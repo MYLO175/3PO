@@ -34,6 +34,7 @@ import EventKit
     private var pendingCalendarRefresh = false
     private var pendingReminderRefresh = false
     private var started = false
+    private var mailSuspended = UserDefaults.standard.bool(forKey: "mailSuspended")
     private var sample: Bool { ProcessInfo.processInfo.arguments.contains("--sample") }
 
     init() {
@@ -62,7 +63,7 @@ import EventKit
                 }
             }
         })
-        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.refresh() } })
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.refresh(retryMail: false) } })
         poll = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(300))
@@ -70,7 +71,7 @@ import EventKit
                 await self?.refreshMail()
             }
         }
-        refresh()
+        refresh(retryMail: false)
         if ProcessInfo.processInfo.arguments.contains("--validate-live") {
             Task {
                 do { validationReport = try await eventKit.validateDisposableReminders() }
@@ -80,7 +81,8 @@ import EventKit
             }
         }
     }
-    func refresh() {
+    func refresh(retryMail: Bool = true) {
+        if retryMail { mailSuspended = false; UserDefaults.standard.set(false, forKey: "mailSuspended") }
         guard !sample else { loadSample(); return }
         Task { await refreshCalendar() }
         Task { await refreshReminders() }
@@ -117,7 +119,9 @@ import EventKit
         if pendingReminderRefresh { pendingReminderRefresh = false; await refreshReminders() }
     }
     func refreshMail() async {
+        if ProcessInfo.processInfo.arguments.contains("--skip-mail") { mailHealth.error = "Mail paused for validation"; return }
         guard !sample, !mailHealth.loading else { return }
+        if mailSuspended { mailHealth.error = "Mail paused after timeout. Click Refresh to retry when Mail is responsive."; return }
         mailHealth.loading = true
         do {
             let snapshot = try await mail.headers()
@@ -135,7 +139,14 @@ import EventKit
                 mailHealth.loading = false
                 persist("mail", mailData)
             }
-        } catch { mailHealth.error = error.localizedDescription; mailHealth.loading = false }
+        } catch {
+            mailHealth.error = error.localizedDescription; mailHealth.loading = false
+            if case MailServiceError.timedOut = error {
+                mailSuspended = true
+                UserDefaults.standard.set(true, forKey: "mailSuspended")
+                mailHealth.error = "Mail timed out. Automatic reads paused; click Refresh to retry when Mail is responsive."
+            }
+        }
     }
     func complete(_ reminder: TaskItem) {
         guard !sample, !writing else { return }
@@ -145,7 +156,7 @@ import EventKit
                 undoToken = try await eventKit.complete(id: reminder.id)
                 undoTitle = reminder.title
                 await refreshReminders()
-            } catch { writeError = error.localizedDescription }
+            } catch { writeError = error.localizedDescription; await refreshReminders() }
             writing = false
         }
     }
@@ -154,7 +165,7 @@ import EventKit
         writing = true; writeError = nil
         Task {
             do { try await eventKit.undo(token: token); undoToken = nil; await refreshReminders() }
-            catch { writeError = error.localizedDescription }
+            catch { writeError = error.localizedDescription; await refreshReminders() }
             writing = false
         }
     }

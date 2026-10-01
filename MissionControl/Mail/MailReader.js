@@ -36,37 +36,8 @@ function accountError(accountID, message) {
     return label + ': ' + String(message);
 }
 
-function mailboxChildren(mailbox) {
-    try {
-        return listValue(mailbox.mailboxes());
-    } catch (_) {
-        return [];
-    }
-}
-
-function accountIDForMailbox(mailbox) {
-    try {
-        return stringValue(mailbox.account().id());
-    } catch (_) {
-        return '';
-    }
-}
-
-function findInboxInTree(mailbox, accountID, depth, requireAccountMatch) {
-    if (depth > 8) return null;
-    const children = mailboxChildren(mailbox);
-    for (let i = 0; i < children.length; i += 1) {
-        const child = children[i];
-        const name = stringValue(child.name()).toLocaleLowerCase();
-        if ((name === 'inbox') && (!requireAccountMatch || accountIDForMailbox(child) === accountID)) return child;
-        const nested = findInboxInTree(child, accountID, depth + 1, requireAccountMatch);
-        if (nested) return nested;
-    }
-    return null;
-}
-
 function resolveInbox(mail, account, accountID) {
-    // Avoid querying children of Mail's aggregate Inbox: some versions hang there.
+    // Resolve an account's exact Inbox, rather than an aggregate child mailbox.
     // Query the account mailbox names in one event and resolve the inbox by index.
     const names = listValue(account.mailboxes.name());
     for (let i = 0; i < names.length; i += 1) {
@@ -166,6 +137,16 @@ function runBody(mail, input) {
     }
 }
 
+function probeInboxes(mail) {
+    const accounts = [], errors = [];
+    mail.accounts().forEach(function(account) {
+        if (!account.enabled()) return;
+        const id = stringValue(account.id());
+        try { accounts.push({ id: id, title: stringValue(account.name()), inbox: stringValue(resolveInbox(mail, account, id).name()) }); }
+        catch (error) { errors.push(accountError(id, error)); }
+    });
+    return { accounts: accounts, errors: errors };
+}
 function run(argv) {
     try {
         if (!argv || argv.length !== 1) {
@@ -174,7 +155,9 @@ function run(argv) {
         const input = JSON.parse(argv[0]);
         const mail = Application('Mail');
         let output;
-        if (input.operation === 'headers') {
+        if (input.operation === 'probe') {
+            output = probeInboxes(mail);
+        } else if (input.operation === 'headers') {
             output = runHeaders(mail);
         } else if (input.operation === 'body') {
             output = runBody(mail, input);

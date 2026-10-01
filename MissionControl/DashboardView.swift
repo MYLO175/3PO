@@ -36,9 +36,11 @@ struct DashboardView: View {
                         inboxPanel.frame(maxWidth: .infinity)
                     }.padding(16)
                 } else {
-                    VSplitView {
-                        HStack(alignment: .top, spacing: 14) { calendarPanel; remindersPanel }.padding([.top, .horizontal], 14).frame(minHeight: 260)
-                        inboxPanel.padding(14).frame(minHeight: 250)
+                    ScrollView {
+                        VStack(spacing: 14) {
+                            HStack(alignment: .top, spacing: 14) { calendarPanel; remindersPanel }.frame(height: 440)
+                            inboxPanel.frame(height: 360)
+                        }.padding(14)
                     }
                 }
             }
@@ -85,11 +87,11 @@ struct DashboardView: View {
                 ForEach(0..<7) { index in
                     let date = Calendar.current.date(byAdding: .day, value: index, to: model.selectedDate)!
                     let count = model.visibleEvents.filter { DateRules.overlaps($0, day: date) }.count
-                    VStack(spacing: 4) {
+                    Button { model.navigate(date) } label: { VStack(spacing: 4) {
                         Text(date.formatted(.dateTime.weekday(.narrow))).font(.caption).foregroundStyle(.secondary)
                         Text(date.formatted(.dateTime.day())).font(.callout.weight(.medium))
                         Text("\(count)").font(.caption2).foregroundStyle(count == 0 ? Color.secondary : Color.accentColor)
-                    }.frame(maxWidth: .infinity).padding(.vertical, 7).background(index == 0 ? Color.accentColor.opacity(0.1) : Color.secondary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8)).onTapGesture { model.navigate(date) }
+                    }.frame(maxWidth: .infinity).padding(.vertical, 7).background(index == 0 ? Color.accentColor.opacity(0.1) : Color.secondary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8)) }.buttonStyle(.plain).accessibilityLabel("\(date.formatted(date: .complete, time: .omitted)), \(count) events")
                 }
             }
             Divider()

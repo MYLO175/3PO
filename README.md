@@ -27,3 +27,5 @@ The build uses `/Applications/Xcode.app/Contents/Developer` without changing glo
 See [PLAN.md](PLAN.md) for all stages and [STATUS.md](STATUS.md) for current validation and outstanding checks. Stage 2 and dictation are deferred until review. Normal refresh never calls an AI service.
 
 Implementation references: [EventKit access](https://developer.apple.com/documentation/eventkit/accessing-the-event-store), [login at launch](https://developer.apple.com/documentation/servicemanagement/smappservice/mainapp). Mail scripting uses the installed Apple Mail scripting dictionary.
+
+Current delivery is a signed **Stage 1 checkpoint**, not full acceptance: Calendar/Reminders work, including tested recurring Undo. Mail account/Inbox discovery works, but the full header read still times out on this Mac. After a timeout, automatic Mail reads pause across relaunch; manual Refresh retries. See STATUS.md before continuing. Do not enable AI yet.

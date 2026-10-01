@@ -38,6 +38,8 @@ import Foundation
         assert(DateRules.group(undated, now: now, calendar: calendar) == "Undated")
         assert(DateRules.ordered([undated, future, early, today]).map(\.id) == ["2", "1", "3", "4"])
         assert(Set([early, today].map(\.id)).count == 2)
+        do { try SampleReminderService().complete(id: "task"); assertionFailure("Sample read-only source must reject writes") }
+        catch IntegrationError.readOnly { }
         let fixture = #"{"messages":[{"id":"a:1","accountID":"a","account":"Example","messageID":1,"internetMessageID":"id@example.invalid","sender":"Test","subject":"Test","received":"2026-10-01T12:00:00.000Z","unread":true,"replied":false,"flagged":true}],"accounts":[{"id":"a","title":"Example"}],"errors":[]}"#.data(using: .utf8)!
         let mail = try JSONDecoder().decode(MailSnapshot.self, from: fixture)
         let restored = try JSONDecoder().decode(MailSnapshot.self, from: JSONEncoder().encode(mail))
@@ -50,6 +52,6 @@ import Foundation
         do { _ = try await service.headers(); assertionFailure("Timeout must fail") }
         catch MailServiceError.timedOut { }
         catch { throw error }
-        print("PASS: DST/overnight/all-day/zero duration, occurrence identity, reminder grouping/order/duplicate identity, Mail cache round-trip/unread flags, helper timeout.")
+        print("PASS: DST/overnight/all-day/zero duration, occurrence identity, reminder grouping/order/duplicate identity, read-only write rejection, Mail cache round-trip/unread flags, helper timeout.")
     }
 }

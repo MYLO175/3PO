@@ -5,7 +5,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if ProcessInfo.processInfo.arguments.contains("--small-window") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                NSApp.windows.first(where: { $0.title == "Mission Control" })?.setContentSize(NSSize(width: 820, height: 640))
+                guard let window = NSApp.windows.first(where: { $0.title == "Mission Control" }) else { return }
+                if window.styleMask.contains(.fullScreen) { window.toggleFullScreen(nil) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    window.setContentSize(NSSize(width: 820, height: 640))
+                }
             }
         }
     }
@@ -17,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var body: some Scene {
         Window("Mission Control", id: "dashboard") {
             DashboardView(model: model)
-        }.defaultSize(width: 1200, height: 780)
+        }.defaultSize(width: ProcessInfo.processInfo.arguments.contains("--small-window") ? 820 : 1200, height: ProcessInfo.processInfo.arguments.contains("--small-window") ? 640 : 780)
         MenuBarExtra("Mission Control", systemImage: "square.grid.2x2") {
             MenuContent(model: model)
         }
