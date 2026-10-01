@@ -2,6 +2,13 @@ import SwiftUI
 import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        if ProcessInfo.processInfo.arguments.contains("--small-window") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                NSApp.windows.first(where: { $0.title == "Mission Control" })?.setContentSize(NSSize(width: 820, height: 640))
+            }
+        }
+    }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
 @main struct MissionControlApp: App {

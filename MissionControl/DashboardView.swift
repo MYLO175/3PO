@@ -17,6 +17,7 @@ struct DashboardView: View {
                 SettingsLink { Image(systemName: "gearshape") }.buttonStyle(.borderless).help("Settings")
             }.padding(24)
             Divider()
+            if let report = model.validationReport { Text(report).font(.callout).padding(10).textSelection(.enabled) }
             if let error = model.storageError { errorBanner(error) }
             if let error = model.writeError { errorBanner(error) }
             if model.undoToken != nil {
@@ -214,7 +215,7 @@ struct DashboardView: View {
             else if let error = model.previewError { ContentUnavailableView("Preview unavailable", systemImage: "exclamationmark.triangle", description: Text(error)) }
             else { ScrollView { Text(model.preview).font(.body).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) } }
             Divider()
-            HStack { Text("Reading previews does not mark mail as read.").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Open in Mail") { model.openMessage(message) } }
+            HStack { Text("Previews are read locally.").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Open in Mail") { model.openMessage(message) } }
         }.padding(24).frame(width: 700, height: 580)
     }
 }

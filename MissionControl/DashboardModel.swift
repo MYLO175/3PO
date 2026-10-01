@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import AppKit
+import EventKit
 
 @MainActor @Observable final class DashboardModel {
     var calendarData = CalendarSnapshot(sources: [], events: [])
@@ -21,14 +22,15 @@ import AppKit
     var writing = false
     var undoToken: String?
     var undoTitle = ""
+    var validationReport: String?
     var storageError: String?
     let eventKit = EventKitService()
     let mail = MailService()
     private var container: ModelContainer?
     private var observers: [NSObjectProtocol] = []
+    private var changes: Task<Void, Never>?
     private var poll: Task<Void, Never>?
     private var previewTask: Task<Void, Never>?
-    private var calendarTask: Task<Void, Never>?
     private var pendingCalendarRefresh = false
     private var pendingReminderRefresh = false
     private var started = false
@@ -50,7 +52,15 @@ import AppKit
         guard !started else { return }; started = true
         if sample { loadSample(); return }
         observers.append(NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in await self?.refreshCalendar(); await self?.refreshReminders() }
+            Task { @MainActor in
+                guard let self else { return }
+                self.changes?.cancel()
+                self.changes = Task {
+                    try? await Task.sleep(for: .seconds(1))
+                    guard !Task.isCancelled else { return }
+                    await self.refreshCalendar(); await self.refreshReminders()
+                }
+            }
         })
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.refresh() } })
         poll = Task { [weak self] in
@@ -61,6 +71,14 @@ import AppKit
             }
         }
         refresh()
+        if ProcessInfo.processInfo.arguments.contains("--validate-live") {
+            Task {
+                do { validationReport = try await eventKit.validateDisposableReminders() }
+                catch { validationReport = "Live reminder validation failed: " + error.localizedDescription }
+                persist("validationReport", validationReport)
+                await refreshReminders()
+            }
+        }
     }
     func refresh() {
         guard !sample else { loadSample(); return }
@@ -110,7 +128,9 @@ import AppKit
             } else {
                 // Reconcile successful accounts; retain cached records only for failed accounts.
                 let successful = Set(snapshot.accounts.map(\.id))
-                mailData = MailSnapshot(messages: (snapshot.messages + mailData.messages.filter { !successful.contains($0.accountID) }).sorted { $0.received > $1.received }, accounts: snapshot.accounts + mailData.accounts.filter { !successful.contains($0.id) }, errors: snapshot.errors)
+                let failed = Set(mailData.accounts.filter { account in snapshot.errors.contains { $0.hasPrefix("Account " + account.id + ":") } }.map(\.id))
+                let retainAll = snapshot.errors.contains { $0.hasPrefix("Mail:") }
+                mailData = MailSnapshot(messages: (snapshot.messages + mailData.messages.filter { (retainAll || failed.contains($0.accountID)) && !successful.contains($0.accountID) }).sorted { $0.received > $1.received }, accounts: snapshot.accounts + mailData.accounts.filter { (retainAll || failed.contains($0.id)) && !successful.contains($0.id) }, errors: snapshot.errors)
                 mailHealth.error = snapshot.errors.joined(separator: "; ")
                 mailHealth.loading = false
                 persist("mail", mailData)
@@ -199,13 +219,8 @@ import AppKit
         } catch { storageError = "Cache could not be read: " + error.localizedDescription }
     }
     private func loadSample() {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: .now)
-        let source = SourceOption(id: "sample", title: "Personal", account: "Sample account", writable: false)
-        calendarData = .init(sources: [source], events: [
-            .init(id: "all", calendarID: "sample", title: "Project day", start: today, end: calendar.date(byAdding: .day, value: 1, to: today)!, allDay: true, location: "", sourceLabel: source.label),
-            .init(id: "review", calendarID: "sample", title: "Design review", start: today.addingTimeInterval(10*3600), end: today.addingTimeInterval(11*3600), allDay: false, location: "Studio", sourceLabel: source.label)])
-        reminderData = .init(sources: [source], reminders: [.init(id: "task", listID: "sample", title: "Review Mission Control", due: today, hasTime: false, sourceLabel: source.label, writable: false, recurring: false)])
-        mailData = .init(messages: [], accounts: [], errors: [])
+        calendarData = SampleCalendarService().snapshot()
+        reminderData = SampleReminderService().snapshot()
+        mailData = SampleMailService().snapshot()
     }
 }

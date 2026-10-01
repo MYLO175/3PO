@@ -81,6 +81,9 @@ actor MailService {
         if let error = response.errors.first {
             throw MailServiceError.mail(error)
         }
+        if let before = response.unreadBefore, let after = response.unreadAfter, before != after {
+            throw MailServiceError.mail("Mail changed the read state during preview retrieval. Refresh Mail before continuing.")
+        }
         return response.body
     }
 
@@ -163,6 +166,8 @@ actor MailService {
 private struct BodyResponse: Decodable {
     let body: String
     let internetMessageID: String
+    let unreadBefore: Bool?
+    let unreadAfter: Bool?
     let errors: [String]
 }
 

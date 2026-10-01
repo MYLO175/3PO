@@ -66,20 +66,12 @@ function findInboxInTree(mailbox, accountID, depth, requireAccountMatch) {
 }
 
 function resolveInbox(mail, account, accountID) {
-    // Mail exposes an aggregate Inbox at the application level. Its child
-    // mailboxes can be mapped back to the account that owns each inbox.
-    try {
-        const rootInbox = mail.inbox();
-        const children = mailboxChildren(rootInbox);
-        for (let i = 0; i < children.length; i += 1) {
-            if (accountIDForMailbox(children[i]) === accountID) return children[i];
-        }
-    } catch (_) {
-        // Fall through to the account's own mailbox tree.
+    // Avoid querying children of Mail's aggregate Inbox: some versions hang there.
+    // Query the account mailbox names in one event and resolve the inbox by index.
+    const names = listValue(account.mailboxes.name());
+    for (let i = 0; i < names.length; i += 1) {
+        if (stringValue(names[i]).toLowerCase() === 'inbox') return account.mailboxes[i];
     }
-
-    const found = findInboxInTree(account, accountID, 0, false);
-    if (found) return found;
     throw new Error('Inbox mailbox not found for this account');
 }
 
@@ -159,9 +151,13 @@ function runBody(mail, input) {
         const inbox = resolveInbox(mail, account, accountID);
         const message = inbox.messages.byId(messageID);
         if (!message) throw new Error('Inbox message not found');
-        // Reading the content property does not open the message or set its read status.
+        const unreadBefore = !Boolean(message.readStatus());
+        const body = stringValue(message.content());
+        const unreadAfter = !Boolean(message.readStatus());
         return {
-            body: stringValue(message.content()),
+            body: body,
+            unreadBefore: unreadBefore,
+            unreadAfter: unreadAfter,
             internetMessageID: stringValue(message.messageId()),
             errors: []
         };

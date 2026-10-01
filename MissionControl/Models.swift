@@ -1,5 +1,4 @@
 import Foundation
-import SwiftData
 
 struct SourceOption: Identifiable, Codable, Hashable {
     var id: String
@@ -41,12 +40,6 @@ struct SourceHealth: Codable {
         return "Not connected"
     }
 }
-@Model final class CachedDashboard {
-    @Attribute(.unique) var key: String
-    var data: Data
-    var updated: Date
-    init(key: String, data: Data, updated: Date = .now) { self.key = key; self.data = data; self.updated = updated }
-}
 enum DateRules {
     static func day(_ date: Date, calendar: Calendar = .current) -> DateInterval {
         calendar.dateInterval(of: .day, for: date)!
@@ -58,7 +51,7 @@ enum DateRules {
     static func group(_ item: TaskItem, now: Date = .now, calendar: Calendar = .current) -> String {
         guard let due = item.due else { return "Undated" }
         let today = calendar.startOfDay(for: now)
-        if due < today { return "Overdue" }
+        if due < today || (item.hasTime && due < now) { return "Overdue" }
         if calendar.isDate(due, inSameDayAs: now) { return "Today" }
         return "Upcoming"
     }
