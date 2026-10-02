@@ -8,18 +8,27 @@ struct AssistantPanel: View {
     var supportsReadingMode = true
     @State private var dictation = DictationService()
     @State private var showDictation = false
+    @State private var showMemory = false
+    @State private var showBriefing = false
     var body: some View {
         VStack(spacing: 8) {
             Divider()
-            HStack {
-                Label("Assistant", systemImage: "sparkles").font(.headline)
-                if !assistant.conversations.isEmpty {
-                    Picker("Conversation", selection: $assistant.activeID) { ForEach(assistant.conversations) { Text($0.title).tag(Optional($0.id)) } }.labelsHidden().frame(maxWidth: 280).disabled(assistant.busy)
+            VStack(alignment:.leading,spacing:8) {
+                HStack {
+                    Label("Assistant",systemImage:"sparkles").font(.headline)
+                    Spacer()
+                    Button("Your PA") { assistant.openPA() }.disabled(assistant.busy)
+                    Button("Memory") { showMemory = true }
+                    if supportsReadingMode { Button { readingMode.toggle() } label: { Image(systemName:readingMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") }.help(readingMode ? "Compact chat" : "Expand chat") }
                 }
-                Button("New chat") { assistant.newConversation() }.disabled(assistant.busy).keyboardShortcut("n",modifiers:.command)
-                if supportsReadingMode { Button { readingMode.toggle() } label: { Image(systemName:readingMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") }.help(readingMode ? "Compact chat" : "Expand chat").accessibilityLabel(readingMode ? "Compact chat" : "Expand chat") }
-                Spacer()
-                Text(assistant.contextEnabled ? "Enabled sources · saved email summaries" : "AI source context off").font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    if !assistant.conversations.isEmpty {
+                        Picker("Conversation",selection:$assistant.activeID) { ForEach(assistant.conversations) { Text($0.title).tag(Optional($0.id)) } }.labelsHidden().frame(maxWidth:280).disabled(assistant.busy)
+                    }
+                    Button("New topic") { assistant.newConversation() }.disabled(assistant.busy).keyboardShortcut("n",modifiers:.command)
+                    Spacer(minLength:0)
+                }
+                Text(assistant.contextEnabled ? "Enabled sources · shared memory" : "Apple source context off").font(.caption).foregroundStyle(.secondary)
             }
             ScrollViewReader { proxy in
                 ScrollView {
@@ -43,6 +52,7 @@ struct AssistantPanel: View {
                                 } else if turn.role == "assistant" {
                                     Text((try? AttributedString(markdown:turn.content,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(turn.content)).textSelection(.enabled).lineSpacing(3)
                                 } else { Text(turn.content).textSelection(.enabled) }
+                                if turn.deliveryID != nil { Button("Briefing and sources") { showBriefing = true }.controlSize(.small) }
                                 if turn.role == "assistant" && !turn.completed && !assistant.busy && !turn.content.isEmpty { Text("Partial response").font(.caption).foregroundStyle(.orange) }
                             }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(turn.role == "user" ? Color.accentColor.opacity(0.06) : Color.primary.opacity(0.025),in:RoundedRectangle(cornerRadius:10)).id(turn.id)
                         }
@@ -75,7 +85,7 @@ struct AssistantPanel: View {
                 Button { showDictation = true } label: { Image(systemName:"mic") }.help("Dictate a message").accessibilityLabel("Dictate a message").disabled(assistant.busy)
                 TextField("Message Mission Control", text: $assistant.draft,axis:.vertical).lineLimit(1...4).textFieldStyle(.plain).padding(9).background(Color(nsColor:.textBackgroundColor),in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.primary.opacity(0.08))).onSubmit { assistant.send(model:model) }.disabled(assistant.busy)
                 if assistant.busy { ProgressView().controlSize(.small); Button("Stop") { assistant.cancel() } }
-                else { Button("Send") { assistant.send(model:model) }.disabled(assistant.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.chatGPT.inferenceVerified || model.chatGPT.busy || model.chatGPT.usagePaused) }
+                else { Button("Send") { assistant.send(model:model) }.disabled(assistant.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (MemoryRules.explicitRequest(assistant.draft) == nil && (!model.chatGPT.inferenceVerified || model.chatGPT.busy || model.chatGPT.usagePaused))) }
             }
             if assistant.error?.contains("Choose the specific target") == true {
                 Picker("Specific action target", selection: $model.assistantActions.selectedTarget) {
@@ -85,7 +95,7 @@ struct AssistantPanel: View {
             }
         }.onChange(of:model.chatGPT.usagePaused) { _, paused in
             if !paused, assistant.error?.contains("subscription_sharing_usage_limit_exceeded") == true { assistant.error = nil }
-        }.sheet(isPresented:$showDictation) {
+        }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { PAMemoryView(memory:assistant.memory,registration:model.chatGPT.activeID) }.sheet(isPresented:$showDictation) {
             DictationView(dictation:dictation) { text in assistant.draft = assistant.draft.isEmpty ? text : assistant.draft + " " + text }
         }.padding(.horizontal, 20).padding(.vertical, 10)
     }

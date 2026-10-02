@@ -60,7 +60,7 @@ struct WorkspaceView: View {
             Button { sidebarVisible.toggle() } label: { Image(systemName:"sidebar.left") }.buttonStyle(.borderless).help("Show dashboard pages")
             VStack(alignment:.leading,spacing:3) { Text(store.selected.title).font(.system(size:23,weight:.semibold,design:.rounded)); Text(Date.now.formatted(date:.complete,time:.omitted)).font(.caption).foregroundStyle(.secondary) }
             Spacer()
-            Button { store.showAssistant() } label: { Label("Assistant",systemImage:"bubble.left.and.bubble.right") }.keyboardShortcut("j",modifiers:.command)
+            Button { model.assistant.openPA(); store.showAssistant() } label: { Label("Assistant",systemImage:"bubble.left.and.bubble.right") }.keyboardShortcut("j",modifiers:.command)
             Button { model.refresh() } label: { Image(systemName:"arrow.clockwise") }.help("Refresh Apple sources (⌘R)").accessibilityLabel("Refresh Apple sources").keyboardShortcut("r",modifiers:.command)
             addMenu
             Toggle("Edit",isOn:$editing).toggleStyle(.button)
