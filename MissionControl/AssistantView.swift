@@ -22,7 +22,7 @@ struct AssistantPanel: View {
                         ForEach(assistant.active?.turns ?? []) { turn in
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(turn.role == "user" ? "You" : "Mission Control").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                                Text(turn.content.isEmpty ? "Thinking…" : turn.content).textSelection(.enabled).id(turn.content)
+                                Text(turn.content.isEmpty ? (assistant.busy ? "Thinking…" : "No completed response.") : turn.content).textSelection(.enabled).id(turn.content)
                                 if turn.role == "assistant" && !turn.completed && !assistant.busy { Text("Partial response").font(.caption).foregroundStyle(.orange) }
                             }.frame(maxWidth: .infinity, alignment: .leading).id(turn.id)
                         }

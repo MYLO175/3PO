@@ -165,9 +165,9 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
             else { self.selectedModel = ""; self.message = "Signed in. Select an available model and test completed inference." }
         }
     }
-    private func access() async throws -> String {
+    private func access(forceRenewal: Bool = false) async throws -> String {
         guard var account = current, !account.accessToken.isEmpty, account.scopes.contains("chatgpt.tokens.use.direct") else { throw ChatGPTError.message("Continue with ChatGPT and enable plan usage first.") }
-        if account.expiry.timeIntervalSinceNow < 120 {
+        if forceRenewal || account.expiry.timeIntervalSinceNow < 120 {
             guard !account.refreshToken.isEmpty else { throw ChatGPTError.message("Please sign in again to renew this session.") }
             let data = try await request(ChatGPTOAuth.issuer + "/api/accounts/oauth/token", fields: ["grant_type":"refresh_token", "client_id":account.clientID, "refresh_token":account.refreshToken, "resource":ChatGPTOAuth.resource])
             guard let tokens = try JSONSerialization.jsonObject(with: data) as? [String:Any], let access = tokens["access_token"] as? String, (tokens["token_type"] as? String)?.lowercased() == "bearer" else { throw ChatGPTError.message("Session renewal returned an incomplete token set.") }
@@ -190,6 +190,11 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         models = list.compactMap { value in guard value["visibility"] as? String == "list", let slug = value["slug"] as? String else { return nil }; return .init(id: slug, name: value["display_name"] as? String ?? slug) }
     }
     func testConnection() { run { try await self.loadModels(); try await self.verifyInference() } }
+    func renewSession() { run {
+        _ = try await self.access(forceRenewal: true)
+        self.inferenceVerified = self.current?.verifiedModel != nil
+        self.message = "Session renewed and saved in Keychain. Your source settings are unchanged."
+    } }
     private func verifyInference() async throws {
         guard models.contains(where: { $0.id == selectedModel }) else { throw ChatGPTError.message("Choose an available model before testing.") }
         message = "Checking completed inference with \(selectedModel)…"
@@ -277,6 +282,7 @@ struct ChatGPTConnectionView: View {
             }
             HStack {
                 Button("Test connection") { connection.testConnection() }.disabled(connection.busy || !connection.hasSession)
+                Button("Renew session") { connection.renewSession() }.disabled(connection.busy || !connection.hasSession)
                 Button("Sign out") { connection.signOut() }.disabled(connection.busy || !connection.hasSession)
                 if connection.busy { ProgressView().controlSize(.small); Button("Cancel") { connection.cancel() } }
             }
