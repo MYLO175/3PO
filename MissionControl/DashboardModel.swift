@@ -10,6 +10,8 @@ import EventKit
     var calendarHealth = SourceHealth()
     var reminderHealth = SourceHealth()
     var mailHealth = SourceHealth()
+    var mailIndex = MailIndexState()
+    var mailCoverage: String { sample ? "Sample data" : mailIndex.coverage(accounts: mailData.accounts) }
     var selectedDate = Calendar.current.startOfDay(for: .now)
     var excludedCalendars: Set<String> = [] { didSet { saveFilters() } }
     var excludedLists: Set<String> = [] { didSet { saveFilters() } }
@@ -31,6 +33,7 @@ import EventKit
     private var changes: Task<Void, Never>?
     private var poll: Task<Void, Never>?
     private var previewTask: Task<Void, Never>?
+    private var mailContinuation: Task<Void, Never>?
     private var pendingCalendarRefresh = false
     private var pendingReminderRefresh = false
     private var started = false
@@ -38,9 +41,14 @@ import EventKit
     private var sample: Bool { ProcessInfo.processInfo.arguments.contains("--sample") }
 
     init() {
-        excludedCalendars = Set(UserDefaults.standard.stringArray(forKey: "excludedCalendars") ?? [])
-        excludedLists = Set(UserDefaults.standard.stringArray(forKey: "excludedLists") ?? [])
-        excludedAccounts = Set(UserDefaults.standard.stringArray(forKey: "excludedAccounts") ?? [])
+        // Read all saved filters before observable property setters persist any
+        // values; otherwise the first setter erases later filters during init.
+        let savedCalendars = Set(UserDefaults.standard.stringArray(forKey: "excludedCalendars") ?? [])
+        let savedLists = Set(UserDefaults.standard.stringArray(forKey: "excludedLists") ?? [])
+        let savedAccounts = Set(UserDefaults.standard.stringArray(forKey: "excludedAccounts") ?? [])
+        excludedCalendars = savedCalendars
+        excludedLists = savedLists
+        excludedAccounts = savedAccounts
         do {
             let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Mission Control", isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -82,7 +90,7 @@ import EventKit
         }
     }
     func refresh(retryMail: Bool = true) {
-        if retryMail { mailSuspended = false; UserDefaults.standard.set(false, forKey: "mailSuspended") }
+        if retryMail { mailContinuation?.cancel(); mailSuspended = false; UserDefaults.standard.set(false, forKey: "mailSuspended") }
         guard !sample else { loadSample(); return }
         Task { await refreshCalendar() }
         Task { await refreshReminders() }
@@ -118,34 +126,69 @@ import EventKit
         } catch { reminderHealth.error = error.localizedDescription; reminderHealth.loading = false }
         if pendingReminderRefresh { pendingReminderRefresh = false; await refreshReminders() }
     }
+    private func persistMailCheckpoint() {
+        persist("mailCheckpoint", MailCheckpoint(snapshot: mailData, index: mailIndex))
+    }
     func refreshMail() async {
         if ProcessInfo.processInfo.arguments.contains("--skip-mail") { mailHealth.error = "Mail paused for validation"; return }
         guard !sample, !mailHealth.loading else { return }
-        if mailSuspended { mailHealth.error = "Mail paused after timeout. Click Refresh to retry when Mail is responsive."; return }
+        if mailSuspended { mailHealth.error = "Mail paused after timeout. Click Refresh to resume when Mail is responsive."; return }
         mailHealth.loading = true
         do {
-            let snapshot = try await mail.headers()
-            if snapshot.errors.isEmpty {
-                mailData = snapshot
-                mailHealth = .init(lastSuccess: .now)
-                persist("mail", snapshot); persist("mailHealth", mailHealth)
-            } else {
-                mailData = snapshot.retainingFailedAccounts(from: mailData)
-                mailHealth.error = snapshot.errors.joined(separator: "; ")
-                mailHealth.loading = false
-                persist("mail", mailData)
-                if snapshot.timedOut == true {
-                    mailSuspended = true
-                    UserDefaults.standard.set(true, forKey: "mailSuspended")
-                    mailHealth.error = (mailHealth.error ?? "Mail timed out") + " Automatic reads paused; click Refresh to retry."
+            let discovery = try await mail.discoverAccounts()
+            if !discovery.errors.isEmpty { throw MailServiceError.mail(discovery.errors.joined(separator: "; ")) }
+            let accounts = discovery.accounts
+            let enabled = Set(accounts.map(\.id))
+            mailData = MailSnapshot(messages: mailData.messages.filter { enabled.contains($0.accountID) && $0.received >= Date.now.addingTimeInterval(-30 * 86400) }, accounts: accounts, errors: [])
+            mailIndex.prepare(accounts: accounts)
+            persistMailCheckpoint()
+            // Round-robin accounts, newest unfinished day first. Six small pages
+            // form a checkpoint; each page is saved and displayed immediately.
+            for job in 0..<6 where !accounts.isEmpty {
+                let account = accounts[job % accounts.count]
+                guard let window = mailIndex.windows.filter({ $0.accountID == account.id && !$0.complete }).sorted(by: { $0.start > $1.start }).first else { continue }
+                do {
+                    let batch = try await mail.batch(accountID: account.id, window: window)
+                    mailData = mailIndex.apply(batch, to: window.id, snapshot: mailData)
+                    mailHealth.lastSuccess = .now; mailHealth.error = nil
+                    persistMailCheckpoint()
+                    persist("mailHealth", SourceHealth(lastSuccess: .now))
+                } catch {
+                    // A changed/moved message invalidates the saved ID list for
+                    // this day. Rebuild it on a user retry; keep cached rows.
+                    if case MailServiceError.mail(let detail) = error,
+                       detail.contains("changed or moved") || detail.contains("-1728"),
+                       let index = mailIndex.windows.firstIndex(where: { $0.id == window.id }) {
+                        mailIndex.windows[index].offset = 0
+                        mailIndex.windows[index].messageIDs = nil
+                        mailIndex.windows[index].seenIDs = []
+                    }
+                    // Timeout/transport errors preserve the last successful page
+                    // cursor and ID list, so Refresh retries only the failed page.
+                    persistMailCheckpoint()
+                    mailHealth.error = account.title + " Inbox: " + error.localizedDescription
+                    if case MailServiceError.timedOut = error {
+                        mailSuspended = true; UserDefaults.standard.set(true, forKey: "mailSuspended")
+                        mailHealth.error = (mailHealth.error ?? "Mail timed out") + " Automatic reads paused; Refresh resumes saved progress."
+                    }
+                    mailHealth.loading = false
+                    return
+                }
+            }
+            mailHealth.loading = false
+            if accounts.isEmpty { mailHealth.lastSuccess = .now }
+            if mailIndex.pending {
+                mailContinuation = Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(2))
+                    guard !Task.isCancelled else { return }
+                    await self?.refreshMail()
                 }
             }
         } catch {
             mailHealth.error = error.localizedDescription; mailHealth.loading = false
             if case MailServiceError.timedOut = error {
-                mailSuspended = true
-                UserDefaults.standard.set(true, forKey: "mailSuspended")
-                mailHealth.error = "Mail timed out. Automatic reads paused; click Refresh to retry when Mail is responsive."
+                mailSuspended = true; UserDefaults.standard.set(true, forKey: "mailSuspended")
+                mailHealth.error = "Mail timed out. Automatic reads paused; Refresh resumes saved progress."
             }
         }
     }
@@ -218,6 +261,10 @@ import EventKit
             calendarData = read("calendar", CalendarSnapshot.self) ?? calendarData
             reminderData = read("reminders", ReminderSnapshot.self) ?? reminderData
             mailData = read("mail", MailSnapshot.self) ?? mailData
+            mailIndex = read("mailIndex", MailIndexState.self) ?? mailIndex
+            if let checkpoint = read("mailCheckpoint", MailCheckpoint.self) {
+                mailData = checkpoint.snapshot; mailIndex = checkpoint.index
+            }
             calendarHealth = read("calendarHealth", SourceHealth.self) ?? calendarHealth
             reminderHealth = read("reminderHealth", SourceHealth.self) ?? reminderHealth
             mailHealth = read("mailHealth", SourceHealth.self) ?? mailHealth

@@ -1,4 +1,5 @@
 # Status
+Current checkpoint (2 October): day-batched Mail import now succeeds for Exchange and iCloud, with full rolling 30-day coverage and saved resume state. Calendar colours and list-based reminders are installed. Stage 1 final permission/Calendar/lifecycle acceptance remains open; see latest section below.
 Stage 1 in progress. Empty folder inspected. Xcode 27.0 / Apple Development identity available. Initial five-hour remaining: 66%; weekly remaining: 53%. Main UI setting cannot be changed by prompt.
 No personal source data in repository. One Luna High task assigned: Mail reader/service only.
 
@@ -75,3 +76,29 @@ Only timing/count metadata was printed; personal header/body data was captured t
 4. Once both actual-app inboxes load, verify unread preservation and original-message opening. Complete Calendar agreement and live event edge cases, filters/relaunch, menu-bar lifecycle, login toggle and compact/light layout.
 
 Final usage milestone: 87% five-hour remaining, 40% weekly remaining. Stage 1 is an incomplete signed checkpoint; Stages 2 and 3 remain deferred.
+
+
+## Resumable Mail and source grouping — 2026-10-02
+Implemented the user's requested batches and source grouping. Main retained integration ownership; the existing authorised Luna High agent contributed optional source RGB colours, EventKit colour extraction, list/due-date UI and mailbox filter labels. Main reviewed it, fixed an opaque View return compile error, prioritised To do and completed final integration. No additional agents, AI requests, billing, credits or resets.
+
+### Changes
+- New `MailBatching.swift`: rolling 30-day calendar-day windows (31 partial/full dates may overlap that interval), stable per-window message ID lists, 20-header pages, saved offsets/seen IDs, per-account coverage and reconciliation after a complete window.
+- JXA resolves a date predicate once for the day's message references. Subsequent pages use persisted IDs; ordinary JavaScript array slicing never uses Mail's expensive indexed range selector. No bodies are fetched for indexing.
+- Newest days first, round-robin accounts, six-page checkpoints with a two-second yield before continued backlog work. Every successful page is displayed immediately and saved atomically with its index state in one SwiftData cache record. Launch/wake/manual/polling resume it. Recent windows refresh every five minutes; older windows are audited hourly when polling runs. Deleted/moved messages are reconciled when a window completes.
+- Timeout/transport failure preserves the exact last successful page offset and ID list, pauses automatic reads and leaves cached data usable. Refresh resumes. A changed/moved target invalidates only its date window's IDs. Mail itself may keep processing an already-issued Apple event after helper termination; the suspension circuit remains necessary.
+- Calendar bars/source labels use EventKit's Calendar colour converted to sRGB; deterministic fallback hue for sources without a colour. Source caches remain compatible with old records.
+- Reminders default to actual Apple lists, To do first, with source-coloured headers/counts and overdue indication. Persisted Lists/Due date toggle keeps date groups available. Existing completion/read-only/Undo services remain intact.
+- Mailboxes menu filters each account's Inbox. A pre-existing initialization bug erased later saved filters when the first observable filter setter persisted defaults; all saved filters are now read before any setter runs.
+- User's future email direction is saved in PLAN.md: daily AI overview of new mail, urgency and suggestions, raw source inspection secondary. No full mail client/composer/sending; AI remains Stage 2 after review/subscription inference.
+
+### Validation
+- `./scripts/test.sh` passed focused checks including old source-cache decoding, DST date windows, incomplete-page cache retention, state encode/decode with saved ID list/cursor, completion reconciliation of disappeared records, and existing failed-write/identity/timeout tests.
+- Final `./scripts/build.sh` succeeded using installed Xcode outside macro sandbox; signed app installed at `~/Applications/Mission Control.app`, signature verified.
+- Metadata-only live probe: today's Exchange batch returned two headers in 0.69 seconds. iCloud first page returned three of five in 4.18 seconds; second page returned two in 0.31 seconds, with zero duplicate IDs. Live unread preview returned a body in 0.87 seconds, retained unread status and matched Internet Message-ID. No body/header text was printed to shell logs.
+- Actual signed app imported both Exchange and iCloud. Coverage reached 31/31 date windows for each account within the rolling 30 days; the observed total was 886 messages (counts naturally change with rolling cutoff/new mail). iCloud appeared alongside Exchange in the native dashboard. Thus earlier full-header timeout blocker is resolved for these accounts with this strategy.
+- Actual-app preview sheet loaded successfully through production body/identity/read-status checks. Wide system-light UI visually inspected: source colours distinguish calendars, list groups display, To do is first. No personal screenshots saved or committed.
+- Mailbox filter hid Exchange and left iCloud; after the initialization fix it survived a genuine app Quit/relaunch. All inboxes restored after the check. Persisted Mail state resumed from Exchange 31/31 and iCloud 29/31 to full coverage on relaunch. Atomic checkpoint cache decoded correctly in actual app.
+- Small-window launch argument was attempted, but restored fullscreen/large window geometry prevented a definitive compact screenshot; do not claim small-window acceptance. No global appearance/security/startup setting changed.
+
+### Remaining Stage 1 acceptance
+Independent Finder launch/permission ownership remains unproven (Calendar Settings had shown ChatGPT/node); compare full Calendar agreement and event edge cases; close-window/menu-bar reopen; launch-at-login user action; final compact/dark appearance. Existing disposable duplicate/recurring reminder completion+Undo and focused date tests passed earlier and were not unnecessarily repeated for presentation changes. Stage 1 remains a signed review checkpoint, not full acceptance-complete. Stages 2 and 3 remain deferred.

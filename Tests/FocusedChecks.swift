@@ -72,6 +72,30 @@ import Foundation
         let isolatedResult = try await isolatedService.headers()
         assert(isolatedResult.messages.count == 1 && isolatedResult.accounts.count == 2)
         assert(isolatedResult.timedOut == true && isolatedResult.errors.first?.hasPrefix("Account b:") == true)
+        let oldSource = try JSONDecoder().decode(SourceOption.self, from: Data(#"{"id":"old","title":"To do","account":"Example","writable":true}"#.utf8))
+        assert(oldSource.color == nil, "Old source caches must still decode")
+        let batchNow = date(2026, 10, 2, 12)
+        var indexing = MailIndexState()
+        indexing.prepare(accounts: mail.accounts, now: batchNow, calendar: calendar)
+        let window = indexing.windows.first { $0.start <= mail.messages[0].received && $0.end > mail.messages[0].received }!
+        func fixtureMessage(_ id: Int) throws -> MailMessage {
+            var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(mail.messages[0])) as! [String: Any]
+            json["id"] = "a:\(id)"; json["messageID"] = id
+            return try JSONDecoder().decode(MailMessage.self, from: JSONSerialization.data(withJSONObject: json))
+        }
+        let prior = MailSnapshot(messages: [try fixtureMessage(3)], accounts: mail.accounts, errors: [])
+        let firstPage = MailBatch(messages: mail.messages, messageIDs: [1,2], nextOffset: 1, complete: false, errors: [])
+        let partialPage = indexing.apply(firstPage, to: window.id, snapshot: prior, now: batchNow)
+        assert(Set(partialPage.messages.map(\.id)) == ["a:1", "a:3"], "Partial pages must not erase unvisited cached rows")
+        indexing = try JSONDecoder().decode(MailIndexState.self, from: JSONEncoder().encode(indexing))
+        let resumed = indexing.windows.first { $0.id == window.id }!
+        assert(resumed.offset == 1 && resumed.messageIDs == [1,2] && resumed.seenIDs == ["a:1"])
+        let secondPage = MailBatch(messages: [try fixtureMessage(2)], messageIDs: [1,2], nextOffset: 2, complete: true, errors: [])
+        let finished = indexing.apply(secondPage, to: window.id, snapshot: partialPage, now: batchNow)
+        assert(Set(finished.messages.map(\.id)) == ["a:1", "a:2"], "Complete window must remove disappeared messages")
+        var dstIndex = MailIndexState()
+        dstIndex.prepare(accounts: mail.accounts, now: date(2026, 10, 25, 12), calendar: calendar)
+        assert(dstIndex.windows.contains { $0.start == dstDay && $0.end.timeIntervalSince($0.start) == 25*3600 })
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("missioncontrol-timeout-\(UUID()).js")
         try "function run(argv) { delay(10); return '{}'; }".write(to: tmp, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: tmp) }
@@ -79,6 +103,6 @@ import Foundation
         do { _ = try await service.headers(); assertionFailure("Timeout must fail") }
         catch MailServiceError.timedOut { }
         catch { throw error }
-        print("PASS: DST/overnight/all-day/zero duration, occurrence identity, reminder grouping/order/duplicate identity, read-only write rejection, Mail cache round-trip/unread flags, helper timeout/account isolation/cache reconciliation/preview identity.")
+        print("PASS: DST/overnight/all-day/zero duration, occurrence identity, reminder grouping/order/duplicate identity, read-only write rejection, Mail cache round-trip/unread flags, helper timeout/account isolation/cache reconciliation/preview identity, persisted batch resume/reconciliation/DST windows/old source caches.")
     }
 }

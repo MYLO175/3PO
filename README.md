@@ -15,8 +15,8 @@ The build uses `/Applications/Xcode.app/Contents/Developer` without changing glo
 ## Behaviour
 - Compact three-panel dashboard; narrower windows place Inbox below Calendar and Reminders.
 - Selected-day/tomorrow agenda and seven-day overview, including all-day and overlapping events.
-- Incomplete reminders grouped by due date; identity-based completion with one-level Undo. Read-only lists cannot be edited.
-- Dynamically discovered enabled Mail account inboxes, last 30 days. Header reads and plain-text previews run through a serial subprocess; no attachments or outgoing mail.
+- Calendar bars use Apple Calendar source colours. Reminders default to their Apple lists, with To do first and an optional Due date grouping; identity-based completion with one-level Undo. Read-only lists cannot be edited.
+- Dynamically discovered account inboxes, last 30 days, with mailbox filters. The reader starts with today and works backwards in calendar-day windows, fetching at most 20 headers per page. Each page and its stable ID cursor are saved together; partial results appear immediately. Coverage shows completed date windows per account (31 calendar dates can overlap a rolling 30-day interval). Timeouts pause automatic reads; Refresh resumes progress. Plain-text bodies load only for a preview. No attachments, outgoing mail or AI requests.
 - Manual/launch/wake refresh, EventKit change observation, Mail polling every five minutes. Errors retain last successful cache and show stale/error state.
 - Source filters persist. Caches are stored with SwiftData in `~/Library/Application Support/Mission Control`, excluded from Git. Preferences use the app's UserDefaults domain.
 - Closing the window keeps the menu bar app alive. Open it again from the menu bar. Explicit Quit stops it. Settings offers launch at login through Apple's SMAppService.
@@ -28,4 +28,4 @@ See [PLAN.md](PLAN.md) for all stages and [STATUS.md](STATUS.md) for current val
 
 Implementation references: [EventKit access](https://developer.apple.com/documentation/eventkit/accessing-the-event-store), [login at launch](https://developer.apple.com/documentation/servicemanagement/smappservice/mainapp). Mail scripting uses the installed Apple Mail scripting dictionary.
 
-Current delivery is a signed **Stage 1 checkpoint**, not full acceptance: Calendar/Reminders work, including tested recurring Undo. Mail account/Inbox discovery works, but the full header read still times out on this Mac. Each account has a separate serial timeout and healthy account results survive a different account failure. After a timeout, automatic Mail reads pause across relaunch; manual Refresh retries. Restart Mail before retrying if its database scan is still running. See STATUS.md before continuing. Do not enable AI yet.
+Current delivery is a signed **Stage 1 checkpoint**. Both Exchange and iCloud inboxes completed their 30-day import in the actual app, with saved progress and mailbox filters. Live unread-preserving helper preview and actual-app preview passed. See STATUS.md for remaining permission, Calendar agreement and lifecycle acceptance boundaries. AI summaries remain Stage 2; the intended email experience is an overview, with raw messages available for source inspection.

@@ -1,10 +1,17 @@
 import Foundation
 
+struct SourceRGB: Codable, Hashable {
+    var red: Double
+    var green: Double
+    var blue: Double
+}
+
 struct SourceOption: Identifiable, Codable, Hashable {
     var id: String
     var title: String
     var account: String
     var writable: Bool
+    var color: SourceRGB? = nil
     var label: String { account.isEmpty ? title : "\(title) · \(account)" }
 }
 struct AgendaEvent: Identifiable, Codable {

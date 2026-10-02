@@ -4,6 +4,7 @@ import AppKit
 
 struct DashboardView: View {
     @Bindable var model: DashboardModel
+    @AppStorage("reminderGroupingMode") private var reminderGroupingMode = "lists"
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .center) {
@@ -47,7 +48,7 @@ struct DashboardView: View {
                 }
             }
             HStack {
-                Text("Local dashboard").font(.caption)
+                Text("Daily overview").font(.caption)
                 Spacer()
                 Text("Apple apps remain the source of truth · No AI processing").font(.caption)
             }.foregroundStyle(.secondary).padding(.horizontal, 24).padding(.vertical, 10)
@@ -68,11 +69,39 @@ struct DashboardView: View {
             Button("Enable all") { exclusions.wrappedValue = [] }
             Divider()
             ForEach(sources) { source in
-                Toggle(source.label, isOn: Binding(get: { !exclusions.wrappedValue.contains(source.id) }, set: { enabled in
+                Toggle(isOn: Binding(get: { !exclusions.wrappedValue.contains(source.id) }, set: { enabled in
                     if enabled { exclusions.wrappedValue.remove(source.id) } else { exclusions.wrappedValue.insert(source.id) }
-                }))
+                })) {
+                    HStack(spacing: 7) {
+                        Circle().fill(sourceColor(source.id, explicit: source.color)).frame(width: 8, height: 8)
+                        Text(source.label)
+                    }
+                }
             }
         } label: { Label(title, systemImage: "line.3.horizontal.decrease") }.controlSize(.small).disabled(sources.isEmpty)
+    }
+    func sourceColor(_ id: String, explicit: SourceRGB? = nil) -> Color {
+        if let explicit {
+            return Color(red: explicit.red, green: explicit.green, blue: explicit.blue)
+        }
+        let hash = id.utf8.reduce(UInt64(14_695_981_039_346_656_037)) { value, byte in
+            (value ^ UInt64(byte)) &* 1_099_511_628_211
+        }
+        return Color(hue: Double(hash % 360) / 360, saturation: 0.48, brightness: 0.78)
+    }
+    func reminderSource(_ id: String) -> SourceOption? {
+        model.reminderData.sources.first { $0.id == id }
+    }
+    func reminderListLabel(_ id: String) -> String {
+        reminderSource(id)?.label ?? model.visibleReminders.first(where: { $0.listID == id })?.sourceLabel ?? "Reminders"
+    }
+    var visibleReminderListIDs: [String] {
+        Array(Set(model.visibleReminders.map(\.listID))).sorted { left, right in
+            let leftDefault = reminderSource(left)?.title.caseInsensitiveCompare("To do") == .orderedSame
+            let rightDefault = reminderSource(right)?.title.caseInsensitiveCompare("To do") == .orderedSame
+            if leftDefault != rightDefault { return leftDefault }
+            return reminderListLabel(left) < reminderListLabel(right)
+        }
     }
     var calendarPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -119,15 +148,16 @@ struct DashboardView: View {
     }
     func moveDate(_ delta: Int) { model.navigate(Calendar.current.date(byAdding: .day, value: delta, to: model.selectedDate)!) }
     func eventRow(_ event: AgendaEvent, day: Date) -> some View {
-        HStack(alignment: .top, spacing: 9) {
-            RoundedRectangle(cornerRadius: 2).fill(Color.accentColor.opacity(0.7)).frame(width: 3)
+        let color = sourceColor(event.calendarID, explicit: model.calendarData.sources.first(where: { $0.id == event.calendarID })?.color)
+        return HStack(alignment: .top, spacing: 9) {
+            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 3)
             VStack(alignment: .leading, spacing: 4) {
                 if !event.allDay {
                     Text(eventTime(event, day: day)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }
                 Text(event.title).font(.callout.weight(.medium)).fixedSize(horizontal: false, vertical: true)
                 if !event.location.isEmpty { Label(event.location, systemImage: "location").font(.caption).foregroundStyle(.secondary) }
-                Text(event.sourceLabel).font(.caption2).foregroundStyle(.secondary)
+                Text(event.sourceLabel).font(.caption2).foregroundStyle(color)
             }
             Spacer(minLength: 0)
         }.padding(.vertical, 3)
@@ -141,30 +171,67 @@ struct DashboardView: View {
     var remindersPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             panelHeader("Reminders", icon: "checklist", health: model.reminderHealth)
-            sourceMenu("Lists", sources: model.reminderData.sources, exclusions: $model.excludedLists)
+            HStack(spacing: 8) {
+                sourceMenu("Lists", sources: model.reminderData.sources, exclusions: $model.excludedLists)
+                Spacer(minLength: 0)
+                Picker("Group reminders", selection: $reminderGroupingMode) {
+                    Text("Lists").tag("lists")
+                    Text("Due date").tag("due")
+                }.pickerStyle(.segmented).labelsHidden().controlSize(.small).fixedSize()
+            }
             Divider()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(["Overdue", "Today", "Upcoming", "Undated"], id: \.self) { group in
-                        let items = model.visibleReminders.filter { DateRules.group($0) == group }
-                        HStack { Text(group).font(.subheadline.weight(.semibold)); Spacer(); Text("\(items.count)").foregroundStyle(.secondary).font(.caption) }
-                        if items.isEmpty { Text("Nothing here").font(.caption).foregroundStyle(.tertiary) }
-                        ForEach(items) { item in
-                            HStack(alignment: .top, spacing: 8) {
-                                Button { model.complete(item) } label: { Image(systemName: item.writable ? "circle" : "lock.circle").font(.title3) }.buttonStyle(.plain).disabled(!item.writable || model.writing).help(item.writable ? "Complete reminder" : "Read-only list")
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(item.title).font(.callout).fixedSize(horizontal: false, vertical: true)
-                                    if let due = item.due { Text(due.formatted(date: .abbreviated, time: item.hasTime ? .shortened : .omitted)).font(.caption).foregroundStyle(group == "Overdue" ? Color.orange : Color.secondary) }
-                                    HStack(spacing: 4) { Text(item.sourceLabel); if item.recurring { Image(systemName: "repeat") } }.font(.caption2).foregroundStyle(.secondary)
-                                }
-                                Spacer(minLength: 0)
-                            }.padding(.vertical, 3)
+                    if reminderGroupingMode == "lists" {
+                        ForEach(visibleReminderListIDs, id: \.self) { listID in
+                            let items = DateRules.ordered(model.visibleReminders.filter { $0.listID == listID })
+                            HStack {
+                                Text(reminderListLabel(listID)).font(.subheadline.weight(.semibold)).foregroundStyle(sourceColor(listID, explicit: reminderSource(listID)?.color)).lineLimit(1)
+                                Spacer(minLength: 4)
+                                Text("\(items.count)").foregroundStyle(.secondary).font(.caption)
+                            }
+                            ForEach(items) { item in
+                                reminderRow(item, showSource: false, showOverdueBadge: true)
+                            }
+                            Divider()
                         }
-                        Divider()
+                    } else {
+                        ForEach(["Overdue", "Today", "Upcoming", "Undated"], id: \.self) { group in
+                            let items = model.visibleReminders.filter { DateRules.group($0) == group }
+                            HStack { Text(group).font(.subheadline.weight(.semibold)); Spacer(); Text("\(items.count)").foregroundStyle(.secondary).font(.caption) }
+                            if items.isEmpty { Text("Nothing here").font(.caption).foregroundStyle(.tertiary) }
+                            ForEach(items) { item in
+                                reminderRow(item, showSource: true, showOverdueBadge: false)
+                            }
+                            Divider()
+                        }
                     }
                 }
             }
         }.panelStyle()
+    }
+    func reminderRow(_ item: TaskItem, showSource: Bool, showOverdueBadge: Bool) -> some View {
+        let overdue = DateRules.group(item) == "Overdue"
+        return HStack(alignment: .top, spacing: 8) {
+            Button { model.complete(item) } label: { Image(systemName: item.writable ? "circle" : "lock.circle").font(.title3) }
+                .buttonStyle(.plain).disabled(!item.writable || model.writing).help(item.writable ? "Complete reminder" : "Read-only list")
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(item.title).font(.callout).fixedSize(horizontal: false, vertical: true)
+                    if showOverdueBadge && overdue {
+                        Text("Overdue").font(.caption2.weight(.medium)).foregroundStyle(.orange).padding(.horizontal, 5).padding(.vertical, 2).background(Color.orange.opacity(0.12), in: Capsule())
+                    }
+                }
+                if let due = item.due { Text(due.formatted(date: .abbreviated, time: item.hasTime ? .shortened : .omitted)).font(.caption).foregroundStyle(overdue ? Color.orange : Color.secondary) }
+                if showSource || item.recurring {
+                    HStack(spacing: 4) {
+                        if showSource { Text(item.sourceLabel) }
+                        if item.recurring { Image(systemName: "repeat") }
+                    }.font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 0)
+        }.padding(.vertical, 3)
     }
     var inboxPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -174,13 +241,16 @@ struct DashboardView: View {
                     Button("Enable all") { model.excludedAccounts = [] }
                     Divider()
                     ForEach(model.mailData.accounts) { account in
-                        Toggle(account.title, isOn: Binding(get: { !model.excludedAccounts.contains(account.id) }, set: { enabled in
+                        Toggle("\(account.title) · Inbox", isOn: Binding(get: { !model.excludedAccounts.contains(account.id) }, set: { enabled in
                             if enabled { model.excludedAccounts.remove(account.id) } else { model.excludedAccounts.insert(account.id) }
                         }))
                     }
-                } label: { Label("Accounts", systemImage: "line.3.horizontal.decrease") }.controlSize(.small)
+                } label: { Label("Mailboxes", systemImage: "line.3.horizontal.decrease") }.controlSize(.small)
                 Spacer()
                 Text("Last 30 days · \(model.visibleMessages.count)").font(.caption).foregroundStyle(.secondary)
+            }
+            if !model.mailCoverage.isEmpty {
+                Text(model.mailCoverage).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
             Divider()
             if model.visibleMessages.isEmpty {

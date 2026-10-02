@@ -139,6 +139,42 @@ function runBody(mail, input) {
     }
 }
 
+// Resolve one date window once, then paginate a persisted list of message IDs.
+// Array.slice below is ordinary JavaScript; never use Mail's indexed range
+// specifier, which can copy the whole inbox once for every selected index.
+function runBatch(mail, input) {
+    const accountID = String(input.accountID || '');
+    const start = new Date(Number(input.start) * 1000);
+    const end = new Date(Number(input.end) * 1000);
+    const offset = Number(input.offset || 0);
+    const limit = Math.min(20, Number(input.limit || 20));
+    if (!accountID || !Number.isFinite(start.getTime()) || !(start < end) || !Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1) throw new Error('Invalid Mail batch');
+    const account = mail.accounts.byId(accountID)();
+    if (!account.enabled()) throw new Error('Mail account is unavailable');
+    const inbox = resolveInbox(mail, account, accountID);
+    let ids = input.messageIDs;
+    if (!Array.isArray(ids)) {
+        const refs = listValue(inbox.messages.whose({ _and: [
+            { dateReceived: { _greaterThanEquals: start } }, { dateReceived: { _lessThan: end } }
+        ] })());
+        ids = refs.map(message => Number(message.id()));
+    }
+    if (ids.some(id => !Number.isSafeInteger(id) || id < 0)) throw new Error('Invalid message identity in batch');
+    const title = stringValue(account.name());
+    const page = ids.slice(offset, offset + limit);
+    const messages = page.map(function (id) {
+        const message = inbox.messages.byId(id)();
+        const received = dateISO(message.dateReceived());
+        if (!received || new Date(received) < start || new Date(received) >= end) throw new Error('A message changed or moved; retry this date window');
+        return { id: accountID + ':' + id, accountID: accountID, account: title, messageID: id,
+            internetMessageID: stringValue(message.messageId()), sender: stringValue(message.sender()),
+            subject: stringValue(message.subject()), received: received, unread: !Boolean(message.readStatus()),
+            replied: Boolean(message.wasRepliedTo()), flagged: Boolean(message.flaggedStatus()) };
+    });
+    return { messages: messages, messageIDs: ids, nextOffset: offset + page.length,
+        complete: offset + page.length >= ids.length, errors: [] };
+}
+
 function probeInboxes(mail) {
     const accounts = [], errors = [];
     mail.accounts().forEach(function(account) {
@@ -157,7 +193,9 @@ function run(argv) {
         const input = JSON.parse(argv[0]);
         const mail = Application('Mail');
         let output;
-        if (input.operation === 'probe') {
+        if (input.operation === 'batch') {
+            output = runBatch(mail, input);
+        } else if (input.operation === 'probe') {
             output = probeInboxes(mail);
         } else if (input.operation === 'headers') {
             output = runHeaders(mail, input);

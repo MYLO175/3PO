@@ -1,5 +1,6 @@
 import Foundation
 import EventKit
+import AppKit
 
 actor EventKitService {
     private let store = EKEventStore()
@@ -23,7 +24,13 @@ actor EventKitService {
         if !granted { throw IntegrationError.denied(type == .event ? "Calendar" : "Reminders") }
     }
     private func option(_ calendar: EKCalendar) -> SourceOption {
-        .init(id: calendar.calendarIdentifier, title: calendar.title, account: calendar.source.title, writable: calendar.allowsContentModifications)
+        let color: SourceRGB?
+        if let sRGB = NSColor(cgColor: calendar.cgColor)?.usingColorSpace(.sRGB) {
+            color = SourceRGB(red: Double(sRGB.redComponent), green: Double(sRGB.greenComponent), blue: Double(sRGB.blueComponent))
+        } else {
+            color = nil
+        }
+        return .init(id: calendar.calendarIdentifier, title: calendar.title, account: calendar.source.title, writable: calendar.allowsContentModifications, color: color)
     }
     func calendar(from start: Date, to end: Date) async throws -> CalendarSnapshot {
         try await access(.event)

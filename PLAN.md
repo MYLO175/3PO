@@ -20,3 +20,7 @@ Stage 1: signed actual launch/own permissions; compare iCloud+Cambridge Exchange
 Stage 2 adds subscription inference/renewal/limits; source-linked factual summaries; ambiguity/failure/embedded instruction checks; daily notification catch-up/idempotence; incremental resumable summaries. Stage 3 adds editable transcript/cancel/denial/typing fallback.
 Prior relevant scripts only: /Users/mylomichael/Documents/Codex/2026-10-01/thi/work (also unrelated private files). EventKit previously saw Exchange timed event AppleScript missed; reminder recurrence/body/unread/all-account behaviour still need app-level validation.
 No OpenClaw, computer use integration, separate billing, email sending, phone app or draggable widgets.
+
+## User refinements — 2 October 2026
+Use Apple source colours for calendar events, with stable fallback colours. Default reminder grouping is by Apple list (To do first), retaining an optional due-date grouping view. Inbox filters identify each account's Inbox. Mail reads must use short date windows, bounded ID-based pages, immediate saved/displayed progress, resumable backlog and explicit coverage.
+The eventual email experience is primarily a daily AI overview of new mail, urgent matters and suggested actions. Raw messages are secondary source inspection; do not build a full mail client, composer or sending workflow. Implement this AI overview in Stage 2 after Stage 1 review and successful subscription inference, with the existing read-only/usage/source-exclusion rules.

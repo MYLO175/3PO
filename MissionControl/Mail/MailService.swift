@@ -104,6 +104,25 @@ actor MailService {
         return MailSnapshot(messages: messages.sorted { $0.received > $1.received }, accounts: discovery.accounts, errors: errors, timedOut: timedOut)
     }
 
+    func discoverAccounts() async throws -> MailDiscovery {
+        try JSONDecoder().decode(MailDiscovery.self, from: run(arguments: ["operation": "probe"]))
+    }
+
+    func batch(accountID: String, window: MailWindowProgress) async throws -> MailBatch {
+        var arguments: [String: Any] = ["operation": "batch", "accountID": accountID,
+            "start": window.start.timeIntervalSince1970, "end": window.end.timeIntervalSince1970,
+            "offset": window.offset, "limit": 20]
+        if let ids = window.messageIDs { arguments["messageIDs"] = ids }
+        let response = try JSONDecoder().decode(MailBatch.self, from: run(arguments: arguments))
+        if let error = response.errors.first { throw MailServiceError.mail(error) }
+        guard let ids = response.messageIDs, let offset = response.nextOffset, let complete = response.complete,
+              offset >= window.offset, offset <= ids.count, Set(ids).count == ids.count,
+              complete == (offset == ids.count), complete || offset > window.offset else {
+            throw MailServiceError.process("Mail returned incomplete batch metadata")
+        }
+        return response
+    }
+
     func body(accountID: String, messageID: Int, expectedInternetMessageID: String? = nil) async throws -> String {
         let data = try run(arguments: [
             "operation": "body",
@@ -199,7 +218,7 @@ actor MailService {
     }
 }
 
-private struct MailDiscovery: Decodable {
+struct MailDiscovery: Decodable, Sendable {
     let accounts: [MailAccount]
     let errors: [String]
 }
