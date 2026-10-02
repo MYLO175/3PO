@@ -68,6 +68,7 @@ private struct ActionLedgerEntry: Codable { var result: String?; var attempted =
             return String(plan.message.prefix(1500))
         }
         try ActionRules.validate(draft)
+        try ActionRules.validateUserTiming(draft,request:request)
         guard ActionRules.permits(draft.kind,request:request) else { throw ActionFailure.message("The planned operation differs from your request. No write was attempted.") }
         if let title = draft.title {
             guard request.range(of:title,options:.caseInsensitive) != nil else { throw ActionFailure.message("Please state the exact new title in your request. No write was attempted.") }

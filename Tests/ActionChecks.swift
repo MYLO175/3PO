@@ -20,6 +20,12 @@ import Foundation
         assert(!ActionRules.permits(.createEvent,request:"Create a reminder titled Fictional"))
         assert(!ActionRules.permits(.createReminder,request:"Create an event titled Fictional"))
         assert(!ActionRules.permits(.createEvent,request:"Complete the reminder"))
+        let eventDraft = try JSONDecoder().decode(ActionDraft.self,from:Data(#"{"kind":"createEvent","title":"Fictional","start":"2026-10-03T10:00:00+01:00","end":"2026-10-03T11:00:00+01:00","allDay":false}"#.utf8))
+        try ActionRules.validateUserTiming(eventDraft,request:"Create an event Fictional tomorrow at 10am for one hour")
+        try ActionRules.validateUserTiming(eventDraft,request:"Create an event Fictional tomorrow from 10:00 to 11:00")
+        var missingTimeRejected = false
+        do { try ActionRules.validateUserTiming(eventDraft,request:"Create an event Fictional tomorrow") } catch { missingTimeRejected = true }
+        assert(missingTimeRejected)
         let key = ActionRules.key(registration:"account",request:"Complete fictional")
         let repeatedKey = ActionRules.key(registration:"account",request:"Complete fictional")
         let otherKey = ActionRules.key(registration:"other",request:"Complete fictional")

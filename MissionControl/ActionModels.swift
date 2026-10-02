@@ -65,6 +65,19 @@ enum ActionRules {
         default: return false
         }
     }
+    static func validateUserTiming(_ draft: ActionDraft, request: String) throws {
+        guard draft.kind == .createEvent else { return }
+        let allDay = request.range(of:#"\ball[ -]day\b"#,options:[.regularExpression,.caseInsensitive]) != nil
+        if draft.allDay == true {
+            guard allDay else { throw ActionFailure.message("Please specify an all-day event or give its start time and duration. No write was attempted.") }
+            return
+        }
+        let clock = #"(?:\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(?:am|pm)\b|\b(?:noon|midnight)\b)"#
+        let hasClock = request.range(of:clock,options:[.regularExpression,.caseInsensitive]) != nil
+        let duration = request.range(of:#"\bfor\s+(?:\d+(?:\.\d+)?|an?|one|two|three|four|half(?:\s+an?)?|quarter(?:\s+of\s+an?)?)\s*(?:minutes?|mins?|hours?|hrs?)\b"#,options:[.regularExpression,.caseInsensitive]) != nil
+        let end = request.range(of:#"\b(?:to|until|ending\s+at)\s*"# + clock,options:[.regularExpression,.caseInsensitive]) != nil
+        guard hasClock && (duration || end) else { throw ActionFailure.message("Please give the event's start time and end time or duration. No write was attempted.") }
+    }
     static func key(registration: String, request: String, selectedTarget: String = "") -> String {
         let data = Data((registration + "\n" + request.trimmingCharacters(in: .whitespacesAndNewlines) + "\n" + selectedTarget).utf8)
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()

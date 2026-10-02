@@ -236,11 +236,11 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         }
         var stream = ChatGPTStream()
         do {
-            for try await line in bytes.lines {
+            for try await byte in bytes {
                 try Task.checkCancellation()
-                if let delta = try stream.line(line) { onDelta?(delta) }
+                if let delta = try stream.byte(byte) { onDelta?(delta) }
             }
-            return try stream.finish()
+            return try stream.finishBytes()
         } catch let failure as ChatGPTStream.Failure {
             switch failure {
             case .failed(let code): throw responseError(code)
