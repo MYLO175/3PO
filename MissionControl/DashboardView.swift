@@ -62,6 +62,7 @@ struct DashboardView: View {
     var emailOverview: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack { Label("Email overview", systemImage: "sparkles").font(.title3.weight(.semibold)); Spacer(); Toggle("Sources", isOn: $showEmailSources).toggleStyle(.button).controlSize(.small) }
+            BriefingView(model: model, briefings: model.briefings)
             if showEmailSources { inboxPanel }
             else { EmailOverviewView(model: model, summaries: model.emailSummaries) }
         }.padding(14).background(.background, in: RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(.quaternary))
@@ -338,6 +339,7 @@ struct SettingsView: View {
             ChatGPTConnectionView(connection: model.chatGPT)
             AssistantSourceSettings(model: model, assistant: model.assistant)
             EmailSummarySettings(model: model, summaries: model.emailSummaries)
+            BriefingSettings(model: model, briefings: model.briefings)
             if let error { Text(error).foregroundStyle(.orange) }
         }.formStyle(.grouped).padding().frame(width: 600, height: 650)
     }

@@ -36,7 +36,7 @@ import SwiftData
     }
     func process(_ model: DashboardModel, resume: Bool = false) {
         if resume { paused = false; error = nil }
-        guard enabled, !paused, !busy, !model.chatGPT.busy, model.chatGPT.inferenceVerified else { return }
+        guard enabled, !paused, !model.chatGPT.usagePaused, !busy, !model.chatGPT.busy, model.chatGPT.inferenceVerified else { return }
         busy = true
         task = Task {
             defer { busy = false }

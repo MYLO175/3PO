@@ -54,6 +54,8 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     var busy = false
     var message = "Not connected. The dashboard works without ChatGPT."
     var inferenceVerified = false
+    private var blockedAccounts = Set(UserDefaults.standard.stringArray(forKey: "chatgptBlockedAccounts") ?? []) { didSet { UserDefaults.standard.set(Array(blockedAccounts), forKey: "chatgptBlockedAccounts") } }
+    var usagePaused: Bool { blockedAccounts.contains(activeID) }
     private var registrations: [ChatGPTRegistration] = []
     private var task: Task<Void, Never>?
     private var callback: ChatGPTCallback?
@@ -118,7 +120,8 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         else if code.contains("not_eligible") { detail = "This account or workspace is not eligible for ChatGPT plan usage. The dashboard remains available." }
         else if status == 401 || code == "invalid_grant" { detail = "Please sign in again. The subscription session needs renewal." }
         else { detail = "ChatGPT request failed (\(status), \(code)). The dashboard remains available." }
-        return .message(detail)
+        if code.contains("usage_limit") || code.contains("usage_unavailable") || status == 429 { blockedAccounts.insert(activeID) }
+        return .message(detail + " (" + code + (status == 0 ? "" : ", HTTP \(status)") + ").")
     }
     private func validateIdentity(_ token: String, client: String, nonce: String?) async throws -> [String:Any] {
         let data = try await request(ChatGPTOAuth.issuer + "/.well-known/jwks.json")
@@ -189,7 +192,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String:Any], let list = root["models"] as? [[String:Any]] else { throw ChatGPTError.message("Account model catalog had an unexpected format.") }
         models = list.compactMap { value in guard value["visibility"] as? String == "list", let slug = value["slug"] as? String else { return nil }; return .init(id: slug, name: value["display_name"] as? String ?? slug) }
     }
-    func testConnection() { run { try await self.loadModels(); try await self.verifyInference() } }
+    func testConnection() { run { self.blockedAccounts.remove(self.activeID); try await self.loadModels(); try await self.verifyInference() } }
     func renewSession() { run {
         _ = try await self.access(forceRenewal: true)
         self.inferenceVerified = self.current?.verifiedModel != nil
@@ -203,10 +206,12 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         account.verifiedModel = selectedModel; account.verifiedAt = .now
         try save(account)
         UserDefaults.standard.set(selectedModel, forKey: "assistantModel")
+        blockedAccounts.remove(activeID)
         inferenceVerified = true; message = "Completed subscription inference verified with \(selectedModel). Personal sources were not sent."
     }
     func streamResponse(input: [[String:String]], instructions: String, onDelta: @escaping (String) -> Void) async throws -> String {
         guard !busy else { throw ChatGPTError.message("Another ChatGPT operation is in progress.") }
+        guard !usagePaused else { throw ChatGPTError.message("Subscription requests are paused after a usage failure. Use Test connection in Settings once access is available.") }
         guard hasSession, inferenceVerified else { throw ChatGPTError.message("Verify completed subscription inference in Settings first.") }
         busy = true
         defer { busy = false }
@@ -286,6 +291,7 @@ struct ChatGPTConnectionView: View {
                 Button("Sign out") { connection.signOut() }.disabled(connection.busy || !connection.hasSession)
                 if connection.busy { ProgressView().controlSize(.small); Button("Cancel") { connection.cancel() } }
             }
+            if connection.usagePaused { Text("All assistant requests paused. Check usage, then Test connection to retry once.").font(.caption).foregroundStyle(.orange) }
             Button("ChatGPT usage and app access") { NSWorkspace.shared.open(URL(string: "https://chatgpt.com/settings/usage")!) }
             Text("Your Plus five-hour allowance is shared with Codex. Keep credit use disabled in ChatGPT's app limits.").font(.caption).foregroundStyle(.secondary)
         }

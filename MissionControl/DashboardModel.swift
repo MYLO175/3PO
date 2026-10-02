@@ -30,6 +30,8 @@ import EventKit
     @ObservationIgnored lazy var assistant = AssistantService(connection: chatGPT, container: container)
     @ObservationIgnored lazy var emailSummaries = EmailSummaryService(container: container)
     private var summaryPoll: Task<Void, Never>?
+    private var briefingPoll: Task<Void, Never>?
+    @ObservationIgnored lazy var briefings = BriefingService(container: container)
     let eventKit = EventKitService()
     let mail = MailService()
     private var container: ModelContainer?
@@ -75,7 +77,7 @@ import EventKit
                 }
             }
         })
-        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.refresh(retryMail: false) } })
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.refresh(retryMail: false); if let self { self.briefings.check(self) } } })
         poll = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(300))
@@ -83,9 +85,15 @@ import EventKit
                 await self?.refreshMail()
             }
         }
+        briefingPoll = Task { [weak self] in
+            while !Task.isCancelled {
+                if let self { self.briefings.check(self) }
+                try? await Task.sleep(for: .seconds(60))
+            }
+        }
         summaryPoll = Task { [weak self] in
             while !Task.isCancelled {
-                if let self { self.emailSummaries.process(self) }
+                if let self, !self.briefings.busy { self.emailSummaries.process(self) }
                 try? await Task.sleep(for: .seconds(300))
             }
         }
