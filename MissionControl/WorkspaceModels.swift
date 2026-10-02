@@ -98,11 +98,13 @@ struct DashboardPage: Identifiable, Codable, Equatable {
     var id: UUID = UUID()
     var title: String
     var widgets: [WidgetPlacement]
+    var canvasRows: Int?
 
-    init(id: UUID = UUID(), title: String, widgets: [WidgetPlacement]) {
+    init(id: UUID = UUID(), title: String, widgets: [WidgetPlacement], canvasRows: Int? = nil) {
         self.id = id
         self.title = title
         self.widgets = widgets
+        self.canvasRows = canvasRows
     }
 }
 
@@ -122,14 +124,17 @@ enum GridRules {
     static let columns = 12
     static let rowHeight: Double = 64
     static let gap: Double = 12
+    static func rows(_ page: DashboardPage) -> Int { max(8,page.canvasRows ?? page.widgets.map { $0.rect.y+$0.rect.h }.max() ?? 8) }
 
     static func valid(
         _ rect: GridRect,
         among placements: [WidgetPlacement],
-        excluding excludedID: UUID? = nil
+        excluding excludedID: UUID? = nil,
+        rowLimit: Int? = nil
     ) -> Bool {
         guard rect.x >= 0, rect.y >= 0, rect.w >= 1, rect.h >= 1,
-              rect.x + rect.w <= columns else { return false }
+              rect.x + rect.w <= columns,
+              rowLimit == nil || rect.y + rect.h <= rowLimit! else { return false }
 
         return !placements.contains { placement in
             placement.id != excludedID && rect.overlaps(placement.rect)
@@ -152,6 +157,16 @@ enum GridRules {
 
         // A free position always exists immediately after the last occupied row.
         return GridRect(x: 0, y: lastOccupiedRow, w: width, h: height)
+    }
+    static func firstFree(kind: WidgetKind, in placements: [WidgetPlacement], rows: Int) -> GridRect? {
+        guard rows >= kind.minimumRows else { return nil }
+        for y in 0...(rows-kind.minimumRows) {
+            for x in 0...(columns-kind.minimumColumns) {
+                let candidate = GridRect(x:x,y:y,w:kind.minimumColumns,h:kind.minimumRows)
+                if valid(candidate,among:placements,rowLimit:rows) { return candidate }
+            }
+        }
+        return nil
     }
 
     static func defaults() -> WorkspaceState {

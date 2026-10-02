@@ -13,6 +13,7 @@ struct WorkspaceView: View {
     @State private var name = ""
     @State private var showName = false
     @State private var legacy = false
+    @State private var focusedWidgetID: UUID?
     private var store: WorkspaceStore { model.workspace }
     private var accentColor: Color { accent == "blue" ? .blue : accent == "rose" ? Color(red:0.69,green:0.36,blue:0.43) : (scheme == .dark ? Color(red:0.60,green:0.76,blue:0.64) : Color(red:0.32,green:0.48,blue:0.38)) }
     private var background: Color { theme == "native" ? Color(nsColor:.windowBackgroundColor) : scheme == .dark ? Color(red:0.12,green:0.13,blue:0.12) : Color(red:0.96,green:0.95,blue:0.92) }
@@ -21,7 +22,7 @@ struct WorkspaceView: View {
             header
             Divider()
             if let report = model.validationReport { HStack { Text(report).font(.caption).textSelection(.enabled); Spacer(); Button { model.validationReport = nil } label: { Image(systemName:"xmark") }.buttonStyle(.borderless).help("Dismiss validation result") }.padding(10) }
-            if let error = store.error { HStack { Label(error,systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange); Spacer(); Button("Original dashboard") { legacy = true } }.padding(10) }
+            if let error = store.error { HStack { Label(error,systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange); Spacer(); if store.readOnly { Button("Original dashboard") { legacy = true } } else { Button("Dismiss") { store.error = nil } } }.padding(10) }
             if let error = model.storageError ?? model.writeError { Text(error).font(.caption).foregroundStyle(.orange).frame(maxWidth:.infinity,alignment:.leading).padding(10) }
             if model.undoToken != nil {
                 HStack { Label("Completed: \(model.undoTitle)",systemImage:"checkmark.circle"); Spacer(); Button("Undo reminder") { model.undo() }.disabled(model.writing) }.font(.callout).padding(10).background(.green.opacity(0.06))
@@ -29,29 +30,42 @@ struct WorkspaceView: View {
             HStack(spacing:0) {
                 if sidebarVisible { sidebar.frame(width:170); Divider() }
                 GeometryReader { geometry in
-                    let width = max(1040,geometry.size.width-32), rows = max(8,Int((geometry.size.height-32)/76))
-                    ScrollView([.horizontal,.vertical]) {
-                        if store.selected.widgets.isEmpty {
-                            VStack(spacing:14) { Image(systemName:"square.grid.2x2").font(.largeTitle).foregroundStyle(accentColor); Text("Make this dashboard yours").font(.title2.weight(.semibold)); Text("Add a widget, then move and resize it in Edit mode.").foregroundStyle(.secondary); addMenu }.frame(width:width,height:max(400,geometry.size.height-32))
-                        } else {
-                            ZStack(alignment:.topLeading) {
-                                if editing { Canvas { context,size in
-                                    let cell = (width-132)/12
-                                    for x in 0..<12 { for y in 0..<Int(size.height/76) { context.fill(Path(ellipseIn:CGRect(x:Double(x)*(cell+12),y:Double(y)*76,width:3,height:3)),with:.color(.secondary.opacity(0.2))) } }
-                                } }
-                                ForEach(store.selected.widgets) { widget in
-                                    WorkspaceTile(model:model,store:store,widget:widgetBinding(widget),editing:editing,canvasWidth:width,fillRows:rows)
-                                }
-                            }.frame(width:width,height:max(geometry.size.height-32,Double(store.selected.widgets.map { $0.rect.y+$0.rect.h }.max() ?? 8)*76-12),alignment:.topLeading)
-                                .coordinateSpace(name:"workspaceGrid")
-                        }
-                    }.padding(16)
-                }
+                    let width = max(1,geometry.size.width-32), height = max(1,geometry.size.height-32)
+                    let rows = GridRules.rows(store.selected)
+                    let metrics = WorkspaceGeometry(width:width,height:height,rows:rows)
+                    if store.selected.widgets.isEmpty {
+                        VStack(spacing:14) { Image(systemName:"square.grid.2x2").font(.largeTitle).foregroundStyle(accentColor); Text("Make this dashboard yours").font(.title2.weight(.semibold)); Text("Add a widget, then move and resize it in Edit mode.").foregroundStyle(.secondary); addMenu }.frame(maxWidth:.infinity,maxHeight:.infinity)
+                    } else if width < 900 && !editing && store.selected.widgets.count > 1 {
+                        VStack(spacing:10) {
+                            HStack {
+                                Text("Focused view").font(.caption).foregroundStyle(.secondary)
+                                Picker("Widget",selection:Binding(get:{ store.selected.widgets.first(where:{ $0.id == focusedWidgetID })?.id ?? store.selected.widgets.first!.id },set:{ focusedWidgetID = $0 })) {
+                                    ForEach(Array(store.selected.widgets.enumerated()),id:\.element.id) { index,widget in Text("\(widget.kind?.title ?? "Widget") \(index+1)").tag(widget.id) }
+                                }.labelsHidden()
+                                Spacer()
+                            }
+                            if let widget = store.selected.widgets.first(where:{ $0.id == focusedWidgetID }) ?? store.selected.widgets.first {
+                                WorkspaceTile(model:model,store:store,widget:widgetBinding(widget),editing:false,metrics:WorkspaceGeometry(width:width,height:max(1,height-38),rows:rows),focused:true)
+                            }
+                        }.padding(16)
+                    } else {
+                        ZStack(alignment:.topLeading) {
+                            if editing { Canvas { context,size in
+                                for x in 0..<12 { for y in 0..<rows { context.fill(Path(ellipseIn:CGRect(x:Double(x)*metrics.xStep,y:Double(y)*metrics.yStep,width:3,height:3)),with:.color(.secondary.opacity(0.2))) } }
+                            }.allowsHitTesting(false) }
+                            ForEach(store.selected.widgets) { widget in
+                                WorkspaceTile(model:model,store:store,widget:widgetBinding(widget),editing:editing,metrics:metrics)
+                            }
+                        }.frame(width:width,height:height,alignment:.topLeading).coordinateSpace(name:"workspaceGrid").padding(16)
+                    }
+                }.clipped()
+
             }
-            HStack { Text(editing ? "Drag a widget's handle to move it · Drag its corner to resize · Overlap is prevented" : "Apple apps stay the source of truth"); Spacer(); if ProcessInfo.processInfo.arguments.contains("--sample") { Text("Sample data") } }.font(.caption).foregroundStyle(.secondary).padding(.horizontal,18).padding(.vertical,9)
+            HStack { Text(editing ? "Drag the handle or corner · Release to snap · Red outline means it does not fit" : "Apple apps stay the source of truth"); Spacer(); if ProcessInfo.processInfo.arguments.contains("--sample") { Text("Sample data") } }.font(.caption).foregroundStyle(.secondary).padding(.horizontal,18).padding(.vertical,9)
         }.background(background).tint(accentColor).frame(minWidth:780,minHeight:580)
             .preferredColorScheme(appearance == "light" ? .light : appearance == "dark" ? .dark : nil)
             .task { model.start() }
+            .onChange(of:store.selected.id) { focusedWidgetID = nil }
             .sheet(isPresented:$showName) { VStack(alignment:.leading,spacing:16) { Text(naming == nil ? "New dashboard" : "Rename dashboard").font(.title2.weight(.semibold)); TextField("Name",text:$name).onSubmit { saveName() }; HStack { Spacer(); Button("Cancel") { showName = false }.keyboardShortcut(.cancelAction); Button("Save") { saveName() }.keyboardShortcut(.defaultAction).disabled(name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty) } }.padding(24).frame(width:360) }
             .sheet(item:$model.selectedMessage) { DashboardView(model:model).previewSheet($0) }
             .sheet(isPresented:$legacy) { DashboardView(model:model).frame(width:1150,height:750) }
@@ -99,34 +113,59 @@ private struct WorkspaceTile: View {
     @Bindable var model: DashboardModel
     @Bindable var store: WorkspaceStore
     @Binding var widget: WidgetPlacement
-    var editing: Bool; var canvasWidth: Double; var fillRows: Int
-    @State private var proposal: GridRect?
+    var editing: Bool
+    var metrics: WorkspaceGeometry
+    var focused = false
+    @State private var interaction: Interaction?
     @State private var readingMode = false
-    private var rect: GridRect { proposal ?? widget.rect }
-    private var cell: Double { (canvasWidth-132)/12 }
-    private var valid: Bool { GridRules.valid(rect,among:store.selected.widgets,excluding:widget.id) }
+    private struct Interaction { var origin: GridRect; var translation: CGSize; var resizing: Bool }
+    private var baseRect: GridRect { focused ? GridRect(x:0,y:0,w:12,h:metrics.rows) : widget.rect }
+    private var baseFrame: CGRect { metrics.frame(baseRect) }
+    private var target: GridRect {
+        guard let interaction else { return baseRect }
+        return metrics.target(origin:interaction.origin,dx:interaction.translation.width,dy:interaction.translation.height,resizing:interaction.resizing,minimumColumns:widget.kind?.minimumColumns ?? 3,minimumRows:widget.kind?.minimumRows ?? 4)
+    }
+    private var visual: CGRect {
+        guard let interaction else { return baseFrame }
+        return metrics.preview(origin:interaction.origin,dx:interaction.translation.width,dy:interaction.translation.height,resizing:interaction.resizing,minimumColumns:widget.kind?.minimumColumns ?? 3,minimumRows:widget.kind?.minimumRows ?? 4)
+    }
+    private var valid: Bool { GridRules.valid(target,among:store.selected.widgets,excluding:widget.id,rowLimit:metrics.rows) }
     private var configuration: Binding<WidgetConfiguration> { Binding(get:{ widget.configuration },set:{ widget.configuration = $0 }) }
     var body: some View {
-        VStack(spacing:0) {
-            if editing {
-                HStack {
-                    HStack { Image(systemName:"line.3.horizontal"); Text(widget.kind?.title ?? "Unavailable widget").font(.caption.weight(.semibold)); Spacer() }.contentShape(Rectangle()).gesture(moveGesture)
-                    Menu {
-                        Button("Fill page") { store.fullPage(widget,rows:fillRows) }
-                        Button("Move right") { adjust(x:1) }; Button("Move left") { adjust(x:-1) }; Button("Move down") { adjust(y:1) }; Button("Move up") { adjust(y:-1) }
-                        Button("Wider") { adjust(w:1) }; Button("Narrower") { adjust(w:-1) }; Button("Taller") { adjust(h:1) }; Button("Shorter") { adjust(h:-1) }
-                        Divider(); Button("Remove widget") { store.removeWidget(widget.id) }
-                    } label: { Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).frame(width:20).accessibilityLabel("\(widget.kind?.title ?? "Widget") layout actions")
-                }.padding(.horizontal,12).frame(height:34).background(Color.accentColor.opacity(0.08))
+        ZStack(alignment:.topLeading) {
+            if interaction != nil {
+                let destination = metrics.frame(target)
+                RoundedRectangle(cornerRadius:16).fill((valid ? Color.accentColor : .red).opacity(0.08))
+                    .overlay(RoundedRectangle(cornerRadius:16).stroke(valid ? Color.accentColor : .red,style:StrokeStyle(lineWidth:2,dash:[6,4])))
+                    .frame(width:destination.width,height:destination.height).offset(x:destination.minX,y:destination.minY).allowsHitTesting(false)
             }
-            content.allowsHitTesting(!editing).frame(maxWidth:.infinity,maxHeight:.infinity)
-        }.frame(width:Double(rect.w)*cell+Double(rect.w-1)*12,height:Double(rect.h)*64+Double(rect.h-1)*12)
+            VStack(spacing:0) {
+                if editing {
+                    HStack {
+                        HStack { Image(systemName:"line.3.horizontal"); Text(widget.kind?.title ?? "Unavailable widget").font(.caption.weight(.semibold)); Spacer() }.contentShape(Rectangle()).gesture(gesture(resizing:false))
+                        Menu {
+                            Button("Fill page") { store.fullPage(widget) }
+                            Button("Move right") { adjust(x:1) }; Button("Move left") { adjust(x:-1) }; Button("Move down") { adjust(y:1) }; Button("Move up") { adjust(y:-1) }
+                            Button("Wider") { adjust(w:1) }; Button("Narrower") { adjust(w:-1) }; Button("Taller") { adjust(h:1) }; Button("Shorter") { adjust(h:-1) }
+                            Divider(); Button("Remove widget") { store.removeWidget(widget.id) }
+                        } label: { Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).frame(width:20).accessibilityLabel("\(widget.kind?.title ?? "Widget") layout actions")
+                    }.padding(.horizontal,12).frame(height:34).background(Color.accentColor.opacity(0.08))
+                }
+                content.allowsHitTesting(!editing).frame(maxWidth:.infinity,maxHeight:.infinity)
+            }
+            // Keep content at its committed size during the gesture; only the preview shell follows the pointer.
+            .frame(width:baseFrame.width,height:baseFrame.height,alignment:.topLeading)
+            .frame(width:visual.width,height:visual.height,alignment:.topLeading)
             .background(Color(nsColor:.controlBackgroundColor),in:RoundedRectangle(cornerRadius:16))
             .clipShape(RoundedRectangle(cornerRadius:16))
             .overlay(RoundedRectangle(cornerRadius:16).stroke(editing ? (valid ? Color.accentColor.opacity(0.6) : .red) : Color.primary.opacity(0.06),lineWidth:editing ? 2 : 1))
-            .overlay(alignment:.bottomTrailing) { if editing { Image(systemName:"arrow.down.right.and.arrow.up.left").font(.caption.weight(.bold)).padding(9).background(.regularMaterial,in:RoundedRectangle(cornerRadius:7)).contentShape(Rectangle()).gesture(resizeGesture).accessibilityLabel("Resize \(widget.kind?.title ?? "widget")") } }
-            .shadow(color:.black.opacity(0.025),radius:8,y:3)
-            .offset(x:Double(rect.x)*(cell+12),y:Double(rect.y)*76)
+            .overlay(alignment:.bottomTrailing) { if editing { Image(systemName:"arrow.down.right.and.arrow.up.left").font(.caption.weight(.bold)).padding(9).background(.regularMaterial,in:RoundedRectangle(cornerRadius:7)).contentShape(Rectangle()).gesture(gesture(resizing:true)).accessibilityLabel("Resize \(widget.kind?.title ?? "widget")") } }
+            .shadow(color:.black.opacity(interaction == nil ? 0.025 : 0.12),radius:interaction == nil ? 8 : 14,y:3)
+            .offset(x:visual.minX,y:visual.minY)
+        }.frame(width:metrics.width,height:metrics.height,alignment:.topLeading).zIndex(interaction == nil ? 0 : 1)
+            .onChange(of:editing) { interaction = nil }
+            .onChange(of:metrics.width) { interaction = nil }
+            .onChange(of:metrics.height) { interaction = nil }
     }
     @ViewBuilder private var content: some View {
         switch widget.kind {
@@ -139,8 +178,19 @@ private struct WorkspaceTile: View {
         case nil: ContentUnavailableView("Widget unavailable",systemImage:"square.dashed",description:Text("Its saved placement is preserved for a future app version."))
         }
     }
-    private var moveGesture: some Gesture { DragGesture(minimumDistance:3).onChanged { value in var next = widget.rect; next.x = max(0,min(12-next.w,next.x+Int((value.translation.width/(cell+12)).rounded()))); next.y = max(0,next.y+Int((value.translation.height/76).rounded())); proposal = next }.onEnded { _ in commit() } }
-    private var resizeGesture: some Gesture { DragGesture(minimumDistance:3).onChanged { value in var next = widget.rect; next.w = max(widget.kind?.minimumColumns ?? 3,min(12-next.x,next.w+Int((value.translation.width/(cell+12)).rounded()))); next.h = max(widget.kind?.minimumRows ?? 4,next.h+Int((value.translation.height/76).rounded())); proposal = next }.onEnded { _ in commit() } }
-    private func commit() { if let proposal, valid { var next = widget; next.rect = proposal; store.update(next) }; proposal = nil }
+    private func gesture(resizing: Bool) -> some Gesture {
+        DragGesture(minimumDistance:3,coordinateSpace:.named("workspaceGrid"))
+            .onChanged { value in
+                if interaction == nil { interaction = Interaction(origin:widget.rect,translation:.zero,resizing:resizing) }
+                interaction?.translation = value.translation
+            }
+            .onEnded { _ in
+                let destination = target
+                withAnimation(.snappy(duration:0.18)) {
+                    if valid && destination != widget.rect { var next = widget; next.rect = destination; store.update(next) }
+                    interaction = nil
+                }
+            }
+    }
     private func adjust(x: Int = 0,y: Int = 0,w: Int = 0,h: Int = 0) { var next = widget; next.rect.x += x; next.rect.y += y; next.rect.w = max(widget.kind?.minimumColumns ?? 3,next.rect.w+w); next.rect.h = max(widget.kind?.minimumRows ?? 4,next.rect.h+h); store.update(next) }
 }

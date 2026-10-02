@@ -41,6 +41,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 Button("Invalidate today's test briefing") { model.briefings.invalidateToday(model) }
                 Button("Run disposable action check") { Task { guard !model.writing else { return }; model.writing = true; defer { model.writing = false }; do { model.validationReport = try await model.eventKit.validateDisposableActions() } catch { model.validationReport = error.localizedDescription } } }
                 Button("Check memory learning (fictional)") { model.validateMemoryLearning() }
+                Button("Preview compact dashboard") { if let window = NSApp.windows.first(where:{ $0.isVisible && !$0.isFloatingPanel }) { window.setContentSize(NSSize(width:820,height:640)); window.center() } }
+                Button("Restore dashboard window size") { if let window = NSApp.windows.first(where:{ $0.isVisible && !$0.isFloatingPanel }) { window.setContentSize(NSSize(width:1200,height:780)); window.center() } }
                 Button("Check email triage (fictional)") { Task { do { model.validationReport = try await model.emailSummaries.validateTriage(model) } catch { model.validationReport = error.localizedDescription } } }
                 Button("Clean assistant action fixtures") { Task { do { model.validationReport = try await model.assistantActions.cleanupFixtures(model) } catch { model.validationReport = error.localizedDescription } } }
             }

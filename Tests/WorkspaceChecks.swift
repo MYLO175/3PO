@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 @main
 struct WorkspaceChecks {
@@ -62,6 +63,34 @@ struct WorkspaceChecks {
         let orderedPageRoundTrip = try JSONDecoder().decode(DashboardPage.self, from: JSONEncoder().encode(orderedPage))
         assert(orderedPageRoundTrip.widgets == orderedWidgets, "Placement order survives JSON encoding")
 
-        print("PASS: grid bounds and collisions, edge touching, unknown-kind round-trip, workspace JSON and defaults, first-free row-major placement, placement order")
+        assert(GridRules.valid(GridRect(x:0,y:3,w:4,h:5),among:[],rowLimit:8))
+        assert(!GridRules.valid(GridRect(x:0,y:4,w:4,h:5),among:[],rowLimit:8),"Canvas bottom is bounded")
+        let filled = [WidgetPlacement(kind:.calendar,rect:GridRect(x:0,y:0,w:12,h:8))]
+        assert(GridRules.firstFree(kind:.reminders,in:filled,rows:8) == nil,"Full pages cannot grow downward")
+        let legacy = try JSONDecoder().decode(DashboardPage.self,from:Data("{\"id\":\"00000000-0000-0000-0000-000000000001\",\"title\":\"Legacy\",\"widgets\":[]}".utf8))
+        assert(legacy.canvasRows == nil && GridRules.rows(legacy) == 8)
+        let tall = DashboardPage(title:"Legacy tall",widgets:[WidgetPlacement(kind:.calendar,rect:GridRect(x:0,y:3,w:12,h:15))])
+        assert(GridRules.rows(tall) == 18,"Existing extents are preserved rather than cropped")
+        for size in [(1100.0,600.0),(750.0,430.0),(1600.0,1000.0)] {
+            let geometry = WorkspaceGeometry(width:size.0,height:size.1,rows:8)
+            let full = geometry.frame(GridRect(x:0,y:0,w:12,h:8))
+            assert(abs(full.width-size.0) < 0.001 && abs(full.height-size.1) < 0.001)
+            let origin = GridRect(x:1,y:1,w:4,h:5)
+            let before = geometry.frame(origin)
+            let smooth = geometry.preview(origin:origin,dx:7,dy:9,resizing:false,minimumColumns:4,minimumRows:5)
+            assert(abs(smooth.minX-before.minX-7) < 0.001 && abs(smooth.minY-before.minY-9) < 0.001,"Preview tracks pixel movement before snapping")
+            let moved = geometry.target(origin:origin,dx:geometry.xStep*2,dy:geometry.yStep,resizing:false,minimumColumns:4,minimumRows:5)
+            assert(moved == GridRect(x:3,y:2,w:4,h:5),"Movement is measured against the immutable gesture origin")
+            let edge = geometry.target(origin:origin,dx:10000,dy:10000,resizing:false,minimumColumns:4,minimumRows:5)
+            assert(edge == GridRect(x:8,y:3,w:4,h:5))
+            let resized = geometry.target(origin:origin,dx:10000,dy:10000,resizing:true,minimumColumns:4,minimumRows:5)
+            assert(resized == GridRect(x:1,y:1,w:11,h:7),"Resize clamps at canvas edges")
+            let minimum = geometry.target(origin:origin,dx:-10000,dy:-10000,resizing:true,minimumColumns:4,minimumRows:5)
+            assert(minimum == origin)
+            let pointerSize = geometry.preview(origin:origin,dx:5,dy:7,resizing:true,minimumColumns:4,minimumRows:5)
+            assert(abs(pointerSize.width-before.width-5) < 0.001 && abs(pointerSize.height-before.height-7) < 0.001)
+        }
+
+        print("PASS: fixed viewport geometry, continuous previews, immutable-origin snapping, bounds/full pages, legacy extent preservation, collisions and workspace persistence")
     }
 }

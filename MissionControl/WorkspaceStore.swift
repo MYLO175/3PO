@@ -6,6 +6,7 @@ import SwiftData
     private(set) var state: WorkspaceState
     var error: String?
     var canUndo: Bool { previous != nil }
+    var readOnly: Bool { !readable }
     private var previous: WorkspaceState?
     private let container: ModelContainer?
     private var readable = true
@@ -20,6 +21,7 @@ import SwiftData
             initial.pages[p].widgets[w].configuration.sourceExclusions = kind == .calendar ? calendars : kind == .reminders ? lists : kind == .mail ? accounts : []
             initial.pages[p].widgets[w].configuration.date = date
         } }
+        for p in initial.pages.indices { initial.pages[p].canvasRows = GridRules.rows(initial.pages[p]) }
         state = initial
         guard !sample else { return }
         do {
@@ -29,6 +31,8 @@ import SwiftData
                       saved.pages.allSatisfy({ page in Set(page.widgets.map(\.id)).count == page.widgets.count && page.widgets.allSatisfy { GridRules.valid($0.rect,among:page.widgets,excluding:$0.id) } }),
                       Set(saved.pages.map(\.id)).count == saved.pages.count else { throw WorkspaceFailure.invalid }
                 state = saved
+                // Preserve legacy coordinates and all widgets, fitting their complete extent to the viewport.
+                for p in state.pages.indices { state.pages[p].canvasRows = GridRules.rows(state.pages[p]) }
                 if !saved.pages.contains(where: { $0.id == saved.selectedPageID }) { state.selectedPageID = saved.pages[0].id }
             } else { try save() }
         } catch { readable = false; self.error = "Saved workspace could not be read. Its original record is preserved; changes are disabled. " + error.localizedDescription }
@@ -50,7 +54,7 @@ import SwiftData
     }
     func select(_ id: UUID) { guard state.pages.contains(where: { $0.id == id }) else { return }; change({ $0.selectedPageID = id },undoable:false) }
     func addPage(_ title: String = "New dashboard") {
-        let page = DashboardPage(title:String(title.trimmingCharacters(in:.whitespacesAndNewlines).prefix(80)).isEmpty ? "New dashboard" : String(title.prefix(80)),widgets:[])
+        let page = DashboardPage(title:String(title.trimmingCharacters(in:.whitespacesAndNewlines).prefix(80)).isEmpty ? "New dashboard" : String(title.prefix(80)),widgets:[],canvasRows:8)
         change { $0.pages.append(page); $0.selectedPageID = page.id }
     }
     func rename(_ id: UUID, title: String) {
@@ -71,22 +75,24 @@ import SwiftData
         change { $0.pages.removeAll { $0.id == id }; if $0.selectedPageID == id { $0.selectedPageID = $0.pages[0].id } }
     }
     func addWidget(_ kind: WidgetKind) {
-        let widget = WidgetPlacement(kindRaw:kind.rawValue,rect:GridRules.firstFree(kind:kind,in:selected.widgets))
+        guard let rect = GridRules.firstFree(kind:kind,in:selected.widgets,rows:GridRules.rows(selected)) else { error = "This dashboard is full. Make room in Edit mode or add a new dashboard."; return }
+        let widget = WidgetPlacement(kindRaw:kind.rawValue,rect:rect)
         change { state in if let i = state.pages.firstIndex(where: { $0.id == state.selectedPageID }) { state.pages[i].widgets.append(widget) } }
     }
     func update(_ widget: WidgetPlacement) {
-        guard GridRules.valid(widget.rect,among:selected.widgets,excluding:widget.id) else { return }
+        guard GridRules.valid(widget.rect,among:selected.widgets,excluding:widget.id,rowLimit:GridRules.rows(selected)) else { return }
         change { state in if let p = state.pages.firstIndex(where: { $0.id == state.selectedPageID }), let w = state.pages[p].widgets.firstIndex(where: { $0.id == widget.id }) { state.pages[p].widgets[w] = widget } }
     }
     func removeWidget(_ id: UUID) { change { state in if let p = state.pages.firstIndex(where: { $0.id == state.selectedPageID }) { state.pages[p].widgets.removeAll { $0.id == id } } } }
-    func fullPage(_ widget: WidgetPlacement, rows: Int) {
-        var full = widget; full.rect = GridRect(x:0,y:0,w:12,h:max(widget.kind?.minimumRows ?? 4,rows))
+    func fullPage(_ widget: WidgetPlacement) {
+        var full = widget; let budget = selected.widgets.count == 1 ? GridRules.rows(selected) : max(8,widget.kind?.minimumRows ?? 4)
+        full.rect = GridRect(x:0,y:0,w:12,h:budget)
         if selected.widgets.count == 1 { update(full) }
-        else { full.id = UUID(); let page = DashboardPage(title:widget.kind?.title ?? "Widget",widgets:[full]); change { $0.pages.append(page); $0.selectedPageID = page.id } }
+        else { full.id = UUID(); let page = DashboardPage(title:widget.kind?.title ?? "Widget",widgets:[full],canvasRows:budget); change { $0.pages.append(page); $0.selectedPageID = page.id } }
     }
     func showAssistant() {
         if let page = state.pages.first(where: { $0.widgets.contains { $0.kind == .conversation } }) { select(page.id) }
-        else { addPage("Assistant"); addWidget(.conversation); if let widget = selected.widgets.first { fullPage(widget,rows:10) } }
+        else { addPage("Assistant"); addWidget(.conversation); if let widget = selected.widgets.first { fullPage(widget) } }
     }
     func undo() { guard let old = previous, readable else { return }; let current = state; state = old; do { try save(); previous = nil; error = nil } catch { state = current; self.error = "Layout Undo could not be saved." } }
 }
