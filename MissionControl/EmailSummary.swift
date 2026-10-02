@@ -17,6 +17,8 @@ struct EmailSummary: Codable, Identifiable {
     var followUpDate: String? = nil
     var followUpEvidence: String? = nil
     var dismissed: Bool? = nil
+    var worthReading: Bool? = nil
+    var needsReply: Bool? = nil
     func retain(after cutoff: Date) -> Bool {
         (messageReceived ?? created) >= cutoff || (dismissed != true && (attention || followUpDate != nil))
     }
@@ -44,19 +46,19 @@ struct EmailSummary: Codable, Identifiable {
         return SHA256.hash(data: Data(fields.joined(separator: "\n").utf8)).map { String(format: "%02x", $0) }.joined()
     }
     static func decode(_ response: String, message: MailMessage, body: String, registration: String) throws -> EmailSummary {
-        struct Output: Decodable { let summary: String; let attention: Bool; let reason: String; let evidence: String; let followUpDate: String?; let followUpEvidence: String? }
+        struct Output: Decodable { let summary: String; let attention: Bool; let reason: String; let evidence: String; let followUpDate: String?; let followUpEvidence: String?; let worthReading: Bool?; let needsReply: Bool? }
         let output = try JSONDecoder().decode(Output.self, from: Data(response.utf8))
         guard !output.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw SummaryFailure.emptySummary }
         guard output.summary.count <= 1200, output.reason.count <= 600, output.evidence.count <= 500 else { throw SummaryFailure.tooLong }
         guard !output.attention || !output.reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw SummaryFailure.missingReason }
         let exactEvidence = verbatimEvidence(output.evidence,body:body,subject:message.subject)
         let supported = exactEvidence != nil
-        guard output.evidence.isEmpty || supported, !output.attention || supported else { throw SummaryFailure.unsupportedEvidence }
+        guard output.evidence.isEmpty || supported, !output.attention || supported, output.worthReading != true || supported, output.needsReply != true || (output.attention && supported) else { throw SummaryFailure.unsupportedEvidence }
         if let date = output.followUpDate {
             let formatter = DateFormatter(); formatter.locale = Locale(identifier:"en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"; formatter.isLenient = false
             guard let parsed = formatter.date(from:date), formatter.string(from:parsed) == date, let quote = output.followUpEvidence, verbatimEvidence(quote,body:body,subject:message.subject) != nil else { throw SummaryFailure.unsupportedEvidence }
         }
-        return .init(id: message.id, registration: registration, fingerprint: fingerprint(message), summary: output.summary, attention: output.attention, reason: output.reason, evidence: exactEvidence ?? "", messageReceived: message.received, message:message, followUpDate:output.followUpDate, followUpEvidence:output.followUpEvidence.flatMap { verbatimEvidence($0,body:body,subject:message.subject) })
+        return .init(id: message.id, registration: registration, fingerprint: fingerprint(message), summary: output.summary, attention: output.attention, reason: output.reason, evidence: exactEvidence ?? "", messageReceived: message.received, message:message, followUpDate:output.followUpDate, followUpEvidence:output.followUpEvidence.flatMap { verbatimEvidence($0,body:body,subject:message.subject) },worthReading:output.worthReading,needsReply:output.needsReply)
     }
 }
 enum SummaryFailure: LocalizedError {
@@ -101,5 +103,22 @@ enum MailMonitoringRules {
         let value = try JSONDecoder().decode(Output.self,from:Data(text.utf8))
         guard Set(value.readBodyIDs).count == value.readBodyIDs.count, Set(value.readBodyIDs).isSubset(of:allowed) else { throw SummaryFailure.invalid }
         return Set(value.readBodyIDs)
+    }
+}
+
+// Presentation is based on saved, validated assessments, never another inference per widget.
+enum EmailHighlightRules {
+    static func visible(_ summary: EmailSummary, now: Date = .now) -> Bool {
+        guard summary.dismissed != true else { return false }
+        return summary.attention || summary.followUpDate != nil || (summary.worthReading == true && (summary.messageReceived ?? summary.created) >= now.addingTimeInterval(-7*86400))
+    }
+    static func category(_ summary: EmailSummary, replied: Bool) -> String {
+        if summary.needsReply == true && !replied { return "May need a reply" }
+        if summary.attention { return summary.needsReply == nil && summary.worthReading == nil ? "Saved suggestion" : "To act on" }
+        if summary.followUpDate != nil { return "Future date" }
+        return "Worth reading"
+    }
+    static func rank(_ summary: EmailSummary, replied: Bool) -> Int {
+        if summary.needsReply == true && !replied { return 0 }; if summary.attention { return 1 }; if summary.worthReading == true { return 2 }; return 3
     }
 }

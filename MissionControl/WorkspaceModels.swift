@@ -5,7 +5,8 @@ enum WidgetKind: String, Codable, CaseIterable {
     case reminders
     case mail
     case conversation
-    case overview
+    case overview // Saved legacy kind, now Today’s brief.
+    case emailSummary
 
     var title: String {
         switch self {
@@ -13,7 +14,8 @@ enum WidgetKind: String, Codable, CaseIterable {
         case .reminders: return "Reminders"
         case .mail: return "Mail"
         case .conversation: return "Conversation"
-        case .overview: return "Overview"
+        case .overview: return "Today’s brief"
+        case .emailSummary: return "Email summary"
         }
     }
 
@@ -23,13 +25,14 @@ enum WidgetKind: String, Codable, CaseIterable {
         case .reminders: return "checklist"
         case .mail: return "envelope"
         case .conversation: return "bubble.left.and.bubble.right"
-        case .overview: return "square.grid.2x2"
+        case .overview: return "sun.max"
+        case .emailSummary: return "envelope.badge"
         }
     }
 
     var minimumColumns: Int {
         switch self {
-        case .calendar, .conversation, .overview: return 4
+        case .calendar, .conversation, .overview, .emailSummary: return 4
         case .reminders: return 3
         case .mail: return 4
         }
@@ -39,7 +42,7 @@ enum WidgetKind: String, Codable, CaseIterable {
         switch self {
         case .calendar, .conversation: return 5
         case .reminders: return 4
-        case .mail, .overview: return 4
+        case .mail, .overview, .emailSummary: return 4
         }
     }
 }

@@ -35,22 +35,22 @@ import SwiftData
     @discardableResult func accept(_ id: UUID) -> Bool { change { state in if let i = state.records.firstIndex(where:{ $0.id == id }) { state.records[i].explicit = true; state.records[i].reviewed = .now } } }
     @discardableResult func resolve(_ id: UUID) -> Bool { change { state in if let i = state.records.firstIndex(where:{ $0.id == id }) { state.records[i].resolved = .now } } }
     @discardableResult func reopen(_ id: UUID) -> Bool { change { state in if let i = state.records.firstIndex(where:{ $0.id == id }) { state.records[i].resolved = nil; state.records[i].reviewed = .now } } }
-    @discardableResult func merge(_ learned: [LearnedMemory], registration: String, sourceDates: [String:Date] = [:]) -> Bool {
+    @discardableResult func merge(_ learned: [LearnedMemory], registration: String, sourceDates: [String:Date] = [:], sourceTopics: [String:UUID] = [:]) -> Bool {
         change { state in
             for entry in learned where !state.suppressed[registration,default:[]].contains(entry.turnID) {
-                guard !state.records.contains(where:{ $0.registration == registration && MemoryLearningRules.normalised($0.text) == MemoryLearningRules.normalised(entry.text) }) else { continue }
-                state.records.append(PAMemory(registration:registration,text:entry.text,kind:entry.kind,explicit:false,provenance:"Learned from your conversation",sourceTurnID:entry.turnID,evidence:entry.evidence,sourceDate:sourceDates[entry.turnID]))
+                guard !state.records.contains(where:{  $0.registration == registration && $0.conversationID == sourceTopics[entry.turnID] && MemoryLearningRules.normalised($0.text) == MemoryLearningRules.normalised(entry.text) }) else { continue }
+                state.records.append(PAMemory(registration:registration,text:entry.text,kind:entry.kind,explicit:false,provenance:"Learned from your conversation",sourceTurnID:entry.turnID,evidence:entry.evidence,sourceDate:sourceDates[entry.turnID],conversationID:sourceTopics[entry.turnID]))
             }
         }
     }
-    func context(_ registration: String) -> [[String:String]] {
+    func context(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false) -> [[String:String]] {
         guard enabled else { return [] }
-        return items(registration).filter { MemoryRules.usable($0,registration:registration) }.sorted {
+        return items(registration).filter { MemoryRules.usable($0,registration:registration) && MemoryRules.inScope($0,conversationID:conversationID,includeTopics:includeTopics) }.sorted {
             if $0.explicit != $1.explicit { return $0.explicit }
             if ($0.kind == .preference) != ($1.kind == .preference) { return $0.kind == .preference }
             return $0.reviewed > $1.reviewed
         }.prefix(40).map {
-            ["id":$0.id.uuidString,"text":$0.text,"kind":$0.kind.rawValue,"certainty":$0.explicit ? "Explicitly provided or confirmed by user" : "Provisional; verify when relevant","provenance":$0.provenance,"evidence":$0.evidence ?? "","messageDate":$0.sourceDate?.ISO8601Format() ?? "unknown","reviewed":$0.reviewed.ISO8601Format()]
+            ["id":$0.id.uuidString,"scope":$0.conversationID?.uuidString ?? "shared","text":$0.text,"kind":$0.kind.rawValue,"certainty":$0.explicit ? "Explicitly provided or confirmed by user" : "Provisional; verify when relevant","provenance":$0.provenance,"evidence":$0.evidence ?? "","messageDate":$0.sourceDate?.ISO8601Format() ?? "unknown","reviewed":$0.reviewed.ISO8601Format()]
         }
     }
     private func change(_ mutation: (inout MemoryEnvelope) -> Void) -> Bool {

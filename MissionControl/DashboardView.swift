@@ -77,8 +77,7 @@ struct DashboardView: View {
     var emailOverview: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack { Label("Your overview", systemImage: "sparkles").font(.title3.weight(.semibold)); Spacer(); Toggle("Sources", isOn: $showEmailSources).toggleStyle(.button).controlSize(.small) }
-            if !showEmailSources { GeneralOverviewView(model:model,briefings:model.briefings) }
-            BriefingView(model: model, briefings: model.briefings)
+            if !showEmailSources { TodayBriefView(model:model,briefings:model.briefings) }
             if showEmailSources { inboxPanel }
             else { DisclosureGroup("Email follow-ups") { EmailOverviewView(model:model,summaries:model.emailSummaries).frame(maxHeight:220) } }
         }.panelStyle()

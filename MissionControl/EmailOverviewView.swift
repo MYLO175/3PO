@@ -2,40 +2,67 @@ import SwiftUI
 struct EmailOverviewView: View {
     @Bindable var model: DashboardModel
     @Bindable var summaries: EmailSummaryService
+    var configuration: Binding<WidgetConfiguration>? = nil
+    @State private var filter = "All"
+    @State private var limit = 6
+    private var available: [(MailMessage,EmailSummary)] {
+        summaries.highlights(model).filter { message,summary in
+            !(configuration?.wrappedValue.sourceExclusions.contains(message.accountID) ?? false) && (filter == "All" || (filter == "To act on" ? summary.attention : filter == "Worth reading" ? summary.worthReading == true : summary.followUpDate != nil))
+        }
+    }
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(summaries.coverage(model)).font(.caption).foregroundStyle(.secondary)
+        VStack(alignment:.leading,spacing:12) {
             HStack {
-                Button(summaries.paused ? "Resume mail monitoring" : "Check new mail") { summaries.process(model, resume: true) }.disabled(!summaries.enabled || model.chatGPT.usagePaused || summaries.busy || model.chatGPT.busy || !model.chatGPT.inferenceVerified)
+                Label("Email summary",systemImage:"envelope.badge").font(.title3.weight(.semibold)); Spacer()
+                Button { summaries.process(model,resume:true) } label: { Image(systemName:"arrow.clockwise") }.help("Check incoming mail").accessibilityLabel("Check incoming mail").disabled(!summaries.enabled || summaries.busy || model.chatGPT.busy || model.assistant.busy || model.chatGPT.usagePaused || !model.chatGPT.inferenceVerified)
                 if summaries.busy { ProgressView().controlSize(.small); Button("Stop") { summaries.cancel() } }
             }
-            if summaries.rejectedCount(model) > 0 {
-                HStack {
-                    Text("\(summaries.rejectedCount(model)) messages skipped because AI output failed validation. Coverage remains partial.").font(.caption).foregroundStyle(.orange)
-                    Button("Retry skipped") { summaries.retryRejected(model) }.disabled(summaries.busy || !summaries.enabled || model.chatGPT.usagePaused || model.chatGPT.busy || !model.chatGPT.inferenceVerified)
-                }
-            }
-            if model.chatGPT.usagePaused { Text("Subscription processing paused. Check access above before resuming monitoring.").font(.caption).foregroundStyle(.orange) }
-            if !summaries.enabled { Text("Enable incoming email monitoring in Settings to assess relevant new mail using your ChatGPT plan. Original messages remain available under Sources.").font(.callout).foregroundStyle(.secondary) }
-            if let error = summaries.error { Text(error).font(.caption).foregroundStyle(.orange) }
-            if summaries.paused && summaries.error == nil { Text("Processing paused. Resume retries a bounded batch; completed summaries are saved.").font(.caption).foregroundStyle(.orange) }
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
-                    let available = summaries.memories(model)
-                    ForEach(available, id: \.0.id) { message, summary in
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(summary.followUpDate.map { "Follow-up · " + $0 } ?? "Retained from email").font(.caption.weight(.semibold)).foregroundStyle(summary.attention ? Color.orange : Color.secondary)
-                            Text(summary.summary).textSelection(.enabled)
-                            if summary.attention { Text(summary.reason).font(.callout); Text("“\(summary.evidence)”").font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
-                            Button("Dismiss follow-up") { summaries.dismiss(message.id,model:model) }.font(.caption)
-                            Button("\(message.account) · \(message.subject)") { model.select(message) }.buttonStyle(.link).lineLimit(2)
+            HStack {
+                Picker("Show",selection:$filter) { ForEach(["All","To act on","Worth reading","Future dates"],id:\.self) { Text($0).tag($0) } }.labelsHidden().frame(maxWidth:160)
+                if let configuration {
+                    Menu("Accounts") {
+                        ForEach(model.mailData.accounts) { account in
+                            Toggle(account.title,isOn:Binding(get:{ !configuration.wrappedValue.sourceExclusions.contains(account.id) },set:{ on in var value = configuration.wrappedValue; if on { value.sourceExclusions.remove(account.id) } else { value.sourceExclusions.insert(account.id) }; configuration.wrappedValue = value }))
                         }
-                        Divider()
                     }
-                    if available.isEmpty { Text("No retained email follow-ups. Monitoring considers incoming mail; older messages are available on request.").foregroundStyle(.secondary) }
-                }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Spacer(minLength:0)
             }
-        }
+            if summaries.canUndoDismiss { HStack { Text("Suggestion dismissed").font(.caption).foregroundStyle(.secondary); Button("Undo") { summaries.undoDismiss(model) }.controlSize(.small); Spacer() } }
+            ScrollView {
+                LazyVStack(alignment:.leading,spacing:10) {
+                    LazyVGrid(columns:[GridItem(.adaptive(minimum:250),spacing:12,alignment:.top)],alignment:.leading,spacing:12) {
+                    ForEach(Array(available.prefix(limit)),id:\.0.id) { message,summary in
+                        VStack(alignment:.leading,spacing:8) {
+                            HStack(alignment:.top) {
+                                Text(EmailHighlightRules.category(summary,replied:message.replied)).font(.caption.weight(.semibold)).foregroundStyle(summary.attention ? Color.accentColor : Color.secondary)
+                                Spacer()
+                                Button { summaries.dismiss(message.id,model:model) } label: { Image(systemName:"xmark") }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary).help("Dismiss suggestion").accessibilityLabel("Dismiss email suggestion")
+                            }
+                            Text(message.subject).font(.callout.weight(.semibold)).lineLimit(2)
+                            Text(summary.summary).font(.callout).lineSpacing(3).lineLimit(4).textSelection(.enabled)
+                            if let date = summary.followUpDate { Label(date,systemImage:"calendar").font(.caption).foregroundStyle(.secondary) }
+                            DisclosureGroup("Why this matters") {
+                                VStack(alignment:.leading,spacing:6) { Text(summary.summary).textSelection(.enabled); if !summary.reason.isEmpty { Text(summary.reason) }; if !summary.evidence.isEmpty { Text("“" + summary.evidence + "”").foregroundStyle(.secondary).textSelection(.enabled) } }.font(.caption)
+                            }.font(.caption)
+                            HStack { Text(message.account + " · " + message.received.formatted(date:.abbreviated,time:.omitted)).font(.caption2).foregroundStyle(.secondary); Spacer(); Button("Read original") { model.select(message) }.buttonStyle(.link).font(.caption) }
+                        }.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(Color.primary.opacity(0.035),in:RoundedRectangle(cornerRadius:12))
+                    }
+                    }
+                    if available.count > limit { Button("Show more (\(available.count-limit))") { limit += 6 }.controlSize(.small) }
+                    if available.isEmpty { ContentUnavailableView("Nothing highlighted here",systemImage:"envelope.open",description:Text(!summaries.enabled ? "Enable incoming email monitoring in Settings. It reads relevant new mail without summarising the historical inbox." : "No saved suggestions match this view. Coverage is partial while new mail is being checked.")) }
+                    DisclosureGroup("Coverage and controls") {
+                        VStack(alignment:.leading,spacing:8) {
+                            Text(summaries.coverage(model)).font(.caption).foregroundStyle(.secondary)
+                            Text("AI suggestions can be mistaken. Reply flags are hints; email is read-only here. Dismiss hides a suggestion without changing Mail.").font(.caption).foregroundStyle(.secondary)
+                            if summaries.rejectedCount(model) > 0 { Button("Retry skipped assessments") { summaries.retryRejected(model) }.disabled(summaries.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
+                        }.padding(.top,6)
+                    }.font(.caption)
+                }.frame(maxWidth:.infinity,alignment:.leading)
+            }
+            if summaries.paused || model.chatGPT.usagePaused { Text(model.chatGPT.usagePaused ? "Subscription processing paused; saved suggestions are available." : "Monitoring paused. Check incoming mail to resume one bounded batch.").font(.caption).foregroundStyle(.orange) }
+            if let error = summaries.error { DisclosureGroup("Monitoring details") { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }.font(.caption) }
+        }.onChange(of:filter) { limit = 6 }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
     }
 }
 struct EmailSummarySettings: View {

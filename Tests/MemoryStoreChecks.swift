@@ -28,6 +28,14 @@ import SwiftData
         precondition(forgotten.records.first(where:{ $0.sourceTurnID == "legacy" })?.sourceDate == nil)
         let unavailable = PAMemoryStore(container:nil)
         precondition(!unavailable.put(saved) && unavailable.records.isEmpty)
+        let topic = UUID(), otherTopic = UUID()
+        let topicEntry = PAMemory(registration:"scope-account",text:"My fictional study project is optics",kind:.context,provenance:"Test",conversationID:topic)
+        let sharedEntry = PAMemory(registration:"scope-account",text:"I prefer short answers",kind:.preference,provenance:"Test")
+        precondition(store.put(topicEntry) && store.put(sharedEntry))
+        precondition(store.context("scope-account").count == 1)
+        precondition(store.context("scope-account",conversationID:topic).count == 2)
+        precondition(store.context("scope-account",conversationID:otherTopic).count == 1)
+        precondition(store.context("scope-account",includeTopics:true).count == 2)
         print("PASS: atomic learned merge/dedup, confirmation, reload, Forget suppression across reload, Undo restore, resolve/reopen and unavailable storage")
     }
 }

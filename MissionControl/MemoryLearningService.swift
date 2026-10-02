@@ -48,7 +48,7 @@ import SwiftData
         // Persist a paused claim before requesting inference. An interrupted job is never retried silently on launch.
         busy = true; error = nil
         let memoryState = memory.state, selectedModel = model.chatGPT.selectedModel
-        let existing = memory.context(registration).prefix(20).map { ["text":String(($0["text"] ?? "").prefix(300)),"kind":$0["kind"] ?? "context"] }
+        let existing = memory.context(registration,includeTopics:true).prefix(20).map { ["text":String(($0["text"] ?? "").prefix(300)),"kind":$0["kind"] ?? "context"] }
         task = Task {
             defer { busy = false }
             do {
@@ -58,7 +58,8 @@ import SwiftData
                 guard registration == model.chatGPT.activeID, selectedModel == model.chatGPT.selectedModel, memory.enabled, memory.learningEnabled, assistant.contextEnabled,
                       memoryState.records == memory.state.records, memoryState.suppressed == memory.state.suppressed else { throw MemoryLearningFailure.changed }
                 let learned = try MemoryLearningRules.decode(output,turns:batch)
-                guard memory.merge(learned,registration:registration,sourceDates:Dictionary(batch.filter(\.dateKnown).map { ($0.id,$0.created) },uniquingKeysWith:{ first,_ in first })) else { throw MemoryLearningFailure.storage }
+                guard memory.merge(learned,registration:registration,sourceDates:Dictionary(batch.filter(\.dateKnown).map { ($0.id,$0.created) },uniquingKeysWith:{ first,_ in first }),sourceTopics:Dictionary(batch.compactMap { turn in turn.conversationID.map { (turn.id,$0) } },uniquingKeysWith:{ first,_ in first })) else { throw MemoryLearningFailure.storage }
+                assistant.acknowledgeLearned(learned)
                 state.accounts[registration]?.seen.formUnion(batch.map(\.id)); state.accounts[registration]?.paused = false
                 do { try save() } catch { state.accounts[registration]?.paused = true; throw error }
             } catch is CancellationError { self.error = "Memory learning stopped. Saved progress remains paused." }

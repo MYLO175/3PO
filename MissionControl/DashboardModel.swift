@@ -91,7 +91,7 @@ import EventKit
                 }
             }
         })
-        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.refresh(retryMail: false); if let self { self.briefings.check(self); self.briefings.checkOverview(self) } } })
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.refresh(retryMail: false); if let self { self.briefings.check(self) } } })
         poll = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(300))
@@ -101,7 +101,7 @@ import EventKit
         }
         briefingPoll = Task { [weak self] in
             while !Task.isCancelled {
-                if let self { self.briefings.check(self); self.briefings.checkOverview(self); self.memoryLearning.check(self) }
+                if let self { self.briefings.check(self); self.memoryLearning.check(self) }
                 try? await Task.sleep(for: .seconds(60))
             }
         }

@@ -46,6 +46,16 @@ import Foundation
         assert(oldFuture.retain(after:Date.now.addingTimeInterval(-30*86400)))
         oldFuture.dismissed = true
         assert(!oldFuture.retain(after:Date.now.addingTimeInterval(-30*86400)))
+        var reading = summary; reading.attention = false; reading.worthReading = true; reading.needsReply = false
+        precondition(EmailHighlightRules.visible(reading,now:message.received))
+        precondition(!EmailHighlightRules.visible(reading,now:message.received.addingTimeInterval(8*86400)))
+        reading.dismissed = true; precondition(!EmailHighlightRules.visible(reading,now:message.received))
+        var reply = summary; reply.needsReply = true
+        precondition(EmailHighlightRules.category(reply,replied:false) == "May need a reply")
+        precondition(EmailHighlightRules.category(reply,replied:true) == "To act on")
+        precondition(EmailHighlightRules.rank(reply,replied:false) < EmailHighlightRules.rank(reading,replied:false))
+        let unsupportedReply = #"{"summary":"Reply","attention":false,"reason":"","evidence":"Please confirm whether you can attend on Monday.","needsReply":true}"#
+        var badReply = false; do { _ = try EmailSummary.decode(unsupportedReply,message:message,body:body,registration:"a") } catch { badReply = true }; precondition(badReply)
         print("PASS: exact source evidence, attention evidence requirement, invalid-output rejection, cache round-trip and changed-header fingerprint")
     }
 }

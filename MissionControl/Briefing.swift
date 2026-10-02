@@ -22,6 +22,7 @@ struct DailyBriefing: Codable, Identifiable {
     var coverage: String
     var invalidated: Bool? = nil
     var sourceScope: String? = nil
+    var message: String? = nil
 }
 struct BriefingState: Codable {
     var records: [DailyBriefing] = []
@@ -42,6 +43,15 @@ enum BriefingRules {
         guard !completed.contains(today), let scheduled = calendar.date(bySettingHour: 7, minute: 30, second: 0, of: now) else { return false }
         return now >= scheduled
     }
+    static func message(_ text: String) throws -> String? {
+        struct Output: Decodable { var message: String? }
+        let value = try JSONDecoder().decode(Output.self,from:Data(text.utf8)).message
+        guard let value else { return nil }
+        guard !value.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, value.count <= 6000 else { throw BriefingFailure.itemText }
+        return value
+    }
+    static func prose(_ record: DailyBriefing) -> String { record.message ?? ("Good morning.\n\n" + record.items.map(\.text).joined(separator:"\n\n")) }
+    static let morningInstructions = "Write a warm, natural UK English good-morning message from the user’s PA for the supplied local day. Focus on what matters TODAY: timed/all-day calendar commitments, overdue/today reminders, relevant undated tasks, and recent worthwhile emails or outstanding requests. Mention later commitments only if preparation or a decision is useful today. Do not dump every source or stale historical obligation. A day without scheduled items is not proof there is nothing to do. Use short paragraphs with optional short headings, a clear order and a calm tone. No numbered priority score, filler or invented personal familiarity. Mark suggestions as suggestions; an explicit request in email is not proof the user has not already dealt with it. Return a message of at most 6000 characters and up to 12 short factual/source-linked items supporting the message."
     static func decode(_ text: String, allowedSources: Set<String>) throws -> [BriefingItem] {
         struct Output: Decodable { var items: [Item]; struct Item: Decodable { var text: String; var sourceIDs: [String] } }
         let value = try JSONDecoder().decode(Output.self, from: Data(text.utf8))

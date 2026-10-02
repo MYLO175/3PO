@@ -14,6 +14,7 @@ struct PAMemory: Codable, Identifiable, Equatable {
     var sourceTurnID: String?
     var evidence: String?
     var sourceDate: Date?
+    var conversationID: UUID? = nil
 }
 enum MemoryRules {
     static func needsReview(_ memory: PAMemory, now: Date = .now) -> Bool {
@@ -26,9 +27,11 @@ enum MemoryRules {
     static func usable(_ memory: PAMemory, registration: String, now: Date = .now) -> Bool {
         memory.registration == registration && memory.resolved == nil && !needsReview(memory,now:now)
     }
+    static func inScope(_ memory: PAMemory, conversationID: UUID?, includeTopics: Bool = false) -> Bool { includeTopics || memory.conversationID == nil || memory.conversationID == conversationID }
     static func explicitRequest(_ text: String) -> String? {
         let trimmed = text.trimmingCharacters(in:.whitespacesAndNewlines)
-        for prefix in ["remember that ","remember: "] where trimmed.lowercased().hasPrefix(prefix) {
+        if ["remember this","remember this.","remember that","add this to memory","add this to memory.","save this to memory","save this to memory."].contains(trimmed.lowercased()) { return "" }
+        for prefix in ["remember that ","remember this: ","remember: ","remember ","add this to memory: ","add to memory: ","save to memory: ","add this to memory ","add to memory ","save this to memory ","please remember that ","please remember "] where trimmed.lowercased().hasPrefix(prefix) {
             let value = String(trimmed.dropFirst(prefix.count)).trimmingCharacters(in:.whitespacesAndNewlines)
             return value.isEmpty ? nil : String(value.prefix(2000))
         }

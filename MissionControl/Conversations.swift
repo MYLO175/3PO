@@ -15,6 +15,7 @@ struct AssistantConversation: Codable, Identifiable {
     var created = Date.now
     var turns: [AssistantTurn] = []
     var isPrimary: Bool?
+    var focus: String?
 }
 
 enum ConversationRules {

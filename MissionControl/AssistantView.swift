@@ -43,6 +43,9 @@ struct AssistantPanel: View {
     @State private var dictation = DictationService()
     @State private var showDictation = false
     @State private var showMemory = false
+    @State private var showTopic = false
+    @State private var topicName = ""
+    @State private var topicFocus = ""
     @State private var showBriefing = false
     var body: some View {
         VStack(spacing: 8) {
@@ -51,18 +54,19 @@ struct AssistantPanel: View {
                 HStack {
                     Label("Assistant",systemImage:"sparkles").font(.headline)
                     Spacer()
-                    Button("Your PA") { if let id = assistant.openPA() { select(id) } }
+                    Button("Home") { if let id = assistant.openPA() { select(id) } }
                     Button("Memory") { showMemory = true }
                     if supportsReadingMode { Button { readingMode.toggle() } label: { Image(systemName:readingMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") }.help(readingMode ? "Compact chat" : "Expand chat") }
                 }
                 HStack {
                     if !assistant.conversations.isEmpty {
-                        Picker("Conversation",selection:Binding(get:{ selectedID },set:{ select($0) })) { ForEach(assistant.conversations) { Text($0.title).tag(Optional($0.id)) } }.labelsHidden().frame(maxWidth:280)
+                        Picker("Conversation",selection:Binding(get:{ selectedID },set:{ select($0) })) { ForEach(assistant.conversations) { Text($0.isPrimary == true ? "Home" : $0.title).tag(Optional($0.id)) } }.labelsHidden().frame(maxWidth:280)
                     }
                     Button("New topic") { if let id = assistant.newConversation() { select(id) } }.disabled(assistant.busy).keyboardShortcut(composerFocused ? KeyboardShortcut("n",modifiers:.command) : nil)
+                    if selected?.isPrimary != true && selectedID != nil { Button { topicName = selected?.title ?? ""; topicFocus = selected?.focus ?? ""; showTopic = true } label: { Image(systemName:"slider.horizontal.3") }.help("Topic focus").accessibilityLabel("Topic focus").disabled(assistant.busy) }
                     Spacer(minLength:0)
                 }
-                Text(assistant.contextEnabled ? "Enabled sources · shared memory" : "Apple source context off").font(.caption).foregroundStyle(.secondary)
+                Text(assistant.contextEnabled ? (selected?.isPrimary == true ? "Your PA · shared memory" : "Topic context · shared preferences") : "Apple source context off").font(.caption).foregroundStyle(.secondary)
             }
             ScrollViewReader { proxy in
                 ScrollView {
@@ -79,16 +83,21 @@ struct AssistantPanel: View {
                             }.padding(.vertical,12)
                         }
                         ForEach(selected?.turns ?? []) { turn in
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(turn.role == "user" ? "You" : "Mission Control").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            HStack(alignment:.top) {
+                            if turn.role == "user" { Spacer(minLength:35) }
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(turn.role == "user" ? "You" : "Your PA").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                                 if turn.content.isEmpty {
                                     Text(sendingHere ? "Thinking…" : "This request didn't complete.").foregroundStyle(.secondary)
                                 } else if turn.role == "assistant" {
                                     Text((try? AttributedString(markdown:turn.content,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(turn.content)).textSelection(.enabled).lineSpacing(3)
                                 } else { Text(turn.content).textSelection(.enabled) }
-                                if turn.deliveryID != nil { Button("Briefing and sources") { showBriefing = true }.controlSize(.small) }
+                                if turn.deliveryID?.contains(":morning:") == true { Button("Briefing and sources") { showBriefing = true }.controlSize(.small) }
                                 if turn.role == "assistant" && !turn.completed && !sendingHere && !turn.content.isEmpty { Text("Partial response").font(.caption).foregroundStyle(.orange) }
-                            }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(turn.role == "user" ? Color.accentColor.opacity(0.06) : Color.primary.opacity(0.025),in:RoundedRectangle(cornerRadius:10)).id(turn.id)
+                                if let date = turn.created { Text(date.formatted(date:.omitted,time:.shortened)).font(.caption2).foregroundStyle(.secondary) }
+                            }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(turn.role == "user" ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.035),in:RoundedRectangle(cornerRadius:10))
+                            if turn.role != "user" { Spacer(minLength:20) }
+                            }.id(turn.id)
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.onChange(of: selected?.turns.last?.content) { if let id = selected?.turns.last?.id { proxy.scrollTo(id, anchor: .bottom) } }
@@ -114,7 +123,7 @@ struct AssistantPanel: View {
             if model.chatGPT.busy && !assistant.busy {
                 HStack(spacing:6) {
                     ProgressView().controlSize(.mini)
-                    Text(model.briefings.busy ? "Preparing your overview or briefing… You can draft a message while it finishes." : model.memoryLearning.busy ? "Learning conversation context… Start drafting to pause learning." : model.emailSummaries.busy ? "Checking incoming mail… You can draft a message while it finishes." : "Checking your ChatGPT connection…").font(.caption).foregroundStyle(.secondary)
+                    Text(model.briefings.busy ? "Preparing today’s brief… You can draft a message while it finishes." : model.memoryLearning.busy ? "Learning conversation context… Start drafting to pause learning." : model.emailSummaries.busy ? "Checking incoming mail… You can draft a message while it finishes." : "Checking your ChatGPT connection…").font(.caption).foregroundStyle(.secondary)
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
             if assistant.busy && !sendingHere { Text("Your PA is replying in another chat. You can keep drafting here.").font(.caption).foregroundStyle(.secondary) }
@@ -141,7 +150,15 @@ struct AssistantPanel: View {
             if !draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && model.memoryLearning.busy { model.memoryLearning.cancel() }
         }.onChange(of:model.chatGPT.usagePaused) { _, paused in
             if !paused, assistant.error?.contains("subscription_sharing_usage_limit_exceeded") == true { assistant.error = nil }
-        }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { PAMemoryView(memory:assistant.memory,registration:model.chatGPT.activeID,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) }) }.sheet(isPresented:$showDictation) {
+        }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { PAMemoryView(memory:assistant.memory,registration:model.chatGPT.activeID,conversationID:selected?.isPrimary == true ? nil : selectedID,topicTitle:selected?.title,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) }) }.sheet(isPresented:$showTopic) {
+            VStack(alignment:.leading,spacing:16) {
+                Text("Topic focus").font(.title2.weight(.semibold))
+                TextField("Topic name",text:$topicName)
+                TextField("For example: Help me plan my engineering study and exams",text:$topicFocus,axis:.vertical).lineLimit(4...8)
+                Text("This focus and the topic’s own memories guide replies here. Shared PA preferences still apply. Other topics’ memories and chats are not supplied.").font(.caption).foregroundStyle(.secondary)
+                HStack { Button("Cancel") { showTopic = false }; Spacer(); Button("Save topic") { if let selectedID, assistant.configureTopic(selectedID,title:topicName,focus:topicFocus) { showTopic = false } }.disabled(assistant.busy || topicName.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty) }
+            }.padding(24).frame(width:480)
+        }.sheet(isPresented:$showDictation) {
             DictationView(dictation:dictation) { text in draft.wrappedValue = draft.wrappedValue.isEmpty ? text : draft.wrappedValue + " " + text }
         }.padding(.horizontal, 20).padding(.vertical, 10)
     }

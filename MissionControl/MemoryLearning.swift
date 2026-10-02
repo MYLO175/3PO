@@ -5,6 +5,7 @@ struct MemoryLearningTurn: Codable, Identifiable {
     var text: String
     var created: Date
     var dateKnown = true
+    var conversationID: UUID? = nil
 }
 struct LearnedMemory: Codable {
     var turnID: String

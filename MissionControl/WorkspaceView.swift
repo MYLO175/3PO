@@ -174,7 +174,8 @@ private struct WorkspaceTile: View {
         case .mail: DashboardView(model:model,widgetConfiguration:configuration).inboxPanel
         case .conversation: AssistantPanel(model:model,assistant:model.assistant,readingMode:$readingMode,supportsReadingMode:false,widgetID:widget.id,configuration:configuration)
         case .overview:
-            VStack(alignment:.leading,spacing:10) { GeneralOverviewView(model:model,briefings:model.briefings); BriefingView(model:model,briefings:model.briefings); DisclosureGroup("Email follow-ups") { EmailOverviewView(model:model,summaries:model.emailSummaries).frame(maxHeight:220) } }.padding(16)
+            TodayBriefView(model:model,briefings:model.briefings).padding(16)
+        case .emailSummary: EmailOverviewView(model:model,summaries:model.emailSummaries,configuration:configuration).padding(16)
         case nil: ContentUnavailableView("Widget unavailable",systemImage:"square.dashed",description:Text("Its saved placement is preserved for a future app version."))
         }
     }

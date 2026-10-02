@@ -28,6 +28,10 @@ import Foundation
         for invalid in [good.replacingOccurrences(of: "known-event", with: "invented-id"), #"{"items":[]}"#, #"{"items":[{"text":" ","sourceIDs":[]}]}"#, #"{"items":[{"text":"Event","sourceIDs":["known-event","known-event"]}]}"#] {
             var rejected = false; do { _ = try BriefingRules.decode(invalid, allowedSources: ["known-event"]) } catch { rejected = true }; assert(rejected)
         }
+        let proseOutput = #"{"message":"Good morning. A meeting is scheduled today.","items":[{"text":"A meeting is scheduled.","sourceIDs":["known-event"]}]}"#
+        let morningMessage = try BriefingRules.message(proseOutput); precondition(morningMessage == "Good morning. A meeting is scheduled today.")
+        let legacyMessage = try BriefingRules.message(good); precondition(legacyMessage == nil)
+        var blankRejected = false; do { _ = try BriefingRules.message(#"{"message":"  "}"#) } catch { blankRejected = true }; precondition(blankRejected)
         print("PASS: 7:30 threshold, DST dates, sleep catch-up, saved completion, notification claim round-trip, source identity validation")
     }
 }
