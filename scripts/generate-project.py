@@ -3,13 +3,13 @@ from pathlib import Path
 import hashlib
 root=Path(__file__).resolve().parent.parent
 uid=lambda s:hashlib.sha1(s.encode()).hexdigest()[:24].upper()
-files=sorted((root/'MissionControl').rglob('*.swift'))+sorted((root/'MissionControl').rglob('*.js'))
+files=sorted((root/'MissionControl').rglob('*.swift'))+sorted((root/'MissionControl').rglob('*.js'))+sorted((root/'MissionControl').rglob('*.icns'))
 objects=[]
 def obj(key,value): objects.append(f'{uid(key)} = {{ {value} }};')
 refs=[]; builds=[]; resources=[]
 for p in files:
     path=str(p.relative_to(root)); ref=uid(path); build=uid('build'+path); refs.append(ref)
-    typ='sourcecode.swift' if p.suffix=='.swift' else 'sourcecode.javascript'
+    typ={'.swift':'sourcecode.swift','.js':'sourcecode.javascript','.icns':'image.icns'}[p.suffix]
     obj(path,f'isa = PBXFileReference; lastKnownFileType = {typ}; path = "{path}"; sourceTree = SOURCE_ROOT;')
     obj('build'+path,f'isa = PBXBuildFile; fileRef = {ref};')
     (builds if p.suffix=='.swift' else resources).append(build)

@@ -8,3 +8,6 @@ xcuserdata/
 *.jpg
 *.json
 !project.json
+
+# Public app artwork
+!MissionControl/Resources/AppIcon.png

@@ -10,6 +10,8 @@ Requires macOS 26+, Xcode and an Apple Development signing identity. The install
 ./scripts/test.sh
 open '/tmp/missioncontrol-derived/Build/Products/Debug/Mission Control.app'
 ```
+The build regenerates the macOS icon from `MissionControl/Resources/AppIcon.png` using the bundled icon script and macOS sips. The menu bar uses a matching monochrome template symbol.
+
 The build uses `/Applications/Xcode.app/Contents/Developer` without changing global settings, and writes derived output under `/tmp` to avoid Finder metadata interfering with signing. `scripts/generate-project.py` regenerates the normal Xcode project from Swift/JS files; open `MissionControl.xcodeproj` for editing. Signing team is configured for this Mac's existing identity; change `DEVELOPMENT_TEAM` in the generator when building elsewhere.
 
 ## Behaviour

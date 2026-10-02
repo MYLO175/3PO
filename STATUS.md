@@ -119,3 +119,9 @@ Independent Finder launch/permission ownership remains unproven (Calendar Settin
 - No personal data/screenshots/credentials added to Git. No AI stages, billing, credits or resets. Main only this turn. Usage: 70% five-hour remaining at start, 51% at final validation milestone (weekly 34%).
 
 Next step: user review of the signed Stage 1 dashboard. Do not start Stage 2 or 3 until the user approves moving on. Then verify supported ChatGPT subscription inference before building daily AI email overview/assistant; no paid API fallback. Remaining environmental validation boundaries: next-login launch, extended sleep/wake soak and exhaustive all-calendar comparison were not performed; existing wake observer and lifecycle implementation are in place.
+
+
+## App artwork — 2026-10-02
+Applied the user's supplied transparent CRT/globe/trajectory PNG as the macOS app icon. `scripts/build-icon.py` reproducibly resizes via macOS sips and packages standard multiresolution PNG ICNS chunks; build.sh runs it before project generation. The generator bundles ICNS resources and Info.plist selects AppIcon. The original public artwork is explicitly allowed in .gitignore; personal screenshots remain excluded.
+Replaced the grid menu-bar symbol with a native 18-point AppKit template rendition of the artwork's rounded screen, globe horizon, trajectory and dot. macOS supplies its colour for menu-bar contrast. Rendered the actual drawing for focused visual inspection; the menu-bar artwork is simplified rather than a downscaled detailed photograph.
+Build and strict signature verification passed; installed and launched the update. Actual About window displayed the supplied app icon. No integration behaviour changed, so the full integration suite was not repeated. Menu-bar drawing inspected through the same native renderer; the global menu-bar appearance was not separately captured. Usage 47% five-hour remaining at delivery milestone. Stage 2 remains deferred.

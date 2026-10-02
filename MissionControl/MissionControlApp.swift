@@ -36,8 +36,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             #endif
         }
-        MenuBarExtra("Mission Control", systemImage: "square.grid.2x2") {
+        MenuBarExtra {
             MenuContent(model: model)
+        } label: {
+            Image(nsImage: MenuBarIcon.image)
+                .accessibilityLabel("Mission Control")
         }
         Settings { SettingsView() }
     }
