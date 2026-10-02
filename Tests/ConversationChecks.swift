@@ -27,6 +27,37 @@ import Foundation
         precondition(ChatDraftRules.hasDraft(drafts,registration:"one") && !ChatDraftRules.hasDraft(drafts,registration:"two"))
         let restored = try JSONDecoder().decode(ChatDraftState.self,from:JSONEncoder().encode(drafts))
         precondition(restored.values == drafts.values)
-        print("PASS: legacy transcript migration with unknown dates, new message dates, primary marker, persisted daily deduplication and registration/day separation")
+        precondition(chat.turns[0].contextID == nil && chat.isTopic == nil)
+        topic.focus = "Engineering study"
+        var archived = AssistantConversation(accountID:"one",title:"An old conversation")
+        archived.turns = [.init(role:"user",content:"Archived private question",completed:true)]
+        var secondTopic = AssistantConversation(accountID:"one",title:"Applications"); secondTopic.isTopic = true
+        let all = [saved,topic,other,archived,secondTopic]
+        precondition(Set(ConversationRules.topics(in:all,registration:"one").map(\.id)) == Set([topic.id,secondTopic.id]))
+        precondition(ConversationRules.topicSelection(nil,legacy:topic.id,in:all,registration:"one") == topic.id)
+        precondition(ConversationRules.topicSelection("",legacy:topic.id,in:all,registration:"one") == nil, "Explicit no-topic must not fall back to Study")
+        precondition(ConversationRules.topicSelection(nil,legacy:archived.id,in:all,registration:"one") == nil)
+        precondition(ConversationRules.topicSelection(topic.id.uuidString,legacy:nil,in:all,registration:"two") == nil)
+        precondition(ConversationRules.topicSelection(UUID().uuidString,legacy:topic.id,in:all,registration:"one") == nil)
+        var feed = saved
+        feed.turns = (0..<25).map { .init(role:"user",content:"General \($0)",completed:true,created:Date(timeIntervalSince1970:Double($0))) }
+        topic.turns = [.init(role:"user",content:"Existing Study context",completed:true,created:Date(timeIntervalSince1970:25))]
+        let study = AssistantTurn(role:"user",content:"Study request",completed:true,created:Date(timeIntervalSince1970:26),contextID:topic.id)
+        let studyReply = AssistantTurn(role:"assistant",content:"Study response",completed:true,created:Date(timeIntervalSince1970:27),contextID:topic.id)
+        let otherMode = AssistantTurn(role:"user",content:"Another topic secret",completed:true,created:Date(timeIntervalSince1970:28),contextID:secondTopic.id)
+        feed.turns += [study,studyReply,otherMode,.init(role:"assistant",content:"Partial",completed:false,created:Date(timeIntervalSince1970:29),contextID:topic.id)]
+        let generalHistory = ConversationRules.history(feed:feed,topic:nil)
+        let topicHistory = ConversationRules.history(feed:feed,topic:topic)
+        precondition(generalHistory.count == 20 && generalHistory.allSatisfy { $0.contextID == nil })
+        precondition(topicHistory.count == 20 && topicHistory.last?.id == studyReply.id)
+        precondition(topicHistory.contains { $0.content == "Existing Study context" } && !topicHistory.contains { $0.id == otherMode.id || !$0.completed })
+        precondition(ConversationRules.context(for:study,in:feed) == topic.id)
+        precondition(ConversationRules.context(for:feed.turns[0],in:feed) == nil)
+        precondition(ConversationRules.context(for:topic.turns[0],in:topic) == topic.id)
+        let roundTrip = try JSONDecoder().decode(AssistantConversation.self,from:JSONEncoder().encode(feed))
+        precondition(roundTrip.turns.first { $0.id == studyReply.id }?.contextID == topic.id)
+        precondition(feed.turns.count == 29, "Changing context must not replace the PA feed")
+        precondition(ConversationRules.history(feed:feed,topic:secondTopic).contains { $0.id == otherMode.id })
+        print("PASS: legacy data preservation, configured-topic-only selection, explicit no-topic/account isolation, one feed with persisted context tags, bounded context filtering and memory-learning scope")
     }
 }

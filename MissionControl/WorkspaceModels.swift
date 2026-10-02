@@ -54,6 +54,8 @@ struct WidgetConfiguration: Codable, Equatable {
     var reminderGrouping: String = "lists"
     var conversationID: UUID? = nil
     var conversationSelections: [String:UUID]? = nil
+    // Empty string is explicit general PA mode, distinct from an unmigrated legacy selection.
+    var paTopicSelections: [String:String]? = nil
 }
 
 struct GridRect: Codable, Equatable {
