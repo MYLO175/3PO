@@ -130,14 +130,15 @@ import EventKit
                 mailHealth = .init(lastSuccess: .now)
                 persist("mail", snapshot); persist("mailHealth", mailHealth)
             } else {
-                // Reconcile successful accounts; retain cached records only for failed accounts.
-                let successful = Set(snapshot.accounts.map(\.id))
-                let failed = Set(mailData.accounts.filter { account in snapshot.errors.contains { $0.hasPrefix("Account " + account.id + ":") } }.map(\.id))
-                let retainAll = snapshot.errors.contains { $0.hasPrefix("Mail:") }
-                mailData = MailSnapshot(messages: (snapshot.messages + mailData.messages.filter { (retainAll || failed.contains($0.accountID)) && !successful.contains($0.accountID) }).sorted { $0.received > $1.received }, accounts: snapshot.accounts + mailData.accounts.filter { (retainAll || failed.contains($0.id)) && !successful.contains($0.id) }, errors: snapshot.errors)
+                mailData = snapshot.retainingFailedAccounts(from: mailData)
                 mailHealth.error = snapshot.errors.joined(separator: "; ")
                 mailHealth.loading = false
                 persist("mail", mailData)
+                if snapshot.timedOut == true {
+                    mailSuspended = true
+                    UserDefaults.standard.set(true, forKey: "mailSuspended")
+                    mailHealth.error = (mailHealth.error ?? "Mail timed out") + " Automatic reads paused; click Refresh to retry."
+                }
             }
         } catch {
             mailHealth.error = error.localizedDescription; mailHealth.loading = false
@@ -174,7 +175,7 @@ import EventKit
         selectedMessage = message; preview = ""; previewError = nil; previewLoading = true
         previewTask = Task {
             do {
-                let body = try await mail.body(accountID: message.accountID, messageID: message.messageID)
+                let body = try await mail.body(accountID: message.accountID, messageID: message.messageID, expectedInternetMessageID: message.internetMessageID)
                 guard !Task.isCancelled, selectedMessage?.id == message.id else { return }
                 preview = body.isEmpty ? "This message has no plain-text body." : body
             } catch {

@@ -45,6 +45,33 @@ import Foundation
         let restored = try JSONDecoder().decode(MailSnapshot.self, from: JSONEncoder().encode(mail))
         assert(restored.messages[0].received == mail.messages[0].received)
         assert(restored.messages[0].unread && restored.messages[0].flagged)
+        let partial = MailSnapshot(messages: [], accounts: [MailAccount(id: "a", title: "Example")], errors: ["Account a: timed out"])
+        let retained = partial.retainingFailedAccounts(from: mail, now: Date(timeIntervalSince1970: 1790942400))
+        assert(retained.messages.map(\.id) == ["a:1"])
+        let successEmpty = MailSnapshot(messages: [], accounts: mail.accounts, errors: [])
+        assert(successEmpty.retainingFailedAccounts(from: mail).messages.isEmpty, "Successful empty account must remove disappeared messages")
+        assert(partial.retainingFailedAccounts(from: mail, now: Date(timeIntervalSince1970: 1794000000)).messages.isEmpty, "Expired stale data must leave the 30-day window")
+        let isolated = FileManager.default.temporaryDirectory.appendingPathComponent("missioncontrol-isolated-\(UUID()).js")
+        let encoded = String(data: try JSONEncoder().encode(mail), encoding: .utf8)!
+        let isolatedScript = """
+        function run(argv) {
+            var input = JSON.parse(argv[0]);
+            if (input.operation === 'body') return JSON.stringify({body:'Fixture',internetMessageID:'other@example.invalid',unreadBefore:true,unreadAfter:true,errors:[]});
+            if (input.operation === 'probe') return JSON.stringify({accounts: [{id:'a',title:'Example'},{id:'b',title:'Failed account'}], errors:[]});
+            if (input.accountID === 'b') { delay(2); return '{}'; }
+            return JSON.stringify(\(encoded));
+        }
+        """
+        try isolatedScript.write(to: isolated, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: isolated) }
+        let isolatedService = MailService(scriptURL: isolated, timeout: 0.7)
+        do {
+            _ = try await isolatedService.body(accountID: "a", messageID: 1, expectedInternetMessageID: "expected@example.invalid")
+            assertionFailure("Preview must reject mismatched message identity")
+        } catch MailServiceError.mail(let detail) { assert(detail.contains("changed or moved")) }
+        let isolatedResult = try await isolatedService.headers()
+        assert(isolatedResult.messages.count == 1 && isolatedResult.accounts.count == 2)
+        assert(isolatedResult.timedOut == true && isolatedResult.errors.first?.hasPrefix("Account b:") == true)
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("missioncontrol-timeout-\(UUID()).js")
         try "function run(argv) { delay(10); return '{}'; }".write(to: tmp, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: tmp) }
@@ -52,6 +79,6 @@ import Foundation
         do { _ = try await service.headers(); assertionFailure("Timeout must fail") }
         catch MailServiceError.timedOut { }
         catch { throw error }
-        print("PASS: DST/overnight/all-day/zero duration, occurrence identity, reminder grouping/order/duplicate identity, read-only write rejection, Mail cache round-trip/unread flags, helper timeout.")
+        print("PASS: DST/overnight/all-day/zero duration, occurrence identity, reminder grouping/order/duplicate identity, read-only write rejection, Mail cache round-trip/unread flags, helper timeout/account isolation/cache reconciliation/preview identity.")
     }
 }

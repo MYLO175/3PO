@@ -47,3 +47,31 @@ Install using `ditto` to `~/Applications/Mission Control.app`, clear output bund
 No personal exports, screenshots, emails or credentials committed. Source/cache diagnostics logged only counts/accounts/errors or disposable metadata. Caches live outside repo.
 
 Final reserve checkpoint build succeeded and signed bundle verified. Installed to `~/Applications/Mission Control.app`; launched normally with persisted `mailSuspended=true` so automatic Mail reads remain paused. Calendar/Reminders refresh independently. Manual Refresh clears suspension and attempts Mail once. This is an incomplete Stage 1 delivery for review/resumption, not acceptance-complete.
+
+
+## Overnight continuation — 2026-10-02
+The one-time scheduled turn began at 03:30 Europe/London. Usage was initially 98% remaining in the five-hour window. No resets, credits, AI services or additional agents were used.
+
+### Work saved
+- MailService now discovers accounts first and runs one serial helper per account, with an independent 45-second timeout. A successful account survives a different account's timeout. Timeout suspension persists even when the helper returns a partial result.
+- Account metadata remains available for filters during partial failures. Reconciliation retains only failed accounts' cached messages, removes disappeared records from successful accounts, deduplicates identities and drops cached messages outside the rolling 30-day scope.
+- Resolve mailbox and preview-message JXA specifiers explicitly before reading properties; unresolved indexed references repeatedly resolve the account/mailbox. Preview also verifies the expected internet message identifier before displaying a body.
+- Dashboard date header now updates each minute, rather than remaining on the previous date after midnight.
+- Focused checks pass, including new fixtures for per-account timeout isolation, successful-empty reconciliation, expired stale messages and mismatched preview identity. Existing date/reminder/cache/timeout checks still pass.
+- `./scripts/build.sh` succeeded; installed signed checkpoint at `/Users/mylomichael/Applications/Mission Control.app`, `codesign --verify --deep --strict` passed. Launched through Launch Services with `mailSuspended=true`. This launch does not establish independent TCC permission ownership or visual acceptance.
+
+### Live investigation and limits
+Only timing/count metadata was printed; personal header/body data was captured transiently in helper pipes and was not saved to Git or diagnostic logs.
+- Dynamic Inbox discovery initially worked. Inbox counts were approximately 5,758 Exchange and 30,865 iCloud messages. Bounded date ranges succeeded; full iCloud date read using a resolved mailbox completed in approximately two seconds and found approximately 722 recent messages. Counts are a transient diagnostic, not validated app coverage.
+- Resolved single-message header reads completed, but collection/header operations remained expensive. A replacement date-scan/index-range experiment still timed out for each account and was removed from production. Current production date predicate remains unresolved; no successful complete header snapshot or unread-preserving body preview is claimed.
+- A one-second Mail stack sample showed Foundation index selection calling `MFMailbox.messages` / `MFLibraryIMAPStore.copyOfAllMessagesWithOptions` repeatedly and scanning SQLite on Mail's main thread. Large JXA object-specifier ranges therefore multiply complete-mailbox reads. Killing a timed-out helper does not cancel Mail's already running Apple event.
+- Mail subsequently consumed about 82% CPU and even metadata discovery timed out. Stop live probes until Mail is restarted; do not repeatedly retry the installed app's Refresh. Automatic Mail reads remain paused. Do not force-quit the user's Mail without coordinating possible drafts.
+- The native UI attempt to quit Mission Control and launch it through Finder remained pending for about 5 hours 44 minutes, eventually returning `cgWindowNotFound`. This delayed the overnight run; it was not continuous development during that interval. The cause (lock/sleep/window availability/tool failure) was not established. Later shell work resumed at about 09:17 London. Prior Mission Control process had quit successfully, but menu-bar reopen and other visual acceptance were not completed.
+
+### Required user action and next work
+1. Restart Apple Mail when convenient, preserving any draft first. Leave automatic reads paused until the replacement strategy is prepared. Avoid another whole-inbox indexed-range query.
+2. Quit Mission Control, then launch `~/Applications/Mission Control.app` directly in Finder and approve its own prompts. Settings previously showed only ChatGPT and node for Calendar: data loaded after a Codex launch does not prove Mission Control independently owns access. Calendar/Reminders reads work in that launch context, but own-permission acceptance remains open.
+3. Next focused Mail attempt should compare bulk date/ID retrieval with resolved unique-ID message reads, or a bundled AppleScript helper using evaluated message references. Avoid range selectors that enumerate the entire mailbox once per index; test a small batch before scaling. High reasoning could help assess these Apple Events evaluation/performance tradeoffs if the user changes the main chat setting. The instruction does not change the selected setting.
+4. Once both actual-app inboxes load, verify unread preservation and original-message opening. Complete Calendar agreement and live event edge cases, filters/relaunch, menu-bar lifecycle, login toggle and compact/light layout.
+
+Final usage milestone: 87% five-hour remaining, 40% weekly remaining. Stage 1 is an incomplete signed checkpoint; Stages 2 and 3 remain deferred.

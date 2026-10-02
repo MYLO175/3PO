@@ -9,7 +9,9 @@ struct DashboardView: View {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Mission Control").font(.system(size: 26, weight: .semibold, design: .rounded))
-                    Text(Date.now.formatted(date: .complete, time: .omitted)).foregroundStyle(.secondary)
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        Text(context.date.formatted(date: .complete, time: .omitted)).foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 if ProcessInfo.processInfo.arguments.contains("--sample") { Text("Sample data").foregroundStyle(.secondary) }

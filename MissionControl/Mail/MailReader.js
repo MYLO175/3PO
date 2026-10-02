@@ -38,15 +38,16 @@ function accountError(accountID, message) {
 
 function resolveInbox(mail, account, accountID) {
     // Resolve an account's exact Inbox, rather than an aggregate child mailbox.
-    // Query the account mailbox names in one event and resolve the inbox by index.
+    // Resolve the specifier now. Leaving an indexed mailbox unevaluated makes
+    // Mail repeat expensive account/mailbox resolution on every property read.
     const names = listValue(account.mailboxes.name());
     for (let i = 0; i < names.length; i += 1) {
-        if (stringValue(names[i]).toLowerCase() === 'inbox') return account.mailboxes[i];
+        if (stringValue(names[i]).toLowerCase() === 'inbox') return account.mailboxes[i]();
     }
     throw new Error('Inbox mailbox not found for this account');
 }
 
-function runHeaders(mail) {
+function runHeaders(mail, input) {
     const accounts = [];
     const messages = [];
     const errors = [];
@@ -65,6 +66,7 @@ function runHeaders(mail) {
         try {
             if (!account.enabled()) return;
             accountID = stringValue(account.id());
+            if (input.accountID && String(input.accountID) !== accountID) return;
             title = stringValue(account.name()) || title;
             const inbox = resolveInbox(mail, account, accountID);
             // Ask Mail to filter by date before fetching properties. Then each
@@ -120,7 +122,7 @@ function runBody(mail, input) {
         const account = mail.accounts.byId(accountID);
         if (!account || !account.enabled()) throw new Error('Enabled Mail account not found');
         const inbox = resolveInbox(mail, account, accountID);
-        const message = inbox.messages.byId(messageID);
+        const message = inbox.messages.byId(messageID)();
         if (!message) throw new Error('Inbox message not found');
         const unreadBefore = !Boolean(message.readStatus());
         const body = stringValue(message.content());
@@ -158,7 +160,7 @@ function run(argv) {
         if (input.operation === 'probe') {
             output = probeInboxes(mail);
         } else if (input.operation === 'headers') {
-            output = runHeaders(mail);
+            output = runHeaders(mail, input);
         } else if (input.operation === 'body') {
             output = runBody(mail, input);
         } else {

@@ -55,6 +55,23 @@ struct MailSnapshot: Codable, Sendable {
     let messages: [MailMessage]
     let accounts: [MailAccount]
     let errors: [String]
+    var timedOut: Bool? = nil
+}
+
+extension MailSnapshot {
+    func retainingFailedAccounts(from previous: MailSnapshot, now: Date = .now) -> MailSnapshot {
+        let known = accounts + previous.accounts
+        let failed = Set(known.filter { account in errors.contains { $0.hasPrefix("Account " + account.id + ":") } }.map(\.id))
+        let retainAll = errors.contains { $0.hasPrefix("Mail:") }
+        let successful = Set(accounts.map(\.id)).subtracting(failed)
+        let retained = previous.messages.filter { (retainAll || failed.contains($0.accountID)) && !successful.contains($0.accountID) }
+        var byID: [String: MailMessage] = [:]
+        for message in retained + messages where message.received >= now.addingTimeInterval(-30 * 86400) { byID[message.id] = message }
+        var byAccount: [String: MailAccount] = [:]
+        for account in previous.accounts where retainAll || failed.contains(account.id) { byAccount[account.id] = account }
+        for account in accounts { byAccount[account.id] = account }
+        return MailSnapshot(messages: byID.values.sorted { $0.received > $1.received }, accounts: byAccount.values.sorted { $0.title < $1.title }, errors: errors, timedOut: timedOut)
+    }
 }
 
 actor MailService {
@@ -67,11 +84,27 @@ actor MailService {
     }
 
     func headers() async throws -> MailSnapshot {
-        let data = try run(arguments: ["operation": "headers"])
-        return try JSONDecoder().decode(MailSnapshot.self, from: data)
+        let discovery = try JSONDecoder().decode(MailDiscovery.self, from: run(arguments: ["operation": "probe"]))
+        var messages: [MailMessage] = []
+        var errors = discovery.errors
+        var timedOut = false
+        // Each account has its own serial helper and timeout. Preserve a healthy
+        // account's result even if the other account stalls or denies access.
+        for account in discovery.accounts {
+            do {
+                let data = try run(arguments: ["operation": "headers", "accountID": account.id])
+                let snapshot = try JSONDecoder().decode(MailSnapshot.self, from: data)
+                messages.append(contentsOf: snapshot.messages)
+                errors.append(contentsOf: snapshot.errors)
+            } catch {
+                if case MailServiceError.timedOut = error { timedOut = true }
+                errors.append("Account \(account.id): \(error.localizedDescription)")
+            }
+        }
+        return MailSnapshot(messages: messages.sorted { $0.received > $1.received }, accounts: discovery.accounts, errors: errors, timedOut: timedOut)
     }
 
-    func body(accountID: String, messageID: Int) async throws -> String {
+    func body(accountID: String, messageID: Int, expectedInternetMessageID: String? = nil) async throws -> String {
         let data = try run(arguments: [
             "operation": "body",
             "accountID": accountID,
@@ -80,6 +113,9 @@ actor MailService {
         let response = try JSONDecoder().decode(BodyResponse.self, from: data)
         if let error = response.errors.first {
             throw MailServiceError.mail(error)
+        }
+        if let expected = expectedInternetMessageID, !expected.isEmpty, expected != response.internetMessageID {
+            throw MailServiceError.mail("This message changed or moved. Refresh the inbox before previewing it.")
         }
         if let before = response.unreadBefore, let after = response.unreadAfter, before != after {
             throw MailServiceError.mail("Mail changed the read state during preview retrieval. Refresh Mail before continuing.")
@@ -161,6 +197,11 @@ actor MailService {
         }
         return stdout
     }
+}
+
+private struct MailDiscovery: Decodable {
+    let accounts: [MailAccount]
+    let errors: [String]
 }
 
 private struct BodyResponse: Decodable {
