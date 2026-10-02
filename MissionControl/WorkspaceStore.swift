@@ -90,10 +90,22 @@ import SwiftData
         if selected.widgets.count == 1 { update(full) }
         else { full.id = UUID(); let page = DashboardPage(title:widget.kind?.title ?? "Widget",widgets:[full],canvasRows:budget); change { $0.pages.append(page); $0.selectedPageID = page.id } }
     }
-    func showAssistant() {
-        if let page = state.pages.first(where: { $0.widgets.contains { $0.kind == .conversation } }) { select(page.id) }
-        else { addPage("Assistant"); addWidget(.conversation); if let widget = selected.widgets.first { fullPage(widget) } }
+    func showAssistant(conversationID: UUID?, registration: String) {
+        if let page = state.pages.first(where:{ page in page.widgets.contains { widget in
+            guard widget.kind == .conversation else { return false }
+            let preferred = widget.configuration.conversationSelections?[registration] ?? widget.configuration.conversationID
+            return preferred == nil || preferred == conversationID
+        } }) { select(page.id) }
+        else {
+            addPage("Your PA"); addWidget(.conversation)
+            if var widget = selected.widgets.first {
+                widget.configuration.conversationID = conversationID
+                if let conversationID { widget.configuration.conversationSelections = [registration:conversationID] }
+                update(widget); fullPage(widget)
+            }
+        }
     }
+
     func undo() { guard let old = previous, readable else { return }; let current = state; state = old; do { try save(); previous = nil; error = nil } catch { state = current; self.error = "Layout Undo could not be saved." } }
 }
 enum WorkspaceFailure: LocalizedError {

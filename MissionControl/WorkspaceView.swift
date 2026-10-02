@@ -75,7 +75,7 @@ struct WorkspaceView: View {
             Button { sidebarVisible.toggle() } label: { Image(systemName:"sidebar.left") }.buttonStyle(.borderless).help("Show dashboard pages")
             VStack(alignment:.leading,spacing:3) { Text(store.selected.title).font(.system(size:23,weight:.semibold,design:.rounded)); Text(Date.now.formatted(date:.complete,time:.omitted)).font(.caption).foregroundStyle(.secondary) }
             Spacer()
-            Button { model.assistant.openPA(); store.showAssistant() } label: { Label("Assistant",systemImage:"bubble.left.and.bubble.right") }.keyboardShortcut("j",modifiers:.command)
+            Button { let primary = model.assistant.openPA(); store.showAssistant(conversationID:primary,registration:model.chatGPT.activeID) } label: { Label("Assistant",systemImage:"bubble.left.and.bubble.right") }.keyboardShortcut("j",modifiers:.command)
             Button { model.refresh() } label: { Image(systemName:"arrow.clockwise") }.help("Refresh Apple sources (⌘R)").accessibilityLabel("Refresh Apple sources").keyboardShortcut("r",modifiers:.command)
             addMenu
             Toggle("Edit",isOn:$editing).toggleStyle(.button)
@@ -172,7 +172,7 @@ private struct WorkspaceTile: View {
         case .calendar: CalendarWidgetView(model:model,configuration:configuration)
         case .reminders: DashboardView(model:model,widgetConfiguration:configuration).remindersPanel
         case .mail: DashboardView(model:model,widgetConfiguration:configuration).inboxPanel
-        case .conversation: AssistantPanel(model:model,assistant:model.assistant,readingMode:$readingMode,supportsReadingMode:false)
+        case .conversation: AssistantPanel(model:model,assistant:model.assistant,readingMode:$readingMode,supportsReadingMode:false,widgetID:widget.id,configuration:configuration)
         case .overview:
             VStack(alignment:.leading,spacing:10) { GeneralOverviewView(model:model,briefings:model.briefings); BriefingView(model:model,briefings:model.briefings); DisclosureGroup("Email follow-ups") { EmailOverviewView(model:model,summaries:model.emailSummaries).frame(maxHeight:220) } }.padding(16)
         case nil: ContentUnavailableView("Widget unavailable",systemImage:"square.dashed",description:Text("Its saved placement is preserved for a future app version."))

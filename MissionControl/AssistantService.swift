@@ -5,6 +5,11 @@ import Observation
 @MainActor @Observable final class AssistantService {
     let connection: ChatGPTConnection
     let memory: PAMemoryStore
+    let drafts: ChatDraftStore
+    var hasDraft: Bool { !draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || drafts.hasDraft(registration:connection.activeID) }
+    private(set) var requestConversationID: UUID?
+    private(set) var errorConversationID: UUID?
+    private(set) var mailSearchConversationID: UUID?
     var contextEnabled = UserDefaults.standard.bool(forKey: "assistantContextEnabled") { didSet { UserDefaults.standard.set(contextEnabled, forKey: "assistantContextEnabled") } }
     var preferences = UserDefaults.standard.string(forKey: "assistantPreferences") ?? "Be concise and practical. Use UK English. Help me organise my day and applications. State uncertainty and cite the supplied sources." { didSet { UserDefaults.standard.set(preferences, forKey: "assistantPreferences") } }
     var excludedCalendars = Set(UserDefaults.standard.stringArray(forKey: "aiExcludedCalendars") ?? []) { didSet { saveSources() } }
@@ -21,7 +26,7 @@ import Observation
     var conversations: [AssistantConversation] { allConversations.filter { $0.accountID == connection.activeID }.sorted { $0.created > $1.created } }
     var active: AssistantConversation? { conversations.first { $0.id == activeID } }
     init(connection: ChatGPTConnection, container: ModelContainer?) {
-        self.connection = connection; self.container = container; self.memory = PAMemoryStore(container:container)
+        self.connection = connection; self.container = container; self.memory = PAMemoryStore(container:container); self.drafts = ChatDraftStore(container:container)
         do {
             if let record = try container?.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first(where: { $0.key == "assistantConversations" }) {
                 allConversations = try JSONDecoder().decode([AssistantConversation].self, from: record.data)
@@ -29,18 +34,52 @@ import Observation
         } catch { conversationsWritable = false; self.error = "Saved conversations could not be read; their record is preserved and changes are disabled." }
         activeID = conversations.first(where:{ $0.isPrimary == true })?.id ?? conversations.first?.id
     }
-    func newConversation() {
-        guard !busy else { return }
-        let conversation = AssistantConversation(accountID: connection.activeID, title: "New topic")
-        allConversations.append(conversation); activeID = conversation.id; error = nil; save()
+    func conversation(_ id: UUID?) -> AssistantConversation? { conversations.first { $0.id == id } }
+    @discardableResult func newConversation() -> UUID? {
+        guard !busy, !connection.activeID.isEmpty else { return nil }
+        let previous = allConversations, selected = activeID
+        let conversation = AssistantConversation(accountID:connection.activeID,title:"New topic")
+        allConversations.append(conversation); activeID = conversation.id; error = nil
+        guard save() else { allConversations = previous; activeID = selected; return nil }
+        return conversation.id
     }
-    func openPA() {
-        guard !busy, !connection.activeID.isEmpty else { return }
-        if let primary = conversations.first(where:{ $0.isPrimary == true }) { activeID = primary.id }
-        else {
-            var primary = AssistantConversation(accountID:connection.activeID,title:"Your PA")
-            primary.isPrimary = true; allConversations.append(primary); activeID = primary.id; save()
+    @discardableResult func openPA() -> UUID? {
+        guard !connection.activeID.isEmpty else { return nil }
+        if let primary = conversations.first(where:{ $0.isPrimary == true }) { activeID = primary.id; return primary.id }
+        guard !busy else { return nil }
+        let previous = allConversations, selected = activeID
+        var primary = AssistantConversation(accountID:connection.activeID,title:"Your PA")
+        primary.isPrimary = true; allConversations.append(primary); activeID = primary.id
+        guard save() else { allConversations = previous; activeID = selected; return nil }
+        return primary.id
+    }
+    /// Widget selection never owns the in-flight request. The request captures its target before yielding.
+    @discardableResult func send(model: DashboardModel, conversationID: UUID?, prompt: String) -> Bool {
+        guard !busy, conversationsWritable, container != nil else { return false }
+        let id: UUID
+        if let conversationID {
+            guard conversation(conversationID) != nil else { error = "That conversation is unavailable for this account."; return false }
+            id = conversationID
+        } else { guard let primary = openPA() else { return false }; id = primary }
+        if prompt.lowercased().contains("continue"), MailLookupRules.requested(prompt), model.mailLookup.hasMore, mailSearchConversationID != id {
+            errorConversationID = id; error = "Continue the email search in the chat that started it, or ask a new mail question here."; return false
         }
+        let previousID = activeID, previousDraft = draft, count = conversation(id)?.turns.count ?? 0
+        activeID = id; draft = prompt; errorConversationID = id
+        defer { activeID = previousID; draft = previousDraft }
+        send(model:model)
+        return busy || ((conversation(id)?.turns.count ?? 0) > count && error == nil)
+    }
+    private func prepare(_ prompt: String, id: UUID) -> AssistantTurn? {
+        guard let index = allConversations.firstIndex(where:{ $0.id == id && $0.accountID == connection.activeID }) else { return nil }
+        let previous = allConversations
+        if allConversations[index].turns.isEmpty && allConversations[index].isPrimary != true { allConversations[index].title = String(prompt.prefix(60)) }
+        allConversations[index].turns.append(.init(role:"user",content:prompt,completed:true))
+        let response = AssistantTurn(role:"assistant",content:"",completed:false)
+        allConversations[index].turns.append(response)
+        guard save() else { allConversations = previous; return nil }
+        draft = ""; busy = true; requestConversationID = id; errorConversationID = id; error = nil
+        return response
     }
     func sharedMemoryContext() -> String {
         let value: [String:Any] = ["savedMemory":memory.context(connection.activeID),"coverage":"At most 40 saved memories. Explicit preferences persist; provisional context is omitted after 90 days without review. Resolved commitments are omitted. Conversation learning is bounded and may be incomplete; only saved records are supplied here."]
@@ -52,13 +91,15 @@ import Observation
     private func remember(_ text: String, prompt: String) {
         guard !busy else { return }
         if active == nil { openPA() }
-        guard let id = activeID, let index = allConversations.firstIndex(where:{ $0.id == id }) else { return }
+        guard let id = activeID, let index = allConversations.firstIndex(where:{ $0.id == id && $0.accountID == connection.activeID }) else { return }
+        let previous = allConversations
         let turn = AssistantTurn(role:"user",content:prompt,completed:true)
         let entry = PAMemory(registration:connection.activeID,text:text,kind:.context,provenance:"Conversation \(id.uuidString), user turn \(turn.id.uuidString)",sourceTurnID:turn.id.uuidString)
         guard memory.put(entry) else { error = memory.error ?? "Memory was not saved."; return }
         allConversations[index].turns.append(turn)
         allConversations[index].turns.append(.init(role:"assistant",content:"I've saved that in our shared memory. You can edit or forget it in Memory.",completed:true))
-        draft = ""; error = nil; save()
+        draft = ""; error = nil
+        if !save() { allConversations = previous; error = "The memory was saved, but its chat acknowledgement could not be saved." }
     }
     func deliverMorning(_ record: DailyBriefing) {
         guard record.registration == connection.activeID, conversationsWritable else { return }
@@ -83,14 +124,9 @@ import Observation
         }
         guard !prompt.isEmpty, !busy, !connection.busy, connection.inferenceVerified, !connection.usagePaused else { return }
         if active == nil { newConversation() }
-        guard let id = activeID, let index = allConversations.firstIndex(where: { $0.id == id }) else { return }
-        if allConversations[index].turns.isEmpty && allConversations[index].isPrimary != true { allConversations[index].title = String(prompt.prefix(60)) }
-        allConversations[index].turns.append(.init(role:"user",content:prompt,completed:true))
-        let response = AssistantTurn(role:"assistant",content:"",completed:false)
-        allConversations[index].turns.append(response)
-        draft = ""; busy = true; error = nil; save()
+        guard let id = activeID, let response = prepare(prompt,id:id) else { return }
         task = Task {
-            defer { busy = false; save() }
+            defer { busy = false; requestConversationID = nil; save() }
             do {
                 let result = try await model.assistantActions.perform(request:prompt,model:model)
                 if let c = allConversations.firstIndex(where: { $0.id == id }), let t = allConversations[c].turns.firstIndex(where: { $0.id == response.id }) { allConversations[c].turns[t].content = result; allConversations[c].turns[t].completed = true }
@@ -101,13 +137,10 @@ import Observation
     private func sendMailLookup(request: String, model: DashboardModel) {
         guard !busy, !connection.busy, connection.inferenceVerified, !connection.usagePaused else { return }
         if active == nil { newConversation() }
-        guard let id = activeID, let index = allConversations.firstIndex(where: { $0.id == id }) else { return }
-        if allConversations[index].turns.isEmpty && allConversations[index].isPrimary != true { allConversations[index].title = String(request.prefix(60)) }
-        allConversations[index].turns.append(.init(role:"user",content:request,completed:true))
-        let response = AssistantTurn(role:"assistant",content:"",completed:false)
-        allConversations[index].turns.append(response); draft = ""; busy = true; error = nil; save()
+        guard let id = activeID, let response = prepare(request,id:id) else { return }
+        mailSearchConversationID = id
         task = Task {
-            defer { busy = false; save() }
+            defer { busy = false; requestConversationID = nil; save() }
             do {
                 let registration = model.chatGPT.activeID, exclusions = excludedAccounts
                 let context = try await model.mailLookup.context(request:request,model:model)
@@ -141,16 +174,11 @@ import Observation
     }
     func send(context: String?) {
         let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !prompt.isEmpty, !busy else { return }
+        guard !prompt.isEmpty, !busy, !connection.busy, !connection.usagePaused else { return }
         guard connection.hasSession, connection.inferenceVerified else { error = "Verify the ChatGPT connection in Settings first."; return }
         if active == nil { newConversation() }
-        guard let id = activeID, let index = allConversations.firstIndex(where: { $0.id == id }) else { return }
-        if allConversations[index].turns.isEmpty && allConversations[index].isPrimary != true { allConversations[index].title = String(prompt.prefix(60)) }
-        allConversations[index].turns.append(.init(role: "user", content: prompt, completed: true))
-        let history = allConversations[index].turns.filter(\.completed).suffix(20).map { ["role":$0.role, "content":String($0.content.prefix(8000))] }
-        let response = AssistantTurn(role: "assistant", content: "", completed: false)
-        allConversations[index].turns.append(response)
-        draft = ""; error = nil; busy = true; save()
+        guard let id = activeID, let response = prepare(prompt,id:id), let conversation = conversation(id) else { return }
+        let history = conversation.turns.filter(\.completed).suffix(20).map { ["role":$0.role,"content":String($0.content.prefix(8000))] }
         let memorySnapshot = sharedMemoryContext(), registration = connection.activeID
         let sourceEnabled = contextEnabled, calendars = excludedCalendars, lists = excludedLists, accounts = excludedAccounts
         let instructions = """
@@ -167,7 +195,7 @@ import Observation
         \(contextEnabled ? (context ?? "Source snapshots unavailable.") : "AI source context is disabled. Do not claim access to calendar, reminders or mail.")
         """
         task = Task {
-            defer { busy = false; save() }
+            defer { busy = false; requestConversationID = nil; save() }
             do {
                 let text = try await connection.streamResponse(input: history, instructions: instructions) { delta in
                     guard registration == self.connection.activeID, memorySnapshot == self.sharedMemoryContext(), sourceEnabled == self.contextEnabled, calendars == self.excludedCalendars, lists == self.excludedLists, accounts == self.excludedAccounts else { return }

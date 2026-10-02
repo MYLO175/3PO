@@ -50,6 +50,7 @@ struct WidgetConfiguration: Codable, Equatable {
     var calendarMode: String = "agenda"
     var reminderGrouping: String = "lists"
     var conversationID: UUID? = nil
+    var conversationSelections: [String:UUID]? = nil
 }
 
 struct GridRect: Codable, Equatable {

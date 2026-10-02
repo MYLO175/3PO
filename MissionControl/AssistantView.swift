@@ -6,6 +6,40 @@ struct AssistantPanel: View {
     @Bindable var assistant: AssistantService
     @Binding var readingMode: Bool
     var supportsReadingMode = true
+    var widgetID: UUID? = nil
+    var configuration: Binding<WidgetConfiguration>? = nil
+    @FocusState private var composerFocused: Bool
+    private var selectedID: UUID? {
+        let preferred = configuration.map { $0.wrappedValue.conversationSelections?[model.chatGPT.activeID] ?? $0.wrappedValue.conversationID } ?? assistant.activeID
+        return ConversationRules.selection(preferred,in:assistant.conversations,registration:model.chatGPT.activeID)
+    }
+    private var selected: AssistantConversation? { assistant.conversation(selectedID) }
+    private var sendingHere: Bool { assistant.busy && assistant.requestConversationID == selectedID }
+    private var errorHere: Bool { assistant.errorConversationID == nil || assistant.errorConversationID == selectedID }
+    private var draft: Binding<String> {
+        Binding(get:{ if let widgetID { return assistant.drafts.text(registration:model.chatGPT.activeID,widget:widgetID,conversation:selectedID) }; return assistant.draft },set:{ text in
+            if let widgetID { assistant.drafts.set(text,registration:model.chatGPT.activeID,widget:widgetID,conversation:selectedID) } else { assistant.draft = text }
+        })
+    }
+    private func select(_ id: UUID?) {
+        assistant.drafts.flush()
+        if let configuration, let id {
+            var value = configuration.wrappedValue
+            var selections = value.conversationSelections ?? [:]; selections[model.chatGPT.activeID] = id
+            value.conversationSelections = selections; value.conversationID = id; configuration.wrappedValue = value
+        } else { assistant.activeID = id }
+    }
+    private func send() {
+        let value = draft.wrappedValue, id = selectedID, registration = model.chatGPT.activeID
+        if assistant.send(model:model,conversationID:id,prompt:value) {
+            if let widgetID { assistant.drafts.set("",registration:registration,widget:widgetID,conversation:id) } else { assistant.draft = "" }
+            assistant.drafts.flush()
+        }
+    }
+    private func showDraft() {
+        if let widgetID { assistant.drafts.show(registration:model.chatGPT.activeID,widget:widgetID,conversation:selectedID) }
+        if !draft.wrappedValue.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { model.memoryLearning.cancel() }
+    }
     @State private var dictation = DictationService()
     @State private var showDictation = false
     @State private var showMemory = false
@@ -17,15 +51,15 @@ struct AssistantPanel: View {
                 HStack {
                     Label("Assistant",systemImage:"sparkles").font(.headline)
                     Spacer()
-                    Button("Your PA") { assistant.openPA() }.disabled(assistant.busy)
+                    Button("Your PA") { if let id = assistant.openPA() { select(id) } }
                     Button("Memory") { showMemory = true }
                     if supportsReadingMode { Button { readingMode.toggle() } label: { Image(systemName:readingMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") }.help(readingMode ? "Compact chat" : "Expand chat") }
                 }
                 HStack {
                     if !assistant.conversations.isEmpty {
-                        Picker("Conversation",selection:$assistant.activeID) { ForEach(assistant.conversations) { Text($0.title).tag(Optional($0.id)) } }.labelsHidden().frame(maxWidth:280).disabled(assistant.busy)
+                        Picker("Conversation",selection:Binding(get:{ selectedID },set:{ select($0) })) { ForEach(assistant.conversations) { Text($0.title).tag(Optional($0.id)) } }.labelsHidden().frame(maxWidth:280)
                     }
-                    Button("New topic") { assistant.newConversation() }.disabled(assistant.busy).keyboardShortcut("n",modifiers:.command)
+                    Button("New topic") { if let id = assistant.newConversation() { select(id) } }.disabled(assistant.busy).keyboardShortcut(composerFocused ? KeyboardShortcut("n",modifiers:.command) : nil)
                     Spacer(minLength:0)
                 }
                 Text(assistant.contextEnabled ? "Enabled sources · shared memory" : "Apple source context off").font(.caption).foregroundStyle(.secondary)
@@ -33,40 +67,42 @@ struct AssistantPanel: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
-                        if assistant.active?.turns.isEmpty ?? true {
+                        if selected?.turns.isEmpty ?? true {
                             VStack(alignment:.leading,spacing:12) {
                                 Text("A little clarity for your day").font(.headline)
                                 Text("Ask about what's coming up, find an email, or tell me what needs doing.").font(.callout).foregroundStyle(.secondary)
-                                HStack {
+                                VStack(alignment:.leading,spacing:6) {
                                     ForEach(["What should I focus on today?","What's coming up this week?"],id:\.self) { suggestion in
-                                        Button(suggestion) { assistant.draft = suggestion }.controlSize(.small)
+                                        Button(suggestion) { draft.wrappedValue = suggestion }.controlSize(.small)
                                     }
                                 }
                             }.padding(.vertical,12)
                         }
-                        ForEach(assistant.active?.turns ?? []) { turn in
+                        ForEach(selected?.turns ?? []) { turn in
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(turn.role == "user" ? "You" : "Mission Control").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                                 if turn.content.isEmpty {
-                                    Text(assistant.busy ? "Thinking…" : "This request didn't complete.").foregroundStyle(.secondary)
+                                    Text(sendingHere ? "Thinking…" : "This request didn't complete.").foregroundStyle(.secondary)
                                 } else if turn.role == "assistant" {
                                     Text((try? AttributedString(markdown:turn.content,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(turn.content)).textSelection(.enabled).lineSpacing(3)
                                 } else { Text(turn.content).textSelection(.enabled) }
                                 if turn.deliveryID != nil { Button("Briefing and sources") { showBriefing = true }.controlSize(.small) }
-                                if turn.role == "assistant" && !turn.completed && !assistant.busy && !turn.content.isEmpty { Text("Partial response").font(.caption).foregroundStyle(.orange) }
+                                if turn.role == "assistant" && !turn.completed && !sendingHere && !turn.content.isEmpty { Text("Partial response").font(.caption).foregroundStyle(.orange) }
                             }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(turn.role == "user" ? Color.accentColor.opacity(0.06) : Color.primary.opacity(0.025),in:RoundedRectangle(cornerRadius:10)).id(turn.id)
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
-                }.onChange(of: assistant.active?.turns.last?.content) { if let id = assistant.active?.turns.last?.id { proxy.scrollTo(id, anchor: .bottom) } }
+                }.onChange(of: selected?.turns.last?.content) { if let id = selected?.turns.last?.id { proxy.scrollTo(id, anchor: .bottom) } }
+                .onChange(of:selectedID) { if let id = selected?.turns.last?.id { proxy.scrollTo(id,anchor:.bottom) } }
+                .onAppear { if let id = selected?.turns.last?.id { proxy.scrollTo(id,anchor:.bottom) } }
             }
-            if !model.mailLookup.status.isEmpty {
+            if assistant.mailSearchConversationID == selectedID && !model.mailLookup.status.isEmpty {
                 HStack {
                     Text(model.mailLookup.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     Menu("Mail sources") { ForEach(model.mailLookup.results) { message in Button(message.account + " · " + message.subject) { model.select(message) } } }
-                    if model.mailLookup.hasMore { Button("Continue mail search") { assistant.draft = "Continue the email search."; assistant.send(model:model) }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
+                    if model.mailLookup.hasMore { Button("Continue mail search") { draft.wrappedValue = "Continue the email search."; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
                 }
             }
-            if let error = assistant.error, !model.chatGPT.usagePaused { DisclosureGroup("Request didn’t complete") { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }.font(.caption) }
+            if let error = assistant.error, errorHere, !model.chatGPT.usagePaused { DisclosureGroup("Request didn’t complete") { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }.font(.caption) }
             if model.chatGPT.usagePaused {
                 HStack {
                     Text("Subscription access was rejected; saved sources remain available.").font(.caption).foregroundStyle(.secondary)
@@ -81,24 +117,32 @@ struct AssistantPanel: View {
                     Text(model.briefings.busy ? "Preparing your overview or briefing… You can draft a message while it finishes." : model.memoryLearning.busy ? "Learning conversation context… Start drafting to pause learning." : model.emailSummaries.busy ? "Checking incoming mail… You can draft a message while it finishes." : "Checking your ChatGPT connection…").font(.caption).foregroundStyle(.secondary)
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
+            if assistant.busy && !sendingHere { Text("Your PA is replying in another chat. You can keep drafting here.").font(.caption).foregroundStyle(.secondary) }
+            if let error = assistant.drafts.error, widgetID != nil { Text(error).font(.caption).foregroundStyle(.orange) }
             HStack {
-                Button { showDictation = true } label: { Image(systemName:"mic") }.help("Dictate a message").accessibilityLabel("Dictate a message").disabled(assistant.busy)
-                TextField("Message Mission Control", text: $assistant.draft,axis:.vertical).lineLimit(1...4).textFieldStyle(.plain).padding(9).background(Color(nsColor:.textBackgroundColor),in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.primary.opacity(0.08))).onSubmit { assistant.send(model:model) }.disabled(assistant.busy)
-                if assistant.busy { ProgressView().controlSize(.small); Button("Stop") { assistant.cancel() } }
-                else { Button("Send") { assistant.send(model:model) }.disabled(assistant.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (MemoryRules.explicitRequest(assistant.draft) == nil && (!model.chatGPT.inferenceVerified || model.chatGPT.busy || model.chatGPT.usagePaused))) }
+                Button { showDictation = true } label: { Image(systemName:"mic") }.help("Dictate a message").accessibilityLabel("Dictate a message").disabled(widgetID != nil && !assistant.drafts.writable)
+                TextField("Message Mission Control", text: draft,axis:.vertical).lineLimit(1...4).textFieldStyle(.plain).padding(9).background(Color(nsColor:.textBackgroundColor),in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.primary.opacity(0.08))).onSubmit { send() }.focused($composerFocused).disabled(widgetID != nil && !assistant.drafts.writable)
+                if sendingHere { ProgressView().controlSize(.small); Button("Stop") { assistant.cancel() } }
+                else { Button("Send") { send() }.disabled(assistant.busy || (widgetID != nil && !assistant.drafts.writable) || draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (MemoryRules.explicitRequest(draft.wrappedValue) == nil && (!model.chatGPT.inferenceVerified || model.chatGPT.busy || model.chatGPT.usagePaused))) }
             }
-            if assistant.error?.contains("Choose the specific target") == true {
+            if errorHere && assistant.error?.contains("Choose the specific target") == true {
                 Picker("Specific action target", selection: $model.assistantActions.selectedTarget) {
                     Text("Choose an item").tag("")
                     ForEach(model.assistantActions.targets) { Text($0.label).tag($0.id) }
                 }
             }
-        }.onChange(of:assistant.draft) { _, draft in
+        }.onAppear {
+            if selectedID == nil { assistant.openPA() }
+            showDraft()
+        }.onDisappear { if let widgetID { assistant.drafts.hide(widget:widgetID) }; assistant.drafts.flush() }
+        .onChange(of:selectedID) { showDraft() }
+        .onChange(of:model.chatGPT.activeID) { assistant.drafts.flush(); showDraft() }
+        .onChange(of:draft.wrappedValue) { _, draft in
             if !draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && model.memoryLearning.busy { model.memoryLearning.cancel() }
         }.onChange(of:model.chatGPT.usagePaused) { _, paused in
             if !paused, assistant.error?.contains("subscription_sharing_usage_limit_exceeded") == true { assistant.error = nil }
         }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { PAMemoryView(memory:assistant.memory,registration:model.chatGPT.activeID,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) }) }.sheet(isPresented:$showDictation) {
-            DictationView(dictation:dictation) { text in assistant.draft = assistant.draft.isEmpty ? text : assistant.draft + " " + text }
+            DictationView(dictation:dictation) { text in draft.wrappedValue = draft.wrappedValue.isEmpty ? text : draft.wrappedValue + " " + text }
         }.padding(.horizontal, 20).padding(.vertical, 10)
     }
 }

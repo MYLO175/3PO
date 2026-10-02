@@ -26,15 +26,15 @@ import SwiftData
         if !assistant.connection.inferenceVerified { return "Verify your ChatGPT connection to enable learning. Explicit memory still works locally." }
         if assistant.connection.usagePaused { return "ChatGPT access is paused. Saved and explicit memories remain available." }
         if !assistant.contextEnabled { return "Assistant source context is off; automatic learning is on hold." }
-        if !assistant.draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { return "A chat draft is open. Finish or clear it before learning new context." }
+        if assistant.hasDraft { return "A visible chat draft is open. Finish or clear it before learning new context." }
         if !assistant.memory.learningEnabled { return "Automatic learning paused. Explicit Remember requests still work." }
-        if progress?.paused == true { return "Learning paused after an error. Check context to try once when ready." }
+        if progress?.paused == true { return "Learning paused after a stopped or failed attempt. Check context to try once when ready." }
         if progress == nil { return "Initial orientation will inspect only the eight most recent eligible messages." }
         return "\(count) messages in next batch · \(progress?.day == BriefingRules.day(.now) ? progress?.attempts ?? 0 : 0) attempts today (automatic budget: 4) · \(progress?.skippedAtOrientation ?? 0) older messages outside initial orientation"
     }
     func check(_ model: DashboardModel, manual: Bool = false) {
         let assistant = model.assistant, memory = assistant.memory, registration = model.chatGPT.activeID, now = Date.now
-        guard readable, !busy, memory.enabled, memory.learningEnabled, assistant.contextEnabled, !assistant.busy, assistant.draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,
+        guard readable, !busy, memory.enabled, memory.learningEnabled, assistant.contextEnabled, !assistant.busy, !assistant.hasDraft,
               !model.chatGPT.busy, !model.chatGPT.usagePaused, model.chatGPT.inferenceVerified, !model.briefings.busy, !model.emailSummaries.busy, !registration.isEmpty else { return }
         let turns = assistant.learningTurns(), day = BriefingRules.day(now)
         var progress = MemoryLearningRules.progress(turns:turns,prior:state.accounts[registration],suppressed:memory.suppressed(registration),day:day)
