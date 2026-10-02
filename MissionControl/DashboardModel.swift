@@ -28,6 +28,8 @@ import EventKit
     var storageError: String?
     let chatGPT = ChatGPTConnection()
     @ObservationIgnored lazy var assistant = AssistantService(connection: chatGPT, container: container)
+    @ObservationIgnored lazy var emailSummaries = EmailSummaryService(container: container)
+    private var summaryPoll: Task<Void, Never>?
     let eventKit = EventKitService()
     let mail = MailService()
     private var container: ModelContainer?
@@ -79,6 +81,12 @@ import EventKit
                 try? await Task.sleep(for: .seconds(300))
                 guard !Task.isCancelled else { return }
                 await self?.refreshMail()
+            }
+        }
+        summaryPoll = Task { [weak self] in
+            while !Task.isCancelled {
+                if let self { self.emailSummaries.process(self) }
+                try? await Task.sleep(for: .seconds(300))
             }
         }
         refresh(retryMail: false)

@@ -44,7 +44,7 @@ struct AssistantSourceSettings: View {
     var body: some View {
         Section("Assistant preferences and sources") {
             Toggle("Enable assistant source context", isOn: $assistant.contextEnabled)
-            Text("When enabled, assistant requests send the enabled calendar and reminder snapshots and recent email headers to OpenAI using your ChatGPT plan. Email body processing and automatic daily summaries come in the next increment. Dashboard refresh itself makes no AI requests.").font(.caption)
+            Text("When enabled, assistant requests send the enabled calendar and reminder snapshots and recent email headers to OpenAI using your ChatGPT plan. Email body processing is enabled separately under Automatic email summaries. Dashboard refresh itself makes no AI requests.").font(.caption)
             TextField("Assistant preferences", text: $assistant.preferences, axis: .vertical).lineLimit(3...6)
             sourceMenu("AI calendars", sources: model.calendarData.sources, excluded: $assistant.excludedCalendars)
             sourceMenu("AI reminder lists", sources: model.reminderData.sources, excluded: $assistant.excludedLists)
