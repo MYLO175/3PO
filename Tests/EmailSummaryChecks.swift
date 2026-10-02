@@ -30,6 +30,22 @@ import Foundation
         assert(restored.matches(message,registration:"registration-a"))
         assert(!restored.matches(message,registration:"registration-b"))
         assert(!restored.matches(changed,registration:"registration-a"))
+        assert(MailMonitoringRules.incoming([message],since:message.received.addingTimeInterval(1)).isEmpty)
+        assert(MailMonitoringRules.incoming([message],since:message.received).count == 1)
+        let selected = try MailMonitoringRules.selections(#"{"readBodyIDs":["mail_1"]}"#,allowed:["mail_1","mail_2"])
+        assert(selected == ["mail_1"])
+        var unknownRejected = false
+        do { _ = try MailMonitoringRules.selections(#"{"readBodyIDs":["invented"]}"#,allowed:["mail_1"]) } catch { unknownRejected = true }
+        assert(unknownRejected)
+        let futureBody = "Please attend the review on 16 October 2026."
+        let future = try EmailSummary.decode(#"{"summary":"Review invitation","attention":true,"reason":"Decide whether to attend","evidence":"Please attend the review on 16 October 2026.","followUpDate":"2026-10-16","followUpEvidence":"16 October 2026"}"#,message:message,body:futureBody,registration:"a")
+        assert(future.followUpDate == "2026-10-16" && future.message?.id == message.id)
+        let savedFuture = try JSONDecoder().decode(EmailSummary.self,from:JSONEncoder().encode(future))
+        assert(savedFuture.followUpEvidence == "16 October 2026")
+        var oldFuture = savedFuture; oldFuture.messageReceived = Date.now.addingTimeInterval(-40*86400)
+        assert(oldFuture.retain(after:Date.now.addingTimeInterval(-30*86400)))
+        oldFuture.dismissed = true
+        assert(!oldFuture.retain(after:Date.now.addingTimeInterval(-30*86400)))
         print("PASS: exact source evidence, attention evidence requirement, invalid-output rejection, cache round-trip and changed-header fingerprint")
     }
 }

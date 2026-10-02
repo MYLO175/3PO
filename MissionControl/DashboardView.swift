@@ -44,8 +44,8 @@ struct DashboardView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 14) {
+                            emailOverview.frame(height: 400)
                             HStack(alignment: .top, spacing: 14) { calendarPanel; remindersPanel }.frame(height: 440)
-                            emailOverview.frame(height: 360)
                         }.padding(14)
                     }
                 }
@@ -61,10 +61,11 @@ struct DashboardView: View {
     }
     var emailOverview: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack { Label("Email overview", systemImage: "sparkles").font(.title3.weight(.semibold)); Spacer(); Toggle("Sources", isOn: $showEmailSources).toggleStyle(.button).controlSize(.small) }
+            HStack { Label("AI overview", systemImage: "sparkles").font(.title3.weight(.semibold)); Spacer(); Toggle("Sources", isOn: $showEmailSources).toggleStyle(.button).controlSize(.small) }
+            if !showEmailSources { GeneralOverviewView(model:model,briefings:model.briefings) }
             BriefingView(model: model, briefings: model.briefings)
             if showEmailSources { inboxPanel }
-            else { EmailOverviewView(model: model, summaries: model.emailSummaries) }
+            else { DisclosureGroup("Email follow-ups") { EmailOverviewView(model:model,summaries:model.emailSummaries).frame(maxHeight:220) } }
         }.padding(14).background(.background, in: RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(.quaternary))
     }
     func errorBanner(_ text: String) -> some View {

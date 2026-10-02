@@ -29,6 +29,13 @@ struct AssistantPanel: View {
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.onChange(of: assistant.active?.turns.last?.content) { if let id = assistant.active?.turns.last?.id { proxy.scrollTo(id, anchor: .bottom) } }
             }
+            if !model.mailLookup.status.isEmpty {
+                HStack {
+                    Text(model.mailLookup.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    Menu("Mail sources") { ForEach(model.mailLookup.results) { message in Button(message.account + " · " + message.subject) { model.select(message) } } }
+                    if model.mailLookup.hasMore { Button("Continue mail search") { assistant.draft = "Continue the email search."; assistant.send(model:model) }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
+                }
+            }
             if let error = assistant.error { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
             HStack {
                 TextField("Message Mission Control", text: $assistant.draft).onSubmit { assistant.send(model:model) }.disabled(assistant.busy)

@@ -35,6 +35,7 @@ import EventKit
     @ObservationIgnored lazy var briefings = BriefingService(container: container)
     let eventKit = EventKitService()
     let mail = MailService()
+    let mailLookup = MailLookup()
     private var container: ModelContainer?
     private var observers: [NSObjectProtocol] = []
     private var changes: Task<Void, Never>?
@@ -78,7 +79,7 @@ import EventKit
                 }
             }
         })
-        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.refresh(retryMail: false); if let self { self.briefings.check(self) } } })
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.refresh(retryMail: false); if let self { self.briefings.check(self); self.briefings.checkOverview(self) } } })
         poll = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(300))
@@ -88,7 +89,7 @@ import EventKit
         }
         briefingPoll = Task { [weak self] in
             while !Task.isCancelled {
-                if let self { self.briefings.check(self) }
+                if let self { self.briefings.check(self); self.briefings.checkOverview(self) }
                 try? await Task.sleep(for: .seconds(60))
             }
         }

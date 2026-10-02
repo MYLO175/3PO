@@ -21,11 +21,15 @@ struct DailyBriefing: Codable, Identifiable {
     var sources: [BriefingSource]
     var coverage: String
     var invalidated: Bool? = nil
+    var sourceScope: String? = nil
 }
 struct BriefingState: Codable {
     var records: [DailyBriefing] = []
     var notificationClaims: Set<String> = []
     var paused = false
+    var overviews: [String:DailyBriefing]? = nil
+    var overviewPaused: Bool? = nil
+    var overviewFingerprints: [String:String]? = nil
     mutating func claimNotification(day: String) -> Bool { notificationClaims.insert(day).inserted }
 }
 enum BriefingRules {
