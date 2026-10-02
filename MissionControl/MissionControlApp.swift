@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             #if DEBUG
             CommandGroup(after: .help) {
                 Button("Run disposable Calendar check") { model.validateCalendarIntegration() }
+                Button("Invalidate today's test briefing") { model.briefings.invalidateToday(model) }
             }
             #endif
         }

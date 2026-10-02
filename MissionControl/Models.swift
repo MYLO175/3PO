@@ -48,6 +48,14 @@ struct SourceHealth: Codable {
     }
 }
 enum DateRules {
+    static func localDate(_ date: Date, calendar: Calendar = .current) -> String {
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
+    }
+    static func reminderDue(_ item: TaskItem, calendar: Calendar = .current) -> String {
+        guard let due = item.due else { return "undated" }
+        return item.hasTime ? due.ISO8601Format() : localDate(due, calendar: calendar)
+    }
     static func day(_ date: Date, calendar: Calendar = .current) -> DateInterval {
         calendar.dateInterval(of: .day, for: date)!
     }

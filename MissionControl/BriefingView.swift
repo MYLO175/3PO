@@ -28,7 +28,7 @@ struct BriefingView: View {
                                 Text(item.text).textSelection(.enabled)
                                 ForEach(item.sourceIDs, id: \.self) { id in
                                     if let source = record.sources.first(where: { $0.id == id }) {
-                                        if source.kind == "mail", let message = model.mailData.messages.first(where: { $0.id == id }), !model.assistant.excludedAccounts.contains(message.accountID) {
+                                        if source.kind == "mail", let message = model.mailData.messages.first(where: { $0.id == (source.originalID ?? id) }), !model.assistant.excludedAccounts.contains(message.accountID) {
                                             Button(source.label) { model.select(message) }.buttonStyle(.link).font(.caption)
                                         } else { Text(source.label).font(.caption).foregroundStyle(.secondary) }
                                     }

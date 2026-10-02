@@ -1,6 +1,13 @@
 import Foundation
 @main struct Checks {
     static func main() throws {
+        var london = Calendar(identifier: .gregorian)
+        london.timeZone = TimeZone(identifier: "Europe/London")!
+        let midnight = ISO8601DateFormatter().date(from: "2026-10-01T23:00:00Z")!
+        let dateOnly = TaskItem(id: "fixture", listID: "list", title: "Fictional", due: midnight, hasTime: false, sourceLabel: "Test", writable: true, recurring: false)
+        assert(DateRules.reminderDue(dateOnly, calendar: london) == "2026-10-02")
+        var timed = dateOnly; timed.hasTime = true
+        assert(DateRules.reminderDue(timed, calendar: london) == "2026-10-01T23:00:00Z")
         var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "Europe/London")!
         func date(_ y: Int, _ m: Int, _ d: Int, _ h: Int, _ min: Int = 0) -> Date { c.date(from: DateComponents(year: y, month: m, day: d, hour: h, minute: min))! }
         for day in [date(2026,3,29,7),date(2026,10,25,7),date(2026,12,31,7)] {

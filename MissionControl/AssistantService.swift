@@ -110,7 +110,7 @@ struct AssistantConversation: Codable, Identifiable {
             "calendarStatus":model.calendarHealth.detail, "calendarSelectedDate":model.selectedDate.ISO8601Format(), "calendarCoverage":"selected date and following seven days", "calendarCount":events.count,
             "events":events.prefix(60).map { ["id":$0.id, "title":String($0.title.prefix(500)), "start":$0.start.ISO8601Format(), "end":$0.end.ISO8601Format(), "allDay":$0.allDay, "source":$0.sourceLabel, "location":String($0.location.prefix(500))] as [String:Any] },
             "reminderStatus":model.reminderHealth.detail, "reminderCount":tasks.count,
-            "reminders":tasks.prefix(80).map { ["id":$0.id, "title":String($0.title.prefix(500)), "due":$0.due?.ISO8601Format() ?? "undated", "hasTime":$0.hasTime, "source":$0.sourceLabel] as [String:Any] },
+            "reminders":tasks.prefix(80).map { ["id":$0.id, "title":String($0.title.prefix(500)), "due":DateRules.reminderDue($0), "hasTime":$0.hasTime, "source":$0.sourceLabel] as [String:Any] },
             "mailStatus":model.mailHealth.detail, "mailCoverage":model.mailCoverage, "mailHeaderCount":emails.count,
             "recentEmailHeaders":emails.prefix(20).map { ["id":$0.id, "sender":String($0.sender.prefix(500)), "subject":String($0.subject.prefix(500)), "received":$0.received.ISO8601Format(), "account":$0.account] },
             "limits":"At most 60 events, 80 reminders and 20 recent email headers. No email bodies in this checkpoint. Excluded sources are omitted."

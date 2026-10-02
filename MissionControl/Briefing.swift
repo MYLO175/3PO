@@ -10,6 +10,7 @@ struct BriefingSource: Codable, Identifiable {
     var label: String
     var kind: String
     var date: Date?
+    var originalID: String? = nil
 }
 struct DailyBriefing: Codable, Identifiable {
     var id: String
@@ -19,6 +20,7 @@ struct DailyBriefing: Codable, Identifiable {
     var items: [BriefingItem]
     var sources: [BriefingSource]
     var coverage: String
+    var invalidated: Bool? = nil
 }
 struct BriefingState: Codable {
     var records: [DailyBriefing] = []
@@ -39,7 +41,19 @@ enum BriefingRules {
     static func decode(_ text: String, allowedSources: Set<String>) throws -> [BriefingItem] {
         struct Output: Decodable { var items: [Item]; struct Item: Decodable { var text: String; var sourceIDs: [String] } }
         let value = try JSONDecoder().decode(Output.self, from: Data(text.utf8))
-        guard !value.items.isEmpty, value.items.count <= 20, value.items.allSatisfy({ !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.text.count <= 1500 && $0.sourceIDs.count <= 12 && Set($0.sourceIDs).count == $0.sourceIDs.count && Set($0.sourceIDs).isSubset(of: allowedSources) }) else { throw SummaryFailure.invalid }
+        guard !value.items.isEmpty, value.items.count <= 20 else { throw BriefingFailure.itemCount }
+        guard value.items.allSatisfy({ !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.text.count <= 1500 }) else { throw BriefingFailure.itemText }
+        guard value.items.allSatisfy({ $0.sourceIDs.count <= 12 && Set($0.sourceIDs).count == $0.sourceIDs.count && Set($0.sourceIDs).isSubset(of: allowedSources) }) else { throw BriefingFailure.sources }
         return value.items.map { .init(text: $0.text, sourceIDs: $0.sourceIDs) }
+    }
+}
+enum BriefingFailure: LocalizedError {
+    case itemCount, itemText, sources
+    var errorDescription: String? {
+        switch self {
+        case .itemCount: return "Briefing must contain 1–20 items. It was not saved."
+        case .itemText: return "Briefing items must have nonempty text up to 1500 characters. It was not saved."
+        case .sources: return "Briefing cited an unknown, duplicate or excessive source ID. It was not saved."
+        }
     }
 }
