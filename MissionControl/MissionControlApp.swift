@@ -42,7 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Image(nsImage: MenuBarIcon.image)
                 .accessibilityLabel("Mission Control")
         }
-        Settings { SettingsView() }
+        Settings { SettingsView(model: model) }
     }
 }
 struct MenuContent: View {

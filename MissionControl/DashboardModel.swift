@@ -26,6 +26,8 @@ import EventKit
     var undoTitle = ""
     var validationReport: String?
     var storageError: String?
+    let chatGPT = ChatGPTConnection()
+    @ObservationIgnored lazy var assistant = AssistantService(connection: chatGPT, container: container)
     let eventKit = EventKitService()
     let mail = MailService()
     private var container: ModelContainer?

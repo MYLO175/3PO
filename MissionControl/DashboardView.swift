@@ -4,6 +4,7 @@ import AppKit
 
 struct DashboardView: View {
     @Bindable var model: DashboardModel
+    @AppStorage("assistantExpanded") private var assistantExpanded = false
     @AppStorage("reminderGroupingMode") private var reminderGroupingMode = "lists"
     var body: some View {
         VStack(spacing: 0) {
@@ -16,6 +17,7 @@ struct DashboardView: View {
                 }
                 Spacer()
                 if ProcessInfo.processInfo.arguments.contains("--sample") { Text("Sample data").foregroundStyle(.secondary) }
+                Button { assistantExpanded.toggle() } label: { Label("Assistant", systemImage: "sparkles") }
                 Button { model.refresh() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
                 SettingsLink { Image(systemName: "gearshape") }.buttonStyle(.borderless).help("Settings")
             }.padding(24)
@@ -47,10 +49,11 @@ struct DashboardView: View {
                     }
                 }
             }
+            if assistantExpanded { AssistantPanel(model: model, assistant: model.assistant).frame(height: 280) }
             HStack {
                 Text("Daily overview").font(.caption)
                 Spacer()
-                Text("Apple apps remain the source of truth · No AI processing").font(.caption)
+                Text(model.assistant.contextEnabled ? "Apple apps remain the source of truth · Assistant context enabled" : "Apple apps remain the source of truth · AI context off").font(.caption)
             }.foregroundStyle(.secondary).padding(.horizontal, 24).padding(.vertical, 10)
         }.frame(minWidth: 780, minHeight: 580).background(Color(nsColor: .windowBackgroundColor)).task { model.start() }
         .sheet(item: $model.selectedMessage) { message in previewSheet(message) }
@@ -306,6 +309,7 @@ private extension View {
     }
 }
 struct SettingsView: View {
+    @Bindable var model: DashboardModel
     @State private var enabled = SMAppService.mainApp.status == .enabled
     @State private var error: String?
     var body: some View {
@@ -320,10 +324,11 @@ struct SettingsView: View {
                 Text("Closing the dashboard keeps the menu bar app running. Choose Quit to stop it.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Connections") {
-                Text("Calendar and Reminders use macOS permissions. Mail uses Automation permission. All data stays on this Mac; Stage 1 makes no AI requests.").font(.callout)
+                Text("Calendar and Reminders use macOS permissions. Mail uses Automation permission. Dashboard refresh stays local. Enabled assistant context is sent through your ChatGPT plan only when you send a message.").font(.callout)
                 Button("Open Privacy & Security") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security")!) }
             }
-            ChatGPTConnectionView()
+            ChatGPTConnectionView(connection: model.chatGPT)
+            AssistantSourceSettings(model: model, assistant: model.assistant)
             if let error { Text(error).foregroundStyle(.orange) }
         }.formStyle(.grouped).padding().frame(width: 600, height: 650)
     }
