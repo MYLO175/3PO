@@ -1,5 +1,5 @@
 # Mission Control
-A local native macOS dashboard for Apple Calendar, Reminders and Mail. Stage 1 has no AI or subscription connection.
+A local native macOS dashboard for Apple Calendar, Reminders and Mail. The dashboard remains local. Stage 2 has begun with an optional ChatGPT subscription connection check in Settings; personal-source AI is not enabled yet.
 
 ## Run
 Requires macOS 26+, Xcode and an Apple Development signing identity. The installed app is `~/Applications/Mission Control.app`. Open it and grant Calendar full access, Reminders access and Automation access to Apple Mail when macOS asks. Permissions belong to this app, not helper scripts.
@@ -26,8 +26,14 @@ The build uses `/Applications/Xcode.app/Contents/Developer` without changing glo
 ## Development checks
 `--sample` launches without Apple-app reads or writes. `--small-window` sets an 820×640 content window for layout review. `--dark-window` tests dark appearance in the dashboard without changing the system theme. Debug builds offer Help → Run disposable Calendar check, which creates and cleans UUID-marked timed/all-day/overnight/recurring and UTC DST fixtures. `--validate-live` is a developer-only acceptance mode: it creates UUID-marked duplicate-title and recurring disposable reminders, exercises production completion/Undo, verifies occurrence identity, then removes only its own marked items. Do not use it against an account whose test writes you do not authorise.
 
-See [PLAN.md](PLAN.md) for all stages and [STATUS.md](STATUS.md) for current validation and outstanding checks. Stage 2 and dictation are deferred until review. Normal refresh never calls an AI service.
+See [PLAN.md](PLAN.md) for all stages and [STATUS.md](STATUS.md) for current validation and outstanding checks. Stage 2 is authorised and starts with a completed subscription inference check. Dictation follows later. Normal refresh never calls an AI service.
 
 Implementation references: [EventKit access](https://developer.apple.com/documentation/eventkit/accessing-the-event-store), [login at launch](https://developer.apple.com/documentation/servicemanagement/smappservice/mainapp). Mail scripting uses the installed Apple Mail scripting dictionary.
 
 Current delivery is a signed **Stage 1 app ready for user review**. Both Exchange and iCloud inboxes completed their 30-day import in the actual app, with saved progress and mailbox filters. Live unread-preserving helper preview and actual-app preview passed. Independent app permissions, Calendar agreement/live edge cases, compact light/dark layout, window close/menu-bar reopen and login registration have passed. Login registration was restored to off; actual startup after a new login has not been exercised. See STATUS.md for the validation record and boundaries. AI summaries remain Stage 2; the intended email experience is an overview, with raw messages available for source inspection.
+
+
+## ChatGPT subscription checkpoint
+Open Settings → Continue with ChatGPT. Complete the browser registration and grant ChatGPT plan usage, keeping credits disabled in app limits. The app validates the signed ID token, stores each account registration and credentials in macOS Keychain, discovers that account's models and sends a short source-free test using GPT-6.1 Sol Medium when available. It reports success only after a nonempty stream reaches `response.completed`; sign-in/model discovery alone is insufficient. Cancel, saved-account selection, renewal, sign-out and Usage controls are available. No API key or separately billed fallback is provided. Email/calendar/reminder context is not transmitted at this checkpoint.
+
+`./scripts/test-auth.sh` checks RFC PKCE, callback state/path/duplicates, escaping, RSA signature verification and invalid identity rejection. Live account eligibility, completed inference and rotating refresh still require actual account validation. Official references: [registration](https://developers.openai.com/siwc/token-sharing-open-source/sign-in), [inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference), [sessions](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions).

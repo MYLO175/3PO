@@ -1,0 +1,269 @@
+import Foundation
+import AppKit
+import SwiftUI
+import Observation
+import Security
+
+private struct ChatGPTRegistration: Codable, Identifiable {
+    var id: String { clientID }
+    var clientID: String
+    var subject: String
+    var email: String
+    var accessToken: String
+    var refreshToken: String
+    var idToken: String
+    var scopes: [String]
+    var expiry: Date
+}
+struct ChatGPTModel: Identifiable {
+    var id: String
+    var name: String
+}
+private enum ChatGPTKeychain {
+    static let query: [String:Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "com.mylomichael.missioncontrol.chatgpt", kSecAttrAccount as String: "registrations"]
+    static func read() throws -> Data? {
+        var request = query; request[kSecReturnData as String] = true; request[kSecMatchLimit as String] = kSecMatchLimitOne
+        var value: CFTypeRef?
+        let status = SecItemCopyMatching(request as CFDictionary, &value)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess else { throw ChatGPTError.message("Keychain access failed (\(status)).") }
+        return value as? Data
+    }
+    static func write(_ data: Data) throws {
+        let updates = [kSecValueData as String: data]
+        var status = SecItemUpdate(query as CFDictionary, updates as CFDictionary)
+        if status == errSecItemNotFound {
+            var item = query; item[kSecValueData as String] = data
+            item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            status = SecItemAdd(item as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else { throw ChatGPTError.message("Credentials could not be saved in Keychain (\(status)).") }
+    }
+}
+private final class NoRedirects: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
+}
+
+@MainActor @Observable final class ChatGPTConnection {
+    var accounts: [ChatGPTAccountLabel] = []
+    var activeID: String = UserDefaults.standard.string(forKey: "chatgptActiveClient") ?? ""
+    var models: [ChatGPTModel] = []
+    var selectedModel = "gpt-6.1-sol"
+    var busy = false
+    var message = "Not connected. The dashboard works without ChatGPT."
+    var inferenceVerified = false
+    private var registrations: [ChatGPTRegistration] = []
+    private var task: Task<Void, Never>?
+    private var callback: ChatGPTCallback?
+    private let redirectDelegate = NoRedirects()
+    @ObservationIgnored private lazy var session: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 30; config.timeoutIntervalForResource = 120
+        return URLSession(configuration: config, delegate: redirectDelegate, delegateQueue: nil)
+    }()
+    init() {
+        do {
+            if let data = try ChatGPTKeychain.read() { registrations = try JSONDecoder().decode([ChatGPTRegistration].self, from: data) }
+            labels()
+            if let active = current, !active.accessToken.isEmpty { message = "Signed in. Completed inference has not been checked this launch." }
+        } catch { message = error.localizedDescription }
+    }
+    struct ChatGPTAccountLabel: Identifiable { let id: String; let name: String }
+    private var current: ChatGPTRegistration? { registrations.first { $0.clientID == activeID } }
+    var hasSession: Bool { !(current?.accessToken.isEmpty ?? true) }
+    private func labels() {
+        accounts = registrations.map { .init(id: $0.clientID, name: ($0.email.isEmpty ? "ChatGPT account" : $0.email) + " · " + String($0.clientID.suffix(6))) }
+    }
+    private func save(_ registration: ChatGPTRegistration) throws {
+        var updated = registrations.filter { $0.clientID != registration.clientID }; updated.append(registration)
+        try ChatGPTKeychain.write(JSONEncoder().encode(updated))
+        registrations = updated; activeID = registration.clientID; labels()
+        UserDefaults.standard.set(activeID, forKey: "chatgptActiveClient")
+    }
+    func switchAccount() { models = []; inferenceVerified = false; message = hasSession ? "Signed in. Run the connection test for this account." : "Continue with ChatGPT to reconnect this account."; UserDefaults.standard.set(activeID, forKey: "chatgptActiveClient") }
+    func cancel() { task?.cancel(); callback?.cancel() }
+    private func run(_ operation: @escaping () async throws -> Void) {
+        guard !busy else { return }
+        busy = true; inferenceVerified = false
+        task = Task {
+            defer { busy = false; callback = nil }
+            do { try await operation() }
+            catch is CancellationError { message = "Cancelled. Your dashboard is still available." }
+            catch { message = error.localizedDescription }
+        }
+    }
+    private func request(_ url: String, fields: [String:String]? = nil, token: String? = nil) async throws -> Data {
+        var request = URLRequest(url: URL(string: url)!)
+        if let fields { request.httpMethod = "POST"; request.httpBody = ChatGPTOAuth.form(fields); request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type") }
+        if let token { request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization") }
+        let (data, response) = try await session.data(for: request)
+        guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else { throw apiError(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0) }
+        return data
+    }
+    private func apiError(_ data: Data, status: Int) -> ChatGPTError {
+        let root = (try? JSONSerialization.jsonObject(with: data)) as? [String:Any]
+        let error = root?["error"]
+        let code = (error as? [String:Any])?["code"] as? String ?? error as? String ?? "request_failed"
+        return responseError(code, status: status)
+    }
+    private func responseError(_ raw: String, status: Int = 0) -> ChatGPTError {
+        let code = raw.count <= 100 && raw.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_") }) ? raw : "request_failed"
+        let detail: String
+        if code.contains("usage_limit") || code.contains("usage_unavailable") || status == 429 { detail = "ChatGPT plan usage is currently limited. Check ChatGPT Usage; no automatic retry or paid API fallback." }
+        else if code.contains("not_eligible") { detail = "This account or workspace is not eligible for ChatGPT plan usage. The dashboard remains available." }
+        else if status == 401 || code == "invalid_grant" { detail = "Please sign in again. The subscription session needs renewal." }
+        else { detail = "ChatGPT request failed (\(status), \(code)). The dashboard remains available." }
+        return .message(detail)
+    }
+    private func validateIdentity(_ token: String, client: String, nonce: String?) async throws -> [String:Any] {
+        let data = try await request(ChatGPTOAuth.issuer + "/.well-known/jwks.json")
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String:Any], let keys = object["keys"] as? [[String:Any]] else { throw ChatGPTError.message("Identity signing keys unavailable.") }
+        return try ChatGPTOAuth.verify(token, client: client, nonce: nonce, jwks: keys)
+    }
+    func signIn(addAccount: Bool = false) {
+        run {
+            self.message = "Complete sign-in and plan permission in your browser."
+            let previous = addAccount ? nil : self.current
+            let state = try ChatGPTOAuth.random(), nonce = try ChatGPTOAuth.random(), verifier = try ChatGPTOAuth.random()
+            let server = ChatGPTCallback(state: state); self.callback = server
+            let redirect = try await server.start()
+            defer { server.cancel() }
+            let hostKey = "chatgptHostID"
+            let host = UserDefaults.standard.string(forKey: hostKey) ?? "urn:uuid:" + UUID().uuidString.lowercased()
+            UserDefaults.standard.set(host, forKey: hostKey)
+            var fields = ["client_id": previous?.clientID ?? "dynamic_agent_client", "ext_agent_host_id": host, "response_type": "code", "redirect_uri": redirect.absoluteString, "scope": "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct", "resource": ChatGPTOAuth.resource, "state": state, "nonce": nonce, "code_challenge_method": "S256", "code_challenge": ChatGPTOAuth.challenge(verifier)]
+            if previous == nil { fields["agent_name_hint"] = "Mission Control" }
+            if let previous, !previous.idToken.isEmpty { fields["id_token_hint"] = previous.idToken }
+            var authorize = URLComponents(string: ChatGPTOAuth.issuer + "/api/accounts/authorize")!
+            authorize.queryItems = fields.map { URLQueryItem(name: $0.key, value: $0.value) }
+            guard let url = authorize.url, NSWorkspace.shared.open(url) else { throw ChatGPTError.message("Could not open the sign-in browser.") }
+            let values = try await server.wait()
+            try Task.checkCancellation()
+            if values["error"] != nil { throw ChatGPTError.message("ChatGPT authorization was declined. No sources have been sent.") }
+            let client: String
+            if let previous {
+                guard values["client_id"] == nil || values["client_id"] == previous.clientID else { throw ChatGPTError.message("Callback returned a different client registration.") }; client = previous.clientID
+            } else {
+                guard let issued = values["client_id"], !issued.isEmpty, issued != "dynamic_agent_client" else { throw ChatGPTError.message("Registration did not return an issued client ID.") }; client = issued
+            }
+            guard let code = values["code"], !code.isEmpty else { throw ChatGPTError.message("Sign-in returned no authorization code.") }
+            let data = try await self.request(ChatGPTOAuth.issuer + "/api/accounts/oauth/token", fields: ["grant_type":"authorization_code", "client_id":client, "code":code, "code_verifier":verifier, "redirect_uri":redirect.absoluteString, "resource":ChatGPTOAuth.resource])
+            guard let tokens = try JSONSerialization.jsonObject(with: data) as? [String:Any], let idToken = tokens["id_token"] as? String, let access = tokens["access_token"] as? String, (tokens["token_type"] as? String)?.lowercased() == "bearer" else { throw ChatGPTError.message("Sign-in returned an incomplete token set.") }
+            let identity = try await self.validateIdentity(idToken, client: client, nonce: nonce)
+            let subject = identity["sub"] as! String
+            guard previous == nil || previous?.subject == subject else { throw ChatGPTError.message("Signed-in identity does not match the selected registration.") }
+            let scopes = (tokens["scope"] as? String ?? "").split(separator: " ").map(String.init)
+            try self.save(.init(clientID: client, subject: subject, email: identity["email"] as? String ?? "", accessToken: access, refreshToken: tokens["refresh_token"] as? String ?? "", idToken: idToken, scopes: scopes, expiry: .now.addingTimeInterval(tokens["expires_in"] as? Double ?? 3600)))
+            guard scopes.contains("chatgpt.tokens.use.direct") else { throw ChatGPTError.message("Signed in, but ChatGPT plan use was not granted. No inference has run.") }
+            try await self.loadModels()
+            if self.models.contains(where: { $0.id == "gpt-6.1-sol" }) { self.selectedModel = "gpt-6.1-sol"; try await self.verifyInference() }
+            else { self.selectedModel = ""; self.message = "Signed in. Select an available model and test completed inference." }
+        }
+    }
+    private func access() async throws -> String {
+        guard var account = current, !account.accessToken.isEmpty, account.scopes.contains("chatgpt.tokens.use.direct") else { throw ChatGPTError.message("Continue with ChatGPT and enable plan usage first.") }
+        if account.expiry.timeIntervalSinceNow < 120 {
+            guard !account.refreshToken.isEmpty else { throw ChatGPTError.message("Please sign in again to renew this session.") }
+            let data = try await request(ChatGPTOAuth.issuer + "/api/accounts/oauth/token", fields: ["grant_type":"refresh_token", "client_id":account.clientID, "refresh_token":account.refreshToken, "resource":ChatGPTOAuth.resource])
+            guard let tokens = try JSONSerialization.jsonObject(with: data) as? [String:Any], let access = tokens["access_token"] as? String, (tokens["token_type"] as? String)?.lowercased() == "bearer" else { throw ChatGPTError.message("Session renewal returned an incomplete token set.") }
+            if let id = tokens["id_token"] as? String {
+                let identity = try await validateIdentity(id, client: account.clientID, nonce: nil)
+                guard identity["sub"] as? String == account.subject else { throw ChatGPTError.message("Renewed identity did not match the account.") }; account.idToken = id
+            }
+            account.accessToken = access; account.refreshToken = tokens["refresh_token"] as? String ?? account.refreshToken
+            account.expiry = .now.addingTimeInterval(tokens["expires_in"] as? Double ?? 3600)
+            if let scope = tokens["scope"] as? String { account.scopes = scope.split(separator: " ").map(String.init) }
+            try save(account)
+            guard account.scopes.contains("chatgpt.tokens.use.direct") else { throw ChatGPTError.message("ChatGPT plan permission is no longer enabled.") }
+        }
+        return account.accessToken
+    }
+    private func loadModels() async throws {
+        let token = try await access()
+        let data = try await request(ChatGPTOAuth.resource + "/models", token: token)
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String:Any], let list = root["models"] as? [[String:Any]] else { throw ChatGPTError.message("Account model catalog had an unexpected format.") }
+        models = list.compactMap { value in guard value["visibility"] as? String == "list", let slug = value["slug"] as? String else { return nil }; return .init(id: slug, name: value["display_name"] as? String ?? slug) }
+    }
+    func testConnection() { run { try await self.loadModels(); try await self.verifyInference() } }
+    private func verifyInference() async throws {
+        guard models.contains(where: { $0.id == selectedModel }) else { throw ChatGPTError.message("Choose an available model before testing.") }
+        message = "Checking completed inference with \(selectedModel)…"
+        let token = try await access()
+        var request = URLRequest(url: URL(string: ChatGPTOAuth.resource + "/responses")!)
+        request.httpMethod = "POST"; request.timeoutInterval = 120
+        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["model":selectedModel, "input":[["role":"user", "content":"Reply with exactly: Mission Control connection works."]], "store":false, "stream":true, "reasoning":["effort":"medium"]])
+        let (bytes, response) = try await session.bytes(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            var data = Data(); for try await byte in bytes { if data.count < 8192 { data.append(byte) } else { break } }
+            throw apiError(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        }
+        var text = "", completed = false, eventData: [String] = []
+        func consume() throws {
+            guard !eventData.isEmpty else { return }
+            let payload = eventData.joined(separator: "\n"); eventData = []
+            if payload == "[DONE]" { return }
+            guard let data = payload.data(using: .utf8), let event = try JSONSerialization.jsonObject(with: data) as? [String:Any], let type = event["type"] as? String else { throw ChatGPTError.message("Invalid response stream event.") }
+            if type == "response.output_text.delta" { text += event["delta"] as? String ?? "" }
+            if type == "response.completed" { completed = true }
+            if type == "response.failed" || type == "error" {
+                let root = event["response"] as? [String:Any] ?? event
+                let error = root["error"] as? [String:Any] ?? root
+                throw responseError(error["code"] as? String ?? "response_failed")
+            }
+            if type == "response.incomplete" { throw ChatGPTError.message("Inference was incomplete. It has not passed the connection check.") }
+        }
+        for try await line in bytes.lines {
+            try Task.checkCancellation()
+            if line.isEmpty { try consume() }
+            else if line.hasPrefix("data:") { eventData.append(String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)); if eventData.joined().utf8.count > 1_000_000 { throw ChatGPTError.message("Response stream event exceeded its safety limit.") }; if let data = eventData.joined(separator: "\n").data(using: .utf8), (try? JSONSerialization.jsonObject(with: data)) != nil { try consume() } }
+        }
+        try consume()
+        guard completed, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ChatGPTError.message("Stream ended without completed, nonempty inference.") }
+        inferenceVerified = true; message = "Completed subscription inference verified with \(selectedModel). Personal sources were not sent."
+    }
+    func signOut() {
+        run {
+            guard var account = self.current else { return }
+            var revoked = false
+            if !account.refreshToken.isEmpty {
+                do {
+                    let discovery = try await self.request(ChatGPTOAuth.issuer + "/.well-known/openid-configuration")
+                    let root = try JSONSerialization.jsonObject(with: discovery) as? [String:Any]
+                    if let endpoint = root?["revocation_endpoint"] as? String, let url = URL(string: endpoint), url.scheme == "https", url.host == "auth.openai.com" {
+                        _ = try await self.request(endpoint, fields: ["token":account.refreshToken, "token_type_hint":"refresh_token", "client_id":account.clientID]); revoked = true
+                    }
+                } catch { /* Clear locally and explicitly report unconfirmed remote revocation. */ }
+            }
+            account.accessToken = ""; account.refreshToken = ""; account.idToken = ""; account.scopes = []; account.expiry = .distantPast
+            try self.save(account); self.models = []
+            self.message = revoked ? "Signed out; renewable session revoked." : "Signed out locally. Remote revocation was not confirmed; disconnect Mission Control in ChatGPT Settings if needed."
+        }
+    }
+}
+
+struct ChatGPTConnectionView: View {
+    @State private var connection = ChatGPTConnection()
+    var body: some View {
+        Section("ChatGPT connection — Stage 2 check") {
+            if !connection.accounts.isEmpty {
+                Picker("Account", selection: $connection.activeID) { ForEach(connection.accounts) { Text($0.name).tag($0.id) } }.disabled(connection.busy).onChange(of: connection.activeID) { connection.switchAccount() }
+            }
+            Text("This first check sends only a short test prompt through your ChatGPT plan. Calendar, reminders and emails stay local until AI features are enabled. No API key or separate API billing.").font(.caption)
+            Text(connection.message).font(.callout).textSelection(.enabled)
+            if !connection.models.isEmpty { Picker("Model", selection: $connection.selectedModel) { Text("Select model").tag(""); ForEach(connection.models) { Text($0.name).tag($0.id) } }.disabled(connection.busy) }
+            HStack {
+                Button("Continue with ChatGPT") { connection.signIn() }.disabled(connection.busy)
+                if !connection.accounts.isEmpty { Button("Add account") { connection.signIn(addAccount: true) }.disabled(connection.busy) }
+            }
+            HStack {
+                Button("Test connection") { connection.testConnection() }.disabled(connection.busy || !connection.hasSession)
+                Button("Sign out") { connection.signOut() }.disabled(connection.busy || !connection.hasSession)
+                if connection.busy { ProgressView().controlSize(.small); Button("Cancel") { connection.cancel() } }
+            }
+            Button("ChatGPT usage and app access") { NSWorkspace.shared.open(URL(string: "https://chatgpt.com/settings/usage")!) }
+            Text("Your Plus five-hour allowance is shared with Codex. Keep credit use disabled in ChatGPT's app limits.").font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}

@@ -323,7 +323,8 @@ struct SettingsView: View {
                 Text("Calendar and Reminders use macOS permissions. Mail uses Automation permission. All data stays on this Mac; Stage 1 makes no AI requests.").font(.callout)
                 Button("Open Privacy & Security") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security")!) }
             }
+            ChatGPTConnectionView()
             if let error { Text(error).foregroundStyle(.orange) }
-        }.formStyle(.grouped).padding().frame(width: 470, height: 340)
+        }.formStyle(.grouped).padding().frame(width: 600, height: 650)
     }
 }
