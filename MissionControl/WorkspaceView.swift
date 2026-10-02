@@ -20,6 +20,7 @@ struct WorkspaceView: View {
         VStack(spacing:0) {
             header
             Divider()
+            if let report = model.validationReport { HStack { Text(report).font(.caption).textSelection(.enabled); Spacer(); Button { model.validationReport = nil } label: { Image(systemName:"xmark") }.buttonStyle(.borderless).help("Dismiss validation result") }.padding(10) }
             if let error = store.error { HStack { Label(error,systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange); Spacer(); Button("Original dashboard") { legacy = true } }.padding(10) }
             if let error = model.storageError ?? model.writeError { Text(error).font(.caption).foregroundStyle(.orange).frame(maxWidth:.infinity,alignment:.leading).padding(10) }
             if model.undoToken != nil {

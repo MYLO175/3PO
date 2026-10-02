@@ -11,6 +11,9 @@ struct PAMemory: Codable, Identifiable, Equatable {
     var created = Date.now
     var reviewed = Date.now
     var resolved: Date?
+    var sourceTurnID: String?
+    var evidence: String?
+    var sourceDate: Date?
 }
 enum MemoryRules {
     static func needsReview(_ memory: PAMemory, now: Date = .now) -> Bool {

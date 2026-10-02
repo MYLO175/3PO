@@ -6,6 +6,7 @@ struct AssistantTurn: Codable, Identifiable {
     var content: String
     var completed: Bool
     var deliveryID: String?
+    var created: Date? = .now
 }
 struct AssistantConversation: Codable, Identifiable {
     var id = UUID()

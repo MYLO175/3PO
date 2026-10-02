@@ -78,7 +78,7 @@ struct AssistantPanel: View {
             if model.chatGPT.busy && !assistant.busy {
                 HStack(spacing:6) {
                     ProgressView().controlSize(.mini)
-                    Text(model.briefings.busy ? "Preparing your overview or briefing… You can draft a message while it finishes." : model.emailSummaries.busy ? "Checking incoming mail… You can draft a message while it finishes." : "Checking your ChatGPT connection…").font(.caption).foregroundStyle(.secondary)
+                    Text(model.briefings.busy ? "Preparing your overview or briefing… You can draft a message while it finishes." : model.memoryLearning.busy ? "Learning conversation context… Start drafting to pause learning." : model.emailSummaries.busy ? "Checking incoming mail… You can draft a message while it finishes." : "Checking your ChatGPT connection…").font(.caption).foregroundStyle(.secondary)
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
             HStack {
@@ -93,9 +93,11 @@ struct AssistantPanel: View {
                     ForEach(model.assistantActions.targets) { Text($0.label).tag($0.id) }
                 }
             }
+        }.onChange(of:assistant.draft) { _, draft in
+            if !draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && model.memoryLearning.busy { model.memoryLearning.cancel() }
         }.onChange(of:model.chatGPT.usagePaused) { _, paused in
             if !paused, assistant.error?.contains("subscription_sharing_usage_limit_exceeded") == true { assistant.error = nil }
-        }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { PAMemoryView(memory:assistant.memory,registration:model.chatGPT.activeID) }.sheet(isPresented:$showDictation) {
+        }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { PAMemoryView(memory:assistant.memory,registration:model.chatGPT.activeID,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) }) }.sheet(isPresented:$showDictation) {
             DictationView(dictation:dictation) { text in assistant.draft = assistant.draft.isEmpty ? text : assistant.draft + " " + text }
         }.padding(.horizontal, 20).padding(.vertical, 10)
     }

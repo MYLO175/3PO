@@ -25,6 +25,15 @@ import EventKit
     var undoToken: String?
     var undoTitle = ""
     var validationReport: String?
+    #if DEBUG
+    func validateMemoryLearning() {
+        validationReport = "Checking the memory prompt with fictional source-free messages…"
+        Task { [self] in
+            do { validationReport = try await memoryLearning.validate(self) }
+            catch { validationReport = error.localizedDescription }
+        }
+    }
+    #endif
     var storageError: String?
     let chatGPT = ChatGPTConnection()
     @ObservationIgnored lazy var workspace = WorkspaceStore(container:container,calendars:excludedCalendars,lists:excludedLists,accounts:excludedAccounts,date:selectedDate)
@@ -34,6 +43,7 @@ import EventKit
     @ObservationIgnored lazy var emailSummaries = EmailSummaryService(container: container)
     private var summaryPoll: Task<Void, Never>?
     private var briefingPoll: Task<Void, Never>?
+    @ObservationIgnored lazy var memoryLearning = MemoryLearningService(container:container)
     @ObservationIgnored lazy var briefings = BriefingService(container: container)
     let eventKit = EventKitService()
     let mail = MailService()
@@ -91,7 +101,7 @@ import EventKit
         }
         briefingPoll = Task { [weak self] in
             while !Task.isCancelled {
-                if let self { self.briefings.check(self); self.briefings.checkOverview(self) }
+                if let self { self.briefings.check(self); self.briefings.checkOverview(self); self.memoryLearning.check(self) }
                 try? await Task.sleep(for: .seconds(60))
             }
         }
