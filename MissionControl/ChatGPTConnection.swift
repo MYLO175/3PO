@@ -209,15 +209,16 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         blockedAccounts.remove(activeID)
         inferenceVerified = true; message = "Completed subscription inference verified with \(selectedModel). Personal sources were not sent."
     }
-    func streamResponse(input: [[String:String]], instructions: String, onDelta: @escaping (String) -> Void) async throws -> String {
+    func streamResponse(input: [[String:String]], instructions: String, model: String? = nil, effort: String = "medium", onDelta: @escaping (String) -> Void) async throws -> String {
         guard !busy else { throw ChatGPTError.message("Another ChatGPT operation is in progress.") }
         guard !usagePaused else { throw ChatGPTError.message("Subscription requests are paused after a usage failure. Use Test connection in Settings once access is available.") }
         guard hasSession, inferenceVerified else { throw ChatGPTError.message("Verify completed subscription inference in Settings first.") }
         busy = true
         defer { busy = false }
         if models.isEmpty { try await loadModels() }
-        guard models.contains(where: { $0.id == selectedModel }) else { throw ChatGPTError.message("The selected model is unavailable to this account.") }
-        return try await performResponse(input: input, instructions: instructions, model: selectedModel, effort: "medium", onDelta: onDelta)
+        let requestedModel = model ?? selectedModel
+        guard ["low", "medium", "high"].contains(effort), models.contains(where: { $0.id == requestedModel }) else { throw ChatGPTError.message("The selected model or reasoning level is unavailable. Check Settings.") }
+        return try await performResponse(input: input, instructions: instructions, model: requestedModel, effort: effort, onDelta: onDelta)
     }
     private func performResponse(input: [[String:String]], instructions: String?, model: String, effort: String, onDelta: ((String) -> Void)?) async throws -> String {
         let token = try await access()

@@ -9,7 +9,12 @@ import Foundation
         assert(summary.attention && summary.registration == "registration-a")
         let saved = try JSONDecoder().decode(EmailSummary.self, from: JSONEncoder().encode(summary))
         assert(saved.fingerprint == summary.fingerprint && saved.evidence == summary.evidence)
-        for invalid in [#"{"summary":"Urgent","attention":true,"reason":"Deadline tomorrow","evidence":"Deadline tomorrow"}"#, #"{"summary":"Urgent","attention":true,"reason":"Act now","evidence":""}"#, "not JSON"] {
+        assert(EmailSummary.fingerprintBody(body) == EmailSummary.fingerprintBody(body))
+        assert(EmailSummary.fingerprintBody(body) != EmailSummary.fingerprintBody(body + " Changed."))
+        assert(saved.messageReceived == message.received)
+        let legacy = try JSONDecoder().decode(EmailSummary.self, from: Data(#"{"id":"x","registration":"r","fingerprint":"f","summary":"Saved","attention":false,"reason":"","evidence":"","created":0}"#.utf8))
+        assert(legacy.bodyFingerprint == nil && legacy.bodyCheckedAt == nil)
+        for invalid in [#"{"summary":"Urgent","attention":true,"reason":"Deadline tomorrow","evidence":"Deadline tomorrow"}"#, #"{"summary":"Urgent","attention":true,"reason":"Act now","evidence":""}"#, good.replacingOccurrences(of: "Reply requested; no explicit deadline.", with: " "), good.replacingOccurrences(of: "An attendance confirmation is requested.", with: " "), "not JSON"] {
             var rejected = false
             do { _ = try EmailSummary.decode(invalid, message: message, body: body, registration: "a") } catch { rejected = true }
             assert(rejected, "Reject unsupported evidence or invalid output")

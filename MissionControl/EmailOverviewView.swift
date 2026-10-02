@@ -37,7 +37,14 @@ struct EmailSummarySettings: View {
     var body: some View {
         Section("Automatic email summaries") {
             Toggle("Process enabled inboxes automatically", isOn: $summaries.enabled)
-            Text("Sends headers and relevant plain-text bodies from AI-enabled email accounts to OpenAI using your ChatGPT plan. Uses the selected assistant model at Medium. No attachments or sending. Reads at most three new messages or changed headers per five-minute batch, saves each summary, and pauses on an error or usage limit. Existing summaries are reused; coverage shows the remaining backlog.").font(.caption)
+            Picker("Email summary model", selection: $summaries.modelID) {
+                Text("Use assistant model").tag("")
+                ForEach(model.chatGPT.models) { Text($0.name).tag($0.id) }
+            }.disabled(summaries.busy)
+            Picker("Email reasoning", selection: $summaries.effort) {
+                Text("Low").tag("low"); Text("Medium").tag("medium"); Text("High").tag("high")
+            }.disabled(summaries.busy)
+            Text("Sends headers and relevant plain-text bodies from AI-enabled email accounts to OpenAI using your ChatGPT plan. Email model/reasoning controls are independent of chat; choose an available Luna model at High for bounded classification if desired. No attachments or sending. Reads at most three new messages or changed headers per five-minute batch, saves each summary, and pauses on an error or usage limit. Existing summaries are reused; coverage shows the remaining backlog.").font(.caption)
             Text("Account controls are under AI email accounts above. Dashboard mailbox filters only change the source view. Briefing controls are below.").font(.caption).foregroundStyle(.secondary)
         }
     }

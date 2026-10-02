@@ -2,6 +2,7 @@ import SwiftUI
 struct BriefingView: View {
     @Bindable var model: DashboardModel
     @Bindable var briefings: BriefingService
+    @State private var selectedRecord = ""
     var body: some View {
         DisclosureGroup("Morning briefing") {
             VStack(alignment: .leading, spacing: 8) {
@@ -11,7 +12,14 @@ struct BriefingView: View {
                 }
                 if let error = briefings.error { Text(error).font(.caption).foregroundStyle(.orange) }
                 if briefings.state.paused && briefings.error == nil { Text("Briefing paused. Prepare today retries once when access is available.").font(.caption).foregroundStyle(.orange) }
-                if let record = briefings.records(model).first {
+                let records = briefings.records(model)
+                if !records.isEmpty {
+                    Picker("Saved briefing", selection: $selectedRecord) {
+                        Text("Latest").tag("")
+                        ForEach(records) { Text($0.day).tag($0.id) }
+                    }
+                }
+                if let record = records.first(where: { $0.id == selectedRecord }) ?? records.first {
                     Text(record.day).font(.headline)
                     Text(record.coverage).font(.caption).foregroundStyle(.secondary)
                     ScrollView {
