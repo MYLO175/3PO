@@ -5,6 +5,7 @@ struct AssistantPanel: View {
     @Bindable var model: DashboardModel
     @Bindable var assistant: AssistantService
     @Binding var readingMode: Bool
+    var supportsReadingMode = true
     @State private var dictation = DictationService()
     @State private var showDictation = false
     var body: some View {
@@ -16,7 +17,7 @@ struct AssistantPanel: View {
                     Picker("Conversation", selection: $assistant.activeID) { ForEach(assistant.conversations) { Text($0.title).tag(Optional($0.id)) } }.labelsHidden().frame(maxWidth: 280).disabled(assistant.busy)
                 }
                 Button("New chat") { assistant.newConversation() }.disabled(assistant.busy).keyboardShortcut("n",modifiers:.command)
-                Button { readingMode.toggle() } label: { Image(systemName:readingMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") }.help(readingMode ? "Compact chat" : "Expand chat").accessibilityLabel(readingMode ? "Compact chat" : "Expand chat")
+                if supportsReadingMode { Button { readingMode.toggle() } label: { Image(systemName:readingMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") }.help(readingMode ? "Compact chat" : "Expand chat").accessibilityLabel(readingMode ? "Compact chat" : "Expand chat") }
                 Spacer()
                 Text(assistant.contextEnabled ? "Enabled sources · saved email summaries" : "AI source context off").font(.caption).foregroundStyle(.secondary)
             }

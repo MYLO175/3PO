@@ -4,10 +4,17 @@ import AppKit
 
 struct DashboardView: View {
     @Bindable var model: DashboardModel
+    var widgetConfiguration: Binding<WidgetConfiguration>? = nil
     @AppStorage("showEmailSources") private var showEmailSources = false
     @AppStorage("assistantExpanded") private var assistantExpanded = false
     @AppStorage("assistantReadingMode") private var assistantReadingMode = false
-    @AppStorage("reminderGroupingMode") private var reminderGroupingMode = "lists"
+    @AppStorage("reminderGroupingMode") private var legacyReminderGroupingMode = "lists"
+    private var reminderGroupingMode: String { widgetConfiguration?.wrappedValue.reminderGrouping ?? legacyReminderGroupingMode }
+    private var reminderGroupingBinding: Binding<String> { widgetConfiguration.map { binding in Binding(get:{ binding.wrappedValue.reminderGrouping },set:{ binding.wrappedValue.reminderGrouping = $0 }) } ?? $legacyReminderGroupingMode }
+    private var listExclusions: Binding<Set<String>> { widgetConfiguration.map { binding in Binding(get:{ binding.wrappedValue.sourceExclusions },set:{ binding.wrappedValue.sourceExclusions = $0 }) } ?? $model.excludedLists }
+    private var accountExclusions: Binding<Set<String>> { widgetConfiguration.map { binding in Binding(get:{ binding.wrappedValue.sourceExclusions },set:{ binding.wrappedValue.sourceExclusions = $0 }) } ?? $model.excludedAccounts }
+    private var visibleReminders: [TaskItem] { model.reminderData.reminders.filter { !listExclusions.wrappedValue.contains($0.listID) } }
+    private var visibleMessages: [MailMessage] { model.mailData.messages.filter { !accountExclusions.wrappedValue.contains($0.accountID) }.sorted { $0.received > $1.received } }
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .center) {
@@ -114,10 +121,10 @@ struct DashboardView: View {
         model.reminderData.sources.first { $0.id == id }
     }
     func reminderListLabel(_ id: String) -> String {
-        reminderSource(id)?.label ?? model.visibleReminders.first(where: { $0.listID == id })?.sourceLabel ?? "Reminders"
+        reminderSource(id)?.label ?? visibleReminders.first(where: { $0.listID == id })?.sourceLabel ?? "Reminders"
     }
     var visibleReminderListIDs: [String] {
-        Array(Set(model.visibleReminders.map(\.listID))).sorted { left, right in
+        Array(Set(visibleReminders.map(\.listID))).sorted { left, right in
             let leftDefault = reminderSource(left)?.title.caseInsensitiveCompare("To do") == .orderedSame
             let rightDefault = reminderSource(right)?.title.caseInsensitiveCompare("To do") == .orderedSame
             if leftDefault != rightDefault { return leftDefault }
@@ -198,9 +205,9 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 12) {
             panelHeader("Reminders", icon: "checklist", health: model.reminderHealth)
             HStack(spacing: 8) {
-                sourceMenu("Lists", sources: model.reminderData.sources, exclusions: $model.excludedLists)
+                sourceMenu("Lists", sources: model.reminderData.sources, exclusions: listExclusions)
                 Spacer(minLength: 0)
-                Picker("Group reminders", selection: $reminderGroupingMode) {
+                Picker("Group reminders", selection: reminderGroupingBinding) {
                     Text("Lists").tag("lists")
                     Text("Due date").tag("due")
                 }.pickerStyle(.segmented).labelsHidden().controlSize(.small).fixedSize()
@@ -210,7 +217,7 @@ struct DashboardView: View {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     if reminderGroupingMode == "lists" {
                         ForEach(visibleReminderListIDs, id: \.self) { listID in
-                            let items = DateRules.ordered(model.visibleReminders.filter { $0.listID == listID })
+                            let items = DateRules.ordered(visibleReminders.filter { $0.listID == listID })
                             HStack {
                                 Text(reminderListLabel(listID)).font(.subheadline.weight(.semibold)).foregroundStyle(sourceColor(listID, explicit: reminderSource(listID)?.color)).lineLimit(1)
                                 Spacer(minLength: 4)
@@ -223,7 +230,7 @@ struct DashboardView: View {
                         }
                     } else {
                         ForEach(["Overdue", "Today", "Upcoming", "Undated"], id: \.self) { group in
-                            let items = model.visibleReminders.filter { DateRules.group($0) == group }
+                            let items = visibleReminders.filter { DateRules.group($0) == group }
                             HStack { Text(group).font(.subheadline.weight(.semibold)); Spacer(); Text("\(items.count)").foregroundStyle(.secondary).font(.caption) }
                             if items.isEmpty { Text("Nothing here").font(.caption).foregroundStyle(.tertiary) }
                             ForEach(items) { item in
@@ -264,27 +271,27 @@ struct DashboardView: View {
             panelHeader("Inbox", icon: "tray", health: model.mailHealth)
             HStack {
                 Menu {
-                    Button("Enable all") { model.excludedAccounts = [] }
+                    Button("Enable all") { accountExclusions.wrappedValue = [] }
                     Divider()
                     ForEach(model.mailData.accounts) { account in
-                        Toggle("\(account.title) · Inbox", isOn: Binding(get: { !model.excludedAccounts.contains(account.id) }, set: { enabled in
-                            if enabled { model.excludedAccounts.remove(account.id) } else { model.excludedAccounts.insert(account.id) }
+                        Toggle("\(account.title) · Inbox", isOn: Binding(get: { !accountExclusions.wrappedValue.contains(account.id) }, set: { enabled in
+                            if enabled { accountExclusions.wrappedValue.remove(account.id) } else { accountExclusions.wrappedValue.insert(account.id) }
                         }))
                     }
                 } label: { Label("Mailboxes", systemImage: "line.3.horizontal.decrease") }.controlSize(.small)
                 Spacer()
-                Text("Last 30 days · \(model.visibleMessages.count)").font(.caption).foregroundStyle(.secondary)
+                Text("Last 30 days · \(visibleMessages.count)").font(.caption).foregroundStyle(.secondary)
             }
             if !model.mailCoverage.isEmpty {
                 Text(model.mailCoverage).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
             Divider()
-            if model.visibleMessages.isEmpty {
+            if visibleMessages.isEmpty {
                 ContentUnavailableView("No inbox messages", systemImage: "tray", description: Text(model.mailHealth.error == nil ? "Recent messages appear here after Mail connects." : "Check the Mail connection status above."))
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(model.visibleMessages) { message in
+                        ForEach(visibleMessages) { message in
                             Button { model.select(message) } label: {
                                 VStack(alignment: .leading, spacing: 6) {
                                     HStack(alignment: .firstTextBaseline) {

@@ -27,6 +27,8 @@ import EventKit
     var validationReport: String?
     var storageError: String?
     let chatGPT = ChatGPTConnection()
+    @ObservationIgnored lazy var workspace = WorkspaceStore(container:container,calendars:excludedCalendars,lists:excludedLists,accounts:excludedAccounts,date:selectedDate)
+    @ObservationIgnored lazy var widgetCalendars = WidgetCalendarStore(service:eventKit)
     @ObservationIgnored lazy var assistant = AssistantService(connection: chatGPT, container: container)
     @ObservationIgnored lazy var assistantActions = AssistantActions(container: container)
     @ObservationIgnored lazy var emailSummaries = EmailSummaryService(container: container)
@@ -75,7 +77,7 @@ import EventKit
                 self.changes = Task {
                     try? await Task.sleep(for: .seconds(1))
                     guard !Task.isCancelled else { return }
-                    await self.refreshCalendar(); await self.refreshReminders()
+                    self.widgetCalendars.invalidate(); await self.refreshCalendar(); await self.refreshReminders()
                 }
             }
         })
@@ -110,6 +112,7 @@ import EventKit
         }
     }
     func refresh(retryMail: Bool = true) {
+        widgetCalendars.invalidate()
         if retryMail { mailContinuation?.cancel(); mailSuspended = false; UserDefaults.standard.set(false, forKey: "mailSuspended") }
         guard !sample else { loadSample(); return }
         Task { await refreshCalendar() }
