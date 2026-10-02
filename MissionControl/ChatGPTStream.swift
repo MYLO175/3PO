@@ -3,6 +3,8 @@ import Foundation
 struct ChatGPTStream {
     enum Failure: Error { case invalid, oversized, failed(String), incomplete, interrupted }
     private(set) var text = ""
+    private(set) var errorParam: String?
+    private(set) var responseID: String?
     private var completed = false
     private var eventData: [String] = []
     private var byteLine = Data()
@@ -43,6 +45,7 @@ struct ChatGPTStream {
         let payload = eventData.joined(separator: "\n"); eventData = []
         if payload == "[DONE]" { return nil }
         guard let event = (try? JSONSerialization.jsonObject(with:Data(payload.utf8))) as? [String:Any], let type = event["type"] as? String else { throw Failure.invalid }
+        if let response = event["response"] as? [String:Any], let id = response["id"] as? String { responseID = id }
         switch type {
         case "response.output_text.delta":
             guard !completed, let delta = event["delta"] as? String else { throw Failure.invalid }
@@ -51,6 +54,7 @@ struct ChatGPTStream {
         case "response.failed", "error":
             let root = event["response"] as? [String:Any] ?? event
             let error = root["error"] as? [String:Any] ?? root
+            errorParam = error["param"] as? String
             throw Failure.failed(error["code"] as? String ?? "response_failed")
         case "response.incomplete": throw Failure.incomplete
         default: break

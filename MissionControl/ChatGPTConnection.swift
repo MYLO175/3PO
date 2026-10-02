@@ -54,6 +54,10 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     var busy = false
     var message = "Not connected. The dashboard works without ChatGPT."
     var inferenceVerified = false
+    var diagnostic = UserDefaults.standard.string(forKey: "chatgptLastDiagnostic") ?? ""
+    private var responseRequestID: String?
+    private var responseHTTPStatus = 0
+    private var responseModel = ""
     private var blockedAccounts = Set(UserDefaults.standard.stringArray(forKey: "chatgptBlockedAccounts") ?? []) { didSet { UserDefaults.standard.set(Array(blockedAccounts), forKey: "chatgptBlockedAccounts") } }
     var usagePaused: Bool { blockedAccounts.contains(activeID) }
     private var registrations: [ChatGPTRegistration] = []
@@ -103,7 +107,9 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         var request = URLRequest(url: URL(string: url)!)
         if let fields { request.httpMethod = "POST"; request.httpBody = ChatGPTOAuth.form(fields); request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type") }
         if let token { request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization") }
+        responseRequestID = nil; responseHTTPStatus = 0; responseModel = ""
         let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse { responseRequestID = http.value(forHTTPHeaderField:"x-request-id"); responseHTTPStatus = http.statusCode }
         guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else { throw apiError(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0) }
         return data
     }
@@ -111,17 +117,14 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         let root = (try? JSONSerialization.jsonObject(with: data)) as? [String:Any]
         let error = root?["error"]
         let code = (error as? [String:Any])?["code"] as? String ?? error as? String ?? "request_failed"
-        return responseError(code, status: status)
+        return responseError(code, status: status, param:(error as? [String:Any])?["param"] as? String, shape:error is [String:Any] ? "HTTP error object" : root?["detail"] != nil ? "HTTP admission detail" : "HTTP other body")
     }
-    private func responseError(_ raw: String, status: Int = 0) -> ChatGPTError {
-        let code = raw.count <= 100 && raw.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_") }) ? raw : "request_failed"
-        let detail: String
-        if code.contains("usage_limit") || code.contains("usage_unavailable") || status == 429 { detail = "ChatGPT plan usage is currently limited. Check ChatGPT Usage; no automatic retry or paid API fallback." }
-        else if code.contains("not_eligible") { detail = "This account or workspace is not eligible for ChatGPT plan usage. The dashboard remains available." }
-        else if status == 401 || code == "invalid_grant" { detail = "Please sign in again. The subscription session needs renewal." }
-        else { detail = "ChatGPT request failed (\(status), \(code)). The dashboard remains available." }
-        if code.contains("usage_limit") || code.contains("usage_unavailable") || status == 429 { blockedAccounts.insert(activeID) }
-        return .message(detail + " (" + code + (status == 0 ? "" : ", HTTP \(status)") + ").")
+    private func responseError(_ raw: String, status: Int = 0, param: String? = nil, shape: String = "stream error") -> ChatGPTError {
+        let code = ChatGPTRecovery.safe(raw, fallback:"request_failed")
+        if ChatGPTRecovery.quota(code) { blockedAccounts.insert(activeID) }
+        diagnostic = "Time: \(Date.now.ISO8601Format())\nModel: \(ChatGPTRecovery.safe(responseModel))\nHTTP: \(status == 0 ? responseHTTPStatus : status)\nStage: \(shape)\nCode: \(code)\nParameter: \(ChatGPTRecovery.safe(param))\nRequest reference: \(ChatGPTRecovery.safe(responseRequestID))"
+        UserDefaults.standard.set(diagnostic, forKey:"chatgptLastDiagnostic")
+        return .message(ChatGPTRecovery.message(code:code,status:status) + " (" + code + "). No paid fallback or automatic retry.")
     }
     private func validateIdentity(_ token: String, client: String, nonce: String?) async throws -> [String:Any] {
         let data = try await request(ChatGPTOAuth.issuer + "/.well-known/jwks.json")
@@ -192,7 +195,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String:Any], let list = root["models"] as? [[String:Any]] else { throw ChatGPTError.message("Account model catalog had an unexpected format.") }
         models = list.compactMap { value in guard value["visibility"] as? String == "list", let slug = value["slug"] as? String else { return nil }; return .init(id: slug, name: value["display_name"] as? String ?? slug) }
     }
-    func testConnection() { run { self.blockedAccounts.remove(self.activeID); try await self.loadModels(); try await self.verifyInference() } }
+    func testConnection() { run { try await self.loadModels(); try await self.verifyInference() } }
     func renewSession() { run {
         _ = try await self.access(forceRenewal: true)
         self.inferenceVerified = self.current?.verifiedModel != nil
@@ -229,7 +232,9 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         var body: [String:Any] = ["model":model, "input":input, "store":false, "stream":true, "reasoning":["effort":effort]]
         if let instructions { body["instructions"] = instructions }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        responseRequestID = nil; responseHTTPStatus = 0; responseModel = model
         let (bytes, response) = try await session.bytes(for: request)
+        if let http = response as? HTTPURLResponse { responseRequestID = http.value(forHTTPHeaderField:"x-request-id"); responseHTTPStatus = http.statusCode }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             var data = Data(); for try await byte in bytes { if data.count < 8192 { data.append(byte) } else { break } }
             throw apiError(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
@@ -243,7 +248,9 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
             return try stream.finishBytes()
         } catch let failure as ChatGPTStream.Failure {
             switch failure {
-            case .failed(let code): throw responseError(code)
+            case .failed(let code):
+                if responseRequestID == nil { responseRequestID = stream.responseID }
+                throw responseError(code, param:stream.errorParam)
             case .incomplete: throw ChatGPTError.message("Inference was incomplete. Partial output is not a completed response.")
             case .interrupted: throw ChatGPTError.message("Stream ended without completed, nonempty inference.")
             case .invalid: throw ChatGPTError.message("Invalid response stream event.")
@@ -292,7 +299,15 @@ struct ChatGPTConnectionView: View {
                 Button("Sign out") { connection.signOut() }.disabled(connection.busy || !connection.hasSession)
                 if connection.busy { ProgressView().controlSize(.small); Button("Cancel") { connection.cancel() } }
             }
-            if connection.usagePaused { Text("All assistant requests paused. Check usage, then Test connection to retry once.").font(.caption).foregroundStyle(.orange) }
+            if connection.usagePaused { Text("Last subscription request rejected; background AI is paused. Test connection checks current access once.").font(.caption).foregroundStyle(.orange) }
+            if !connection.diagnostic.isEmpty {
+                VStack(alignment:.leading,spacing:6) {
+                    Text("Last failure details").font(.caption.weight(.semibold))
+                    Text(connection.diagnostic).font(.caption).textSelection(.enabled)
+                    Button("Copy failure details") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(connection.diagnostic,forType:.string) }
+                    Text("Contains only time, model, error fields and request reference. No credentials, prompts or personal sources.").font(.caption)
+                }
+            }
             Button("ChatGPT usage and app access") { NSWorkspace.shared.open(URL(string: "https://chatgpt.com/settings/usage")!) }
             Text("Your Plus five-hour allowance is shared with Codex. Keep credit use disabled in ChatGPT's app limits.").font(.caption).foregroundStyle(.secondary)
         }

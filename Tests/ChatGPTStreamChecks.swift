@@ -1,6 +1,22 @@
 import Foundation
 @main struct Checks {
     static func main() throws {
+        assert(ChatGPTRecovery.quota("subscription_sharing_usage_limit_exceeded"))
+        assert(!ChatGPTRecovery.quota("subscription_sharing_usage_unavailable"))
+        assert(!ChatGPTRecovery.quota("rate_limit_exceeded"))
+        assert(ChatGPTRecovery.message(code:"rate_limit_exceeded",status:429).contains("not confirmed"))
+        assert(ChatGPTRecovery.message(code:"subscription_sharing_usage_unavailable",status:503).contains("session is retained"))
+        assert(ChatGPTRecovery.safe("req_test-123") == "req_test-123")
+        assert(ChatGPTRecovery.safe("Bearer private token") == "unavailable")
+        var quotaFailure = ChatGPTStream()
+        do {
+            _ = try quotaFailure.line(#"data: {"type":"response.failed","response":{"id":"resp_test123","error":{"code":"subscription_sharing_usage_limit_exceeded","param":"model"}}}"#)
+            assertionFailure("Quota failure must throw")
+        } catch ChatGPTStream.Failure.failed(let code) {
+            assert(code == "subscription_sharing_usage_limit_exceeded")
+            assert(quotaFailure.errorParam == "model")
+            assert(quotaFailure.responseID == "resp_test123")
+        }
         var stream = ChatGPTStream()
         let ignored = try stream.line("event: response.output_text.delta"); assert(ignored == nil)
         let delta = try stream.line(#"data: {"type":"response.output_text.delta","delta":"Hello"}"#)

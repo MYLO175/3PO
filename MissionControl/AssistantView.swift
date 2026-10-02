@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct AssistantPanel: View {
     @Bindable var model: DashboardModel
@@ -39,6 +40,14 @@ struct AssistantPanel: View {
                 }
             }
             if let error = assistant.error { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+            if model.chatGPT.usagePaused {
+                HStack {
+                    Text("Subscription access was rejected; saved sources remain available.").font(.caption).foregroundStyle(.secondary)
+                    Button("Check access") { model.chatGPT.testConnection() }.disabled(model.chatGPT.busy || assistant.busy)
+                    Button("Usage") { NSWorkspace.shared.open(URL(string:"https://chatgpt.com/settings/usage")!) }
+                }
+                Text(model.chatGPT.message).font(.caption).foregroundStyle(.orange)
+            }
             HStack {
                 Button { showDictation = true } label: { Image(systemName:"mic") }.help("Dictate a message").accessibilityLabel("Dictate a message").disabled(assistant.busy)
                 TextField("Message Mission Control", text: $assistant.draft).onSubmit { assistant.send(model:model) }.disabled(assistant.busy)
@@ -51,6 +60,8 @@ struct AssistantPanel: View {
                     ForEach(model.assistantActions.targets) { Text($0.label).tag($0.id) }
                 }
             }
+        }.onChange(of:model.chatGPT.usagePaused) { _, paused in
+            if !paused, assistant.error?.contains("subscription_sharing_usage_limit_exceeded") == true { assistant.error = nil }
         }.sheet(isPresented:$showDictation) {
             DictationView(dictation:dictation) { text in assistant.draft = assistant.draft.isEmpty ? text : assistant.draft + " " + text }
         }.padding(.horizontal, 20).padding(.vertical, 10)
