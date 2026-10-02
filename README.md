@@ -82,3 +82,7 @@ User has deprioritised built-in dictation in favour of their existing shortcut. 
 
 ## Subscription recovery
 If OpenAI rejects Mission Control's plan allowance, background AI pauses while sources stay usable. Check access in Assistant (or Test connection in Settings) sends one small source-free request; a completed result clears the pause. It does not automatically repeat the failed personal request. Temporary usage-check outages/rate limits are labelled separately. Settings retains safe last-failure details for investigation, without prompts, credentials or personal sources. Available overall usage does not by itself prove an app request should pass; [OpenAI documents app-specific limits and the recovery policy](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery). Repeated server rejection with verified allowance needs provider investigation rather than a local billing workaround.
+
+
+## Dashboard shortcuts and reading
+Use **⌘J** to show or hide Assistant and **⌘R** to refresh Apple sources. With Assistant open, **⌘N** starts a conversation. Its expand button gives messages more reading room; the setting survives relaunch. Suggested questions fill the editable draft and require Send. AI overview priorities show their source types and keep coverage details available. A paused overview keeps its saved content and gives a direct access check. System appearance is respected in normal launches.

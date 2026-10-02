@@ -39,3 +39,6 @@ After the Stage 3 approval question and installed Stage 2 review, user explicitl
 
 
 Stage 3 checkpoint: optional microphone/transcript UI is installed. User subsequently deprioritised built-in dictation because an existing system shortcut already dictates into text fields. Keep typed/system dictation input primary and concentrate remaining work on Stage 2 reliability and useful personal-assistant behaviour. No additional voice setup is required from the user for continued development.
+
+
+User authorised ongoing plan work and native usability polish without routine approvals. Preserve the source-of-truth, read-only mail and subscription/no-billing boundaries. The current UX checkpoint adds readable priority cards, adaptive chat, suggested drafts, keyboard shortcuts and explicit paused/empty states; remaining live validation is recorded in STATUS.md rather than claiming every stage acceptance item complete.

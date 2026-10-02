@@ -4,6 +4,7 @@ import AppKit
 struct AssistantPanel: View {
     @Bindable var model: DashboardModel
     @Bindable var assistant: AssistantService
+    @Binding var readingMode: Bool
     @State private var dictation = DictationService()
     @State private var showDictation = false
     var body: some View {
@@ -14,20 +15,35 @@ struct AssistantPanel: View {
                 if !assistant.conversations.isEmpty {
                     Picker("Conversation", selection: $assistant.activeID) { ForEach(assistant.conversations) { Text($0.title).tag(Optional($0.id)) } }.labelsHidden().frame(maxWidth: 280).disabled(assistant.busy)
                 }
-                Button("New chat") { assistant.newConversation() }.disabled(assistant.busy)
+                Button("New chat") { assistant.newConversation() }.disabled(assistant.busy).keyboardShortcut("n",modifiers:.command)
+                Button { readingMode.toggle() } label: { Image(systemName:readingMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") }.help(readingMode ? "Compact chat" : "Expand chat").accessibilityLabel(readingMode ? "Compact chat" : "Expand chat")
                 Spacer()
                 Text(assistant.contextEnabled ? "Enabled sources · saved email summaries" : "AI source context off").font(.caption).foregroundStyle(.secondary)
             }
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
-                        if assistant.active?.turns.isEmpty ?? true { Text("Ask about your day. Enable source context in Settings when you want the assistant to use your calendar, reminders and recent email headers.").foregroundStyle(.secondary) }
+                        if assistant.active?.turns.isEmpty ?? true {
+                            VStack(alignment:.leading,spacing:12) {
+                                Text("A little clarity for your day").font(.headline)
+                                Text("Ask about what's coming up, find an email, or tell me what needs doing.").font(.callout).foregroundStyle(.secondary)
+                                HStack {
+                                    ForEach(["What should I focus on today?","What's coming up this week?"],id:\.self) { suggestion in
+                                        Button(suggestion) { assistant.draft = suggestion }.controlSize(.small)
+                                    }
+                                }
+                            }.padding(.vertical,12)
+                        }
                         ForEach(assistant.active?.turns ?? []) { turn in
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(turn.role == "user" ? "You" : "Mission Control").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                                Text(turn.content.isEmpty ? (assistant.busy ? "Thinking…" : "No completed response.") : turn.content).textSelection(.enabled).id(turn.content)
-                                if turn.role == "assistant" && !turn.completed && !assistant.busy { Text("Partial response").font(.caption).foregroundStyle(.orange) }
-                            }.frame(maxWidth: .infinity, alignment: .leading).id(turn.id)
+                                if turn.content.isEmpty {
+                                    Text(assistant.busy ? "Thinking…" : "This request didn't complete.").foregroundStyle(.secondary)
+                                } else if turn.role == "assistant" {
+                                    Text((try? AttributedString(markdown:turn.content,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(turn.content)).textSelection(.enabled).lineSpacing(3)
+                                } else { Text(turn.content).textSelection(.enabled) }
+                                if turn.role == "assistant" && !turn.completed && !assistant.busy && !turn.content.isEmpty { Text("Partial response").font(.caption).foregroundStyle(.orange) }
+                            }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(turn.role == "user" ? Color.accentColor.opacity(0.06) : Color.primary.opacity(0.025),in:RoundedRectangle(cornerRadius:10)).id(turn.id)
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.onChange(of: assistant.active?.turns.last?.content) { if let id = assistant.active?.turns.last?.id { proxy.scrollTo(id, anchor: .bottom) } }
@@ -39,18 +55,24 @@ struct AssistantPanel: View {
                     if model.mailLookup.hasMore { Button("Continue mail search") { assistant.draft = "Continue the email search."; assistant.send(model:model) }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
                 }
             }
-            if let error = assistant.error { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+            if let error = assistant.error, !model.chatGPT.usagePaused { DisclosureGroup("Request didn’t complete") { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }.font(.caption) }
             if model.chatGPT.usagePaused {
                 HStack {
                     Text("Subscription access was rejected; saved sources remain available.").font(.caption).foregroundStyle(.secondary)
                     Button("Check access") { model.chatGPT.testConnection() }.disabled(model.chatGPT.busy || assistant.busy)
                     Button("Usage") { NSWorkspace.shared.open(URL(string:"https://chatgpt.com/settings/usage")!) }
                 }
-                Text(model.chatGPT.message).font(.caption).foregroundStyle(.orange)
+                DisclosureGroup("Access details") { Text(model.chatGPT.message).font(.caption).foregroundStyle(.orange) }.font(.caption)
+            }
+            if model.chatGPT.busy && !assistant.busy {
+                HStack(spacing:6) {
+                    ProgressView().controlSize(.mini)
+                    Text(model.briefings.busy ? "Preparing your overview or briefing… You can draft a message while it finishes." : model.emailSummaries.busy ? "Checking incoming mail… You can draft a message while it finishes." : "Checking your ChatGPT connection…").font(.caption).foregroundStyle(.secondary)
+                }.frame(maxWidth:.infinity,alignment:.leading)
             }
             HStack {
                 Button { showDictation = true } label: { Image(systemName:"mic") }.help("Dictate a message").accessibilityLabel("Dictate a message").disabled(assistant.busy)
-                TextField("Message Mission Control", text: $assistant.draft).onSubmit { assistant.send(model:model) }.disabled(assistant.busy)
+                TextField("Message Mission Control", text: $assistant.draft,axis:.vertical).lineLimit(1...4).textFieldStyle(.plain).padding(9).background(Color(nsColor:.textBackgroundColor),in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.primary.opacity(0.08))).onSubmit { assistant.send(model:model) }.disabled(assistant.busy)
                 if assistant.busy { ProgressView().controlSize(.small); Button("Stop") { assistant.cancel() } }
                 else { Button("Send") { assistant.send(model:model) }.disabled(assistant.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.chatGPT.inferenceVerified || model.chatGPT.busy || model.chatGPT.usagePaused) }
             }
@@ -73,7 +95,7 @@ struct AssistantSourceSettings: View {
     var body: some View {
         Section("Assistant preferences and sources") {
             Toggle("Enable assistant source context", isOn: $assistant.contextEnabled)
-            Text("When enabled, assistant requests send the enabled calendar and reminder snapshots, recent email headers and saved email summaries to OpenAI using your ChatGPT plan. Email body processing is enabled separately under Automatic email summaries. Dashboard refresh itself makes no AI requests.").font(.caption)
+            Text("When enabled, assistant requests send the enabled calendar and reminder snapshots, recent email headers and saved email summaries to OpenAI using your ChatGPT plan. Email body processing is enabled separately under Incoming email monitoring. Dashboard refresh itself makes no AI requests.").font(.caption)
             TextField("Assistant preferences", text: $assistant.preferences, axis: .vertical).lineLimit(3...6)
             sourceMenu("AI calendars", sources: model.calendarData.sources, excluded: $assistant.excludedCalendars)
             sourceMenu("AI reminder lists", sources: model.reminderData.sources, excluded: $assistant.excludedLists)

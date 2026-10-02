@@ -6,6 +6,7 @@ struct DashboardView: View {
     @Bindable var model: DashboardModel
     @AppStorage("showEmailSources") private var showEmailSources = false
     @AppStorage("assistantExpanded") private var assistantExpanded = false
+    @AppStorage("assistantReadingMode") private var assistantReadingMode = false
     @AppStorage("reminderGroupingMode") private var reminderGroupingMode = "lists"
     var body: some View {
         VStack(spacing: 0) {
@@ -18,8 +19,8 @@ struct DashboardView: View {
                 }
                 Spacer()
                 if ProcessInfo.processInfo.arguments.contains("--sample") { Text("Sample data").foregroundStyle(.secondary) }
-                Button { assistantExpanded.toggle() } label: { Label("Assistant", systemImage: "sparkles") }
-                Button { model.refresh() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                Button { assistantExpanded.toggle() } label: { Label("Assistant", systemImage: "sparkles") }.keyboardShortcut("j",modifiers:.command).help("Show or hide Assistant (⌘J)")
+                Button { model.refresh() } label: { Label("Refresh", systemImage: "arrow.clockwise") }.keyboardShortcut("r",modifiers:.command).help("Refresh Apple sources (⌘R)")
                 SettingsLink { Image(systemName: "gearshape") }.buttonStyle(.borderless).help("Settings")
             }.padding(24)
             Divider()
@@ -35,6 +36,8 @@ struct DashboardView: View {
                 }.font(.callout).padding(12).background(.green.opacity(0.08))
             }
             GeometryReader { geometry in
+                VStack(spacing:0) {
+                Group {
                 if geometry.size.width >= 1040 {
                     HStack(alignment: .top, spacing: 14) {
                         calendarPanel.frame(width: max(320, geometry.size.width * 0.31))
@@ -49,8 +52,13 @@ struct DashboardView: View {
                         }.padding(14)
                     }
                 }
+                }.frame(maxHeight:.infinity)
+                if assistantExpanded {
+                    AssistantPanel(model:model,assistant:model.assistant,readingMode:$assistantReadingMode)
+                        .frame(height:min(assistantReadingMode ? 420 : 280,geometry.size.height * (assistantReadingMode ? 0.7 : 0.55)))
+                }
+                }
             }
-            if assistantExpanded { AssistantPanel(model: model, assistant: model.assistant).frame(height: 280) }
             HStack {
                 Text("Daily overview").font(.caption)
                 Spacer()
@@ -61,12 +69,12 @@ struct DashboardView: View {
     }
     var emailOverview: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack { Label("AI overview", systemImage: "sparkles").font(.title3.weight(.semibold)); Spacer(); Toggle("Sources", isOn: $showEmailSources).toggleStyle(.button).controlSize(.small) }
+            HStack { Label("Your overview", systemImage: "sparkles").font(.title3.weight(.semibold)); Spacer(); Toggle("Sources", isOn: $showEmailSources).toggleStyle(.button).controlSize(.small) }
             if !showEmailSources { GeneralOverviewView(model:model,briefings:model.briefings) }
             BriefingView(model: model, briefings: model.briefings)
             if showEmailSources { inboxPanel }
             else { DisclosureGroup("Email follow-ups") { EmailOverviewView(model:model,summaries:model.emailSummaries).frame(maxHeight:220) } }
-        }.padding(14).background(.background, in: RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(.quaternary))
+        }.panelStyle()
     }
     func errorBanner(_ text: String) -> some View {
         HStack { Image(systemName: "exclamationmark.triangle"); Text(text).textSelection(.enabled); Spacer() }.font(.callout).foregroundStyle(.orange).padding(10)
@@ -316,6 +324,7 @@ private extension View {
         self.padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.06)))
+            .shadow(color:.black.opacity(0.025),radius:8,x:0,y:3)
     }
 }
 struct SettingsView: View {

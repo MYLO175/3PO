@@ -15,8 +15,8 @@ struct EmailOverviewView: View {
                     Button("Retry skipped") { summaries.retryRejected(model) }.disabled(summaries.busy || !summaries.enabled || model.chatGPT.usagePaused || model.chatGPT.busy || !model.chatGPT.inferenceVerified)
                 }
             }
-            if model.chatGPT.usagePaused { Text("Subscription processing paused. Check usage and Test connection in Settings before resuming.").font(.caption).foregroundStyle(.orange) }
-            if !summaries.enabled { Text("Enable automatic email summaries in Settings to read enabled inbox bodies using your ChatGPT plan. Original messages remain available under Sources.").font(.callout).foregroundStyle(.secondary) }
+            if model.chatGPT.usagePaused { Text("Subscription processing paused. Check access above before resuming monitoring.").font(.caption).foregroundStyle(.orange) }
+            if !summaries.enabled { Text("Enable incoming email monitoring in Settings to assess relevant new mail using your ChatGPT plan. Original messages remain available under Sources.").font(.callout).foregroundStyle(.secondary) }
             if let error = summaries.error { Text(error).font(.caption).foregroundStyle(.orange) }
             if summaries.paused && summaries.error == nil { Text("Processing paused. Resume retries a bounded batch; completed summaries are saved.").font(.caption).foregroundStyle(.orange) }
             ScrollView {
