@@ -9,10 +9,16 @@ struct EmailOverviewView: View {
                 Button(summaries.paused ? "Resume summaries" : "Summarise next 3") { summaries.process(model, resume: true) }.disabled(!summaries.enabled || model.chatGPT.usagePaused || summaries.busy || model.chatGPT.busy || !model.chatGPT.inferenceVerified)
                 if summaries.busy { ProgressView().controlSize(.small); Button("Stop") { summaries.cancel() } }
             }
+            if summaries.rejectedCount(model) > 0 {
+                HStack {
+                    Text("\(summaries.rejectedCount(model)) messages skipped because AI output failed validation. Coverage remains partial.").font(.caption).foregroundStyle(.orange)
+                    Button("Retry skipped") { summaries.retryRejected(model) }.disabled(summaries.busy || !summaries.enabled || model.chatGPT.usagePaused || model.chatGPT.busy || !model.chatGPT.inferenceVerified)
+                }
+            }
             if model.chatGPT.usagePaused { Text("Subscription processing paused. Check usage and Test connection in Settings before resuming.").font(.caption).foregroundStyle(.orange) }
             if !summaries.enabled { Text("Enable automatic email summaries in Settings to read enabled inbox bodies using your ChatGPT plan. Original messages remain available under Sources.").font(.callout).foregroundStyle(.secondary) }
             if let error = summaries.error { Text(error).font(.caption).foregroundStyle(.orange) }
-            if summaries.paused && summaries.error == nil { Text("Processing paused. Resume when subscription access is available.").font(.caption).foregroundStyle(.orange) }
+            if summaries.paused && summaries.error == nil { Text("Processing paused. Resume retries a bounded batch; completed summaries are saved.").font(.caption).foregroundStyle(.orange) }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     let available = summaries.eligible(model).compactMap { message -> (MailMessage, EmailSummary)? in guard let summary = summaries.current(message, model: model) else { return nil }; return (message, summary) }
@@ -44,7 +50,7 @@ struct EmailSummarySettings: View {
             Picker("Email reasoning", selection: $summaries.effort) {
                 Text("Low").tag("low"); Text("Medium").tag("medium"); Text("High").tag("high")
             }.disabled(summaries.busy)
-            Text("Sends headers and relevant plain-text bodies from AI-enabled email accounts to OpenAI using your ChatGPT plan. Email model/reasoning controls are independent of chat; choose an available Luna model at High for bounded classification if desired. No attachments or sending. Reads at most three new messages or changed headers per five-minute batch, saves each summary, and pauses on an error or usage limit. Existing summaries are reused; coverage shows the remaining backlog.").font(.caption)
+            Text("Sends headers and relevant plain-text bodies from AI-enabled email accounts to OpenAI using your ChatGPT plan. Email model/reasoning controls are independent of chat; choose an available Luna model at High for bounded classification if desired. No attachments or sending. Reads at most three new messages or changed headers per five-minute batch, saves each summary, and skips invalid model output while continuing other messages. Read, connection, storage and usage-limit errors pause processing. Retry skipped explicitly allows another bounded attempt. Existing summaries are reused; coverage shows the remaining backlog.").font(.caption)
             Text("Account controls are under AI email accounts above. Dashboard mailbox filters only change the source view. Briefing controls are below.").font(.caption).foregroundStyle(.secondary)
         }
     }

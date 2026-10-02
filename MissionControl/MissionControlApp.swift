@@ -39,6 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             CommandGroup(after: .help) {
                 Button("Run disposable Calendar check") { model.validateCalendarIntegration() }
                 Button("Invalidate today's test briefing") { model.briefings.invalidateToday(model) }
+                Button("Run disposable action check") { Task { guard !model.writing else { return }; model.writing = true; defer { model.writing = false }; do { model.validationReport = try await model.eventKit.validateDisposableActions() } catch { model.validationReport = error.localizedDescription } } }
+                Button("Clean assistant action fixtures") { Task { do { model.validationReport = try await model.assistantActions.cleanupFixtures(model) } catch { model.validationReport = error.localizedDescription } } }
             }
             #endif
         }

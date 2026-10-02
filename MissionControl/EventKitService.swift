@@ -3,7 +3,7 @@ import EventKit
 import AppKit
 
 actor EventKitService {
-    private let store = EKEventStore()
+    let store = EKEventStore()
     private struct CompletionRecord {
         let originalID: String
         let originalDue: DateComponents?
@@ -16,7 +16,7 @@ actor EventKitService {
             store.fetchReminders(matching: store.predicateForReminders(in: [calendar])) { continuation.resume(returning: $0 ?? []) }
         }
     }
-    private func access(_ type: EKEntityType) async throws {
+    func access(_ type: EKEntityType) async throws {
         let status = EKEventStore.authorizationStatus(for: type)
         if status == .fullAccess { return }
         if status == .denied || status == .restricted { throw IntegrationError.denied(type == .event ? "Calendar" : "Reminders") }

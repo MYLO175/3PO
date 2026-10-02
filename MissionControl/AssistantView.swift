@@ -13,7 +13,7 @@ struct AssistantPanel: View {
                 }
                 Button("New chat") { assistant.newConversation() }.disabled(assistant.busy)
                 Spacer()
-                Text(assistant.contextEnabled ? "Enabled source snapshots · headers only" : "AI source context off").font(.caption).foregroundStyle(.secondary)
+                Text(assistant.contextEnabled ? "Enabled sources · saved email summaries" : "AI source context off").font(.caption).foregroundStyle(.secondary)
             }
             ScrollViewReader { proxy in
                 ScrollView {
@@ -31,9 +31,15 @@ struct AssistantPanel: View {
             }
             if let error = assistant.error { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
             HStack {
-                TextField("Message Mission Control", text: $assistant.draft).onSubmit { assistant.send(context: assistant.snapshot(model)) }.disabled(assistant.busy)
+                TextField("Message Mission Control", text: $assistant.draft).onSubmit { assistant.send(model:model) }.disabled(assistant.busy)
                 if assistant.busy { ProgressView().controlSize(.small); Button("Stop") { assistant.cancel() } }
-                else { Button("Send") { assistant.send(context: assistant.snapshot(model)) }.disabled(assistant.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.chatGPT.inferenceVerified) }
+                else { Button("Send") { assistant.send(model:model) }.disabled(assistant.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.chatGPT.inferenceVerified || model.chatGPT.busy || model.chatGPT.usagePaused) }
+            }
+            if assistant.error?.contains("Choose the specific target") == true {
+                Picker("Specific action target", selection: $model.assistantActions.selectedTarget) {
+                    Text("Choose an item").tag("")
+                    ForEach(model.assistantActions.targets) { Text($0.label).tag($0.id) }
+                }
             }
         }.padding(.horizontal, 20).padding(.vertical, 10)
     }
@@ -44,7 +50,7 @@ struct AssistantSourceSettings: View {
     var body: some View {
         Section("Assistant preferences and sources") {
             Toggle("Enable assistant source context", isOn: $assistant.contextEnabled)
-            Text("When enabled, assistant requests send the enabled calendar and reminder snapshots and recent email headers to OpenAI using your ChatGPT plan. Email body processing is enabled separately under Automatic email summaries. Dashboard refresh itself makes no AI requests.").font(.caption)
+            Text("When enabled, assistant requests send the enabled calendar and reminder snapshots, recent email headers and saved email summaries to OpenAI using your ChatGPT plan. Email body processing is enabled separately under Automatic email summaries. Dashboard refresh itself makes no AI requests.").font(.caption)
             TextField("Assistant preferences", text: $assistant.preferences, axis: .vertical).lineLimit(3...6)
             sourceMenu("AI calendars", sources: model.calendarData.sources, excluded: $assistant.excludedCalendars)
             sourceMenu("AI reminder lists", sources: model.reminderData.sources, excluded: $assistant.excludedLists)

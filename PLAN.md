@@ -26,3 +26,6 @@ Use Apple source colours for calendar events, with stable fallback colours. Defa
 The eventual email experience is primarily a daily AI overview of new mail, urgent matters and suggested actions. Raw messages are secondary source inspection; do not build a full mail client, composer or sending workflow. Implement this AI overview in Stage 2 after Stage 1 review and successful subscription inference, with the existing read-only/usage/source-exclusion rules.
 
 User reviewed the Stage 1 delivery and explicitly requested continuing the plan on 2 October. The first Stage 2 checkpoint adds native browser sign-in and a source-free completed inference test. Do not enable personal-source AI or implement the rest of Stage 2 until this account passes that test.
+
+## Current continuation (2 October)
+Subscription inference recovered after normal reset; automatic source processing, saved daily briefing and one delivered notification have live checkpoints. Defined requested Calendar/Reminders actions and persisted replay protection have actual-app disposable validation. Email evidence validation now quarantines individual malformed completed outputs, while integration/usage failures pause. Remaining live summary-format diagnosis, adversarial/ambiguity checks and overnight scheduler acceptance are tracked in STATUS.md. Stage 3 remains deferred pending Stage 2 review.

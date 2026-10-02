@@ -28,6 +28,7 @@ import EventKit
     var storageError: String?
     let chatGPT = ChatGPTConnection()
     @ObservationIgnored lazy var assistant = AssistantService(connection: chatGPT, container: container)
+    @ObservationIgnored lazy var assistantActions = AssistantActions(container: container)
     @ObservationIgnored lazy var emailSummaries = EmailSummaryService(container: container)
     private var summaryPoll: Task<Void, Never>?
     private var briefingPoll: Task<Void, Never>?
@@ -241,7 +242,11 @@ import EventKit
         guard let token = undoToken, !writing else { return }
         writing = true; writeError = nil
         Task {
-            do { try await eventKit.undo(token: token); undoToken = nil; await refreshReminders() }
+            do {
+                try await eventKit.undo(token: token); undoToken = nil
+                do { try assistantActions.recordUndo(token:token) } catch { writeError = "Reminder restored; its action receipt could not be updated." }
+                await refreshReminders()
+            }
             catch { writeError = error.localizedDescription; await refreshReminders() }
             writing = false
         }

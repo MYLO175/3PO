@@ -23,7 +23,7 @@ struct DashboardView: View {
                 SettingsLink { Image(systemName: "gearshape") }.buttonStyle(.borderless).help("Settings")
             }.padding(24)
             Divider()
-            if let report = model.validationReport { Text(report).font(.callout).padding(10).textSelection(.enabled) }
+            if let report = model.validationReport { Text(report).font(.callout).padding(10).textSelection(.enabled).id(report) }
             if let error = model.storageError { errorBanner(error) }
             if let error = model.writeError { errorBanner(error) }
             if model.undoToken != nil {

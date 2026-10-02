@@ -12,6 +12,10 @@ import Foundation
         assert(EmailSummary.fingerprintBody(body) == EmailSummary.fingerprintBody(body))
         assert(EmailSummary.fingerprintBody(body) != EmailSummary.fingerprintBody(body + " Changed."))
         assert(saved.messageReceived == message.received)
+        let sourceWithWhitespace = "Please\u{00a0}confirm\n whether you can attend on Monday."
+        let restoredQuote = EmailSummary.verbatimEvidence("Please confirm whether you can attend on Monday.",body:sourceWithWhitespace,subject:"")
+        assert(restoredQuote == sourceWithWhitespace)
+        assert(EmailSummary.verbatimEvidence("Please attend tomorrow.",body:sourceWithWhitespace,subject:"") == nil)
         let legacy = try JSONDecoder().decode(EmailSummary.self, from: Data(#"{"id":"x","registration":"r","fingerprint":"f","summary":"Saved","attention":false,"reason":"","evidence":"","created":0}"#.utf8))
         assert(legacy.bodyFingerprint == nil && legacy.bodyCheckedAt == nil)
         for invalid in [#"{"summary":"Urgent","attention":true,"reason":"Deadline tomorrow","evidence":"Deadline tomorrow"}"#, #"{"summary":"Urgent","attention":true,"reason":"Act now","evidence":""}"#, good.replacingOccurrences(of: "Reply requested; no explicit deadline.", with: " "), good.replacingOccurrences(of: "An attendance confirmation is requested.", with: " "), "not JSON"] {
@@ -21,6 +25,11 @@ import Foundation
         }
         let changed = try JSONDecoder().decode(MailMessage.self, from: Data(raw.replacingOccurrences(of: "Meeting request", with: "Changed request").utf8))
         assert(EmailSummary.fingerprint(changed) != summary.fingerprint)
+        let rejection = EmailSummaryRejection(id:message.id,registration:"registration-a",fingerprint:summary.fingerprint,received:message.received,reason:"Invalid evidence")
+        let restored = try JSONDecoder().decode(EmailSummaryRejection.self,from:JSONEncoder().encode(rejection))
+        assert(restored.matches(message,registration:"registration-a"))
+        assert(!restored.matches(message,registration:"registration-b"))
+        assert(!restored.matches(changed,registration:"registration-a"))
         print("PASS: exact source evidence, attention evidence requirement, invalid-output rejection, cache round-trip and changed-header fingerprint")
     }
 }

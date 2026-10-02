@@ -16,6 +16,22 @@ struct EmailSummary: Codable, Identifiable {
     static func fingerprintBody(_ body: String) -> String {
         SHA256.hash(data: Data(body.utf8)).map { String(format: "%02x", $0) }.joined()
     }
+    static func verbatimEvidence(_ quote: String, body: String, subject: String) -> String? {
+        guard !quote.isEmpty else { return nil }
+        if body.contains(quote) || subject.contains(quote) { return quote }
+        let words = quote.components(separatedBy:.whitespacesAndNewlines).filter { !$0.isEmpty }
+        guard !words.isEmpty else { return nil }
+        let pattern = words.map(NSRegularExpression.escapedPattern(for:)).joined(separator:"\\s+")
+        guard let regex = try? NSRegularExpression(pattern:pattern) else { return nil }
+        for source in [body,subject] {
+            let text = source as NSString
+            if let match = regex.firstMatch(in:source,range:NSRange(location:0,length:text.length)) {
+                let original = text.substring(with:match.range)
+                if original.count <= 500 { return original }
+            }
+        }
+        return nil
+    }
     static func fingerprint(_ message: MailMessage) -> String {
         let fields = [message.id, message.internetMessageID, message.sender, message.subject, message.received.ISO8601Format()]
         return SHA256.hash(data: Data(fields.joined(separator: "\n").utf8)).map { String(format: "%02x", $0) }.joined()
@@ -26,9 +42,10 @@ struct EmailSummary: Codable, Identifiable {
         guard !output.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw SummaryFailure.emptySummary }
         guard output.summary.count <= 1200, output.reason.count <= 600, output.evidence.count <= 500 else { throw SummaryFailure.tooLong }
         guard !output.attention || !output.reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw SummaryFailure.missingReason }
-        let supported = !output.evidence.isEmpty && (body.contains(output.evidence) || message.subject.contains(output.evidence))
+        let exactEvidence = verbatimEvidence(output.evidence,body:body,subject:message.subject)
+        let supported = exactEvidence != nil
         guard output.evidence.isEmpty || supported, !output.attention || supported else { throw SummaryFailure.unsupportedEvidence }
-        return .init(id: message.id, registration: registration, fingerprint: fingerprint(message), summary: output.summary, attention: output.attention, reason: output.reason, evidence: output.evidence, messageReceived: message.received)
+        return .init(id: message.id, registration: registration, fingerprint: fingerprint(message), summary: output.summary, attention: output.attention, reason: output.reason, evidence: exactEvidence ?? "", messageReceived: message.received)
     }
 }
 enum SummaryFailure: LocalizedError {
@@ -42,6 +59,17 @@ enum SummaryFailure: LocalizedError {
         case .missingReason: reason = "The attention item had no explanation."
         case .unsupportedEvidence: reason = "The model's quote did not exactly match the supplied email."
         }
-        return reason + " It was not saved; processing is paused."
+        return reason + " It was not saved."
+    }
+}
+
+struct EmailSummaryRejection: Codable {
+    var id: String
+    var registration: String
+    var fingerprint: String
+    var received: Date
+    var reason: String
+    func matches(_ message: MailMessage, registration: String) -> Bool {
+        self.registration == registration && id == message.id && fingerprint == EmailSummary.fingerprint(message)
     }
 }
