@@ -32,13 +32,16 @@ enum ConversationRules {
         if let stored { candidate = UUID(uuidString:stored) } else { candidate = legacy }
         return topics(in:conversations,registration:registration).first { $0.id == candidate }?.id
     }
-    static func history(feed: AssistantConversation, topic: AssistantConversation?) -> [AssistantTurn] {
-        // Old topic transcripts remain local context, without presenting a history browser.
-        let turns = feed.turns.filter { $0.completed && ($0.contextID == nil || $0.contextID == topic?.id) } + (topic?.turns.filter(\.completed) ?? [])
+    /// Each optional context is a distinct ongoing thread. Tagged messages preserve the previous feed without copying or deleting records.
+    static func thread(feed: AssistantConversation, topic: AssistantConversation?) -> [AssistantTurn] {
+        let turns = feed.turns.filter { $0.contextID == topic?.id } + (topic?.turns ?? [])
         return turns.enumerated().sorted {
             let lhs = $0.element.created ?? .distantPast, rhs = $1.element.created ?? .distantPast
             return lhs == rhs ? $0.offset < $1.offset : lhs < rhs
-        }.suffix(20).map(\.element)
+        }.map(\.element)
+    }
+    static func history(feed: AssistantConversation, topic: AssistantConversation?) -> [AssistantTurn] {
+        Array(thread(feed:feed,topic:topic).filter(\.completed).suffix(20))
     }
     static func context(for turn: AssistantTurn, in conversation: AssistantConversation) -> UUID? {
         conversation.isPrimary == true ? turn.contextID : conversation.id

@@ -10,14 +10,18 @@ struct AssistantPanel: View {
     var configuration: Binding<WidgetConfiguration>? = nil
     @FocusState private var composerFocused: Bool
     private var selectedID: UUID? { assistant.feed?.id }
-    private var selected: AssistantConversation? { assistant.feed }
+    private var selected: AssistantConversation? {
+        guard var feed = assistant.feed else { return nil }
+        feed.turns = ConversationRules.thread(feed:feed,topic:topic)
+        return feed
+    }
     private var selectedTopicID: UUID? {
         let value = configuration?.wrappedValue
         return ConversationRules.topicSelection(value?.paTopicSelections?[model.chatGPT.activeID],legacy:value.map { $0.conversationSelections?[model.chatGPT.activeID] ?? $0.conversationID } ?? assistant.topicID,in:assistant.conversations,registration:model.chatGPT.activeID)
     }
     private var topic: AssistantConversation? { assistant.conversation(selectedTopicID) }
     private var draftKey: UUID? { selectedTopicID ?? selectedID }
-    private var sendingHere: Bool { assistant.busy && assistant.requestConversationID == selectedID }
+    private var sendingHere: Bool { assistant.busy && assistant.requestConversationID == selectedID && assistant.requestTopicID == selectedTopicID }
     private var errorHere: Bool { assistant.errorConversationID == nil || (assistant.errorConversationID == selectedID && assistant.errorTopicID == selectedTopicID) }
     private var draft: Binding<String> {
         Binding(get:{ if let widgetID { return assistant.drafts.text(registration:model.chatGPT.activeID,widget:widgetID,conversation:draftKey) }; return assistant.draft },set:{ text in
@@ -114,6 +118,7 @@ struct AssistantPanel: View {
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.onChange(of: selected?.turns.last?.content) { if let id = selected?.turns.last?.id { proxy.scrollTo(id, anchor: .bottom) } }
                 .onChange(of:selectedID) { if let id = selected?.turns.last?.id { proxy.scrollTo(id,anchor:.bottom) } }
+                .onChange(of:selectedTopicID) { if let id = selected?.turns.last?.id { proxy.scrollTo(id,anchor:.bottom) } }
                 .onAppear { if let id = selected?.turns.last?.id { proxy.scrollTo(id,anchor:.bottom) } }
             }
             if assistant.mailSearchConversationID == selectedID && assistant.mailSearchTopicID == selectedTopicID && !model.mailLookup.status.isEmpty {
@@ -138,7 +143,7 @@ struct AssistantPanel: View {
                     Text(model.briefings.busy ? "Preparing today’s brief… You can draft a message while it finishes." : model.memoryLearning.busy ? "Learning conversation context… Start drafting to pause learning." : model.emailSummaries.busy ? "Checking incoming mail… You can draft a message while it finishes." : "Checking your ChatGPT connection…").font(.caption).foregroundStyle(.secondary)
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
-            if sendingHere && assistant.requestTopicID != selectedTopicID { Text("Replying with the context selected when you sent the message. You can keep drafting.").font(.caption).foregroundStyle(.secondary) }
+            if assistant.busy && !sendingHere { Text("Your PA is replying in another topic. You can keep drafting here.").font(.caption).foregroundStyle(.secondary) }
             if let error = assistant.drafts.error, widgetID != nil { Text(error).font(.caption).foregroundStyle(.orange) }
             HStack {
                 Button { showDictation = true } label: { Image(systemName:"mic") }.help("Dictate a message").accessibilityLabel("Dictate a message").disabled(widgetID != nil && !assistant.drafts.writable)
@@ -185,7 +190,7 @@ private struct TopicFocusEditor: View {
             Text(topicID == nil ? "Add a topic" : "Topic focus").font(.title2.weight(.semibold))
             TextField("Topic name",text:$name)
             TextField("For example: Help me plan my engineering study and exams",text:$focus,axis:.vertical).lineLimit(4...8)
-            Text("A topic adds focus and its own memories to your PA. It does not start a new chat. Shared preferences still apply; other topics’ context stays separate.").font(.caption).foregroundStyle(.secondary)
+            Text("A topic adds focus and its own memories to your PA. It has its own ongoing thread. Shared preferences still apply; other topics’ context stays separate.").font(.caption).foregroundStyle(.secondary)
             if saveFailed { Text("The topic could not be saved. Your changes are still here.").font(.caption).foregroundStyle(.orange) }
             HStack {
                 Button("Cancel") { dismiss() }; Spacer()
