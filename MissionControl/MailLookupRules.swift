@@ -7,6 +7,9 @@ struct MailLookupPlan: Codable {
     var end: String?
 }
 enum MailLookupRules {
+    static func answerRequest(original: String) -> String {
+        "Answer this original mail question using the newly retrieved search evidence: \(original). The app has already performed this bounded search. Explain the findings and remaining coverage; do not treat this as a request to operate Mail yourself."
+    }
     static func requested(_ request: String) -> Bool {
         let value = request.lowercased()
         return value.range(of:#"\b(?:email|emails|mail|inbox)\b"#,options:.regularExpression) != nil && value.range(of:#"\b(?:find|search|old|earlier|last|when|what|look|continue)\b"#,options:.regularExpression) != nil
@@ -19,4 +22,3 @@ enum MailLookupRules {
         terms.contains { message.subject.localizedCaseInsensitiveContains($0) || message.sender.localizedCaseInsensitiveContains($0) }
     }
 }
-

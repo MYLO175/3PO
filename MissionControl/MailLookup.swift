@@ -5,6 +5,7 @@ import Observation
     var results: [MailMessage] = []
     var status = ""
     private var question = ""
+    var originalQuestion: String { question }
     var hasMore = false
     private var windows: [MailWindowProgress] = []
     private var terms: [String] = []

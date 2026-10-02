@@ -9,9 +9,11 @@
 <key>CFBundleShortVersionString</key><string>0.1</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>26.0</string>
-<key>NSCalendarsUsageDescription</key><string>Mission Control reads your calendars to show your agenda.</string>
-<key>NSCalendarsFullAccessUsageDescription</key><string>Mission Control reads your calendars to show your agenda.</string>
-<key>NSRemindersFullAccessUsageDescription</key><string>Mission Control shows your reminders and lets you complete them and undo completion.</string>
+<key>NSCalendarsUsageDescription</key><string>Mission Control reads your agenda and manages events you explicitly ask it to create or edit.</string>
+<key>NSCalendarsFullAccessUsageDescription</key><string>Mission Control reads your agenda and manages events you explicitly ask it to create or edit.</string>
+<key>NSRemindersFullAccessUsageDescription</key><string>Mission Control shows your reminders, completes them with Undo, and manages reminders you explicitly request.</string>
 <key>NSAppleEventsUsageDescription</key><string>Mission Control reads inbox messages from Apple Mail for your local dashboard. It never sends email.</string>
+<key>NSMicrophoneUsageDescription</key><string>Mission Control uses your microphone only when you start dictation, to prepare an editable message.</string>
+<key>NSSpeechRecognitionUsageDescription</key><string>Mission Control transcribes your dictated message on device so you can review it before sending.</string>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>

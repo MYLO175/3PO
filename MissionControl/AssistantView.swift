@@ -3,6 +3,8 @@ import SwiftUI
 struct AssistantPanel: View {
     @Bindable var model: DashboardModel
     @Bindable var assistant: AssistantService
+    @State private var dictation = DictationService()
+    @State private var showDictation = false
     var body: some View {
         VStack(spacing: 8) {
             Divider()
@@ -38,6 +40,7 @@ struct AssistantPanel: View {
             }
             if let error = assistant.error { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
             HStack {
+                Button { showDictation = true } label: { Image(systemName:"mic") }.help("Dictate a message").accessibilityLabel("Dictate a message").disabled(assistant.busy)
                 TextField("Message Mission Control", text: $assistant.draft).onSubmit { assistant.send(model:model) }.disabled(assistant.busy)
                 if assistant.busy { ProgressView().controlSize(.small); Button("Stop") { assistant.cancel() } }
                 else { Button("Send") { assistant.send(model:model) }.disabled(assistant.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.chatGPT.inferenceVerified || model.chatGPT.busy || model.chatGPT.usagePaused) }
@@ -48,6 +51,8 @@ struct AssistantPanel: View {
                     ForEach(model.assistantActions.targets) { Text($0.label).tag($0.id) }
                 }
             }
+        }.sheet(isPresented:$showDictation) {
+            DictationView(dictation:dictation) { text in assistant.draft = assistant.draft.isEmpty ? text : assistant.draft + " " + text }
         }.padding(.horizontal, 20).padding(.vertical, 10)
     }
 }
