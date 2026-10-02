@@ -180,4 +180,64 @@ actor EventKitService {
         return result + (cleanupErrors == 0 ? " Disposable items cleaned up." : " Cleanup failures: \(cleanupErrors). Remove only Mission Control validation items in Reminders.")
     }
 
+    func validateDisposableCalendarEvents() async throws -> String {
+        try await access(.event)
+        guard let destination = store.defaultCalendarForNewEvents, destination.allowsContentModifications else { throw IntegrationError.readOnly }
+        let marker = "Mission Control calendar validation " + UUID().uuidString
+        let calendar = Calendar.current
+        let day = calendar.startOfDay(for: .now)
+        let nextDay = calendar.date(byAdding: .day, value: 1, to: day)!
+        var created: [EKEvent] = []
+        func create(_ kind: String, start: Date, end: Date, allDay: Bool = false, recurring: Bool = false) throws {
+            let event = EKEvent(eventStore: store)
+            event.calendar = destination; event.title = marker + " " + kind; event.notes = marker
+            // Use UTC for a fold-hour fixture: EventKit otherwise converts
+            // the two equal local clock times into a zero-duration event.
+            event.timeZone = kind == "DST" ? TimeZone(secondsFromGMT: 0)! : calendar.timeZone
+            event.startDate = start; event.endDate = end
+            event.isAllDay = allDay
+            if recurring { event.addRecurrenceRule(EKRecurrenceRule(recurrenceWith: .daily, interval: 1, end: EKRecurrenceEnd(occurrenceCount: 2))) }
+            try store.save(event, span: .thisEvent, commit: true)
+            created.append(event)
+        }
+        var result = ""
+        do {
+            try create("timed", start: day.addingTimeInterval(9*3600), end: day.addingTimeInterval(10*3600))
+            try create("all-day", start: day, end: nextDay, allDay: true)
+            try create("overnight", start: calendar.date(bySettingHour: 23, minute: 30, second: 0, of: day)!, end: calendar.date(bySettingHour: 1, minute: 0, second: 0, of: nextDay)!)
+            try create("recurring", start: day.addingTimeInterval(13*3600), end: day.addingTimeInterval(13*3600+1800), recurring: true)
+            let end = calendar.date(byAdding: .day, value: 3, to: day)!
+            let snapshot = try await self.calendar(from: day, to: end)
+            let fixtures = snapshot.events.filter { $0.calendarID == destination.calendarIdentifier && $0.title.hasPrefix(marker) }
+            guard fixtures.count == 5, Set(fixtures.map(\.id)).count == 5,
+                  fixtures.filter(\.allDay).count == 1,
+                  fixtures.filter({ DateRules.overlaps($0, day: nextDay) }).count == 2 else { throw NSError(domain: "CalendarCheck", code: 1, userInfo: [NSLocalizedDescriptionKey: "counts total=\(fixtures.count), unique=\(Set(fixtures.map(\.id)).count), allDay=\(fixtures.filter(\.allDay).count), nextDay=\(fixtures.filter({ DateRules.overlaps($0, day: nextDay) }).count)"]) }
+            for original in created where !original.hasRecurrenceRules {
+                guard fixtures.contains(where: { $0.id == DateRules.occurrenceID(original.eventIdentifier, start: original.startDate) && $0.start == original.startDate && $0.end == original.endDate && $0.allDay == original.isAllDay }) else { throw NSError(domain: "CalendarCheck", code: 2, userInfo: [NSLocalizedDescriptionKey: "Original timed/all-day/overnight round-trip mismatch"]) }
+            }
+            var daylightResult = ""
+            if let transition = calendar.timeZone.nextDaylightSavingTimeTransition(after: day) {
+                let exactTransition = Date(timeIntervalSince1970: transition.timeIntervalSince1970.rounded())
+                let start = exactTransition.addingTimeInterval(-1800), finish = exactTransition.addingTimeInterval(1800)
+                try create("DST", start: start, end: finish)
+                let dstEvent = created.last!
+                let dstSnapshot = try await self.calendar(from: start.addingTimeInterval(-3600), to: finish.addingTimeInterval(3600))
+                guard dstSnapshot.events.contains(where: { $0.id == DateRules.occurrenceID(dstEvent.eventIdentifier, start: start) && $0.start == start && $0.end == finish && $0.end.timeIntervalSince($0.start) == 3600 }) else { throw NSError(domain: "CalendarCheck", code: 3, userInfo: [NSLocalizedDescriptionKey: "DST round-trip mismatch: saved start delta=\(dstEvent.startDate.timeIntervalSince(start)), end delta=\(dstEvent.endDate.timeIntervalSince(finish)), read count=\(dstSnapshot.events.filter { $0.title.hasPrefix(marker) }.count), read metadata=\(dstSnapshot.events.filter { $0.title.hasPrefix(marker) }.map { "start delta=\($0.start.timeIntervalSince(start)), end delta=\($0.end.timeIntervalSince(finish)), duration=\($0.end.timeIntervalSince($0.start)), sameID=\($0.id == DateRules.occurrenceID(dstEvent.eventIdentifier, start: start))" }.joined(separator: "; "))"]) }
+                daylightResult = " DST UTC round-trip passed."
+            }
+            result = "PASS actual EventKit timed/all-day/overnight/recurring reads and distinct occurrence IDs." + daylightResult
+        } catch { result = "FAIL Calendar fixture check: " + error.localizedDescription }
+        var cleanupFailures = 0
+        for original in created {
+            guard let id = original.eventIdentifier else { cleanupFailures += 1; continue }
+            if let item = store.event(withIdentifier: id), item.notes == marker, item.calendar.calendarIdentifier == destination.calendarIdentifier {
+                do { try store.remove(item, span: item.hasRecurrenceRules ? .futureEvents : .thisEvent, commit: true) }
+                catch { cleanupFailures += 1 }
+            }
+        }
+        let cleanupEnd = max(calendar.date(byAdding: .day, value: 3, to: day)!, created.map(\.endDate).max() ?? day)
+        let leftovers = store.events(matching: store.predicateForEvents(withStart: day, end: cleanupEnd.addingTimeInterval(1), calendars: [destination])).filter { $0.notes == marker }
+        return result + (cleanupFailures == 0 && leftovers.isEmpty ? " Disposable events cleaned up." : " Cleanup incomplete: remove only UUID-marked Mission Control calendar validation events.")
+    }
+
 }

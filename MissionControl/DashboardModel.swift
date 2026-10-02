@@ -126,6 +126,14 @@ import EventKit
         } catch { reminderHealth.error = error.localizedDescription; reminderHealth.loading = false }
         if pendingReminderRefresh { pendingReminderRefresh = false; await refreshReminders() }
     }
+    func validateCalendarIntegration() {
+        Task {
+            do { validationReport = try await eventKit.validateDisposableCalendarEvents() }
+            catch { validationReport = "Calendar validation: " + error.localizedDescription }
+            persist("validationReport", validationReport)
+            await refreshCalendar()
+        }
+    }
     private func persistMailCheckpoint() {
         persist("mailCheckpoint", MailCheckpoint(snapshot: mailData, index: mailIndex))
     }
@@ -177,6 +185,13 @@ import EventKit
             }
             mailHealth.loading = false
             if accounts.isEmpty { mailHealth.lastSuccess = .now }
+            // A relaunch inside the refresh interval can have no due windows.
+            // Successful discovery confirms availability; retain the real last
+            // header timestamp but clear the temporary launch-cache banner.
+            if !mailIndex.pending {
+                mailHealth.error = nil
+                persist("mailHealth", SourceHealth(lastSuccess: mailHealth.lastSuccess))
+            }
             if mailIndex.pending {
                 mailContinuation = Task { [weak self] in
                     try? await Task.sleep(for: .seconds(2))

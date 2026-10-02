@@ -22,7 +22,7 @@ obj('project',f'isa = PBXProject; attributes = {{ LastUpgradeCheck = 2700; }}; b
 for mode in ['Debug','Release']:
     obj('p'+mode,f'isa = XCBuildConfiguration; buildSettings = {{ SDKROOT = macosx; MACOSX_DEPLOYMENT_TARGET = 26.0; SWIFT_VERSION = 5.0; CLANG_ENABLE_MODULES = YES; }}; name = {mode};')
     settings='PRODUCT_BUNDLE_IDENTIFIER = com.mylomichael.missioncontrol; PRODUCT_NAME = "Mission Control"; INFOPLIST_FILE = MissionControl/Info.plist; GENERATE_INFOPLIST_FILE = NO; DEVELOPMENT_TEAM = 4NYCBX3QPX; CODE_SIGN_STYLE = Manual; CODE_SIGN_IDENTITY = "Apple Development"; CODE_SIGN_ENTITLEMENTS = MissionControl/MissionControl.entitlements; ENABLE_HARDENED_RUNTIME = YES; SWIFT_VERSION = 5.0; COMBINE_HIDPI_IMAGES = YES;'
-    if mode=='Debug': settings+=' SWIFT_OPTIMIZATION_LEVEL = "-Onone";'
+    if mode=='Debug': settings+=' SWIFT_OPTIMIZATION_LEVEL = "-Onone"; SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;'
     obj('t'+mode,f'isa = XCBuildConfiguration; buildSettings = {{ {settings} }}; name = {mode};')
 for kind,prefix in [('project','p'),('target','t')]: obj(kind+'configs',f'isa = XCConfigurationList; buildConfigurations = ({uid(prefix+"Debug")},{uid(prefix+"Release")}); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;')
 project=root/'MissionControl.xcodeproj';project.mkdir(exist_ok=True)

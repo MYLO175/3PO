@@ -3,12 +3,18 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        if ProcessInfo.processInfo.arguments.contains("--small-window") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                guard let window = NSApp.windows.first(where: { $0.title == "Mission Control" }) else { return }
-                if window.styleMask.contains(.fullScreen) { window.toggleFullScreen(nil) }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                    window.setContentSize(NSSize(width: 820, height: 640))
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("--small-window") || arguments.contains("--dark-window") else { return }
+        // SwiftUI may restore a fullscreen window after didFinishLaunching.
+        // Retry after restoration and identify the dashboard without relying on
+        // its title (which can be empty while fullscreen).
+        for attempt in 1...4 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(attempt)) {
+                guard let window = NSApp.windows.first(where: { $0.isVisible && !$0.isFloatingPanel }) else { return }
+                if arguments.contains("--dark-window") { window.appearance = NSAppearance(named: .darkAqua) }
+                if arguments.contains("--small-window") {
+                    if window.styleMask.contains(.fullScreen) { window.toggleFullScreen(nil) }
+                    else { window.setContentSize(NSSize(width: 820, height: 640)); window.center() }
                 }
             }
         }
@@ -21,7 +27,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var body: some Scene {
         Window("Mission Control", id: "dashboard") {
             DashboardView(model: model)
+                .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("--dark-window") ? .dark : nil)
         }.defaultSize(width: ProcessInfo.processInfo.arguments.contains("--small-window") ? 820 : 1200, height: ProcessInfo.processInfo.arguments.contains("--small-window") ? 640 : 780)
+        .commands {
+            #if DEBUG
+            CommandGroup(after: .help) {
+                Button("Run disposable Calendar check") { model.validateCalendarIntegration() }
+            }
+            #endif
+        }
         MenuBarExtra("Mission Control", systemImage: "square.grid.2x2") {
             MenuContent(model: model)
         }

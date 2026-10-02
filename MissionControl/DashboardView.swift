@@ -166,6 +166,11 @@ struct DashboardView: View {
         let calendar = Calendar.current
         let start = calendar.isDate(event.start, inSameDayAs: day) ? event.start.formatted(date: .omitted, time: .shortened) : event.start.formatted(date: .abbreviated, time: .shortened)
         let end = calendar.isDate(event.end, inSameDayAs: day) ? event.end.formatted(date: .omitted, time: .shortened) : event.end.formatted(date: .abbreviated, time: .shortened)
+        if calendar.timeZone.secondsFromGMT(for: event.start) != calendar.timeZone.secondsFromGMT(for: event.end) {
+            let startZone = calendar.timeZone.abbreviation(for: event.start) ?? ""
+            let endZone = calendar.timeZone.abbreviation(for: event.end) ?? ""
+            return "\(start) \(startZone) – \(end) \(endZone)"
+        }
         return "\(start) – \(end)"
     }
     var remindersPanel: some View {
