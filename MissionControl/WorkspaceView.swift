@@ -60,6 +60,7 @@ struct WorkspaceView: View {
         }.background(background).tint(accentColor).frame(minWidth:780,minHeight:580)
             .preferredColorScheme(appearance == "light" ? .light : appearance == "dark" ? .dark : nil)
             .toolbar(id:"mission-control.workspace.native-toolbar") { windowToolbar }
+            .focusedSceneValue(\.workspaceMenu,WorkspaceMenuActions(sidebar:$sidebarVisible,editing:$editing,newDashboard:newDashboard,addWidget:addWidget,customiseToolbar:customiseToolbar))
             .task { model.start() }
             .onChange(of:store.selected.id) { focusedWidgetID = nil }
             .sheet(isPresented:$showName) { VStack(alignment:.leading,spacing:16) { Text(naming == nil ? "New dashboard" : "Rename dashboard").font(.title2.weight(.semibold)); TextField("Name",text:$name).onSubmit { saveName() }; HStack { Spacer(); Button("Cancel") { showName = false }.keyboardShortcut(.cancelAction); Button("Save") { saveName() }.keyboardShortcut(.defaultAction).disabled(name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty) } }.padding(24).frame(width:360) }
@@ -113,11 +114,11 @@ struct WorkspaceView: View {
         }.defaultCustomization(visible(.appearance) ? .visible : .hidden)
         ToolbarItem(id:"customise") {
             Menu {
-                Button("Customise toolbar…") { NSApp.keyWindow?.runToolbarCustomizationPalette(nil) }
+                Button("Customise toolbar…") { customiseToolbar() }
                 Section("Actions") {
                     Toggle("Show sidebar",isOn:$sidebarVisible)
-                    Button("Assistant") { showAssistant() }.keyboardShortcut("j",modifiers:.command)
-                    Button("Refresh") { model.refresh() }.keyboardShortcut("r",modifiers:.command)
+                    Button("Assistant") { showAssistant() }
+                    Button("Refresh") { model.refresh() }
                     Menu("Add widget") { widgetChoices }
                     Toggle("Edit layout",isOn:$editing)
                     Button(model.undoLabel) { model.undoLatest() }.disabled(model.latestUndo == nil || model.writing || model.assistant.busy)
@@ -128,9 +129,12 @@ struct WorkspaceView: View {
         ToolbarItem(id:"settings") { SettingsLink { Label("Settings",systemImage:"gearshape") } }
         }
     }
+    private func newDashboard() { naming = nil; name = "New dashboard"; showName = true }
+    private func addWidget(_ kind: WidgetKind) { store.addWidget(kind); editing = true }
+    private func customiseToolbar() { NSApp.keyWindow?.runToolbarCustomizationPalette(nil) }
     private func showAssistant() { model.assistant.openPA(); store.showAssistant() }
     private func visible(_ tool: WorkspaceTool) -> Bool { ToolbarRules.visible(tool,hidden:toolbarHidden) }
-    private var widgetChoices: some View { ForEach(WidgetKind.allCases,id:\.self) { kind in Button { store.addWidget(kind); editing = true } label: { Label(kind.title,systemImage:kind.icon) } } }
+    private var widgetChoices: some View { ForEach(WidgetKind.allCases,id:\.self) { kind in Button { addWidget(kind) } label: { Label(kind.title,systemImage:kind.icon) } } }
     private var addMenu: some View {
         Menu { widgetChoices } label: { Label("Add widget",systemImage:"plus") }
     }
@@ -145,7 +149,7 @@ struct WorkspaceView: View {
                     }
                 }
             }
-            Button { naming = nil; name = "New dashboard"; showName = true } label: { Label("New dashboard",systemImage:"plus") }.buttonStyle(.borderless)
+            Button { newDashboard() } label: { Label("New dashboard",systemImage:"plus") }.buttonStyle(.borderless)
             Text("Each page is yours to arrange.").font(.caption).foregroundStyle(.secondary)
         }.padding(12)
     }

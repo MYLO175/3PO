@@ -3,7 +3,7 @@
 Installed signed app: `~/Applications/Mission Control.app`. Matching local build: `build/Mission Control.app` (ignored by Git).
 Stable bundle identifier: `com.mylomichael.missioncontrol`.
 Built with the installed Xcode and existing Apple Development identity; strict deep signature verification passed.
-Final build log: `/tmp/missioncontrol-native-toolbar-final-build.log`.
+Final build log: `/tmp/missioncontrol-menu-commands-build.log`.
 
 The accumulated overnight changes and compact-toolbar update are now installed and independently launched from Finder. Both old app instances were quit before replacement. Strict installed signature verification passed; existing Application Support/Keychain records were preserved. The old installed bundle is retained at `/tmp/missioncontrol-before-compact-toolbar.app`. No new permission or sign-in was requested.
 
@@ -31,6 +31,9 @@ The 44-point one-line toolbar and footer removal were inspected at normal size a
 ## Native toolbar refinement — 3 October morning
 
 The subsequent Safari-style refinement removes the separate header entirely: window controls and buttons share one native unified compact toolbar. Actual palette opening and flexible-space availability passed. Native move changed Refresh/Assistant order, which persisted across Quit, Finder launch and replacement with the final signed build; default action order was then restored. Normal and 820×640 screenshots show a single window-controls row and widgets below it, with no footer or outer dashboard scrolling. Widget-display Undo produced readable green feedback in the native toolbar without changing widget frames. Native palette drag hit-testing itself was not separately exercised; movement used the native item’s accessible Move previous/next actions. The app-control pipe/capture interruption recovered; the active disposable reminder was subsequently confirmed absent in Mission Control as well.
+
+## macOS menu-bar access — 3 October
+The signed installed update exposes Dashboard/View/Edit commands independently of toolbar visibility. Actual Settings toolbar removal followed by Mission Control → Settings… opened the correct Settings window. Dashboard editing commands disabled in Settings and enabled on returning to the dashboard. Dashboard → Edit layout toggled the existing layout state; View → Show dashboard sidebar toggled the same saved preference, then was restored. View → Customise dashboard toolbar opened the native palette; Settings was restored to its previous end position. Appearance choices are present in View; they were inspected without altering the user’s theme. Edit retains normal text Undo/Redo plus the separately disabled latest-dashboard Undo when no receipt exists. Existing data/layout identities are unchanged. No new source write/inference test was needed for these command bindings.
 
 ## Focused checks passed
 

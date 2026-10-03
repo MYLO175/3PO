@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }.defaultSize(width: ProcessInfo.processInfo.arguments.contains("--small-window") ? 820 : 1200, height: ProcessInfo.processInfo.arguments.contains("--small-window") ? 640 : 780)
         .windowToolbarStyle(.unifiedCompact(showsTitle:false))
         .commands {
+            WorkspaceCommands(model:model)
             #if DEBUG
             CommandGroup(after: .help) {
                 Button("Run disposable Calendar check") { model.validateCalendarIntegration() }
