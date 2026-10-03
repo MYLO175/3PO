@@ -533,3 +533,6 @@ Validation: scripts/build.sh succeeded (/tmp/missioncontrol-assistant-focus-buil
 
 ## Widget menu arrow removed — 4 October
 Edit-mode widget layout-actions Menu now hides its native menu indicator, showing only ellipsis beside the separate palette control. Build /tmp/missioncontrol-widget-menu-build.log succeeded; installed and ignored delivery strict deep signatures passed. Actual Edit-mode screenshot verified all four widget headers display three dots with no arrow; returned to normal mode. No data/layout mutations or broad test runs for this one-modifier visual change.
+
+## PA topic selector alignment — 4 October
+Right-aligned the topic selector within its existing bounded header frame so General/current topic sits directly beside the ellipsis menu instead of leaving a large trailing gap. Build /tmp/missioncontrol-topic-alignment-build.log succeeded; installed and ignored delivery strict deep signatures passed. Actual app screenshot confirmed compact right-aligned controls. No source/data/layout changes or broad tests for this alignment-only edit.

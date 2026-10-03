@@ -120,7 +120,7 @@ struct AssistantPanel: View {
                         Image(systemName:"chevron.down").font(.system(size:9,weight:.semibold))
                     }.font(.caption.weight(.medium)).padding(.horizontal,10).padding(.vertical,6)
                         .background(palette[.assistantBubble],in:Capsule())
-                }.buttonStyle(.plain).fixedSize(horizontal:false,vertical:true).frame(maxWidth:150)
+                }.buttonStyle(.plain).fixedSize(horizontal:false,vertical:true).frame(maxWidth:150,alignment:.trailing)
                     .help("Choose a PA topic").accessibilityLabel("PA topic: " + (topic?.title ?? "No topic"))
                     .popover(isPresented:$showTopicChoices,arrowEdge:.bottom) {
                         VStack(alignment:.leading,spacing:4) {
