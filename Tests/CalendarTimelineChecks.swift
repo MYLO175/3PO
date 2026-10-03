@@ -30,6 +30,13 @@ import Foundation
         assert(calendar.component(.hour,from:work.start) == 9 && calendar.component(.hour,from:work.end) == 18)
         assert(work.duration == 9*3600)
         assert(CalendarTimelineFocus.anchor(fall.start.addingTimeInterval(3600)) != CalendarTimelineFocus.anchor(fall.start.addingTimeInterval(7200)))
+        let dropped = CalendarTimelineMove.start(on:range.start,y:9.14*CalendarTimelineFocus.hourHeight,calendar:calendar)!
+        assert(dropped == range.start.addingTimeInterval(9.25*3600))
+        assert(CalendarTimelineMove.start(on:range.start,y:-1,calendar:calendar) == nil && CalendarTimelineMove.start(on:range.start,y:.nan,calendar:calendar) == nil)
+        assert(CalendarTimelineMove.start(on:fall.start,y:1.5*CalendarTimelineFocus.hourHeight,calendar:calendar) == first)
+        assert(CalendarTimelineMove.start(on:fall.start,y:2.5*CalendarTimelineFocus.hourHeight,calendar:calendar) == second)
+        let spring = day(2026,3,29)
+        assert(CalendarTimelineMove.start(on:spring.start,y:2000,calendar:calendar) == spring.end.addingTimeInterval(-900))
         print("PASS: connected overlap lanes, deterministic ordering, overnight clipping and 23/25-hour DST days, viewport columns, work-day focus and distinct repeated-hour anchors")
     }
 }

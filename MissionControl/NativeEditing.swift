@@ -26,7 +26,21 @@ struct NativeEditDetails: Equatable {
     var canEdit: Bool { writable && !(kind == .reminder && recurring) }
 }
 struct NativeEditSession { var item: NativeEditDetails; var sources: [SourceOption] }
+struct NativeEventMoveProposal {
+    var occurrenceID: String
+    var sourceID: String
+    var originalStart: Date
+    var originalEnd: Date
+    var start: Date
+}
 enum NativeEditRules {
+    static func moved(_ baseline: NativeEditDetails, proposal: NativeEventMoveProposal) throws -> NativeEditDetails {
+        guard baseline.kind == .event, !baseline.allDay, baseline.canEdit,
+              baseline.occurrenceID == proposal.occurrenceID, baseline.sourceID == proposal.sourceID,
+              baseline.start == proposal.originalStart, baseline.end == proposal.originalEnd else { throw IntegrationError.missing }
+        var edited = baseline; edited.start = proposal.start; edited.end = proposal.start.addingTimeInterval(baseline.end.timeIntervalSince(baseline.start))
+        try validate(edited,baseline:baseline); return edited
+    }
     static func validate(_ value: NativeEditDetails, baseline: NativeEditDetails) throws {
         guard baseline.canEdit else { throw IntegrationError.readOnly }
         guard value.itemID == baseline.itemID, value.kind == baseline.kind, value.occurrenceID == baseline.occurrenceID else { throw IntegrationError.missing }

@@ -7,7 +7,8 @@ struct CalendarWidgetView: View {
     @State private var loading = false
     @State private var error: String?
     @State private var updated: Date?
-    @State private var selectedEvent: AgendaEvent?
+    @State private var selectedEvent: CalendarEventSelection?
+    @State private var dragToken = UUID().uuidString
     private var calendar: Calendar { .current }
     private var mode: String { configuration.calendarMode }
     private var range: DateInterval {
@@ -48,12 +49,13 @@ struct CalendarWidgetView: View {
                 Button { navigate(1) } label: { Image(systemName:"chevron.right") }.buttonStyle(.borderless).accessibilityLabel("Next calendar period")
             }
             Divider()
+            if mode == "day" || mode == "week" { Text("Drag a timed event to another slot to review its time.").font(.caption2).foregroundStyle(.secondary) }
             if mode == "month" { monthView }
             else if mode == "day" || mode == "week" { timelineView }
             else { agendaView }
         }.padding(16).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
             .task(id:"\(range.start.timeIntervalSince1970):\(range.end.timeIntervalSince1970):\(model.widgetCalendars.revision)") { await load() }
-            .sheet(item:$selectedEvent) { NativeItemEditor(model:model,target:.event($0)) }
+            .sheet(item:$selectedEvent) { NativeItemEditor(model:model,target:.event($0.event),proposedMove:$0.move) }
     }
     private func load() async {
         loading = true; defer { loading = false }
@@ -67,8 +69,20 @@ struct CalendarWidgetView: View {
     }
     private func color(_ event: AgendaEvent) -> Color { DashboardView(model:model).sourceColor(event.calendarID,explicit:snapshot.sources.first { $0.id == event.calendarID }?.color) }
     private func dayEvents(_ date: Date) -> [AgendaEvent] { events.filter { DateRules.overlaps($0,day:date) } }
+    private func select(_ event: AgendaEvent) { selectedEvent = CalendarEventSelection(event:event) }
+    private func dragValue(_ event: AgendaEvent) -> String? {
+        guard !model.writing, !event.allDay, !ProcessInfo.processInfo.arguments.contains("--sample"), snapshot.sources.contains(where:{ $0.id == event.calendarID && $0.writable }) else { return nil }
+        return dragToken + ":" + event.id
+    }
+    private func drop(_ values: [String], point: CGPoint, day: Date) -> Bool {
+        guard values.count == 1, let value = values.first, value.hasPrefix(dragToken+":"), !model.writing else { return false }
+        let id = String(value.dropFirst(dragToken.count+1))
+        guard let event = events.first(where:{ $0.id == id }), dragValue(event) != nil, let start = CalendarTimelineMove.start(on:day,y:point.y), start != event.start else { return false }
+        let proposal = NativeEventMoveProposal(occurrenceID:event.id,sourceID:event.calendarID,originalStart:event.start,originalEnd:event.end,start:start)
+        selectedEvent = CalendarEventSelection(event:event,move:proposal); return true
+    }
     private func eventButton(_ event: AgendaEvent) -> some View {
-        Button { selectedEvent = event } label: {
+        Button { select(event) } label: {
             HStack(alignment:.top,spacing:7) {
                 RoundedRectangle(cornerRadius:2).fill(color(event)).frame(width:3)
                 VStack(alignment:.leading,spacing:4) {
@@ -107,7 +121,7 @@ struct CalendarWidgetView: View {
                                 Button { configuration.date = date; configuration.calendarMode = "day" } label: {
                                     Text(date.formatted(.dateTime.day())).font(.caption.weight(.semibold)).foregroundStyle(calendar.isDateInToday(date) ? Color.accentColor : Color.primary)
                                 }.buttonStyle(.plain).accessibilityLabel("Open " + date.formatted(date:.complete,time:.omitted))
-                                ForEach(items.prefix(max(1,Int((height-28)/21)))) { event in Button { selectedEvent = event } label: { Text(event.title).font(.caption2).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading).padding(3).background(color(event).opacity(0.12),in:RoundedRectangle(cornerRadius:3)) }.buttonStyle(.plain) }
+                                ForEach(items.prefix(max(1,Int((height-28)/21)))) { event in Button { select(event) } label: { Text(event.title).font(.caption2).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading).padding(3).background(color(event).opacity(0.12),in:RoundedRectangle(cornerRadius:3)) }.buttonStyle(.plain) }
                                 if items.count > max(1,Int((height-28)/21)) { Text("+\(items.count-max(1,Int((height-28)/21))) more").font(.caption2).foregroundStyle(.secondary) }
                                 Spacer(minLength:0)
                             }.padding(6).frame(maxWidth:.infinity).frame(height:height).background(Color.primary.opacity(0.025),in:RoundedRectangle(cornerRadius:5))
@@ -136,11 +150,11 @@ struct CalendarWidgetView: View {
                                 if allDayCount > 0 {
                                     let items = dayEvents(day).filter(\.allDay)
                                     VStack(alignment:.leading,spacing:3) {
-                                        ForEach(items.prefix(3)) { event in Button { selectedEvent = event } label: { Text("All day · " + event.title).font(.caption2).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading).padding(4).background(color(event).opacity(0.12),in:RoundedRectangle(cornerRadius:4)) }.buttonStyle(.plain).help(event.title) }
+                                        ForEach(items.prefix(3)) { event in Button { select(event) } label: { Text("All day · " + event.title).font(.caption2).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading).padding(4).background(color(event).opacity(0.12),in:RoundedRectangle(cornerRadius:4)) }.buttonStyle(.plain).help(event.title) }
                                         if items.count > 3 { Button("+\(items.count-3) all-day events") { configuration.date = day; configuration.calendarMode = "agenda" }.font(.caption2).buttonStyle(.borderless) }
                                     }.frame(height:allDayHeight,alignment:.top)
                                 }
-                                CalendarDayTimeline(events:dayEvents(day).filter { !$0.allDay },day:day,color:color,select:{ selectedEvent = $0 })
+                                CalendarDayTimeline(events:dayEvents(day).filter { !$0.allDay },day:day,color:color,select:select,dragValue:dragValue,drop:{ values,point in drop(values,point:point,day:day) })
                             }.frame(width:width)
                         }
                     }.padding(.bottom,10)
@@ -153,8 +167,16 @@ struct CalendarWidgetView: View {
         }
     }
 }
+private struct CalendarEventSelection: Identifiable {
+    let id = UUID()
+    var event: AgendaEvent
+    var move: NativeEventMoveProposal? = nil
+}
 private struct CalendarDayTimeline: View {
     var events: [AgendaEvent]; var day: Date; var color: (AgendaEvent)->Color; var select: (AgendaEvent)->Void
+    var dragValue: (AgendaEvent)->String?
+    var drop: ([String],CGPoint)->Bool
+    @State private var dropTargeted = false
     private var interval: DateInterval { Calendar.current.dateInterval(of:.day,for:day)! }
     private let hourHeight = CalendarTimelineFocus.hourHeight
     var body: some View {
@@ -173,13 +195,14 @@ private struct CalendarDayTimeline: View {
             ForEach(CalendarTimelineLayout.segments(events,interval:interval)) { segment in
                 GeometryReader { geo in
                     let height = max(CalendarTimelineFocus.minimumEventHeight,segment.end.timeIntervalSince(segment.start)/3600*hourHeight)
-                    Button { select(segment.event) } label: {
+                    let button = Button { select(segment.event) } label: {
                         VStack(alignment:.leading,spacing:2) {
                             Text(segment.event.title).font(.caption2.weight(.medium)).lineLimit(height > 48 ? 3 : 1)
                             if height > 38 { Text(segment.event.start.formatted(date:.omitted,time:.shortened)).font(.system(size:10)).foregroundStyle(.secondary) }
                             Spacer(minLength:0)
                         }.padding(.horizontal,5).padding(.vertical,height > 38 ? 5 : 2).frame(maxWidth:.infinity,alignment:.leading).background(color(segment.event).opacity(0.17),in:RoundedRectangle(cornerRadius:5)).overlay(alignment:.leading) { RoundedRectangle(cornerRadius:2).fill(color(segment.event)).frame(width:3) }.clipped()
                     }.buttonStyle(.plain).help(segment.event.title + " · " + segment.event.start.formatted(date:.omitted,time:.shortened)).frame(width:max(1,(geo.size.width-40)/CGFloat(segment.lanes)-3),height:height).offset(x:40+CGFloat(segment.lane)*(geo.size.width-40)/CGFloat(segment.lanes),y:segment.start.timeIntervalSince(interval.start)/3600*hourHeight)
+                    if let value = dragValue(segment.event) { button.draggable(value) } else { button }
                 }
             }
             TimelineView(.periodic(from:.now,by:60)) { context in
@@ -188,6 +211,8 @@ private struct CalendarDayTimeline: View {
                         .accessibilityLabel("Current time " + context.date.formatted(date:.omitted,time:.shortened)).allowsHitTesting(false)
                 }
             }
-        }.frame(height:CGFloat(hours)*hourHeight)
+        }.frame(height:CGFloat(hours)*hourHeight).contentShape(Rectangle())
+            .overlay { if dropTargeted { RoundedRectangle(cornerRadius:5).stroke(Color.accentColor.opacity(0.6),lineWidth:2).allowsHitTesting(false) } }
+            .dropDestination(for:String.self,action:drop,isTargeted:{ dropTargeted = $0 })
     }
 }

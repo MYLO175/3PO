@@ -3,6 +3,7 @@ import SwiftUI
 struct NativeItemEditor: View {
     @Bindable var model: DashboardModel
     var target: NativeEditTarget
+    var proposedMove: NativeEventMoveProposal? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var baseline: NativeEditDetails?
     @State private var edited: NativeEditDetails?
@@ -34,6 +35,7 @@ struct NativeItemEditor: View {
                 if !baseline.writable { Label("This source is read-only.",systemImage:"lock").font(.callout).foregroundStyle(.secondary) }
                 else if !baseline.canEdit { Text("Recurring reminder editing is deferred. You can still complete an occurrence and Undo from the dashboard.").font(.callout).foregroundStyle(.secondary) }
                 else if baseline.recurring { Text("Changes apply to this occurrence only; the rest of the series stays unchanged.").font(.callout).foregroundStyle(.secondary) }
+                if proposedMove != nil { Text("Review the proposed time below. The event keeps its duration and is only moved when you save.").font(.callout).foregroundStyle(.secondary) }
                 ScrollView {
                     VStack(alignment:.leading,spacing:16) {
                         TextField("Title",text:field(\.title,fallback:"")).textFieldStyle(.roundedBorder)
@@ -80,6 +82,7 @@ struct NativeItemEditor: View {
         do {
             let session = try await model.eventKit.editSession(target)
             try Task.checkCancellation(); baseline = session.item; edited = session.item; sources = session.sources
+            if let proposedMove { edited = try NativeEditRules.moved(session.item,proposal:proposedMove) }
         } catch is CancellationError {} catch { self.error = error.localizedDescription }
     }
     private func save() async {

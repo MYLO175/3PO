@@ -51,3 +51,12 @@ enum CalendarTimelineFocus {
         DateInterval(start:calendar.date(bySettingHour:9,minute:0,second:0,of:day)!,end:calendar.date(bySettingHour:18,minute:0,second:0,of:day)!)
     }
 }
+
+enum CalendarTimelineMove {
+    /// Snap elapsed timeline coordinates, preserving both occurrences of repeated DST hours.
+    static func start(on day: Date, y: Double, calendar: Calendar = .current) -> Date? {
+        guard y.isFinite, y >= 0, let interval = calendar.dateInterval(of:.day,for:day) else { return nil }
+        let elapsed = (y / CalendarTimelineFocus.hourHeight * 3600 / 900).rounded() * 900
+        return interval.start.addingTimeInterval(min(max(0,elapsed),interval.duration-900))
+    }
+}
