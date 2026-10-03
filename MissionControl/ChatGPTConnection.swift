@@ -85,10 +85,10 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     private func labels() {
         accounts = registrations.map { .init(id: $0.clientID, name: ($0.email.isEmpty ? "ChatGPT account" : $0.email) + " · " + String($0.clientID.suffix(6))) }
     }
-    private func save(_ registration: ChatGPTRegistration) throws {
+    private func save(_ registration: ChatGPTRegistration, select: Bool = true) throws {
         var updated = registrations.filter { $0.clientID != registration.clientID }; updated.append(registration)
         try ChatGPTKeychain.write(JSONEncoder().encode(updated))
-        registrations = updated; activeID = registration.clientID; labels()
+        registrations = updated; if select { activeID = registration.clientID }; labels()
         UserDefaults.standard.set(activeID, forKey: "chatgptActiveClient")
     }
     func switchAccount() { models = []; inferenceVerified = current?.verifiedModel != nil; message = hasSession ? "Signed in. Run the connection test for this account." : "Continue with ChatGPT to reconnect this account."; UserDefaults.standard.set(activeID, forKey: "chatgptActiveClient") }
@@ -104,24 +104,25 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         }
     }
     private func request(_ url: String, fields: [String:String]? = nil, token: String? = nil) async throws -> Data {
+        let registration = activeID
         var request = URLRequest(url: URL(string: url)!)
         if let fields { request.httpMethod = "POST"; request.httpBody = ChatGPTOAuth.form(fields); request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type") }
         if let token { request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization") }
         responseRequestID = nil; responseHTTPStatus = 0; responseModel = ""
         let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse { responseRequestID = http.value(forHTTPHeaderField:"x-request-id"); responseHTTPStatus = http.statusCode }
-        guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else { throw apiError(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0) }
+        guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else { throw apiError(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0, registration:registration) }
         return data
     }
-    private func apiError(_ data: Data, status: Int) -> ChatGPTError {
+    private func apiError(_ data: Data, status: Int, registration: String? = nil) -> ChatGPTError {
         let root = (try? JSONSerialization.jsonObject(with: data)) as? [String:Any]
         let error = root?["error"]
         let code = (error as? [String:Any])?["code"] as? String ?? error as? String ?? "request_failed"
-        return responseError(code, status: status, param:(error as? [String:Any])?["param"] as? String, shape:error is [String:Any] ? "HTTP error object" : root?["detail"] != nil ? "HTTP admission detail" : "HTTP other body")
+        return responseError(code, status: status, param:(error as? [String:Any])?["param"] as? String, shape:error is [String:Any] ? "HTTP error object" : root?["detail"] != nil ? "HTTP admission detail" : "HTTP other body",registration:registration)
     }
-    private func responseError(_ raw: String, status: Int = 0, param: String? = nil, shape: String = "stream error") -> ChatGPTError {
+    private func responseError(_ raw: String, status: Int = 0, param: String? = nil, shape: String = "stream error", registration: String? = nil) -> ChatGPTError {
         let code = ChatGPTRecovery.safe(raw, fallback:"request_failed")
-        if ChatGPTRecovery.quota(code) { blockedAccounts.insert(activeID) }
+        blockedAccounts = ChatGPTRecovery.blocked(after:code,registration:registration ?? activeID,existing:blockedAccounts)
         diagnostic = "Time: \(Date.now.ISO8601Format())\nModel: \(ChatGPTRecovery.safe(responseModel))\nHTTP: \(status == 0 ? responseHTTPStatus : status)\nStage: \(shape)\nCode: \(code)\nParameter: \(ChatGPTRecovery.safe(param))\nRequest reference: \(ChatGPTRecovery.safe(responseRequestID))"
         UserDefaults.standard.set(diagnostic, forKey:"chatgptLastDiagnostic")
         return .message(ChatGPTRecovery.message(code:code,status:status) + " (" + code + "). No paid fallback or automatic retry.")
@@ -184,14 +185,17 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
             account.accessToken = access; account.refreshToken = tokens["refresh_token"] as? String ?? account.refreshToken
             account.expiry = .now.addingTimeInterval(tokens["expires_in"] as? Double ?? 3600)
             if let scope = tokens["scope"] as? String { account.scopes = scope.split(separator: " ").map(String.init) }
-            try save(account)
+            try save(account,select:false)
             guard account.scopes.contains("chatgpt.tokens.use.direct") else { throw ChatGPTError.message("ChatGPT plan permission is no longer enabled.") }
         }
+        guard activeID == account.clientID else { throw ChatGPTError.message("The selected ChatGPT account changed during renewal; no source request sent for the new account.") }
         return account.accessToken
     }
     private func loadModels() async throws {
+        let registration = activeID
         let token = try await access()
         let data = try await request(ChatGPTOAuth.resource + "/models", token: token)
+        guard activeID == registration else { throw ChatGPTError.message("The selected account changed; its model catalog was not replaced.") }
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String:Any], let list = root["models"] as? [[String:Any]] else { throw ChatGPTError.message("Account model catalog had an unexpected format.") }
         models = list.compactMap { value in guard value["visibility"] as? String == "list", let slug = value["slug"] as? String else { return nil }; return .init(id: slug, name: value["display_name"] as? String ?? slug) }
     }
@@ -203,10 +207,11 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     } }
     private func verifyInference() async throws {
         guard models.contains(where: { $0.id == selectedModel }) else { throw ChatGPTError.message("Choose an available model before testing.") }
-        message = "Checking completed inference with \(selectedModel)…"
-        _ = try await performResponse(input: [["role":"user", "content":"Reply with exactly: Mission Control connection works."]], instructions: nil, model: selectedModel, effort: "medium", onDelta: nil)
-        guard var account = current else { throw ChatGPTError.message("The active account changed.") }
-        account.verifiedModel = selectedModel; account.verifiedAt = .now
+        let registration = activeID, model = selectedModel
+        message = "Checking completed inference with \(model)…"
+        _ = try await performResponse(input: [["role":"user", "content":"Reply with exactly: Mission Control connection works."]], instructions: nil, model: model, effort: "medium", onDelta: nil)
+        guard activeID == registration, selectedModel == model, var account = current else { throw ChatGPTError.message("The active account or model changed; verification was not transferred.") }
+        account.verifiedModel = model; account.verifiedAt = .now
         try save(account)
         UserDefaults.standard.set(selectedModel, forKey: "assistantModel")
         blockedAccounts.remove(activeID)
@@ -218,13 +223,16 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         guard hasSession, inferenceVerified else { throw ChatGPTError.message("Verify completed subscription inference in Settings first.") }
         busy = true
         defer { busy = false }
+        let registration = activeID, requestedModel = model ?? selectedModel
         if models.isEmpty { try await loadModels() }
-        let requestedModel = model ?? selectedModel
+        guard activeID == registration else { throw ChatGPTError.message("The selected account changed before inference; no source request sent.") }
         guard ["low", "medium", "high"].contains(effort), models.contains(where: { $0.id == requestedModel }) else { throw ChatGPTError.message("The selected model or reasoning level is unavailable. Check Settings.") }
         return try await performResponse(input: input, instructions: instructions, model: requestedModel, effort: effort, onDelta: onDelta)
     }
     private func performResponse(input: [[String:String]], instructions: String?, model: String, effort: String, onDelta: ((String) -> Void)?) async throws -> String {
+        let registration = activeID
         let token = try await access()
+        guard activeID == registration else { throw ChatGPTError.message("The selected account changed before inference; no source request sent.") }
         var request = URLRequest(url: URL(string: ChatGPTOAuth.resource + "/responses")!)
         request.httpMethod = "POST"; request.timeoutInterval = 120
         request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
@@ -243,12 +251,13 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         if let http = response as? HTTPURLResponse { responseRequestID = http.value(forHTTPHeaderField:"x-request-id"); responseHTTPStatus = http.statusCode }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             var data = Data(); for try await byte in bytes { if data.count < 8192 { data.append(byte) } else { break } }
-            throw apiError(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+            throw apiError(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0,registration:registration)
         }
         var stream = ChatGPTStream()
         do {
             for try await byte in bytes {
                 try Task.checkCancellation()
+                guard activeID == registration else { throw ChatGPTError.message("The selected account changed; the old response was stopped.") }
                 if let delta = try stream.byte(byte) { onDelta?(delta) }
             }
             return try stream.finishBytes()
@@ -256,7 +265,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
             switch failure {
             case .failed(let code):
                 if responseRequestID == nil { responseRequestID = stream.responseID }
-                throw responseError(code, param:stream.errorParam)
+                throw responseError(code, param:stream.errorParam,registration:registration)
             case .incomplete: throw ChatGPTError.message("Inference was incomplete. Partial output is not a completed response.")
             case .interrupted: throw ChatGPTError.message("Stream ended without completed, nonempty inference.")
             case .invalid: throw ChatGPTError.message("Invalid response stream event.")

@@ -57,6 +57,8 @@ import SwiftData
         task = Task {
             defer { busy = false }
             do {
+                try Task.checkCancellation()
+                guard !assistant.busy, !assistant.hasDraft, !model.writing, registration == model.chatGPT.activeID, selectedModel == model.chatGPT.selectedModel else { throw MemoryLearningFailure.changed }
                 let input = try MemoryLearningRules.input(turns:batch,existing:existing,timezone:TimeZone.current.identifier,questionAllowed:questionAllowed)
                 let output = try await model.chatGPT.streamResponse(input:[["role":"user","content":input]],instructions:MemoryLearningRules.instructions,model:selectedModel) { _ in }
                 try Task.checkCancellation()

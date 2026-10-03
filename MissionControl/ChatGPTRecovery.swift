@@ -4,6 +4,10 @@ import Foundation
 /// A generic 429 or usage-check outage must not permanently latch quota state.
 enum ChatGPTRecovery {
     static func quota(_ code: String) -> Bool { code == "subscription_sharing_usage_limit_exceeded" }
+    static func blocked(after code: String, registration: String, existing: Set<String>) -> Set<String> {
+        guard quota(code), !registration.isEmpty else { return existing }
+        return existing.union([registration])
+    }
     static func safe(_ value: String?, fallback: String = "unavailable") -> String {
         guard let value, !value.isEmpty, value.count <= 160,
               value.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "_-.[]".contains($0)) }) else { return fallback }

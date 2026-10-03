@@ -2,6 +2,10 @@ import Foundation
 @main struct Checks {
     static func main() throws {
         assert(ChatGPTRecovery.quota("subscription_sharing_usage_limit_exceeded"))
+        let first = ChatGPTRecovery.blocked(after:"subscription_sharing_usage_limit_exceeded",registration:"request-account",existing:[])
+        assert(first == ["request-account"] && !first.contains("new-active-account"))
+        assert(ChatGPTRecovery.blocked(after:"rate_limit_exceeded",registration:"request-account",existing:[]) == [])
+        assert(ChatGPTRecovery.blocked(after:"subscription_sharing_usage_limit_exceeded",registration:"",existing:[]) == [])
         assert(!ChatGPTRecovery.quota("subscription_sharing_usage_unavailable"))
         assert(!ChatGPTRecovery.quota("rate_limit_exceeded"))
         assert(ChatGPTRecovery.message(code:"rate_limit_exceeded",status:429).contains("not confirmed"))
