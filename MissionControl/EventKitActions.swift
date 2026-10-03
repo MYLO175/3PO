@@ -1,7 +1,7 @@
 import Foundation
 import EventKit
 
-struct ActionResult { var message: String; var undoToken: String? = nil; var itemID: String? = nil }
+struct ActionResult { var message: String; var undoToken: String? = nil; var itemID: String? = nil; var nativeUndo: NativeEditUndo? = nil }
 extension EventKitService {
     private func equivalentDue(_ left: DateComponents?, _ right: DateComponents?) -> Bool {
         guard let left, let right else { return left == nil && right == nil }
@@ -67,9 +67,10 @@ extension EventKitService {
                     item.dueDateComponents = Calendar.current.dateComponents(hasTime ? [.year,.month,.day,.hour,.minute,.second,.timeZone] : [.year,.month,.day],from:date)
                 }
             }
-            let title = item.title, calendarID = item.calendar.calendarIdentifier, due = item.dueDateComponents
+            if let notes = draft.notes { item.notes = notes.isEmpty ? nil : notes }
+            let title = item.title, calendarID = item.calendar.calendarIdentifier, due = item.dueDateComponents, notes = item.notes ?? ""
             do { try store.save(item,commit:true) } catch { store.reset(); throw error }
-            guard let saved = store.calendarItem(withIdentifier:item.calendarItemIdentifier) as? EKReminder, !saved.isCompleted, saved.title == title, saved.calendar.calendarIdentifier == calendarID, equivalentDue(saved.dueDateComponents,due) else { throw IntegrationError.verification }
+            guard let saved = store.calendarItem(withIdentifier:item.calendarItemIdentifier) as? EKReminder, !saved.isCompleted, saved.title == title, (saved.notes ?? "") == notes, saved.calendar.calendarIdentifier == calendarID, equivalentDue(saved.dueDateComponents,due) else { throw IntegrationError.verification }
             return .init(message:(draft.kind == .createReminder ? "Created reminder: " : "Updated reminder: ") + (title ?? "Untitled"),itemID:saved.calendarItemIdentifier)
         case .createEvent, .editEvent:
             try await access(.event)
@@ -106,16 +107,26 @@ extension EventKitService {
             guard item.startDate != nil, item.endDate != nil, item.endDate > item.startDate, item.endDate.timeIntervalSince(item.startDate) <= 366 * 86400 else { throw ActionFailure.message("Specify a valid event start and end; no duration was guessed.") }
             if draft.kind == .createEvent || draft.start != nil || draft.end != nil || draft.allDay != nil { item.timeZone = allDay ? .current : TimeZone(secondsFromGMT:0) }
             item.isAllDay = allDay
-            let expectedStart = item.startDate, expectedEnd = item.endDate, title = item.title, calendarID = item.calendar.calendarIdentifier
+            if let notes = draft.notes { item.notes = notes.isEmpty ? nil : notes }
+            if let location = draft.location { item.location = location.isEmpty ? nil : location }
+            let expectedStart = item.startDate, expectedEnd = item.endDate, title = item.title, calendarID = item.calendar.calendarIdentifier, notes = item.notes ?? "", location = item.location ?? ""
+            if allDay { item.endDate = expectedEnd!.addingTimeInterval(-1) }
             do { try store.save(item,span:.thisEvent,commit:true) } catch { store.reset(); throw error }
             let matches = store.events(matching:store.predicateForEvents(withStart:expectedStart!.addingTimeInterval(-1),end:expectedEnd!.addingTimeInterval(1),calendars:[item.calendar])).filter { $0.calendarItemIdentifier == item.calendarItemIdentifier && $0.startDate == expectedStart }
-            guard matches.count == 1, let saved = matches.first, saved.title == title, saved.endDate == expectedEnd, saved.isAllDay == allDay, saved.calendar.calendarIdentifier == calendarID else { throw IntegrationError.verification }
+            guard matches.count == 1, let saved = matches.first, saved.title == title, (saved.notes ?? "") == notes, (saved.location ?? "") == location, editorDetails(saved).end == expectedEnd, saved.isAllDay == allDay, saved.calendar.calendarIdentifier == calendarID else { throw IntegrationError.verification }
             return .init(message:(draft.kind == .createEvent ? "Created event: " : "Updated event: ") + (title ?? "Untitled"),itemID:saved.calendarItemIdentifier)
         }
     }
     #if DEBUG
     func removeActionFixture(id: String, title: String, marker: String) throws {
-        guard let item = store.calendarItem(withIdentifier:id), item.title == title, item.notes == "Mission Control request " + marker else { throw IntegrationError.missing }
+        // Tool-edit Undo can restore the original UUID title. Keep cleanup limited
+        // to the exact tracked item and its unchanged, private creation marker.
+        let prefix = "Mission Control tool validation "
+        let suffix = title.hasPrefix(prefix) ? String(title.dropFirst(prefix.count).prefix(36)) : ""
+        let original = UUID(uuidString:suffix) == nil ? nil : prefix + suffix
+        guard let item = store.calendarItem(withIdentifier:id),
+              item.title == title || (original != nil && item.title == original),
+              item.notes == "Mission Control request " + marker else { throw IntegrationError.missing }
         if let reminder = item as? EKReminder { try store.remove(reminder,commit:true) }
         else if let event = item as? EKEvent { try store.remove(event,span:.thisEvent,commit:true) }
         guard store.calendarItem(withIdentifier:id) == nil else { throw IntegrationError.verification }

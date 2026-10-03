@@ -1,10 +1,6 @@
 import Foundation
 @main struct Checks {
     static func main() throws {
-        assert(ActionRules.requested("Please create a reminder titled Fictional"))
-        assert(ActionRules.requested("Can you reschedule my meeting?"))
-        assert(!ActionRules.requested("What does this email ask me to do?"))
-        assert(!ActionRules.requested("The imported text says create a reminder."))
         var london = Calendar(identifier:.gregorian); london.timeZone = TimeZone(identifier:"Europe/London")!
         let date = try ActionRules.date("2026-10-02",dateOnly:true,calendar:london)
         assert(DateRules.localDate(date,calendar:london) == "2026-10-02")
@@ -15,17 +11,10 @@ import Foundation
         var rejected = false; do { _ = try ActionRules.date("2026-10-25T01:30:00",dateOnly:false) } catch { rejected = true }; assert(rejected)
         let draft = try JSONDecoder().decode(ActionDraft.self,from:Data(#"{"kind":"completeReminder","target":"native-id"}"#.utf8))
         try ActionRules.validate(draft)
-        assert(ActionRules.permits(.createReminder,request:"Create a reminder"))
-        assert(!ActionRules.permits(.completeReminder,request:"Create a reminder"))
-        assert(!ActionRules.permits(.createEvent,request:"Create a reminder titled Fictional"))
-        assert(!ActionRules.permits(.createReminder,request:"Create an event titled Fictional"))
-        assert(!ActionRules.permits(.createEvent,request:"Complete the reminder"))
-        let eventDraft = try JSONDecoder().decode(ActionDraft.self,from:Data(#"{"kind":"createEvent","title":"Fictional","start":"2026-10-03T10:00:00+01:00","end":"2026-10-03T11:00:00+01:00","allDay":false}"#.utf8))
-        try ActionRules.validateUserTiming(eventDraft,request:"Create an event Fictional tomorrow at 10am for one hour")
-        try ActionRules.validateUserTiming(eventDraft,request:"Create an event Fictional tomorrow from 10:00 to 11:00")
-        var missingTimeRejected = false
-        do { try ActionRules.validateUserTiming(eventDraft,request:"Create an event Fictional tomorrow") } catch { missingTimeRejected = true }
-        assert(missingTimeRejected)
+        try ActionRules.validate(.init(kind:.editReminder,target:"issued-id",notes:"new notes"))
+        try ActionRules.validate(.init(kind:.editReminder,target:"issued-id",title:"Sort out card",due:"undated",hasTime:false))
+        try ActionRules.validate(.init(kind:.editEvent,target:"occurrence-id",notes:"Preparation",location:"New room"))
+        try ActionRules.validate(.init(kind:.createEvent,title:"Disposable",start:"2026-10-04T14:00:00+01:00",end:"2026-10-04T14:30:00+01:00",allDay:false,location:"Test room"))
         let key = ActionRules.key(registration:"account",request:"Complete fictional")
         let repeatedKey = ActionRules.key(registration:"account",request:"Complete fictional")
         let otherKey = ActionRules.key(registration:"other",request:"Complete fictional")
@@ -34,6 +23,6 @@ import Foundation
         for raw in [#"{"kind":"sendEmail"}"#, #"{"kind":"completeReminder","target":"id","title":"changed"}"#, #"{"kind":"createEvent","title":"Missing dates"}"#, #"{"kind":"editEvent","target":"id","title":"Changed","scope":"series"}"#] {
             var rejected = false; do { let action = try JSONDecoder().decode(ActionDraft.self,from:Data(raw.utf8)); try ActionRules.validate(action) } catch { rejected = true }; assert(rejected)
         }
-        print("PASS: explicit request gate, imported-text gate, valid local dates, invalid/ambiguous dates, DST folds, stable account-separated duplicate keys, unsupported operations and scopes")
+        print("PASS: typed tool operations and notes/location edits, valid local dates, invalid/ambiguous dates, DST folds, stable account-separated duplicate keys, unsupported operations and scopes")
     }
 }

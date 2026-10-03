@@ -174,12 +174,12 @@ struct AssistantPanel: View {
                 .onAppear { if let id = selected?.turns.last?.id { proxy.scrollTo(id,anchor:.bottom) } }
             }
             if model.memoryLearning.canUndoQuestion(model.chatGPT.activeID) { HStack { Text("Question dismissed").font(.caption).foregroundStyle(.secondary); Button("Undo") { model.memoryLearning.undoQuestion(model.chatGPT.activeID) }.controlSize(.small); Spacer() } }
-            if assistant.mailSearchConversationID == selectedID && assistant.mailSearchTopicID == selectedTopicID && !model.mailLookup.status.isEmpty {
+            if assistant.mailSearchConversationID == selectedID && assistant.mailSearchTopicID == selectedTopicID, let lookup = assistant.visibleMailLookup, !lookup.status.isEmpty {
                 HStack {
-                    Text(model.mailLookup.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    Menu("Mail sources") { ForEach(model.mailLookup.results) { message in Button(message.account + " · " + message.subject) { model.select(message) } } }
-                    if model.mailLookup.hasUnavailable { Button("Retry unavailable reads") { draft.wrappedValue = "Retry unavailable mail reads."; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
-                    if model.mailLookup.hasMore { Button("Continue mail search") { draft.wrappedValue = "Continue the email search."; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
+                    Text(lookup.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    Menu("Mail sources") { ForEach(lookup.results) { message in Button(message.account + " · " + message.subject) { model.select(message) } } }
+                    if lookup.hasUnavailable { Button("Retry unavailable reads") { draft.wrappedValue = "Retry unavailable mail reads."; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
+                    if lookup.hasMore { Button("Continue mail search") { draft.wrappedValue = "Continue the email search."; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
                 }
             }
             if let error = assistant.error, errorHere, !model.chatGPT.usagePaused { DisclosureGroup("Request didn’t complete") { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }.font(.caption) }
@@ -202,8 +202,8 @@ struct AssistantPanel: View {
             HStack {
                 Button { showDictation = true } label: { Image(systemName:"mic") }.help("Dictate a message").accessibilityLabel("Dictate a message").disabled(widgetID != nil && !assistant.drafts.writable)
                 TextField("Message your PA", text: draft,axis:.vertical).lineLimit(1...4).textFieldStyle(.plain).padding(9).background(Color(nsColor:.textBackgroundColor),in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.primary.opacity(0.08))).onSubmit { send() }.focused($composerFocused).disabled(widgetID != nil && !assistant.drafts.writable)
-                if sendingHere { ProgressView().controlSize(.small); Button("Stop") { assistant.cancel() } }
-                else { Button("Send") { send() }.disabled(assistant.busy || (widgetID != nil && !assistant.drafts.writable) || draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (MemoryRules.explicitRequest(draft.wrappedValue) == nil && assistant.localDiscoveryReview(draft.wrappedValue,model:model,topicID:selectedTopicID) == nil && (!model.chatGPT.inferenceVerified || model.chatGPT.busy || model.chatGPT.usagePaused))) }
+                if sendingHere { ProgressView().controlSize(.small); Text(assistant.toolStatus).font(.caption).foregroundStyle(.secondary).lineLimit(1); Button("Stop") { assistant.cancel() } }
+                else { Button("Send") { send() }.disabled(assistant.busy || (widgetID != nil && !assistant.drafts.writable) || draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (!model.chatGPT.inferenceVerified || model.chatGPT.busy || model.chatGPT.usagePaused)) }
             }
             if errorHere && assistant.error?.contains("Choose the specific target") == true {
                 Picker("Specific action target", selection: $model.assistantActions.selectedTarget) {

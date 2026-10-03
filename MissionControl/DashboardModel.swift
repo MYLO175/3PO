@@ -342,11 +342,26 @@ import EventKit
             await refreshCalendar(); await refreshReminders()
         } catch { writeError = error.localizedDescription; throw error }
     }
+    func recordAssistantEditUndo(_ receipt: NativeEditUndo) { editUndo = receipt; widgetCalendars.invalidate() }
     func showFeedback(_ text: String) { nativeWriteNotice = text; feedbackDate = .now }
     var latestUndo: String? {
         UndoOrder.latest(layout:workspace.canUndo ? workspace.undoDate : nil,completion:undoToken == nil ? nil : completionUndoDate,edit:editUndo?.created)
     }
     var undoLabel: String { latestUndo == "edit" ? "Undo edit" : latestUndo == "completion" ? "Undo reminder completion" : "Undo dashboard change" }
+    func undoAssistantAppleChange() async throws -> String {
+        guard !sample, !writing else { throw ActionFailure.message("Another write is in progress.") }
+        let latest = UndoOrder.latest(layout:nil,completion:undoToken == nil ? nil : completionUndoDate,edit:editUndo?.created)
+        guard latest != nil else { throw ActionFailure.message("No supported Apple edit/completion remains to undo. Creation/deletion are outside this Undo.") }
+        writing = true; defer { writing = false }
+        let result: String
+        if latest == "edit", let ticket = editUndo {
+            try await eventKit.undoEdit(ticket); editUndo = nil; widgetCalendars.invalidate(); result = "Edit undone: " + ticket.original.title
+        } else if let token = undoToken {
+            try await eventKit.undo(token:token); undoToken = nil; result = "Reminder restored: " + undoTitle
+            do { try assistantActions.recordUndo(token:token) } catch { writeError = "Reminder restored; action receipt update failed." }
+        } else { throw ActionFailure.message("Undo receipt is unavailable.") }
+        showFeedback(result); await refreshCalendar(); await refreshReminders(); await refreshPAOrientation(); return result
+    }
     func undoLatest() {
         guard !writing, !assistant.busy else { return }
         if latestUndo == "layout" { workspace.undo(); if workspace.error == nil { showFeedback("Dashboard change undone") }; return }

@@ -13,6 +13,8 @@ struct ActionDraft: Codable {
     var end: String?
     var allDay: Bool?
     var scope: String?
+    var notes: String?
+    var location: String?
 }
 enum ActionFailure: LocalizedError {
     case message(String)
@@ -22,18 +24,15 @@ enum ActionRules {
     static func validate(_ draft: ActionDraft) throws {
         switch draft.kind {
         case .createReminder, .editReminder, .completeReminder:
-            guard draft.start == nil, draft.end == nil, draft.allDay == nil, draft.scope == nil else { throw ActionFailure.message("Reminder action included unsupported event fields.") }
-            if draft.kind == .completeReminder { guard draft.target != nil, draft.title == nil, draft.destination == nil, draft.due == nil, draft.hasTime == nil else { throw ActionFailure.message("Completion must identify one reminder without editing it.") } }
-            if draft.kind == .editReminder { guard draft.target != nil, draft.title != nil || draft.due != nil || draft.destination != nil else { throw ActionFailure.message("Specify the reminder change.") } }
+            guard draft.start == nil, draft.end == nil, draft.allDay == nil, draft.scope == nil, draft.location == nil else { throw ActionFailure.message("Reminder action included unsupported event fields.") }
+            if draft.kind == .completeReminder { guard draft.target != nil, draft.title == nil, draft.destination == nil, draft.due == nil, draft.hasTime == nil, draft.notes == nil else { throw ActionFailure.message("Completion must identify one reminder without editing it.") } }
+            if draft.kind == .editReminder { guard draft.target != nil, draft.title != nil || draft.due != nil || draft.destination != nil || draft.notes != nil else { throw ActionFailure.message("Specify the reminder change.") } }
             if draft.kind == .createReminder { guard draft.target == nil, draft.title != nil, draft.hasTime != true || draft.due != nil else { throw ActionFailure.message("Specify the new reminder, including a date for any due time.") } }
         case .createEvent, .editEvent:
             guard draft.due == nil, draft.hasTime == nil, draft.scope == nil || draft.scope == "occurrence" else { throw ActionFailure.message("Unsupported event fields or recurring scope.") }
             if draft.kind == .createEvent { guard draft.target == nil, draft.start != nil, draft.end != nil, draft.allDay != nil, draft.scope == nil else { throw ActionFailure.message("Specify event start, end and whether it is all-day.") } }
-            if draft.kind == .editEvent { guard draft.target != nil, draft.title != nil || draft.start != nil || draft.end != nil || draft.allDay != nil || draft.destination != nil else { throw ActionFailure.message("Specify the event change.") } }
+            if draft.kind == .editEvent { guard draft.target != nil, draft.title != nil || draft.start != nil || draft.end != nil || draft.allDay != nil || draft.destination != nil || draft.notes != nil || draft.location != nil else { throw ActionFailure.message("Specify the event change.") } }
         }
-    }
-    static func requested(_ text: String) -> Bool {
-        text.range(of: #"^\s*(?:(?:please|can you|could you|would you)\s+)?(?:create|add|schedule|edit|change|move|reschedule|complete|mark)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
     static func date(_ value: String, dateOnly: Bool, calendar: Calendar = .current) throws -> Date {
         if dateOnly {
@@ -49,34 +48,6 @@ enum ActionRules {
         format.formatOptions.insert(.withFractionalSeconds)
         guard let date = format.date(from: value) else { throw ActionFailure.message("The requested time is invalid.") }
         return date
-    }
-    static func permits(_ kind: ActionKind, request: String) -> Bool {
-        let pattern = #"^\s*(?:(?:please|can you|could you|would you)\s+)?(create|add|schedule|edit|change|move|reschedule|complete|mark)\b"#
-        guard let regex = try? NSRegularExpression(pattern:pattern,options:.caseInsensitive), let match = regex.firstMatch(in:request,range:NSRange(request.startIndex...,in:request)) else { return false }
-        let verb = (request as NSString).substring(with:match.range(at:1)).lowercased()
-        let remainder = (request as NSString).substring(from:NSMaxRange(match.range)).trimmingCharacters(in:.whitespacesAndNewlines)
-        switch verb {
-        case "create","add","schedule":
-            if remainder.range(of:#"^(?:(?:a|an|new|the|my)\s+)*(?:calendar\s+)?reminder\b"#,options:[.regularExpression,.caseInsensitive]) != nil { return kind == .createReminder }
-            if remainder.range(of:#"^(?:(?:a|an|new|the|my)\s+)*(?:calendar\s+)?(?:event|meeting|appointment)\b"#,options:[.regularExpression,.caseInsensitive]) != nil { return kind == .createEvent }
-            return kind == .createReminder || kind == .createEvent
-        case "edit","change","move","reschedule": return kind == .editReminder || kind == .editEvent
-        case "complete","mark": return kind == .completeReminder
-        default: return false
-        }
-    }
-    static func validateUserTiming(_ draft: ActionDraft, request: String) throws {
-        guard draft.kind == .createEvent else { return }
-        let allDay = request.range(of:#"\ball[ -]day\b"#,options:[.regularExpression,.caseInsensitive]) != nil
-        if draft.allDay == true {
-            guard allDay else { throw ActionFailure.message("Please specify an all-day event or give its start time and duration. No write was attempted.") }
-            return
-        }
-        let clock = #"(?:\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(?:am|pm)\b|\b(?:noon|midnight)\b)"#
-        let hasClock = request.range(of:clock,options:[.regularExpression,.caseInsensitive]) != nil
-        let duration = request.range(of:#"\bfor\s+(?:\d+(?:\.\d+)?|an?|one|two|three|four|half(?:\s+an?)?|quarter(?:\s+of\s+an?)?)\s*(?:minutes?|mins?|hours?|hrs?)\b"#,options:[.regularExpression,.caseInsensitive]) != nil
-        let end = request.range(of:#"\b(?:to|until|ending\s+at)\s*"# + clock,options:[.regularExpression,.caseInsensitive]) != nil
-        guard hasClock && (duration || end) else { throw ActionFailure.message("Please give the event's start time and end time or duration. No write was attempted.") }
     }
     static func key(registration: String, request: String, selectedTarget: String = "") -> String {
         let data = Data((registration + "\n" + request.trimmingCharacters(in: .whitespacesAndNewlines) + "\n" + selectedTarget).utf8)

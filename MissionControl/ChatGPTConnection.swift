@@ -229,7 +229,18 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         guard ["low", "medium", "high"].contains(effort), models.contains(where: { $0.id == requestedModel }) else { throw ChatGPTError.message("The selected model or reasoning level is unavailable. Check Settings.") }
         return try await performResponse(input: input, instructions: instructions, model: requestedModel, effort: effort, onDelta: onDelta)
     }
+    func toolResponse(input: [[String:Any]], instructions: String, tools: [[String:Any]], model: String, onDelta: @escaping (String) -> Void) async throws -> PAResponse {
+        guard !busy, !usagePaused, hasSession, inferenceVerified else { throw ChatGPTError.message("Subscription access is unavailable or another request is in progress.") }
+        busy = true; defer { busy = false }
+        let registration = activeID
+        if models.isEmpty { try await loadModels() }
+        guard activeID == registration, models.contains(where:{ $0.id == model }) else { throw ChatGPTError.message("The selected account/model is unavailable.") }
+        return try await performToolResponse(input:input,instructions:instructions,model:model,effort:"medium",tools:tools,onDelta:onDelta)
+    }
     private func performResponse(input: [[String:String]], instructions: String?, model: String, effort: String, onDelta: ((String) -> Void)?) async throws -> String {
+        try await performToolResponse(input:input.map { $0 as [String:Any] },instructions:instructions,model:model,effort:effort,tools:[],onDelta:onDelta).text
+    }
+    private func performToolResponse(input: [[String:Any]], instructions: String?, model: String, effort: String, tools: [[String:Any]], onDelta: ((String) -> Void)?) async throws -> PAResponse {
         let registration = activeID
         let token = try await access()
         guard activeID == registration else { throw ChatGPTError.message("The selected account changed before inference; no source request sent.") }
@@ -239,6 +250,10 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         var body: [String:Any] = ["model":model, "input":input, "store":false, "stream":true, "reasoning":["effort":effort]]
         if let instructions { body["instructions"] = instructions }
+        if !tools.isEmpty {
+            body["tools"] = tools; body["parallel_tool_calls"] = false
+            body["include"] = ["reasoning.encrypted_content"]
+        }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         responseRequestID = nil; responseHTTPStatus = 0; responseModel = model
         let configuration = URLSessionConfiguration.ephemeral
@@ -253,21 +268,22 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
             var data = Data(); for try await byte in bytes { if data.count < 8192 { data.append(byte) } else { break } }
             throw apiError(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0,registration:registration)
         }
-        var stream = ChatGPTStream()
+        var stream = ChatGPTStream(allowsTools:!tools.isEmpty)
         do {
             for try await byte in bytes {
                 try Task.checkCancellation()
                 guard activeID == registration else { throw ChatGPTError.message("The selected account changed; the old response was stopped.") }
                 if let delta = try stream.byte(byte) { onDelta?(delta) }
             }
-            return try stream.finishBytes()
+            let text = try stream.finishBytes()
+            return PAResponse(text:text,output:stream.output,calls:stream.calls)
         } catch let failure as ChatGPTStream.Failure {
             switch failure {
             case .failed(let code):
                 if responseRequestID == nil { responseRequestID = stream.responseID }
                 throw responseError(code, param:stream.errorParam,registration:registration)
             case .incomplete: throw ChatGPTError.message("Inference was incomplete. Partial output is not a completed response.")
-            case .interrupted: throw ChatGPTError.message("Stream ended without completed, nonempty inference.")
+            case .interrupted: throw ChatGPTError.message("Stream ended without completed, nonempty inference." + (tools.isEmpty ? "" : " Tool transport: " + stream.diagnostic))
             case .invalid: throw ChatGPTError.message("Invalid response stream event.")
             case .oversized: throw ChatGPTError.message("Response stream event exceeded its safety limit.")
             }
