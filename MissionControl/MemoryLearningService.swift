@@ -6,6 +6,8 @@ import SwiftData
     private(set) var state = MemoryLearningState()
     var questionsEnabled = true { didSet { UserDefaults.standard.set(questionsEnabled,forKey:"paLearningQuestionsEnabled") } }
     private var undoQuestionID: String?
+    private var dismissalDate: Date?
+    func undoDate(_ registration: String) -> Date? { canUndoQuestion(registration) ? dismissalDate : nil }
     private(set) var busy = false
     private(set) var error: String?
     private let container: ModelContainer?
@@ -93,13 +95,13 @@ import SwiftData
     func dismiss(_ record: PALearningQuestion) {
         guard let index = state.questions?.firstIndex(where:{ $0.id == record.id }) else { return }
         let previous = state; state.questions?[index].dismissed = true
-        do { try save(); undoQuestionID = record.id } catch { state = previous; self.error = "Question dismissal could not be saved." }
+        do { try save(); undoQuestionID = record.id; dismissalDate = .now } catch { state = previous; self.error = "Question dismissal could not be saved." }
     }
     func canUndoQuestion(_ registration: String) -> Bool { state.questions?.contains { $0.id == undoQuestionID && $0.registration == registration } == true }
     func undoQuestion(_ registration: String) {
         guard let index = state.questions?.firstIndex(where:{ $0.id == undoQuestionID && $0.registration == registration }) else { return }
         let previous = state; state.questions?[index].dismissed = false
-        do { try save(); undoQuestionID = nil } catch { state = previous; self.error = "Question dismissal could not be undone." }
+        do { try save(); undoQuestionID = nil; dismissalDate = nil } catch { state = previous; self.error = "Question dismissal could not be undone." }
     }
     #if DEBUG
     func validate(_ model: DashboardModel) async throws -> String {

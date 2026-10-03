@@ -13,6 +13,8 @@ import SwiftData
     private let container: ModelContainer?
     private var lastCheck = Date.distantPast
     private var undoID: String?
+    private var dismissalDate: Date?
+    func undoDate(_ registration: String) -> Date? { state.records.contains { $0.id == undoID && $0.registration == registration } ? dismissalDate : nil }
     init(container: ModelContainer?) {
         self.container = container
         if UserDefaults.standard.object(forKey:"paProactiveEnabled") != nil { enabled = UserDefaults.standard.bool(forKey:"paProactiveEnabled") }
@@ -42,13 +44,13 @@ import SwiftData
         let previous = state
         guard let i = state.records.firstIndex(where:{ $0.id == record.id }) else { return }
         state.records[i].dismissed = true
-        do { try save(); undoID = record.id } catch { state = previous; self.error = "Suggestion dismissal could not be saved." }
+        do { try save(); undoID = record.id; dismissalDate = .now } catch { state = previous; self.error = "Suggestion dismissal could not be saved." }
     }
     var canUndo: Bool { undoID != nil }
     func undo(_ model: DashboardModel) {
         guard let id = undoID, let i = state.records.firstIndex(where:{ $0.id == id && $0.registration == model.chatGPT.activeID }) else { return }
         let previous = state; state.records[i].dismissed = false
-        do { try save(); undoID = nil } catch { state = previous; self.error = "Dismissal could not be undone." }
+        do { try save(); undoID = nil; dismissalDate = nil } catch { state = previous; self.error = "Dismissal could not be undone." }
     }
     func cancel() { task?.cancel() }
     func check(_ model: DashboardModel, manual: Bool = false) {

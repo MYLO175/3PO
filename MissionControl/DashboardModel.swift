@@ -345,9 +345,30 @@ import EventKit
     func recordAssistantEditUndo(_ receipt: NativeEditUndo) { editUndo = receipt; widgetCalendars.invalidate() }
     func showFeedback(_ text: String) { nativeWriteNotice = text; feedbackDate = .now }
     var latestUndo: String? {
-        UndoOrder.latest(layout:workspace.canUndo ? workspace.undoDate : nil,completion:undoToken == nil ? nil : completionUndoDate,edit:editUndo?.created)
+        UndoOrder.latest(layout:workspace.canUndo ? workspace.undoDate : nil,completion:undoToken == nil ? nil : completionUndoDate,edit:editUndo?.created,email:emailSummaries.undoDate(chatGPT.activeID),discovery:proactive.undoDate(chatGPT.activeID),question:memoryLearning.undoDate(chatGPT.activeID))
     }
-    var undoLabel: String { latestUndo == "edit" ? "Undo edit" : latestUndo == "completion" ? "Undo reminder completion" : "Undo dashboard change" }
+    var latestUndoDate: Date? {
+        switch latestUndo {
+        case "layout": return workspace.undoDate
+        case "completion": return completionUndoDate
+        case "edit": return editUndo?.created
+        case "email": return emailSummaries.undoDate(chatGPT.activeID)
+        case "discovery": return proactive.undoDate(chatGPT.activeID)
+        case "question": return memoryLearning.undoDate(chatGPT.activeID)
+        default: return nil
+        }
+    }
+    var undoLabel: String {
+        switch latestUndo {
+        case "edit": return "Undo edit"
+        case "completion": return "Undo reminder completion"
+        case "layout": return "Undo dashboard change"
+        case "email": return "Undo email dismissal"
+        case "discovery": return "Undo suggestion dismissal"
+        case "question": return "Undo question dismissal"
+        default: return "Undo"
+        }
+    }
     func undoAssistantAppleChange() async throws -> String {
         guard !sample, !writing else { throw ActionFailure.message("Another write is in progress.") }
         let latest = UndoOrder.latest(layout:nil,completion:undoToken == nil ? nil : completionUndoDate,edit:editUndo?.created)
@@ -364,6 +385,9 @@ import EventKit
     }
     func undoLatest() {
         guard !writing, !assistant.busy else { return }
+        if latestUndo == "email" { emailSummaries.undoDismiss(self); return }
+        if latestUndo == "discovery" { proactive.undo(self); return }
+        if latestUndo == "question" { memoryLearning.undoQuestion(chatGPT.activeID); return }
         if latestUndo == "layout" { workspace.undo(); if workspace.error == nil { showFeedback("Dashboard change undone") }; return }
         if latestUndo == "completion" { undo(); return }
         guard latestUndo == "edit", let ticket = editUndo else { return }

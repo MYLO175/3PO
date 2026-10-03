@@ -132,3 +132,5 @@ Conversational intent refinement: the PA acts on ordinary phrasing, accepted con
 
 
 Widget appearance refinement implemented: optional light/dark overrides per saved widget, inheriting all unset theme roles and reversible through Use theme. Appearance menus now contain mode and the coordinated colour editor, removing redundant Style/Accent choices while retaining existing preferences for migration. Full-screen and windowed native toolbar backgrounds use the dashboard canvas. PA header has a compact General/topic selector and one ellipsis menu for Memory/topic actions.
+
+Standard Command-Z now shares latest supported action Undo with the toolbar, including scoped suggestion/question dismissals, while field-editor text Undo/Redo and modal sheet isolation are preserved. Retained app receipts remain one per category; unlimited history, app Redo, new Apple-item creation/deletion and global preference Undo are future work.

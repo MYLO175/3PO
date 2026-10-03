@@ -11,6 +11,8 @@ import SwiftData
     var effort = UserDefaults.standard.string(forKey: "emailSummaryEffort") ?? "medium" { didSet { UserDefaults.standard.set(effort, forKey: "emailSummaryEffort") } }
     private(set) var records: [EmailSummary] = []
     private var dismissedUndo: (String,String)?
+    private var dismissalDate: Date?
+    func undoDate(_ registration: String) -> Date? { dismissedUndo?.1 == registration ? dismissalDate : nil }
     var canUndoDismiss: Bool { dismissedUndo != nil }
     private var rejected: [EmailSummaryRejection] = []
     private var decisions: [EmailHeaderDecision] = []
@@ -71,12 +73,12 @@ import SwiftData
         guard let (id,registration) = dismissedUndo, registration == model.chatGPT.activeID else { return }
         let previous = records
         for i in records.indices where records[i].id == id && records[i].registration == registration { records[i].dismissed = false }
-        do { try save(); dismissedUndo = nil } catch { records = previous; self.error = "Dismissal could not be undone." }
+        do { try save(); dismissedUndo = nil; dismissalDate = nil } catch { records = previous; self.error = "Dismissal could not be undone." }
     }
     func dismiss(_ id: String, model: DashboardModel) {
         let previous = records
         for index in records.indices where records[index].id == id && records[index].registration == model.chatGPT.activeID { records[index].dismissed = true }
-        do { try save(); dismissedUndo = (id,model.chatGPT.activeID) } catch { records = previous; self.error = "Email suggestion could not be dismissed." }
+        do { try save(); dismissedUndo = (id,model.chatGPT.activeID); dismissalDate = .now } catch { records = previous; self.error = "Email suggestion could not be dismissed." }
     }
     func coverage(_ model: DashboardModel) -> String {
         let pending = monitored(model).filter { message in
