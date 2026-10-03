@@ -11,7 +11,7 @@ extension EventKitService {
                 let endDay = Calendar.current.startOfDay(for:event.endDate)
                 if event.endDate != endDay { value.end = Calendar.current.date(byAdding:.day,value:1,to:endDay)! }
             }
-            value.timeZoneID = event.timeZone?.identifier ?? TimeZone.current.identifier
+            value.timeZoneID = event.isAllDay ? TimeZone.current.identifier : (event.timeZone?.identifier ?? TimeZone.current.identifier)
         } else if let reminder = item as? EKReminder {
             var calendar = reminder.dueDateComponents?.calendar ?? Calendar.current
             calendar.timeZone = reminder.dueDateComponents?.timeZone ?? .current
@@ -30,13 +30,13 @@ extension EventKitService {
         case .event(let expected):
             try await access(.event); store.reset()
             let event = try editorEvent(expected.id,sourceID:expected.calendarID,start:expected.start,end:expected.end)
-            guard event.title == expected.title, event.startDate == expected.start, event.endDate == expected.end, event.isAllDay == expected.allDay, (event.location ?? "") == expected.location else { throw IntegrationError.missing }
+            guard (event.title ?? "Untitled event") == expected.title, event.startDate == expected.start, event.endDate == expected.end, event.isAllDay == expected.allDay, (event.location ?? "") == expected.location else { throw IntegrationError.missing }
             return NativeEditSession(item:editorDetails(event),sources:store.calendars(for:.event).map(option))
         case .reminder(let expected):
             try await access(.reminder); store.reset()
             guard let reminder = store.calendarItem(withIdentifier:expected.id) as? EKReminder, !reminder.isCompleted else { throw IntegrationError.missing }
             let details = editorDetails(reminder)
-            guard details.title == expected.title, details.sourceID == expected.listID, details.due == expected.due, details.hasTime == expected.hasTime, details.recurring == expected.recurring else { throw IntegrationError.missing }
+            guard (reminder.title ?? "Untitled reminder") == expected.title, details.sourceID == expected.listID, details.due == expected.due, details.hasTime == expected.hasTime, details.recurring == expected.recurring else { throw IntegrationError.missing }
             return NativeEditSession(item:details,sources:store.calendars(for:.reminder).map(option))
         }
     }

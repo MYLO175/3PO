@@ -318,7 +318,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack { Text(message.subject.isEmpty ? "(No subject)" : message.subject).font(.title2.weight(.semibold)); Spacer(); Button("Done") { model.selectedMessage = nil }.keyboardShortcut(.cancelAction) }
             Text(message.sender).textSelection(.enabled)
-            Text("\(message.account) · \(message.received.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary)
+            Text("\(message.account) · \(message.mailboxName ?? "Inbox") · \(message.received.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary)
             Divider()
             if model.previewLoading { ProgressView("Loading plain-text preview…").frame(maxWidth: .infinity, maxHeight: .infinity) }
             else if let error = model.previewError { ContentUnavailableView("Preview unavailable", systemImage: "exclamationmark.triangle", description: Text(error)) }

@@ -162,7 +162,7 @@ import Observation
         if let note = MemoryRules.explicitRequest(prompt) { remember(note,prompt:prompt); return }
         guard ActionRules.requested(prompt) else {
             if MailLookupRules.requested(prompt) { sendMailLookup(request:prompt,model:model) }
-            else { send(context:snapshot(model)) }
+            else { send(context:snapshot(model),model:model) }
             return
         }
         guard !prompt.isEmpty, !busy, !connection.busy, connection.inferenceVerified, !connection.usagePaused else { return }
@@ -217,14 +217,24 @@ import Observation
             try context.save(); return true
         } catch { container.mainContext.rollback(); self.error = "Conversation could not be saved: " + error.localizedDescription; return false }
     }
-    func send(context: String?) {
+    func sourceSafeHistory(_ model: DashboardModel, feed: AssistantConversation, topic: AssistantConversation?) -> [AssistantTurn] {
+        let excluded = Set(ConversationRules.thread(feed:feed,topic:topic).compactMap { turn -> String? in
+            guard let delivery = turn.deliveryID else { return nil }
+            if delivery.hasPrefix("discovery:") {
+                guard let record = model.proactive.record(delivery:delivery,model:model), model.proactive.visible(record,model:model) else { return delivery }
+            } else if delivery.contains(":morning:"), !model.briefings.allowsChatDelivery(delivery,content:turn.content,model:model) { return delivery }
+            return nil
+        })
+        return ConversationRules.history(feed:feed,topic:topic,excludedDeliveries:excluded)
+    }
+    func send(context: String?, model: DashboardModel) {
         let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty, !busy, !connection.busy, !connection.usagePaused else { return }
         guard connection.hasSession, connection.inferenceVerified else { error = "Verify the ChatGPT connection in Settings first."; return }
         if active == nil { openPA() }
         guard let id = activeID, let response = prepare(prompt,id:id), let conversation = conversation(id) else { return }
         let contextID = response.contextID, topic = self.conversation(response.contextID)
-        let history = ConversationRules.history(feed:conversation,topic:topic).map { ["role":$0.role,"content":String($0.content.prefix(8000))] }
+        let history = sourceSafeHistory(model,feed:conversation,topic:topic).map { ["role":$0.role,"content":String($0.content.prefix(8000))] }
         let memorySnapshot = sharedMemoryContext(conversationID:contextID), topicFocus = topic?.focus ?? "", registration = connection.activeID
         let sourceEnabled = contextEnabled, calendars = excludedCalendars, lists = excludedLists, accounts = excludedAccounts
         let instructions = """

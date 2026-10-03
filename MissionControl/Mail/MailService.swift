@@ -4,6 +4,15 @@ struct MailAccount: Codable, Identifiable, Sendable {
     let id: String
     let title: String
 }
+enum MailFolderRole: String, Codable, Sendable { case inbox, sent, archive }
+struct MailFolder: Codable, Identifiable, Sendable {
+    let id: String
+    let accountID: String
+    let account: String
+    let name: String
+    let role: MailFolderRole
+}
+struct MailFolderDiscovery: Codable, Sendable { let folders: [MailFolder]; let accounts: [MailAccount]; let errors: [String] }
 
 struct MailMessage: Codable, Identifiable, Sendable {
     let id: String
@@ -17,6 +26,9 @@ struct MailMessage: Codable, Identifiable, Sendable {
     let unread: Bool
     let replied: Bool
     let flagged: Bool
+    let mailboxName: String?
+    let mailboxRole: MailFolderRole?
+    let recipients: [String]?
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -48,6 +60,9 @@ struct MailMessage: Codable, Identifiable, Sendable {
         unread = try values.decode(Bool.self, forKey: .unread)
         replied = try values.decode(Bool.self, forKey: .replied)
         flagged = try values.decode(Bool.self, forKey: .flagged)
+        mailboxName = try values.decodeIfPresent(String.self,forKey:.mailboxName)
+        mailboxRole = try values.decodeIfPresent(MailFolderRole.self,forKey:.mailboxRole)
+        recipients = try values.decodeIfPresent([String].self,forKey:.recipients)
     }
 }
 
@@ -107,12 +122,42 @@ actor MailService {
     func discoverAccounts() async throws -> MailDiscovery {
         try JSONDecoder().decode(MailDiscovery.self, from: run(arguments: ["operation": "probe"]))
     }
+    func discoverSearchFolders() async throws -> MailFolderDiscovery {
+        try JSONDecoder().decode(MailFolderDiscovery.self,from:run(arguments:["operation":"folders"]))
+    }
+    #if DEBUG
+    func validateSearchFolders() async throws -> String {
+        let discovery = try await discoverSearchFolders()
+        var checks: [String] = ["\(discovery.accounts.count) accounts, \(discovery.folders.count) discovered Inbox/Sent/Archive folders"]
+        let end = Calendar.current.startOfDay(for:.now)
+        for role in [MailFolderRole.sent,.archive] {
+            let folders = Array(discovery.folders.filter { $0.role == role }.prefix(2))
+            guard !folders.isEmpty else { checks.append(role.rawValue + ": unavailable (not guessed)"); continue }
+            var matched: MailMessage?, pageCount = 0, headerCount = 0
+            search: for dayOffset in 1...2 {
+                let day = Calendar.current.date(byAdding:.day,value:-dayOffset,to:end)!, next = Calendar.current.date(byAdding:.day,value:1,to:day)!
+                for folder in folders {
+                    let page = try await batch(accountID:folder.accountID,window:.init(id:"fixture",accountID:folder.accountID,start:day,end:next,mailboxName:folder.name,mailboxRole:folder.role))
+                    pageCount += 1; headerCount += page.messages.count
+                    if let message = page.messages.first { matched = message; break search }
+                }
+            }
+            if let message = matched {
+                _ = try await body(accountID:message.accountID,messageID:message.messageID,expectedInternetMessageID:message.internetMessageID,mailboxName:message.mailboxName)
+                checks.append(role.rawValue + ": \(headerCount) headers across \(pageCount) bounded pages, one identity/read-state-verified body")
+            } else { checks.append(role.rawValue + ": \(pageCount) empty one-day windows; body untested") }
+        }
+        return "PASS bounded Mail folder reads: " + checks.joined(separator:"; ") + (discovery.errors.isEmpty ? "." : ". Some account metadata unavailable; coverage partial.")
+    }
+    #endif
 
     func batch(accountID: String, window: MailWindowProgress) async throws -> MailBatch {
         var arguments: [String: Any] = ["operation": "batch", "accountID": accountID,
             "start": window.start.timeIntervalSince1970, "end": window.end.timeIntervalSince1970,
             "offset": window.offset, "limit": 20]
         if let ids = window.messageIDs { arguments["messageIDs"] = ids }
+        if let name = window.mailboxName { arguments["mailboxName"] = name }
+        if let role = window.mailboxRole { arguments["mailboxRole"] = role.rawValue }
         let response = try JSONDecoder().decode(MailBatch.self, from: run(arguments: arguments))
         if let error = response.errors.first { throw MailServiceError.mail(error) }
         guard let ids = response.messageIDs, let offset = response.nextOffset, let complete = response.complete,
@@ -123,12 +168,14 @@ actor MailService {
         return response
     }
 
-    func body(accountID: String, messageID: Int, expectedInternetMessageID: String? = nil) async throws -> String {
-        let data = try run(arguments: [
+    func body(accountID: String, messageID: Int, expectedInternetMessageID: String? = nil, mailboxName: String? = nil) async throws -> String {
+        var arguments: [String:Any] = [
             "operation": "body",
             "accountID": accountID,
             "messageID": messageID
-        ])
+        ]
+        if let mailboxName { arguments["mailboxName"] = mailboxName }
+        let data = try run(arguments:arguments)
         let response = try JSONDecoder().decode(BodyResponse.self, from: data)
         if let error = response.errors.first {
             throw MailServiceError.mail(error)

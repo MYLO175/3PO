@@ -47,6 +47,38 @@ function resolveInbox(mail, account, accountID) {
     throw new Error('Inbox mailbox not found for this account');
 }
 
+function resolveSearchMailbox(mail, account, input) {
+    if (!input.mailboxName) return resolveInbox(mail, account, input.accountID);
+    const requested = String(input.mailboxName);
+    if (!requested || requested.length > 500) throw new Error('Invalid mailbox name');
+    const names = listValue(account.mailboxes.name());
+    const matches = names.map((name,index) => ({ name: stringValue(name), index: index })).filter(value => value.name === requested);
+    if (matches.length !== 1) throw new Error('The exact account mailbox changed or is ambiguous; search again');
+    return account.mailboxes[matches[0].index]();
+}
+function searchFolders(mail) {
+    const folders = [], accounts = [], errors = [];
+    mail.accounts().forEach(function(account) {
+        const id = stringValue(account.id());
+        try {
+            if (!account.enabled()) return;
+            const title = stringValue(account.name());
+            accounts.push({id:id,title:title});
+            const names = listValue(account.mailboxes.name());
+            if (names.length > 500) throw new Error('Too many top-level mailboxes for bounded discovery');
+            names.forEach(function(raw) {
+                const name = stringValue(raw), lower = name.toLowerCase();
+                let role = null;
+                if (lower === 'inbox') role = 'inbox';
+                else if (['sent','sent messages','sent items'].indexOf(lower) >= 0) role = 'sent';
+                else if (lower === 'archive' || lower === 'archives') role = 'archive';
+                if (role) folders.push({ id:id + ':' + name, accountID:id, account:title, name:name, role:role });
+            });
+        } catch(error) { errors.push(accountError(id,error)); }
+    });
+    return { folders:folders, accounts:accounts, errors:errors };
+}
+
 function runHeaders(mail, input) {
     const accounts = [];
     const messages = [];
@@ -119,11 +151,11 @@ function runBody(mail, input) {
     }
 
     try {
-        const account = mail.accounts.byId(accountID);
+        const account = mail.accounts.byId(accountID)();
         if (!account || !account.enabled()) throw new Error('Enabled Mail account not found');
-        const inbox = resolveInbox(mail, account, accountID);
+        const inbox = resolveSearchMailbox(mail, account, input);
         const message = inbox.messages.byId(messageID)();
-        if (!message) throw new Error('Inbox message not found');
+        if (!message) throw new Error('Message not found in its original account mailbox');
         const unreadBefore = !Boolean(message.readStatus());
         const body = stringValue(message.content());
         const unreadAfter = !Boolean(message.readStatus());
@@ -151,12 +183,12 @@ function runBatch(mail, input) {
     if (!accountID || !Number.isFinite(start.getTime()) || !(start < end) || !Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1) throw new Error('Invalid Mail batch');
     const account = mail.accounts.byId(accountID)();
     if (!account.enabled()) throw new Error('Mail account is unavailable');
-    const inbox = resolveInbox(mail, account, accountID);
+    const inbox = resolveSearchMailbox(mail, account, input);
+    const dateField = input.mailboxRole === 'sent' ? 'dateSent' : 'dateReceived';
     let ids = input.messageIDs;
     if (!Array.isArray(ids)) {
-        const refs = listValue(inbox.messages.whose({ _and: [
-            { dateReceived: { _greaterThanEquals: start } }, { dateReceived: { _lessThan: end } }
-        ] })());
+        const lower = {}, upper = {}; lower[dateField] = { _greaterThanEquals:start }; upper[dateField] = { _lessThan:end };
+        const refs = listValue(inbox.messages.whose({ _and:[lower,upper] })());
         ids = refs.map(message => Number(message.id()));
     }
     if (ids.some(id => !Number.isSafeInteger(id) || id < 0)) throw new Error('Invalid message identity in batch');
@@ -164,12 +196,17 @@ function runBatch(mail, input) {
     const page = ids.slice(offset, offset + limit);
     const messages = page.map(function (id) {
         const message = inbox.messages.byId(id)();
-        const received = dateISO(message.dateReceived());
+        const received = dateISO(input.mailboxRole === 'sent' ? message.dateSent() : message.dateReceived());
         if (!received || new Date(received) < start || new Date(received) >= end) throw new Error('A message changed or moved; retry this date window');
+        let recipients = null;
+        if (input.mailboxRole === 'sent') {
+            const addresses = listValue(message.toRecipients.address()), names = listValue(message.toRecipients.name());
+            recipients = addresses.slice(0,50).map((address,index) => stringValue(names[index]) + ' <' + stringValue(address) + '>');
+        }
         return { id: accountID + ':' + id, accountID: accountID, account: title, messageID: id,
             internetMessageID: stringValue(message.messageId()), sender: stringValue(message.sender()),
             subject: stringValue(message.subject()), received: received, unread: !Boolean(message.readStatus()),
-            replied: Boolean(message.wasRepliedTo()), flagged: Boolean(message.flaggedStatus()) };
+            replied: Boolean(message.wasRepliedTo()), flagged: Boolean(message.flaggedStatus()), mailboxName:input.mailboxName ? String(input.mailboxName) : null, mailboxRole:input.mailboxRole || null, recipients:recipients };
     });
     return { messages: messages, messageIDs: ids, nextOffset: offset + page.length,
         complete: offset + page.length >= ids.length, errors: [] };
@@ -193,7 +230,9 @@ function run(argv) {
         const input = JSON.parse(argv[0]);
         const mail = Application('Mail');
         let output;
-        if (input.operation === 'batch') {
+        if (input.operation === 'folders') {
+            output = searchFolders(mail);
+        } else if (input.operation === 'batch') {
             output = runBatch(mail, input);
         } else if (input.operation === 'probe') {
             output = probeInboxes(mail);

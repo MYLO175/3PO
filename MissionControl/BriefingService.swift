@@ -37,6 +37,10 @@ import UserNotifications
         return records(model).first { $0.day == BriefingRules.day(.now) && $0.sourceScope == scope(model) }
     }
     func records(_ model: DashboardModel) -> [DailyBriefing] { state.records.filter { $0.registration == model.chatGPT.activeID && $0.invalidated != true }.sorted { $0.created > $1.created } }
+    func allowsChatDelivery(_ key: String, content: String, model: DashboardModel) -> Bool {
+        guard model.assistant.contextEnabled else { return false }
+        return records(model).contains { ConversationRules.morningKey(registration:$0.registration,day:$0.day) == key && $0.sourceScope == scope(model) && BriefingRules.prose($0) == content }
+    }
     #if DEBUG
     func invalidateToday(_ model: DashboardModel) {
         let previous = state

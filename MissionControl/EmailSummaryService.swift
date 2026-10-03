@@ -147,7 +147,7 @@ import SwiftData
                     guard enabled, !paused, registration == model.chatGPT.activeID, !model.assistant.excludedAccounts.contains(message.accountID), !model.chatGPT.busy, !model.assistant.busy, !model.briefings.busy else { return }
                     phase = "Reading Mail body"
                     let body: String
-                    do { body = try await model.mail.body(accountID:message.accountID,messageID:message.messageID,expectedInternetMessageID:message.internetMessageID) }
+                    do { body = try await model.mail.body(accountID:message.accountID,messageID:message.messageID,expectedInternetMessageID:message.internetMessageID,mailboxName:message.mailboxName) }
                     catch is DecodingError { throw ChatGPTError.message("Mail body retrieval returned an invalid structured response. No body was sent for this message; processing is paused.") }
                     try Task.checkCancellation()
                     guard enabled, !model.assistant.excludedAccounts.contains(message.accountID), registration == model.chatGPT.activeID else { return }

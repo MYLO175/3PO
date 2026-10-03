@@ -44,9 +44,9 @@ struct NativeItemEditor: View {
                         }
                         Text("Notes").font(.subheadline.weight(.semibold))
                         TextEditor(text:field(\.notes,fallback:"")).frame(minHeight:115).padding(5).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.primary.opacity(0.12)))
-                        if isEvent && !edited.allDay || !isEvent && edited.hasTime { Text("Times shown in " + edited.timeZoneID).font(.caption).foregroundStyle(.secondary) }
+                        if isEvent && !edited.allDay || !isEvent && edited.hasTime { Text("Times shown in " + TimeZone.current.identifier).font(.caption).foregroundStyle(.secondary) }
                     }.disabled(!baseline.canEdit || saving).padding(2)
-                        .environment(\.timeZone,TimeZone(identifier:edited.timeZoneID) ?? .current)
+                        .environment(\.timeZone,TimeZone.current)
                 }
             } else if loading { Text("Loading the current Apple item…").foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity) }
             Spacer(minLength:0)

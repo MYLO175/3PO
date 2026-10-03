@@ -63,6 +63,12 @@ import Foundation
         precondition(ConversationRules.thread(feed:feed,topic:nil).count == 25)
         precondition(ConversationRules.thread(feed:feed,topic:secondTopic).map(\.id) == [otherMode.id])
         precondition(ConversationRules.history(feed:feed,topic:secondTopic).contains { $0.id == otherMode.id })
+        let hidden = AssistantTurn(role:"assistant",content:"Dismissed source",completed:true,deliveryID:"discovery:hidden",created:Date(timeIntervalSince1970:30))
+        let morning = AssistantTurn(role:"assistant",content:"Old source scope",completed:true,deliveryID:"one:morning:old",created:Date(timeIntervalSince1970:31))
+        var withSources = feed; withSources.turns += [hidden,morning]
+        let filtered = ConversationRules.history(feed:withSources,topic:nil,excludedDeliveries:["discovery:hidden","one:morning:old"])
+        precondition(filtered.count == 20 && !filtered.contains { $0.id == hidden.id || $0.id == morning.id })
+        precondition(withSources.turns.contains { $0.id == hidden.id }, "Filtering inference never deletes the transcript")
         print("PASS: legacy data preservation, configured-topic-only selection, explicit no-topic/account isolation, distinct persisted topic threads, bounded isolated history and memory-learning scope")
     }
 }

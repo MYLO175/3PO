@@ -40,8 +40,8 @@ enum ConversationRules {
             return lhs == rhs ? $0.offset < $1.offset : lhs < rhs
         }.map(\.element)
     }
-    static func history(feed: AssistantConversation, topic: AssistantConversation?) -> [AssistantTurn] {
-        Array(thread(feed:feed,topic:topic).filter(\.completed).suffix(20))
+    static func history(feed: AssistantConversation, topic: AssistantConversation?, excludedDeliveries: Set<String> = []) -> [AssistantTurn] {
+        Array(thread(feed:feed,topic:topic).filter { $0.completed && ($0.deliveryID.map { !excludedDeliveries.contains($0) } ?? true) }.suffix(20))
     }
     static func context(for turn: AssistantTurn, in conversation: AssistantConversation) -> UUID? {
         conversation.isPrimary == true ? turn.contextID : conversation.id

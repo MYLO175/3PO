@@ -30,6 +30,24 @@ import EventKit
     var undoTitle = ""
     var validationReport: String?
     #if DEBUG
+    func validateProactivePrompt() {
+        validationReport = "Checking the proactive prompt with fictional sources…"
+        Task { [self] in
+            let result: String
+            do { result = try await proactive.validate(self) } catch { result = error.localizedDescription }
+            validationReport = result
+            UserDefaults.standard.set(["completed":Date.now.ISO8601Format(),"result":result],forKey:"debugProactiveValidation")
+        }
+    }
+    func validateMailFolders() {
+        validationReport = "Checking bounded Mail folder reads…"
+        Task { [self] in
+            let result: String
+            do { result = try await mail.validateSearchFolders() } catch { result = error.localizedDescription }
+            validationReport = result
+            UserDefaults.standard.set(["completed":Date.now.ISO8601Format(),"result":result],forKey:"debugMailFolderValidation")
+        }
+    }
     func validateMemoryLearning() {
         validationReport = "Checking the memory prompt with fictional source-free messages…"
         Task { [self] in
@@ -300,7 +318,7 @@ import EventKit
         selectedMessage = message; preview = ""; previewError = nil; previewLoading = true
         previewTask = Task {
             do {
-                let body = try await mail.body(accountID: message.accountID, messageID: message.messageID, expectedInternetMessageID: message.internetMessageID)
+                let body = try await mail.body(accountID: message.accountID, messageID: message.messageID, expectedInternetMessageID: message.internetMessageID, mailboxName:message.mailboxName)
                 guard !Task.isCancelled, selectedMessage?.id == message.id else { return }
                 preview = body.isEmpty ? "This message has no plain-text body." : body
             } catch {

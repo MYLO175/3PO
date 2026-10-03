@@ -233,7 +233,13 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         if let instructions { body["instructions"] = instructions }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         responseRequestID = nil; responseHTTPStatus = 0; responseModel = model
-        let (bytes, response) = try await session.bytes(for: request)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 120; configuration.timeoutIntervalForResource = 180
+        let inferenceSession = URLSession(configuration:configuration,delegate:NoRedirects(),delegateQueue:nil)
+        let deadline = InferenceDeadline(session:inferenceSession)
+        defer { deadline.stop(); inferenceSession.invalidateAndCancel() }
+        do {
+        let (bytes, response) = try await inferenceSession.bytes(for: request)
         if let http = response as? HTTPURLResponse { responseRequestID = http.value(forHTTPHeaderField:"x-request-id"); responseHTTPStatus = http.statusCode }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             var data = Data(); for try await byte in bytes { if data.count < 8192 { data.append(byte) } else { break } }
@@ -256,6 +262,11 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
             case .invalid: throw ChatGPTError.message("Invalid response stream event.")
             case .oversized: throw ChatGPTError.message("Response stream event exceeded its safety limit.")
             }
+        }
+        } catch {
+            if deadline.didExpire { throw ChatGPTError.message("The subscription response exceeded three minutes without completing. Partial output was not accepted; no automatic retry or paid fallback. Try again once when ready.") }
+            if Task.isCancelled { throw CancellationError() }
+            throw error
         }
     }
 

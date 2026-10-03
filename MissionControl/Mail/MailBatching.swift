@@ -10,6 +10,8 @@ struct MailWindowProgress: Codable, Identifiable, Sendable {
     var seenIDs: Set<String> = []
     var complete = false
     var lastSuccess: Date?
+    var mailboxName: String? = nil
+    var mailboxRole: MailFolderRole? = nil
 }
 
 struct MailBatch: Decodable, Sendable {

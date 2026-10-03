@@ -39,14 +39,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             CommandGroup(after: .help) {
                 Button("Run disposable Calendar check") { model.validateCalendarIntegration() }
                 Button("Invalidate today's test briefing") { model.briefings.invalidateToday(model) }
-                Button("Check proactive suggestions (fictional)") { model.validationReport = "Checking the proactive prompt with fictional sources…"; Task { do { model.validationReport = try await model.proactive.validate(model) } catch { model.validationReport = error.localizedDescription } } }.keyboardShortcut("p",modifiers:[.command,.option,.shift])
-                Button("Run disposable editor check") { Task { guard !model.writing else { return }; model.writing = true; defer { model.writing = false; model.refresh(retryMail:false) }; do { model.validationReport = try await model.eventKit.validateNativeEditors() } catch { model.validationReport = error.localizedDescription } } }
-                Button("Run disposable action check") { Task { guard !model.writing else { return }; model.writing = true; defer { model.writing = false }; do { model.validationReport = try await model.eventKit.validateDisposableActions() } catch { model.validationReport = error.localizedDescription } } }
+                Button("Check proactive suggestions (fictional)") { model.validateProactivePrompt() }.keyboardShortcut("p",modifiers:[.command,.option,.shift])
+                Button("Check Mail search folders") { model.validateMailFolders() }.keyboardShortcut("m",modifiers:[.command,.option,.shift])
+                Button("Run disposable editor check") { let current = model; Task { guard !current.writing else { return }; current.writing = true; defer { current.writing = false; current.refresh(retryMail:false) }; do { current.validationReport = try await current.eventKit.validateNativeEditors() } catch { current.validationReport = error.localizedDescription } } }
+                Button("Run disposable action check") { let current = model; Task { guard !current.writing else { return }; current.writing = true; defer { current.writing = false }; do { current.validationReport = try await current.eventKit.validateDisposableActions() } catch { current.validationReport = error.localizedDescription } } }
                 Button("Check memory learning (fictional)") { model.validateMemoryLearning() }
                 Button("Preview compact dashboard") { if let window = NSApp.windows.first(where:{ $0.isVisible && !$0.isFloatingPanel }) { window.setContentSize(NSSize(width:820,height:640)); window.center() } }
                 Button("Restore dashboard window size") { if let window = NSApp.windows.first(where:{ $0.isVisible && !$0.isFloatingPanel }) { window.setContentSize(NSSize(width:1200,height:780)); window.center() } }
-                Button("Check email triage (fictional)") { Task { do { model.validationReport = try await model.emailSummaries.validateTriage(model) } catch { model.validationReport = error.localizedDescription } } }
-                Button("Clean assistant action fixtures") { Task { do { model.validationReport = try await model.assistantActions.cleanupFixtures(model) } catch { model.validationReport = error.localizedDescription } } }
+                Button("Check email triage (fictional)") { let current = model; Task { do { current.validationReport = try await current.emailSummaries.validateTriage(current) } catch { current.validationReport = error.localizedDescription } } }
+                Button("Clean assistant action fixtures") { let current = model; Task { do { current.validationReport = try await current.assistantActions.cleanupFixtures(current) } catch { current.validationReport = error.localizedDescription } } }
             }
             #endif
         }
