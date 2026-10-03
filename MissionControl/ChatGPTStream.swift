@@ -90,9 +90,10 @@ struct ChatGPTStream {
                           !calls.contains(where:{ $0.id == id }), calls.count < 12 else { throw Failure.invalid }
                     calls.append(.init(id:id,name:name,namespace:item["namespace"] as? String,arguments:arguments))
                 }
-                if text.isEmpty {
-                    text = items.filter { $0["type"] as? String == "message" }.flatMap { $0["content"] as? [[String:Any]] ?? [] }.compactMap { $0["text"] as? String }.joined()
-                }
+                let finalText = items.filter { $0["type"] as? String == "message" }.flatMap { $0["content"] as? [[String:Any]] ?? [] }.compactMap { $0["text"] as? String }.joined()
+                // Completed output is authoritative even if the provider sent only
+                // part of the message through output_text.delta events.
+                if !finalText.isEmpty { text = finalText }
             }
             completed = true
         case "response.failed", "error":
