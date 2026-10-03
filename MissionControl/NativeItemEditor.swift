@@ -19,7 +19,11 @@ struct NativeItemEditor: View {
         Binding(get:{ edited?[keyPath:path] ?? fallback },set:{ edited?[keyPath:path] = $0 })
     }
     private func eventDate(_ path: WritableKeyPath<NativeEditDetails,Date>) -> Binding<Date> {
-        Binding(get:{ edited?[keyPath:path] ?? .now },set:{ edited?[keyPath:path] = $0; dateSelected = true })
+        Binding(get:{ edited?[keyPath:path] ?? .now },set:{
+            if path == \NativeEditDetails.start, let item = edited { edited = NativeEditRules.movingStart(item,to:$0) }
+            else { edited?[keyPath:path] = $0 }
+            dateSelected = true
+        })
     }
     var body: some View {
         VStack(alignment:.leading,spacing:16) {

@@ -34,11 +34,22 @@ struct NativeEventMoveProposal {
     var start: Date
 }
 enum NativeEditRules {
+    static func movingStart(_ item: NativeEditDetails, to start: Date, calendar: Calendar = .current) -> NativeEditDetails {
+        var value = item
+        if item.allDay {
+            let days = max(1,calendar.dateComponents([.day],from:calendar.startOfDay(for:item.start),to:calendar.startOfDay(for:item.end)).day ?? 1)
+            value.start = calendar.startOfDay(for:start)
+            value.end = calendar.date(byAdding:.day,value:days,to:value.start)!
+        } else {
+            value.start = start; value.end = start.addingTimeInterval(item.end.timeIntervalSince(item.start))
+        }
+        return value
+    }
     static func moved(_ baseline: NativeEditDetails, proposal: NativeEventMoveProposal) throws -> NativeEditDetails {
         guard baseline.kind == .event, !baseline.allDay, baseline.canEdit,
               baseline.occurrenceID == proposal.occurrenceID, baseline.sourceID == proposal.sourceID,
               baseline.start == proposal.originalStart, baseline.end == proposal.originalEnd else { throw IntegrationError.missing }
-        var edited = baseline; edited.start = proposal.start; edited.end = proposal.start.addingTimeInterval(baseline.end.timeIntervalSince(baseline.start))
+        let edited = movingStart(baseline,to:proposal.start)
         try validate(edited,baseline:baseline); return edited
     }
     static func validate(_ value: NativeEditDetails, baseline: NativeEditDetails) throws {
