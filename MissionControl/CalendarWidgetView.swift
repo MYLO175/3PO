@@ -119,37 +119,75 @@ struct CalendarWidgetView: View {
         }
     }
     private var timelineView: some View {
-        ScrollView([.horizontal,.vertical]) {
-            HStack(alignment:.top,spacing:6) {
-                ForEach(0..<(mode == "week" ? 7 : 1),id:\.self) { offset in
-                    let day = calendar.date(byAdding:.day,value:offset,to:range.start)!
-                    VStack(alignment:.leading,spacing:8) {
-                        Text(day.formatted(.dateTime.weekday(.abbreviated).day())).font(.subheadline.weight(.semibold))
-                        ForEach(dayEvents(day).filter(\.allDay)) { event in Button { selectedEvent = event } label: { Text("All day · " + event.title).font(.caption).lineLimit(2).frame(maxWidth:.infinity,alignment:.leading).padding(5).background(color(event).opacity(0.12),in:RoundedRectangle(cornerRadius:4)) }.buttonStyle(.plain) }
-                        CalendarDayTimeline(events:dayEvents(day).filter { !$0.allDay },day:day,color:color,select:{ selectedEvent = $0 })
-                    }.frame(width:mode == "week" ? 140 : 290)
+        GeometryReader { geometry in
+            let days = mode == "week" ? 7 : 1
+            let width = CalendarTimelineFocus.columnWidth(available:geometry.size.width,days:days)
+            let focusDay = days == 7 && range.contains(Date.now) ? Date.now : range.start
+            let focus = CalendarTimelineFocus.hour(on:focusDay,now:.now,events:events)
+            let allDayCount = (0..<days).map { dayEvents(calendar.date(byAdding:.day,value:$0,to:range.start)!).filter(\.allDay).count }.max() ?? 0
+            let allDayHeight = Double(min(3,allDayCount))*24 + (allDayCount > 3 ? 20 : 0)
+            ScrollViewReader { proxy in
+                ScrollView([.horizontal,.vertical]) {
+                    HStack(alignment:.top,spacing:8) {
+                        ForEach(0..<days,id:\.self) { offset in
+                            let day = calendar.date(byAdding:.day,value:offset,to:range.start)!
+                            VStack(alignment:.leading,spacing:8) {
+                                Text(day.formatted(.dateTime.weekday(.abbreviated).day())).font(.subheadline.weight(.semibold)).foregroundStyle(calendar.isDateInToday(day) ? Color.accentColor : Color.primary)
+                                if allDayCount > 0 {
+                                    let items = dayEvents(day).filter(\.allDay)
+                                    VStack(alignment:.leading,spacing:3) {
+                                        ForEach(items.prefix(3)) { event in Button { selectedEvent = event } label: { Text("All day · " + event.title).font(.caption2).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading).padding(4).background(color(event).opacity(0.12),in:RoundedRectangle(cornerRadius:4)) }.buttonStyle(.plain).help(event.title) }
+                                        if items.count > 3 { Button("+\(items.count-3) all-day events") { configuration.date = day; configuration.calendarMode = "agenda" }.font(.caption2).buttonStyle(.borderless) }
+                                    }.frame(height:allDayHeight,alignment:.top)
+                                }
+                                CalendarDayTimeline(events:dayEvents(day).filter { !$0.allDay },day:day,color:color,select:{ selectedEvent = $0 })
+                            }.frame(width:width)
+                        }
+                    }.padding(.bottom,10)
                 }
-            }.padding(.bottom,10)
+                .task(id:"\(mode):\(range.start.timeIntervalSince1970)") {
+                    await Task.yield()
+                    proxy.scrollTo(CalendarTimelineFocus.anchor(focus),anchor:.top)
+                }
+            }
         }
     }
 }
 private struct CalendarDayTimeline: View {
     var events: [AgendaEvent]; var day: Date; var color: (AgendaEvent)->Color; var select: (AgendaEvent)->Void
     private var interval: DateInterval { Calendar.current.dateInterval(of:.day,for:day)! }
+    private let hourHeight = CalendarTimelineFocus.hourHeight
     var body: some View {
         let hours = Int(interval.duration/3600)
+        let work = CalendarTimelineFocus.workingHours(on:day)
         ZStack(alignment:.topLeading) {
+            Rectangle().fill(Color.accentColor.opacity(0.035)).padding(.leading,40).frame(height:work.duration/3600*hourHeight).offset(y:work.start.timeIntervalSince(interval.start)/3600*hourHeight)
             ForEach(0..<hours,id:\.self) { hour in
                 let date = Calendar.current.date(byAdding:.hour,value:hour,to:interval.start)!
-                HStack(alignment:.top,spacing:3) { Text(date.formatted(.dateTime.hour().minute())).font(.system(size:9)).foregroundStyle(.secondary).frame(width:32); Rectangle().fill(Color.primary.opacity(0.07)).frame(height:1) }.offset(y:CGFloat(hour)*44)
+                HStack(alignment:.top,spacing:4) {
+                    Text(date.formatted(.dateTime.hour().minute())).font(.system(size:10)).foregroundStyle(.secondary).frame(width:36)
+                    Rectangle().fill(Color.primary.opacity(0.07)).frame(height:1)
+                }.offset(y:CGFloat(hour)*hourHeight).id(CalendarTimelineFocus.anchor(date))
+                    .help(date.formatted(date:.omitted,time:.shortened) + " " + (Calendar.current.timeZone.abbreviation(for:date) ?? ""))
             }
             ForEach(CalendarTimelineLayout.segments(events,interval:interval)) { segment in
                 GeometryReader { geo in
+                    let height = max(CalendarTimelineFocus.minimumEventHeight,segment.end.timeIntervalSince(segment.start)/3600*hourHeight)
                     Button { select(segment.event) } label: {
-                        VStack(alignment:.leading,spacing:2) { Text(segment.event.start.formatted(date:.omitted,time:.shortened)).font(.system(size:9)); Text(segment.event.title).font(.caption2.weight(.medium)).lineLimit(3); Spacer(minLength:0) }.padding(4).frame(maxWidth:.infinity,alignment:.leading).background(color(segment.event).opacity(0.16),in:RoundedRectangle(cornerRadius:4)).clipped()
-                    }.buttonStyle(.plain).help(segment.event.title).frame(width:(geo.size.width-36)/CGFloat(segment.lanes)-2,height:max(12,segment.end.timeIntervalSince(segment.start)/3600*44)).offset(x:36+CGFloat(segment.lane)*(geo.size.width-36)/CGFloat(segment.lanes),y:segment.start.timeIntervalSince(interval.start)/3600*44)
+                        VStack(alignment:.leading,spacing:2) {
+                            Text(segment.event.title).font(.caption2.weight(.medium)).lineLimit(height > 48 ? 3 : 1)
+                            if height > 38 { Text(segment.event.start.formatted(date:.omitted,time:.shortened)).font(.system(size:10)).foregroundStyle(.secondary) }
+                            Spacer(minLength:0)
+                        }.padding(.horizontal,5).padding(.vertical,height > 38 ? 5 : 2).frame(maxWidth:.infinity,alignment:.leading).background(color(segment.event).opacity(0.17),in:RoundedRectangle(cornerRadius:5)).overlay(alignment:.leading) { RoundedRectangle(cornerRadius:2).fill(color(segment.event)).frame(width:3) }.clipped()
+                    }.buttonStyle(.plain).help(segment.event.title + " · " + segment.event.start.formatted(date:.omitted,time:.shortened)).frame(width:max(1,(geo.size.width-40)/CGFloat(segment.lanes)-3),height:height).offset(x:40+CGFloat(segment.lane)*(geo.size.width-40)/CGFloat(segment.lanes),y:segment.start.timeIntervalSince(interval.start)/3600*hourHeight)
                 }
             }
-        }.frame(height:CGFloat(hours)*44)
+            TimelineView(.periodic(from:.now,by:60)) { context in
+                if interval.contains(context.date) && context.date < interval.end {
+                    HStack(spacing:0) { Circle().fill(.red).frame(width:6,height:6); Rectangle().fill(.red.opacity(0.8)).frame(height:1) }.padding(.leading,37).offset(y:context.date.timeIntervalSince(interval.start)/3600*hourHeight)
+                        .accessibilityLabel("Current time " + context.date.formatted(date:.omitted,time:.shortened)).allowsHitTesting(false)
+                }
+            }
+        }.frame(height:CGFloat(hours)*hourHeight)
     }
 }

@@ -17,7 +17,7 @@ enum CalendarTimelineLayout {
         for event in clipped {
             let start = max(event.start,interval.start), end = min(max(event.end,start),interval.end)
             // Minimum visual height is also reserved for collision layout.
-            let visualEnd = min(interval.end,max(end,start.addingTimeInterval(12/44*3600)))
+            let visualEnd = min(interval.end,max(end,start.addingTimeInterval(CalendarTimelineFocus.minimumEventHeight/CalendarTimelineFocus.hourHeight*3600)))
             if !group.isEmpty && start >= groupEnd { finish(); groupEnd = interval.start }
             let lane = laneEnds.firstIndex(where: { $0 <= start }) ?? laneEnds.count
             if lane == laneEnds.count { laneEnds.append(visualEnd) } else { laneEnds[lane] = visualEnd }
@@ -25,5 +25,29 @@ enum CalendarTimelineLayout {
             group.append(.init(event:event,start:start,end:end,lane:lane,lanes:1))
         }
         finish(); return output
+    }
+}
+
+// Clock-based focus preserves daylight-saving days rather than assuming 24 hours.
+enum CalendarTimelineFocus {
+    static let hourHeight = 52.0
+    static let minimumEventHeight = 20.0
+    static func columnWidth(available: Double, days: Int) -> Double {
+        max(days == 1 ? 220 : 125,(available - Double(max(0,days-1))*8)/Double(max(1,days)))
+    }
+    static func hour(on day: Date, now: Date, events: [AgendaEvent], calendar: Calendar = .current) -> Date {
+        let start = calendar.startOfDay(for:day)
+        let target: Int
+        if calendar.isDate(day,inSameDayAs:now) {
+            target = min(17,max(8,calendar.component(.hour,from:now)-1))
+        } else {
+            let first = events.filter { !$0.allDay && DateRules.overlaps($0,day:day,calendar:calendar) }.map { max($0.start,start) }.min()
+            target = first.map { min(8,max(0,calendar.component(.hour,from:$0)-1)) } ?? 8
+        }
+        return calendar.date(bySettingHour:target,minute:0,second:0,of:start) ?? start
+    }
+    static func anchor(_ date: Date) -> String { "calendar-hour:" + String(Int(date.timeIntervalSince1970)) }
+    static func workingHours(on day: Date, calendar: Calendar = .current) -> DateInterval {
+        DateInterval(start:calendar.date(bySettingHour:9,minute:0,second:0,of:day)!,end:calendar.date(bySettingHour:18,minute:0,second:0,of:day)!)
     }
 }
