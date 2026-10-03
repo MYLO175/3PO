@@ -133,11 +133,12 @@ struct AssistantPanel: View {
                             }.padding(.vertical,12)
                         }
                         ForEach((selected?.turns ?? []).filter(turnVisible)) { turn in
+                            let replyingHere = turn.role == "assistant" && sendingHere && assistant.requestTurnID == turn.id
                             HStack(alignment:.top) {
                             if turn.role == "user" { Spacer(minLength:35) }
                             VStack(alignment: .leading, spacing: 5) {
                                 if turn.content.isEmpty {
-                                    Text(assistant.requestTurnID == turn.id ? "Thinking…" : "This request didn't complete.").foregroundStyle(.secondary)
+                                    Text(replyingHere ? (assistant.toolStatus.isEmpty ? "Thinking…" : assistant.toolStatus) : "This request didn't complete.").foregroundStyle(.secondary)
                                 } else if turn.role == "assistant", turn.deliveryID?.hasPrefix("learned:") == true {
                                     HStack {
                                         Label("Provisional memory",systemImage:"brain").font(.caption.weight(.medium)).foregroundStyle(.secondary)
@@ -149,6 +150,9 @@ struct AssistantPanel: View {
                                 } else if turn.role == "assistant" {
                                     Text((try? AttributedString(markdown:turn.content,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(turn.content)).textSelection(.enabled).lineSpacing(3).id(turn.completed)
                                 } else { Text(turn.content).textSelection(.enabled) }
+                                if replyingHere && !turn.content.isEmpty {
+                                    Text(assistant.toolStatus.isEmpty ? "Thinking…" : assistant.toolStatus).font(.caption).foregroundStyle(.secondary)
+                                }
                                 if turn.deliveryID?.contains(":morning:") == true { Button("Briefing and sources") { showBriefing = true }.controlSize(.small) }
                                 if let delivery = turn.deliveryID, let record = model.proactive.record(delivery:delivery,model:model) {
                                     ViewThatFits(in:.horizontal) {
@@ -202,8 +206,9 @@ struct AssistantPanel: View {
             HStack {
                 Button { showDictation = true } label: { Image(systemName:"mic") }.help("Dictate a message").accessibilityLabel("Dictate a message").disabled(widgetID != nil && !assistant.drafts.writable)
                 TextField("Message your PA", text: draft,axis:.vertical).lineLimit(1...4).textFieldStyle(.plain).padding(9).background(Color(nsColor:.textBackgroundColor),in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.primary.opacity(0.08))).onSubmit { send() }.focused($composerFocused).disabled(widgetID != nil && !assistant.drafts.writable)
-                if sendingHere { ProgressView().controlSize(.small); Text(assistant.toolStatus).font(.caption).foregroundStyle(.secondary).lineLimit(1); Button("Stop") { assistant.cancel() } }
-                else { Button("Send") { send() }.disabled(assistant.busy || (widgetID != nil && !assistant.drafts.writable) || draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (!model.chatGPT.inferenceVerified || model.chatGPT.busy || model.chatGPT.usagePaused)) }
+                Button(sendingHere ? "Stop" : "Send") { if sendingHere { assistant.cancel() } else { send() } }
+                    .frame(width:56)
+                    .disabled(!sendingHere && (assistant.busy || (widgetID != nil && !assistant.drafts.writable) || draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (!model.chatGPT.inferenceVerified || model.chatGPT.busy || model.chatGPT.usagePaused)))
             }
             if errorHere && assistant.error?.contains("Choose the specific target") == true {
                 Picker("Specific action target", selection: $model.assistantActions.selectedTarget) {
