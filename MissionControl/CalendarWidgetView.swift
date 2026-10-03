@@ -143,22 +143,35 @@ struct CalendarWidgetView: View {
             let allDayHeight = Double(min(3,allDayCount))*24 + (allDayCount > 3 ? 20 : 0)
             ScrollViewReader { proxy in
                 ScrollView(days == 1 ? .vertical : [.horizontal,.vertical]) {
-                    HStack(alignment:.top,spacing:8) {
-                        ForEach(0..<days,id:\.self) { offset in
-                            let day = calendar.date(byAdding:.day,value:offset,to:range.start)!
-                            VStack(alignment:.leading,spacing:8) {
-                                Text(day.formatted(.dateTime.weekday(.abbreviated).day())).font(.subheadline.weight(.semibold)).foregroundStyle(calendar.isDateInToday(day) ? Color.accentColor : Color.primary)
-                                if allDayCount > 0 {
-                                    let items = dayEvents(day).filter(\.allDay)
-                                    VStack(alignment:.leading,spacing:3) {
-                                        ForEach(items.prefix(3)) { event in Button { select(event) } label: { Text("All day · " + event.title).font(.caption2).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading).padding(4).background(color(event).opacity(0.12),in:RoundedRectangle(cornerRadius:4)) }.buttonStyle(.plain).help(event.title) }
-                                        if items.count > 3 { Button("+\(items.count-3) all-day events") { configuration.date = day; configuration.calendarMode = "agenda" }.font(.caption2).buttonStyle(.borderless) }
-                                    }.frame(height:allDayHeight,alignment:.top)
+                    LazyVStack(spacing:0,pinnedViews:[.sectionHeaders]) {
+                        Section {
+                            HStack(alignment:.top,spacing:8) {
+                                ForEach(0..<days,id:\.self) { offset in
+                                    let day = calendar.date(byAdding:.day,value:offset,to:range.start)!
+                                    CalendarDayTimeline(events:dayEvents(day).filter { !$0.allDay },day:day,color:color,select:select,dragValue:dragValue,drop:{ values,point in drop(values,point:point,day:day) }).frame(width:width)
                                 }
-                                CalendarDayTimeline(events:dayEvents(day).filter { !$0.allDay },day:day,color:color,select:select,dragValue:dragValue,drop:{ values,point in drop(values,point:point,day:day) })
-                            }.frame(width:width)
+                            }.padding(.bottom,10)
+                        } header: {
+                            HStack(alignment:.top,spacing:8) {
+                                ForEach(0..<days,id:\.self) { offset in
+                                    let day = calendar.date(byAdding:.day,value:offset,to:range.start)!
+                                    VStack(alignment:.leading,spacing:6) {
+                                        Text(day.formatted(.dateTime.weekday(.abbreviated).day())).font(.subheadline.weight(.semibold)).foregroundStyle(calendar.isDateInToday(day) ? Color.accentColor : Color.primary)
+                                        if allDayCount > 0 {
+                                            let items = dayEvents(day).filter(\.allDay)
+                                            VStack(alignment:.leading,spacing:3) {
+                                                ForEach(items.prefix(3)) { event in Button { select(event) } label: { Text("All day · " + event.title).font(.caption2).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading).padding(4).background(color(event).opacity(0.12),in:RoundedRectangle(cornerRadius:4)) }.buttonStyle(.plain).help(event.title) }
+                                                if items.count > 3 { Button("+\(items.count-3) all-day events") { configuration.date = day; configuration.calendarMode = "agenda" }.font(.caption2).buttonStyle(.borderless) }
+                                            }.frame(height:allDayHeight,alignment:.top)
+                                        }
+                                    }.frame(width:width,alignment:.leading)
+                                }
+                            }.padding(.vertical,8)
+                                .background(Color(nsColor:.controlBackgroundColor))
+                                .overlay(alignment:.bottom) { Rectangle().fill(Color.primary.opacity(0.08)).frame(height:1) }
                         }
-                    }.padding(.bottom,10)
+                    }.frame(width:Double(days)*width+Double(days-1)*8)
+
                 }
                 .task(id:"\(mode):\(range.start.timeIntervalSince1970)") {
                     await Task.yield()

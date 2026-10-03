@@ -109,3 +109,5 @@ Remove the unused dashboard-name and date toolbar items. Keep toolbar customizat
 
 
 3 October continuation: fixed root appearance ownership and verified Dark/Light/System plus Settings and relaunch; Calendar Day/Week now focus on useful daytime bounds, Day scrolls vertically only. Actual disposable Calendar creation/field/time edits and top Undo passed; drag-to-move remains an independent unverified interaction. Prioritise stable timeline drag/review and persistent day headings in the next Calendar ergonomics unit, preserving exact ID/revision checks and explicit Save.
+
+Pinned Calendar day headings/all-day strip implemented and actual full Week/narrow Day checked3October. Preserve shared column widths, adaptive opaque header and exact timed-move coordinates. Drag-to-move live review remains next interaction check.
