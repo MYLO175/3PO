@@ -19,6 +19,13 @@ import EventKit
     var excludedCalendars: Set<String> = [] { didSet { saveFilters() } }
     var excludedLists: Set<String> = [] { didSet { saveFilters() } }
     var excludedAccounts: Set<String> = [] { didSet { saveFilters() } }
+    var assistantFocusRequest: AssistantFocusRequest?
+    func openAssistantComposer() {
+        assistant.openPA()
+        workspace.showAssistant()
+        guard let widget = workspace.selected.widgets.first(where:{ $0.kind == .conversation }) else { return }
+        assistantFocusRequest = AssistantFocusRequest(widgetID:widget.id)
+    }
     var selectedMessage: MailMessage?
     var editTarget: NativeEditTarget?
     var nativeWriteNotice: String?
@@ -486,4 +493,9 @@ import EventKit
         reminderData = SampleReminderService().snapshot()
         mailData = SampleMailService().snapshot()
     }
+}
+
+struct AssistantFocusRequest: Equatable {
+    let id = UUID()
+    let widgetID: UUID
 }

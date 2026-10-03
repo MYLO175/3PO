@@ -242,6 +242,13 @@ struct AssistantPanel: View {
         }.onAppear {
             if selectedID == nil { assistant.openPA() }
             showDraft()
+        }.task(id:model.assistantFocusRequest?.id) {
+            guard let request = model.assistantFocusRequest, request.widgetID == widgetID else { return }
+            // Navigation first mounts the selected widget and its saved draft.
+            await Task.yield()
+            guard !Task.isCancelled, model.assistantFocusRequest == request else { return }
+            composerFocused = true
+            model.assistantFocusRequest = nil
         }.onDisappear { if let widgetID { assistant.drafts.hide(widget:widgetID) }; assistant.drafts.flush() }
         .onChange(of:selectedID) { showDraft() }
         .onChange(of:selectedTopicID) { showDraft() }

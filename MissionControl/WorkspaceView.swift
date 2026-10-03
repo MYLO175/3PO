@@ -70,6 +70,11 @@ struct WorkspaceView: View {
             .sheet(isPresented:$showColors) { WorkspaceColorEditor() }
             .task { model.start() }
             .onChange(of:store.selected.id) { focusedWidgetID = nil }
+            .onChange(of:model.assistantFocusRequest?.id) {
+                guard let request = model.assistantFocusRequest else { return }
+                editing = false
+                focusedWidgetID = request.widgetID
+            }
             .sheet(isPresented:$showName) { VStack(alignment:.leading,spacing:16) { Text(naming == nil ? "New dashboard" : "Rename dashboard").font(.title2.weight(.semibold)); TextField("Name",text:$name).onSubmit { saveName() }; HStack { Spacer(); Button("Cancel") { showName = false }.keyboardShortcut(.cancelAction); Button("Save") { saveName() }.keyboardShortcut(.defaultAction).disabled(name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty) } }.padding(24).frame(width:360) }
             .sheet(item:$model.selectedMessage) { DashboardView(model:model).previewSheet($0) }
             .sheet(item:$model.editTarget) { NativeItemEditor(model:model,target:$0) }
@@ -131,7 +136,7 @@ struct WorkspaceView: View {
     private func newDashboard() { naming = nil; name = "New dashboard"; showName = true }
     private func addWidget(_ kind: WidgetKind) { store.addWidget(kind); editing = true }
     private func customiseToolbar() { NSApp.keyWindow?.runToolbarCustomizationPalette(nil) }
-    private func showAssistant() { model.assistant.openPA(); store.showAssistant() }
+    private func showAssistant() { model.openAssistantComposer() }
     private func visible(_ tool: WorkspaceTool) -> Bool { ToolbarRules.visible(tool,hidden:toolbarHidden) }
     private var widgetChoices: some View { ForEach(WidgetKind.allCases,id:\.self) { kind in Button { addWidget(kind) } label: { Label(kind.title,systemImage:kind.icon) } } }
     private var addMenu: some View {

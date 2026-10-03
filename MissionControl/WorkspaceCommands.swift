@@ -52,7 +52,7 @@ struct WorkspaceCommands: Commands {
         CommandGroup(after:.sidebar) {
             Toggle("Show dashboard sidebar",isOn:sidebar).disabled(workspace == nil)
             Button("Show assistant") {
-                model.assistant.openPA(); model.workspace.showAssistant()
+                model.openAssistantComposer()
                 NSApp.activate(ignoringOtherApps:true); openWindow(id:"dashboard")
             }.keyboardShortcut("j",modifiers:.command)
         }
