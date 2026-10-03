@@ -1,5 +1,5 @@
 # Mission Control
-A local native macOS dashboard for Apple Calendar, Reminders and Mail. The dashboard remains local. Stage 2 adds optional subscription-powered chat, email summaries and a saved morning briefing. Personal sources are sent only when their AI controls are enabled.
+A local native macOS dashboard for Apple Calendar, Reminders and Mail. Apple-source caches remain local; optional nearby weather fetches use Open-Meteo. Stage 2 adds optional subscription-powered chat, email summaries and a saved morning briefing. Personal sources are sent only when their AI controls are enabled.
 
 ## Run
 Requires macOS 26+, Xcode and an Apple Development signing identity. The installed app is `~/Applications/Mission Control.app`. Open it and grant Calendar full access, Reminders access and Automation access to Apple Mail when macOS asks. Permissions belong to this app, not helper scripts.
@@ -22,6 +22,11 @@ The build uses `/Applications/Xcode.app/Contents/Developer` without changing glo
 - Manual/launch/wake refresh, EventKit change observation, Mail polling every five minutes. Errors retain last successful cache and show stale/error state.
 - Source filters persist. Caches are stored with SwiftData in `~/Library/Application Support/Mission Control`, excluded from Git. Preferences use the app's UserDefaults domain.
 - Closing the window keeps the menu bar app alive. Open it again from the menu bar. Explicit Quit stops it. Settings offers launch at login through Apple's SMAppService.
+
+## Local weather
+Settings → Local weather enables a nearby three-day forecast for PA chat and future morning briefings. Allow Mission Control in macOS Privacy & Security → Location Services. The app checks location once per refresh and stops updates, rounds coordinates to 0.1 degree (about 11 km latitude) before fetching [Open-Meteo](https://open-meteo.com/), and caches forecasts without coordinates. No weather account, API key or paid service is required. Network refreshes are limited to every 30 minutes at launch/wake/poll unless you explicitly refresh in Settings; normal dashboard refresh still makes no AI calls.
+
+Today’s brief shows a lightweight live weather card beside its saved message; the current day’s completed message and notification are preserved. Future briefings await a bounded already-authorised forecast fetch, without prompting for location in the background. PA context gets dates, Celsius temperatures, rain probability, maximum wind and freshness, never coordinates. Weather older than two hours, from another timezone or without today is omitted from PA context. Turning weather off removes its card/context and survives relaunch. Existing saved conversations/briefings are historical records and are not deleted. No manual-town fallback or weather alert notifications are implemented yet. `./scripts/test-weather.sh` checks rounding, local/DST dates, units, invalid responses and cache boundaries.
 
 ## Development checks
 `--sample` launches without Apple-app reads or writes. `--small-window` sets an 820×640 content window for layout review. `--dark-window` tests dark appearance in the dashboard without changing the system theme. Debug builds offer Help → Run disposable Calendar check, which creates and cleans UUID-marked timed/all-day/overnight/recurring and UTC DST fixtures. `--validate-live` is a developer-only acceptance mode: it creates UUID-marked duplicate-title and recurring disposable reminders, exercises production completion/Undo, verifies occurrence identity, then removes only its own marked items. Do not use it against an account whose test writes you do not authorise.

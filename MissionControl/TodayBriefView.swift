@@ -15,6 +15,7 @@ struct TodayBriefView: View {
             if let record = briefings.today(model) {
                 ScrollView {
                     VStack(alignment:.leading,spacing:16) {
+                        WeatherBriefCard(weather:model.weather)
                         Text((try? AttributedString(markdown:BriefingRules.prose(record),options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(BriefingRules.prose(record))).font(.callout).lineSpacing(5).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)
                         DisclosureGroup("Sources and coverage") {
                             VStack(alignment:.leading,spacing:10) {
@@ -24,6 +25,7 @@ struct TodayBriefView: View {
                                     ForEach(item.sourceIDs,id:\.self) { id in
                                         if let source = record.sources.first(where: { $0.id == id }) {
                                             if source.kind == "mail", let message = model.emailSummaries.highlights(model).first(where:{ $0.0.id == source.originalID })?.0 { Button(source.label) { model.select(message) }.buttonStyle(.link).font(.caption) }
+                                            else if source.kind == "weather" { Link(source.label,destination:WeatherRules.provider).font(.caption) }
                                             else { Label(source.label,systemImage:source.kind == "calendar" ? "calendar" : "checklist").font(.caption).foregroundStyle(.secondary) }
                                         }
                                     }
@@ -34,6 +36,7 @@ struct TodayBriefView: View {
                 }
                 Text("Prepared \(record.created.formatted(date:.omitted,time:.shortened)) · Saved for today").font(.caption2).foregroundStyle(.secondary)
             } else {
+                WeatherBriefCard(weather:model.weather)
                 ContentUnavailableView("A clear start to your day",systemImage:"sun.horizon",description:Text(!model.assistant.contextEnabled ? "Enable assistant source context in Settings." : !briefings.enabled ? "Enable the 7:30 morning brief in Settings, then prepare today’s brief." : model.chatGPT.usagePaused ? "Subscription access is paused. Your Apple sources remain available." : briefings.busy ? "Your PA is preparing today’s message…" : "Your PA brings together today’s calendar, reminders and relevant recent mail. Prepared at 7:30, with catch-up after launch or wake."))
             }
             if let error = briefings.error { DisclosureGroup("Briefing details") { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }.font(.caption) }

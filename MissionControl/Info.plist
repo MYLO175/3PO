@@ -15,5 +15,7 @@
 <key>NSAppleEventsUsageDescription</key><string>Mission Control reads inbox messages from Apple Mail for your local dashboard. It never sends email.</string>
 <key>NSMicrophoneUsageDescription</key><string>Mission Control uses your microphone only when you start dictation, to prepare an editable message.</string>
 <key>NSSpeechRecognitionUsageDescription</key><string>Mission Control transcribes your dictated message on device so you can review it before sending.</string>
+<key>NSLocationUsageDescription</key><string>Mission Control uses your location for a local forecast. It sends only a rounded nearby area to Open-Meteo; your PA receives weather, never coordinates.</string>
+<key>NSLocationWhenInUseUsageDescription</key><string>Mission Control uses your location for a local forecast. It sends only a rounded nearby area to Open-Meteo; your PA receives weather, never coordinates.</string>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>

@@ -61,6 +61,7 @@ import EventKit
     }
     #endif
     var storageError: String?
+    @ObservationIgnored lazy var weather = WeatherService(container:container)
     let chatGPT = ChatGPTConnection()
     @ObservationIgnored lazy var workspace = WorkspaceStore(container:container,calendars:excludedCalendars,lists:excludedLists,accounts:excludedAccounts,date:selectedDate)
     @ObservationIgnored lazy var widgetCalendars = WidgetCalendarStore(service:eventKit)
@@ -109,6 +110,7 @@ import EventKit
     func start() {
         guard !started else { return }; started = true
         if sample { loadSample(); return }
+        weather.startRefresh(allowPrompt:true)
         observers.append(NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
@@ -127,6 +129,7 @@ import EventKit
                 try? await Task.sleep(for: .seconds(300))
                 guard !Task.isCancelled else { return }
                 await self?.refreshMail()
+                self?.weather.startRefresh()
             }
         }
         briefingPoll = Task { [weak self] in
@@ -155,6 +158,7 @@ import EventKit
         widgetCalendars.invalidate()
         if retryMail { mailContinuation?.cancel(); mailSuspended = false; UserDefaults.standard.set(false, forKey: "mailSuspended") }
         guard !sample else { loadSample(); return }
+        weather.startRefresh()
         Task { await refreshCalendar() }
         Task { await refreshReminders() }
         Task { await refreshPAOrientation() }

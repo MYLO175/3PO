@@ -352,9 +352,10 @@ struct SettingsView: View {
                 Text("Closing the dashboard keeps the menu bar app running. Choose Quit to stop it.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Connections") {
-                Text("Calendar and Reminders use macOS permissions. Mail uses Automation permission. Dashboard refresh stays local. Enabled assistant context is sent through your ChatGPT plan only when you send a message.").font(.callout)
+                Text("Calendar and Reminders use macOS permissions. Mail uses Automation permission. Calendar, Reminders and Mail refresh make no AI calls. Optional weather fetches use a rounded nearby area. Enabled assistant context is used by chat and the configured background PA jobs.").font(.callout)
                 Button("Open Privacy & Security") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security")!) }
             }
+            WeatherSettings(weather:model.weather)
             ChatGPTConnectionView(connection: model.chatGPT)
             AssistantSourceSettings(model: model, assistant: model.assistant)
             EmailSummarySettings(model: model, summaries: model.emailSummaries)

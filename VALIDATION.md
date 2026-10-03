@@ -50,3 +50,6 @@ Auth/stream/deadline; conversations/drafts/workspace; memory retention/store/lea
 7. One source-free subscription test when access is available. Genuine provider allowance rejection remains unresolved; no permanent fix is claimed.
 
 No paid API fallback, credits/reset use, email sending, historical inbox summary backlog or permanent source/memory write authorisation was added. Personal records, credentials, caches and screenshots remain outside Git. Deletion/complex recurring-series edits stay deferred; dictation remains deprioritised.
+
+
+3 October weather increment: focused test-weather.sh and existing test-briefing.sh passed. Open-Meteo public dummy-area response verified. Actual independently launched signed app owns enabled Location Services after user approval and displayed a local forecast; weather off/card hiding and relaunch persistence passed, restored on. Local SwiftData weather cache has3days and no coordinate keys. Privacy precision, old/day/timezone rejection and failed-response rules checked with fictional samples. Actual subscription PA weather answer completed and matched supplied forecast figures with provider/date attribution; completed answer saved. Next07:30 wake/notification result remains unverified; prior acceptance boundaries remain in STATUS.
