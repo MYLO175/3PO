@@ -62,6 +62,8 @@ struct WorkspaceView: View {
             }
         }.background(background).tint(accentColor).foregroundStyle(palette[.text]).environment(\.workspacePalette,palette).frame(minWidth:780,minHeight:580)
             .toolbar(id:"mission-control.workspace.native-toolbar") { windowToolbar }
+            .toolbarBackground(background,for:.windowToolbar)
+            .toolbarBackground(.visible,for:.windowToolbar)
             .focusedSceneValue(\.workspaceMenu,WorkspaceMenuActions(sidebar:$sidebarVisible,editing:$editing,newDashboard:newDashboard,addWidget:addWidget,customiseToolbar:customiseToolbar,customiseColors:{ showColors = true }))
             .sheet(isPresented:$showColors) { WorkspaceColorEditor() }
             .task { model.start() }
