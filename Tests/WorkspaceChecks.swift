@@ -30,6 +30,11 @@ struct WorkspaceChecks {
         configuration.conversationID = UUID()
         configuration.conversationSelections = ["account-one":UUID(),"account-two":UUID()]
         configuration.paTopicSelections = ["account-one":"","account-two":UUID().uuidString]
+        configuration.colourProfiles = ["light":["widget":"#FFEEEE"],"dark":["widget":"#332222","text":"#FFFFFF"]]
+        var legacyConfiguration = try JSONSerialization.jsonObject(with:JSONEncoder().encode(configuration)) as! [String:Any]
+        legacyConfiguration.removeValue(forKey:"colourProfiles")
+        let migratedColours = try JSONDecoder().decode(WidgetConfiguration.self,from:JSONSerialization.data(withJSONObject:legacyConfiguration))
+        assert(migratedColours.colourProfiles == nil && migratedColours.paTopicSelections == configuration.paTopicSelections,"Old layouts inherit theme and retain topic selections")
         let state = GridRules.defaults()
         let stateRoundTrip = try JSONDecoder().decode(WorkspaceState.self, from: JSONEncoder().encode(state))
         assert(stateRoundTrip == state, "Workspace state survives JSON encoding")

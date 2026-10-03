@@ -64,6 +64,8 @@ struct WorkspaceView: View {
             .toolbar(id:"mission-control.workspace.native-toolbar") { windowToolbar }
             .toolbarBackground(background,for:.windowToolbar)
             .toolbarBackground(.visible,for:.windowToolbar)
+            .windowToolbarFullScreenVisibility(.visible)
+            .background(WorkspaceWindowColour(colour:NSColor(background)))
             .focusedSceneValue(\.workspaceMenu,WorkspaceMenuActions(sidebar:$sidebarVisible,editing:$editing,newDashboard:newDashboard,addWidget:addWidget,customiseToolbar:customiseToolbar,customiseColors:{ showColors = true }))
             .sheet(isPresented:$showColors) { WorkspaceColorEditor() }
             .task { model.start() }
@@ -104,9 +106,7 @@ struct WorkspaceView: View {
         }.defaultCustomization(visible(.undo) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
         ToolbarItem(id:"appearance") {
             Menu {
-                Picker("Style",selection:$theme) { Text("Warm workspace").tag("warm"); Text("Native macOS").tag("native") }
                 Picker("Appearance",selection:$appearance) { Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark") }
-                Picker("Accent",selection:$accent) { Text("Sage").tag("sage"); Text("Blue").tag("blue"); Text("Rose").tag("rose") }
                 Divider()
                 Button("Customise colours…") { showColors = true }
             } label: { Label("Appearance",systemImage:"paintpalette") }
@@ -156,7 +156,10 @@ struct WorkspaceView: View {
     private func widgetBinding(_ original: WidgetPlacement) -> Binding<WidgetPlacement> { Binding(get:{ store.selected.widgets.first { $0.id == original.id } ?? original },set:{ store.update($0) }) }
 }
 private struct WorkspaceTile: View {
-    @Environment(\.workspacePalette) private var palette
+    @Environment(\.workspacePalette) private var themePalette
+    @Environment(\.colorScheme) private var scheme
+    private var palette: WorkspacePalette { themePalette.applying(widget.configuration.colourProfiles,mode:scheme == .dark ? "dark" : "light") }
+    @State private var showWidgetColours = false
     @Bindable var model: DashboardModel
     @Bindable var store: WorkspaceStore
     @Binding var widget: WidgetPlacement
@@ -190,6 +193,7 @@ private struct WorkspaceTile: View {
                 if editing {
                     HStack {
                         HStack { Image(systemName:"line.3.horizontal"); Text(widget.kind?.title ?? "Unavailable widget").font(.caption.weight(.semibold)); Spacer() }.contentShape(Rectangle()).gesture(gesture(resizing:false))
+                        Button { showWidgetColours = true } label: { Image(systemName:"paintpalette") }.buttonStyle(.borderless).help("Widget colours").accessibilityLabel("\(widget.kind?.title ?? "Widget") colours")
                         Menu {
                             Button("Fill page") { store.fullPage(widget) }
                             Button("Move right") { adjust(x:1) }; Button("Move left") { adjust(x:-1) }; Button("Move down") { adjust(y:1) }; Button("Move up") { adjust(y:-1) }
@@ -198,7 +202,7 @@ private struct WorkspaceTile: View {
                         } label: { Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).frame(width:20).accessibilityLabel("\(widget.kind?.title ?? "Widget") layout actions")
                     }.padding(.horizontal,12).frame(height:34).background(Color.accentColor.opacity(0.08))
                 }
-                content.allowsHitTesting(!editing).frame(maxWidth:.infinity,maxHeight:.infinity)
+                content.environment(\.workspacePalette,palette).foregroundStyle(palette[.text]).tint(palette[.accent]).allowsHitTesting(!editing).frame(maxWidth:.infinity,maxHeight:.infinity)
             }
             // Keep content at its committed size during the gesture; only the preview shell follows the pointer.
             .frame(width:baseFrame.width,height:baseFrame.height,alignment:.topLeading)
@@ -210,6 +214,7 @@ private struct WorkspaceTile: View {
             .shadow(color:.black.opacity(interaction == nil ? 0.025 : 0.12),radius:interaction == nil ? 8 : 14,y:3)
             .offset(x:visual.minX,y:visual.minY)
         }.frame(width:metrics.width,height:metrics.height,alignment:.topLeading).zIndex(interaction == nil ? 0 : 1)
+            .sheet(isPresented:$showWidgetColours) { WidgetColourEditor(configuration:configuration,title:widget.kind?.title ?? "Widget") }
             .onChange(of:editing) { interaction = nil }
             .onChange(of:metrics.width) { interaction = nil }
             .onChange(of:metrics.height) { interaction = nil }

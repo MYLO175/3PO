@@ -68,6 +68,7 @@ struct AssistantPanel: View {
     @State private var showDictation = false
     @State private var showMemory = false
     @State private var showTopic = false
+    @State private var showTopicChoices = false
     @State private var editingTopicID: UUID?
     @State private var editorRegistration = ""
     @State private var topicName = ""
@@ -99,24 +100,45 @@ struct AssistantPanel: View {
         Button("Source email") { if let message = model.emailSummaries.highlights(model).first(where:{ $0.0.id == record.mailID })?.0 { model.select(message) } }
         Button("Dismiss") { model.proactive.dismiss(record) }
     }
+    private func topicChoice(_ title: String, id: UUID?) -> some View {
+        Button { select(id); showTopicChoices = false } label: {
+            HStack {
+                Text(title).lineLimit(1)
+                Spacer()
+                if selectedTopicID == id { Image(systemName:"checkmark").font(.caption) }
+            }.padding(.horizontal,8).padding(.vertical,6).contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing:8) {
                 Label("Your PA",systemImage:"sparkles").font(.title3.weight(.semibold)).fixedSize()
                 Spacer(minLength:4)
-                Menu {
-                    Toggle("No topic",isOn:Binding(get:{ selectedTopicID == nil },set:{ if $0 { select(nil) } }))
-                    ForEach(assistant.topics) { topic in Toggle(topic.title,isOn:Binding(get:{ selectedTopicID == topic.id },set:{ if $0 { select(topic.id) } })) }
-                } label: { Text(topic?.title ?? "No topic").lineLimit(1) }
-                    .menuStyle(.borderlessButton).fixedSize(horizontal:false,vertical:true).frame(maxWidth:130)
+                Button { showTopicChoices.toggle() } label: {
+                    HStack(spacing:6) {
+                        Text(topic?.title ?? "General").lineLimit(1)
+                        Image(systemName:"chevron.down").font(.system(size:9,weight:.semibold))
+                    }.font(.caption.weight(.medium)).padding(.horizontal,10).padding(.vertical,6)
+                        .background(palette[.assistantBubble],in:Capsule())
+                }.buttonStyle(.plain).fixedSize(horizontal:false,vertical:true).frame(maxWidth:150)
                     .help("Choose a PA topic").accessibilityLabel("PA topic: " + (topic?.title ?? "No topic"))
-                Button { showMemory = true } label: { Image(systemName:"brain") }.help("Memory").accessibilityLabel("Memory")
+                    .popover(isPresented:$showTopicChoices,arrowEdge:.bottom) {
+                        VStack(alignment:.leading,spacing:4) {
+                            Text("PA topic").font(.caption).foregroundStyle(.secondary).padding(.bottom,4)
+                            topicChoice("General",id:nil)
+                            ScrollView { VStack(alignment:.leading,spacing:4) {
+                                ForEach(assistant.topics) { topic in topicChoice(topic.title,id:topic.id) }
+                            } }.frame(maxHeight:240)
+                            Divider()
+                            Button("Add topic…") { showTopicChoices = false; editTopic(nil) }.buttonStyle(.borderless)
+                        }.padding(12).frame(width:220)
+                    }
                 Menu {
                     Button("Memory…") { showMemory = true }
                     if let selectedTopicID { Button("Edit topic focus…") { editTopic(selectedTopicID) } }
                     Button("Add topic…") { editTopic(nil) }
                     Text(assistant.contextEnabled ? "Apple source context enabled" : "Apple source context off")
-                } label: { Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).fixedSize().help("Topic options").accessibilityLabel("Topic options").disabled(assistant.busy)
+                } label: { Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Topic options").accessibilityLabel("Topic options").disabled(assistant.busy)
                 if supportsReadingMode { Button { readingMode.toggle() } label: { Image(systemName:readingMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") }.help(readingMode ? "Compact chat" : "Expand chat") }
             }.buttonStyle(.borderless).controlSize(.small)
             ScrollViewReader { proxy in
@@ -223,7 +245,7 @@ struct AssistantPanel: View {
         }.onDisappear { if let widgetID { assistant.drafts.hide(widget:widgetID) }; assistant.drafts.flush() }
         .onChange(of:selectedID) { showDraft() }
         .onChange(of:selectedTopicID) { showDraft() }
-        .onChange(of:model.chatGPT.activeID) { assistant.drafts.flush(); assistant.openPA(); showTopic = false; showMemory = false; showDraft() }
+        .onChange(of:model.chatGPT.activeID) { assistant.drafts.flush(); assistant.openPA(); showTopic = false; showTopicChoices = false; showMemory = false; showDraft() }
         .onChange(of:draft.wrappedValue) { _, draft in
             if !draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && model.memoryLearning.busy { model.memoryLearning.cancel() }
         }.onChange(of:model.chatGPT.usagePaused) { _, paused in

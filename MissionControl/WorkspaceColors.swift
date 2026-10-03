@@ -171,3 +171,80 @@ private struct WorkspaceHexField: View {
             }
     }
 }
+
+extension WorkspacePalette {
+    func applying(_ profiles: [String:[String:String]]?, mode: String) -> Self {
+        var result = self
+        for role in WorkspaceColorRole.allCases {
+            guard let hex = profiles?[mode]?[role.rawValue], let (r,g,b) = WorkspaceColorOverrides.components(hex) else { continue }
+            result.colors[role] = Color(.sRGB,red:r,green:g,blue:b,opacity:1)
+        }
+        return result
+    }
+}
+struct WidgetColourEditor: View {
+    @Binding var configuration: WidgetConfiguration
+    let title: String
+    @AppStorage("workspaceColorOverrides") private var raw = "{}"
+    @AppStorage("workspaceTheme") private var theme = "warm"
+    @AppStorage("workspaceAccent") private var accent = "sage"
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.dismiss) private var dismiss
+    @State private var mode = "light"
+    private let roles: [WorkspaceColorRole] = [.widget,.text,.accent,.border,.assistantBubble,.userBubble,.input]
+    private var palette: WorkspacePalette { WorkspacePalette.resolved(raw:raw,mode:mode,theme:theme,accent:accent).applying(configuration.colourProfiles,mode:mode) }
+    private func set(_ role: WorkspaceColorRole, hex: String?) {
+        var profiles = configuration.colourProfiles ?? [:]
+        profiles[mode,default:[:]][role.rawValue] = hex
+        configuration.colourProfiles = profiles
+    }
+    var body: some View {
+        VStack(alignment:.leading,spacing:16) {
+            HStack { Text(title + " colours").font(.title2.weight(.semibold)); Spacer(); Picker("Palette",selection:$mode) { Text("Light").tag("light"); Text("Dark").tag("dark") }.pickerStyle(.segmented).labelsHidden().frame(width:150) }
+            Text("Only this widget changes. Colours without an override follow your dashboard theme.").font(.callout).foregroundStyle(.secondary)
+            VStack(alignment:.leading,spacing:10) {
+                Text(title).font(.headline)
+                Text("A little clarity for your day.")
+                HStack { Text("Theme accent").foregroundStyle(palette[.accent]); Spacer(); Text("A message").padding(6).background(palette[.userBubble],in:RoundedRectangle(cornerRadius:6)) }
+            }.foregroundStyle(palette[.text]).padding(16).frame(maxWidth:.infinity).background(palette[.widget],in:RoundedRectangle(cornerRadius:12)).overlay(RoundedRectangle(cornerRadius:12).stroke(palette[.border]))
+            ScrollView {
+                VStack(spacing:12) {
+                    ForEach(roles) { role in
+                        HStack {
+                            Text(role.title).frame(maxWidth:.infinity,alignment:.leading)
+                            ColorPicker(role.title,selection:Binding(get:{ palette[role] },set:{ colour in
+                                var value = WorkspaceColorOverrides(); value.set(role,mode:mode,color:colour); set(role,hex:value.profiles[mode]?[role.rawValue])
+                            }),supportsOpacity:false).labelsHidden()
+                            WorkspaceHexField(value:configuration.colourProfiles?[mode]?[role.rawValue] ?? "",title:role.title) { set(role,hex:$0) }.id(mode + role.rawValue)
+                            Button("Use theme") { set(role,hex:nil) }.buttonStyle(.borderless).disabled(configuration.colourProfiles?[mode]?[role.rawValue] == nil)
+                        }
+                    }
+                }.padding(4)
+            }
+            HStack { Button("Use theme for this widget") { configuration.colourProfiles = nil }; Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }
+        }.padding(24).frame(width:560,height:520).onAppear { mode = scheme == .dark ? "dark" : "light" }
+    }
+}
+
+// AppKit's fullscreen titlebar can ignore SwiftUI's toolbar background.
+// Make its underlying window transparent to the same canvas colour.
+struct WorkspaceWindowColour: NSViewRepresentable {
+    let colour: NSColor
+    func makeNSView(context: Context) -> ColourView { ColourView() }
+    func updateNSView(_ view: ColourView, context: Context) { view.colour = colour; view.apply() }
+    final class ColourView: NSView {
+        var colour: NSColor = .windowBackgroundColor
+        private var observers: [NSObjectProtocol] = []
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observers.forEach(NotificationCenter.default.removeObserver); observers = []
+            guard let window else { return }
+            for name in [NSWindow.didEnterFullScreenNotification,NSWindow.didExitFullScreenNotification] {
+                observers.append(NotificationCenter.default.addObserver(forName:name,object:window,queue:.main) { [weak self] _ in self?.apply() })
+            }
+            apply()
+        }
+        func apply() { window?.titlebarAppearsTransparent = true; window?.backgroundColor = colour }
+        deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+    }
+}
