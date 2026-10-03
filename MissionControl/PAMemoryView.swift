@@ -22,6 +22,10 @@ struct PAMemoryView: View {
             Toggle("Learn useful context from conversations",isOn:$memory.learningEnabled)
             Text("When on, small batches of your chat messages are assessed through your ChatGPT plan. Learned entries stay provisional until confirmed. No email backlog is processed. Pausing stops future learning; you can still save explicit memories.").font(.caption).foregroundStyle(.secondary)
             if let learning, let assistant { HStack { Text(learning.status(assistant)).font(.caption).foregroundStyle(.secondary); Spacer(); if learning.busy { Button("Stop") { learning.cancel() } } else { Button("Check context") { checkContext?() }.disabled(assistant.connection.busy || assistant.busy || assistant.connection.usagePaused || !assistant.connection.inferenceVerified || !assistant.contextEnabled || assistant.hasDraft || !memory.enabled || !memory.learningEnabled) } }; if let error = learning.error { Text(error).font(.caption).foregroundStyle(.orange) } }
+            if let learning {
+                Toggle("Ask occasional useful learning questions",isOn:Binding(get:{ learning.questionsEnabled },set:{ learning.questionsEnabled = $0; learning.cancel() }))
+                Text("At most one per day, only about something you told the PA. Included in the existing small learning pass; no separate AI request or notification. You can dismiss it and Undo in chat.").font(.caption).foregroundStyle(.secondary)
+            }
             Text("Shared memories are available everywhere; topic memories are supplied only in their topic (and when relevant in a daily brief). Explicit facts stay until you forget them. Provisional context needs review after 90 days. Completing a commitment here only updates memory; Apple reminders are separate.").font(.callout).foregroundStyle(.secondary)
             if let error = memory.error { Text(error).foregroundStyle(.orange).font(.caption) }
             ScrollView {

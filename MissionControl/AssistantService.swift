@@ -132,6 +132,17 @@ import Observation
         allConversations[index].turns.append(.init(role:"assistant",content:record.message,completed:true,deliveryID:record.deliveryID))
         if !save() { allConversations = previous }
     }
+    func deliverLearningQuestion(_ record: PALearningQuestion) {
+        guard record.registration == connection.activeID, conversationsWritable,
+              record.conversationID == nil || topics.contains(where:{ $0.id == record.conversationID }),
+              !ConversationRules.hasDelivery(allConversations,registration:record.registration,key:record.deliveryID) else { return }
+        let previous = allConversations
+        let index: Int
+        if let existing = allConversations.firstIndex(where:{ $0.accountID == record.registration && $0.isPrimary == true }) { index = existing }
+        else { var primary = AssistantConversation(accountID:record.registration,title:"Your PA"); primary.isPrimary = true; allConversations.append(primary); index = allConversations.count-1 }
+        allConversations[index].turns.append(.init(role:"assistant",content:record.text,completed:true,deliveryID:record.deliveryID,contextID:record.conversationID))
+        if !save() { allConversations = previous }
+    }
     @discardableResult func configureTopic(_ id: UUID, title: String, focus: String) -> Bool {
         guard !busy, let index = allConversations.firstIndex(where:{ $0.id == id && $0.accountID == connection.activeID && $0.isPrimary != true }) else { return false }
         let previous = allConversations
@@ -222,6 +233,8 @@ import Observation
             guard let delivery = turn.deliveryID else { return nil }
             if delivery.hasPrefix("discovery:") {
                 guard let record = model.proactive.record(delivery:delivery,model:model), model.proactive.visible(record,model:model) else { return delivery }
+            } else if delivery.hasPrefix("learn-question:") {
+                guard let record = model.memoryLearning.question(delivery:delivery,registration:connection.activeID), model.memoryLearning.visible(record,assistant:self) else { return delivery }
             } else if delivery.contains(":morning:"), !model.briefings.allowsChatDelivery(delivery,content:turn.content,model:model) { return delivery }
             return nil
         })

@@ -39,6 +39,38 @@ import Foundation
         let restored = try MemoryEnvelope.decode(JSONEncoder().encode(envelope))
         precondition(restored.suppressed["one"] == ["12"] && restored.records.count == 1)
         do { _ = try MemoryEnvelope.decode(Data("{\"version\":99,\"records\":[],\"suppressed\":{}}".utf8)); fatalError("Accepted unknown version") } catch {}
-        print("PASS: bounded orientation/batches, evidence and ID validation, daily/interval/pause controls, explicit migration and suppression persistence")
+        let topic = UUID(), otherTopic = UUID()
+        let scoped = [MemoryLearningTurn(id:"general",text:"I prefer concise replies",created:now),MemoryLearningTurn(id:"study",text:"My project is about optics",created:now.addingTimeInterval(1),conversationID:topic),MemoryLearningTurn(id:"other",text:"My other project is acoustics",created:now.addingTimeInterval(2),conversationID:otherTopic),MemoryLearningTurn(id:"study-two",text:"I study in the library",created:now.addingTimeInterval(3),conversationID:topic)]
+        precondition(MemoryLearningRules.batch(scoped,seen:[],suppressed:[]).map(\.id) == ["general"])
+        precondition(MemoryLearningRules.batch(scoped,seen:["general"],suppressed:[]).map(\.id) == ["study","study-two"])
+        let questionJSON = "{\"memories\":[],\"question\":{\"turnID\":\"study\",\"text\":\"How much preparation time should I allow for your optics project?\",\"evidence\":\"My project is about optics\"}}"
+        let assessment = try MemoryLearningRules.assessment(questionJSON,turns:scoped,questionAllowed:true)
+        precondition(assessment.memories.isEmpty && assessment.question?.turnID == "study")
+        for (bad,allowed) in [(questionJSON,false),(questionJSON.replacingOccurrences(of:"My project is about optics",with:"Invented quote"),true),(questionJSON.replacingOccurrences(of:"How much preparation time should I allow for your optics project?",with:"Not a question"),true),(questionJSON.replacingOccurrences(of:"\"study\"",with:"\"not-a-turn\""),true)] {
+            do { _ = try MemoryLearningRules.assessment(bad,turns:scoped,questionAllowed:allowed); preconditionFailure("Invalid question accepted") } catch {}
+        }
+        let conflicting = questionJSON.replacingOccurrences(of:"\"memories\":[]",with:"\"memories\":[{\"turnID\":\"study\",\"text\":\"My project is about optics\",\"kind\":\"context\",\"evidence\":\"My project is about optics\"}]")
+        do { _ = try MemoryLearningRules.assessment(conflicting,turns:scoped,questionAllowed:true); preconditionFailure("Learned and queried the same fact") } catch {}
+        let q = LearningQuestionRules.record(assessment.question!,turns:scoped,prior:[],registration:"one",now:now)!
+        precondition(q.conversationID == topic && q.turnID == "study")
+        precondition(LearningQuestionRules.record(assessment.question!,turns:scoped,prior:[q],registration:"one",now:now) == nil)
+        let today = BriefingRules.day(now)
+        precondition(!LearningQuestionRules.allowed(progress:MemoryLearningProgress(),records:[q],registration:"one",day:today))
+        precondition(LearningQuestionRules.allowed(progress:MemoryLearningProgress(),records:[q],registration:"two",day:today))
+        precondition(LearningQuestionRules.allowed(progress:MemoryLearningProgress(),records:[q],registration:"one",day:"tomorrow"))
+        var claimed = MemoryLearningProgress(); claimed.lastQuestionDay = today
+        precondition(!LearningQuestionRules.allowed(progress:claimed,records:[],registration:"one",day:today))
+        claimed.day = today
+        let questionProgress = MemoryLearningRules.progress(turns:[],prior:claimed,suppressed:[],day:"tomorrow")
+        precondition(questionProgress.lastQuestionDay == today)
+        let legacyProgress = "{\"version\":1,\"accounts\":{\"one\":{\"seen\":[],\"skippedAtOrientation\":0,\"day\":\"today\",\"attempts\":0,\"paused\":false}}}"
+        let legacyState = try JSONDecoder().decode(MemoryLearningState.self,from:Data(legacyProgress.utf8))
+        precondition(legacyState.questions == nil && legacyState.accounts["one"]?.lastQuestionDay == nil)
+        var savedQuestion = q; savedQuestion.dismissed = true
+        var questionState = MemoryLearningState(); questionState.questions = [savedQuestion]; questionState.accounts["one"] = claimed
+        let questionReload = try JSONDecoder().decode(MemoryLearningState.self,from:JSONEncoder().encode(questionState))
+        precondition(questionReload.questions == [savedQuestion] && questionReload.accounts["one"]?.lastQuestionDay == today)
+        precondition(!q.deliveryID.hasPrefix("discovery:") && !q.deliveryID.contains(":morning:"))
+        print("PASS: bounded orientation/batches, evidence and ID validation, daily/interval/pause controls, explicit migration/suppression, single-scope batches, grounded optional daily questions, legacy state and dismissal roundtrip")
     }
 }

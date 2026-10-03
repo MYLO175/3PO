@@ -28,6 +28,18 @@ struct AssistantPanel: View {
             if let widgetID { assistant.drafts.set(text,registration:model.chatGPT.activeID,widget:widgetID,conversation:draftKey) } else { assistant.draft = text }
         })
     }
+    private func turnVisible(_ turn: AssistantTurn) -> Bool {
+        guard let delivery = turn.deliveryID else { return true }
+        if delivery.hasPrefix("discovery:") {
+            guard let record = model.proactive.record(delivery:delivery,model:model) else { return false }
+            return model.proactive.visible(record,model:model)
+        }
+        if delivery.hasPrefix("learn-question:") {
+            guard let record = model.memoryLearning.question(delivery:delivery,registration:model.chatGPT.activeID) else { return false }
+            return model.memoryLearning.visible(record,assistant:assistant)
+        }
+        return true
+    }
     private func select(_ id: UUID?) {
         assistant.drafts.flush()
         if let configuration {
@@ -97,11 +109,7 @@ struct AssistantPanel: View {
                                 }
                             }.padding(.vertical,12)
                         }
-                        ForEach((selected?.turns ?? []).filter { turn in
-                            guard let delivery = turn.deliveryID, delivery.hasPrefix("discovery:") else { return true }
-                            guard let record = model.proactive.record(delivery:delivery,model:model) else { return false }
-                            return model.proactive.visible(record,model:model)
-                        }) { turn in
+                        ForEach((selected?.turns ?? []).filter(turnVisible)) { turn in
                             HStack(alignment:.top) {
                             if turn.role == "user" { Spacer(minLength:35) }
                             VStack(alignment: .leading, spacing: 5) {
@@ -119,6 +127,10 @@ struct AssistantPanel: View {
                                         Button("Dismiss") { model.proactive.dismiss(record) }
                                     }.controlSize(.small)
                                 }
+                                if let delivery = turn.deliveryID, let question = model.memoryLearning.question(delivery:delivery,registration:model.chatGPT.activeID) {
+                                    DisclosureGroup("Why I’m asking") { Text("“" + question.evidence + "”").font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }.font(.caption)
+                                    Button("Dismiss question") { model.memoryLearning.dismiss(question) }.controlSize(.small)
+                                }
                                 if turn.role == "assistant" && !turn.completed && assistant.requestTurnID != turn.id && !turn.content.isEmpty { Text("Partial response").font(.caption).foregroundStyle(.orange) }
                                 if let contextID = turn.contextID { Text(assistant.conversation(contextID)?.title ?? "Saved topic").font(.caption2.weight(.medium)).foregroundStyle(Color.accentColor) }
                                 if let date = turn.created { Text(date.formatted(date:.omitted,time:.shortened)).font(.caption2).foregroundStyle(.secondary) }
@@ -132,6 +144,7 @@ struct AssistantPanel: View {
                 .onChange(of:selectedTopicID) { if let id = selected?.turns.last?.id { proxy.scrollTo(id,anchor:.bottom) } }
                 .onAppear { if let id = selected?.turns.last?.id { proxy.scrollTo(id,anchor:.bottom) } }
             }
+            if model.memoryLearning.canUndoQuestion(model.chatGPT.activeID) { HStack { Text("Question dismissed").font(.caption).foregroundStyle(.secondary); Button("Undo") { model.memoryLearning.undoQuestion(model.chatGPT.activeID) }.controlSize(.small); Spacer() } }
             if assistant.mailSearchConversationID == selectedID && assistant.mailSearchTopicID == selectedTopicID && !model.mailLookup.status.isEmpty {
                 HStack {
                     Text(model.mailLookup.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
