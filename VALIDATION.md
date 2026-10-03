@@ -56,3 +56,5 @@ No paid API fallback, credits/reset use, email sending, historical inbox summary
 
 
 3 October compact visual refinement: final signed build compiled and independently Finder-launched. Live normal and820×640 focused brief/PA layouts inspected; normal size restored. Native Calendar picker/status popover, final date navigation/restore, direct Study/general topic switching, topic-scoped Memory and customization palette passed. No new AI calls or Apple writes were used for this UI increment. Dark menu selection did not visibly change appearance; no new dark visual check claimed. Existing integration acceptance remains in STATUS.
+
+3 October appearance follow-up: actual Dark dashboard and Settings verified, Dark retained across Quit/Finder relaunch, Light switching verified and System restored. Signed in-place fix built successfully; supersedes the previous dark-mode boundary.

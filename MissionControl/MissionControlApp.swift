@@ -29,10 +29,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 @main struct MissionControlApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @State private var model = DashboardModel()
+    @AppStorage("workspaceAppearance") private var appearance = "system"
+    private var selectedColorScheme: ColorScheme? {
+        if ProcessInfo.processInfo.arguments.contains("--dark-window") { return .dark }
+        switch appearance { case "light": return .light; case "dark": return .dark; default: return nil }
+    }
     var body: some Scene {
         Window("Mission Control", id: "dashboard") {
             WorkspaceView(model: model)
-                .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("--dark-window") ? .dark : nil)
+                .preferredColorScheme(selectedColorScheme)
         }.defaultSize(width: ProcessInfo.processInfo.arguments.contains("--small-window") ? 820 : 1200, height: ProcessInfo.processInfo.arguments.contains("--small-window") ? 640 : 780)
         .windowToolbarStyle(.unifiedCompact(showsTitle:false))
         .commands {
@@ -59,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             Image(nsImage: MenuBarIcon.image)
                 .accessibilityLabel("Mission Control")
         }
-        Settings { SettingsView(model: model) }
+        Settings { SettingsView(model: model).preferredColorScheme(selectedColorScheme) }
     }
 }
 struct MenuContent: View {

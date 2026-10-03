@@ -58,7 +58,6 @@ struct WorkspaceView: View {
 
             }
         }.background(background).tint(accentColor).frame(minWidth:780,minHeight:580)
-            .preferredColorScheme(appearance == "light" ? .light : appearance == "dark" ? .dark : nil)
             .toolbar(id:"mission-control.workspace.native-toolbar") { windowToolbar }
             .focusedSceneValue(\.workspaceMenu,WorkspaceMenuActions(sidebar:$sidebarVisible,editing:$editing,newDashboard:newDashboard,addWidget:addWidget,customiseToolbar:customiseToolbar))
             .task { model.start() }
