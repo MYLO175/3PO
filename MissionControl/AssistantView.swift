@@ -149,6 +149,7 @@ struct AssistantPanel: View {
                 HStack {
                     Text(model.mailLookup.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     Menu("Mail sources") { ForEach(model.mailLookup.results) { message in Button(message.account + " · " + message.subject) { model.select(message) } } }
+                    if model.mailLookup.hasUnavailable { Button("Retry unavailable reads") { draft.wrappedValue = "Retry unavailable mail reads."; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
                     if model.mailLookup.hasMore { Button("Continue mail search") { draft.wrappedValue = "Continue the email search."; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
                 }
             }

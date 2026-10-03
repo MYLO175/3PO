@@ -18,7 +18,14 @@ enum MailLookupRules {
     static func answerRequest(original: String) -> String {
         "Answer this original mail question using the newly retrieved search evidence: \(original). The app has already performed this bounded search. Explain the findings and remaining coverage; do not treat this as a request to operate Mail yourself."
     }
+    static func retriesUnavailable(_ request: String) -> Bool {
+        request.trimmingCharacters(in:.whitespacesAndNewlines).lowercased().trimmingCharacters(in:CharacterSet(charactersIn:".!")) == "retry unavailable mail reads"
+    }
+    static func continues(_ request: String) -> Bool {
+        retriesUnavailable(request) || request.lowercased().contains("continue") && requested(request)
+    }
     static func requested(_ request: String) -> Bool {
+        if retriesUnavailable(request) { return true }
         let value = request.lowercased()
         let mail = value.range(of:#"\b(?:email|emails|mail|inbox)\b"#,options:.regularExpression) != nil || value.range(of:#"\b(?:i|we) (?:have )?(?:sent|emailed)\b"#,options:.regularExpression) != nil
         return mail && value.range(of:#"\b(?:find|search|old|earlier|last|when|what|look|continue)\b"#,options:.regularExpression) != nil

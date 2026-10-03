@@ -35,6 +35,27 @@ import Foundation
             do { _ = try MailLookupRules.terms(bad,request:"Find Alice's email") } catch { failed = true }
             assert(failed)
         }
-        print("PASS: mail-specific request routing, literal meaningful terms, case-insensitive sender/subject matches, unknown/generic terms rejected")
+        let start = Date(timeIntervalSince1970:1_790_000_000)
+        var blocked = MailWindowProgress(id:"failed-one",accountID:"A",start:start,end:start.addingTimeInterval(86400),mailboxName:"Inbox",mailboxRole:.inbox)
+        let anotherDay = MailWindowProgress(id:"failed-two",accountID:"A",start:start.addingTimeInterval(-86400),end:start,mailboxName:"Inbox",mailboxRole:.inbox)
+        let healthy = MailWindowProgress(id:"healthy",accountID:"B",start:start,end:start.addingTimeInterval(86400),mailboxName:"Inbox",mailboxRole:.inbox)
+        let sentWindow = MailWindowProgress(id:"sent",accountID:"A",start:start,end:start.addingTimeInterval(86400),mailboxName:"Sent",mailboxRole:.sent)
+        let failedKey = MailLookupCoverage.folderKey(blocked), failed: Set<String> = [failedKey]
+        assert(MailLookupCoverage.folderKey(anotherDay) == failedKey)
+        assert(MailLookupCoverage.folderKey(sentWindow) != failedKey)
+        assert(MailLookupCoverage.next([blocked,anotherDay,healthy],failedFolders:failed) == 2)
+        assert(MailLookupCoverage.next([blocked,anotherDay],failedFolders:failed) == nil)
+        assert(MailLookupCoverage.next([blocked,anotherDay],failedFolders:[]) == 0, "Explicit retry restores original cursor, not completed coverage")
+        blocked.messageIDs = [1,2]; blocked.offset = 1
+        assert(MailLookupCoverage.next([blocked],failedFolders:[]) == 0 && blocked.offset == 1 && blocked.messageIDs == [1,2])
+        assert(!MailLookupCoverage.hasMore([blocked],failedFolders:failed,results:[],delivered:[]))
+        assert(MailLookupCoverage.hasMore([blocked],failedFolders:failed,results:[message],delivered:[]), "A failed AI answer must retain matched evidence for another answer")
+        assert(!MailLookupCoverage.hasMore([blocked],failedFolders:failed,results:[message],delivered:[message.id]))
+        let partial = MailLookupCoverage.status([blocked,anotherDay],failedFolders:failed,matched:1,failedBodies:1,hasMore:false)
+        assert(partial.contains("0/2") && partial.contains("remains partial") && partial.contains("only headers") && !partial.contains("search complete"))
+        assert(MailLookupRules.retriesUnavailable("Retry unavailable mail reads."))
+        assert(MailLookupRules.continues("Continue the email search.") && MailLookupRules.requested("Retry unavailable mail reads."))
+        assert(!MailLookupRules.retriesUnavailable("Retry unavailable mail reads and delete them"))
+        print("PASS: mail-specific request routing, literal meaningful terms, case-insensitive sender/subject matches, unknown/generic terms rejected, failed-folder isolation, cursor preservation, incomplete-body coverage and retry intent")
     }
 }
