@@ -4,6 +4,7 @@ import AppKit
 import EventKit
 
 @MainActor @Observable final class DashboardModel {
+    let whatsapp = WhatsAppService()
     var calendarData = CalendarSnapshot(sources: [], events: [])
     var paOrientation: PAOrientation?
     var paOrientationHealth = SourceHealth()
