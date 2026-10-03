@@ -9,6 +9,7 @@ struct WorkspaceMenuActions {
     var newDashboard: () -> Void
     var addWidget: (WidgetKind) -> Void
     var customiseToolbar: () -> Void
+    var customiseColors: () -> Void
 }
 private struct WorkspaceMenuKey: FocusedValueKey {
     typealias Value = WorkspaceMenuActions
@@ -57,6 +58,8 @@ struct WorkspaceCommands: Commands {
                 Picker("Style",selection:$theme) { Text("Warm workspace").tag("warm"); Text("Native macOS").tag("native") }
                 Picker("Appearance",selection:$appearance) { Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark") }
                 Picker("Accent",selection:$accent) { Text("Sage").tag("sage"); Text("Blue").tag("blue"); Text("Rose").tag("rose") }
+                Divider()
+                Button("Customise colours…") { workspace?.customiseColors() }.disabled(workspace == nil)
             }
         }
     }

@@ -7,6 +7,7 @@ struct WorkspaceView: View {
     @AppStorage("workspaceTheme") private var theme = "warm"
     @AppStorage("workspaceAppearance") private var appearance = "system"
     @AppStorage("workspaceAccent") private var accent = "sage"
+    @AppStorage("workspaceColorOverrides") private var colorOverrides = "{}"
     @AppStorage("workspaceToolbarHidden") private var toolbarHidden = ""
     @Environment(\.colorScheme) private var scheme
     @State private var editing = false
@@ -15,16 +16,18 @@ struct WorkspaceView: View {
     @State private var showName = false
     @State private var legacy = false
     @State private var focusedWidgetID: UUID?
+    @State private var showColors = false
     private var store: WorkspaceStore { model.workspace }
-    private var accentColor: Color { accent == "blue" ? .blue : accent == "rose" ? Color(red:0.69,green:0.36,blue:0.43) : (scheme == .dark ? Color(red:0.60,green:0.76,blue:0.64) : Color(red:0.32,green:0.48,blue:0.38)) }
-    private var background: Color { theme == "native" ? Color(nsColor:.windowBackgroundColor) : scheme == .dark ? Color(red:0.12,green:0.13,blue:0.12) : Color(red:0.96,green:0.95,blue:0.92) }
+    private var palette: WorkspacePalette { .resolved(raw:colorOverrides,mode:scheme == .dark ? "dark" : "light",theme:theme,accent:accent) }
+    private var accentColor: Color { palette[.accent] }
+    private var background: Color { palette[.canvas] }
     var body: some View {
         VStack(spacing:0) {
             if let report = model.validationReport { HStack { Text(report).font(.caption).textSelection(.enabled); Spacer(); Button { model.validationReport = nil } label: { Image(systemName:"xmark") }.buttonStyle(.borderless).help("Dismiss validation result") }.padding(10) }
             if let error = store.error { HStack { Label(error,systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange); Spacer(); if store.readOnly { Button("Original dashboard") { legacy = true } } else { Button("Dismiss") { store.error = nil } } }.padding(10) }
             if let error = model.storageError ?? model.writeError { Text(error).font(.caption).foregroundStyle(.orange).frame(maxWidth:.infinity,alignment:.leading).padding(10) }
             HStack(spacing:0) {
-                if sidebarVisible { sidebar.frame(width:170); Divider() }
+                if sidebarVisible { sidebar.frame(width:170).background(palette[.sidebar]); Divider() }
                 GeometryReader { geometry in
                     let width = max(1,geometry.size.width-32), height = max(1,geometry.size.height-32)
                     let rows = GridRules.rows(store.selected)
@@ -57,9 +60,10 @@ struct WorkspaceView: View {
                 }.clipped()
 
             }
-        }.background(background).tint(accentColor).frame(minWidth:780,minHeight:580)
+        }.background(background).tint(accentColor).foregroundStyle(palette[.text]).environment(\.workspacePalette,palette).frame(minWidth:780,minHeight:580)
             .toolbar(id:"mission-control.workspace.native-toolbar") { windowToolbar }
-            .focusedSceneValue(\.workspaceMenu,WorkspaceMenuActions(sidebar:$sidebarVisible,editing:$editing,newDashboard:newDashboard,addWidget:addWidget,customiseToolbar:customiseToolbar))
+            .focusedSceneValue(\.workspaceMenu,WorkspaceMenuActions(sidebar:$sidebarVisible,editing:$editing,newDashboard:newDashboard,addWidget:addWidget,customiseToolbar:customiseToolbar,customiseColors:{ showColors = true }))
+            .sheet(isPresented:$showColors) { WorkspaceColorEditor() }
             .task { model.start() }
             .onChange(of:store.selected.id) { focusedWidgetID = nil }
             .sheet(isPresented:$showName) { VStack(alignment:.leading,spacing:16) { Text(naming == nil ? "New dashboard" : "Rename dashboard").font(.title2.weight(.semibold)); TextField("Name",text:$name).onSubmit { saveName() }; HStack { Spacer(); Button("Cancel") { showName = false }.keyboardShortcut(.cancelAction); Button("Save") { saveName() }.keyboardShortcut(.defaultAction).disabled(name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty) } }.padding(24).frame(width:360) }
@@ -101,6 +105,8 @@ struct WorkspaceView: View {
                 Picker("Style",selection:$theme) { Text("Warm workspace").tag("warm"); Text("Native macOS").tag("native") }
                 Picker("Appearance",selection:$appearance) { Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark") }
                 Picker("Accent",selection:$accent) { Text("Sage").tag("sage"); Text("Blue").tag("blue"); Text("Rose").tag("rose") }
+                Divider()
+                Button("Customise colours…") { showColors = true }
             } label: { Label("Appearance",systemImage:"paintpalette") }
         }.defaultCustomization(visible(.appearance) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
         ToolbarItem(id:"customise") {
@@ -148,6 +154,7 @@ struct WorkspaceView: View {
     private func widgetBinding(_ original: WidgetPlacement) -> Binding<WidgetPlacement> { Binding(get:{ store.selected.widgets.first { $0.id == original.id } ?? original },set:{ store.update($0) }) }
 }
 private struct WorkspaceTile: View {
+    @Environment(\.workspacePalette) private var palette
     @Bindable var model: DashboardModel
     @Bindable var store: WorkspaceStore
     @Binding var widget: WidgetPlacement
@@ -194,9 +201,9 @@ private struct WorkspaceTile: View {
             // Keep content at its committed size during the gesture; only the preview shell follows the pointer.
             .frame(width:baseFrame.width,height:baseFrame.height,alignment:.topLeading)
             .frame(width:visual.width,height:visual.height,alignment:.topLeading)
-            .background(Color(nsColor:.controlBackgroundColor),in:RoundedRectangle(cornerRadius:16))
+            .background(palette[.widget],in:RoundedRectangle(cornerRadius:16))
             .clipShape(RoundedRectangle(cornerRadius:16))
-            .overlay(RoundedRectangle(cornerRadius:16).stroke(editing ? (valid ? Color.accentColor.opacity(0.6) : .red) : Color.primary.opacity(0.06),lineWidth:editing ? 2 : 1))
+            .overlay(RoundedRectangle(cornerRadius:16).stroke(editing ? (valid ? palette[.accent].opacity(0.6) : .red) : palette[.border],lineWidth:editing ? 2 : 1))
             .overlay(alignment:.bottomTrailing) { if editing { Image(systemName:"arrow.down.right.and.arrow.up.left").font(.caption.weight(.bold)).padding(9).background(.regularMaterial,in:RoundedRectangle(cornerRadius:7)).contentShape(Rectangle()).gesture(gesture(resizing:true)).accessibilityLabel("Resize \(widget.kind?.title ?? "widget")") } }
             .shadow(color:.black.opacity(interaction == nil ? 0.025 : 0.12),radius:interaction == nil ? 8 : 14,y:3)
             .offset(x:visual.minX,y:visual.minY)

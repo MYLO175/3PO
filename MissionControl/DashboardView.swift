@@ -331,9 +331,15 @@ struct DashboardView: View {
 }
 private extension View {
     func panelStyle() -> some View {
-        self.padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.06)))
+        modifier(DashboardPanelStyle())
+    }
+}
+private struct DashboardPanelStyle: ViewModifier {
+    @Environment(\.workspacePalette) private var palette
+    func body(content: Content) -> some View {
+        content.padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(palette[.widget], in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(palette[.border]))
             .shadow(color:.black.opacity(0.025),radius:8,x:0,y:3)
     }
 }

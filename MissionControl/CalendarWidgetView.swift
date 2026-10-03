@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct CalendarWidgetView: View {
+    @Environment(\.workspacePalette) private var palette
     @Bindable var model: DashboardModel
     @Binding var configuration: WidgetConfiguration
     @State private var snapshot = CalendarSnapshot(sources:[],events:[])
@@ -171,7 +172,7 @@ struct CalendarWidgetView: View {
                                     }.frame(width:width,alignment:.leading)
                                 }
                             }.padding(.vertical,8)
-                                .background(Color(nsColor:.controlBackgroundColor))
+                                .background(palette[.widget])
                                 .overlay(alignment:.bottom) { Rectangle().fill(Color.primary.opacity(0.08)).frame(height:1) }
                         }
                     }.frame(width:Double(days)*width+Double(days-1)*8)

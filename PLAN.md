@@ -124,3 +124,6 @@ User explicitly requested tool calling for all supported PA operations after the
 
 
 Conversational intent refinement: the PA acts on ordinary phrasing, accepted concrete suggestions (including yes/do that/👍), resolved pronouns and unambiguous task-status updates. No command templates or repeated approval for understood intent. Current-human evidence accepts a nonempty one-character reply; semantic validation resolves what it means using the current thread. An unrelated fact, imported source text, hypothetical or negated change still does not trigger an Apple change. Defaults choose To do/writable Calendar where appropriate; genuinely missing targets or new-event timing receive one short clarification. Completed message text supersedes partial streaming deltas when present.
+
+
+3 October appearance extension: independent workspace-wide light/dark colour palettes are implemented for dashboard, sidebar, widgets, text, controls, borders, conversation bubbles and input. Native colour wells/exact hex entry, live preview, persistent choices and per-colour/per-mode reset. Existing source colours and semantic state indicators remain distinct. Per-dashboard/per-widget palette overrides, typography and spacing controls are possible future refinements, not implemented in this checkpoint.

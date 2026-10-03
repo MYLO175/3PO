@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 
 struct AssistantPanel: View {
+    @Environment(\.workspacePalette) private var palette
     @Bindable var model: DashboardModel
     @Bindable var assistant: AssistantService
     @Binding var readingMode: Bool
@@ -167,7 +168,7 @@ struct AssistantPanel: View {
                                 }
                                 if turn.role == "assistant" && !turn.completed && assistant.requestTurnID != turn.id && !turn.content.isEmpty { Text("Partial response").font(.caption).foregroundStyle(.orange) }
                                 if let date = turn.created { Text(date.formatted(date:.omitted,time:.shortened)).font(.caption2).foregroundStyle(.secondary) }
-                            }.font(.callout).padding(12).frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children:.contain).accessibilityLabel(turn.role == "user" ? "Your message" : "PA message").background(turn.role == "user" ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.035),in:RoundedRectangle(cornerRadius:10))
+                            }.font(.callout).padding(12).frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children:.contain).accessibilityLabel(turn.role == "user" ? "Your message" : "PA message").background(palette[turn.role == "user" ? .userBubble : .assistantBubble],in:RoundedRectangle(cornerRadius:10))
                             if turn.role != "user" { Spacer(minLength:20) }
                             }.id(turn.id)
                         }
@@ -205,7 +206,7 @@ struct AssistantPanel: View {
             if let error = assistant.drafts.error, widgetID != nil { Text(error).font(.caption).foregroundStyle(.orange) }
             HStack {
                 Button { showDictation = true } label: { Image(systemName:"mic") }.help("Dictate a message").accessibilityLabel("Dictate a message").disabled(widgetID != nil && !assistant.drafts.writable)
-                TextField("Message your PA", text: draft,axis:.vertical).lineLimit(1...4).textFieldStyle(.plain).padding(9).background(Color(nsColor:.textBackgroundColor),in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.primary.opacity(0.08))).onSubmit { send() }.focused($composerFocused).disabled(widgetID != nil && !assistant.drafts.writable)
+                TextField("Message your PA", text: draft,axis:.vertical).lineLimit(1...4).textFieldStyle(.plain).padding(9).background(palette[.input],in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).stroke(palette[.border])).onSubmit { send() }.focused($composerFocused).disabled(widgetID != nil && !assistant.drafts.writable)
                 Button(sendingHere ? "Stop" : "Send") { if sendingHere { assistant.cancel() } else { send() } }
                     .frame(width:56)
                     .disabled(!sendingHere && (assistant.busy || (widgetID != nil && !assistant.drafts.writable) || draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (!model.chatGPT.inferenceVerified || model.chatGPT.busy || model.chatGPT.usagePaused)))
