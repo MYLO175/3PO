@@ -174,7 +174,7 @@ struct AssistantPanel: View {
                 Button { showDictation = true } label: { Image(systemName:"mic") }.help("Dictate a message").accessibilityLabel("Dictate a message").disabled(widgetID != nil && !assistant.drafts.writable)
                 TextField("Message your PA", text: draft,axis:.vertical).lineLimit(1...4).textFieldStyle(.plain).padding(9).background(Color(nsColor:.textBackgroundColor),in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.primary.opacity(0.08))).onSubmit { send() }.focused($composerFocused).disabled(widgetID != nil && !assistant.drafts.writable)
                 if sendingHere { ProgressView().controlSize(.small); Button("Stop") { assistant.cancel() } }
-                else { Button("Send") { send() }.disabled(assistant.busy || (widgetID != nil && !assistant.drafts.writable) || draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (MemoryRules.explicitRequest(draft.wrappedValue) == nil && (!model.chatGPT.inferenceVerified || model.chatGPT.busy || model.chatGPT.usagePaused))) }
+                else { Button("Send") { send() }.disabled(assistant.busy || (widgetID != nil && !assistant.drafts.writable) || draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (MemoryRules.explicitRequest(draft.wrappedValue) == nil && assistant.localDiscoveryReview(draft.wrappedValue,model:model,topicID:selectedTopicID) == nil && (!model.chatGPT.inferenceVerified || model.chatGPT.busy || model.chatGPT.usagePaused))) }
             }
             if errorHere && assistant.error?.contains("Choose the specific target") == true {
                 Picker("Specific action target", selection: $model.assistantActions.selectedTarget) {

@@ -168,9 +168,25 @@ import Observation
         if !save() { allConversations = previous }
     }
     func cancel() { task?.cancel() }
+    func localDiscoveryReview(_ prompt: String, model: DashboardModel, topicID: UUID?) -> PADiscovery? {
+        guard let feed else { return nil }
+        let turns = ConversationRules.thread(feed:feed,topic:conversation(topicID))
+        let records = model.proactive.state.records.filter { $0.registration == connection.activeID && UUID(uuidString:$0.id) != nil && model.proactive.visible($0,model:model) }
+        return ProactiveReviewRules.reference(prompt,turns:turns,records:records)
+    }
+    private func reviewDiscovery(_ record: PADiscovery, prompt: String, model: DashboardModel) {
+        guard !busy, !model.writing, let id = activeID, let response = prepare(prompt,id:id) else { return }
+        defer { busy = false; requestConversationID = nil; requestTopicID = nil; requestTurnID = nil }
+        guard let index = allConversations.firstIndex(where:{ $0.id == id }), let turn = allConversations[index].turns.firstIndex(where:{ $0.id == response.id }) else { return }
+        allConversations[index].turns[turn].content = "I’ve opened a review form for that email suggestion. Check its details and press Create when ready."
+        allConversations[index].turns[turn].completed = true
+        guard save() else { return }
+        model.reviewDiscovery(record)
+    }
     func send(model: DashboardModel) {
         let prompt = draft.trimmingCharacters(in:.whitespacesAndNewlines)
         if let note = MemoryRules.explicitRequest(prompt) { remember(note,prompt:prompt); return }
+        if let record = localDiscoveryReview(prompt,model:model,topicID:activeTopicID) { reviewDiscovery(record,prompt:prompt,model:model); return }
         guard ActionRules.requested(prompt) else {
             if MailLookupRules.requested(prompt) { sendMailLookup(request:prompt,model:model) }
             else { send(context:snapshot(model),model:model) }

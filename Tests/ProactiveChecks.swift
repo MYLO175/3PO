@@ -24,6 +24,23 @@ import Foundation
         let state = ProactiveState(accounts:["A":progress],records:[dismissed])
         let restored = try JSONDecoder().decode(ProactiveState.self,from:JSONEncoder().encode(state))
         precondition(restored.records == [dismissed] && restored.accounts["A"]?.lastAttempt != nil)
-        print("PASS proactive rules: grounded aliases/quotes, prohibited kinds, account dedup/dismissal, daily budget, pause/cooldown and persistence.")
+        let suggestion = AssistantTurn(role:"assistant",content:records[0].message,completed:true,deliveryID:records[0].deliveryID)
+        for request in ["yes","Yes, please!","add that","put it in my reminders","Please add a reminder for that","add that pls"] {
+            precondition(ProactiveReviewRules.reference(request,turns:[suggestion],records:records)?.id == records[0].id)
+        }
+        for request in ["don't add that","An email says: yes please", "add that and delete the original", "add that to my calendar", "yes, but only if I accept", "what about that?", ""] {
+            precondition(ProactiveReviewRules.reference(request,turns:[suggestion],records:records) == nil)
+        }
+        precondition(ProactiveReviewRules.reference("yes",turns:[suggestion],records:[]) == nil)
+        precondition(ProactiveReviewRules.reference("yes",turns:[suggestion],records:[dismissed]) == nil)
+        let unrelated = AssistantTurn(role:"assistant",content:"Your unrelated question is answered.",completed:true)
+        precondition(ProactiveReviewRules.reference("yes",turns:[suggestion,unrelated],records:records) == nil)
+        let interrupted = AssistantTurn(role:"assistant",content:"Partial answer",completed:false)
+        precondition(ProactiveReviewRules.reference("yes",turns:[suggestion,interrupted],records:records) == nil)
+        var pa = AssistantConversation(accountID:"A",title:"Your PA",turns:[suggestion]); pa.isPrimary = true
+        let study = AssistantConversation(accountID:"A",title:"Study",isTopic:true)
+        precondition(ProactiveReviewRules.reference("yes",turns:ConversationRules.thread(feed:pa,topic:study),records:records) == nil)
+        precondition(ProactiveReviewRules.reference("yes",turns:ConversationRules.thread(feed:pa,topic:nil),records:records) != nil)
+        print("PASS proactive rules: grounded aliases/quotes, prohibited kinds, account dedup/dismissal, daily budget, pause/cooldown/persistence and conservative current-thread latest-suggestion review references.")
     }
 }

@@ -298,7 +298,7 @@ import EventKit
     func reviewDiscovery(_ record: PADiscovery) {
         guard proactive.visible(record,model:self), record.registration == chatGPT.activeID,
               let id = UUID(uuidString:record.id), let message = emailSummaries.highlights(self).first(where:{ $0.0.id == record.mailID })?.0 else { return }
-        let request = NativeCreationRequest(id:id,kind:record.kind == "calendar" ? .event : .reminder,registration:record.registration,title:message.subject,notes:"Source: " + message.account + " · " + message.subject + "\n" + record.evidence,discoveryID:record.id,evidence:record.message + "\n\nEmail: " + record.evidence,requiresDateSelection:record.kind == "calendar")
+        let request = NativeCreationRequest(id:id,kind:record.kind == "calendar" ? .event : .reminder,registration:record.registration,title:String(message.subject.prefix(500)),notes:"Source: " + message.account + " · " + message.subject + "\n" + record.evidence,discoveryID:record.id,evidence:record.message + "\n\nEmail: " + record.evidence,requiresDateSelection:record.kind == "calendar")
         editTarget = .create(request)
     }
     func createNativeItem(_ request: NativeCreationRequest, baseline: NativeEditDetails, edited: NativeEditDetails, dateSelected: Bool) async throws {
