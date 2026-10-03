@@ -24,12 +24,15 @@ struct WeatherBriefCard: View {
                 if weather.allowed, let forecast = weather.forecast, forecast.usable(), let today = forecast.days.first {
                     Label("\(today.description) · \(today.low.formatted(.number.precision(.fractionLength(0))))–\(today.high.formatted(.number.precision(.fractionLength(0))))°C",systemImage:"cloud.sun").font(.callout.weight(.medium))
                     Text("Rain chance \(Int(today.rainChance))% · Wind up to \(Int(today.windKmh)) km/h").font(.caption)
-                    Text(weather.status).font(.caption2).foregroundStyle(.secondary)
-                    Link("Open-Meteo · Nearby area",destination:WeatherRules.provider).font(.caption2)
+                    HStack(spacing:8) {
+                        Link("Open-Meteo · Nearby area",destination:WeatherRules.provider)
+                        Spacer(minLength:0)
+                        Text(weather.status.replacingOccurrences(of:" · Nearby area",with:"")).foregroundStyle(.secondary).lineLimit(2)
+                    }.font(.caption2)
                 } else {
                     Label(weather.status,systemImage:"cloud.sun").font(.caption).foregroundStyle(.secondary)
                 }
-            }.frame(maxWidth:.infinity,alignment:.leading).padding(10).background(.quaternary,in:RoundedRectangle(cornerRadius:10))
+            }.frame(maxWidth:.infinity,alignment:.leading).padding(10).background(Color.primary.opacity(0.035),in:RoundedRectangle(cornerRadius:10))
         }
     }
 }

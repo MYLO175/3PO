@@ -102,11 +102,11 @@ struct DashboardView: View {
                 })) {
                     HStack(spacing: 7) {
                         Circle().fill(sourceColor(source.id, explicit: source.color)).frame(width: 8, height: 8)
-                        Text(source.label)
+                        Text(source.displayLabel)
                     }
                 }
             }
-        } label: { Label(title, systemImage: "line.3.horizontal.decrease") }.controlSize(.small).disabled(sources.isEmpty)
+        } label: { Label(title, systemImage: "line.3.horizontal.decrease") }.menuStyle(.borderlessButton).controlSize(.small).disabled(sources.isEmpty)
     }
     func sourceColor(_ id: String, explicit: SourceRGB? = nil) -> Color {
         if let explicit {
@@ -121,7 +121,7 @@ struct DashboardView: View {
         model.reminderData.sources.first { $0.id == id }
     }
     func reminderListLabel(_ id: String) -> String {
-        reminderSource(id)?.label ?? visibleReminders.first(where: { $0.listID == id })?.sourceLabel ?? "Reminders"
+        reminderSource(id)?.displayLabel ?? visibleReminders.first(where: { $0.listID == id })?.sourceLabel ?? "Reminders"
     }
     var visibleReminderListIDs: [String] {
         Array(Set(visibleReminders.map(\.listID))).sorted { left, right in
@@ -204,7 +204,8 @@ struct DashboardView: View {
     }
     var remindersPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack { panelHeader("Reminders", icon: "checklist", health: model.reminderHealth); Button { model.newNativeItem(.reminder) } label: { Image(systemName:"plus") }.buttonStyle(.borderless).help("New reminder").accessibilityLabel("New reminder").disabled(model.writing) }
+            HStack(spacing:8) { Label("Reminders",systemImage:"checklist").font(.title3.weight(.semibold)); SourceStatusIndicator(title:"Reminders",health:model.reminderHealth); Spacer(); Button { model.newNativeItem(.reminder) } label: { Image(systemName:"plus") }.buttonStyle(.borderless).help("New reminder").accessibilityLabel("New reminder").disabled(model.writing) }
+            if let error = model.reminderHealth.error { Text((model.reminderHealth.lastSuccess == nil ? "" : "Stale · ") + error).font(.caption).foregroundStyle(.orange).lineLimit(2) }
             HStack(spacing: 8) {
                 sourceMenu("Lists", sources: model.reminderData.sources, exclusions: listExclusions)
                 Spacer(minLength: 0)

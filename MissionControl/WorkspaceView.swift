@@ -73,15 +73,7 @@ struct WorkspaceView: View {
         Group {
         ToolbarItem(id:"sidebar",placement:.navigation) {
             Button { sidebarVisible.toggle() } label: { Label("Sidebar",systemImage:"sidebar.left") }.help("Show dashboard pages")
-        }.customizationBehavior(.reorderable)
-        ToolbarItem(id:"page",placement:.navigation) {
-            Text(store.selected.title).font(.headline).lineLimit(1).frame(maxWidth:160,alignment:.leading)
-        }
-        ToolbarItem(id:"date") {
-            TimelineView(.periodic(from:.now,by:60)) { context in
-                Text(context.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))).font(.callout).foregroundStyle(.secondary).lineLimit(1)
-            }
-        }.defaultCustomization(visible(.date) ? .visible : .hidden)
+        }.customizationBehavior(.reorderable).sharedBackgroundVisibility(.hidden)
         ToolbarSpacer(.flexible)
         ToolbarItem(id:"feedback") {
             TimelineView(.periodic(from:.now,by:1)) { context in
@@ -89,29 +81,29 @@ struct WorkspaceView: View {
                     Label(notice,systemImage:"checkmark.circle.fill").labelStyle(.titleAndIcon).font(.caption).foregroundStyle(.green).lineLimit(1).frame(maxWidth:170).help(notice).padding(.horizontal,8).padding(.vertical,4).background(.green.opacity(0.07),in:Capsule())
                 }
             }
-        }.customizationBehavior(.disabled)
+        }.customizationBehavior(.disabled).sharedBackgroundVisibility(.hidden)
         ToolbarItem(id:"assistant") {
             Button { showAssistant() } label: { Label("Assistant",systemImage:"bubble.left.and.bubble.right") }.help("Assistant (⌘J)")
-        }.defaultCustomization(visible(.assistant) ? .visible : .hidden)
+        }.defaultCustomization(visible(.assistant) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
         ToolbarItem(id:"refresh") {
             Button { model.refresh() } label: { Label("Refresh",systemImage:"arrow.clockwise") }.help("Refresh Apple sources (⌘R)")
-        }.defaultCustomization(visible(.refresh) ? .visible : .hidden)
+        }.defaultCustomization(visible(.refresh) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
         }
         Group {
-        ToolbarItem(id:"addWidget") { addMenu }.defaultCustomization(visible(.addWidget) ? .visible : .hidden)
+        ToolbarItem(id:"addWidget") { addMenu }.defaultCustomization(visible(.addWidget) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
         ToolbarItem(id:"edit") {
             Button { editing.toggle() } label: { Label(editing ? "Done" : "Edit layout",systemImage:editing ? "checkmark" : "square.grid.2x2") }.help("Arrange widgets · Drag handle/corner, release to snap")
-        }.defaultCustomization(visible(.edit) ? .visible : .hidden)
+        }.defaultCustomization(visible(.edit) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
         ToolbarItem(id:"undo") {
             Button { model.undoLatest() } label: { Label(model.undoLabel,systemImage:"arrow.uturn.backward") }.disabled(model.latestUndo == nil || model.writing || model.assistant.busy).help(model.undoLabel)
-        }.defaultCustomization(visible(.undo) ? .visible : .hidden)
+        }.defaultCustomization(visible(.undo) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
         ToolbarItem(id:"appearance") {
             Menu {
                 Picker("Style",selection:$theme) { Text("Warm workspace").tag("warm"); Text("Native macOS").tag("native") }
                 Picker("Appearance",selection:$appearance) { Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark") }
                 Picker("Accent",selection:$accent) { Text("Sage").tag("sage"); Text("Blue").tag("blue"); Text("Rose").tag("rose") }
             } label: { Label("Appearance",systemImage:"paintpalette") }
-        }.defaultCustomization(visible(.appearance) ? .visible : .hidden)
+        }.defaultCustomization(visible(.appearance) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
         ToolbarItem(id:"customise") {
             Menu {
                 Button("Customise toolbar…") { customiseToolbar() }
@@ -125,8 +117,8 @@ struct WorkspaceView: View {
                     SettingsLink { Text("Settings…") }
                 }
             } label: { Label("Toolbar options",systemImage:"slider.horizontal.3") }
-        }.customizationBehavior(.reorderable)
-        ToolbarItem(id:"settings") { SettingsLink { Label("Settings",systemImage:"gearshape") } }
+        }.customizationBehavior(.reorderable).sharedBackgroundVisibility(.hidden)
+        ToolbarItem(id:"settings") { SettingsLink { Label("Settings",systemImage:"gearshape") } }.sharedBackgroundVisibility(.hidden)
         }
     }
     private func newDashboard() { naming = nil; name = "New dashboard"; showName = true }

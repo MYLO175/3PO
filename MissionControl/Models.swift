@@ -13,6 +13,7 @@ struct SourceOption: Identifiable, Codable, Hashable {
     var writable: Bool
     var color: SourceRGB? = nil
     var label: String { account.isEmpty ? title : "\(title) · \(account)" }
+    var displayLabel: String { title.caseInsensitiveCompare(account) == .orderedSame ? title : label }
 }
 struct AgendaEvent: Identifiable, Codable {
     var id: String

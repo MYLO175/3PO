@@ -7,6 +7,7 @@ struct CalendarWidgetView: View {
     @State private var loading = false
     @State private var error: String?
     @State private var updated: Date?
+    @State private var showDatePicker = false
     @State private var selectedEvent: CalendarEventSelection?
     @State private var dragToken = UUID().uuidString
     private var calendar: Calendar { .current }
@@ -24,37 +25,37 @@ struct CalendarWidgetView: View {
     private var events: [AgendaEvent] { snapshot.events.filter { !configuration.sourceExclusions.contains($0.calendarID) } }
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
-            HStack {
+            HStack(spacing:8) {
                 Label("Calendar",systemImage:"calendar").font(.title3.weight(.semibold))
-                Spacer()
-                if loading { ProgressView().controlSize(.small) }
-                Button { model.newNativeItem(.event,date:configuration.date) } label: { Image(systemName:"plus") }.buttonStyle(.borderless).help("New event").accessibilityLabel("New event").disabled(model.writing)
+                SourceStatusIndicator(title:"Calendar",health:SourceHealth(lastSuccess:updated,error:error,loading:loading))
+                Spacer(minLength:4)
+                Menu { Button("Show all") { configuration.sourceExclusions = [] }; Divider(); ForEach(snapshot.sources) { source in
+                    Toggle(source.displayLabel,isOn:Binding(get:{ !configuration.sourceExclusions.contains(source.id) },set:{ enabled in if enabled { configuration.sourceExclusions.remove(source.id) } else { configuration.sourceExclusions.insert(source.id) } }))
+                } } label: { Image(systemName:"line.3.horizontal.decrease") }.menuStyle(.borderlessButton).fixedSize().help("Filter calendars").accessibilityLabel("Filter calendars")
+                Button { model.newNativeItem(.event,date:configuration.date) } label: { Image(systemName:"plus") }.help("New event").accessibilityLabel("New event").disabled(model.writing)
                 Picker("Calendar view",selection:$configuration.calendarMode) {
                     Text("Agenda").tag("agenda"); Text("Day").tag("day"); Text("Week").tag("week"); Text("Month").tag("month")
-                }.labelsHidden().frame(maxWidth:115)
-            }
-            if let error { Text("Stale · " + error).font(.caption).foregroundStyle(.orange).lineLimit(2) }
-            else if let updated { Text("Updated " + updated.formatted(date:.omitted,time:.shortened)).font(.caption).foregroundStyle(.secondary) }
-            HStack {
-                Menu { Button("Show all") { configuration.sourceExclusions = [] }; Divider(); ForEach(snapshot.sources) { source in
-                    Toggle(source.label,isOn:Binding(get:{ !configuration.sourceExclusions.contains(source.id) },set:{ enabled in if enabled { configuration.sourceExclusions.remove(source.id) } else { configuration.sourceExclusions.insert(source.id) } }))
-                } } label: { Label("Calendars",systemImage:"line.3.horizontal.decrease") }.controlSize(.small)
-                Spacer()
-                Button("Today") { configuration.date = .now }.controlSize(.small)
-            }
-            HStack {
-                Button { navigate(-1) } label: { Image(systemName:"chevron.left") }.buttonStyle(.borderless).accessibilityLabel("Previous calendar period")
-                DatePicker("Date",selection:$configuration.date,displayedComponents:.date).labelsHidden()
+                }.pickerStyle(.menu).labelsHidden().frame(width:90)
+            }.buttonStyle(.borderless).controlSize(.small)
+            HStack(spacing:8) {
+                Button { showDatePicker.toggle() } label: {
+                    HStack(spacing:4) { Text(configuration.date.formatted(mode == "month" ? .dateTime.month(.wide).year() : .dateTime.weekday(.abbreviated).day().month(.wide))).font(.callout.weight(.medium)); Image(systemName:"chevron.down").font(.caption2) }
+                }.help("Choose calendar date").accessibilityLabel("Choose calendar date").popover(isPresented:$showDatePicker) {
+                    DatePicker("Calendar date",selection:$configuration.date,displayedComponents:.date).datePickerStyle(.graphical).labelsHidden().padding(12)
+                }
                 Spacer(minLength:4)
-                Button { navigate(1) } label: { Image(systemName:"chevron.right") }.buttonStyle(.borderless).accessibilityLabel("Next calendar period")
-            }
-            Divider()
+                Button { navigate(-1) } label: { Image(systemName:"chevron.left") }.help("Previous calendar period").accessibilityLabel("Previous calendar period")
+                Button("Today") { configuration.date = .now }
+                Button { navigate(1) } label: { Image(systemName:"chevron.right") }.help("Next calendar period").accessibilityLabel("Next calendar period")
+            }.buttonStyle(.borderless).controlSize(.small)
+            if let error { Text((updated == nil ? "" : "Stale · ") + error).font(.caption).foregroundStyle(.orange).lineLimit(2) }
             if mode == "day" || mode == "week" { Text("Drag a timed event to another slot to review its time.").font(.caption2).foregroundStyle(.secondary) }
             if mode == "month" { monthView }
             else if mode == "day" || mode == "week" { timelineView }
             else { agendaView }
         }.padding(16).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
             .task(id:"\(range.start.timeIntervalSince1970):\(range.end.timeIntervalSince1970):\(model.widgetCalendars.revision)") { await load() }
+            .onChange(of:configuration.date) { showDatePicker = false }
             .sheet(item:$selectedEvent) { NativeItemEditor(model:model,target:.event($0.event),proposedMove:$0.move) }
     }
     private func load() async {
@@ -89,7 +90,7 @@ struct CalendarWidgetView: View {
                     if !event.allDay { Text(event.start.formatted(date:.omitted,time:.shortened) + " – " + event.end.formatted(date:.omitted,time:.shortened)).font(.caption).foregroundStyle(.secondary) }
                     Text(event.title).font(.callout.weight(.medium)).lineLimit(3)
                     if !event.location.isEmpty { Text(event.location).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
-                    Text(event.sourceLabel).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    Text(snapshot.sources.first(where:{ $0.id == event.calendarID })?.displayLabel ?? event.sourceLabel).font(.caption2).foregroundStyle(color(event)).lineLimit(1)
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }.padding(.vertical,5).contentShape(Rectangle())
         }.buttonStyle(.plain)
@@ -99,7 +100,7 @@ struct CalendarWidgetView: View {
             LazyVStack(alignment:.leading,spacing:12) {
                 ForEach(0..<7,id:\.self) { offset in
                     let day = calendar.date(byAdding:.day,value:offset,to:range.start)!, items = dayEvents(day)
-                    Text(day.formatted(date:.abbreviated,time:.omitted)).font(.subheadline.weight(.semibold))
+                    Text(day.formatted(.dateTime.weekday(.wide).day().month(.abbreviated))).font(.subheadline.weight(.semibold))
                     if items.isEmpty { Text("Nothing scheduled").font(.callout).foregroundStyle(.secondary) }
                     ForEach(items.filter(\.allDay)) { eventButton($0) }
                     ForEach(items.filter { !$0.allDay }) { eventButton($0) }

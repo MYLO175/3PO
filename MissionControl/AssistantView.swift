@@ -74,27 +74,24 @@ struct AssistantPanel: View {
     @State private var showBriefing = false
     var body: some View {
         VStack(spacing: 8) {
-            Divider()
-            VStack(alignment:.leading,spacing:8) {
-                HStack {
-                    Label("Your PA",systemImage:"sparkles").font(.headline)
-                    Spacer()
-                    Button("Memory") { showMemory = true }
-                    if supportsReadingMode { Button { readingMode.toggle() } label: { Image(systemName:readingMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") }.help(readingMode ? "Compact chat" : "Expand chat") }
-                }
-                HStack {
-                    Picker("Topic",selection:Binding(get:{ selectedTopicID },set:{ select($0) })) {
-                        Text("No topic").tag(Optional<UUID>.none)
-                        ForEach(assistant.topics) { Text($0.title).tag(Optional($0.id)) }
-                    }.frame(maxWidth:280)
-                    Menu {
-                        if let selectedTopicID { Button("Edit topic focus…") { editTopic(selectedTopicID) } }
-                        Button("Add topic…") { editTopic(nil) }
-                    } label: { Image(systemName:"slider.horizontal.3") }.help("Manage topic context").accessibilityLabel("Manage topic context").disabled(assistant.busy)
-                    Spacer(minLength:0)
-                }
-                Text(assistant.contextEnabled ? (topic == nil ? "Shared PA memory and enabled sources" : "Shared PA memory + " + (topic?.title ?? "") + " focus") : "Apple source context off").font(.caption).foregroundStyle(.secondary)
-            }
+            HStack(spacing:8) {
+                Label("Your PA",systemImage:"sparkles").font(.title3.weight(.semibold)).fixedSize()
+                Spacer(minLength:4)
+                Menu {
+                    Toggle("No topic",isOn:Binding(get:{ selectedTopicID == nil },set:{ if $0 { select(nil) } }))
+                    ForEach(assistant.topics) { topic in Toggle(topic.title,isOn:Binding(get:{ selectedTopicID == topic.id },set:{ if $0 { select(topic.id) } })) }
+                } label: { Text(topic?.title ?? "No topic").lineLimit(1) }
+                    .menuStyle(.borderlessButton).fixedSize(horizontal:false,vertical:true).frame(maxWidth:130)
+                    .help("Choose a PA topic").accessibilityLabel("PA topic: " + (topic?.title ?? "No topic"))
+                Button { showMemory = true } label: { Image(systemName:"brain") }.help("Memory").accessibilityLabel("Memory")
+                Menu {
+                    Button("Memory…") { showMemory = true }
+                    if let selectedTopicID { Button("Edit topic focus…") { editTopic(selectedTopicID) } }
+                    Button("Add topic…") { editTopic(nil) }
+                    Text(assistant.contextEnabled ? "Apple source context enabled" : "Apple source context off")
+                } label: { Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).fixedSize().help("Topic options").accessibilityLabel("Topic options").disabled(assistant.busy)
+                if supportsReadingMode { Button { readingMode.toggle() } label: { Image(systemName:readingMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") }.help(readingMode ? "Compact chat" : "Expand chat") }
+            }.buttonStyle(.borderless).controlSize(.small)
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
@@ -113,7 +110,6 @@ struct AssistantPanel: View {
                             HStack(alignment:.top) {
                             if turn.role == "user" { Spacer(minLength:35) }
                             VStack(alignment: .leading, spacing: 5) {
-                                Text(turn.role == "user" ? "You" : "Your PA").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                                 if turn.content.isEmpty {
                                     Text(assistant.requestTurnID == turn.id ? "Thinking…" : "This request didn't complete.").foregroundStyle(.secondary)
                                 } else if turn.role == "assistant" {
@@ -132,9 +128,8 @@ struct AssistantPanel: View {
                                     Button("Dismiss question") { model.memoryLearning.dismiss(question) }.controlSize(.small)
                                 }
                                 if turn.role == "assistant" && !turn.completed && assistant.requestTurnID != turn.id && !turn.content.isEmpty { Text("Partial response").font(.caption).foregroundStyle(.orange) }
-                                if let contextID = turn.contextID { Text(assistant.conversation(contextID)?.title ?? "Saved topic").font(.caption2.weight(.medium)).foregroundStyle(Color.accentColor) }
                                 if let date = turn.created { Text(date.formatted(date:.omitted,time:.shortened)).font(.caption2).foregroundStyle(.secondary) }
-                            }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(turn.role == "user" ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.035),in:RoundedRectangle(cornerRadius:10))
+                            }.font(.callout).padding(12).frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children:.contain).accessibilityLabel(turn.role == "user" ? "Your message" : "PA message").background(turn.role == "user" ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.035),in:RoundedRectangle(cornerRadius:10))
                             if turn.role != "user" { Spacer(minLength:20) }
                             }.id(turn.id)
                         }
@@ -197,7 +192,7 @@ struct AssistantPanel: View {
             TopicFocusEditor(assistant:assistant,topicID:$editingTopicID,registration:$editorRegistration,name:$topicName,focus:$topicFocus,onSelected:select)
         }.sheet(isPresented:$showDictation) {
             DictationView(dictation:dictation) { text in draft.wrappedValue = draft.wrappedValue.isEmpty ? text : draft.wrappedValue + " " + text }
-        }.padding(.horizontal, 20).padding(.vertical, 10)
+        }.padding(16)
     }
 }
 // Bindings let a newly presented sheet read the current context, rather than a stale presentation closure.

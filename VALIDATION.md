@@ -53,3 +53,6 @@ No paid API fallback, credits/reset use, email sending, historical inbox summary
 
 
 3 October weather increment: focused test-weather.sh and existing test-briefing.sh passed. Open-Meteo public dummy-area response verified. Actual independently launched signed app owns enabled Location Services after user approval and displayed a local forecast; weather off/card hiding and relaunch persistence passed, restored on. Local SwiftData weather cache has3days and no coordinate keys. Privacy precision, old/day/timezone rejection and failed-response rules checked with fictional samples. Actual subscription PA weather answer completed and matched supplied forecast figures with provider/date attribution; completed answer saved. Next07:30 wake/notification result remains unverified; prior acceptance boundaries remain in STATUS.
+
+
+3 October compact visual refinement: final signed build compiled and independently Finder-launched. Live normal and820×640 focused brief/PA layouts inspected; normal size restored. Native Calendar picker/status popover, final date navigation/restore, direct Study/general topic switching, topic-scoped Memory and customization palette passed. No new AI calls or Apple writes were used for this UI increment. Dark menu selection did not visibly change appearance; no new dark visual check claimed. Existing integration acceptance remains in STATUS.
