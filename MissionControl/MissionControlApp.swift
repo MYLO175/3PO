@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             WorkspaceView(model: model)
                 .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("--dark-window") ? .dark : nil)
         }.defaultSize(width: ProcessInfo.processInfo.arguments.contains("--small-window") ? 820 : 1200, height: ProcessInfo.processInfo.arguments.contains("--small-window") ? 640 : 780)
+        .windowToolbarStyle(.unifiedCompact(showsTitle:false))
         .commands {
             #if DEBUG
             CommandGroup(after: .help) {

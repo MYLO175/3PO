@@ -20,8 +20,6 @@ struct WorkspaceView: View {
     private var background: Color { theme == "native" ? Color(nsColor:.windowBackgroundColor) : scheme == .dark ? Color(red:0.12,green:0.13,blue:0.12) : Color(red:0.96,green:0.95,blue:0.92) }
     var body: some View {
         VStack(spacing:0) {
-            header
-            Divider()
             if let report = model.validationReport { HStack { Text(report).font(.caption).textSelection(.enabled); Spacer(); Button { model.validationReport = nil } label: { Image(systemName:"xmark") }.buttonStyle(.borderless).help("Dismiss validation result") }.padding(10) }
             if let error = store.error { HStack { Label(error,systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange); Spacer(); if store.readOnly { Button("Original dashboard") { legacy = true } } else { Button("Dismiss") { store.error = nil } } }.padding(10) }
             if let error = model.storageError ?? model.writeError { Text(error).font(.caption).foregroundStyle(.orange).frame(maxWidth:.infinity,alignment:.leading).padding(10) }
@@ -61,6 +59,7 @@ struct WorkspaceView: View {
             }
         }.background(background).tint(accentColor).frame(minWidth:780,minHeight:580)
             .preferredColorScheme(appearance == "light" ? .light : appearance == "dark" ? .dark : nil)
+            .toolbar(id:"mission-control.workspace.native-toolbar") { windowToolbar }
             .task { model.start() }
             .onChange(of:store.selected.id) { focusedWidgetID = nil }
             .sheet(isPresented:$showName) { VStack(alignment:.leading,spacing:16) { Text(naming == nil ? "New dashboard" : "Rename dashboard").font(.title2.weight(.semibold)); TextField("Name",text:$name).onSubmit { saveName() }; HStack { Spacer(); Button("Cancel") { showName = false }.keyboardShortcut(.cancelAction); Button("Save") { saveName() }.keyboardShortcut(.defaultAction).disabled(name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty) } }.padding(24).frame(width:360) }
@@ -68,47 +67,69 @@ struct WorkspaceView: View {
             .sheet(item:$model.editTarget) { NativeItemEditor(model:model,target:$0) }
             .sheet(isPresented:$legacy) { DashboardView(model:model).frame(width:1150,height:750) }
     }
-    private var header: some View {
-        HStack(spacing:8) {
-            Button { sidebarVisible.toggle() } label: { Image(systemName:"sidebar.left") }.buttonStyle(.borderless).help("Show dashboard pages")
-            Text(store.selected.title).font(.system(size:17,weight:.semibold,design:.rounded)).lineLimit(1).frame(maxWidth:170,alignment:.leading)
-            if visible(.date) { TimelineView(.periodic(from:.now,by:60)) { context in Text(context.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))).font(.caption).foregroundStyle(.secondary).lineLimit(1) } }
-            Spacer(minLength:4)
+    // Native toolbar identifiers own macOS persistence; dashboard layouts remain independent.
+    @ToolbarContentBuilder private var windowToolbar: some CustomizableToolbarContent {
+        Group {
+        ToolbarItem(id:"sidebar",placement:.navigation) {
+            Button { sidebarVisible.toggle() } label: { Label("Sidebar",systemImage:"sidebar.left") }.help("Show dashboard pages")
+        }.customizationBehavior(.reorderable)
+        ToolbarItem(id:"page",placement:.navigation) {
+            Text(store.selected.title).font(.headline).lineLimit(1).frame(maxWidth:160,alignment:.leading)
+        }
+        ToolbarItem(id:"date") {
+            TimelineView(.periodic(from:.now,by:60)) { context in
+                Text(context.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }.defaultCustomization(visible(.date) ? .visible : .hidden)
+        ToolbarSpacer(.flexible)
+        ToolbarItem(id:"feedback") {
             TimelineView(.periodic(from:.now,by:1)) { context in
                 if let notice = model.nativeWriteNotice, let date = model.feedbackDate, context.date.timeIntervalSince(date) < 8 {
-                    Label(notice,systemImage:"checkmark.circle.fill").font(.caption).foregroundStyle(.green).lineLimit(1).frame(maxWidth:210).help(notice).padding(.horizontal,8).padding(.vertical,5).background(.green.opacity(0.07),in:Capsule())
+                    Label(notice,systemImage:"checkmark.circle.fill").labelStyle(.titleAndIcon).font(.caption).foregroundStyle(.green).lineLimit(1).frame(maxWidth:170).help(notice).padding(.horizontal,8).padding(.vertical,4).background(.green.opacity(0.07),in:Capsule())
                 }
-            }.layoutPriority(-1)
-            ViewThatFits(in:.horizontal) {
-                HStack(spacing:6) { toolbarActions(labels:true) }
-                HStack(spacing:5) { toolbarActions(labels:false) }
             }
+        }.customizationBehavior(.disabled)
+        ToolbarItem(id:"assistant") {
+            Button { showAssistant() } label: { Label("Assistant",systemImage:"bubble.left.and.bubble.right") }.help("Assistant (⌘J)")
+        }.defaultCustomization(visible(.assistant) ? .visible : .hidden)
+        ToolbarItem(id:"refresh") {
+            Button { model.refresh() } label: { Label("Refresh",systemImage:"arrow.clockwise") }.help("Refresh Apple sources (⌘R)")
+        }.defaultCustomization(visible(.refresh) ? .visible : .hidden)
+        }
+        Group {
+        ToolbarItem(id:"addWidget") { addMenu }.defaultCustomization(visible(.addWidget) ? .visible : .hidden)
+        ToolbarItem(id:"edit") {
+            Button { editing.toggle() } label: { Label(editing ? "Done" : "Edit layout",systemImage:editing ? "checkmark" : "square.grid.2x2") }.help("Arrange widgets · Drag handle/corner, release to snap")
+        }.defaultCustomization(visible(.edit) ? .visible : .hidden)
+        ToolbarItem(id:"undo") {
+            Button { model.undoLatest() } label: { Label(model.undoLabel,systemImage:"arrow.uturn.backward") }.disabled(model.latestUndo == nil || model.writing || model.assistant.busy).help(model.undoLabel)
+        }.defaultCustomization(visible(.undo) ? .visible : .hidden)
+        ToolbarItem(id:"appearance") {
             Menu {
-                Section("Show in toolbar") { ForEach(WorkspaceTool.allCases,id:\.self) { tool in Toggle(tool.title,isOn:Binding(get:{ visible(tool) },set:{ toolbarHidden = ToolbarRules.setting(tool,visible:$0,hidden:toolbarHidden) })) }; Button("Reset toolbar") { toolbarHidden = "" } }
+                Picker("Style",selection:$theme) { Text("Warm workspace").tag("warm"); Text("Native macOS").tag("native") }
+                Picker("Appearance",selection:$appearance) { Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark") }
+                Picker("Accent",selection:$accent) { Text("Sage").tag("sage"); Text("Blue").tag("blue"); Text("Rose").tag("rose") }
+            } label: { Label("Appearance",systemImage:"paintpalette") }
+        }.defaultCustomization(visible(.appearance) ? .visible : .hidden)
+        ToolbarItem(id:"customise") {
+            Menu {
+                Button("Customise toolbar…") { NSApp.keyWindow?.runToolbarCustomizationPalette(nil) }
                 Section("Actions") {
-                    Button("Assistant") { model.assistant.openPA(); store.showAssistant() }.keyboardShortcut("j",modifiers:.command)
+                    Toggle("Show sidebar",isOn:$sidebarVisible)
+                    Button("Assistant") { showAssistant() }.keyboardShortcut("j",modifiers:.command)
                     Button("Refresh") { model.refresh() }.keyboardShortcut("r",modifiers:.command)
                     Menu("Add widget") { widgetChoices }
                     Toggle("Edit layout",isOn:$editing)
                     Button(model.undoLabel) { model.undoLatest() }.disabled(model.latestUndo == nil || model.writing || model.assistant.busy)
+                    SettingsLink { Text("Settings…") }
                 }
-            } label: { Image(systemName:"slider.horizontal.3") }.help("Customise toolbar").accessibilityLabel("Customise toolbar")
-            SettingsLink { Image(systemName:"gearshape") }.buttonStyle(.borderless).help("Settings")
-        }.controlSize(.small).padding(.horizontal,16).frame(height:44)
+            } label: { Label("Toolbar options",systemImage:"slider.horizontal.3") }
+        }.customizationBehavior(.reorderable)
+        ToolbarItem(id:"settings") { SettingsLink { Label("Settings",systemImage:"gearshape") } }
+        }
     }
+    private func showAssistant() { model.assistant.openPA(); store.showAssistant() }
     private func visible(_ tool: WorkspaceTool) -> Bool { ToolbarRules.visible(tool,hidden:toolbarHidden) }
-    @ViewBuilder private func toolbarActions(labels: Bool) -> some View {
-        if visible(.assistant) { Button { model.assistant.openPA(); store.showAssistant() } label: { if labels { Label("Assistant",systemImage:"bubble.left.and.bubble.right") } else { Image(systemName:"bubble.left.and.bubble.right") } }.help("Assistant (⌘J)").accessibilityLabel("Assistant") }
-        if visible(.refresh) { Button { model.refresh() } label: { Image(systemName:"arrow.clockwise") }.help("Refresh Apple sources (⌘R)").accessibilityLabel("Refresh Apple sources") }
-        if visible(.addWidget) { Menu { widgetChoices } label: { if labels { Label("Add widget",systemImage:"plus") } else { Image(systemName:"plus") } }.accessibilityLabel("Add widget") }
-        if visible(.edit) { Button { editing.toggle() } label: { if labels { Text(editing ? "Done" : "Edit") } else { Image(systemName:editing ? "checkmark" : "slider.horizontal.3") } }.help("Arrange widgets · Drag handle/corner, release to snap").accessibilityLabel(editing ? "Finish arranging widgets" : "Edit layout").tint(editing ? .accentColor : nil) }
-        if visible(.undo) { Button { model.undoLatest() } label: { Image(systemName:"arrow.uturn.backward") }.disabled(model.latestUndo == nil || model.writing || model.assistant.busy).help(model.undoLabel).accessibilityLabel(model.undoLabel) }
-        if visible(.appearance) { Menu {
-                Picker("Style",selection:$theme) { Text("Warm workspace").tag("warm"); Text("Native macOS").tag("native") }
-                Picker("Appearance",selection:$appearance) { Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark") }
-                Picker("Accent",selection:$accent) { Text("Sage").tag("sage"); Text("Blue").tag("blue"); Text("Rose").tag("rose") }
-            } label: { Image(systemName:"paintpalette") }.help("Workspace appearance").accessibilityLabel("Workspace appearance") }
-    }
     private var widgetChoices: some View { ForEach(WidgetKind.allCases,id:\.self) { kind in Button { store.addWidget(kind); editing = true } label: { Label(kind.title,systemImage:kind.icon) } } }
     private var addMenu: some View {
         Menu { widgetChoices } label: { Label("Add widget",systemImage:"plus") }

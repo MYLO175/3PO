@@ -3,7 +3,7 @@
 Installed signed app: `~/Applications/Mission Control.app`. Matching local build: `build/Mission Control.app` (ignored by Git).
 Stable bundle identifier: `com.mylomichael.missioncontrol`.
 Built with the installed Xcode and existing Apple Development identity; strict deep signature verification passed.
-Final build log: `/tmp/missioncontrol-compact-toolbar-final-build.log`.
+Final build log: `/tmp/missioncontrol-native-toolbar-final-build.log`.
 
 The accumulated overnight changes and compact-toolbar update are now installed and independently launched from Finder. Both old app instances were quit before replacement. Strict installed signature verification passed; existing Application Support/Keychain records were preserved. The old installed bundle is retained at `/tmp/missioncontrol-before-compact-toolbar.app`. No new permission or sign-in was requested.
 
@@ -27,6 +27,10 @@ Actual independent app launch and topic-thread selection; existing-item editor l
 ## Compact-toolbar live acceptance — 3 October morning
 
 The 44-point one-line toolbar and footer removal were inspected at normal size and an 820×640 content window. Inline completion/layout feedback leaves the widget frame unchanged. Toolbar hiding/reset and a real Quit/Finder relaunch preserved the choice and new Date & clock widget. A disposable reminder was created through the actual form, completed and restored through top Undo, renamed through the native form and restored through top Undo. Apple Reminders independently showed the restored title/notes; only that UUID-marked fixture was removed through its recoverable Delete action, and its row was absent afterward. Production native editor fixtures also passed reminder/event edit Undo and refusal after external changes, with fixture cleanup verified. Layout Undo and the clock’s display option were checked in the actual app.
+
+## Native toolbar refinement — 3 October morning
+
+The subsequent Safari-style refinement removes the separate header entirely: window controls and buttons share one native unified compact toolbar. Actual palette opening and flexible-space availability passed. Native move changed Refresh/Assistant order, which persisted across Quit, Finder launch and replacement with the final signed build; default action order was then restored. Normal and 820×640 screenshots show a single window-controls row and widgets below it, with no footer or outer dashboard scrolling. Widget-display Undo produced readable green feedback in the native toolbar without changing widget frames. Native palette drag hit-testing itself was not separately exercised; movement used the native item’s accessible Move previous/next actions. The app-control pipe/capture interruption recovered; the active disposable reminder was subsequently confirmed absent in Mission Control as well.
 
 ## Focused checks passed
 
