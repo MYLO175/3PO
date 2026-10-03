@@ -23,7 +23,7 @@ actor EventKitService {
         let granted = type == .event ? try await store.requestFullAccessToEvents() : try await store.requestFullAccessToReminders()
         if !granted { throw IntegrationError.denied(type == .event ? "Calendar" : "Reminders") }
     }
-    private func option(_ calendar: EKCalendar) -> SourceOption {
+    func option(_ calendar: EKCalendar) -> SourceOption {
         let color: SourceRGB?
         if let sRGB = NSColor(cgColor: calendar.cgColor)?.usingColorSpace(.sRGB) {
             color = SourceRGB(red: Double(sRGB.redComponent), green: Double(sRGB.greenComponent), blue: Double(sRGB.blueComponent))

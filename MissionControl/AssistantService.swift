@@ -122,6 +122,16 @@ import Observation
         allConversations[index].turns.append(AssistantTurn(role:"assistant",content:message,completed:true,deliveryID:delivery))
         if !save() { allConversations = previous }
     }
+    func deliverDiscovery(_ record: PADiscovery) {
+        guard record.registration == connection.activeID, conversationsWritable,
+              !ConversationRules.hasDelivery(allConversations,registration:record.registration,key:record.deliveryID) else { return }
+        let previous = allConversations
+        let index: Int
+        if let existing = allConversations.firstIndex(where:{ $0.accountID == record.registration && $0.isPrimary == true }) { index = existing }
+        else { var primary = AssistantConversation(accountID:record.registration,title:"Your PA"); primary.isPrimary = true; allConversations.append(primary); index = allConversations.count-1 }
+        allConversations[index].turns.append(.init(role:"assistant",content:record.message,completed:true,deliveryID:record.deliveryID))
+        if !save() { allConversations = previous }
+    }
     @discardableResult func configureTopic(_ id: UUID, title: String, focus: String) -> Bool {
         guard !busy, let index = allConversations.firstIndex(where:{ $0.id == id && $0.accountID == connection.activeID && $0.isPrimary != true }) else { return false }
         let previous = allConversations
@@ -251,7 +261,10 @@ import Observation
     }
     func snapshot(_ model: DashboardModel) -> String? {
         guard contextEnabled else { return nil }
-        let events = model.calendarData.events.filter { !excludedCalendars.contains($0.calendarID) }
+        let events = model.paOrientation?.events(excluding:excludedCalendars) ?? model.calendarData.events.filter { !excludedCalendars.contains($0.calendarID) }
+        let eventCount = model.paOrientation?.calendar.events.filter { !excludedCalendars.contains($0.calendarID) }.count ?? events.count
+        let coverage = model.paOrientation?.coverage(limit:200,enabledCount:eventCount) ?? "Fallback: dashboard selected date and following seven days, first 60 events. The PA's 90-day calendar orientation is unavailable."
+        let eventLimit = model.paOrientation == nil ? 60 : 200
         let tasks = model.reminderData.reminders.filter { !excludedLists.contains($0.listID) }
         let emails = model.mailData.messages.filter { !excludedAccounts.contains($0.accountID) }.sorted { $0.received > $1.received }
         let summaries = model.emailSummaries.highlights(model).map { message,summary -> [String:Any] in
@@ -259,14 +272,14 @@ import Observation
         }
         let value: [String:Any] = [
             "now":Date.now.ISO8601Format(), "timezone":TimeZone.current.identifier,
-            "calendarStatus":model.calendarHealth.detail, "calendarSelectedDate":model.selectedDate.ISO8601Format(), "calendarCoverage":"selected date and following seven days", "calendarCount":events.count,
-            "events":events.prefix(60).map { ["id":$0.id, "title":String($0.title.prefix(500)), "start":$0.allDay ? DateRules.localDate($0.start) : $0.start.ISO8601Format(), "end":$0.allDay ? DateRules.localDate($0.end) : $0.end.ISO8601Format(), "allDay":$0.allDay, "source":$0.sourceLabel, "location":String($0.location.prefix(500))] as [String:Any] },
+            "calendarStatus":model.paOrientation == nil ? model.calendarHealth.detail : model.paOrientationHealth.detail, "calendarCoverage":coverage, "calendarCount":eventCount,
+            "events":events.prefix(eventLimit).map { ["id":$0.id, "title":String($0.title.prefix(500)), "start":$0.allDay ? DateRules.localDate($0.start) : $0.start.ISO8601Format(), "end":$0.allDay ? DateRules.localDate($0.end) : $0.end.ISO8601Format(), "allDay":$0.allDay, "source":$0.sourceLabel, "location":String($0.location.prefix(500))] as [String:Any] },
             "reminderStatus":model.reminderHealth.detail, "reminderCount":tasks.count,
             "reminders":tasks.prefix(80).map { ["id":$0.id, "title":String($0.title.prefix(500)), "due":DateRules.reminderDue($0), "hasTime":$0.hasTime, "source":$0.sourceLabel] as [String:Any] },
             "mailStatus":model.mailHealth.detail, "mailCoverage":model.mailCoverage, "mailHeaderCount":emails.count,
             "recentEmailHeaders":emails.prefix(20).map { ["id":$0.id, "sender":String($0.sender.prefix(500)), "subject":String($0.subject.prefix(500)), "received":$0.received.ISO8601Format(), "account":$0.account] },
             "savedEmailSummaries":Array(summaries.prefix(20)), "emailSummaryCoverage":model.emailSummaries.coverage(model),
-            "limits":"At most 60 events, 80 reminders, 20 recent email headers and 20 saved summaries. No full email bodies. Excluded sources are omitted."
+            "limits":"At most \(eventLimit) events, 80 reminders, 20 recent email headers and 20 saved summaries. No full email bodies. Excluded sources are omitted."
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]), let string = String(data: data, encoding: .utf8) else { return nil }
         return string

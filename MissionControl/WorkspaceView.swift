@@ -68,6 +68,7 @@ struct WorkspaceView: View {
             .onChange(of:store.selected.id) { focusedWidgetID = nil }
             .sheet(isPresented:$showName) { VStack(alignment:.leading,spacing:16) { Text(naming == nil ? "New dashboard" : "Rename dashboard").font(.title2.weight(.semibold)); TextField("Name",text:$name).onSubmit { saveName() }; HStack { Spacer(); Button("Cancel") { showName = false }.keyboardShortcut(.cancelAction); Button("Save") { saveName() }.keyboardShortcut(.defaultAction).disabled(name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty) } }.padding(24).frame(width:360) }
             .sheet(item:$model.selectedMessage) { DashboardView(model:model).previewSheet($0) }
+            .sheet(item:$model.editTarget) { NativeItemEditor(model:model,target:$0) }
             .sheet(isPresented:$legacy) { DashboardView(model:model).frame(width:1150,height:750) }
     }
     private var header: some View {

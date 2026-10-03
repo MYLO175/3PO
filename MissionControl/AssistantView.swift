@@ -49,7 +49,7 @@ struct AssistantPanel: View {
     }
     private func showDraft() {
         if let widgetID { assistant.drafts.show(registration:model.chatGPT.activeID,widget:widgetID,conversation:draftKey) }
-        if !draft.wrappedValue.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { model.memoryLearning.cancel() }
+        if !draft.wrappedValue.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { model.memoryLearning.cancel(); model.proactive.cancel() }
     }
     @State private var dictation = DictationService()
     @State private var showDictation = false
@@ -97,7 +97,11 @@ struct AssistantPanel: View {
                                 }
                             }.padding(.vertical,12)
                         }
-                        ForEach(selected?.turns ?? []) { turn in
+                        ForEach((selected?.turns ?? []).filter { turn in
+                            guard let delivery = turn.deliveryID, delivery.hasPrefix("discovery:") else { return true }
+                            guard let record = model.proactive.record(delivery:delivery,model:model) else { return false }
+                            return model.proactive.visible(record,model:model)
+                        }) { turn in
                             HStack(alignment:.top) {
                             if turn.role == "user" { Spacer(minLength:35) }
                             VStack(alignment: .leading, spacing: 5) {
@@ -108,6 +112,12 @@ struct AssistantPanel: View {
                                     Text((try? AttributedString(markdown:turn.content,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(turn.content)).textSelection(.enabled).lineSpacing(3)
                                 } else { Text(turn.content).textSelection(.enabled) }
                                 if turn.deliveryID?.contains(":morning:") == true { Button("Briefing and sources") { showBriefing = true }.controlSize(.small) }
+                                if let delivery = turn.deliveryID, let record = model.proactive.record(delivery:delivery,model:model) {
+                                    HStack {
+                                        Button("Source email") { if let message = model.emailSummaries.highlights(model).first(where:{ $0.0.id == record.mailID })?.0 { model.select(message) } }
+                                        Button("Dismiss") { model.proactive.dismiss(record) }
+                                    }.controlSize(.small)
+                                }
                                 if turn.role == "assistant" && !turn.completed && assistant.requestTurnID != turn.id && !turn.content.isEmpty { Text("Partial response").font(.caption).foregroundStyle(.orange) }
                                 if let contextID = turn.contextID { Text(assistant.conversation(contextID)?.title ?? "Saved topic").font(.caption2.weight(.medium)).foregroundStyle(Color.accentColor) }
                                 if let date = turn.created { Text(date.formatted(date:.omitted,time:.shortened)).font(.caption2).foregroundStyle(.secondary) }
@@ -140,7 +150,7 @@ struct AssistantPanel: View {
             if model.chatGPT.busy && !assistant.busy {
                 HStack(spacing:6) {
                     ProgressView().controlSize(.mini)
-                    Text(model.briefings.busy ? "Preparing today’s brief… You can draft a message while it finishes." : model.memoryLearning.busy ? "Learning conversation context… Start drafting to pause learning." : model.emailSummaries.busy ? "Checking incoming mail… You can draft a message while it finishes." : "Checking your ChatGPT connection…").font(.caption).foregroundStyle(.secondary)
+                    Text(model.briefings.busy ? "Preparing today’s brief… You can draft a message while it finishes." : model.memoryLearning.busy ? "Learning conversation context… Start drafting to pause learning." : model.proactive.busy ? "Checking useful suggestions… Start drafting to pause the check." : model.emailSummaries.busy ? "Checking incoming mail… You can draft a message while it finishes." : "Checking your ChatGPT connection…").font(.caption).foregroundStyle(.secondary)
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
             if assistant.busy && !sendingHere { Text("Your PA is replying in another topic. You can keep drafting here.").font(.caption).foregroundStyle(.secondary) }
@@ -211,7 +221,17 @@ struct AssistantSourceSettings: View {
         Section("Assistant preferences and sources") {
             Toggle("Enable assistant source context", isOn: $assistant.contextEnabled)
             Text("When enabled, assistant requests send the enabled calendar and reminder snapshots, recent email headers and saved email summaries to OpenAI using your ChatGPT plan. Email body processing is enabled separately under Incoming email monitoring. Dashboard refresh itself makes no AI requests.").font(.caption)
+            Text("PA calendar: " + model.paOrientationHealth.detail).font(.caption).foregroundStyle(.secondary)
+            if let orientation = model.paOrientation {
+                Text(orientation.coverage(enabledCount:orientation.calendar.events.filter { !assistant.excludedCalendars.contains($0.calendarID) }.count)).font(.caption).foregroundStyle(.secondary)
+            }
             TextField("Assistant preferences", text: $assistant.preferences, axis: .vertical).lineLimit(3...6)
+            Toggle("Quiet proactive suggestions",isOn:$model.proactive.enabled)
+            Text(model.proactive.status(model)).font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Button("Check suggestions once") { model.proactive.check(model,manual:true) }.disabled(model.chatGPT.busy || model.proactive.busy || model.chatGPT.usagePaused)
+                if model.proactive.canUndo { Button("Undo dismissed suggestion") { model.proactive.undo(model) } }
+            }
             sourceMenu("AI calendars", sources: model.calendarData.sources, excluded: $assistant.excludedCalendars)
             sourceMenu("AI reminder lists", sources: model.reminderData.sources, excluded: $assistant.excludedLists)
             sourceMenu("AI email accounts", sources: model.mailData.accounts.map { SourceOption(id: $0.id, title: $0.title, account: "", writable: false) }, excluded: $assistant.excludedAccounts)

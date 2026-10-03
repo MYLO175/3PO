@@ -5,6 +5,9 @@ import EventKit
 
 @MainActor @Observable final class DashboardModel {
     var calendarData = CalendarSnapshot(sources: [], events: [])
+    var paOrientation: PAOrientation?
+    var paOrientationHealth = SourceHealth()
+    private var lastOrientationCheck = Date.distantPast
     var reminderData = ReminderSnapshot(sources: [], reminders: [])
     var mailData = MailSnapshot(messages: [], accounts: [], errors: [])
     var calendarHealth = SourceHealth()
@@ -17,6 +20,7 @@ import EventKit
     var excludedLists: Set<String> = [] { didSet { saveFilters() } }
     var excludedAccounts: Set<String> = [] { didSet { saveFilters() } }
     var selectedMessage: MailMessage?
+    var editTarget: NativeEditTarget?
     var preview = ""
     var previewLoading = false
     var previewError: String?
@@ -44,6 +48,8 @@ import EventKit
     private var summaryPoll: Task<Void, Never>?
     private var briefingPoll: Task<Void, Never>?
     @ObservationIgnored lazy var memoryLearning = MemoryLearningService(container:container)
+    @ObservationIgnored lazy var proactive = ProactiveService(container:container)
+    var sourceRevision = 0
     @ObservationIgnored lazy var briefings = BriefingService(container: container)
     let eventKit = EventKitService()
     let mail = MailService()
@@ -83,11 +89,12 @@ import EventKit
         observers.append(NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
+                self.sourceRevision += 1
                 self.changes?.cancel()
                 self.changes = Task {
                     try? await Task.sleep(for: .seconds(1))
                     guard !Task.isCancelled else { return }
-                    self.widgetCalendars.invalidate(); await self.refreshCalendar(); await self.refreshReminders()
+                    self.widgetCalendars.invalidate(); await self.refreshCalendar(); await self.refreshReminders(); await self.refreshPAOrientation()
                 }
             }
         })
@@ -101,7 +108,7 @@ import EventKit
         }
         briefingPoll = Task { [weak self] in
             while !Task.isCancelled {
-                if let self { self.briefings.check(self); self.memoryLearning.check(self) }
+                if let self { self.briefings.check(self); self.memoryLearning.check(self); self.proactive.recoverDelivery(self); self.proactive.check(self); if Date.now.timeIntervalSince(self.lastOrientationCheck) >= 900 { await self.refreshPAOrientation() } }
                 try? await Task.sleep(for: .seconds(60))
             }
         }
@@ -127,6 +134,7 @@ import EventKit
         guard !sample else { loadSample(); return }
         Task { await refreshCalendar() }
         Task { await refreshReminders() }
+        Task { await refreshPAOrientation() }
         Task { await refreshMail() }
     }
     func navigate(_ date: Date) {
@@ -146,6 +154,18 @@ import EventKit
             persist("calendar", snapshot); persist("calendarHealth", calendarHealth)
         } catch { calendarHealth.error = error.localizedDescription; calendarHealth.loading = false }
         if pendingCalendarRefresh { pendingCalendarRefresh = false; await refreshCalendar() }
+    }
+    func refreshPAOrientation() async {
+        guard !sample, assistant.contextEnabled, !paOrientationHealth.loading else { return }
+        lastOrientationCheck = .now; paOrientationHealth.loading = true
+        let start = Calendar.current.startOfDay(for:.now), end = Calendar.current.date(byAdding:.day,value:90,to:start)!, revision = sourceRevision
+        do {
+            let snapshot = try await eventKit.calendar(from:start,to:end)
+            guard revision == sourceRevision else { paOrientationHealth.loading = false; paOrientationHealth.error = "Source changed during orientation; refresh pending."; return }
+            paOrientation = PAOrientation(start:start,end:end,refreshed:.now,calendar:snapshot)
+            paOrientationHealth = .init(lastSuccess:.now)
+            persist("paOrientation",paOrientation); persist("paOrientationHealth",paOrientationHealth)
+        } catch { paOrientationHealth.error = error.localizedDescription; paOrientationHealth.loading = false }
     }
     func refreshReminders() async {
         guard !sample else { return }
@@ -252,6 +272,16 @@ import EventKit
             writing = false
         }
     }
+    func saveNativeEdit(baseline: NativeEditDetails, edited: NativeEditDetails) async throws {
+        guard !sample, !writing, !assistant.busy else { throw ActionFailure.message("Another change is in progress; wait before saving.") }
+        writing = true; writeError = nil
+        defer { writing = false }
+        do {
+            try await eventKit.saveEdit(baseline:baseline,edited:edited)
+            widgetCalendars.invalidate()
+            await refreshCalendar(); await refreshReminders()
+        } catch { writeError = error.localizedDescription; throw error }
+    }
     func undo() {
         guard let token = undoToken, !writing else { return }
         writing = true; writeError = nil
@@ -310,6 +340,9 @@ import EventKit
         do {
             let records = try container.mainContext.fetch(FetchDescriptor<CachedDashboard>())
             func read<T: Decodable>(_ key: String, _ type: T.Type) -> T? { records.first { $0.key == key }.flatMap { try? JSONDecoder().decode(type, from: $0.data) } }
+            paOrientation = read("paOrientation",PAOrientation.self)
+            paOrientationHealth = read("paOrientationHealth",SourceHealth.self) ?? paOrientationHealth
+            if paOrientation != nil { paOrientationHealth.error = "Cached data · refresh pending" }
             calendarData = read("calendar", CalendarSnapshot.self) ?? calendarData
             reminderData = read("reminders", ReminderSnapshot.self) ?? reminderData
             mailData = read("mail", MailSnapshot.self) ?? mailData

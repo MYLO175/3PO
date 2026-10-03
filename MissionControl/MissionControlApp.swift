@@ -39,6 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             CommandGroup(after: .help) {
                 Button("Run disposable Calendar check") { model.validateCalendarIntegration() }
                 Button("Invalidate today's test briefing") { model.briefings.invalidateToday(model) }
+                Button("Check proactive suggestions (fictional)") { model.validationReport = "Checking the proactive prompt with fictional sources…"; Task { do { model.validationReport = try await model.proactive.validate(model) } catch { model.validationReport = error.localizedDescription } } }.keyboardShortcut("p",modifiers:[.command,.option,.shift])
+                Button("Run disposable editor check") { Task { guard !model.writing else { return }; model.writing = true; defer { model.writing = false; model.refresh(retryMail:false) }; do { model.validationReport = try await model.eventKit.validateNativeEditors() } catch { model.validationReport = error.localizedDescription } } }
                 Button("Run disposable action check") { Task { guard !model.writing else { return }; model.writing = true; defer { model.writing = false }; do { model.validationReport = try await model.eventKit.validateDisposableActions() } catch { model.validationReport = error.localizedDescription } } }
                 Button("Check memory learning (fictional)") { model.validateMemoryLearning() }
                 Button("Preview compact dashboard") { if let window = NSApp.windows.first(where:{ $0.isVisible && !$0.isFloatingPanel }) { window.setContentSize(NSSize(width:820,height:640)); window.center() } }

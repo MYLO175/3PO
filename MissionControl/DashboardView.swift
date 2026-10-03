@@ -73,6 +73,7 @@ struct DashboardView: View {
             }.foregroundStyle(.secondary).padding(.horizontal, 24).padding(.vertical, 10)
         }.frame(minWidth: 780, minHeight: 580).background(Color(nsColor: .windowBackgroundColor)).task { model.start() }
         .sheet(item: $model.selectedMessage) { message in previewSheet(message) }
+        .sheet(item: $model.editTarget) { NativeItemEditor(model:model,target:$0) }
     }
     var emailOverview: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -187,6 +188,7 @@ struct DashboardView: View {
                 Text(event.sourceLabel).font(.caption2).foregroundStyle(color)
             }
             Spacer(minLength: 0)
+            Button { model.editTarget = .event(event) } label: { Image(systemName:"pencil") }.buttonStyle(.borderless).help("Edit event").accessibilityLabel("Edit event: " + event.title).disabled(model.writing)
         }.padding(.vertical, 3)
     }
     func eventTime(_ event: AgendaEvent, day: Date) -> String {
@@ -263,6 +265,7 @@ struct DashboardView: View {
                 }
             }
             Spacer(minLength: 0)
+            Button { model.editTarget = .reminder(item) } label: { Image(systemName:"pencil") }.buttonStyle(.borderless).help("Edit reminder").accessibilityLabel("Edit reminder: " + item.title).disabled(model.writing)
         }.padding(.vertical, 3)
     }
     var inboxPanel: some View {

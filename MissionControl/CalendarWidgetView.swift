@@ -52,14 +52,7 @@ struct CalendarWidgetView: View {
             else { agendaView }
         }.padding(16).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
             .task(id:"\(range.start.timeIntervalSince1970):\(range.end.timeIntervalSince1970):\(model.widgetCalendars.revision)") { await load() }
-            .sheet(item:$selectedEvent) { event in
-                VStack(alignment:.leading,spacing:14) {
-                    Text(event.title).font(.title2.weight(.semibold)); Text(event.sourceLabel).font(.callout).foregroundStyle(.secondary)
-                    Text(event.allDay ? "All day · " + event.start.formatted(date:.complete,time:.omitted) : event.start.formatted(date:.abbreviated,time:.shortened) + " – " + event.end.formatted(date:.abbreviated,time:.shortened))
-                    if !event.location.isEmpty { Label(event.location,systemImage:"location") }
-                    Spacer(); HStack { Spacer(); Button("Done") { selectedEvent = nil }.keyboardShortcut(.cancelAction) }
-                }.padding(24).frame(width:440,height:250)
-            }
+            .sheet(item:$selectedEvent) { NativeItemEditor(model:model,target:.event($0)) }
     }
     private func load() async {
         loading = true; defer { loading = false }

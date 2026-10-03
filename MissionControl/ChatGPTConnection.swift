@@ -214,7 +214,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     }
     func streamResponse(input: [[String:String]], instructions: String, model: String? = nil, effort: String = "medium", onDelta: @escaping (String) -> Void) async throws -> String {
         guard !busy else { throw ChatGPTError.message("Another ChatGPT operation is in progress.") }
-        guard !usagePaused else { throw ChatGPTError.message("Subscription requests are paused after a usage failure. Use Test connection in Settings once access is available.") }
+        guard !usagePaused else { throw ChatGPTError.message("Subscription requests are paused after a usage failure. Use Check access in Settings once access is available.") }
         guard hasSession, inferenceVerified else { throw ChatGPTError.message("Verify completed subscription inference in Settings first.") }
         busy = true
         defer { busy = false }
@@ -294,12 +294,12 @@ struct ChatGPTConnectionView: View {
                 if !connection.accounts.isEmpty { Button("Add account") { connection.signIn(addAccount: true) }.disabled(connection.busy) }
             }
             HStack {
-                Button("Test connection") { connection.testConnection() }.disabled(connection.busy || !connection.hasSession)
+                Button("Check access") { connection.testConnection() }.disabled(connection.busy || !connection.hasSession)
                 Button("Renew session") { connection.renewSession() }.disabled(connection.busy || !connection.hasSession)
                 Button("Sign out") { connection.signOut() }.disabled(connection.busy || !connection.hasSession)
                 if connection.busy { ProgressView().controlSize(.small); Button("Cancel") { connection.cancel() } }
             }
-            if connection.usagePaused { Text("Last subscription request rejected; background AI is paused. Test connection checks current access once.").font(.caption).foregroundStyle(.orange) }
+            if connection.usagePaused { Text("Last subscription request rejected; background AI is paused. Check access makes one source-free inference request.").font(.caption).foregroundStyle(.orange) }
             if !connection.diagnostic.isEmpty {
                 VStack(alignment:.leading,spacing:6) {
                     Text("Last failure details").font(.caption.weight(.semibold))
