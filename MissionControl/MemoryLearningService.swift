@@ -53,7 +53,7 @@ import SwiftData
         let memoryState = memory.state, selectedModel = model.chatGPT.selectedModel
         let questionsEnabled = self.questionsEnabled
         let questionAllowed = questionsEnabled && (batch.first?.conversationID == nil || assistant.topics.contains { $0.id == batch.first?.conversationID }) && LearningQuestionRules.allowed(progress:progress,records:state.questions ?? [],registration:registration,day:day)
-        let existing = memory.context(registration,conversationID:batch.first?.conversationID).prefix(20).map { ["text":String(($0["text"] ?? "").prefix(300)),"kind":$0["kind"] ?? "context"] }
+        let existing = memory.context(registration,conversationID:batch.first?.conversationID,query:batch.map(\.text).joined(separator:" ")).prefix(20).map { ["text":String(($0["text"] ?? "").prefix(300)),"kind":$0["kind"] ?? "context"] }
         task = Task {
             defer { busy = false }
             do {

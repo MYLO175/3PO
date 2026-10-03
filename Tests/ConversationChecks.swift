@@ -69,6 +69,16 @@ import Foundation
         let filtered = ConversationRules.history(feed:withSources,topic:nil,excludedDeliveries:["discovery:hidden","one:morning:old"])
         precondition(filtered.count == 20 && !filtered.contains { $0.id == hidden.id || $0.id == morning.id })
         precondition(withSources.turns.contains { $0.id == hidden.id }, "Filtering inference never deletes the transcript")
+        let current = AssistantTurn(role:"user",content:String(repeating:"🧠",count:3000),completed:true)
+        let longHistory = (0..<19).map { _ in AssistantTurn(role:"assistant",content:String(repeating:"Older detailed response ",count:1000),completed:true) } + [current]
+        let replay = ConversationRules.replay(longHistory,currentUserID:current.id)
+        precondition(replay.last?["content"] == current.content && replay.count < longHistory.count && replay.count > 1)
+        precondition(replay.first?["content"]?.contains("Earlier message excerpt") == true)
+        let replayData = try JSONSerialization.data(withJSONObject:replay); precondition(replayData.count <= 24_000)
+        precondition(ConversationRules.acceptsPrompt(current.content) && !ConversationRules.acceptsPrompt(String(repeating:"🧠",count:5000)))
+        precondition(!ConversationRules.acceptsPrompt(String(repeating:"\n",count:16000)), "JSON escaping must fit before the draft is consumed")
+        precondition(ConversationRules.utf8Prefix("🧠hello",bytes:3).isEmpty && ConversationRules.utf8Prefix("🧠hello",bytes:5) == "🧠h")
+        precondition(longHistory[0].content.count > 3000 && longHistory.last?.content == current.content)
         print("PASS: legacy data preservation, configured-topic-only selection, explicit no-topic/account isolation, distinct persisted topic threads, bounded isolated history and memory-learning scope")
     }
 }

@@ -25,6 +25,26 @@ import Foundation
         m.conversationID = nil; precondition(MemoryRules.inScope(m,conversationID:topic))
         let decoded = try JSONDecoder().decode(PAMemory.self,from:JSONEncoder().encode(m))
         precondition(decoded == m)
+        var many = (0..<60).map { index in PAMemory(registration:"one",text:"Preference number \(index)",kind:.preference,provenance:"User",reviewed:now.addingTimeInterval(Double(index))) }
+        let older = PAMemory(registration:"one",text:"The thermodynamics exam needs revision of entropy",kind:.context,provenance:"User",reviewed:now.addingTimeInterval(-1000))
+        var scoped = older; scoped.id = UUID(); scoped.conversationID = topic
+        var foreign = older; foreign.id = UUID(); foreign.registration = "two"
+        var anotherTopic = scoped; anotherTopic.id = UUID(); anotherTopic.conversationID = otherTopic
+        var stale = older; stale.id = UUID(); stale.explicit = false; stale.reviewed = now.addingTimeInterval(-91*86400)
+        var resolved = older; resolved.id = UUID(); resolved.resolved = now
+        many += [older,scoped,foreign,anotherTopic,stale,resolved]
+        let retrieved = MemoryRetrieval.select(many,registration:"one",query:"Help with thermodynamics entropy revision",now:now)
+        let ids = Set(retrieved.records.compactMap { $0["id"] })
+        precondition(retrieved.eligibleCount == 61 && retrieved.records.count == 40 && ids.contains(older.id.uuidString))
+        precondition(!ids.contains(scoped.id.uuidString) && !ids.contains(foreign.id.uuidString) && !ids.contains(stale.id.uuidString) && !ids.contains(resolved.id.uuidString))
+        let focused = MemoryRetrieval.select(many,registration:"one",conversationID:topic,query:"thermodynamics",now:now)
+        precondition(focused.records.contains { $0["id"] == scoped.id.uuidString } && !focused.records.contains { $0["id"] == anotherTopic.id.uuidString })
+        precondition(retrieved.records == MemoryRetrieval.select(many.reversed(),registration:"one",query:"Help with thermodynamics entropy revision",now:now).records, "Ordering does not depend on storage fetch order")
+        let budget = MemoryRetrieval.select(many,registration:"one",query:"thermodynamics",now:now,bytes:1000)
+        let budgetData = try JSONSerialization.data(withJSONObject:budget.records,options:[.sortedKeys]); precondition(budgetData.count <= 1000)
+        precondition(many.count == 66 && many.contains { $0 == older }, "Retrieval never deletes or edits saved records")
+        var huge = older; huge.id = UUID(); huge.text = String(repeating:"🧠",count:6000)
+        precondition(MemoryRetrieval.select([huge,older],registration:"one",now:now).records.map { $0["id"] } == [older.id.uuidString])
         print("PASS: explicit retention, provisional review, account scope, resolved archive, anchored human memory request and round-trip")
     }
 }

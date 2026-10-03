@@ -43,6 +43,34 @@ enum ConversationRules {
     static func history(feed: AssistantConversation, topic: AssistantConversation?, excludedDeliveries: Set<String> = []) -> [AssistantTurn] {
         Array(thread(feed:feed,topic:topic).filter { $0.completed && ($0.deliveryID.map { !excludedDeliveries.contains($0) } ?? true) }.suffix(20))
     }
+    static let promptByteLimit = 16_000
+    static func acceptsPrompt(_ prompt: String) -> Bool {
+        guard prompt.utf8.count <= promptByteLimit, let data = try? JSONSerialization.data(withJSONObject:["role":"user","content":prompt]) else { return false }
+        return data.count + 2 <= 24_000
+    }
+    static func utf8Prefix(_ text: String, bytes: Int) -> String {
+        var data = Array(text.utf8.prefix(max(0,bytes)))
+        while !data.isEmpty {
+            if let result = String(bytes:data,encoding:.utf8) { return result }
+            data.removeLast()
+        }
+        return ""
+    }
+    /// The current human request is intact; only older saved turns may become labelled excerpts.
+    static func replay(_ turns: [AssistantTurn], currentUserID: UUID, bytes: Int = 24_000) -> [[String:String]] {
+        guard let current = turns.last(where:{ $0.id == currentUserID && $0.role == "user" && $0.completed }) else { return [] }
+        let last = ["role":current.role,"content":current.content]
+        guard let encoded = try? JSONSerialization.data(withJSONObject:last), encoded.count + 2 <= bytes else { return [] }
+        var result = [last], used = encoded.count + 2
+        let before = turns.prefix(while:{ $0.id != currentUserID })
+        for turn in before.suffix(19).reversed() where turn.completed && ["user","assistant"].contains(turn.role) {
+            let content = turn.content.utf8.count > 3000 ? utf8Prefix(turn.content,bytes:3000) + "\n[Earlier message excerpt; remaining text omitted.]" : turn.content
+            let value = ["role":turn.role,"content":content]
+            guard let data = try? JSONSerialization.data(withJSONObject:value), used + data.count + 1 <= bytes else { break }
+            result.insert(value,at:0); used += data.count + 1
+        }
+        return result
+    }
     static func context(for turn: AssistantTurn, in conversation: AssistantConversation) -> UUID? {
         conversation.isPrimary == true ? turn.contextID : conversation.id
     }

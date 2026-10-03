@@ -6,7 +6,8 @@ import SwiftData
     private(set) var state = MemoryEnvelope()
     var records: [PAMemory] { state.records }
     private(set) var error: String?
-    var enabled = UserDefaults.standard.object(forKey:"paMemoryEnabled") as? Bool ?? true { didSet { UserDefaults.standard.set(enabled,forKey:"paMemoryEnabled") } }
+    private(set) var revision = UUID()
+    var enabled = UserDefaults.standard.object(forKey:"paMemoryEnabled") as? Bool ?? true { didSet { UserDefaults.standard.set(enabled,forKey:"paMemoryEnabled"); revision = UUID() } }
     var learningEnabled = UserDefaults.standard.object(forKey:"paMemoryLearningEnabled") as? Bool ?? true { didSet { UserDefaults.standard.set(learningEnabled,forKey:"paMemoryLearningEnabled") } }
     private let container: ModelContainer?
     private var writable = true
@@ -43,15 +44,12 @@ import SwiftData
             }
         }
     }
-    func context(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false) -> [[String:String]] {
-        guard enabled else { return [] }
-        return items(registration).filter { MemoryRules.usable($0,registration:registration) && MemoryRules.inScope($0,conversationID:conversationID,includeTopics:includeTopics) }.sorted {
-            if $0.explicit != $1.explicit { return $0.explicit }
-            if ($0.kind == .preference) != ($1.kind == .preference) { return $0.kind == .preference }
-            return $0.reviewed > $1.reviewed
-        }.prefix(40).map {
-            ["id":$0.id.uuidString,"scope":$0.conversationID?.uuidString ?? "shared","text":$0.text,"kind":$0.kind.rawValue,"certainty":$0.explicit ? "Explicitly provided or confirmed by user" : "Provisional; verify when relevant","provenance":$0.provenance,"evidence":$0.evidence ?? "","messageDate":$0.sourceDate?.ISO8601Format() ?? "unknown","reviewed":$0.reviewed.ISO8601Format()]
-        }
+    func selection(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil) -> MemorySelection {
+        guard enabled else { return MemorySelection(records:[],eligibleCount:0) }
+        return MemoryRetrieval.select(records,registration:registration,conversationID:conversationID,includeTopics:includeTopics,query:query)
+    }
+    func context(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil) -> [[String:String]] {
+        selection(registration,conversationID:conversationID,includeTopics:includeTopics,query:query).records
     }
     private func change(_ mutation: (inout MemoryEnvelope) -> Void) -> Bool {
         guard writable, let container else { error = "Memory storage is unavailable; nothing was changed."; return false }
@@ -60,7 +58,7 @@ import SwiftData
             let context = container.mainContext, data = try JSONEncoder().encode(state)
             if let record = try context.fetch(FetchDescriptor<CachedDashboard>()).first(where:{ $0.key == "paMemory" }) { record.data = data; record.updated = .now }
             else { context.insert(CachedDashboard(key:"paMemory",data:data)) }
-            try context.save(); error = nil; return true
+            try context.save(); revision = UUID(); error = nil; return true
         } catch { container.mainContext.rollback(); state = old; self.error = "Memory change could not be saved."; return false }
     }
 }
