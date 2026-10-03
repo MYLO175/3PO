@@ -36,3 +36,5 @@ Conversational intent refinement: the PA acts on ordinary phrasing, accepted con
 Foreground PA progress stays in the captured request reply bubble (empty Thinking/tool phase or caption below streaming text/receipts). Composer has only the fixed-width Send/Stop action, no foreground spinner/status label; retain input width and Stop cancellation.
 
 Appearance update: workspaceColorOverrides stores JSON light/dark role palettes in preferences. WorkspacePalette environment supplies canvas/sidebar/widget/text/accent/border/assistantBubble/userBubble/input. Preserve missing-role defaults and independent modes; no layout/cache/transcript migration. Native editor sheets/window chrome and semantic/source colours retain their own appearance. Colour editor supports native wells and validated hex-on-Return with per-role/per-mode reset.
+
+Colour presets apply complete light/dark role dictionaries to workspaceColorOverrides; editing them keeps custom overrides. Theme defaults resets both profiles; Reset this palette remains mode-only. Preserve user style/accent and default appearance on install.

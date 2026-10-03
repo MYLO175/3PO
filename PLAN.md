@@ -127,3 +127,5 @@ Conversational intent refinement: the PA acts on ordinary phrasing, accepted con
 
 
 3 October appearance extension: independent workspace-wide light/dark colour palettes are implemented for dashboard, sidebar, widgets, text, controls, borders, conversation bubbles and input. Native colour wells/exact hex entry, live preview, persistent choices and per-colour/per-mode reset. Existing source colours and semantic state indicators remain distinct. Per-dashboard/per-widget palette overrides, typography and spacing controls are possible future refinements, not implemented in this checkpoint.
+
+3 October coordinated theme presets complete: Warm sage, Ocean, Graphite and Rose, each setting matching light/dark palettes across the nine workspace roles while retaining individual customization.

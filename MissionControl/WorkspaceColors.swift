@@ -30,6 +30,37 @@ enum WorkspaceColorRole: String, CaseIterable, Identifiable {
     case .assistantBubble:return "PA message bubbles"; case .userBubble:return "Your message bubbles"; case .input:return "Chat input background"
     } }
 }
+enum WorkspaceColorTheme: String, CaseIterable, Identifiable {
+    case sage, ocean, graphite, rose
+    var id: String { rawValue }
+    var title: String { switch self { case .sage: "Warm sage"; case .ocean: "Ocean"; case .graphite: "Graphite"; case .rose: "Rose" } }
+    var detail: String { switch self {
+    case .sage: "Warm ivory and calm greens"
+    case .ocean: "Cool whites and deep blue"
+    case .graphite: "Neutral greys and a restrained blue accent"
+    case .rose: "Soft blush and muted plum"
+    } }
+    func profile(_ mode: String) -> [String:String] {
+        let light: [String], dark: [String]
+        switch self {
+        case .sage:
+            light = ["F4F2EA","EAEDE3","FFFEFA","26332C","456B54","DDE3D8","EEF1E9","DCE9DD","F8F9F3"]
+            dark = ["171E1A","1C2620","222D26","E8EFE8","A5CBAA","36483B","2C3A30","334B3A","1A241D"]
+        case .ocean:
+            light = ["EDF3F8","E3EDF5","FFFFFF","20364A","2C678F","D6E2EC","EEF4F8","DCECF8","F5F8FB"]
+            dark = ["101C28","142333","1C2D3E","E5EEF6","91C5E8","324B62","243A4D","2B4C65","142333"]
+        case .graphite:
+            light = ["F0F1F3","E6E8EC","FFFFFF","292D35","496486","DADDE3","F0F1F4","E0E7F1","F7F8FA"]
+            dark = ["181A1F","1D2026","252830","ECEEF3","AEC2DF","3B404C","30343E","354359","1D2026"]
+        case .rose:
+            light = ["F6F0F1","EFE5E9","FFFBFC","412D39","86516C","E7D7DF","F5ECEF","EFDFE8","FAF4F7"]
+            dark = ["241B22","2C202A","342731","F2E8EF","D6A9C2","503C49","41313D","503B4D","291E27"]
+        }
+        let roles: [WorkspaceColorRole] = [.canvas,.sidebar,.widget,.text,.accent,.border,.assistantBubble,.userBubble,.input]
+        return Dictionary(uniqueKeysWithValues:zip(roles,mode == "dark" ? dark : light).map { ($0.rawValue,"#" + $1) })
+    }
+    var profiles: [String:[String:String]] { ["light":profile("light"),"dark":profile("dark")] }
+}
 struct WorkspacePalette {
     var colors: [WorkspaceColorRole:Color]
     subscript(_ role: WorkspaceColorRole) -> Color { colors[role]! }
@@ -67,6 +98,20 @@ struct WorkspaceColorEditor: View {
         VStack(alignment:.leading,spacing:16) {
             HStack { Text("Workspace colours").font(.title2.weight(.semibold)); Spacer(); Picker("Palette",selection:$mode) { Text("Light").tag("light"); Text("Dark").tag("dark") }.pickerStyle(.segmented).labelsHidden().frame(width:150) }
             Text("Changes save automatically. Light and dark keep their own colours; System appearance switches between them.").font(.callout).foregroundStyle(.secondary)
+            HStack {
+                Picker("Theme",selection:Binding(get:{ overrides.profiles.isEmpty ? "defaults" : WorkspaceColorTheme.allCases.first(where:{ $0.profiles == overrides.profiles })?.rawValue ?? "custom" },set:{ selected in
+                    var value = overrides
+                    if selected == "defaults" { value.profiles = [:] }
+                    else if let preset = WorkspaceColorTheme(rawValue:selected) { value.profiles = preset.profiles }
+                    raw = value.encoded
+                })) {
+                    Text("Custom / current").tag("custom")
+                    Text("Theme defaults").tag("defaults")
+                    ForEach(WorkspaceColorTheme.allCases) { Text($0.title).tag($0.rawValue) }
+                }.frame(width:240)
+                Spacer()
+                Text("Applies light and dark").font(.caption).foregroundStyle(.secondary)
+            }
             preview
             ScrollView {
                 VStack(spacing:12) {
