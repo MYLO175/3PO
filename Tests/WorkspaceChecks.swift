@@ -93,6 +93,18 @@ struct WorkspaceChecks {
             assert(abs(pointerSize.width-before.width-5) < 0.001 && abs(pointerSize.height-before.height-7) < 0.001)
         }
 
-        print("PASS: fixed viewport geometry, continuous previews, immutable-origin snapping, bounds/full pages, legacy extent preservation, collisions and workspace persistence")
+        let earlier = Date(timeIntervalSince1970:100), later = earlier.addingTimeInterval(1)
+        assert(UndoOrder.latest(layout:earlier,completion:later,edit:nil) == "completion")
+        assert(UndoOrder.latest(layout:later,completion:earlier,edit:nil) == "layout")
+        assert(UndoOrder.latest(layout:earlier,completion:nil,edit:later) == "edit")
+        assert(UndoOrder.latest(layout:nil,completion:nil,edit:nil) == nil)
+        let hidden = ToolbarRules.setting(.date,visible:false,hidden:"future-control")
+        assert(!ToolbarRules.visible(.date,hidden:hidden) && ToolbarRules.visible(.refresh,hidden:hidden))
+        assert(ToolbarRules.setting(.date,visible:true,hidden:hidden) == "future-control")
+        var clock = WidgetConfiguration(); clock.clockShowsTime = false; clock.clockShowsSeconds = true
+        let clockData = try JSONEncoder().encode(clock), restoredClock = try JSONDecoder().decode(WidgetConfiguration.self,from:clockData)
+        assert(restoredClock.clockShowsTime == false && restoredClock.clockShowsSeconds == true)
+        assert(WidgetKind.clock.minimumRows == 2 && WidgetKind.clock.minimumColumns == 3)
+        print("PASS: fixed viewport geometry, continuous previews, workspace persistence, clock preferences, toolbar preservation and latest-supported Undo ordering")
     }
 }

@@ -7,6 +7,7 @@ enum WidgetKind: String, Codable, CaseIterable {
     case conversation
     case overview // Saved legacy kind, now Today’s brief.
     case emailSummary
+    case clock
 
     var title: String {
         switch self {
@@ -16,6 +17,7 @@ enum WidgetKind: String, Codable, CaseIterable {
         case .conversation: return "Conversation"
         case .overview: return "Today’s brief"
         case .emailSummary: return "Email summary"
+        case .clock: return "Date & clock"
         }
     }
 
@@ -27,6 +29,7 @@ enum WidgetKind: String, Codable, CaseIterable {
         case .conversation: return "bubble.left.and.bubble.right"
         case .overview: return "sun.max"
         case .emailSummary: return "envelope.badge"
+        case .clock: return "clock"
         }
     }
 
@@ -35,6 +38,7 @@ enum WidgetKind: String, Codable, CaseIterable {
         case .calendar, .conversation, .overview, .emailSummary: return 4
         case .reminders: return 3
         case .mail: return 4
+        case .clock: return 3
         }
     }
 
@@ -43,6 +47,7 @@ enum WidgetKind: String, Codable, CaseIterable {
         case .calendar, .conversation: return 5
         case .reminders: return 4
         case .mail, .overview, .emailSummary: return 4
+        case .clock: return 2
         }
     }
 }
@@ -56,6 +61,8 @@ struct WidgetConfiguration: Codable, Equatable {
     var conversationSelections: [String:UUID]? = nil
     // Empty string is explicit general PA mode, distinct from an unmigrated legacy selection.
     var paTopicSelections: [String:String]? = nil
+    var clockShowsTime: Bool? = nil
+    var clockShowsSeconds: Bool? = nil
 }
 
 struct GridRect: Codable, Equatable {

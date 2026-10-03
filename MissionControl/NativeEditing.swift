@@ -26,6 +26,11 @@ struct NativeEditDetails: Equatable {
     var canEdit: Bool { writable && !(kind == .reminder && recurring) }
 }
 struct NativeEditSession { var item: NativeEditDetails; var sources: [SourceOption] }
+struct NativeEditUndo {
+    var original: NativeEditDetails
+    var saved: NativeEditDetails
+    var created = Date.now
+}
 struct NativeEventMoveProposal {
     var occurrenceID: String
     var sourceID: String
@@ -34,6 +39,13 @@ struct NativeEventMoveProposal {
     var start: Date
 }
 enum NativeEditRules {
+    static func restoring(_ undo: NativeEditUndo) throws -> NativeEditDetails {
+        guard undo.original.kind == undo.saved.kind else { throw IntegrationError.missing }
+        var restored = undo.original
+        restored.itemID = undo.saved.itemID; restored.occurrenceID = undo.saved.occurrenceID
+        restored.modified = undo.saved.modified
+        try validate(restored,baseline:undo.saved); return restored
+    }
     static func movingStart(_ item: NativeEditDetails, to start: Date, calendar: Calendar = .current) -> NativeEditDetails {
         var value = item
         if item.allDay {

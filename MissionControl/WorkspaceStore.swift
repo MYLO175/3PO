@@ -6,6 +6,7 @@ import SwiftData
     private(set) var state: WorkspaceState
     var error: String?
     var canUndo: Bool { previous != nil }
+    private(set) var undoDate: Date?
     var readOnly: Bool { !readable }
     private var previous: WorkspaceState?
     private let container: ModelContainer?
@@ -49,7 +50,7 @@ import SwiftData
         guard readable else { return }
         let old = state
         body(&state)
-        do { try save(); if undoable { previous = old }; error = nil }
+        do { try save(); if undoable && old != state { previous = old; undoDate = .now }; error = nil }
         catch { state = old; self.error = "Workspace change was not saved. " + error.localizedDescription }
     }
     func select(_ id: UUID) { guard state.pages.contains(where: { $0.id == id }) else { return }; change({ $0.selectedPageID = id },undoable:false) }
@@ -98,7 +99,7 @@ import SwiftData
         }
     }
 
-    func undo() { guard let old = previous, readable else { return }; let current = state; state = old; do { try save(); previous = nil; error = nil } catch { state = current; self.error = "Layout Undo could not be saved." } }
+    func undo() { guard let old = previous, readable else { return }; let current = state; state = old; do { try save(); previous = nil; undoDate = nil; error = nil } catch { state = current; self.error = "Layout Undo could not be saved." } }
 }
 enum WorkspaceFailure: LocalizedError {
     case invalid, storage

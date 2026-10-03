@@ -7,6 +7,7 @@ struct WorkspaceView: View {
     @AppStorage("workspaceTheme") private var theme = "warm"
     @AppStorage("workspaceAppearance") private var appearance = "system"
     @AppStorage("workspaceAccent") private var accent = "sage"
+    @AppStorage("workspaceToolbarHidden") private var toolbarHidden = ""
     @Environment(\.colorScheme) private var scheme
     @State private var editing = false
     @State private var naming: UUID?
@@ -24,10 +25,6 @@ struct WorkspaceView: View {
             if let report = model.validationReport { HStack { Text(report).font(.caption).textSelection(.enabled); Spacer(); Button { model.validationReport = nil } label: { Image(systemName:"xmark") }.buttonStyle(.borderless).help("Dismiss validation result") }.padding(10) }
             if let error = store.error { HStack { Label(error,systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange); Spacer(); if store.readOnly { Button("Original dashboard") { legacy = true } } else { Button("Dismiss") { store.error = nil } } }.padding(10) }
             if let error = model.storageError ?? model.writeError { Text(error).font(.caption).foregroundStyle(.orange).frame(maxWidth:.infinity,alignment:.leading).padding(10) }
-            if let notice = model.nativeWriteNotice { HStack { Label(notice,systemImage:"checkmark.circle").font(.callout); Spacer(); Button { model.nativeWriteNotice = nil } label: { Image(systemName:"xmark") }.buttonStyle(.borderless).accessibilityLabel("Dismiss save confirmation") }.padding(10).background(.green.opacity(0.06)) }
-            if model.undoToken != nil {
-                HStack { Label("Completed: \(model.undoTitle)",systemImage:"checkmark.circle"); Spacer(); Button("Undo reminder") { model.undo() }.disabled(model.writing) }.font(.callout).padding(10).background(.green.opacity(0.06))
-            }
             HStack(spacing:0) {
                 if sidebarVisible { sidebar.frame(width:170); Divider() }
                 GeometryReader { geometry in
@@ -62,7 +59,6 @@ struct WorkspaceView: View {
                 }.clipped()
 
             }
-            HStack { Text(editing ? "Drag the handle or corner · Release to snap · Red outline means it does not fit" : "Apple apps stay the source of truth"); Spacer(); if ProcessInfo.processInfo.arguments.contains("--sample") { Text("Sample data") } }.font(.caption).foregroundStyle(.secondary).padding(.horizontal,18).padding(.vertical,9)
         }.background(background).tint(accentColor).frame(minWidth:780,minHeight:580)
             .preferredColorScheme(appearance == "light" ? .light : appearance == "dark" ? .dark : nil)
             .task { model.start() }
@@ -73,25 +69,49 @@ struct WorkspaceView: View {
             .sheet(isPresented:$legacy) { DashboardView(model:model).frame(width:1150,height:750) }
     }
     private var header: some View {
-        HStack(spacing:12) {
+        HStack(spacing:8) {
             Button { sidebarVisible.toggle() } label: { Image(systemName:"sidebar.left") }.buttonStyle(.borderless).help("Show dashboard pages")
-            VStack(alignment:.leading,spacing:3) { Text(store.selected.title).font(.system(size:23,weight:.semibold,design:.rounded)); Text(Date.now.formatted(date:.complete,time:.omitted)).font(.caption).foregroundStyle(.secondary) }
-            Spacer()
-            Button { model.assistant.openPA(); store.showAssistant() } label: { Label("Assistant",systemImage:"bubble.left.and.bubble.right") }.keyboardShortcut("j",modifiers:.command)
-            Button { model.refresh() } label: { Image(systemName:"arrow.clockwise") }.help("Refresh Apple sources (⌘R)").accessibilityLabel("Refresh Apple sources").keyboardShortcut("r",modifiers:.command)
-            addMenu
-            Toggle("Edit",isOn:$editing).toggleStyle(.button)
-            if store.canUndo { Button { store.undo() } label: { Image(systemName:"arrow.uturn.backward") }.help("Undo last workspace change").accessibilityLabel("Undo workspace change") }
+            Text(store.selected.title).font(.system(size:17,weight:.semibold,design:.rounded)).lineLimit(1).frame(maxWidth:170,alignment:.leading)
+            if visible(.date) { TimelineView(.periodic(from:.now,by:60)) { context in Text(context.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))).font(.caption).foregroundStyle(.secondary).lineLimit(1) } }
+            Spacer(minLength:4)
+            TimelineView(.periodic(from:.now,by:1)) { context in
+                if let notice = model.nativeWriteNotice, let date = model.feedbackDate, context.date.timeIntervalSince(date) < 8 {
+                    Label(notice,systemImage:"checkmark.circle.fill").font(.caption).foregroundStyle(.green).lineLimit(1).frame(maxWidth:210).help(notice).padding(.horizontal,8).padding(.vertical,5).background(.green.opacity(0.07),in:Capsule())
+                }
+            }.layoutPriority(-1)
+            ViewThatFits(in:.horizontal) {
+                HStack(spacing:6) { toolbarActions(labels:true) }
+                HStack(spacing:5) { toolbarActions(labels:false) }
+            }
             Menu {
+                Section("Show in toolbar") { ForEach(WorkspaceTool.allCases,id:\.self) { tool in Toggle(tool.title,isOn:Binding(get:{ visible(tool) },set:{ toolbarHidden = ToolbarRules.setting(tool,visible:$0,hidden:toolbarHidden) })) }; Button("Reset toolbar") { toolbarHidden = "" } }
+                Section("Actions") {
+                    Button("Assistant") { model.assistant.openPA(); store.showAssistant() }.keyboardShortcut("j",modifiers:.command)
+                    Button("Refresh") { model.refresh() }.keyboardShortcut("r",modifiers:.command)
+                    Menu("Add widget") { widgetChoices }
+                    Toggle("Edit layout",isOn:$editing)
+                    Button(model.undoLabel) { model.undoLatest() }.disabled(model.latestUndo == nil || model.writing || model.assistant.busy)
+                }
+            } label: { Image(systemName:"slider.horizontal.3") }.help("Customise toolbar").accessibilityLabel("Customise toolbar")
+            SettingsLink { Image(systemName:"gearshape") }.buttonStyle(.borderless).help("Settings")
+        }.controlSize(.small).padding(.horizontal,16).frame(height:44)
+    }
+    private func visible(_ tool: WorkspaceTool) -> Bool { ToolbarRules.visible(tool,hidden:toolbarHidden) }
+    @ViewBuilder private func toolbarActions(labels: Bool) -> some View {
+        if visible(.assistant) { Button { model.assistant.openPA(); store.showAssistant() } label: { if labels { Label("Assistant",systemImage:"bubble.left.and.bubble.right") } else { Image(systemName:"bubble.left.and.bubble.right") } }.help("Assistant (⌘J)").accessibilityLabel("Assistant") }
+        if visible(.refresh) { Button { model.refresh() } label: { Image(systemName:"arrow.clockwise") }.help("Refresh Apple sources (⌘R)").accessibilityLabel("Refresh Apple sources") }
+        if visible(.addWidget) { Menu { widgetChoices } label: { if labels { Label("Add widget",systemImage:"plus") } else { Image(systemName:"plus") } }.accessibilityLabel("Add widget") }
+        if visible(.edit) { Button { editing.toggle() } label: { if labels { Text(editing ? "Done" : "Edit") } else { Image(systemName:editing ? "checkmark" : "slider.horizontal.3") } }.help("Arrange widgets · Drag handle/corner, release to snap").accessibilityLabel(editing ? "Finish arranging widgets" : "Edit layout").tint(editing ? .accentColor : nil) }
+        if visible(.undo) { Button { model.undoLatest() } label: { Image(systemName:"arrow.uturn.backward") }.disabled(model.latestUndo == nil || model.writing || model.assistant.busy).help(model.undoLabel).accessibilityLabel(model.undoLabel) }
+        if visible(.appearance) { Menu {
                 Picker("Style",selection:$theme) { Text("Warm workspace").tag("warm"); Text("Native macOS").tag("native") }
                 Picker("Appearance",selection:$appearance) { Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark") }
                 Picker("Accent",selection:$accent) { Text("Sage").tag("sage"); Text("Blue").tag("blue"); Text("Rose").tag("rose") }
-            } label: { Image(systemName:"paintpalette") }.help("Workspace appearance").accessibilityLabel("Workspace appearance")
-            SettingsLink { Image(systemName:"gearshape") }.buttonStyle(.borderless).help("Settings")
-        }.padding(.horizontal,20).padding(.vertical,17)
+            } label: { Image(systemName:"paintpalette") }.help("Workspace appearance").accessibilityLabel("Workspace appearance") }
     }
+    private var widgetChoices: some View { ForEach(WidgetKind.allCases,id:\.self) { kind in Button { store.addWidget(kind); editing = true } label: { Label(kind.title,systemImage:kind.icon) } } }
     private var addMenu: some View {
-        Menu { ForEach(WidgetKind.allCases,id:\.self) { kind in Button { store.addWidget(kind); editing = true } label: { Label(kind.title,systemImage:kind.icon) } } } label: { Label("Add widget",systemImage:"plus") }
+        Menu { widgetChoices } label: { Label("Add widget",systemImage:"plus") }
     }
     private var sidebar: some View {
         VStack(alignment:.leading,spacing:12) {
@@ -178,6 +198,7 @@ private struct WorkspaceTile: View {
         case .overview:
             TodayBriefView(model:model,briefings:model.briefings).padding(16)
         case .emailSummary: EmailOverviewView(model:model,summaries:model.emailSummaries,configuration:configuration).padding(16)
+        case .clock: DateClockWidget(configuration:configuration)
         case nil: ContentUnavailableView("Widget unavailable",systemImage:"square.dashed",description:Text("Its saved placement is preserved for a future app version."))
         }
     }

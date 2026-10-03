@@ -22,6 +22,12 @@ import Foundation
         var wrongProposal = proposal; wrongProposal.occurrenceID = "duplicate-other-occurrence"; rejectsMove(base,wrongProposal)
         wrongProposal = proposal; wrongProposal.sourceID = "other-calendar"; rejectsMove(base,wrongProposal)
         let movedRecurring = try NativeEditRules.moved(recurring,proposal:proposal); precondition(movedRecurring.recurring && movedRecurring.sourceID == recurring.sourceID)
+        var verified = moved; verified.itemID = "verified-native-ID"; verified.occurrenceID = "verified-moved-occurrence"; verified.modified = .now
+        let restored = try NativeEditRules.restoring(NativeEditUndo(original:base,saved:verified))
+        precondition(restored.start == base.start && restored.end == base.end && restored.notes == base.notes)
+        precondition(restored.itemID == verified.itemID && restored.occurrenceID == verified.occurrenceID && restored.modified == verified.modified)
+        var unavailableUndo = verified; unavailableUndo.writable = false
+        do { _ = try NativeEditRules.restoring(.init(original:base,saved:unavailableUndo)); preconditionFailure("Read-only Undo accepted") } catch {}
         let allDay = NativeEditRules.allDay(base,enabled:true,calendar:calendar)
         precondition(allDay.start == date(25) && allDay.end == date(26))
         precondition(allDay.end.timeIntervalSince(allDay.start) == 25*3600, "DST all-day duration follows calendar boundaries")

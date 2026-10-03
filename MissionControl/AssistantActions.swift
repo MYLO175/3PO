@@ -113,7 +113,7 @@ private struct ActionLedgerEntry: Codable { var result: String?; var attempted =
         #if DEBUG
         if draft.kind == .createReminder, let title = draft.title, title.hasPrefix("Mission Control action validation "), UUID(uuidString:String(title.dropFirst("Mission Control action validation ".count))) != nil { ledger[key]?.fixtureTitle = title }
         #endif
-        if let token = result.undoToken { model.undoToken = token; model.undoTitle = reminder?.title ?? "Reminder" }
+        if let token = result.undoToken { model.undoToken = token; model.undoTitle = reminder?.title ?? "Reminder"; model.showFeedback("Completed: " + model.undoTitle) }
         selectedTarget = ""
         model.refresh(retryMail:false)
         do { try save() } catch { return result.message + " Apple save verified, but the action receipt could not be saved. Check the original before repeating." }

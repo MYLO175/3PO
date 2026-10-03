@@ -27,7 +27,10 @@ import EventKit
     var previewError: String?
     var writeError: String?
     var writing = false
-    var undoToken: String?
+    var undoToken: String? { didSet { completionUndoDate = undoToken == nil ? nil : .now } }
+    private var completionUndoDate: Date?
+    private var editUndo: NativeEditUndo?
+    var feedbackDate: Date?
     var undoTitle = ""
     var validationReport: String?
     #if DEBUG
@@ -287,6 +290,7 @@ import EventKit
             do {
                 undoToken = try await eventKit.complete(id: reminder.id)
                 undoTitle = reminder.title
+                showFeedback("Completed: " + reminder.title)
                 await refreshReminders()
             } catch { writeError = error.localizedDescription; await refreshReminders() }
             writing = false
@@ -314,7 +318,7 @@ import EventKit
         do {
             let receipt = try await eventKit.createItem(request:request,baseline:baseline,edited:edited,scope:proactive.scope(self))
             try nativeCreations.complete(request,receipt:receipt)
-            nativeWriteNotice = "Created " + receipt.title + " · " + receipt.destination
+            showFeedback("Created " + receipt.title + " · " + receipt.destination)
             widgetCalendars.invalidate(); await refreshCalendar(); await refreshReminders(); await refreshPAOrientation()
         } catch {
             let text = error.localizedDescription + " Check Apple Calendar or Reminders before creating another item; this save will not be repeated automatically."
@@ -326,10 +330,31 @@ import EventKit
         writing = true; writeError = nil
         defer { writing = false }
         do {
-            try await eventKit.saveEdit(baseline:baseline,edited:edited)
+            let saved = try await eventKit.saveEdit(baseline:baseline,edited:edited)
+            editUndo = NativeEditUndo(original:baseline,saved:saved)
+            showFeedback("Updated: " + saved.title)
             widgetCalendars.invalidate()
             await refreshCalendar(); await refreshReminders()
         } catch { writeError = error.localizedDescription; throw error }
+    }
+    func showFeedback(_ text: String) { nativeWriteNotice = text; feedbackDate = .now }
+    var latestUndo: String? {
+        UndoOrder.latest(layout:workspace.canUndo ? workspace.undoDate : nil,completion:undoToken == nil ? nil : completionUndoDate,edit:editUndo?.created)
+    }
+    var undoLabel: String { latestUndo == "edit" ? "Undo edit" : latestUndo == "completion" ? "Undo reminder completion" : "Undo dashboard change" }
+    func undoLatest() {
+        guard !writing, !assistant.busy else { return }
+        if latestUndo == "layout" { workspace.undo(); if workspace.error == nil { showFeedback("Dashboard change undone") }; return }
+        if latestUndo == "completion" { undo(); return }
+        guard latestUndo == "edit", let ticket = editUndo else { return }
+        writing = true; writeError = nil
+        Task {
+            defer { writing = false }
+            do {
+                try await eventKit.undoEdit(ticket); editUndo = nil; showFeedback("Edit undone: " + ticket.original.title)
+                widgetCalendars.invalidate(); await refreshCalendar(); await refreshReminders(); await refreshPAOrientation()
+            } catch { writeError = "Could not undo the edit. The item may have changed outside Mission Control. " + error.localizedDescription }
+        }
     }
     func undo() {
         guard let token = undoToken, !writing else { return }
@@ -337,6 +362,7 @@ import EventKit
         Task {
             do {
                 try await eventKit.undo(token: token); undoToken = nil
+                showFeedback("Reminder restored: " + undoTitle)
                 do { try assistantActions.recordUndo(token:token) } catch { writeError = "Reminder restored; its action receipt could not be updated." }
                 await refreshReminders()
             }

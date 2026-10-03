@@ -41,11 +41,12 @@ extension EventKitService {
             return NativeEditSession(item:details,sources:store.calendars(for:.reminder).map(option))
         }
     }
-    func saveEdit(baseline: NativeEditDetails, edited: NativeEditDetails) async throws {
+    @discardableResult func saveEdit(baseline: NativeEditDetails, edited: NativeEditDetails) async throws -> NativeEditDetails {
         try NativeEditRules.validate(edited,baseline:baseline)
         try await access(baseline.kind == .event ? .event : .reminder)
         store.reset()
         do {
+            let verified: NativeEditDetails
             let native: EKCalendarItem
             if baseline.kind == .event { native = try editorEvent(baseline.occurrenceID,sourceID:baseline.sourceID,start:baseline.start,end:baseline.end) }
             else {
@@ -81,6 +82,7 @@ extension EventKitService {
                     throw IntegrationError.verification
                     #endif
                 }
+                verified = editorDetails(saved)
             } else if let reminder = native as? EKReminder {
                 if edited.due != baseline.due || edited.hasTime != baseline.hasTime {
                     var calendar = Calendar.current; calendar.timeZone = TimeZone(identifier:edited.timeZoneID) ?? .current
@@ -92,8 +94,15 @@ extension EventKitService {
                 guard details.title == edited.title, details.notes == edited.notes, details.sourceID == edited.sourceID, details.hasTime == edited.hasTime else { throw IntegrationError.verification }
                 if edited.hasTime { guard details.due == edited.due else { throw IntegrationError.verification } }
                 else { let savedDay = details.due.map { DateRules.localDate($0) }, editedDay = edited.due.map { DateRules.localDate($0) }; guard savedDay == editedDay else { throw IntegrationError.verification } }
+                verified = details
             }
+            else { throw IntegrationError.missing }
+            return verified
         } catch { store.reset(); throw error }
+    }
+    func undoEdit(_ undo: NativeEditUndo) async throws {
+        // saveEdit compares the complete saved revision before restoring exact fields.
+        try await saveEdit(baseline:undo.saved,edited:NativeEditRules.restoring(undo))
     }
     #if DEBUG
     func validateNativeEditors() async throws -> String {
@@ -141,7 +150,10 @@ extension EventKitService {
             guard staleRejected else { throw IntegrationError.verification }
             let timedCurrent = editorDetails(store.calendarItem(withIdentifier:fixtures[0].0)!)
             var undated = timedCurrent; undated.due = nil; undated.hasTime = false
-            stage = "save undated reminder"; try await saveEdit(baseline:timedCurrent,edited:undated)
+            stage = "save undated reminder"; let undatedSaved = try await saveEdit(baseline:timedCurrent,edited:undated)
+            stage = "undo reminder edit"; try await undoEdit(.init(original:timedCurrent,saved:undatedSaved))
+            store.reset()
+            guard let undoReminder = store.calendarItem(withIdentifier:fixtures[0].0) as? EKReminder, editorDetails(undoReminder).due == timedCurrent.due, editorDetails(undoReminder).hasTime == timedCurrent.hasTime else { throw IntegrationError.verification }
             let event = EKEvent(eventStore:store); event.title = marker; event.notes = marker; event.calendar = calendar
             event.startDate = Date(timeIntervalSince1970:floor(Date.now.addingTimeInterval(86400).timeIntervalSince1970)); event.endDate = event.startDate.addingTimeInterval(3600)
             try store.save(event,span:.thisEvent,commit:true); fixtures.append((event.calendarItemIdentifier,.event))
@@ -153,13 +165,16 @@ extension EventKitService {
             guard let savedEvent = store.calendarItem(withIdentifier:fixtures[2].0) as? EKEvent else { throw IntegrationError.verification }
             let eventCurrent = editorDetails(savedEvent)
             let wholeDay = NativeEditRules.allDay(eventCurrent,enabled:true)
-            stage = "save all-day event"; try await saveEdit(baseline:eventCurrent,edited:wholeDay)
+            stage = "save all-day event"; let wholeSaved = try await saveEdit(baseline:eventCurrent,edited:wholeDay)
+            stage = "undo event edit"; try await undoEdit(.init(original:eventCurrent,saved:wholeSaved))
+            store.reset()
+            guard let undoEvent = store.calendarItem(withIdentifier:fixtures[2].0) as? EKEvent, !undoEvent.isAllDay, undoEvent.startDate == eventCurrent.start, editorDetails(undoEvent).end == eventCurrent.end else { throw IntegrationError.verification }
             store.reset()
             guard let changed = store.calendarItem(withIdentifier:fixtures[2].0) as? EKEvent else { throw IntegrationError.verification }
             let beforeExternalChange = editorDetails(changed)
             changed.notes = marker + "\nExternal fixture change"; try store.save(changed,span:.thisEvent,commit:true)
             var rejectedExternal = false
-            do { try await saveEdit(baseline:beforeExternalChange,edited:beforeExternalChange) } catch IntegrationError.missing { rejectedExternal = true }
+            do { try await undoEdit(.init(original:eventBaseline,saved:beforeExternalChange)) } catch IntegrationError.missing { rejectedExternal = true }
             guard rejectedExternal else { throw IntegrationError.verification }
             stage = "edit one recurring occurrence"
             let series = EKEvent(eventStore:store); series.calendar = calendar; series.title = marker; series.notes = marker
@@ -173,7 +188,7 @@ extension EventKitService {
             let after = store.events(matching:store.predicateForEvents(withStart:occurrence.start,end:fixtureEnd,calendars:[calendar])).filter { $0.notes == marker }.sorted { $0.startDate < $1.startDate }
             guard after.count == 2, after[0].title == one.title, after[1].title == marker, after[1].startDate == occurrences[1].startDate else { throw IntegrationError.verification }
             stage = "cleanup"; try cleanup()
-            return "PASS native editors: duplicate identity, notes, date-only/timed/undated reminder, event title/location/time/all-day, single recurring occurrence, stale/external-change refusal; fixtures removed and absence verified."
+            return "PASS native editors: duplicate identity, notes, reminder/event edit Undo, date-only/timed/undated reminder, event title/location/time/all-day, single recurring occurrence, stale/external-change Undo refusal; fixtures removed and absence verified."
         } catch {
             do { try cleanup() } catch { throw ActionFailure.message("Native editor validation failed and fixture cleanup needs review. Only UUID-marked editor fixtures were touched.") }
             throw ActionFailure.message("Native editor check (" + stage + "): " + error.localizedDescription + " Fixtures removed.")
