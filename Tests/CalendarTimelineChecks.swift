@@ -37,6 +37,14 @@ import Foundation
         assert(CalendarTimelineMove.start(on:fall.start,y:2.5*CalendarTimelineFocus.hourHeight,calendar:calendar) == second)
         let spring = day(2026,3,29)
         assert(CalendarTimelineMove.start(on:spring.start,y:2000,calendar:calendar) == spring.end.addingTimeInterval(-900))
+        let shifted = CalendarTimelineMove.translated(start:afternoon,day:range.start,dx:100,dy:52,columnWidth:125,visibleDays:7,range:DateInterval(start:range.start,end:range.start.addingTimeInterval(7*86400)),calendar:calendar)!
+        assert(shifted.day == range.end && shifted.y == 16*52)
+        let single = CalendarTimelineMove.translated(start:afternoon,day:range.start,dx:300,dy:-52,columnWidth:900,visibleDays:1,range:range,calendar:calendar)!
+        assert(single.day == range.start && single.y == 14*52)
+        assert(CalendarTimelineMove.translated(start:afternoon,day:range.start,dx:-500,dy:0,columnWidth:125,visibleDays:7,range:range,calendar:calendar) == nil)
+        assert(CalendarTimelineMove.translated(start:afternoon,day:range.start,dx:.nan,dy:0,columnWidth:125,visibleDays:7,range:range,calendar:calendar) == nil)
+        let dstDrag = CalendarTimelineMove.translated(start:second,day:fall.start,dx:0,dy:0,columnWidth:900,visibleDays:1,range:fall,calendar:calendar)!
+        assert(CalendarTimelineMove.start(on:dstDrag.day,y:dstDrag.y,calendar:calendar) == second)
         print("PASS: connected overlap lanes, deterministic ordering, overnight clipping and 23/25-hour DST days, viewport columns, work-day focus and distinct repeated-hour anchors")
     }
 }

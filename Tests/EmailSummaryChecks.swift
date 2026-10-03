@@ -52,8 +52,14 @@ import Foundation
         reading.dismissed = true; precondition(!EmailHighlightRules.visible(reading,now:message.received))
         var reply = summary; reply.needsReply = true
         precondition(EmailHighlightRules.category(reply,replied:false) == "May need a reply")
-        precondition(EmailHighlightRules.category(reply,replied:true) == "To act on")
+        precondition(EmailHighlightRules.category(reply,replied:true) == "Reply sent")
         precondition(EmailHighlightRules.rank(reply,replied:false) < EmailHighlightRules.rank(reading,replied:false))
+        assert(EmailHighlightRules.needsAction(reply,replied:false), "Explicit reply assessments remain actionable even with an older missing reading field")
+        reply.worthReading = true
+        assert(EmailHighlightRules.needsAction(reply,replied:false))
+        assert(!EmailHighlightRules.needsAction(reply,replied:true))
+        assert(!EmailHighlightRules.needsAction(summary,replied:false), "Legacy suggestions are not confirmed action judgments")
+        assert(EmailHighlightRules.category(summary,replied:false) == "Saved suggestion")
         let unsupportedReply = #"{"summary":"Reply","attention":false,"reason":"","evidence":"Please confirm whether you can attend on Monday.","needsReply":true}"#
         var badReply = false; do { _ = try EmailSummary.decode(unsupportedReply,message:message,body:body,registration:"a") } catch { badReply = true }; precondition(badReply)
         print("PASS: exact source evidence, attention evidence requirement, invalid-output rejection, cache round-trip and changed-header fingerprint")

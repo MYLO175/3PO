@@ -53,9 +53,15 @@ enum DateRules {
         let c = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
     }
+    static func localTimestamp(_ date: Date, calendar: Calendar = .current) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = calendar.timeZone
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.string(from:date)
+    }
     static func reminderDue(_ item: TaskItem, calendar: Calendar = .current) -> String {
         guard let due = item.due else { return "undated" }
-        return item.hasTime ? due.ISO8601Format() : localDate(due, calendar: calendar)
+        return item.hasTime ? localTimestamp(due,calendar:calendar) : localDate(due, calendar: calendar)
     }
     static func day(_ date: Date, calendar: Calendar = .current) -> DateInterval {
         calendar.dateInterval(of: .day, for: date)!

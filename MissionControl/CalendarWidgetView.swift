@@ -9,6 +9,7 @@ struct CalendarWidgetView: View {
     @State private var updated: Date?
     @State private var showDatePicker = false
     @State private var selectedEvent: CalendarEventSelection?
+    @State private var focusRequest = 0
     @State private var dragToken = UUID().uuidString
     private var calendar: Calendar { .current }
     private var mode: String { configuration.calendarMode }
@@ -45,7 +46,7 @@ struct CalendarWidgetView: View {
                 }
                 Spacer(minLength:4)
                 Button { navigate(-1) } label: { Image(systemName:"chevron.left") }.help("Previous calendar period").accessibilityLabel("Previous calendar period")
-                Button("Today") { configuration.date = .now }
+                Button(mode == "day" || mode == "week" ? "Now" : "Today") { configuration.date = .now; focusRequest += 1 }
                 Button { navigate(1) } label: { Image(systemName:"chevron.right") }.help("Next calendar period").accessibilityLabel("Next calendar period")
             }.buttonStyle(.borderless).controlSize(.small)
             if let error { Text((updated == nil ? "" : "Stale · ") + error).font(.caption).foregroundStyle(.orange).lineLimit(2) }
@@ -138,7 +139,7 @@ struct CalendarWidgetView: View {
             let days = mode == "week" ? 7 : 1
             let width = CalendarTimelineFocus.columnWidth(available:max(1,geometry.size.width-14),days:days)
             let focusDay = days == 7 && range.contains(Date.now) ? Date.now : range.start
-            let focus = CalendarTimelineFocus.hour(on:focusDay,now:.now,events:events)
+            let focus = focusRequest > 0 && range.contains(Date.now) ? max(Calendar.current.dateInterval(of:.hour,for:.now)!.start.addingTimeInterval(-3600),Calendar.current.startOfDay(for:.now)) : CalendarTimelineFocus.hour(on:focusDay,now:.now,events:events)
             let allDayCount = (0..<days).map { dayEvents(calendar.date(byAdding:.day,value:$0,to:range.start)!).filter(\.allDay).count }.max() ?? 0
             let allDayHeight = Double(min(3,allDayCount))*24 + (allDayCount > 3 ? 20 : 0)
             ScrollViewReader { proxy in
@@ -148,7 +149,10 @@ struct CalendarWidgetView: View {
                             HStack(alignment:.top,spacing:8) {
                                 ForEach(0..<days,id:\.self) { offset in
                                     let day = calendar.date(byAdding:.day,value:offset,to:range.start)!
-                                    CalendarDayTimeline(events:dayEvents(day).filter { !$0.allDay },day:day,color:color,select:select,dragValue:dragValue,drop:{ values,point in drop(values,point:point,day:day) }).frame(width:width)
+                                    CalendarDayTimeline(events:dayEvents(day).filter { !$0.allDay },day:day,color:color,select:select,dragValue:dragValue,reviewMove:{ event,start,dx,dy in
+                                        guard let value = dragValue(event), let target = CalendarTimelineMove.translated(start:start,day:day,dx:dx,dy:dy,columnWidth:width,visibleDays:days,range:range) else { return }
+                                        _ = drop([value],point:CGPoint(x:0,y:target.y),day:target.day)
+                                    }).frame(width:width)
                                 }
                             }.padding(.bottom,10)
                         } header: {
@@ -173,7 +177,7 @@ struct CalendarWidgetView: View {
                     }.frame(width:Double(days)*width+Double(days-1)*8)
 
                 }
-                .task(id:"\(mode):\(range.start.timeIntervalSince1970)") {
+                .task(id:"\(mode):\(range.start.timeIntervalSince1970):\(focusRequest)") {
                     await Task.yield()
                     proxy.scrollTo(CalendarTimelineFocus.anchor(focus),anchor:.top)
                 }
@@ -189,8 +193,7 @@ private struct CalendarEventSelection: Identifiable {
 private struct CalendarDayTimeline: View {
     var events: [AgendaEvent]; var day: Date; var color: (AgendaEvent)->Color; var select: (AgendaEvent)->Void
     var dragValue: (AgendaEvent)->String?
-    var drop: ([String],CGPoint)->Bool
-    @State private var dropTargeted = false
+    var reviewMove: (AgendaEvent,Date,Double,Double)->Void
     private var interval: DateInterval { Calendar.current.dateInterval(of:.day,for:day)! }
     private let hourHeight = CalendarTimelineFocus.hourHeight
     var body: some View {
@@ -210,17 +213,14 @@ private struct CalendarDayTimeline: View {
                         .help(date.formatted(date:.omitted,time:.shortened) + " " + (Calendar.current.timeZone.abbreviation(for:date) ?? ""))
                 }
             }
-            ForEach(CalendarTimelineLayout.segments(events,interval:interval)) { segment in
-                GeometryReader { geo in
-                    let height = max(CalendarTimelineFocus.minimumEventHeight,segment.end.timeIntervalSince(segment.start)/3600*hourHeight)
-                    let button = Button { select(segment.event) } label: {
-                        VStack(alignment:.leading,spacing:2) {
-                            Text(segment.event.title).font(.caption2.weight(.medium)).lineLimit(height > 48 ? 3 : 1)
-                            if height > 38 { Text(segment.event.start.formatted(date:.omitted,time:.shortened)).font(.system(size:10)).foregroundStyle(.secondary) }
-                            Spacer(minLength:0)
-                        }.padding(.horizontal,5).padding(.vertical,height > 38 ? 5 : 2).frame(maxWidth:.infinity,alignment:.leading).background(color(segment.event).opacity(0.17),in:RoundedRectangle(cornerRadius:5)).overlay(alignment:.leading) { RoundedRectangle(cornerRadius:2).fill(color(segment.event)).frame(width:3) }.clipped()
-                    }.buttonStyle(.plain).help(segment.event.title + " · " + segment.event.start.formatted(date:.omitted,time:.shortened)).frame(width:max(1,(geo.size.width-40)/CGFloat(segment.lanes)-3),height:height).offset(x:40+CGFloat(segment.lane)*(geo.size.width-40)/CGFloat(segment.lanes),y:segment.start.timeIntervalSince(interval.start)/3600*hourHeight)
-                    if let value = dragValue(segment.event) { button.draggable(value) } else { button }
+            GeometryReader { geo in
+                ZStack(alignment:.topLeading) {
+                    ForEach(CalendarTimelineLayout.segments(events,interval:interval)) { segment in
+                        let height = max(CalendarTimelineFocus.minimumEventHeight,segment.end.timeIntervalSince(segment.start)/3600*hourHeight)
+                        CalendarTimedEventCard(event:segment.event,color:color(segment.event),height:height,movable:dragValue(segment.event) != nil,select:{ select(segment.event) },review:{ dx,dy in reviewMove(segment.event,segment.start,dx,dy) })
+                            .frame(width:max(1,(geo.size.width-40)/CGFloat(segment.lanes)-3),height:height)
+                            .offset(x:40+CGFloat(segment.lane)*(geo.size.width-40)/CGFloat(segment.lanes),y:segment.start.timeIntervalSince(interval.start)/3600*hourHeight)
+                    }
                 }
             }
             TimelineView(.periodic(from:.now,by:60)) { context in
@@ -230,7 +230,41 @@ private struct CalendarDayTimeline: View {
                 }
             }
         }.frame(height:CGFloat(hours)*hourHeight).contentShape(Rectangle())
-            .overlay { if dropTargeted { RoundedRectangle(cornerRadius:5).stroke(Color.accentColor.opacity(0.6),lineWidth:2).allowsHitTesting(false) } }
-            .dropDestination(for:String.self,action:drop,isTargeted:{ dropTargeted = $0 })
+    }
+}
+
+// In-app dragging keeps the event's grab offset stable and never writes directly.
+private struct CalendarTimedEventCard: View {
+    var event: AgendaEvent
+    var color: Color
+    var height: Double
+    var movable: Bool
+    var select: ()->Void
+    var review: (Double,Double)->Void
+    @GestureState private var translation = CGSize.zero
+    private var moving: Bool { translation != .zero }
+    private var title: String { event.title + " · " + event.start.formatted(date:.omitted,time:.shortened) }
+    private var drag: some Gesture {
+        DragGesture(minimumDistance:6)
+            .updating($translation) { value,state,_ in state = value.translation }
+            .onEnded { value in review(Double(value.translation.width),Double(value.translation.height)) }
+    }
+    private var card: some View {
+        VStack(alignment:.leading,spacing:2) {
+            Text(event.title).font(.caption2.weight(.medium)).lineLimit(height > 48 ? 3 : 1)
+            if height > 38 { Text(event.start.formatted(date:.omitted,time:.shortened)).font(.system(size:10)).foregroundStyle(.secondary) }
+            Spacer(minLength:0)
+        }.padding(.horizontal,5).padding(.vertical,height > 38 ? 5 : 2).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+            .background(color.opacity(moving ? 0.3 : 0.17),in:RoundedRectangle(cornerRadius:5))
+            .overlay(alignment:.leading) { RoundedRectangle(cornerRadius:2).fill(color).frame(width:3) }.clipped()
+            .overlay { if moving { RoundedRectangle(cornerRadius:5).stroke(color,lineWidth:1.5) } }
+            .contentShape(Rectangle()).onTapGesture(perform:select)
+    }
+    var body: some View {
+        Group {
+            if movable { card.gesture(drag) } else { card }
+        }.offset(x:translation.width,y:translation.height).zIndex(moving ? 1 : 0)
+            .help(title).accessibilityElement(children:.ignore).accessibilityLabel(title)
+            .accessibilityAddTraits(.isButton).accessibilityAction(.default) { select() }
     }
 }

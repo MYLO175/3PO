@@ -14,6 +14,9 @@ import SwiftData
         precondition(NativeCreationRules.allowed(store.state,key:request.key))
         try store.begin(request); precondition(!NativeCreationRules.allowed(store.state,key:request.key))
         rejects { try store.begin(request) }
+        var alternative = request; alternative.kind = .event
+        precondition(alternative.key == request.key)
+        rejects { try store.begin(alternative) }
         let pending = NativeCreationStore(container:container)
         rejects { try pending.begin(request) }; precondition(pending.receipt(request) == nil)
         let receipt = NativeCreationReceipt(requestID:request.id,registration:request.registration,kind:request.kind,itemID:"exact-new-ID",title:request.title,destination:"To do · Test",created:.now,sourceScope:"fixture")

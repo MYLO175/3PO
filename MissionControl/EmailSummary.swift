@@ -112,13 +112,19 @@ enum EmailHighlightRules {
         guard summary.dismissed != true else { return false }
         return summary.attention || summary.followUpDate != nil || (summary.worthReading == true && (summary.messageReceived ?? summary.created) >= now.addingTimeInterval(-7*86400))
     }
+    static func needsAction(_ summary: EmailSummary, replied: Bool) -> Bool {
+        guard summary.attention, !(summary.needsReply == true && replied) else { return false }
+        // Legacy assessments predate distinct reply/reading judgments and remain visible as suggestions.
+        return summary.needsReply != nil || summary.worthReading != nil
+    }
     static func category(_ summary: EmailSummary, replied: Bool) -> String {
         if summary.needsReply == true && !replied { return "May need a reply" }
+        if summary.needsReply == true && replied { return "Reply sent" }
         if summary.attention { return summary.needsReply == nil && summary.worthReading == nil ? "Saved suggestion" : "To act on" }
         if summary.followUpDate != nil { return "Future date" }
         return "Worth reading"
     }
     static func rank(_ summary: EmailSummary, replied: Bool) -> Int {
-        if summary.needsReply == true && !replied { return 0 }; if summary.attention { return 1 }; if summary.worthReading == true { return 2 }; return 3
+        if summary.needsReply == true && !replied { return 0 }; if needsAction(summary,replied:replied) { return 1 }; if summary.worthReading == true { return 2 }; return 3
     }
 }

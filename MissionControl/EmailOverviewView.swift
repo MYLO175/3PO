@@ -7,7 +7,7 @@ struct EmailOverviewView: View {
     @State private var limit = 6
     private var available: [(MailMessage,EmailSummary)] {
         summaries.highlights(model).filter { message,summary in
-            !(configuration?.wrappedValue.sourceExclusions.contains(message.accountID) ?? false) && (filter == "All" || (filter == "To act on" ? summary.attention : filter == "Worth reading" ? summary.worthReading == true : summary.followUpDate != nil))
+            !(configuration?.wrappedValue.sourceExclusions.contains(message.accountID) ?? false) && (filter == "All" || (filter == "Needs action" ? EmailHighlightRules.needsAction(summary,replied:message.replied) : filter == "Worth reading" ? summary.worthReading == true && !EmailHighlightRules.needsAction(summary,replied:message.replied) : summary.followUpDate != nil))
         }
     }
     var body: some View {
@@ -18,7 +18,7 @@ struct EmailOverviewView: View {
                 if summaries.busy { ProgressView().controlSize(.small); Button("Stop") { summaries.cancel() } }
             }
             HStack {
-                Picker("Show",selection:$filter) { ForEach(["All","To act on","Worth reading","Future dates"],id:\.self) { Text($0).tag($0) } }.labelsHidden().frame(maxWidth:160)
+                Picker("Show",selection:$filter) { ForEach(["All","Needs action","Worth reading","Future dates"],id:\.self) { Text($0).tag($0) } }.labelsHidden().frame(maxWidth:160)
                 if let configuration {
                     Menu("Accounts") {
                         ForEach(model.mailData.accounts) { account in

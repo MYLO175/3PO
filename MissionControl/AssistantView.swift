@@ -72,6 +72,32 @@ struct AssistantPanel: View {
     @State private var topicName = ""
     @State private var topicFocus = ""
     @State private var showBriefing = false
+    @ViewBuilder private func discoveryActions(_ record: PADiscovery, compact: Bool = false) -> some View {
+        if compact {
+            HStack { reviewDiscoveryButtons(record) }
+            HStack { discoverySourceButtons(record) }
+        } else {
+            HStack { reviewDiscoveryButtons(record); discoverySourceButtons(record) }
+        }
+    }
+    private func discoveryClaim(_ record: PADiscovery) -> NativeCreationClaim? {
+        guard let id = UUID(uuidString:record.id) else { return nil }
+        return model.nativeCreations.state.claims[record.registration + ":" + id.uuidString]
+    }
+    @ViewBuilder private func reviewDiscoveryButtons(_ record: PADiscovery) -> some View {
+        if let claim = discoveryClaim(record) {
+            Label(claim.receipt == nil ? "Check save outcome" : "Created",systemImage:claim.receipt == nil ? "exclamationmark.circle" : "checkmark.circle").font(.caption).foregroundStyle(.secondary)
+        } else {
+            Button(record.kind == "calendar" ? "Review event" : "Review reminder") { model.reviewDiscovery(record) }.disabled(model.writing)
+            Menu("Instead…") {
+                Button(record.kind == "calendar" ? "Remind me instead…" : "Review as an event…") { model.reviewDiscovery(record,as:record.kind == "calendar" ? .reminder : .event) }
+            }.disabled(model.writing)
+        }
+    }
+    @ViewBuilder private func discoverySourceButtons(_ record: PADiscovery) -> some View {
+        Button("Source email") { if let message = model.emailSummaries.highlights(model).first(where:{ $0.0.id == record.mailID })?.0 { model.select(message) } }
+        Button("Dismiss") { model.proactive.dismiss(record) }
+    }
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing:8) {
@@ -112,16 +138,24 @@ struct AssistantPanel: View {
                             VStack(alignment: .leading, spacing: 5) {
                                 if turn.content.isEmpty {
                                     Text(assistant.requestTurnID == turn.id ? "Thinking…" : "This request didn't complete.").foregroundStyle(.secondary)
+                                } else if turn.role == "assistant", turn.deliveryID?.hasPrefix("learned:") == true {
+                                    HStack {
+                                        Label("Provisional memory",systemImage:"brain").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                                        Spacer()
+                                        Button("Review") { showMemory = true }.controlSize(.small)
+                                    }
+                                    Text(turn.content.components(separatedBy:"\n\n").first ?? turn.content).lineLimit(3).textSelection(.enabled)
+                                    DisclosureGroup("Details") { Text(turn.content).textSelection(.enabled) }.font(.caption)
                                 } else if turn.role == "assistant" {
                                     Text((try? AttributedString(markdown:turn.content,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(turn.content)).textSelection(.enabled).lineSpacing(3)
                                 } else { Text(turn.content).textSelection(.enabled) }
                                 if turn.deliveryID?.contains(":morning:") == true { Button("Briefing and sources") { showBriefing = true }.controlSize(.small) }
                                 if let delivery = turn.deliveryID, let record = model.proactive.record(delivery:delivery,model:model) {
-                                    HStack {
-                                        Button("Source email") { if let message = model.emailSummaries.highlights(model).first(where:{ $0.0.id == record.mailID })?.0 { model.select(message) } }
-                                        Button(record.kind == "calendar" ? "Review event" : "Review reminder") { model.reviewDiscovery(record) }.disabled(model.writing)
-                                        Button("Dismiss") { model.proactive.dismiss(record) }
+                                    ViewThatFits(in:.horizontal) {
+                                    discoveryActions(record)
+                                    VStack(alignment:.leading,spacing:6) { discoveryActions(record,compact:true) }
                                     }.controlSize(.small)
+
                                 }
                                 if let delivery = turn.deliveryID, let question = model.memoryLearning.question(delivery:delivery,registration:model.chatGPT.activeID) {
                                     DisclosureGroup("Why I’m asking") { Text("“" + question.evidence + "”").font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }.font(.caption)

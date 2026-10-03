@@ -7,7 +7,13 @@ import Foundation
         let dateOnly = TaskItem(id: "fixture", listID: "list", title: "Fictional", due: midnight, hasTime: false, sourceLabel: "Test", writable: true, recurring: false)
         assert(DateRules.reminderDue(dateOnly, calendar: london) == "2026-10-02")
         var timed = dateOnly; timed.hasTime = true
-        assert(DateRules.reminderDue(timed, calendar: london) == "2026-10-01T23:00:00Z")
+        assert(DateRules.reminderDue(timed, calendar: london) == "2026-10-02T00:00:00+01:00")
+        let formatter = ISO8601DateFormatter()
+        for (utc,expected) in [("2026-03-29T00:30:00Z","2026-03-29T00:30:00Z"),("2026-03-29T01:30:00Z","2026-03-29T02:30:00+01:00"),("2026-10-25T00:30:00Z","2026-10-25T01:30:00+01:00"),("2026-10-25T01:30:00Z","2026-10-25T01:30:00Z")] {
+            let instant = formatter.date(from:utc)!
+            let rendered = DateRules.localTimestamp(instant,calendar:london)
+            assert(rendered == expected && formatter.date(from:rendered) == instant, "Local time must preserve exact instant across both DST changes")
+        }
         var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "Europe/London")!
         func date(_ y: Int, _ m: Int, _ d: Int, _ h: Int, _ min: Int = 0) -> Date { c.date(from: DateComponents(year: y, month: m, day: d, hour: h, minute: min))! }
         for day in [date(2026,3,29,7),date(2026,10,25,7),date(2026,12,31,7)] {
@@ -32,6 +38,28 @@ import Foundation
         let morningMessage = try BriefingRules.message(proseOutput); precondition(morningMessage == "Good morning. A meeting is scheduled today.")
         let legacyMessage = try BriefingRules.message(good); precondition(legacyMessage == nil)
         var blankRejected = false; do { _ = try BriefingRules.message(#"{"message":"  "}"#) } catch { blankRejected = true }; precondition(blankRejected)
+        let morning = DailyBriefing(id:"morning",registration:"account",day:"2026-10-02",created:date(2026,10,2,7,30),items:items,sources:[],coverage:"partial",sourceScope:"scope",message:"Good morning")
+        var update = morning; update.id = "update"; update.morningID = morning.id; update.created = date(2026,10,2,12); update.message = "This afternoon"
+        let noon = date(2026,10,2,12)
+        assert(BriefingRules.current(morning:morning,update:update,now:noon,calendar:c).id == "update")
+        for invalid in 0..<5 {
+            var changed = update
+            switch invalid {
+            case 0: changed.registration = "other"
+            case 1: changed.morningID = "replaced-morning"
+            case 2: changed.sourceScope = "excluded-source"
+            case 3: changed.day = "2026-10-01"
+            default: changed.created = date(2026,10,2,6)
+            }
+            assert(BriefingRules.current(morning:morning,update:changed,now:noon,calendar:c).id == "morning")
+        }
+        assert(BriefingRules.current(morning:morning,update:update,now:date(2026,10,3,8),calendar:c).id == "morning")
+        restored.records = [morning]; restored.updatedBriefs = ["account":update]
+        let roundTrip = try JSONDecoder().decode(BriefingState.self,from:JSONEncoder().encode(restored))
+        assert(roundTrip.records.first?.message == "Good morning" && roundTrip.updatedBriefs?["account"]?.message == "This afternoon")
+        assert(roundTrip.notificationClaims == restored.notificationClaims)
+        let legacy = try JSONDecoder().decode(BriefingState.self,from:Data(#"{"records":[],"notificationClaims":[],"paused":false}"#.utf8))
+        assert(legacy.updatedBriefs == nil)
         print("PASS: 7:30 threshold, DST dates, sleep catch-up, saved completion, notification claim round-trip, source identity validation")
     }
 }

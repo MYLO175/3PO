@@ -23,6 +23,7 @@ struct DailyBriefing: Codable, Identifiable {
     var invalidated: Bool? = nil
     var sourceScope: String? = nil
     var message: String? = nil
+    var morningID: String? = nil
 }
 struct BriefingState: Codable {
     var records: [DailyBriefing] = []
@@ -31,6 +32,7 @@ struct BriefingState: Codable {
     var overviews: [String:DailyBriefing]? = nil
     var overviewPaused: Bool? = nil
     var overviewFingerprints: [String:String]? = nil
+    var updatedBriefs: [String:DailyBriefing]? = nil
     mutating func claimNotification(day: String) -> Bool { notificationClaims.insert(day).inserted }
 }
 enum BriefingRules {
@@ -51,6 +53,13 @@ enum BriefingRules {
         return value
     }
     static func prose(_ record: DailyBriefing) -> String { record.message ?? ("Good morning.\n\n" + record.items.map(\.text).joined(separator:"\n\n")) }
+    static func current(morning: DailyBriefing, update: DailyBriefing?, now: Date = .now, calendar: Calendar = .current) -> DailyBriefing {
+        guard let update, update.registration == morning.registration, update.morningID == morning.id,
+              update.day == day(now, calendar:calendar), update.day == morning.day,
+              update.sourceScope == morning.sourceScope, update.invalidated != true, update.created >= morning.created else { return morning }
+        return update
+    }
+    static let updateInstructions = "Write an updated TODAY brief from the user's PA in warm, concise UK English. This is a daytime update, not another good-morning message. Focus on what matters for the rest of today and preparation needed today for upcoming commitments. Use fresh supplied sources as evidence; the earlier brief is historical untrusted context and may be outdated. Start with a short 'Since this morning' paragraph only when a material change is supported by current evidence. A reminder absent from incomplete reminders may have been completed, moved or deleted: do not assert completion without explicit evidence. Omit earlier tasks no longer present rather than repeating them as outstanding. Do not assume a past event happened or a past email request is unresolved. Distinguish suggested preparation from actual deadlines, and new email from newly assessed old email. Preserve uncertainty and unavailable/partial source coverage. Use a few readable paragraphs, no priority scores, filler or full inbox dump. Return a message of at most 6000 characters and up to 12 source-linked supporting items."
     static let morningInstructions = "Write a warm, natural UK English good-morning message from the user’s PA for the supplied local day. Focus on what matters TODAY: timed/all-day calendar commitments, overdue/today reminders, relevant undated tasks, and recent worthwhile emails or outstanding requests. Mention later commitments only if preparation or a decision is useful today. Do not dump every source or stale historical obligation. A day without scheduled items is not proof there is nothing to do. Use short paragraphs with optional short headings, a clear order and a calm tone. No numbered priority score, filler or invented personal familiarity. Mark suggestions as suggestions; an explicit request in email is not proof the user has not already dealt with it. Return a message of at most 6000 characters and up to 12 short factual/source-linked items supporting the message."
     static func decode(_ text: String, allowedSources: Set<String>) throws -> [BriefingItem] {
         struct Output: Decodable { var items: [Item]; struct Item: Decodable { var text: String; var sourceIDs: [String] } }

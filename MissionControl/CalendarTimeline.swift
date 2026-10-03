@@ -53,6 +53,13 @@ enum CalendarTimelineFocus {
 }
 
 enum CalendarTimelineMove {
+    static func translated(start: Date, day: Date, dx: Double, dy: Double, columnWidth: Double, visibleDays: Int, range: DateInterval, calendar: Calendar = .current) -> (day: Date,y: Double)? {
+        guard dx.isFinite, dy.isFinite, columnWidth > 0, visibleDays > 0, range.contains(day), let interval = calendar.dateInterval(of:.day,for:day) else { return nil }
+        let columns = visibleDays == 1 ? 0 : Int(max(-Double(visibleDays),min(Double(visibleDays),(dx/(columnWidth+8)).rounded())))
+        guard let targetDay = calendar.date(byAdding:.day,value:columns,to:day), range.contains(targetDay) else { return nil }
+        let y = max(0,start.timeIntervalSince(interval.start)/3600*CalendarTimelineFocus.hourHeight + dy)
+        return (targetDay,y)
+    }
     /// Snap elapsed timeline coordinates, preserving both occurrences of repeated DST hours.
     static func start(on day: Date, y: Double, calendar: Calendar = .current) -> Date? {
         guard y.isFinite, y >= 0, let interval = calendar.dateInterval(of:.day,for:day) else { return nil }
