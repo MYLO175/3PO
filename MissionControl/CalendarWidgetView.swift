@@ -136,13 +136,13 @@ struct CalendarWidgetView: View {
     private var timelineView: some View {
         GeometryReader { geometry in
             let days = mode == "week" ? 7 : 1
-            let width = CalendarTimelineFocus.columnWidth(available:geometry.size.width,days:days)
+            let width = CalendarTimelineFocus.columnWidth(available:max(1,geometry.size.width-14),days:days)
             let focusDay = days == 7 && range.contains(Date.now) ? Date.now : range.start
             let focus = CalendarTimelineFocus.hour(on:focusDay,now:.now,events:events)
             let allDayCount = (0..<days).map { dayEvents(calendar.date(byAdding:.day,value:$0,to:range.start)!).filter(\.allDay).count }.max() ?? 0
             let allDayHeight = Double(min(3,allDayCount))*24 + (allDayCount > 3 ? 20 : 0)
             ScrollViewReader { proxy in
-                ScrollView([.horizontal,.vertical]) {
+                ScrollView(days == 1 ? .vertical : [.horizontal,.vertical]) {
                     HStack(alignment:.top,spacing:8) {
                         ForEach(0..<days,id:\.self) { offset in
                             let day = calendar.date(byAdding:.day,value:offset,to:range.start)!
@@ -185,13 +185,17 @@ private struct CalendarDayTimeline: View {
         let work = CalendarTimelineFocus.workingHours(on:day)
         ZStack(alignment:.topLeading) {
             Rectangle().fill(Color.accentColor.opacity(0.035)).padding(.leading,40).frame(height:work.duration/3600*hourHeight).offset(y:work.start.timeIntervalSince(interval.start)/3600*hourHeight)
-            ForEach(0..<hours,id:\.self) { hour in
-                let date = Calendar.current.date(byAdding:.hour,value:hour,to:interval.start)!
-                HStack(alignment:.top,spacing:4) {
-                    Text(date.formatted(.dateTime.hour().minute())).font(.system(size:10)).foregroundStyle(.secondary).frame(width:36)
-                    Rectangle().fill(Color.primary.opacity(0.07)).frame(height:1)
-                }.offset(y:CGFloat(hour)*hourHeight).id(CalendarTimelineFocus.anchor(date))
-                    .help(date.formatted(date:.omitted,time:.shortened) + " " + (Calendar.current.timeZone.abbreviation(for:date) ?? ""))
+            // Real stacked row bounds let ScrollViewReader locate each hour.
+            // Offset-only rows all retain their midnight layout origin.
+            VStack(spacing:0) {
+                ForEach(0..<hours,id:\.self) { hour in
+                    let date = Calendar.current.date(byAdding:.hour,value:hour,to:interval.start)!
+                    HStack(alignment:.top,spacing:4) {
+                        Text(date.formatted(.dateTime.hour().minute())).font(.system(size:10)).foregroundStyle(.secondary).frame(width:36)
+                        Rectangle().fill(Color.primary.opacity(0.07)).frame(height:1)
+                    }.frame(height:hourHeight,alignment:.top).id(CalendarTimelineFocus.anchor(date))
+                        .help(date.formatted(date:.omitted,time:.shortened) + " " + (Calendar.current.timeZone.abbreviation(for:date) ?? ""))
+                }
             }
             ForEach(CalendarTimelineLayout.segments(events,interval:interval)) { segment in
                 GeometryReader { geo in
