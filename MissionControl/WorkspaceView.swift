@@ -24,6 +24,7 @@ struct WorkspaceView: View {
             if let report = model.validationReport { HStack { Text(report).font(.caption).textSelection(.enabled); Spacer(); Button { model.validationReport = nil } label: { Image(systemName:"xmark") }.buttonStyle(.borderless).help("Dismiss validation result") }.padding(10) }
             if let error = store.error { HStack { Label(error,systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange); Spacer(); if store.readOnly { Button("Original dashboard") { legacy = true } } else { Button("Dismiss") { store.error = nil } } }.padding(10) }
             if let error = model.storageError ?? model.writeError { Text(error).font(.caption).foregroundStyle(.orange).frame(maxWidth:.infinity,alignment:.leading).padding(10) }
+            if let notice = model.nativeWriteNotice { HStack { Label(notice,systemImage:"checkmark.circle").font(.callout); Spacer(); Button { model.nativeWriteNotice = nil } label: { Image(systemName:"xmark") }.buttonStyle(.borderless).accessibilityLabel("Dismiss save confirmation") }.padding(10).background(.green.opacity(0.06)) }
             if model.undoToken != nil {
                 HStack { Label("Completed: \(model.undoTitle)",systemImage:"checkmark.circle"); Spacer(); Button("Undo reminder") { model.undo() }.disabled(model.writing) }.font(.callout).padding(10).background(.green.opacity(0.06))
             }

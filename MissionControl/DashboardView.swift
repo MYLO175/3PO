@@ -204,7 +204,7 @@ struct DashboardView: View {
     }
     var remindersPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            panelHeader("Reminders", icon: "checklist", health: model.reminderHealth)
+            HStack { panelHeader("Reminders", icon: "checklist", health: model.reminderHealth); Button { model.newNativeItem(.reminder) } label: { Image(systemName:"plus") }.buttonStyle(.borderless).help("New reminder").accessibilityLabel("New reminder").disabled(model.writing) }
             HStack(spacing: 8) {
                 sourceMenu("Lists", sources: model.reminderData.sources, exclusions: listExclusions)
                 Spacer(minLength: 0)

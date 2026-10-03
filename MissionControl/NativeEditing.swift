@@ -3,7 +3,8 @@ import Foundation
 enum NativeItemKind: String, Codable { case event, reminder }
 enum NativeEditTarget: Identifiable {
     case event(AgendaEvent), reminder(TaskItem)
-    var id: String { switch self { case .event(let value): return "event:" + value.id; case .reminder(let value): return "reminder:" + value.id } }
+    case create(NativeCreationRequest)
+    var id: String { switch self { case .event(let value): return "event:" + value.id; case .reminder(let value): return "reminder:" + value.id; case .create(let request): return "create:" + request.id.uuidString } }
 }
 struct NativeEditDetails: Equatable {
     var kind: NativeItemKind

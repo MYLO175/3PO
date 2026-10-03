@@ -27,6 +27,7 @@ struct CalendarWidgetView: View {
                 Label("Calendar",systemImage:"calendar").font(.title3.weight(.semibold))
                 Spacer()
                 if loading { ProgressView().controlSize(.small) }
+                Button { model.newNativeItem(.event,date:configuration.date) } label: { Image(systemName:"plus") }.buttonStyle(.borderless).help("New event").accessibilityLabel("New event").disabled(model.writing)
                 Picker("Calendar view",selection:$configuration.calendarMode) {
                     Text("Agenda").tag("agenda"); Text("Day").tag("day"); Text("Week").tag("week"); Text("Month").tag("month")
                 }.labelsHidden().frame(maxWidth:115)

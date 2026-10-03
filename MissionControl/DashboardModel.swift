@@ -21,6 +21,7 @@ import EventKit
     var excludedAccounts: Set<String> = [] { didSet { saveFilters() } }
     var selectedMessage: MailMessage?
     var editTarget: NativeEditTarget?
+    var nativeWriteNotice: String?
     var preview = ""
     var previewLoading = false
     var previewError: String?
@@ -66,6 +67,7 @@ import EventKit
     private var summaryPoll: Task<Void, Never>?
     private var briefingPoll: Task<Void, Never>?
     @ObservationIgnored lazy var memoryLearning = MemoryLearningService(container:container)
+    @ObservationIgnored lazy var nativeCreations = NativeCreationStore(container:container)
     @ObservationIgnored lazy var proactive = ProactiveService(container:container)
     var sourceRevision = 0
     @ObservationIgnored lazy var briefings = BriefingService(container: container)
@@ -288,6 +290,35 @@ import EventKit
                 await refreshReminders()
             } catch { writeError = error.localizedDescription; await refreshReminders() }
             writing = false
+        }
+    }
+    func newNativeItem(_ kind: NativeItemKind, date: Date? = nil) {
+        editTarget = .create(NativeCreationRequest(kind:kind,registration:chatGPT.activeID,preferredDate:date))
+    }
+    func reviewDiscovery(_ record: PADiscovery) {
+        guard proactive.visible(record,model:self), record.registration == chatGPT.activeID,
+              let id = UUID(uuidString:record.id), let message = emailSummaries.highlights(self).first(where:{ $0.0.id == record.mailID })?.0 else { return }
+        let request = NativeCreationRequest(id:id,kind:record.kind == "calendar" ? .event : .reminder,registration:record.registration,title:message.subject,notes:"Source: " + message.account + " · " + message.subject + "\n" + record.evidence,discoveryID:record.id,evidence:record.message + "\n\nEmail: " + record.evidence,requiresDateSelection:record.kind == "calendar")
+        editTarget = .create(request)
+    }
+    func createNativeItem(_ request: NativeCreationRequest, baseline: NativeEditDetails, edited: NativeEditDetails, dateSelected: Bool) async throws {
+        guard !sample, !writing, !assistant.busy, request.registration == chatGPT.activeID else { throw ActionFailure.message("Another change or account switch is in progress; reopen the form when ready.") }
+        if request.requiresDateSelection && !dateSelected { throw ActionFailure.message("Choose the event's date and time before creating it.") }
+        if let discovery = request.discoveryID {
+            guard let record = proactive.state.records.first(where:{ $0.id == discovery && $0.registration == request.registration }), proactive.visible(record,model:self) else { throw ActionFailure.message("This suggestion or its enabled source changed; reopen it before creating anything.") }
+        }
+        try NativeCreationRules.validate(request:request,baseline:baseline,edited:edited)
+        try nativeCreations.begin(request)
+        writing = true; writeError = nil; nativeWriteNotice = nil
+        defer { writing = false }
+        do {
+            let receipt = try await eventKit.createItem(request:request,baseline:baseline,edited:edited,scope:proactive.scope(self))
+            try nativeCreations.complete(request,receipt:receipt)
+            nativeWriteNotice = "Created " + receipt.title + " · " + receipt.destination
+            widgetCalendars.invalidate(); await refreshCalendar(); await refreshReminders(); await refreshPAOrientation()
+        } catch {
+            let text = error.localizedDescription + " Check Apple Calendar or Reminders before creating another item; this save will not be repeated automatically."
+            writeError = text; throw ActionFailure.message(text)
         }
     }
     func saveNativeEdit(baseline: NativeEditDetails, edited: NativeEditDetails) async throws {

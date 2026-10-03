@@ -115,6 +115,7 @@ struct AssistantPanel: View {
                                 if let delivery = turn.deliveryID, let record = model.proactive.record(delivery:delivery,model:model) {
                                     HStack {
                                         Button("Source email") { if let message = model.emailSummaries.highlights(model).first(where:{ $0.0.id == record.mailID })?.0 { model.select(message) } }
+                                        Button(record.kind == "calendar" ? "Review event" : "Review reminder") { model.reviewDiscovery(record) }.disabled(model.writing)
                                         Button("Dismiss") { model.proactive.dismiss(record) }
                                     }.controlSize(.small)
                                 }

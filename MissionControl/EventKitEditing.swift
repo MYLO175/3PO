@@ -2,7 +2,7 @@ import Foundation
 import EventKit
 
 extension EventKitService {
-    private func editorDetails(_ item: EKCalendarItem) -> NativeEditDetails {
+    func editorDetails(_ item: EKCalendarItem) -> NativeEditDetails {
         var value = NativeEditDetails(kind:item is EKEvent ? .event : .reminder,itemID:item.calendarItemIdentifier,occurrenceID:item.calendarItemIdentifier,sourceID:item.calendar.calendarIdentifier,title:item.title ?? "",notes:item.notes ?? "",recurring:item.hasRecurrenceRules,writable:item.calendar.allowsContentModifications,modified:item.lastModifiedDate)
         if let event = item as? EKEvent {
             value.occurrenceID = DateRules.occurrenceID(event.eventIdentifier ?? event.calendarItemIdentifier,start:event.startDate)
@@ -27,6 +27,7 @@ extension EventKitService {
     }
     func editSession(_ target: NativeEditTarget) async throws -> NativeEditSession {
         switch target {
+        case .create(let request): return try await creationSession(request)
         case .event(let expected):
             try await access(.event); store.reset()
             let event = try editorEvent(expected.id,sourceID:expected.calendarID,start:expected.start,end:expected.end)
