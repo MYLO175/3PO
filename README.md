@@ -1,6 +1,9 @@
 # Mission Control
 A local native macOS dashboard for Apple Calendar, Reminders and Mail. Apple-source caches remain local; optional nearby weather fetches use Open-Meteo. Stage 2 adds optional subscription-powered chat, email summaries and a saved morning briefing. Personal sources are sent only when their AI controls are enabled.
 
+## Understand the app
+Start with the [Mission Control notebook](docs/README.md) for a readable explanation of memory, tools, topics, background work and next improvements. Git tracks this documentation alongside implementation.
+
 ## Run
 Requires macOS 26+, Xcode and an Apple Development signing identity. The installed app is `~/Applications/Mission Control.app`. Open it and grant Calendar full access, Reminders access and Automation access to Apple Mail when macOS asks. Permissions belong to this app, not helper scripts.
 

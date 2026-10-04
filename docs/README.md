@@ -1,0 +1,22 @@
+# Mission Control notebook
+
+This is the readable explanation of the product: what exists, how it works and what we want to improve. It lives beside the code, so Git records changes to both. You do not need to read code or the development log to understand the app.
+
+Start with **[How it works](HOW_IT_WORKS.md)**. Use **[Next improvements](NEXT_IMPROVEMENTS.md)** to review priorities and **[Decisions](DECISIONS.md)** to understand why the app is organised this way.
+
+| Document | Purpose |
+| --- | --- |
+| [How it works](HOW_IT_WORKS.md) | Current behaviour and the pieces behind it |
+| [Next improvements](NEXT_IMPROVEMENTS.md) | Desired behaviour, gaps and success criteria |
+| [Decisions](DECISIONS.md) | Significant choices and their consequences |
+| [PLAN](../PLAN.md) | Full approved implementation scope |
+| [STATUS](../STATUS.md) | Detailed engineering evidence, checkpoints and unfinished validation |
+| [Repository README](../README.md) | Build/run instructions and integration details |
+
+## Keeping this useful
+
+After a meaningful feature changes, update its explanation here and the relevant roadmap item. Keep CURRENT and PLANNED clearly separate. Record a significant change of direction in Decisions. Put build/test evidence in STATUS, rather than making this notebook a long chronological log.
+
+Git is the history and backup mechanism; these Markdown pages are the explanation. They can be read in Codex, a text editor or Obsidian. Obsidian is optional and is not part of Mission Control's runtime. These files document the software, not your personal life: emails, chats, credentials and private memory remain outside the repository.
+
+Last checked against the implementation: 4 October 2026. An installed build and a passing test are different from a completed live acceptance check; see STATUS for those boundaries.
