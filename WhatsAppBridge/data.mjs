@@ -20,10 +20,20 @@ export function textMessage(m) {
   const body=content?.conversation ?? content?.extendedTextMessage?.text;
   const time=Number(m.messageTimestamp)*1000;
   if(typeof body!=='string'||!body||!Number.isFinite(time)) return;
-  return {id:chat+':'+id,chat,sender:m.pushName||m.key.participant||chat,text:body.slice(0,12000),sentByMe:!!m.key.fromMe,time};
+  // Avoid an unpaired UTF-16 surrogate at the truncation boundary: Swift's JSON
+  // decoder must receive valid text even for very long emoji messages.
+  let text=body.slice(0,12000);
+  if(/[\uD800-\uDBFF]$/.test(text))text=text.slice(0,-1);
+  return {id:chat+':'+id,chat,sender:m.pushName||m.key.participant||chat,text,sentByMe:!!m.key.fromMe,time};
 }
 export function boundedMessages(messages) {
-  return Object.fromEntries(Object.entries(messages).sort((a,b)=>b[1].time-a[1].time).slice(0,2000));
+  const result=[];let bytes=2;
+  for(const entry of Object.entries(messages).sort((a,b)=>b[1].time-a[1].time || (a[0]<b[0]?-1:a[0]>b[0]?1:0)).slice(0,2000)){
+    const size=Buffer.byteLength(JSON.stringify(entry))+1;
+    if(bytes+size>12_000_000)break;
+    result.push(entry);bytes+=size;
+  }
+  return Object.fromEntries(result);
 }
 export function applyMessageUpdates(messages,updates) {
   const result={...messages};
