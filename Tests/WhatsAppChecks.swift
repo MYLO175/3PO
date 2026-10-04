@@ -1,6 +1,12 @@
 import Foundation
 @main struct Checks {
     static func main() throws {
+        let chats=[WhatsAppChat(id:"dad-lid",name:"Fixture parent",group:false),WhatsAppChat(id:"family",name:"Fixture family",group:true)]
+        let selected=WhatsAppReadRules.selectedChats(chats,selected:["dad-lid","absent"])
+        assert(selected.count == 2 && Set(selected.map(\.id)) == ["dad-lid","absent"])
+        assert(selected.first(where:{$0.id == "dad-lid"})?.name == "Fixture parent")
+        assert(selected.first(where:{$0.id == "absent"})?.name == "Chat not currently available")
+        assert(WhatsAppReadRules.selectedChats(chats,selected:[]).isEmpty)
         let start=Date(timeIntervalSince1970:100),end=Date(timeIntervalSince1970:200)
         let messages=(0..<65).map { i in WhatsAppReadMessage(id:"m\(i)",chat:i==0 ? "excluded" : "allowed",sender:"Fixture sender",text:"meeting notes",sentByMe:false,time:Double(100+i)*1000) }
         let found=WhatsAppReadRules.search(messages,allowed:["allowed"],chat:nil,query:"MEETING sender",start:start,end:end,offset:0)

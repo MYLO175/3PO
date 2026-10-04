@@ -41,6 +41,11 @@ enum WhatsAppReadRules {
         guard let key=accessKey(registration:registration,linkedIdentity:linkedIdentity) else { return .init() }
         return saved[key] ?? .init()
     }
+    static func selectedChats(_ chats:[WhatsAppChat],selected:Set<String>)->[WhatsAppChat] {
+        let known=Dictionary(chats.map { ($0.id,$0) },uniquingKeysWith:{first,_ in first})
+        return selected.map { known[$0] ?? WhatsAppChat(id:$0,name:"Chat not currently available",group:$0.hasSuffix("@g.us")) }
+            .sorted { $0.name == $1.name ? $0.id < $1.id : $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
     static func validSearchRange(start: Date, end: Date, calendar: Calendar = .current) -> Bool {
         guard start < end, calendar.startOfDay(for:start) == start, calendar.startOfDay(for:end) == end,
               let days=calendar.dateComponents([.day],from:start,to:end).day else { return false }
@@ -104,5 +109,7 @@ struct WhatsAppReadEvent: Decodable {
     var coverage: String?
     var chats: [WhatsAppChat]?
     var identity: String?
+    var namesBusy:Bool?
+    var namesStatus:String?
     var revoked: Bool?
 }

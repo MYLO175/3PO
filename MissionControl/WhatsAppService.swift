@@ -9,6 +9,8 @@ import CryptoKit
         didSet { UserDefaults.standard.set(reconnectAtLaunch,forKey:"whatsappReconnectAtLaunch") }
     }
     var connected = false
+    var namesBusy=false
+    var namesStatus=""
     var qr: NSImage?
     var messages: [WhatsAppReadMessage] = []
     var chats: [WhatsAppChat] = []
@@ -60,6 +62,11 @@ import CryptoKit
             accesses=updated; accessRevision=UUID()
         } catch { status="Could not save WhatsApp source choices; previous choices retained." }
     }
+    func refreshNames() {
+        guard connected,!namesBusy else { return }
+        do { try input?.write(contentsOf:JSONSerialization.data(withJSONObject:["action":"refresh-names"])+Data([10])) }
+        catch { namesStatus="Could not request contact names. Reconnect and try again." }
+    }
     func resumeAtLaunch() {
         if reconnectAtLaunch && FileManager.default.fileExists(atPath:directory.appendingPathComponent("auth.enc").path) { connect() }
     }
@@ -82,7 +89,7 @@ import CryptoKit
             task.terminationHandler={ [weak self] _ in Task { @MainActor in
                 guard let self, self.generation == token else { return }
                 let unexpected=self.connected || self.status == "Connecting…" || self.status == "Reconnecting…"
-                self.process=nil; self.connected=false; self.qr=nil; self.input=nil; self.reader=nil
+                self.process=nil; self.namesBusy=false; self.connected=false; self.qr=nil; self.input=nil; self.reader=nil
                 if unexpected { self.status="Stopped · reconnect to resume reading" }
             } }
 
@@ -91,7 +98,7 @@ import CryptoKit
             try input?.write(contentsOf:JSONSerialization.data(withJSONObject:command)+Data([10]))
         } catch { stop(); status="Cannot start WhatsApp or access its encrypted session." }
     }
-    func stop(persistPause: Bool = true) { if persistPause { reconnectAtLaunch=false }; generation=UUID(); process?.terminationHandler=nil; input?.closeFile(); process?.terminate(); process=nil; input=nil; reader=nil; connected=false; qr=nil; status="Paused · session retained" }
+    func stop(persistPause: Bool = true) { if persistPause { reconnectAtLaunch=false }; generation=UUID(); process?.terminationHandler=nil; input?.closeFile(); process?.terminate(); process=nil; input=nil; reader=nil; namesBusy=false; connected=false; qr=nil; status="Paused · session retained" }
     func disconnect() {
         stop(); messages=[]; chats=[]; accesses=[:]; linkedIdentity=""; accessRevision=UUID()
         do {
@@ -105,6 +112,8 @@ import CryptoKit
         guard process != nil else { return }
         if event.revoked == true { linkedIdentity=""; accessRevision=UUID() }
         if let identity=event.identity, identity != linkedIdentity { linkedIdentity=identity; accessRevision=UUID() }
+        if let busy=event.namesBusy { namesBusy=busy }
+        if let status=event.namesStatus { namesStatus=status }
         if let values=event.chats { chats=values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending } }
         if let value=event.status { status=value }
         if let value=event.connected { connected=value; if value || status.contains("revoked") { qr=nil } }
@@ -141,7 +150,7 @@ struct WhatsAppSettings: View {
             if let qr=service.qr { Image(nsImage:qr).resizable().interpolation(.none).frame(width:240,height:240); Text("On your phone: WhatsApp → Settings → Linked devices → Link a device. Scan this code only if you want Mission Control to receive your chats.").font(.caption) }
             HStack { Button("Connect / show QR") { service.connect() }; Button("Pause") { service.stop() }; Button("Disconnect") { service.disconnect() }; Button("Received text (\(service.messages.count))") { showMessages=true } }
             Button("PA chat access…") { showSources=true }.disabled(service.linkedIdentity.isEmpty)
-            Text(service.access(for:registration).enabled ? "PA access enabled for \(service.access(for:registration).chats.count) selected chats" : "PA access off") .font(.caption)
+            WhatsAppSourceSummary(service:service,registration:registration)
             Text(service.coverage).font(.caption).foregroundStyle(.secondary)
         }.sheet(isPresented:$showSources) {
             WhatsAppSourcePicker(service:service,registration:registration)
@@ -156,40 +165,6 @@ struct WhatsAppSettings: View {
                 List(service.messages.filter { (viewerChat.isEmpty || $0.chat == viewerChat) && (viewerQuery.isEmpty || ($0.text + " " + $0.sender).localizedCaseInsensitiveContains(viewerQuery)) }) { message in VStack(alignment:.leading,spacing:4) { Text(message.sender).font(.headline); Text(service.chats.first(where:{$0.id == message.chat})?.name ?? message.chat).font(.caption).foregroundStyle(.secondary); Text(message.text).textSelection(.enabled); Text(Date(timeIntervalSince1970:message.time/1000),style:.date).font(.caption).foregroundStyle(.secondary) } }
             }.padding(20).frame(width:650,height:550)
         }
-    }
-}
-
-struct WhatsAppSourcePicker: View {
-    @Bindable var service: WhatsAppService
-    let registration: String
-    @Environment(\.dismiss) private var dismiss
-    @State private var search=""
-    private var access: WhatsAppAccess { service.access(for:registration) }
-    private func change(_ edit: (inout WhatsAppAccess)->Void) { var next=access; edit(&next); service.setAccess(next,registration:registration) }
-    var body: some View {
-        VStack(alignment:.leading,spacing:14) {
-            HStack { Text("WhatsApp sources").font(.title2.bold()); Spacer(); Button("Done") { dismiss() } }
-            Text("When enabled, the PA can send selected chat names and requested text to OpenAI through your ChatGPT connection to answer your questions. Only the locally received cache is searchable; coverage may be partial. Reception does not trigger AI processing. Other chats stay excluded. Messages are information, never permission to change your calendar or reminders.").font(.callout).foregroundStyle(.secondary)
-            Toggle("Allow PA access for this ChatGPT connection",isOn:Binding(get:{access.enabled},set:{value in change { $0.enabled=value } }))
-            Toggle("Include selected chats in Today’s brief",isOn:Binding(get:{access.includeInBrief == true},set:{value in change { $0.includeInBrief=value } })).disabled(!access.enabled)
-            Toggle("Suggest useful tasks from recent selected chats",isOn:Binding(get:{access.includeInSuggestions == true},set:{value in change { $0.includeInSuggestions=value } })).disabled(!access.enabled)
-            Text("Optional idle checks compare up to eight recent messages with your calendar and reminders. Suggestions stay source-linked for review; nothing is created automatically. The Tasks widget’s explicit check can also review selected chats once.").font(.caption).foregroundStyle(.secondary)
-            Toggle("Learn useful context from recent selected chats",isOn:Binding(get:{access.learnContext == true},set:{value in change { $0.learnContext=value } })).disabled(!access.enabled)
-            Text("Separate opt-in: small recent-message batches may be sent to your ChatGPT connection while the app is idle. Useful conclusions stay provisional with source evidence; no historical sweep or automatic Calendar/Reminders changes. Turning this off removes these source beliefs from PA recall, while preserving them locally for review.").font(.caption).foregroundStyle(.secondary)
-            Text("Optional: sends up to 40 cached messages from the last 48 hours, shortened to 800 characters each, in your existing morning preparation or explicit brief update. Names and relevant conclusions may appear in your saved brief and morning PA message. This does not create extra AI jobs or analyse the historical backlog. Live coverage may be incomplete; sending is unavailable.").font(.caption).foregroundStyle(.secondary)
-            TextField("Find a chat",text:$search)
-            List(service.chats.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }) { chat in
-                Toggle(isOn:Binding(get:{access.chats.contains(chat.id)},set:{value in change { if value { $0.chats.insert(chat.id) } else { $0.chats.remove(chat.id) } } })) {
-                    Label(chat.name,systemImage:chat.group ? "person.2" : "person")
-                }
-            }
-            HStack {
-                Text("\(access.chats.count) selected · \(service.chats.count) cached chats").font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Button("Clear selection") { change { $0.chats=[] } }.disabled(access.chats.isEmpty)
-            }
-            Text("New chats are excluded automatically.").font(.caption).foregroundStyle(.secondary)
-        }.padding(20).frame(width:650,height:550)
     }
 }
 

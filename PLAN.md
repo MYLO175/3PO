@@ -179,3 +179,7 @@ Refine Date & clock with size-aware adaptive layout, Digital/Calendar alternativ
 
 ## 4 October — Weather and reliable brief refresh
 User requested a dedicated attractive Weather widget and diagnosis of a missing brief after refresh. Add the optional theme-aware, fitted forecast widget without replacing saved layouts; share existing permission/cache. Preserve current-source privacy filtering, fix nondeterministic structured-memory snapshot comparison, expose explicit refresh progress/refusals, and wait for running background work without duplicate inference. Manual preparation is independent of the optional morning schedule. Validate forecast midnight rollover/persistence, unchanged-vs-changed memory snapshots and live installed brief update separately from fictional visual fixtures.
+
+
+## 4 October — readable WhatsApp sources
+User requested missing contact names (including their father) and a neat view of selected sources. Keep a priority-aware encrypted display directory with explicit phone/linked-address aliases and recover existing contact metadata without message-history reads. Preserve exact selected IDs and all PA source controls. Add named source summary, Selected/All views and cache-coverage captions; validate identity isolation, encryption and live lookup separately from selection write tests.

@@ -26,7 +26,12 @@ async function exerciseReader(switchAccount=false) {
       const index=++count,ev=new EventEmitter();
       const identity=index===2&&${switchAccount}?'other-fixture:1@s.whatsapp.net':'fixture:1@s.whatsapp.net';
       config.auth.creds.me.id=identity;
-      const socket={ev,user:{id:identity},end(){},groupMetadata:async()=>({})};
+      const socket={ev,user:{id:identity},end(){},groupMetadata:async()=>({}),authState:config.auth,
+        appStatePatchMutex:{mutex:async fn=>fn()},resyncAppState:async(collections,initial)=>{
+          if(JSON.stringify(collections)!=='["critical_unblock_low"]'||initial!==false)throw Error('Unexpected metadata scope');
+          const changed=index===2&&${switchAccount};
+          ev.emit('contacts.upsert',[{id:changed?'442222@s.whatsapp.net':'441111@s.whatsapp.net',lid:changed?'888@lid':'777@lid',name:changed?'Different fixture':'Fixture parent'}]);
+        }};
       setTimeout(async()=>{
         ev.emit('connection.update',{connection:'open'});
         ev.emit('messages.upsert',{messages:[message('a'),message('b')]});
@@ -85,6 +90,12 @@ async function exerciseReader(switchAccount=false) {
     assert.equal(auth.keys['fixture-key'].obsolete,undefined);
     assert.equal(auth.creds.me.id,switchAccount?'other-fixture:1@s.whatsapp.net':'fixture:1@s.whatsapp.net');
     assert.equal(events.some(event=>event.status?.includes('failed')),false);
+    const directory=JSON.parse(open(readFileSync(join(root,'storage/names.enc')),key));
+    assert.equal(directory.refreshed,true);
+    assert.equal(directory.names[switchAccount?'442222@s.whatsapp.net':'441111@s.whatsapp.net'].name,switchAccount?'Different fixture':'Fixture parent');
+    if(switchAccount)assert.equal(directory.names['441111@s.whatsapp.net'],undefined);
+    assert.equal(events.some(event=>event.namesBusy===true),true);
+    assert.equal(events.some(event=>event.namesBusy===false),true);
   } finally {
     clearTimeout(timer);child.kill();rmSync(root,{recursive:true,force:true});
   }
