@@ -231,7 +231,7 @@ import Observation
         guard !history.isEmpty else { busy = false; error = "This message could not fit safely in the PA request. Please split it into smaller messages."; return }
         let memorySnapshot = sharedMemoryContext(conversationID:contextID,query:prompt), topicFocus = topic?.focus ?? "", registration = connection.activeID
         let memoryRevision = memory.revision
-        let whatsappScope = model.whatsapp.accessRevision
+        let whatsappScope = model.whatsapp.scope(for:registration)
         let weatherScope = model.weather.scope
         let selectedModel = connection.selectedModel, capturedPreferences = preferences
         let sourceEnabled = contextEnabled, calendars = excludedCalendars, lists = excludedLists, accounts = excludedAccounts
@@ -258,7 +258,7 @@ import Observation
             var expectedMemory = memoryRevision
             let expectedWeather = weatherScope
             @MainActor func valid() -> Bool {
-                registration == connection.activeID && selectedModel == connection.selectedModel && capturedPreferences == preferences && expectedMemory == memory.revision && expectedWeather == model.weather.scope && whatsappScope == model.whatsapp.accessRevision && topicFocus == (self.conversation(contextID)?.focus ?? "") && sourceEnabled == contextEnabled && calendars == excludedCalendars && lists == excludedLists && accounts == excludedAccounts
+                registration == connection.activeID && selectedModel == connection.selectedModel && capturedPreferences == preferences && expectedMemory == memory.revision && expectedWeather == model.weather.scope && whatsappScope == model.whatsapp.scope(for:connection.activeID) && topicFocus == (self.conversation(contextID)?.focus ?? "") && sourceEnabled == contextEnabled && calendars == excludedCalendars && lists == excludedLists && accounts == excludedAccounts
             }
             @MainActor func setResponse(_ text: String, completed: Bool) {
                 if let c = allConversations.firstIndex(where:{ $0.id == id }), let t = allConversations[c].turns.firstIndex(where:{ $0.id == response.id }) {

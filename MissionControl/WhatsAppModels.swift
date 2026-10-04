@@ -25,7 +25,25 @@ struct WhatsAppBriefSnapshot {
     let start: Date
     let end: Date
 }
+struct WhatsAppSourceScope: Equatable {
+    let registration: String
+    let linkedIdentity: String
+    let revision: UUID
+}
 enum WhatsAppReadRules {
+    static func accessKey(registration: String, linkedIdentity: String) -> String? {
+        guard !registration.isEmpty, !linkedIdentity.isEmpty else { return nil }
+        return registration + ":" + linkedIdentity
+    }
+    static func access(_ saved: [String:WhatsAppAccess], registration: String, linkedIdentity: String) -> WhatsAppAccess {
+        guard let key=accessKey(registration:registration,linkedIdentity:linkedIdentity) else { return .init() }
+        return saved[key] ?? .init()
+    }
+    static func validSearchRange(start: Date, end: Date, calendar: Calendar = .current) -> Bool {
+        guard start < end, calendar.startOfDay(for:start) == start, calendar.startOfDay(for:end) == end,
+              let days=calendar.dateComponents([.day],from:start,to:end).day else { return false }
+        return (1...90).contains(days)
+    }
     // A bounded snapshot for the existing daily job, never a historical indexing pass.
     static func brief(_ messages: [WhatsAppReadMessage], access: WhatsAppAccess, now: Date) -> WhatsAppBriefSnapshot {
         let start=now.addingTimeInterval(-48*3600)
@@ -51,4 +69,5 @@ struct WhatsAppReadEvent: Decodable {
     var coverage: String?
     var chats: [WhatsAppChat]?
     var identity: String?
+    var revoked: Bool?
 }

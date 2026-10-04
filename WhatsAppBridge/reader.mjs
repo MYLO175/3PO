@@ -73,7 +73,7 @@ async function connect() {
         finally{clearTimeout(timeout);}
       }
     }
-    if(update.connection==='close'&&!stopping){const code=update.lastDisconnect?.error?.output?.statusCode;if(code===DisconnectReason.loggedOut){emit({type:'status',status:'Session revoked. Disconnect, then link again.',connected:false});}else if(retry++<3){emit({type:'status',status:'Reconnecting…',connected:false});clearTimeout(timer);timer=setTimeout(()=>{if(isCurrent())connect().catch(fail);},2000*retry);}else emit({type:'status',status:'Connection stopped after three retries. Reconnect manually.',connected:false});}
+    if(update.connection==='close'&&!stopping){const code=update.lastDisconnect?.error?.output?.statusCode;if(code===DisconnectReason.loggedOut){emit({type:'status',status:'Session revoked. Disconnect, then link again.',connected:false,revoked:true});}else if(retry++<3){emit({type:'status',status:'Reconnecting…',connected:false});clearTimeout(timer);timer=setTimeout(()=>{if(isCurrent())connect().catch(fail);},2000*retry);}else emit({type:'status',status:'Connection stopped after three retries. Reconnect manually.',connected:false});}
   });
 }
 const fail=()=>emit({type:'status',status:'WhatsApp connection failed. Reconnect or relink the device.',connected:false});

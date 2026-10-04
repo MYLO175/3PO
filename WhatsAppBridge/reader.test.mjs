@@ -8,7 +8,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { open } from './data.mjs';
 
-test('actual reader rejects old history, socket key writes and late QR output with an offline transport',async()=>{
+async function exerciseReader(switchAccount=false) {
   const root=mkdtempSync(join(tmpdir(),'missioncontrol-wa-fixture-'));
   const key=randomBytes(32),events=[];
   // Only the two transport/QR imports are replaced. The actual reader, encrypted
@@ -24,7 +24,9 @@ test('actual reader rejects old history, socket key writes and late QR output wi
     const message=chat=>({key:{remoteJid:chat,id:'same'},messageTimestamp:100,pushName:'Fixture',message:{conversation:'Original'}});
     export default function makeSocket(config){
       const index=++count,ev=new EventEmitter();
-      const socket={ev,user:{id:'fixture:1@s.whatsapp.net'},end(){},groupMetadata:async()=>({})};
+      const identity=index===2&&${switchAccount}?'other-fixture:1@s.whatsapp.net':'fixture:1@s.whatsapp.net';
+      config.auth.creds.me.id=identity;
+      const socket={ev,user:{id:identity},end(){},groupMetadata:async()=>({})};
       setTimeout(async()=>{
         ev.emit('connection.update',{connection:'open'});
         ev.emit('messages.upsert',{messages:[message('a'),message('b')]});
@@ -74,14 +76,19 @@ test('actual reader rejects old history, socket key writes and late QR output wi
     child.stdin.write(JSON.stringify({action:'start',directory:join(root,'storage'),key:key.toString('base64')})+'\n');
     await finished;
     const final=events.filter(event=>event.type==='messages').at(-1);
-    assert.deepEqual(final.messages.map(message=>[message.id,message.text]),[['a:same','Corrected']]);
+    assert.deepEqual(final.messages.map(message=>[message.id,message.text]),switchAccount?[['a:same','Original'],['b:same','Original']]:[['a:same','Corrected']]);
+    const journal=JSON.parse(open(readFileSync(join(root,'storage/revisions.enc')),key));
+    if(switchAccount)assert.equal(Object.keys(journal.entries).length,0);
     assert.equal(events.some(event=>event.type==='qr'),false);
     const auth=JSON.parse(open(readFileSync(join(root,'storage/auth.enc')),key));
     assert.equal(auth.keys['fixture-key'].current,'second socket');
     assert.equal(auth.keys['fixture-key'].obsolete,undefined);
-    assert.equal(auth.creds.me.id,'fixture:1@s.whatsapp.net');
+    assert.equal(auth.creds.me.id,switchAccount?'other-fixture:1@s.whatsapp.net':'fixture:1@s.whatsapp.net');
     assert.equal(events.some(event=>event.status?.includes('failed')),false);
   } finally {
     clearTimeout(timer);child.kill();rmSync(root,{recursive:true,force:true});
   }
-});
+
+}
+test('actual reader rejects old history, socket key writes and late QR output with an offline transport',()=>exerciseReader());
+test('replacement linked identity clears old message cache and replay journal',()=>exerciseReader(true));

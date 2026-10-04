@@ -42,12 +42,13 @@ import CryptoKit
         }
     }
     func access(for registration: String) -> WhatsAppAccess {
-        guard !linkedIdentity.isEmpty else { return .init() }
-        return accesses[registration + ":" + linkedIdentity] ?? .init()
+        WhatsAppReadRules.access(accesses,registration:registration,linkedIdentity:linkedIdentity)
+    }
+    func scope(for registration: String) -> WhatsAppSourceScope {
+        .init(registration:registration,linkedIdentity:linkedIdentity,revision:accessRevision)
     }
     func setAccess(_ access: WhatsAppAccess, registration: String) {
-        guard !linkedIdentity.isEmpty else { return }
-        let id=registration + ":" + linkedIdentity
+        guard let id=WhatsAppReadRules.accessKey(registration:registration,linkedIdentity:linkedIdentity) else { return }
         var updated=accesses; updated[id]=access
         do {
             try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
@@ -69,6 +70,9 @@ import CryptoKit
         guard let node=[root.appendingPathComponent("Runtime/node").path,"/usr/local/bin/node","/opt/homebrew/bin/node"].first(where:{ FileManager.default.isExecutableFile(atPath:$0) }) else { status="This experimental connector requires Node.js 20 or later installed on this Mac."; return }
         do {
             let secret=try key(), task=Process(), incoming=Pipe(), outgoing=Pipe()
+            // Cached text arriving from the helper is not AI-eligible until this
+            // process has authenticated its own linked identity.
+            linkedIdentity=""; accessRevision=UUID()
             let token=UUID(); generation=token
             task.environment=ProcessInfo.processInfo.environment.filter { !["NODE_OPTIONS","NODE_PATH","NODE_TLS_REJECT_UNAUTHORIZED","SSLKEYLOGFILE"].contains($0.key) && !$0.key.hasPrefix("DYLD_") }
             task.executableURL=URL(fileURLWithPath:node); task.arguments=[root.appendingPathComponent("reader.mjs").path]
@@ -99,6 +103,7 @@ import CryptoKit
     }
     private func receive(_ event: WhatsAppReadEvent) {
         guard process != nil else { return }
+        if event.revoked == true { linkedIdentity=""; accessRevision=UUID() }
         if let identity=event.identity, identity != linkedIdentity { linkedIdentity=identity; accessRevision=UUID() }
         if let values=event.chats { chats=values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending } }
         if let value=event.status { status=value }
