@@ -1,6 +1,6 @@
 import Foundation
 
-struct WhatsAppReadMessage: Codable, Identifiable {
+struct WhatsAppReadMessage: Codable, Identifiable, Equatable {
     let id: String
     let chat: String
     let sender: String
@@ -51,13 +51,46 @@ enum WhatsAppReadRules {
             .sorted { $0.time == $1.time ? $0.id < $1.id : $0.time > $1.time }
         return .init(messages:Array(matches.prefix(40)),total:matches.count,start:start,end:now)
     }
-    static func search(_ messages: [WhatsAppReadMessage], allowed: Set<String>, chat: String?, query: String, start: Date, end: Date, offset: Int) -> (page: [WhatsAppReadMessage], total: Int) {
+    static func matches(_ messages: [WhatsAppReadMessage], allowed: Set<String>, chat: String?, query: String, start: Date, end: Date) -> [WhatsAppReadMessage] {
         let terms = query.lowercased().split(whereSeparator: { $0.isWhitespace }).map(String.init)
-        let matches = messages.filter { item in
+        return messages.filter { item in
             let date=Date(timeIntervalSince1970:item.time/1000)
             return allowed.contains(item.chat) && (chat == nil || chat == item.chat) && date >= start && date < end && terms.allSatisfy { (item.text + " " + item.sender).lowercased().contains($0) }
         }.sorted { $0.time == $1.time ? $0.id < $1.id : $0.time > $1.time }
+    }
+    static func search(_ messages: [WhatsAppReadMessage], allowed: Set<String>, chat: String?, query: String, start: Date, end: Date, offset: Int) -> (page: [WhatsAppReadMessage], total: Int) {
+        let found=matches(messages,allowed:allowed,chat:chat,query:query,start:start,end:end)
+        return (Array(found.dropFirst(max(0,offset)).prefix(30)),found.count)
+    }
+}
+
+struct WhatsAppSearchCursor {
+    let allowed: Set<String>
+    let chat: String?
+    let query: String
+    let start: Date
+    let end: Date
+    let fetched: Date
+    private let matches: [WhatsAppReadMessage]
+    init(messages: [WhatsAppReadMessage], allowed: Set<String>, chat: String?, query: String, start: Date, end: Date, fetched: Date = .now) {
+        self.allowed=allowed;self.chat=chat;self.query=query.lowercased().split(whereSeparator: { $0.isWhitespace }).joined(separator:" ")
+        self.start=start;self.end=end;self.fetched=fetched
+        matches=WhatsAppReadRules.matches(messages,allowed:allowed,chat:chat,query:query,start:start,end:end)
+    }
+    func page(messages: [WhatsAppReadMessage], allowed: Set<String>, chat: String?, query: String, start: Date, end: Date, offset: Int) throws -> (page: [WhatsAppReadMessage], total: Int) {
+        guard allowed == self.allowed, chat == self.chat, query.lowercased().split(whereSeparator: { $0.isWhitespace }).joined(separator:" ") == self.query, start == self.start, end == self.end else { throw WhatsAppSearchFailure.restart }
+        let fresh=WhatsAppReadRules.matches(messages,allowed:allowed,chat:chat,query:query,start:start,end:end)
+        guard fresh == matches else { throw WhatsAppSearchFailure.changed }
         return (Array(matches.dropFirst(max(0,offset)).prefix(30)),matches.count)
+    }
+}
+enum WhatsAppSearchFailure: LocalizedError {
+    case restart, changed
+    var errorDescription: String? {
+        switch self {
+        case .restart: return "Start this WhatsApp search at page 0 in the current turn before requesting later pages."
+        case .changed: return "The relevant WhatsApp cache changed during this search. Start again at page 0; previous results may be outdated."
+        }
     }
 }
 

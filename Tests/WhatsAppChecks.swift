@@ -50,6 +50,23 @@ import Foundation
         }
         let revoked=try JSONDecoder().decode(WhatsAppReadEvent.self,from:Data("{\"connected\":false,\"revoked\":true}".utf8))
         assert(revoked.revoked==true)
+        let cursor=WhatsAppSearchCursor(messages:messages,allowed:["allowed"],chat:nil,query:"MEETING sender",start:start,end:end,fetched:start)
+        let page1=try cursor.page(messages:messages,allowed:["allowed"],chat:nil,query:" meeting   SENDER ",start:start,end:end,offset:30)
+        assert(page1.page.map(\.id)==next.page.map(\.id) && cursor.fetched==start)
+        func rejected(_ body: () throws -> Void) {
+            do { try body(); assertionFailure("Changed WhatsApp search must be rejected") }
+            catch { assert(error is WhatsAppSearchFailure) }
+        }
+        let arrival=WhatsAppReadMessage(id:"new",chat:"allowed",sender:"Fixture sender",text:"meeting notes",sentByMe:false,time:165000)
+        for changed in [messages+[arrival],Array(messages.dropLast()),messages.map { item in item.id=="m31" ? WhatsAppReadMessage(id:item.id,chat:item.chat,sender:item.sender,text:"changed meeting notes",sentByMe:item.sentByMe,time:item.time) : item }] {
+            rejected { _=try cursor.page(messages:changed,allowed:["allowed"],chat:nil,query:"meeting sender",start:start,end:end,offset:30) }
+        }
+        rejected { _=try cursor.page(messages:messages,allowed:[],chat:nil,query:"meeting sender",start:start,end:end,offset:30) }
+        rejected { _=try cursor.page(messages:messages,allowed:["allowed"],chat:"allowed",query:"meeting sender",start:start,end:end,offset:30) }
+        rejected { _=try cursor.page(messages:messages,allowed:["allowed"],chat:nil,query:"different",start:start,end:end,offset:30) }
+        let unrelated=WhatsAppReadMessage(id:"unselected",chat:"excluded",sender:"Fixture sender",text:"meeting notes",sentByMe:false,time:165000)
+        let unchanged=try cursor.page(messages:messages+[unrelated],allowed:["allowed"],chat:nil,query:"meeting sender",start:start,end:end,offset:30)
+        assert(unchanged.page.map(\.id)==page1.page.map(\.id))
         print("WhatsApp scope, date bounds, pagination and defaults checks passed")
     }
 }
