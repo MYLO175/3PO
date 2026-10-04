@@ -5,6 +5,7 @@ export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 if [[ ! -d WhatsAppBridge/node_modules ]]; then
   npm --cache /tmp/missioncontrol-npm-cache ci --ignore-scripts --prefix WhatsAppBridge
 fi
+python3 scripts/patch-baileys-readonly.py
 python3 scripts/package-whatsapp-runtime.py
 python3 scripts/build-icon.py
 python3 scripts/generate-project.py

@@ -82,4 +82,9 @@ test('asynchronous results are discarded after connection replacement or stoppin
   assert.equal(prepared,false);
   await deliverIfCurrent(()=>true,async()=> 'current QR',value=>delivered.push(value));
   assert.deepEqual(delivered,['current QR']);
+  let reject;
+  current=true;
+  const failed=deliverIfCurrent(()=>current,()=>new Promise((_,fail)=>{reject=fail}),value=>delivered.push(value));
+  current=false;reject(Error('obsolete failure'));await failed;
+  await assert.rejects(deliverIfCurrent(()=>true,async()=>{throw Error('current failure')},()=>{}),/current failure/);
 });

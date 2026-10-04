@@ -84,6 +84,10 @@ export class ReceivedTextCache {
 
 export async function deliverIfCurrent(isCurrent, prepare, deliver) {
   if (!isCurrent()) return;
-  const value = await prepare();
-  if (isCurrent()) deliver(value);
+  try {
+    const value = await prepare();
+    if (isCurrent()) deliver(value);
+  } catch (error) {
+    if (isCurrent()) throw error;
+  }
 }
