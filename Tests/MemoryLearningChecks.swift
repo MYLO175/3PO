@@ -15,8 +15,22 @@ import Foundation
         precondition(input.contains("unknown") && input.contains("dateKnown"))
         let good = "{\"memories\":[{\"turnID\":\"12\",\"text\":\"Prefers two weeks of advance notice.\",\"kind\":\"preference\",\"evidence\":\"two weeks of advance notice\"}]}"
         let valid = try MemoryLearningRules.decode(good,turns:batch); precondition(valid.count == 1)
+        let introduction=MemoryLearningTurn(id:"intro",text:"I study Materials Engineering. My family chat is called The Nest.",created:now)
+        let parts="{\"memories\":[{\"turnID\":\"intro\",\"text\":\"Studies Materials Engineering\",\"kind\":\"context\",\"evidence\":\"I study Materials Engineering\"},{\"turnID\":\"intro\",\"text\":\"Family chat is The Nest\",\"kind\":\"context\",\"evidence\":\"My family chat is called The Nest\"}]}"
+        let multiple=try MemoryLearningRules.decode(parts,turns:[introduction]);precondition(multiple.count == 2 && multiple.allSatisfy{$0.turnID == "intro"})
         func encode(_ values: [LearnedMemory]) throws -> String {
-            String(data:try JSONSerialization.data(withJSONObject:["memories":values.map { ["turnID":$0.turnID,"text":$0.text,"kind":$0.kind.rawValue,"evidence":$0.evidence] }]),encoding:.utf8)!
+            String(data:try JSONSerialization.data(withJSONObject:["memories":try JSONSerialization.jsonObject(with:JSONEncoder().encode(values))]),encoding:.utf8)!
+        }
+        var classified=multiple[0];classified.organisation = .init(areas:[.studies],connections:[],selfName:nil)
+        let typed=try MemoryLearningRules.decode(encode([classified]),turns:[introduction]);precondition(typed[0].organisation?.areas == [.studies])
+        for metadata in [
+            LifeMemoryOrganisation(areas:[.studies],connections:[.init(connection:"0",subjectKind:.person,objectKind:.course,subjectIsSelf:true,objectIsSelf:false)],selfName:nil),
+            LifeMemoryOrganisation(areas:[.studies],connections:[],selfName:"An invented name"),
+            LifeMemoryOrganisation(areas:[.studies],connections:[],selfName:nil,manual:true)
+        ] {
+            classified.organisation=metadata
+            let retained=try MemoryLearningRules.decode(encode([classified]),turns:[introduction])
+            precondition(retained.count == 1 && retained[0].text == classified.text && retained[0].evidence == classified.evidence && retained[0].organisation == nil,"Unsupported navigation must not discard a faithful fact")
         }
         let excessive = try encode((12..<17).map { LearnedMemory(turnID:String($0),text:"Supported",kind:.preference,evidence:"two weeks of advance notice") })
         let duplicate = try encode([valid[0],valid[0]])

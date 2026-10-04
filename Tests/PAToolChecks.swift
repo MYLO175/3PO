@@ -23,9 +23,14 @@ import Foundation
         var rejected = false
         do { _ = try PAToolProtocol.arguments(.init(id:"bad",name:"change_reminder",namespace:"pa",arguments:String(data:try JSONSerialization.data(withJSONObject:bad),encoding:.utf8)!)) } catch { rejected = true }
         assert(rejected)
-        var context: [String:Any] = ["text":"The Zoo is my family chat", "kind":"context", "scope":"shared", "certainty":"stated", "durability":"stable", "evidence":"my family chat is The Zoo", "connections":[["subject":"Me","relation":"family chat","object":"The Zoo","evidence":"my family chat is The Zoo"]]]
+        var context: [String:Any] = ["text":"The Zoo is my family chat", "kind":"context", "scope":"shared", "certainty":"stated", "durability":"stable", "evidence":"my family chat is The Zoo", "connections":[["subject":"Me","relation":"family chat","object":"The Zoo","evidence":"my family chat is The Zoo"]],"organisation":NSNull()]
         func contextCall(_ value:[String:Any]) throws -> PAFunctionCall { .init(id:"memory",name:"remember_context",namespace:"pa",arguments:String(data:try JSONSerialization.data(withJSONObject:value),encoding:.utf8)!) }
         _ = try PAToolProtocol.arguments(contextCall(context))
+        context["organisation"]=["areas":["people"],"connections":[["connection":"0","subjectKind":"person","objectKind":"group","subjectIsSelf":true,"objectIsSelf":false]],"selfName":NSNull()]
+        _ = try PAToolProtocol.arguments(contextCall(context))
+        var badOrganisation=context;badOrganisation["organisation"]=["areas":["execute"],"connections":[],"selfName":NSNull()]
+        var organisationRejected=false
+        do { _=try PAToolProtocol.arguments(contextCall(badOrganisation)) } catch { organisationRejected=true };assert(organisationRejected)
         context["connections"] = [["subject":"Me","relation":"family chat","object":"The Zoo","evidence":"my family chat is The Zoo","unknown":"bad"]]
         var nestedRejected=false
         do { _ = try PAToolProtocol.arguments(contextCall(context)) } catch { nestedRejected=true }

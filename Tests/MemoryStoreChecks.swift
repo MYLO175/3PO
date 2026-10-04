@@ -40,6 +40,44 @@ import SwiftData
         precondition(store.context("scope-account",conversationID:topic).count == 2)
         precondition(store.context("scope-account",conversationID:otherTopic).count == 1)
         precondition(store.context("scope-account",includeTopics:true).count == 2)
+        let oldFact=store.records.first(where:{$0.id == sharedEntry.id})!,revision=store.revision
+        let structure=LifeMemoryOrganisation(areas:[.about],connections:[],selfName:nil)
+        precondition(store.organise(sharedEntry.id,value:structure,expectedRevision:revision))
+        let organised=store.records.first(where:{$0.id == sharedEntry.id})!
+        precondition(organised.text == oldFact.text && organised.evidence == oldFact.evidence && organised.reviewed == oldFact.reviewed && organised.id == oldFact.id)
+        precondition(!store.organise(topicEntry.id,value:structure,expectedRevision:revision),"Reject a stale captured memory revision")
+        let organisationRevision=store.revision
+        let unknown=LifeOrganisationEntry(id:UUID(),organisation:structure)
+        precondition(!store.organise([.init(id:topicEntry.id,organisation:structure),unknown],expectedRevision:organisationRevision))
+        precondition(store.records.first(where:{$0.id == topicEntry.id})?.organisation == nil,"A malformed batch is atomic")
+        precondition(store.setOrganisation(sharedEntry.id,value:structure))
+        precondition(store.records.first(where:{$0.id == sharedEntry.id})?.organisation?.manual == true)
+        precondition(!store.organise(sharedEntry.id,value:structure,expectedRevision:store.revision),"Automatic classification cannot overwrite a manual pin")
+        precondition(PAMemoryStore(container:container).records.first(where:{$0.id == sharedEntry.id})?.organisation?.manual == true)
+        let original=PAMemory(registration:"history",text:"I study Chemistry",kind:.context,provenance:"Human",sourceTurnID:"original-turn",evidence:"I study Chemistry")
+        precondition(store.put(original))
+        let savedOriginal=store.records.first(where:{$0.id == original.id})!
+        var correction=original;correction.id=UUID();correction.text="I now study Physics";correction.evidence="I now study Physics";correction.sourceTurnID="correction-turn"
+        precondition(store.correct(original.id,with:correction))
+        precondition(store.records.first(where:{$0.id == original.id})?.text == savedOriginal.text && store.records.first(where:{$0.id == original.id})?.evidence == savedOriginal.evidence)
+        precondition(store.context("history").map{$0["text"]} == [correction.text])
+        let oldParaphrase=LearnedMemory(turnID:"original-turn",text:"Studying Chemistry",kind:.context,evidence:"I study Chemistry")
+        let anotherFact=LearnedMemory(turnID:"original-turn",text:"Also plays tennis",kind:.context,evidence:"I also play tennis")
+        precondition(store.merge([oldParaphrase,anotherFact],registration:"history"))
+        precondition(!store.context("history").contains(where:{$0["text"] == oldParaphrase.text}),"Old evidence cannot resurrect a superseded belief with different wording")
+        let otherID=store.records.first(where:{$0.registration == "history" && $0.text == anotherFact.text})!.id
+        precondition(store.forget(otherID),"Distinct evidence in the same rich turn remains eligible")
+        precondition(!store.correct(original.id,with:correction),"A stale earlier belief cannot be corrected again")
+        let reloadedHistory=PAMemoryStore(container:container)
+        precondition(reloadedHistory.context("history").count == 1 && reloadedHistory.restoreVersion(original.id))
+        let restoredCurrent=reloadedHistory.records.first(where:{$0.registration == "history" && $0.supersededBy == nil})!
+        precondition(restoredCurrent.id != original.id && restoredCurrent.id != correction.id && restoredCurrent.text == original.text)
+        precondition(restoredCurrent.supersedes == correction.id && reloadedHistory.context("history").count == 1)
+        let versions=reloadedHistory.versionFamily(restoredCurrent.id)
+        precondition(versions.count == 3 && reloadedHistory.forget(restoredCurrent.id) && reloadedHistory.context("history").isEmpty)
+        precondition(reloadedHistory.records.allSatisfy{$0.registration != "history"} && reloadedHistory.suppressed("history").isSuperset(of:["original-turn","correction-turn"]))
+        precondition(reloadedHistory.restoreForgotten(versions) && reloadedHistory.context("history").map{$0["text"]} == [original.text])
+        precondition(!reloadedHistory.restoreForgotten(versions),"Undo cannot duplicate a restored lineage")
         print("PASS: atomic learned merge/dedup, confirmation, reload, Forget suppression across reload, Undo restore, resolve/reopen and unavailable storage")
     }
 }

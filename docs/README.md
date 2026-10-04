@@ -4,10 +4,13 @@ This is the readable explanation of the product: what exists, how it works and w
 
 Start with **[How it works](HOW_IT_WORKS.md)**. Use **[Next improvements](NEXT_IMPROVEMENTS.md)** to review priorities and **[Decisions](DECISIONS.md)** to understand why the app is organised this way.
 
+The detailed next-stage architecture and acceptance plan is **[Building a useful personal assistant](PA_INTELLIGENCE_PLAN.md)**. It separates identity, evidence, life areas, retrieval, learning, corrections and useful behaviour.
+
 | Document | Purpose |
 | --- | --- |
 | [How it works](HOW_IT_WORKS.md) | Current behaviour and the pieces behind it |
 | [Next improvements](NEXT_IMPROVEMENTS.md) | Desired behaviour, gaps and success criteria |
+| [PA intelligence plan](PA_INTELLIGENCE_PLAN.md) | Detailed phases and tests for a PA that understands useful life context |
 | [Decisions](DECISIONS.md) | Significant choices and their consequences |
 | [PLAN](../PLAN.md) | Full approved implementation scope |
 | [STATUS](../STATUS.md) | Detailed engineering evidence, checkpoints and unfinished validation |

@@ -67,6 +67,16 @@ import EventKit
             catch { validationReport = error.localizedDescription }
         }
     }
+    func validateLifeNotebook() {
+        validationReport="Checking life organisation and recall with fictional facts…"
+        Task { [self] in
+            let result:[String:Any]
+            do { result=try await LifeNotebookEvaluation.run(self);validationReport="Life notebook evaluation: \(result["passed"] ?? 0)/\(result["total"] ?? 0) checks passed." }
+            catch { result=["completed":Date.now.ISO8601Format(),"error":String(error.localizedDescription.prefix(500))];validationReport=error.localizedDescription }
+            if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-life-notebook-evaluation.json"),options:.atomic) }
+            if ProcessInfo.processInfo.arguments.contains("--validate-life-notebook") { NSApp.terminate(nil) }
+        }
+    }
     #endif
     var storageError: String?
     @ObservationIgnored lazy var weather = WeatherService(container:container)
@@ -79,6 +89,7 @@ import EventKit
     private var summaryPoll: Task<Void, Never>?
     private var briefingPoll: Task<Void, Never>?
     @ObservationIgnored lazy var memoryLearning = MemoryLearningService(container:container)
+    @ObservationIgnored lazy var lifeOrganisation = LifeOrganisationService(container:container)
     @ObservationIgnored lazy var nativeCreations = NativeCreationStore(container:container)
     @ObservationIgnored lazy var proactive = ProactiveService(container:container)
     var sourceRevision = 0
@@ -117,6 +128,9 @@ import EventKit
     }
     func start() {
         guard !started else { return }; started = true
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--validate-life-notebook") { validateLifeNotebook();return }
+        #endif
         if !sample { whatsapp.resumeAtLaunch() }
         if sample { loadSample(); return }
         weather.startRefresh(allowPrompt:true)
@@ -143,7 +157,7 @@ import EventKit
         }
         briefingPoll = Task { [weak self] in
             while !Task.isCancelled {
-                if let self { self.briefings.check(self); self.memoryLearning.recoverDelivery(self); self.memoryLearning.check(self); self.proactive.recoverDelivery(self); self.proactive.check(self); if Date.now.timeIntervalSince(self.lastOrientationCheck) >= 900 { await self.refreshPAOrientation() } }
+                if let self { self.briefings.check(self); self.memoryLearning.recoverDelivery(self); self.memoryLearning.check(self); self.proactive.recoverDelivery(self); self.proactive.check(self); self.lifeOrganisation.check(self); if Date.now.timeIntervalSince(self.lastOrientationCheck) >= 900 { await self.refreshPAOrientation() } }
                 try? await Task.sleep(for: .seconds(60))
             }
         }

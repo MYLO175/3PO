@@ -282,7 +282,7 @@ struct AssistantPanel: View {
             if !draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && model.memoryLearning.busy { model.memoryLearning.cancel() }
         }.onChange(of:model.chatGPT.usagePaused) { _, paused in
             if !paused, assistant.error?.contains("subscription_sharing_usage_limit_exceeded") == true { assistant.error = nil }
-        }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { PAMemoryView(memory:assistant.memory,registration:model.chatGPT.activeID,conversationID:selectedTopicID,topicTitle:topic?.title,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) }) }.sheet(isPresented:$showTopic) {
+        }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { PAMemoryView(memory:assistant.memory,registration:model.chatGPT.activeID,conversationID:selectedTopicID,topicTitle:topic?.title,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) },organisation:model.lifeOrganisation,organiseContext:{ model.lifeOrganisation.check(model,manual:true,topic:selectedTopicID) }) }.sheet(isPresented:$showTopic) {
             TopicFocusEditor(assistant:assistant,topicID:$editingTopicID,registration:$editorRegistration,name:$topicName,focus:$topicFocus,onSelected:select)
         }.sheet(isPresented:$showProfileSetup) {
             PAProfileSetupPanel(model:model,assistant:assistant,topicID:selectedTopicID,registration:model.chatGPT.activeID)
@@ -301,23 +301,25 @@ private struct TopicFocusEditor: View {
     var onSelected: (UUID?) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var saveFailed = false
+    @State private var notebookArea=""
     var body: some View {
         VStack(alignment:.leading,spacing:16) {
             Text(topicID == nil ? "Add a topic" : "Topic focus").font(.title2.weight(.semibold))
             TextField("Topic name",text:$name)
             TextField("For example: Help me plan my engineering study and exams",text:$focus,axis:.vertical).lineLimit(4...8)
+            Picker("Notebook focus",selection:$notebookArea) { Text("No area preference").tag(""); ForEach(LifeArea.allCases.filter{$0 != .unsorted}) { Text($0.title).tag($0.rawValue) } }
             Text("A topic adds focus and its own memories to your PA. It has its own ongoing thread. Shared preferences still apply; other topics’ context stays separate.").font(.caption).foregroundStyle(.secondary)
             if saveFailed { Text("The topic could not be saved. Your changes are still here.").font(.caption).foregroundStyle(.orange) }
             HStack {
                 Button("Cancel") { dismiss() }; Spacer()
                 Button("Save topic") {
                     guard registration == assistant.connection.activeID else { return }
-                    if let topicID { if assistant.configureTopic(topicID,title:name,focus:focus) { dismiss() } else { saveFailed = true } }
-                    else if let id = assistant.createTopic(title:name,focus:focus) { onSelected(id); dismiss() }
+                    if let topicID { if assistant.configureTopic(topicID,title:name,focus:focus,areas:LifeArea(rawValue:notebookArea).map{[$0]} ?? []) { dismiss() } else { saveFailed = true } }
+                    else if let id = assistant.createTopic(title:name,focus:focus,areas:LifeArea(rawValue:notebookArea).map{[$0]} ?? []) { onSelected(id); dismiss() }
                     else { saveFailed = true }
                 }.disabled(assistant.busy || registration != assistant.connection.activeID || name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
             }
-        }.padding(24).frame(width:480)
+        }.padding(24).frame(width:480).onAppear { notebookArea=assistant.conversation(topicID)?.notebookAreas?.first?.rawValue ?? "" }
     }
 }
 struct AssistantSourceSettings: View {

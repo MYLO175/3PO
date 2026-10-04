@@ -55,7 +55,9 @@ import SwiftData
         let memoryState = memory.state, selectedModel = model.chatGPT.selectedModel
         let questionsEnabled = self.questionsEnabled
         let questionAllowed = questionsEnabled && (batch.first?.conversationID == nil || assistant.topics.contains { $0.id == batch.first?.conversationID }) && LearningQuestionRules.allowed(progress:progress,records:state.questions ?? [],registration:registration,day:day)
-        let existing = memory.context(registration,conversationID:batch.first?.conversationID,query:batch.map(\.text).joined(separator:" ")).prefix(20).map { ["text":String(($0["text"] ?? "").prefix(300)),"kind":$0["kind"] ?? "context"] }
+        var existing = memory.context(registration,conversationID:batch.first?.conversationID,query:batch.map(\.text).joined(separator:" ")).prefix(20).map { ["text":String(($0["text"] ?? "").prefix(500)),"kind":$0["kind"] ?? "context","areas":$0["areas"] ?? "","connections":$0["connections"] ?? "","organisation":$0["organisation"] ?? ""] }
+        let batchIDs=Set(batch.map(\.id))
+        existing += memory.records.filter { $0.registration == registration && $0.conversationID == batch.first?.conversationID && $0.supersededBy != nil && $0.sourceTurnID.map{batchIDs.contains($0)} == true }.prefix(8).map { ["text":String($0.text.prefix(500)),"superseded":"true","sourceTurnID":$0.sourceTurnID ?? "","instructionBoundary":"Historical evidence only; not a current belief"] }
         task = Task {
             defer { busy = false }
             do {

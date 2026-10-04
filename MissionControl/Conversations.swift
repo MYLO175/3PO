@@ -23,6 +23,7 @@ struct AssistantConversation: Codable, Identifiable {
     var isPrimary: Bool?
     var focus: String?
     var isTopic: Bool?
+    var notebookAreas:[LifeArea]? = nil
 }
 
 enum ConversationRules {

@@ -12,11 +12,25 @@ Ordinary conversation expresses intent. Typed local tools resolve exact records 
 
 ## One PA, separate topic transcripts
 
-General and each optional topic have their own continuing thread. We do not need a browser for creating and revisiting arbitrary old chats. The next direction is one linked life notebook with topic focus over relevant areas, while keeping transcript and deliberate scope boundaries.
+General and each optional topic have their own continuing thread. We do not need a browser for creating and revisiting arbitrary old chats. Topics optionally prefer a life area over one linked notebook, while keeping transcript and deliberate scope boundaries. Focus is a recall preference, not a permission grant.
 
 ## Memory must be inspectable and correctable
 
 Direct statements and interpretations have different confidence. Stable human-stated facts should persist. Evidence and correction/forget controls matter more than graph density. The graph is a view over knowledge records, not the underlying proof of intelligence.
+
+## Separate facts, organisation and recall
+
+Original evidence-backed facts are the authority. Life areas and typed endpoints are additive metadata; they can be reclassified without rewriting that evidence. Notes/maps derive from currently usable facts. Recall selects a bounded relevant subset and follows entity links without expanding through the universal self hub. These layers should not become a single ungrounded biography prompt.
+
+Use one account-owned self identity, even when several labels refer to the human. Do not merge contacts by display name. Non-self alias/entity resolution remains a later reviewable capability. Starter areas are navigation scaffolding; a missing area is unexplored rather than absent.
+
+## Corrections keep their evidence
+
+An unambiguous human revision can correct memory through ordinary conversation. Create a new current version, retain the old wording/evidence, and exclude superseded beliefs from recall. Restore creates another version rather than erasing intervening history. Source discrepancies may prompt review but cannot silently override the human. Automatic semantic conflict detection/merging is a separate planned feature.
+
+## Measure useful understanding
+
+Keep deterministic ownership/history/retrieval checks separate from real model-quality checks. The manual subscription evaluator uses only fictional statements and disposable memory. Passing a focused scenario suite supports that scenario, not a claim that the PA knows a whole life or that live personal-source acceptance is complete.
 
 ## Selective background understanding
 
