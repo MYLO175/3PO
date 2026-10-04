@@ -31,18 +31,22 @@ enum WorkspaceColorRole: String, CaseIterable, Identifiable {
     } }
 }
 enum WorkspaceColorTheme: String, CaseIterable, Identifiable {
-    case sage, ocean, graphite, rose
+    case sage, ocean, graphite, rose, threePO = "3po"
     var id: String { rawValue }
-    var title: String { switch self { case .sage: "Warm sage"; case .ocean: "Ocean"; case .graphite: "Graphite"; case .rose: "Rose" } }
+    var title: String { switch self { case .sage: "Warm sage"; case .ocean: "Ocean"; case .graphite: "Graphite"; case .rose: "Rose"; case .threePO: "3PO" } }
     var detail: String { switch self {
     case .sage: "Warm ivory and calm greens"
     case .ocean: "Cool whites and deep blue"
     case .graphite: "Neutral greys and a restrained blue accent"
     case .rose: "Soft blush and muted plum"
+    case .threePO: "Polished gold, warm ivory and midnight bronze"
     } }
     func profile(_ mode: String) -> [String:String] {
         let light: [String], dark: [String]
         switch self {
+        case .threePO:
+            light = ["F5EFDF","EAE1C9","FFFCF3","352A18","826017","D9C99E","F2EAD5","E8D7AC","FBF7EA"]
+            dark = ["19160F","211C12","2B2418","F6EED9","E0BA63","51422A","352C1D","4B3B20","211C12"]
         case .sage:
             light = ["F4F2EA","EAEDE3","FFFEFA","26332C","456B54","DDE3D8","EEF1E9","DCE9DD","F8F9F3"]
             dark = ["171E1A","1C2620","222D26","E8EFE8","A5CBAA","36483B","2C3A30","334B3A","1A241D"]

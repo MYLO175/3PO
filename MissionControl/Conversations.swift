@@ -13,6 +13,7 @@ struct AssistantTurn: Codable, Identifiable {
     var profileSessionID: UUID? = nil
     var profileControl: Bool? = nil
     var memoryNotes: [String]? = nil
+    var sourceMemoryIDs:[UUID]? = nil
 }
 struct AssistantConversation: Codable, Identifiable {
     var id = UUID()
@@ -50,6 +51,9 @@ enum ConversationRules {
     }
     static func history(feed: AssistantConversation, topic: AssistantConversation?, excludedDeliveries: Set<String> = []) -> [AssistantTurn] {
         Array(thread(feed:feed,topic:topic).filter { $0.completed && $0.profileSessionID == nil && ($0.deliveryID.map { !excludedDeliveries.contains($0) } ?? true) }.suffix(20))
+    }
+    static func sourceMemoryHistory(_ turns:[AssistantTurn],permitted:Set<UUID>)->[AssistantTurn] {
+        turns.filter{($0.sourceMemoryIDs ?? []).allSatisfy(permitted.contains)}
     }
     static let promptByteLimit = 16_000
     static func acceptsPrompt(_ prompt: String) -> Bool {

@@ -78,6 +78,54 @@ import SwiftData
         precondition(reloadedHistory.records.allSatisfy{$0.registration != "history"} && reloadedHistory.suppressed("history").isSuperset(of:["original-turn","correction-turn"]))
         precondition(reloadedHistory.restoreForgotten(versions) && reloadedHistory.context("history").map{$0["text"]} == [original.text])
         precondition(!reloadedHistory.restoreForgotten(versions),"Undo cannot duplicate a restored lineage")
+        let origin=MemorySourceIdentity(kind:.whatsapp,accountID:"source-account",containerID:"family",itemID:"message-1",linkedIdentity:"linked-test")
+        let quote="Alex is starting a robotics project next week."
+        let evidence=MemorySourceEvidence(identity:origin,revision:"version-1",label:"The Nest · fictional message",quote:quote,observed:.now,sourceDate:.now)
+        let sourceFact=PAMemory(registration:"sources",text:"A family message mentions Alex starting a robotics project.",kind:.context,explicit:false,provenance:"Source assessment",evidence:quote,certainty:.inferred,durability:.situational,source:evidence)
+        store.sourceIsPermitted={ _ in true }
+        let sourceRevision=store.revision
+        precondition(!store.putSource(sourceFact,sourceText:"Unrelated text",expectedRevision:sourceRevision))
+        var unsafe=sourceFact;unsafe.explicit=true
+        precondition(!store.putSource(unsafe,sourceText:quote,expectedRevision:sourceRevision),"A source cannot claim human confirmation")
+        unsafe=sourceFact;unsafe.certainty = .stated
+        precondition(!store.putSource(unsafe,sourceText:quote,expectedRevision:sourceRevision),"A sender's statement is not the owner's assertion")
+        unsafe=sourceFact;unsafe.source?.identity.linkedIdentity=nil
+        precondition(!store.putSource(unsafe,sourceText:quote,expectedRevision:sourceRevision),"WhatsApp source identity includes its linked account")
+        var invalidBatch=sourceFact;invalidBatch.id=UUID();invalidBatch.evidence="Invented evidence"
+        let beforeBatch=store.records.count
+        precondition(!store.putSources([sourceFact,invalidBatch],sourceTexts:[sourceFact.id:quote,invalidBatch.id:quote],expectedRevision:sourceRevision))
+        precondition(store.records.count == beforeBatch && store.revision == sourceRevision,"Malformed source batches never partially save")
+        precondition(store.putSource(sourceFact,sourceText:quote,expectedRevision:sourceRevision))
+        let afterSource=store.revision
+        precondition(!store.putSource(sourceFact,sourceText:quote,expectedRevision:sourceRevision),"Stale source jobs cannot commit")
+        var same=sourceFact;same.id=UUID()
+        precondition(store.putSource(same,sourceText:quote,expectedRevision:afterSource) && store.records.filter{$0.registration == "sources"}.count == 1)
+        precondition(store.context("sources").first?["certainty"]?.contains("source interpretation") == true)
+        precondition(store.invalidateSource(origin,registration:"other",previousRevision:"version-1",reason:.deleted) && store.context("sources").count == 1)
+        precondition(store.invalidateSource(origin,registration:"sources",previousRevision:"old-version",reason:.changed) && store.context("sources").count == 1)
+        precondition(store.invalidateSource(origin,registration:"sources",previousRevision:"version-1",reason:.accessRemoved) && store.context("sources").isEmpty)
+        precondition(store.records.contains{$0.id == sourceFact.id},"Invalidation preserves the original evidence")
+        let sourceReload=PAMemoryStore(container:container);sourceReload.sourceIsPermitted={ _ in true }
+        precondition(sourceReload.records.first(where:{$0.id == sourceFact.id})?.sourceInvalidation == .accessRemoved && sourceReload.context("sources").isEmpty,"Invalidation survives restart")
+        var forgettable=sourceFact;forgettable.id=UUID();forgettable.source?.revision="version-forget"
+        precondition(store.putSource(forgettable,sourceText:quote,expectedRevision:store.revision))
+        precondition(store.forget(forgettable.id))
+        forgettable.id=UUID()
+        precondition(store.putSource(forgettable,sourceText:quote,expectedRevision:store.revision) && !store.records.contains{$0.id == forgettable.id},"Forget suppresses source-version relearning")
+        store.sourceIsPermitted={ _ in false }
+        precondition(store.context("sources").isEmpty)
+        store.sourceIsPermitted={ _ in true }
+        precondition(store.context("sources",includeSources:false).isEmpty,"Automatic legacy briefs can use human-only memory")
+        let budget=LearningBudget(container:container),clock=Date(timeIntervalSince1970:2_000_000_000)
+        for pass in 0..<4 { precondition(budget.claim("quota",manual:false,now:clock.addingTimeInterval(Double(pass)*3600))) }
+        let quotaReload=LearningBudget(container:container)
+        precondition(!quotaReload.claim("quota",manual:false,now:clock.addingTimeInterval(5*3600)),"Shared automatic quota survives restart")
+        precondition(quotaReload.claim("quota",manual:true,now:clock.addingTimeInterval(5*3600)),"Explicit bounded checks can bypass the automatic quota")
+        precondition(quotaReload.claim("quota",manual:false,now:clock.addingTimeInterval(24*3600)),"A later local day has a new allowance")
+        precondition(!quotaReload.claim("quota",manual:false,now:clock.addingTimeInterval(24*3600+300)),"Shared cooldown survives claims")
+        let independentHuman=LearnedMemory(turnID:"source-confirming-human",text:sourceFact.text,kind:.context,evidence:"I am starting a robotics project",certainty:.stated,durability:.stable)
+        precondition(store.merge([independentHuman],registration:"sources"))
+        precondition(store.context("sources",includeSources:false).count == 1,"A later human statement is not lost by deduplication against a source guess")
         print("PASS: atomic learned merge/dedup, confirmation, reload, Forget suppression across reload, Undo restore, resolve/reopen and unavailable storage")
     }
 }

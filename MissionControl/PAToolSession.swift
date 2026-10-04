@@ -52,7 +52,7 @@ import Foundation
         if !memoryTool, call.name != "ask_clarification", ProcessInfo.processInfo.arguments.contains("--sample") { throw ActionFailure.message("Sample mode never accesses Apple apps.") }
         var target = (args["target"] as? String).flatMap { id in reminders.reminders.first { $0.id == id }.map { $0.title + " · " + $0.sourceLabel } ?? calendar.events.first { $0.id == id }.map { $0.title + " · " + $0.sourceLabel + " · " + DateRules.localTimestamp($0.start) } }
         if call.name == "change_memory" {
-            guard let id=(args["id"] as? String).flatMap(UUID.init(uuidString:)),issuedMemory.contains(id),let record=memory.records.first(where:{ $0.id == id && MemoryRules.usable($0,registration:registration) && MemoryRules.inScope($0,conversationID:topicID) }) else { throw ActionFailure.message("Read the current permitted memory before changing it.") }
+            guard let id=(args["id"] as? String).flatMap(UUID.init(uuidString:)),issuedMemory.contains(id),let record=memory.permittedRecords.first(where:{ $0.id == id && MemoryRules.usable($0,registration:registration) && MemoryRules.inScope($0,conversationID:topicID) }) else { throw ActionFailure.message("Read the current permitted memory before changing it.") }
             target=try json(["memoryID":record.id.uuidString,"currentBeliefData":record.text,"scope":record.conversationID?.uuidString ?? "shared"])
         }
         let organisationAccepted=try await PAToolAuthorization.check(call:call,args:args,human:human,history:history,target:target,model:model)
@@ -177,7 +177,7 @@ import Foundation
             for area in notes["areas"] as? [[String:Any]] ?? [] { issuedMemory.formUnion((area["facts"] as? [[String:String]] ?? []).compactMap{$0["id"].flatMap(UUID.init(uuidString:))}) }
             return try json(["notes":notes,"records":selection.records,"entities":notebook.entities.filter{!$0.memoryIDs.isDisjoint(with:issuedMemory)}.prefix(40).map{["id":$0.id,"label":$0.label,"kind":$0.kind.rawValue,"areas":$0.areas.map(\.rawValue).sorted()] as [String:Any]},"coverage":"Partial bounded shared/current-topic notebook; no other-topic facts or source reads."])
         case "organise_memory":
-            guard memory.enabled,let id=UUID(uuidString:text("id")!),issuedMemory.contains(id),let record=memory.records.first(where:{$0.id == id && $0.registration == registration && MemoryRules.inScope($0,conversationID:topicID)}) else { throw ActionFailure.message("Read this permitted memory before organising it.") }
+            guard memory.enabled,let id=UUID(uuidString:text("id")!),issuedMemory.contains(id),let record=memory.permittedRecords.first(where:{$0.id == id && $0.source == nil && $0.registration == registration && MemoryRules.inScope($0,conversationID:topicID)}) else { throw ActionFailure.message("Read a permitted human memory before organising it. Source interpretations keep their separate evidence and provisional areas.") }
             var object=args;object.removeValue(forKey:"id")
             let value=try JSONDecoder().decode(LifeMemoryOrganisation.self,from:JSONSerialization.data(withJSONObject:object))
             guard LifeMemoryOrganisation.valid(value,record:record) else { throw ActionFailure.message("Unsupported organisation or self identity; memory was not changed.") }
@@ -202,7 +202,7 @@ import Foundation
             guard explicit || memory.learningEnabled else { throw ActionFailure.message("Automatic memory learning is paused; ask explicitly to remember this.") }
             guard explicit || !memory.suppressed(registration).contains(turnID.uuidString) else { throw ActionFailure.message("This conversation's forgotten memory must not be learned again automatically.") }
             let scope = text("scope") == "topic" ? topicID : nil
-            if let existing = memory.records.first(where:{ MemoryRules.usable($0,registration:registration) && $0.conversationID == scope && MemoryLearningRules.normalised($0.text) == MemoryLearningRules.normalised(value) }) { return try json(["saved":true,"id":existing.id.uuidString,"result":"Already saved","explicit":existing.explicit]) }
+            if let existing = memory.permittedRecords.first(where:{ $0.source == nil && MemoryRules.usable($0,registration:registration) && $0.conversationID == scope && MemoryLearningRules.normalised($0.text) == MemoryLearningRules.normalised(value) }) { return try json(["saved":true,"id":existing.id.uuidString,"result":"Already saved","explicit":existing.explicit]) }
             var record = PAMemory(registration:registration,text:value,kind:MemoryKind(rawValue:text("kind")!)!,explicit:explicit,provenance:"PA tool from human conversation",sourceTurnID:turnID.uuidString,evidence:text("evidence"),sourceDate:.now,conversationID:scope,certainty:certainty,durability:durability,connections:connections)
             if let metadata=args["organisation"] as? [String:Any] {
                 let structure=try JSONDecoder().decode(LifeMemoryOrganisation.self,from:JSONSerialization.data(withJSONObject:metadata))
@@ -215,7 +215,7 @@ import Foundation
         case "change_memory":
             guard memory.enabled else { throw ActionFailure.message("Memory is disabled.") }
             try PAToolProtocol.evidence(text("authorization"),human:human)
-            guard let id = UUID(uuidString:text("id")!), issuedMemory.contains(id), let record = memory.records.first(where:{ $0.id == id && $0.registration == registration && MemoryRules.inScope($0,conversationID:topicID) }) else { throw ActionFailure.message("Read the memory's permitted identity before changing it.") }
+            guard let id = UUID(uuidString:text("id")!), issuedMemory.contains(id), let record = memory.permittedRecords.first(where:{ $0.id == id && $0.registration == registration && MemoryRules.inScope($0,conversationID:topicID) }) else { throw ActionFailure.message("Read the memory's permitted identity before changing it.") }
             let success: Bool
             var resultID=id
             switch text("operation")! {
@@ -224,7 +224,7 @@ import Foundation
             default:
                 guard let value = text("text"), !value.isEmpty, value.count <= 2000 else { throw ActionFailure.message("Specify the corrected memory.") }
                 if value == record.text { return try json(["saved":true,"id":record.id.uuidString,"result":"Already consistent with the requested fact."]) }
-                var revised = record;revised.id=UUID();revised.text = value; revised.explicit = true; revised.connections = nil; revised.organisation=nil; revised.certainty = .stated; revised.durability = nil; revised.evidence = text("authorization");revised.sourceTurnID=turnID.uuidString;revised.sourceDate = .now;revised.provenance="Corrected from your PA conversation"
+                var revised = record;revised.id=UUID();revised.text = value; revised.explicit = true; revised.connections = nil; revised.organisation=nil; revised.certainty = .stated; revised.durability = nil; revised.evidence = text("authorization");revised.sourceTurnID=turnID.uuidString;revised.sourceDate = .now;revised.provenance="Corrected from your PA conversation";revised.source=nil;revised.sourceInvalidation=nil
                 success = memory.correct(id,with:revised)
                 if success { issuedMemory.insert(revised.id);resultID=revised.id }
             }

@@ -57,9 +57,10 @@ struct PAMemoryView: View {
                         VStack(alignment:.leading,spacing:6) {
                             HStack { Text(item.conversationID.map { "Topic · " + (assistant?.conversation($0)?.title ?? "Saved topic") } ?? "Shared").font(.caption).foregroundStyle(.secondary); Text(item.kind.rawValue.capitalized).font(.caption.weight(.semibold)); if item.supersededBy != nil { Text("Earlier version").font(.caption).foregroundStyle(.secondary) } else if item.supersedes != nil { Text("Corrected").font(.caption).foregroundStyle(.secondary) };if item.resolved != nil { Text(MemoryRules.archived(item) ? "Archived" : "Resolved").font(.caption).foregroundStyle(.secondary) }; if MemoryRules.needsReview(item) { Text("Review needed").foregroundStyle(.orange).font(.caption) }; Spacer() }
                             Text(item.text).textSelection(.enabled)
+                            if item.source != nil && !memory.sourceIsPermitted(item) { Text("Outside current source access or changed cache · excluded from PA recall").font(.caption).foregroundStyle(.secondary) }
                             ForEach(Array((item.connections ?? []).enumerated()),id:\.offset) { _, edge in Text(edge.subject + " → " + edge.relation + " → " + edge.object).font(.caption).foregroundStyle(.secondary) }
                             if let evidence = item.evidence { Text("“" + evidence + "”").font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
-                            Text((item.explicit ? "Confirmed · " : item.certainty == .stated ? "You stated · " : "Provisional · ") + item.provenance).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            Text(item.attribution + " · " + item.provenance).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                             HStack {
                                 if item.supersededBy != nil { Button("Restore this version") { memory.restoreVersion(item.id) } }
                                 else {
@@ -87,7 +88,7 @@ struct PAMemoryView: View {
             HStack { if editing != nil { Button("Cancel edit") { clear() } }; Spacer(); Button("Save memory") {
                 if let editing,memory.records.first(where:{$0.id == editing.id}) != editing { editError="This memory changed while you were editing. Reopen it before saving.";return }
                 var item = editing ?? PAMemory(registration:registration,text:text,kind:kind,provenance:"Added by you in Memory")
-                if item.text != text { item.connections=nil; item.organisation=nil; item.certainty=nil; item.durability=nil; item.evidence=text; item.provenance="Edited by you in Memory"; item.sourceTurnID=nil; item.sourceDate = .now }
+                if item.text != text { item.connections=nil; item.organisation=nil; item.source=nil; item.sourceInvalidation=nil; item.certainty=nil; item.durability=nil; item.evidence=text; item.provenance="Edited by you in Memory"; item.sourceTurnID=nil; item.sourceDate = .now }
                 item.text = text; item.kind = kind; item.explicit = !provisional; item.conversationID = scope
                 if scope != nil { item.organisation?.selfName=nil }
                 if let editing,editing.text != text {

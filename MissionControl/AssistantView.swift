@@ -9,6 +9,7 @@ struct AssistantPanel: View {
     var supportsReadingMode = true
     var widgetID: UUID? = nil
     var configuration: Binding<WidgetConfiguration>? = nil
+    @State private var showRename = false
     @FocusState private var composerFocused: Bool
     private var selectedID: UUID? { assistant.feed?.id }
     private var selected: AssistantConversation? {
@@ -113,7 +114,7 @@ struct AssistantPanel: View {
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing:8) {
-                Label("Your PA",systemImage:"sparkles").font(.title3.weight(.semibold)).fixedSize()
+                Label(assistant.displayName,systemImage:"sparkles").font(.title3.weight(.semibold)).lineLimit(1).truncationMode(.tail)
                 Spacer(minLength:4)
                 Button { showTopicChoices.toggle() } label: {
                     HStack(spacing:6) {
@@ -135,6 +136,7 @@ struct AssistantPanel: View {
                         }.padding(12).frame(width:220)
                     }
                 Menu {
+                    Button("Name your PA…") { showRename = true }
                     Button("Memory…") { showMemory = true }
                     Button(assistant.setupActive(selectedTopicID) ? "Continue memory setup…" : "Set up my PA…") { showProfileSetup=true }
                     if let selectedTopicID { Button("Edit topic focus…") { editTopic(selectedTopicID) } }
@@ -253,7 +255,7 @@ struct AssistantPanel: View {
             if let error = assistant.drafts.error, widgetID != nil { Text(error).font(.caption).foregroundStyle(.orange) }
             HStack {
                 Button { showDictation = true } label: { Image(systemName:"mic") }.help("Dictate a message").accessibilityLabel("Dictate a message").disabled(widgetID != nil && !assistant.drafts.writable)
-                TextField("Message your PA", text: draft,axis:.vertical).lineLimit(1...4).textFieldStyle(.plain).padding(9).background(palette[.input],in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).stroke(palette[.border])).onSubmit { send() }.focused($composerFocused).disabled(widgetID != nil && !assistant.drafts.writable)
+                TextField(PAIdentity.placeholder(assistant.displayName), text: draft,axis:.vertical).lineLimit(1...4).textFieldStyle(.plain).padding(9).background(palette[.input],in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).stroke(palette[.border])).onSubmit { send() }.focused($composerFocused).disabled(widgetID != nil && !assistant.drafts.writable)
                 Button(sendingHere && draft.wrappedValue.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty ? "Stop" : assistant.busy ? "Queue" : "Send") { if sendingHere && draft.wrappedValue.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { assistant.cancel() } else { send() } }
                     .frame(width:56)
                     .disabled(!sendingHere && ((widgetID != nil && !assistant.drafts.writable) || draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (!model.chatGPT.inferenceVerified || (!assistant.busy && model.chatGPT.busy) || model.chatGPT.usagePaused)))
@@ -282,7 +284,7 @@ struct AssistantPanel: View {
             if !draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && model.memoryLearning.busy { model.memoryLearning.cancel() }
         }.onChange(of:model.chatGPT.usagePaused) { _, paused in
             if !paused, assistant.error?.contains("subscription_sharing_usage_limit_exceeded") == true { assistant.error = nil }
-        }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { PAMemoryView(memory:assistant.memory,registration:model.chatGPT.activeID,conversationID:selectedTopicID,topicTitle:topic?.title,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) },organisation:model.lifeOrganisation,organiseContext:{ model.lifeOrganisation.check(model,manual:true,topic:selectedTopicID) }) }.sheet(isPresented:$showTopic) {
+        }.sheet(isPresented:$showRename) { PANameEditor(assistant:assistant) }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { PAMemoryView(memory:assistant.memory,registration:model.chatGPT.activeID,conversationID:selectedTopicID,topicTitle:topic?.title,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) },organisation:model.lifeOrganisation,organiseContext:{ model.lifeOrganisation.check(model,manual:true,topic:selectedTopicID) }) }.sheet(isPresented:$showTopic) {
             TopicFocusEditor(assistant:assistant,topicID:$editingTopicID,registration:$editorRegistration,name:$topicName,focus:$topicFocus,onSelected:select)
         }.sheet(isPresented:$showProfileSetup) {
             PAProfileSetupPanel(model:model,assistant:assistant,topicID:selectedTopicID,registration:model.chatGPT.activeID)
@@ -327,6 +329,8 @@ struct AssistantSourceSettings: View {
     @Bindable var assistant: AssistantService
     var body: some View {
         Section("Assistant preferences and sources") {
+            LabeledContent("PA name",value:assistant.displayName)
+            PANameSetting(assistant:assistant)
             Toggle("Enable assistant source context", isOn: $assistant.contextEnabled)
             Text("When enabled, assistant requests send the enabled calendar and reminder snapshots, recent email headers and saved email summaries to OpenAI using your ChatGPT plan. Email body processing is enabled separately under Incoming email monitoring. Dashboard refresh itself makes no AI requests.").font(.caption)
             Text("PA calendar: " + model.paOrientationHealth.detail).font(.caption).foregroundStyle(.secondary)
@@ -334,6 +338,12 @@ struct AssistantSourceSettings: View {
                 Text(orientation.coverage(enabledCount:orientation.calendar.events.filter { !assistant.excludedCalendars.contains($0.calendarID) }.count)).font(.caption).foregroundStyle(.secondary)
             }
             TextField("Assistant preferences", text: $assistant.preferences, axis: .vertical).lineLimit(3...6)
+            Text(model.sourceLearning.status(model)).font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Button("Check recent WhatsApp context") { model.sourceLearning.check(model,manual:true) }.disabled(model.chatGPT.busy || model.sourceLearning.busy || model.chatGPT.usagePaused || model.whatsapp.access(for:model.chatGPT.activeID).learnContext != true)
+                if model.sourceLearning.busy { Button("Stop learning") { model.sourceLearning.cancel() } }
+            }
+            if let error=model.sourceLearning.error { Text(error).font(.caption).foregroundStyle(.orange) }
             Toggle("Quiet proactive suggestions",isOn:$model.proactive.enabled)
             Text(model.proactive.status(model)).font(.caption).foregroundStyle(.secondary)
             HStack {

@@ -126,7 +126,7 @@ import SwiftData
     }
     func process(_ model: DashboardModel, resume: Bool = false) {
         if resume { paused = false; error = nil }
-        guard enabled, !paused, !model.chatGPT.usagePaused, !busy, !model.chatGPT.busy, !model.assistant.busy, !model.briefings.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing, model.chatGPT.inferenceVerified else { return }
+        guard enabled, !paused, !model.chatGPT.usagePaused, !busy, !model.chatGPT.busy, !model.assistant.busy, !model.briefings.busy, !model.sourceLearning.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing, model.chatGPT.inferenceVerified else { return }
         let registration = model.chatGPT.activeID, selectedModel = modelID.isEmpty ? model.chatGPT.selectedModel : modelID, selectedEffort = effort
         let requestedModel = modelID
         busy = true
@@ -161,13 +161,13 @@ import SwiftData
                 let batch = Array(newMessages.prefix(rechecks.isEmpty ? 3 : 2)) + Array(rechecks.prefix(newMessages.isEmpty ? 3 : 1))
                 for message in batch {
                     try Task.checkCancellation()
-                    guard requestedModel == modelID, selectedEffort == effort, selectedModel == (modelID.isEmpty ? model.chatGPT.selectedModel : modelID), enabled, !paused, registration == model.chatGPT.activeID, !model.assistant.excludedAccounts.contains(message.accountID), !model.chatGPT.busy, !model.assistant.busy, !model.briefings.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing else { return }
+                    guard requestedModel == modelID, selectedEffort == effort, selectedModel == (modelID.isEmpty ? model.chatGPT.selectedModel : modelID), enabled, !paused, registration == model.chatGPT.activeID, !model.assistant.excludedAccounts.contains(message.accountID), !model.chatGPT.busy, !model.assistant.busy, !model.briefings.busy, !model.sourceLearning.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing else { return }
                     phase = "Reading Mail body"
                     let body: String
                     do { body = try await model.mail.body(accountID:message.accountID,messageID:message.messageID,expectedInternetMessageID:message.internetMessageID,mailboxName:message.mailboxName) }
                     catch is DecodingError { throw ChatGPTError.message("Mail body retrieval returned an invalid structured response. No body was sent for this message; processing is paused.") }
                     try Task.checkCancellation()
-                    guard requestedModel == modelID, selectedEffort == effort, selectedModel == (modelID.isEmpty ? model.chatGPT.selectedModel : modelID), enabled, !paused, !model.assistant.excludedAccounts.contains(message.accountID), registration == model.chatGPT.activeID, !model.assistant.busy, !model.chatGPT.busy, !model.briefings.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing else { return }
+                    guard requestedModel == modelID, selectedEffort == effort, selectedModel == (modelID.isEmpty ? model.chatGPT.selectedModel : modelID), enabled, !paused, !model.assistant.excludedAccounts.contains(message.accountID), registration == model.chatGPT.activeID, !model.assistant.busy, !model.chatGPT.busy, !model.briefings.busy, !model.sourceLearning.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing else { return }
                     let bodyHash = EmailSummary.fingerprintBody(body)
                     if var saved = current(message, model: model), saved.bodyFingerprint == bodyHash, saved.worthReading != nil, saved.needsReply != nil {
                         let previous = records

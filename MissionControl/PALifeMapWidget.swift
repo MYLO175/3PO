@@ -51,7 +51,7 @@ struct PALifeMapWidget: View {
         .sheet(item:$selected) { memory in
             VStack(alignment:.leading,spacing:14) {
                 Text(memory.text).font(.title3.weight(.semibold)).textSelection(.enabled)
-                Text(memory.explicit || memory.certainty == .stated ? "You stated this" : "Provisional interpretation").font(.caption).foregroundStyle(.secondary)
+                Text(memory.attribution).font(.caption).foregroundStyle(.secondary)
                 if let evidence=memory.evidence { Text("“"+evidence+"”").textSelection(.enabled) }
                 ForEach(Array((memory.connections ?? []).enumerated()),id:\.offset) { _,edge in Text(edge.subject+" → "+edge.relation+" → "+edge.object).font(.callout) }
                 Text(memory.provenance).font(.caption).foregroundStyle(.secondary)

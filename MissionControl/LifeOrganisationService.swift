@@ -34,7 +34,7 @@ import SwiftData
         let assistant=model.assistant,memory=assistant.memory,registration=model.chatGPT.activeID
         guard readable,!busy,(manual || automatic),memory.enabled,memory.learningEnabled,!assistant.busy,(manual || !assistant.hasDraft),
               !model.chatGPT.busy,!model.chatGPT.usagePaused,model.chatGPT.inferenceVerified,!model.writing,
-              !model.memoryLearning.busy,!model.proactive.busy,!model.briefings.busy,!model.emailSummaries.busy,!registration.isEmpty else { return }
+              !model.sourceLearning.busy,!model.memoryLearning.busy,!model.proactive.busy,!model.briefings.busy,!model.emailSummaries.busy,!registration.isEmpty else { return }
         let requestedScopes:[UUID?]=manual ? (topic == nil ? [nil] : [nil,topic]) : [nil]+assistant.topics.sorted{$0.id.uuidString < $1.id.uuidString}.map{Optional($0.id)}
         let selectedModel=model.chatGPT.selectedModel,capturedTopics=Set(assistant.topics.map(\.id)),enabledAtStart=automatic
         if manual {
@@ -47,6 +47,7 @@ import SwiftData
         }
         guard LifeOrganisationBatch.allowed(state.accounts[registration] ?? .init(),now:.now,manual:manual) else { return }
         guard requestedScopes.contains(where:{ !batch(memory,registration:registration,topic:$0).isEmpty }) else { return }
+        guard model.learningBudget.claim(registration,manual:manual) else { return }
         busy=true;error=nil
         task=Task {
             defer { busy=false }

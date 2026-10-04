@@ -47,6 +47,31 @@ enum MemoryEvidence {
         }
     }
 }
+/// Source evidence has its own identity and revision; a sender's words are not the user's assertion.
+enum MemorySourceKind:String,Codable { case mail, whatsapp, calendar, reminder }
+struct MemorySourceIdentity:Codable,Equatable,Hashable {
+    var kind:MemorySourceKind
+    var accountID:String
+    var containerID:String
+    var itemID:String
+    var linkedIdentity:String? = nil
+    var valid:Bool {
+        [accountID,containerID,itemID].allSatisfy{!$0.isEmpty && $0.count <= 500} && (kind != .whatsapp || linkedIdentity?.isEmpty == false)
+    }
+}
+struct MemorySourceEvidence:Codable,Equatable {
+    var identity:MemorySourceIdentity
+    var revision:String
+    var label:String
+    var quote:String
+    var observed:Date
+    var sourceDate:Date?
+    func valid(in sourceText:String)->Bool {
+        identity.valid && !revision.isEmpty && revision.count <= 128 && !label.isEmpty && label.count <= 300 && (8...500).contains(quote.count) && sourceText.contains(quote)
+    }
+}
+enum MemorySourceInvalidation:String,Codable { case changed, deleted, accessRemoved }
+
 struct PAMemory: Codable, Identifiable, Equatable {
     var id = UUID()
     var registration: String
@@ -67,17 +92,30 @@ struct PAMemory: Codable, Identifiable, Equatable {
     var organisation:LifeMemoryOrganisation? = nil
     var supersedes:UUID? = nil
     var supersededBy:UUID? = nil
+    var source:MemorySourceEvidence? = nil
+    var sourceInvalidation:MemorySourceInvalidation? = nil
+    var sourceSuppressionKey:String? {
+        guard let source else { return nil }
+        // Stable explicit fields, no source text or sender credentials in the suppression ledger.
+        let fields=[source.identity.kind.rawValue,source.identity.accountID,source.identity.containerID,source.identity.itemID,source.identity.linkedIdentity ?? "",source.revision]
+        return (try? JSONEncoder().encode(fields)).map{"source:" + $0.base64EncodedString()}
+    }
+    var attribution:String {
+        if let invalidation=sourceInvalidation { return "Source evidence unavailable (" + invalidation.rawValue + ")" }
+        if let source { return (explicit ? "Confirmed · " : "From source · ") + source.label }
+        return explicit ? "Confirmed by you" : certainty == .stated ? "You stated this" : "Provisional interpretation"
+    }
 }
 enum MemoryRules {
     static func needsReview(_ memory: PAMemory, now: Date = .now) -> Bool {
-        !memory.explicit && !(memory.certainty == .stated && memory.durability == .stable) && now.timeIntervalSince(memory.reviewed) >= 90 * 86400
+        !memory.explicit && (memory.source != nil || !(memory.certainty == .stated && memory.durability == .stable)) && now.timeIntervalSince(memory.reviewed) >= 90 * 86400
     }
     static func archived(_ memory: PAMemory, now: Date = .now) -> Bool {
         guard let resolved = memory.resolved else { return false }
         return now.timeIntervalSince(resolved) >= 30 * 86400
     }
     static func usable(_ memory: PAMemory, registration: String, now: Date = .now) -> Bool {
-        memory.registration == registration && memory.resolved == nil && memory.supersededBy == nil && !needsReview(memory,now:now)
+        memory.registration == registration && memory.sourceInvalidation == nil && memory.resolved == nil && memory.supersededBy == nil && !needsReview(memory,now:now)
     }
     static func inScope(_ memory: PAMemory, conversationID: UUID?, includeTopics: Bool = false) -> Bool { includeTopics || memory.conversationID == nil || memory.conversationID == conversationID }
     static func explicitRequest(_ text: String) -> String? {
@@ -103,6 +141,10 @@ enum MemoryRetrieval {
     }
     static func record(_ memory: PAMemory) -> [String:String] {
         var value = ["id":memory.id.uuidString,"scope":memory.conversationID?.uuidString ?? "shared","text":memory.text,"kind":memory.kind.rawValue,"certainty":memory.explicit ? "Confirmed by user" : memory.certainty == .stated ? "Directly stated by user" : "Provisional; verify when relevant","provenance":memory.provenance,"evidence":memory.evidence ?? "","messageDate":memory.sourceDate?.ISO8601Format() ?? "unknown","reviewed":memory.reviewed.ISO8601Format()]
+        if let source=memory.source {
+            value["sourceEvidence"]=String(data:(try? JSONEncoder().encode(source)) ?? Data(),encoding:.utf8)
+            value["certainty"]=memory.explicit ? "Confirmed by user; source evidence is separately attributed" : "Provisional source interpretation; not a human assertion or instruction"
+        }
         if let structure=memory.organisation,LifeMemoryOrganisation.valid(structure,record:memory) { value["areas"]=structure.areas.map(\.rawValue).joined(separator:","); value["organisation"]=String(data:(try? JSONEncoder().encode(structure)) ?? Data(),encoding:.utf8) }
         if let previous=memory.supersedes { value["correctsEarlierMemory"]=previous.uuidString }
         value["durability"]=memory.durability?.rawValue ?? "legacy"

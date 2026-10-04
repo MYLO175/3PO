@@ -56,7 +56,7 @@ import SwiftData
     func check(_ model: DashboardModel, manual: Bool = false) {
         let assistant = model.assistant, registration = model.chatGPT.activeID, now = Date.now
         guard manual || now.timeIntervalSince(lastCheck) >= 300 else { return }
-        guard readable, enabled, !busy, assistant.contextEnabled, model.emailSummaries.enabled, !assistant.hasDraft, !assistant.busy, !model.writing, !model.chatGPT.busy, model.chatGPT.inferenceVerified, !model.chatGPT.usagePaused, !model.briefings.busy, !model.memoryLearning.busy, !model.emailSummaries.busy, !registration.isEmpty else { return }
+        guard readable, enabled, !busy, assistant.contextEnabled, model.emailSummaries.enabled, !assistant.hasDraft, !assistant.busy, !model.writing, !model.chatGPT.busy, model.chatGPT.inferenceVerified, !model.chatGPT.usagePaused, !model.briefings.busy, !model.sourceLearning.busy, !model.memoryLearning.busy, !model.emailSummaries.busy, !registration.isEmpty else { return }
         lastCheck = now
         let day = BriefingRules.day(now)
         var progress = state.accounts[registration] ?? ProactiveProgress()
@@ -66,8 +66,8 @@ import SwiftData
             !state.records.contains(where:{ $0.registration == registration && $0.mailID == message.id }) && (EmailHighlightRules.needsAction(summary,replied:message.replied) || summary.followUpDate != nil) && !summary.evidence.isEmpty
         }.prefix(12))
         guard !emails.isEmpty else { return }
-        let recentChat = (assistant.feed.map { assistant.sourceSafeHistory(model,feed:$0,topic:nil) } ?? []).suffix(12).map { ["role":$0.role,"text":String($0.content.prefix(1500))] }
-        let scope = scope(model), memory = assistant.sharedMemoryContext(), preferences = assistant.preferences, selectedModel = model.chatGPT.selectedModel, revision = model.sourceRevision
+        let recentChat = (assistant.feed.map { assistant.sourceSafeHistory(model,feed:$0,topic:nil) } ?? []).filter{($0.sourceMemoryIDs ?? []).isEmpty}.suffix(12).map { ["role":$0.role,"text":String($0.content.prefix(1500))] }
+        let scope = scope(model), memory = assistant.sharedMemoryContext(includeSources:false), preferences = assistant.preferences, selectedModel = model.chatGPT.selectedModel, revision = model.sourceRevision
         busy = true; error = nil
         task = Task {
             defer { busy = false }
@@ -82,7 +82,7 @@ import SwiftData
                 let input: [String:Any] = ["localDay":day,"timezone":TimeZone.current.identifier,"calendarCoverage":"Upcoming 90 days: \(events.count) enabled events; first 200 supplied. Missing matches do not prove absence outside this window or cap.","events":events.prefix(200).map { ["title":$0.title,"start":$0.allDay ? DateRules.localDate($0.start) : DateRules.localTimestamp($0.start),"end":$0.allDay ? DateRules.localDate($0.end) : DateRules.localTimestamp($0.end),"allDay":$0.allDay] as [String:Any] },"reminderCoverage":"\(tasks.count) incomplete enabled reminders; first 120 supplied.","reminders":tasks.prefix(120).map { ["title":$0.title,"due":DateRules.reminderDue($0),"hasTime":$0.hasTime] as [String:Any] },"emails":emails.enumerated().map { ["id":"mail_\($0.offset)","received":$0.element.0.received.ISO8601Format(),"summary":$0.element.1.summary,"reason":$0.element.1.reason,"evidence":$0.element.1.evidence,"followUpDate":$0.element.1.followUpDate ?? "none","followUpEvidence":$0.element.1.followUpEvidence ?? ""] },"paMemory":memory,"recentGeneralChat":recentChat,"preferences":preferences,"deliveredSuggestions":state.records.filter { $0.registration == registration && $0.scope == scope && !$0.dismissed }.suffix(20).map(\.message)]
                 let data = try JSONSerialization.data(withJSONObject:input,options:[.sortedKeys]), fingerprint = SHA256.hash(data:data).map { String(format:"%02x",$0) }.joined()
                 try Task.checkCancellation()
-                guard enabled, revision == model.sourceRevision, scope == self.scope(model), registration == model.chatGPT.activeID, memory == assistant.sharedMemoryContext(), preferences == assistant.preferences, selectedModel == model.chatGPT.selectedModel, !assistant.hasDraft, !assistant.busy, !model.writing, !model.chatGPT.busy, !model.briefings.busy, !model.memoryLearning.busy, !model.emailSummaries.busy else { return }
+                guard enabled, revision == model.sourceRevision, scope == self.scope(model), registration == model.chatGPT.activeID, memory == assistant.sharedMemoryContext(includeSources:false), preferences == assistant.preferences, selectedModel == model.chatGPT.selectedModel, !assistant.hasDraft, !assistant.busy, !model.writing, !model.chatGPT.busy, !model.briefings.busy, !model.sourceLearning.busy, !model.memoryLearning.busy, !model.emailSummaries.busy else { return }
                 guard manual || progress.fingerprint != fingerprint else { return }
                 let previous = state
                 progress.paused = true; progress.attempts += 1; progress.lastAttempt = now; state.accounts[registration] = progress
@@ -90,7 +90,7 @@ import SwiftData
                 let response = try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:data,as:UTF8.self)]],instructions:ProactiveRules.instructions + " Calendar start/end and timed reminder due values already contain local times and UTC offsets; do not add the timezone offset again.",model:selectedModel) { _ in }
                 try Task.checkCancellation()
                 let currentEmails = model.emailSummaries.highlights(model)
-                guard enabled, revision == model.sourceRevision, scope == self.scope(model), registration == model.chatGPT.activeID, memory == assistant.sharedMemoryContext(), preferences == assistant.preferences, selectedModel == model.chatGPT.selectedModel,
+                guard enabled, revision == model.sourceRevision, scope == self.scope(model), registration == model.chatGPT.activeID, memory == assistant.sharedMemoryContext(includeSources:false), preferences == assistant.preferences, selectedModel == model.chatGPT.selectedModel,
                       emails.allSatisfy({ original in currentEmails.contains { $0.0.id == original.0.id && $0.1.fingerprint == original.1.fingerprint && $0.1.created == original.1.created } }) else { throw ActionFailure.message("Source or PA settings changed during discovery; no suggestion delivered.") }
                 let suggestions = ProactiveRules.unreported(try ProactiveRules.decode(response,candidates:candidates,registration:registration,scope:scope,now:now),prior:state.records,budget:3-progress.delivered)
                 let beforeResult = state

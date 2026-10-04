@@ -83,12 +83,21 @@ import EventKit
     let chatGPT = ChatGPTConnection()
     @ObservationIgnored lazy var workspace = WorkspaceStore(container:container,calendars:excludedCalendars,lists:excludedLists,accounts:excludedAccounts,date:selectedDate)
     @ObservationIgnored lazy var widgetCalendars = WidgetCalendarStore(service:eventKit)
-    @ObservationIgnored lazy var assistant = AssistantService(connection: chatGPT, container: container)
+    @ObservationIgnored lazy var assistant:AssistantService = {
+        let service=AssistantService(connection:chatGPT,container:container)
+        service.memory.sourceIsPermitted = { [weak self,weak service] record in
+            guard let self,service?.contextEnabled == true else { return false }
+            return SourceContextRules.permitted(record,access:self.whatsapp.access(for:record.registration),linkedIdentity:self.whatsapp.linkedIdentity,messages:self.whatsapp.messages)
+        }
+        return service
+    }()
     @ObservationIgnored lazy var assistantActions = AssistantActions(container: container)
     @ObservationIgnored lazy var emailSummaries = EmailSummaryService(container: container)
     private var summaryPoll: Task<Void, Never>?
     private var briefingPoll: Task<Void, Never>?
     @ObservationIgnored lazy var memoryLearning = MemoryLearningService(container:container)
+    @ObservationIgnored lazy var sourceLearning = SourceContextLearningService(container:container)
+    @ObservationIgnored lazy var learningBudget = LearningBudget(container:container)
     @ObservationIgnored lazy var lifeOrganisation = LifeOrganisationService(container:container)
     @ObservationIgnored lazy var nativeCreations = NativeCreationStore(container:container)
     @ObservationIgnored lazy var proactive = ProactiveService(container:container)
@@ -129,6 +138,18 @@ import EventKit
     func start() {
         guard !started else { return }; started = true
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--validate-source-context") {
+            Task {
+                let result:[String:Any]
+                do { result=try await SourceContextEvaluation.run(self) }
+                catch { result=["error":error.localizedDescription,"completed":Date.now.ISO8601Format()] }
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-source-context-evaluation.json"),options:.atomic) }
+                NSApp.terminate(nil)
+            };return
+        }
+        if ProcessInfo.processInfo.arguments.contains("--render-life-map") {
+            Task { try? await Task.sleep(for:.milliseconds(250));LifeNotebookPreview.render();NSApp.terminate(nil) };return
+        }
         if ProcessInfo.processInfo.arguments.contains("--validate-life-notebook") { validateLifeNotebook();return }
         #endif
         if !sample { whatsapp.resumeAtLaunch() }
@@ -157,7 +178,7 @@ import EventKit
         }
         briefingPoll = Task { [weak self] in
             while !Task.isCancelled {
-                if let self { self.briefings.check(self); self.memoryLearning.recoverDelivery(self); self.memoryLearning.check(self); self.proactive.recoverDelivery(self); self.proactive.check(self); self.lifeOrganisation.check(self); if Date.now.timeIntervalSince(self.lastOrientationCheck) >= 900 { await self.refreshPAOrientation() } }
+                if let self { self.briefings.check(self); self.memoryLearning.recoverDelivery(self); self.memoryLearning.check(self); self.proactive.recoverDelivery(self); self.proactive.check(self); self.sourceLearning.check(self); self.lifeOrganisation.check(self); if Date.now.timeIntervalSince(self.lastOrientationCheck) >= 900 { await self.refreshPAOrientation() } }
                 try? await Task.sleep(for: .seconds(60))
             }
         }

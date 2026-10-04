@@ -1,15 +1,15 @@
 # Next improvements
 
-This is the product roadmap to review together. The detailed next-stage architecture is in [PA intelligence plan](PA_INTELLIGENCE_PLAN.md), approved scope in [PLAN](../PLAN.md), and exact validation boundaries in [STATUS](../STATUS.md). Small icon/toolbar/Settings issues are deferred while PA quality improves.
+This is the product roadmap to review together. The detailed next-stage architecture is in [PA intelligence plan](PA_INTELLIGENCE_PLAN.md), approved scope in [PLAN](../PLAN.md), and exact validation boundaries in [STATUS](../STATUS.md). PA quality remains the priority; map layout, 3PO palettes and local PA naming have also been refined.
 
 | Area | Already implemented | Next improvement | Success looks like |
 | --- | --- | --- | --- |
 | Topic focus | Separate transcripts, focus text, optional area preference, two-hop permitted recall | More specific entity anchors and measured semantic recall if needed | Engineering recalls modules/projects/career links while retaining important shared context |
 | Linked notebook | One self identity, typed connections, area notes and pinned organisation | Reusable non-self entity identities, supported aliases and custom subareas | One coherent person/project identity rather than several slightly different names |
-| Source learning | Foreground source tools, selective mail assessment and briefs | Bounded learning from explicitly enabled source changes | Useful supported context can be learned without requiring a chat, with its origin visible |
+| Source learning | Foreground source tools plus separate opt-in recent WhatsApp delta learning, scoped source evidence and shared learning quota | Mail/Calendar/Reminders deltas and source-aware persistent brief/suggestion dependencies | Useful supported context can be learned without requiring a chat, with its origin visible |
 | Refinement | Versioned human corrections/restore, earlier-evidence protection, exact duplicate avoidance and provisional review expiry | Reviewable semantic consolidation, conflicts, alias proposals and temporary-context archiving | Less repetition, no silent loss of confirmed facts, corrections persist |
 | Helpful questions | Dedicated small-question setup uses notebook breadth; optional grounded daily question | Evaluate multi-turn coverage, skip behaviour and useful source-driven uncertainty | Few useful questions, no repetitive onboarding or routine approval requests |
-| Life map | Searchable Map/Notes widget, coloured area hubs, typed facts and evidence inspection | Validate real-profile layout, then useful expansion/cross-link navigation | A readable explanation of the PA's beliefs, not a ball of decorative lines |
+| Life map | Searchable Map/Notes widget, coloured area hubs, typed facts and evidence inspection | Validate real-profile interaction, then entity expansion/cross-link navigation | A readable explanation of the PA's beliefs, not a ball of decorative lines |
 | Background handoffs | Queue and completed outputs, local email drafts | Better progress, source references, editable outputs and resumption controls | You can delegate several tasks and review their results later |
 | Reliability | Bounded tools, ownership, deterministic notebook fixtures and a repeatable fictional subscription evaluator | Broader multi-turn/source/proactive evaluations plus live personal acceptance | Correct recall/actions, honest uncertainty and no duplicated changes |
 

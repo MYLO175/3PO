@@ -36,7 +36,7 @@ struct LifeOrganisationState:Codable {
 enum LifeOrganisationBatch {
     static func scope(_ registration:String,_ topic:UUID?)->String { registration+":"+(topic?.uuidString ?? "general") }
     static func records(_ records:[PAMemory],registration:String,topic:UUID?,progress:LifeOrganisationProgress,now:Date = .now)->[PAMemory] {
-        records.filter { MemoryRules.usable($0,registration:registration,now:now) && $0.conversationID == topic && $0.organisation == nil && progress.inspected[$0.id] != $0.reviewed }
+        records.filter { MemoryRules.usable($0,registration:registration,now:now) && $0.source == nil && $0.conversationID == topic && $0.organisation == nil && progress.inspected[$0.id] != $0.reviewed }
             .sorted { $0.reviewed == $1.reviewed ? $0.id.uuidString < $1.id.uuidString : $0.reviewed > $1.reviewed }.prefix(8).map{$0}
     }
     static func allowed(_ progress:LifeOrganisationProgress,now:Date,manual:Bool)->Bool {

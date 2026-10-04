@@ -40,12 +40,13 @@ import SwiftData
     func check(_ model: DashboardModel, manual: Bool = false) {
         let assistant = model.assistant, memory = assistant.memory, registration = model.chatGPT.activeID, now = Date.now
         guard readable, !busy, memory.enabled, memory.learningEnabled, assistant.contextEnabled, !assistant.busy, !assistant.hasDraft,
-              !model.chatGPT.busy, !model.chatGPT.usagePaused, model.chatGPT.inferenceVerified, !model.writing, !model.proactive.busy, !model.briefings.busy, !model.emailSummaries.busy, !registration.isEmpty else { return }
+              !model.chatGPT.busy, !model.chatGPT.usagePaused, model.chatGPT.inferenceVerified, !model.writing, !model.sourceLearning.busy, !model.lifeOrganisation.busy, !model.proactive.busy, !model.briefings.busy, !model.emailSummaries.busy, !registration.isEmpty else { return }
         let turns = assistant.learningTurns(), day = BriefingRules.day(now)
         var progress = MemoryLearningRules.progress(turns:turns,prior:state.accounts[registration],suppressed:memory.suppressed(registration),day:day)
         guard MemoryLearningRules.allowed(progress,now:now,manual:manual) else { return }
         let batch = MemoryLearningRules.batch(turns,seen:progress.seen,suppressed:memory.suppressed(registration))
         guard !batch.isEmpty else { if state.accounts[registration] == nil { let old = state; state.accounts[registration] = progress; do { try save() } catch { state = old; self.error = error.localizedDescription } }; return }
+        guard model.learningBudget.claim(registration,manual:manual) else { return }
         let previous = state
         progress.lastAttempt = now; progress.attempts += 1; progress.paused = true
         state.accounts[registration] = progress
@@ -55,7 +56,7 @@ import SwiftData
         let memoryState = memory.state, selectedModel = model.chatGPT.selectedModel
         let questionsEnabled = self.questionsEnabled
         let questionAllowed = questionsEnabled && (batch.first?.conversationID == nil || assistant.topics.contains { $0.id == batch.first?.conversationID }) && LearningQuestionRules.allowed(progress:progress,records:state.questions ?? [],registration:registration,day:day)
-        var existing = memory.context(registration,conversationID:batch.first?.conversationID,query:batch.map(\.text).joined(separator:" ")).prefix(20).map { ["text":String(($0["text"] ?? "").prefix(500)),"kind":$0["kind"] ?? "context","areas":$0["areas"] ?? "","connections":$0["connections"] ?? "","organisation":$0["organisation"] ?? ""] }
+        var existing = memory.context(registration,conversationID:batch.first?.conversationID,query:batch.map(\.text).joined(separator:" ")).prefix(20).map { ["text":String(($0["text"] ?? "").prefix(500)),"kind":$0["kind"] ?? "context","areas":$0["areas"] ?? "","connections":$0["connections"] ?? "","organisation":$0["organisation"] ?? "","certainty":$0["certainty"] ?? "unknown","sourceEvidence":$0["sourceEvidence"] ?? ""] }
         let batchIDs=Set(batch.map(\.id))
         existing += memory.records.filter { $0.registration == registration && $0.conversationID == batch.first?.conversationID && $0.supersededBy != nil && $0.sourceTurnID.map{batchIDs.contains($0)} == true }.prefix(8).map { ["text":String($0.text.prefix(500)),"superseded":"true","sourceTurnID":$0.sourceTurnID ?? "","instructionBoundary":"Historical evidence only; not a current belief"] }
         task = Task {

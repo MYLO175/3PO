@@ -79,6 +79,13 @@ import Foundation
         precondition(!ConversationRules.acceptsPrompt(String(repeating:"\n",count:16000)), "JSON escaping must fit before the draft is consumed")
         precondition(ConversationRules.utf8Prefix("🧠hello",bytes:3).isEmpty && ConversationRules.utf8Prefix("🧠hello",bytes:5) == "🧠h")
         precondition(longHistory[0].content.count > 3000 && longHistory.last?.content == current.content)
+        let sourceID=UUID()
+        let sourceReply=AssistantTurn(role:"assistant",content:"Source-backed answer",completed:true,sourceMemoryIDs:[sourceID])
+        let normalReply=AssistantTurn(role:"assistant",content:"Human-backed answer",completed:true)
+        precondition(ConversationRules.sourceMemoryHistory([sourceReply,normalReply],permitted:[sourceID]).count == 2)
+        precondition(ConversationRules.sourceMemoryHistory([sourceReply,normalReply],permitted:[]).map(\.id) == [normalReply.id],"Removed/edited sources cannot return through later AI history")
+        let sourceRoundTrip=try JSONDecoder().decode(AssistantTurn.self,from:JSONEncoder().encode(sourceReply))
+        precondition(sourceRoundTrip.sourceMemoryIDs == [sourceID])
         print("PASS: legacy data preservation, configured-topic-only selection, explicit no-topic/account isolation, distinct persisted topic threads, bounded isolated history and memory-learning scope")
     }
 }

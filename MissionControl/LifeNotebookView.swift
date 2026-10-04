@@ -13,36 +13,72 @@ extension LifeEntityKind {
 
 /// A hierarchy of areas is navigation; factual cross-links remain separately inspectable.
 struct LifeNotebookMapView:View {
+    @Environment(\.workspacePalette) private var palette
     var notebook:LifeNotebook
     var notes:[LifeAreaNote]
     @Binding var selectedArea:LifeArea?
+    private func related(_ note:LifeAreaNote)->Bool {
+        guard let selected=notes.first(where:{$0.area == selectedArea}),selected.area != note.area else { return false }
+        return !Set(selected.records.map(\.id)).isDisjoint(with:note.records.map(\.id))
+    }
     var body:some View {
-        let rows=(notes.count+1)/2,height=CGFloat(90+rows*86)
+        LifeMapSizing(count:notes.count) {
         GeometryReader { geometry in
-            let width=geometry.size.width,root=CGPoint(x:width/2,y:25)
+            let layout=LifeMapLayout(width:geometry.size.width,count:notes.count)
             ZStack(alignment:.topLeading) {
                 Canvas { context,_ in
+                    if layout.compact,!notes.isEmpty {
+                        var trunk=Path();trunk.move(to:CGPoint(x:layout.root.x,y:layout.root.y+44))
+                        trunk.addLine(to:CGPoint(x:layout.root.x,y:96));trunk.addLine(to:CGPoint(x:26,y:96))
+                        trunk.addQuadCurve(to:CGPoint(x:18,y:104),control:CGPoint(x:18,y:96))
+                        trunk.addLine(to:CGPoint(x:18,y:layout.card(notes.count-1).midY))
+                        context.stroke(trunk,with:.color(palette[.text].opacity(0.14)),lineWidth:1.5)
+                    }
                     for (index,note) in notes.enumerated() {
-                        let point=CGPoint(x:width*(index%2 == 0 ? 0.25 : 0.75),y:CGFloat(100+(index/2)*86))
-                        var path=Path();path.move(to:root);path.addCurve(to:point,control1:CGPoint(x:root.x,y:point.y-35),control2:CGPoint(x:point.x,y:point.y-35))
-                        context.stroke(path,with:.color(note.area.colour.opacity(selectedArea == note.area ? 0.7 : 0.2)),lineWidth:selectedArea == note.area ? 2 : 1)
+                        let branch=layout.branch(index)
+                        var path=Path();path.move(to:branch.start);path.addCurve(to:branch.end,control1:branch.control1,control2:branch.control2)
+                        context.stroke(path,with:.color(note.area.colour.opacity(selectedArea == note.area ? 0.75 : related(note) ? 0.5 : 0.23)),style:StrokeStyle(lineWidth:selectedArea == note.area ? 2.5 : 1.5,lineCap:.round,dash:related(note) ? [4,4] : []))
                     }
                 }.accessibilityHidden(true)
-                Label(notebook.selfLabel,systemImage:"person.crop.circle.fill").font(.headline).padding(.horizontal,16).padding(.vertical,9)
-                    .background(.regularMaterial,in:Capsule()).position(root)
+                VStack(spacing:6) {
+                    Image(systemName:"person.crop.circle.fill").font(.system(size:28)).foregroundStyle(palette[.accent])
+                    Text(notebook.selfLabel).font(.headline).lineLimit(2).minimumScaleFactor(0.7)
+                }.padding(10).frame(width:88,height:88).background(palette[.widget],in:RoundedRectangle(cornerRadius:24))
+                    .overlay(RoundedRectangle(cornerRadius:24).stroke(palette[.accent].opacity(0.25))).position(layout.root)
                 ForEach(Array(notes.enumerated()),id:\.element.id) { index,note in
-                    Button { selectedArea = selectedArea == note.area ? nil : note.area } label: {
-                        VStack(spacing:4) {
-                            Label(note.area.title,systemImage:note.area.symbol).font(.callout.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
-                            Text("\(note.records.count) \(note.records.count == 1 ? "fact" : "facts")").font(.caption).foregroundStyle(.secondary)
-                        }.frame(width:max(100,width/2-16),height:60)
-                            .background(note.area.colour.opacity(selectedArea == note.area ? 0.18 : 0.07),in:RoundedRectangle(cornerRadius:12))
-                            .overlay(RoundedRectangle(cornerRadius:12).stroke(note.area.colour.opacity(selectedArea == note.area ? 0.65 : 0.22)))
-                    }.buttonStyle(.plain).position(x:width*(index%2 == 0 ? 0.25 : 0.75),y:CGFloat(100+(index/2)*86))
-                        .accessibilityLabel("\(note.area.title), \(note.records.count) saved facts").accessibilityAddTraits(selectedArea == note.area ? .isSelected : [])
+                    let rect=layout.card(index),active=selectedArea == note.area
+                    Button { selectedArea = active ? nil : note.area } label: {
+                        HStack(spacing:9) {
+                            Image(systemName:note.area.symbol).font(.system(size:18)).foregroundStyle(note.area.colour).frame(width:24)
+                            VStack(alignment:.leading,spacing:4) {
+                                Text(note.area.title).font(.callout.weight(.semibold)).lineLimit(2).minimumScaleFactor(0.85)
+                                Text("\(note.records.count) \(note.records.count == 1 ? "fact" : "facts")").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength:0)
+                        }.padding(.horizontal,12).frame(width:rect.width,height:rect.height)
+                            .background(palette[.widget],in:RoundedRectangle(cornerRadius:16))
+                            .background(note.area.colour.opacity(active ? 0.16 : 0.06),in:RoundedRectangle(cornerRadius:16))
+                            .overlay(RoundedRectangle(cornerRadius:16).fill(note.area.colour.opacity(active ? 0.12 : 0.04)))
+                            .overlay(RoundedRectangle(cornerRadius:16).stroke(note.area.colour.opacity(active ? 0.7 : related(note) ? 0.5 : 0.2),lineWidth:active ? 2 : 1))
+                    }.buttonStyle(.plain).position(x:rect.midX,y:rect.midY)
+                        .accessibilityLabel("\(note.area.title), \(note.records.count) saved facts" + (related(note) ? ", shares facts with the selected area" : ""))
+                        .accessibilityAddTraits(active ? .isSelected : [])
                 }
-            }
-        }.frame(height:height)
+            }.foregroundStyle(palette[.text])
+        }
+        }.animation(.easeInOut(duration:0.18),value:selectedArea)
+    }
+
+}
+
+private struct LifeMapSizing:Layout {
+    var count:Int
+    func sizeThatFits(proposal:ProposedViewSize,subviews:Subviews,cache:inout ())->CGSize {
+        let width=proposal.width ?? 600
+        return CGSize(width:width,height:LifeMapLayout(width:width,count:count).height)
+    }
+    func placeSubviews(in bounds:CGRect,proposal:ProposedViewSize,subviews:Subviews,cache:inout ()) {
+        subviews.first?.place(at:bounds.origin,anchor:.topLeading,proposal:.init(width:bounds.width,height:bounds.height))
     }
 }
 
