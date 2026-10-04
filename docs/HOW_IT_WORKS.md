@@ -119,3 +119,11 @@ The Life map uses a stable bilateral layout on wide widgets and a single trunk o
 
 
 The Life map widget has a compact Map/Notes switch without a search row. Its map scales uniformly to fit the available width and height; wider widgets keep the diagram centred rather than stretching branches. Click an area to browse its notes and evidence in a separate detail view. Notes can scroll; the map overview stays fully visible. Detailed organisation status is available from the saved-fact count tooltip. Memory management retains its own search.
+
+
+### Local Weather and explicit brief refresh
+Add widget → Weather adds a theme-aware local forecast with a large condition icon/daily high, rain chance, maximum wind and a three-day outlook. Short widgets simplify their content to keep the forecast readable. It shares the existing coarse-location Open-Meteo cache and weather permission/toggle; viewing it performs only a bounded weather refresh, with no AI request or permission prompt. The existing Today’s brief weather card remains available. A fresh forecast spanning midnight selects the actual current local day rather than its first cached day.
+
+Today's brief hides a saved morning message when its source choices differ from the currently permitted choices. Update brief prepares a separate current-source update while preserving the original morning record and its delivery/notification claim. Manual preparation does not require enabling automatic 7:30 preparation. An explicit request waits up to three minutes for an already-running background job, reserving the brief slot without overlapping inference; Stop cancels that wait. Missing connection/context, other foreground work, interrupted requests and source changes have visible explanations. Normal dashboard/source refresh still performs no AI inference.
+
+Structured memory supplied to AI uses consistently ordered JSON for nested organisation, connections and source evidence. This makes captured context comparable: unchanged memory no longer falsely invalidates briefing preparation, while actual memory/source/account/control changes still reject stale output. Storage format, memory evidence and ownership are unchanged.

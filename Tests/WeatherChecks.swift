@@ -15,6 +15,16 @@ import Foundation
         precondition(decoded.days[1].description == "Rain" && decoded.usable(now:now,timezone:timezone))
         precondition(!decoded.usable(now:now.addingTimeInterval(7201),timezone:timezone))
         precondition(!decoded.usable(now:now,timezone:TimeZone(identifier:"America/New_York")!))
+        precondition(decoded.today(now:now,timezone:timezone)?.date == dates[0])
+        precondition(decoded.today(now:now.addingTimeInterval(7201),timezone:timezone) == nil)
+        precondition(decoded.today(now:now,timezone:TimeZone(identifier:"America/New_York")!) == nil)
+        // A fresh pre-midnight cache remains valid after midnight, but its first day is yesterday.
+        let beforeMidnight = ISO8601DateFormatter().date(from:"2026-10-25T23:30:00Z")!
+        let afterMidnight = beforeMidnight.addingTimeInterval(3600)
+        var rollover = decoded; rollover.fetched = beforeMidnight
+        precondition(rollover.today(now:afterMidnight,timezone:timezone)?.date == "2026-10-26")
+        precondition(rollover.today(now:afterMidnight,timezone:timezone)?.symbol == "cloud.rain.fill")
+        precondition(decoded.days[0].symbol == "sun.max.fill" && decoded.days[2].symbol == "cloud.fill")
         let saved = try JSONEncoder().encode(decoded)
         precondition(!String(data:saved,encoding:.utf8)!.contains("latitude"))
         let restored = try JSONDecoder().decode(WeatherForecast.self,from:saved)

@@ -8,6 +8,7 @@ enum WidgetKind: String, Codable, CaseIterable {
     case overview // Saved legacy kind, now Today’s brief.
     case emailSummary
     case clock
+    case weather
     case tasks
     case memoryGraph
 
@@ -22,6 +23,7 @@ enum WidgetKind: String, Codable, CaseIterable {
         case .memoryGraph: return "Life map"
         case .tasks: return "Tasks for you"
         case .clock: return "Date & clock"
+        case .weather: return "Weather"
         }
     }
 
@@ -36,6 +38,7 @@ enum WidgetKind: String, Codable, CaseIterable {
         case .memoryGraph: return "point.3.connected.trianglepath.dotted"
         case .tasks: return "tray.full"
         case .clock: return "clock"
+        case .weather: return "cloud.sun"
         }
     }
 
@@ -45,6 +48,7 @@ enum WidgetKind: String, Codable, CaseIterable {
         case .reminders: return 3
         case .mail: return 4
         case .clock: return 3
+        case .weather: return 3
         }
     }
 
@@ -54,6 +58,7 @@ enum WidgetKind: String, Codable, CaseIterable {
         case .reminders: return 4
         case .mail, .overview, .emailSummary, .tasks, .memoryGraph: return 4
         case .clock: return 2
+        case .weather: return 3
         }
     }
 }

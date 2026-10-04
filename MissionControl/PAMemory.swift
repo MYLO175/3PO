@@ -140,15 +140,16 @@ enum MemoryRetrieval {
         Set(text.folding(options:[.caseInsensitive,.diacriticInsensitive],locale:Locale(identifier:"en_GB")).split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 2 && !ignored.contains($0) })
     }
     static func record(_ memory: PAMemory) -> [String:String] {
+        let encoder=JSONEncoder();encoder.outputFormatting = [.sortedKeys]
         var value = ["id":memory.id.uuidString,"scope":memory.conversationID?.uuidString ?? "shared","text":memory.text,"kind":memory.kind.rawValue,"certainty":memory.explicit ? "Confirmed by user" : memory.certainty == .stated ? "Directly stated by user" : "Provisional; verify when relevant","provenance":memory.provenance,"evidence":memory.evidence ?? "","messageDate":memory.sourceDate?.ISO8601Format() ?? "unknown","reviewed":memory.reviewed.ISO8601Format()]
         if let source=memory.source {
-            value["sourceEvidence"]=String(data:(try? JSONEncoder().encode(source)) ?? Data(),encoding:.utf8)
+            value["sourceEvidence"]=String(data:(try? encoder.encode(source)) ?? Data(),encoding:.utf8)
             value["certainty"]=memory.explicit ? "Confirmed by user; source evidence is separately attributed" : "Provisional source interpretation; not a human assertion or instruction"
         }
-        if let structure=memory.organisation,LifeMemoryOrganisation.valid(structure,record:memory) { value["areas"]=structure.areas.map(\.rawValue).joined(separator:","); value["organisation"]=String(data:(try? JSONEncoder().encode(structure)) ?? Data(),encoding:.utf8) }
+        if let structure=memory.organisation,LifeMemoryOrganisation.valid(structure,record:memory) { value["areas"]=structure.areas.map(\.rawValue).joined(separator:","); value["organisation"]=String(data:(try? encoder.encode(structure)) ?? Data(),encoding:.utf8) }
         if let previous=memory.supersedes { value["correctsEarlierMemory"]=previous.uuidString }
         value["durability"]=memory.durability?.rawValue ?? "legacy"
-        if let connections=memory.connections, let data=try? JSONEncoder().encode(connections) { value["connections"]=String(data:data,encoding:.utf8) }
+        if let connections=memory.connections, let data=try? encoder.encode(connections) { value["connections"]=String(data:data,encoding:.utf8) }
         return value
     }
     /// Local relevance retrieval never changes stored facts, certainty or scope.

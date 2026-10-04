@@ -15,6 +15,10 @@ struct WorkspaceChecks {
         assert(defaults.calendarMode == "agenda" && defaults.reminderGrouping == "lists")
         assert(defaults.conversationID == nil)
 
+        let weather=WidgetPlacement(kind:.weather,rect:GridRect(x:0,y:0,w:3,h:3))
+        let weatherRoundTrip=try JSONDecoder().decode(WidgetPlacement.self,from:JSONEncoder().encode(weather))
+        assert(weatherRoundTrip == weather && weatherRoundTrip.kind == .weather)
+        assert(WidgetKind.weather.minimumColumns == 3 && WidgetKind.weather.minimumRows == 3)
         let base = WidgetPlacement(kind: .calendar, rect: GridRect(x: 0, y: 0, w: 4, h: 5))
         assert(GridRules.valid(GridRect(x: 4, y: 0, w: 4, h: 5), among: [base]), "Edge touching is allowed")
         assert(!GridRules.valid(GridRect(x: 3, y: 0, w: 4, h: 5), among: [base]), "Horizontal overlap is rejected")

@@ -9,11 +9,16 @@ struct WeatherDay: Codable, Identifiable {
     var windKmh: Double
     var id: String { date }
     var description: String { WeatherRules.description(code) }
+    var symbol:String { WeatherRules.symbol(code) }
 }
 struct WeatherForecast: Codable {
     var fetched: Date
     var timezone: String
     var days: [WeatherDay]
+    func today(now:Date = .now,timezone:TimeZone = .current)->WeatherDay? {
+        guard usable(now:now,timezone:timezone) else { return nil }
+        return days.first { $0.date == WeatherRules.day(now,timezone:timezone) }
+    }
     func usable(now: Date = .now, timezone: TimeZone = .current) -> Bool {
         let age = now.timeIntervalSince(fetched)
         return age >= -60 && age <= 7200 && self.timezone == timezone.identifier && days.contains { $0.date == WeatherRules.day(now, timezone: timezone) }
@@ -63,6 +68,20 @@ enum WeatherRules {
         return WeatherForecast(fetched:now,timezone:timezone.identifier,days:days)
     }
     static let validCodes: Set<Int> = [0,1,2,3,45,48,51,53,55,56,57,61,63,65,66,67,71,73,75,77,80,81,82,85,86,95,96,99]
+    static func symbol(_ code:Int)->String {
+        switch code {
+        case 0: return "sun.max.fill"
+        case 1,2: return "cloud.sun.fill"
+        case 3: return "cloud.fill"
+        case 45,48: return "cloud.fog.fill"
+        case 51,53,55: return "cloud.drizzle.fill"
+        case 56,57,66,67: return "cloud.sleet.fill"
+        case 61,63,65,80,81,82: return "cloud.rain.fill"
+        case 71,73,75,77,85,86: return "cloud.snow.fill"
+        case 95,96,99: return "cloud.bolt.rain.fill"
+        default: return "cloud"
+        }
+    }
     static func description(_ code: Int) -> String {
         switch code { case 0: return "Clear"; case 1,2: return "Partly cloudy"; case 3: return "Overcast"; case 45,48: return "Fog"; case 51,53,55: return "Drizzle"; case 56,57,66,67: return "Freezing rain"; case 61,63,65,80,81,82: return "Rain"; case 71,73,75,77,85,86: return "Snow"; case 95,96,99: return "Thunderstorms"; default: return "Unavailable" }
     }

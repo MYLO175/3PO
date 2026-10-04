@@ -1,6 +1,13 @@
 import Foundation
 @main struct Checks {
     static func main() throws {
+        precondition(BriefingRequestAvailability().reason == nil)
+        let blocked: [BriefingRequestAvailability] = [
+            .init(contextEnabled:false), .init(verified:false), .init(paused:true),
+            .init(connectionBusy:true), .init(assistantBusy:true), .init(writing:true), .init(hasAccount:false)
+        ]
+        precondition(blocked.allSatisfy { $0.reason?.isEmpty == false },"Every skipped explicit brief request needs a visible explanation")
+        precondition(BriefingRequestAvailability(verified:false,paused:true).reason?.contains("paused") == true,"Explain paused subscription access before verification")
         var london = Calendar(identifier: .gregorian)
         london.timeZone = TimeZone(identifier: "Europe/London")!
         let midnight = ISO8601DateFormatter().date(from: "2026-10-01T23:00:00Z")!

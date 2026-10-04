@@ -68,6 +68,11 @@ import Foundation
         var family = older; family.text = "The Zoo"; family.connections = [edge]
         let connected = MemoryRetrieval.select([family],registration:"one",query:"family",now:now)
         precondition(connected.records.first?["connections"]?.contains("The Zoo") == true)
+        family.organisation = .init(areas:[.people],connections:[],selfName:nil)
+        let stableContext = MemoryRetrieval.record(family)
+        for _ in 0..<100 { precondition(MemoryRetrieval.record(family) == stableContext,"Unchanged structured memory must produce the same context for in-flight brief revision checks") }
+        var changedFamily=family;changedFamily.organisation?.areas=[.home]
+        precondition(MemoryRetrieval.record(changedFamily) != stableContext,"Real organisation changes still invalidate captured context")
         family.registration = "two"
         precondition(MemoryRetrieval.select([family],registration:"one",query:"family",now:now).records.isEmpty)
         var legacy = try JSONSerialization.jsonObject(with:JSONEncoder().encode(stable)) as! [String:Any]

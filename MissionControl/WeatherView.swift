@@ -21,8 +21,8 @@ struct WeatherBriefCard: View {
     var body: some View {
         if weather.enabled {
             VStack(alignment:.leading,spacing:5) {
-                if weather.allowed, let forecast = weather.forecast, forecast.usable(), let today = forecast.days.first {
-                    Label("\(today.description) · \(today.low.formatted(.number.precision(.fractionLength(0))))–\(today.high.formatted(.number.precision(.fractionLength(0))))°C",systemImage:"cloud.sun").font(.callout.weight(.medium))
+                if weather.allowed, let today = weather.forecast?.today() {
+                    Label("\(today.description) · \(today.low.formatted(.number.precision(.fractionLength(0))))–\(today.high.formatted(.number.precision(.fractionLength(0))))°C",systemImage:today.symbol).font(.callout.weight(.medium))
                     Text("Rain chance \(Int(today.rainChance))% · Wind up to \(Int(today.windKmh)) km/h").font(.caption)
                     HStack(spacing:8) {
                         Link("Open-Meteo · Nearby area",destination:WeatherRules.provider)

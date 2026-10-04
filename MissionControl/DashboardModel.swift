@@ -156,6 +156,9 @@ import EventKit
                 NSApp.terminate(nil)
             };return
         }
+        if ProcessInfo.processInfo.arguments.contains("--render-weather") {
+            Task { try? await Task.sleep(for:.milliseconds(250));WeatherWidgetPreview.render();NSApp.terminate(nil) };return
+        }
         if ProcessInfo.processInfo.arguments.contains("--render-life-map") {
             Task { try? await Task.sleep(for:.milliseconds(250));LifeNotebookPreview.render();DateClockPreview.render();NSApp.terminate(nil) };return
         }
