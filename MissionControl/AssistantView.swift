@@ -17,10 +17,19 @@ struct AssistantPanel: View {
         feed.turns = ConversationRules.thread(feed:feed,topic:topic).filter { $0.profileSessionID == nil }
         return feed
     }
-    private var selectedTopicID: UUID? {
-        let value = configuration?.wrappedValue
-        return ConversationRules.topicSelection(value?.paTopicSelections?[model.chatGPT.activeID],legacy:value.map { $0.conversationSelections?[model.chatGPT.activeID] ?? $0.conversationID } ?? assistant.topicID,in:assistant.conversations,registration:model.chatGPT.activeID)
+    private var selectedTopicID:UUID? { nil }
+    private var focusAreas:[LifeArea] {
+        if configuration == nil { return LifeFocusRules.normalised(assistant.standaloneFocusSelections[model.chatGPT.activeID] ?? []) }
+        if let saved=configuration?.wrappedValue.lifeFocusSelections?[model.chatGPT.activeID] { return LifeFocusRules.normalised(saved) }
+        let legacy=configuration?.wrappedValue.paTopicSelections?[model.chatGPT.activeID].flatMap(UUID.init(uuidString:))
+        return assistant.conversation(legacy)?.notebookAreas ?? []
     }
+    private var focusBinding:Binding<[LifeArea]> { Binding(get:{focusAreas},set:{areas in
+        guard let configuration else { assistant.standaloneFocusSelections[model.chatGPT.activeID]=areas.map(\.rawValue);return }
+        var value=configuration.wrappedValue
+        if value.lifeFocusSelections == nil { value.lifeFocusSelections=[:] }
+        value.lifeFocusSelections?[model.chatGPT.activeID]=areas.map(\.rawValue);configuration.wrappedValue=value
+    }) }
     private var topic: AssistantConversation? { assistant.conversation(selectedTopicID) }
     private var draftKey: UUID? { selectedTopicID ?? selectedID }
     private var sendingHere: Bool { assistant.busy && !assistant.profileBusy(selectedTopicID) && assistant.requestConversationID == selectedID && assistant.requestTopicID == selectedTopicID }
@@ -42,21 +51,9 @@ struct AssistantPanel: View {
         }
         return true
     }
-    private func select(_ id: UUID?) {
-        assistant.drafts.flush()
-        if let configuration {
-            var value = configuration.wrappedValue
-            var modes = value.paTopicSelections ?? [:]; modes[model.chatGPT.activeID] = id?.uuidString ?? ""
-            value.paTopicSelections = modes; configuration.wrappedValue = value
-        } else { assistant.topicID = id }
-    }
-    private func editTopic(_ id: UUID?) {
-        editingTopicID = id; editorRegistration = model.chatGPT.activeID
-        topicName = assistant.conversation(id)?.title ?? ""; topicFocus = assistant.conversation(id)?.focus ?? ""; showTopic = true
-    }
     private func send() {
         let value = draft.wrappedValue, contextID = selectedTopicID, key = draftKey, registration = model.chatGPT.activeID
-        if assistant.send(model:model,topicID:contextID,prompt:value) {
+        if assistant.send(model:model,topicID:contextID,prompt:value,focusAreas:focusAreas) {
             if let widgetID { assistant.drafts.set("",registration:registration,widget:widgetID,conversation:key) } else { assistant.draft = "" }
             assistant.drafts.flush()
         }
@@ -69,13 +66,8 @@ struct AssistantPanel: View {
     @State private var showDictation = false
     @State private var showMemory = false
     @State private var showProfileSetup = false
-    @State private var showTopic = false
-    @State private var showTopicChoices = false
-    @State private var editingTopicID: UUID?
-    @State private var editorRegistration = ""
-    @State private var topicName = ""
-    @State private var topicFocus = ""
     @State private var showBriefing = false
+    @State private var sourceDiscovery:PADiscovery?
     @ViewBuilder private func discoveryActions(_ record: PADiscovery, compact: Bool = false) -> some View {
         if compact {
             HStack { reviewDiscoveryButtons(record) }
@@ -99,50 +91,21 @@ struct AssistantPanel: View {
         }
     }
     @ViewBuilder private func discoverySourceButtons(_ record: PADiscovery) -> some View {
-        Button("Source email") { if let message = model.emailSummaries.highlights(model).first(where:{ $0.0.id == record.mailID })?.0 { model.select(message) } }
+        Button(record.sourceKind == "whatsapp" ? "Source message" : "Source email") { if record.sourceKind == "whatsapp" { sourceDiscovery=record } else if let message = model.emailSummaries.highlights(model).first(where:{ $0.0.id == record.mailID })?.0 { model.select(message) } }
         Button("Dismiss") { model.proactive.dismiss(record) }
-    }
-    private func topicChoice(_ title: String, id: UUID?) -> some View {
-        Button { select(id); showTopicChoices = false } label: {
-            HStack {
-                Text(title).lineLimit(1)
-                Spacer()
-                if selectedTopicID == id { Image(systemName:"checkmark").font(.caption) }
-            }.padding(.horizontal,8).padding(.vertical,6).contentShape(Rectangle())
-        }.buttonStyle(.plain)
     }
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing:8) {
                 Label(assistant.displayName,systemImage:"sparkles").font(.title3.weight(.semibold)).lineLimit(1).truncationMode(.tail)
                 Spacer(minLength:4)
-                Button { showTopicChoices.toggle() } label: {
-                    HStack(spacing:6) {
-                        Text(topic?.title ?? "General").lineLimit(1)
-                        Image(systemName:"chevron.down").font(.system(size:9,weight:.semibold))
-                    }.font(.caption.weight(.medium)).padding(.horizontal,10).padding(.vertical,6)
-                        .background(palette[.assistantBubble],in:Capsule())
-                }.buttonStyle(.plain).fixedSize(horizontal:false,vertical:true).frame(maxWidth:150,alignment:.trailing)
-                    .help("Choose a PA topic").accessibilityLabel("PA topic: " + (topic?.title ?? "No topic"))
-                    .popover(isPresented:$showTopicChoices,arrowEdge:.bottom) {
-                        VStack(alignment:.leading,spacing:4) {
-                            Text("PA topic").font(.caption).foregroundStyle(.secondary).padding(.bottom,4)
-                            topicChoice("General",id:nil)
-                            ScrollView { VStack(alignment:.leading,spacing:4) {
-                                ForEach(assistant.topics) { topic in topicChoice(topic.title,id:topic.id) }
-                            } }.frame(maxHeight:240)
-                            Divider()
-                            Button("Add topic…") { showTopicChoices = false; editTopic(nil) }.buttonStyle(.borderless)
-                        }.padding(12).frame(width:220)
-                    }
+                LifeFocusPicker(selection:focusBinding).frame(maxWidth:160,alignment:.trailing)
                 Menu {
                     Button("Name your PA…") { showRename = true }
                     Button("Memory…") { showMemory = true }
                     Button(assistant.setupActive(selectedTopicID) ? "Continue memory setup…" : "Set up my PA…") { showProfileSetup=true }
-                    if let selectedTopicID { Button("Edit topic focus…") { editTopic(selectedTopicID) } }
-                    Button("Add topic…") { editTopic(nil) }
                     Text(assistant.contextEnabled ? "Apple source context enabled" : "Apple source context off")
-                } label: { Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Topic options").accessibilityLabel("Topic options").disabled(assistant.busy)
+                } label: { Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("PA options").accessibilityLabel("PA options").disabled(assistant.busy)
                 if supportsReadingMode { Button { readingMode.toggle() } label: { Image(systemName:readingMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") }.help(readingMode ? "Compact chat" : "Expand chat") }
             }.buttonStyle(.borderless).controlSize(.small)
             ScrollViewReader { proxy in
@@ -279,49 +242,17 @@ struct AssistantPanel: View {
         }.onDisappear { if let widgetID { assistant.drafts.hide(widget:widgetID) }; assistant.drafts.flush() }
         .onChange(of:selectedID) { showDraft() }
         .onChange(of:selectedTopicID) { showProfileSetup=false; showDraft() }
-        .onChange(of:model.chatGPT.activeID) { assistant.drafts.flush(); assistant.openPA(); showTopic = false; showTopicChoices = false; showMemory = false; showProfileSetup=false; showDraft() }
+        .onChange(of:model.chatGPT.activeID) { assistant.drafts.flush(); assistant.openPA(); showMemory = false; showProfileSetup=false;sourceDiscovery=nil; showDraft() }
+        .onChange(of:model.proactive.state.records.filter { model.proactive.visible($0,model:model) }.map(\.id)) { if let sourceDiscovery,!model.proactive.visible(sourceDiscovery,model:model) { self.sourceDiscovery=nil } }
         .onChange(of:draft.wrappedValue) { _, draft in
             if !draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && model.memoryLearning.busy { model.memoryLearning.cancel() }
         }.onChange(of:model.chatGPT.usagePaused) { _, paused in
             if !paused, assistant.error?.contains("subscription_sharing_usage_limit_exceeded") == true { assistant.error = nil }
-        }.sheet(isPresented:$showRename) { PANameEditor(assistant:assistant) }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { PAMemoryView(memory:assistant.memory,registration:model.chatGPT.activeID,conversationID:selectedTopicID,topicTitle:topic?.title,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) },organisation:model.lifeOrganisation,organiseContext:{ model.lifeOrganisation.check(model,manual:true,topic:selectedTopicID) }) }.sheet(isPresented:$showTopic) {
-            TopicFocusEditor(assistant:assistant,topicID:$editingTopicID,registration:$editorRegistration,name:$topicName,focus:$topicFocus,onSelected:select)
-        }.sheet(isPresented:$showProfileSetup) {
+        }.sheet(isPresented:$showRename) { PANameEditor(assistant:assistant) }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { PAMemoryView(memory:assistant.memory,registration:model.chatGPT.activeID,conversationID:selectedTopicID,topicTitle:topic?.title,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) },organisation:model.lifeOrganisation,organiseContext:{ model.lifeOrganisation.check(model,manual:true,topic:selectedTopicID) }) }.sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record) }.sheet(isPresented:$showProfileSetup) {
             PAProfileSetupPanel(model:model,assistant:assistant,topicID:selectedTopicID,registration:model.chatGPT.activeID)
         }.sheet(isPresented:$showDictation) {
             DictationView(dictation:dictation) { text in draft.wrappedValue = draft.wrappedValue.isEmpty ? text : draft.wrappedValue + " " + text }
         }.padding(16)
-    }
-}
-// Bindings let a newly presented sheet read the current context, rather than a stale presentation closure.
-private struct TopicFocusEditor: View {
-    @Bindable var assistant: AssistantService
-    @Binding var topicID: UUID?
-    @Binding var registration: String
-    @Binding var name: String
-    @Binding var focus: String
-    var onSelected: (UUID?) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var saveFailed = false
-    @State private var notebookArea=""
-    var body: some View {
-        VStack(alignment:.leading,spacing:16) {
-            Text(topicID == nil ? "Add a topic" : "Topic focus").font(.title2.weight(.semibold))
-            TextField("Topic name",text:$name)
-            TextField("For example: Help me plan my engineering study and exams",text:$focus,axis:.vertical).lineLimit(4...8)
-            Picker("Notebook focus",selection:$notebookArea) { Text("No area preference").tag(""); ForEach(LifeArea.allCases.filter{$0 != .unsorted}) { Text($0.title).tag($0.rawValue) } }
-            Text("A topic adds focus and its own memories to your PA. It has its own ongoing thread. Shared preferences still apply; other topics’ context stays separate.").font(.caption).foregroundStyle(.secondary)
-            if saveFailed { Text("The topic could not be saved. Your changes are still here.").font(.caption).foregroundStyle(.orange) }
-            HStack {
-                Button("Cancel") { dismiss() }; Spacer()
-                Button("Save topic") {
-                    guard registration == assistant.connection.activeID else { return }
-                    if let topicID { if assistant.configureTopic(topicID,title:name,focus:focus,areas:LifeArea(rawValue:notebookArea).map{[$0]} ?? []) { dismiss() } else { saveFailed = true } }
-                    else if let id = assistant.createTopic(title:name,focus:focus,areas:LifeArea(rawValue:notebookArea).map{[$0]} ?? []) { onSelected(id); dismiss() }
-                    else { saveFailed = true }
-                }.disabled(assistant.busy || registration != assistant.connection.activeID || name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
-            }
-        }.padding(24).frame(width:480).onAppear { notebookArea=assistant.conversation(topicID)?.notebookAreas?.first?.rawValue ?? "" }
     }
 }
 struct AssistantSourceSettings: View {

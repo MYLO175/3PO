@@ -88,6 +88,13 @@ import Foundation
         precondition(LifeOrganisationBatch.allowed(progress,now:now,manual:true))
         progress.attempts=0;progress.paused=true
         precondition(!LifeOrganisationBatch.allowed(progress,now:now.addingTimeInterval(86400),manual:false),"Interrupted jobs do not replay the next day")
+        let general=UUID(),other=UUID()
+        var oldTopic=PAMemory(registration:"owner",text:"Scoped old study fact",kind:.context,provenance:"fixture",organisation:.init(areas:[.studies],connections:[]));oldTopic.conversationID=general
+        var foreignFocus=oldTopic;foreignFocus.id=UUID();foreignFocus.registration="other";foreignFocus.conversationID=other
+        precondition(LifeNotebook.build([oldTopic,foreignFocus],registration:"owner").notes.isEmpty)
+        precondition(LifeNotebook.build([oldTopic,foreignFocus],registration:"owner",includeTopics:true).notes.flatMap(\.records).map(\.id) == [oldTopic.id])
+        precondition(MemoryRetrieval.select([oldTopic,foreignFocus],registration:"owner",includeTopics:true,query:"study",focus:[.studies,.career]).records.count == 1)
+        precondition(LifeFocusRules.normalised(["career","studies","career","bad"]) == [.studies,.career])
         print("PASS: canonical self, distinct contacts, typed goals/habits/projects, cross-area notes, scoped evidence, two-hop recall without self spillover, topic bias, exact byte bounds, metadata validation, legacy decode and bounded paused organisation")
     }
 }

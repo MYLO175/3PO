@@ -35,7 +35,8 @@ import SwiftData
         guard readable,!busy,(manual || automatic),memory.enabled,memory.learningEnabled,!assistant.busy,(manual || !assistant.hasDraft),
               !model.chatGPT.busy,!model.chatGPT.usagePaused,model.chatGPT.inferenceVerified,!model.writing,
               !model.sourceLearning.busy,!model.memoryLearning.busy,!model.proactive.busy,!model.briefings.busy,!model.emailSummaries.busy,!registration.isEmpty else { return }
-        let requestedScopes:[UUID?]=manual ? (topic == nil ? [nil] : [nil,topic]) : [nil]+assistant.topics.sorted{$0.id.uuidString < $1.id.uuidString}.map{Optional($0.id)}
+        let accountScopes:[UUID?]=[nil]+assistant.topics.sorted{$0.id.uuidString < $1.id.uuidString}.map{Optional($0.id)}
+        let requestedScopes:[UUID?]=manual && topic != nil ? [nil,topic] : accountScopes
         let selectedModel=model.chatGPT.selectedModel,capturedTopics=Set(assistant.topics.map(\.id)),enabledAtStart=automatic
         if manual {
             let old=state

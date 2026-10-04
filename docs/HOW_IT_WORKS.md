@@ -8,6 +8,8 @@ Pages hold movable, resizable widgets. A page fits the window; content inside a 
 
 Current widgets include Calendar, Reminders, Mail, Today's brief, Email summary, Your PA, Tasks for you, Date & clock and Life map. Adding or viewing a widget does not itself start an AI request.
 
+Date & clock scales its typography to the widget. Adaptive layout puts the date and time side by side in wide widgets; Digital and Calendar layouts are selectable from its ellipsis menu, alongside Centre/Leading alignment, clock visibility, seconds and 24-hour time. These are local per-widget preferences. Ellipsis menus use only three dots.
+
 ## A PA conversation
 
 ```mermaid
@@ -30,7 +32,7 @@ A foreground turn has limits: six inference rounds, twelve tool calls, at most f
 
 | Layer | What it contains | How it is used |
 | --- | --- | --- |
-| Recent conversation | Recent completed messages in the current general/topic thread | Follow-ups, references and conversational intent |
+| Recent conversation | Recent completed messages in the ongoing general PA conversation (legacy thread tags stay saved) | Follow-ups, references and conversational intent |
 | Saved facts | Preferences, context and commitments, with account/topic ownership | Relevant recall between conversations |
 | Connections and organisation | Evidence-backed subject → relationship → object links, typed endpoints and life areas | Connected recall, area notes and the Life map |
 | Correction history | Original and replacement facts with separate evidence and IDs | Current recall uses the latest belief; earlier versions can be inspected/restored |
@@ -40,7 +42,7 @@ Useful facts can be learned naturally, without a remember keyword. The foregroun
 
 Stable directly stated facts persist until corrected or forgotten. Inferred facts are provisional; older provisional context requires review after 90 days. Resolved commitments are excluded from ordinary recall. Passing a date does not prove a task is complete.
 
-Recall uses local word relevance, topic-area preference and up to two hops through typed connected entities, capped at 40 records and 20,000 bytes. The universal self node is excluded from expansion, so asking about one project does not pull in every fact about you. A separate bounded notebook context supplies up to four relevant areas, each with up to six source facts, within 8,000 bytes. These are useful recall layers, not a semantic embedding index or a complete biography.
+Recall uses local word relevance, selected life-area preference and up to two hops through typed connected entities, capped at 40 records and 20,000 bytes. The universal self node is excluded from expansion, so asking about one project does not pull in every fact about you. A separate bounded notebook context supplies up to four relevant areas, each with up to six source facts, within 8,000 bytes. These are useful recall layers, not a semantic embedding index or a complete biography.
 
 There is one account-owned self identity. First-person links attach to it; an explicitly supported own-name annotation labels it. A person sharing your name remains a separate contact. Goals, habits, projects, values and personality traits have distinct types. Broad areas include About me, Studies, Career, Personal projects, Interests, Wellbeing, People, Home and Administration. Facts may belong to several areas without being copied. The current taxonomy is a starter set, rather than arbitrary nested personal folders.
 
@@ -48,15 +50,17 @@ The Life map widget offers Map and Notes views. Map starts from you and shows co
 
 You can inspect, correct, confirm and forget memories. A correction creates a new current version and preserves the old wording/evidence as history. Show earlier versions and Restore are available in Memory. Forgetting a current belief removes its correction lineage and suppresses relearning from its original/correction turns; a local Undo restores the removed records. Old superseded evidence is also excluded from ordinary recall and cannot be reinserted by a background learner merely paraphrasing the same quoted evidence. This is conservative history protection, not complete automatic contradiction detection.
 
-## Topics
+## Focus
 
-General has its own ongoing transcript. Each named topic has a separate transcript, focus description, optional preferred notebook area and additional scoped memory. Topic editing can choose Studies, Career or another area to bias relevant recall. All topics can still use shared PA memory; an explicit question about another area can retrieve its permitted facts. The Life map can display shared memory or shared plus one selected topic. Account/topic filtering happens before notebook projection or connected retrieval.
+The PA now uses one ongoing general conversation. Its Focus control lets you choose several life areas, such as Studies and Career, or All areas. This biases relevant recall; it does not start another chat or prevent an explicit question from using other relevant memories. The Life map has its own Focus control for displaying a subset of areas. Choices are saved per widget and account; the expanded PA view saves its account preference separately. Each new request and queued request captures the selected areas when submitted, so later changes do not retarget work already running.
 
-This is area-based focus over the same notebook, not a global alias registry or arbitrary entity-anchor focus yet. A focus choice does not broaden source permissions or expose another topic's private records.
+Earlier named-topic transcripts, drafts, IDs and memory ownership are retained in storage without merging or deleting them. The new selector does not browse those historical transcripts. A previous topic's area preference seeds Focus until a new choice is saved. Normal Focus chat and the Life map can retrieve this account's usable earlier topic memories as part of the same notebook. New normal-chat memories are shared. Other accounts and disabled source context remain excluded; Focus grants no source access or write permission. Existing legacy queued work retains its original captured thread.
+
+This is multi-area focus, not arbitrary entity anchors or a global alias registry. Account and source-permission filtering still precede notebook projection and connected retrieval.
 
 ## Questions and setup
 
-Set up my PA opens a dedicated memory interview, separate from your normal chat and its unfinished draft. Start it explicitly, then answer one short question at a time. It builds breadth across questions, using existing shared/current-topic memory to avoid repeating what it already knows. Questions have a completed-output length/format check; a failed response offers Continue instead of pasting a long answer into the normal chat.
+Set up my PA opens a dedicated memory interview, separate from your normal chat and its unfinished draft. Start it explicitly, then answer one short question at a time. It builds breadth across questions, using this account’s existing permitted notebook memory to avoid repeating what it already knows. Questions have a completed-output length/format check; a failed response offers Continue instead of pasting a long answer into the normal chat.
 
 The interview has its own saved account/topic/session transcript and answer draft. Close pauses your interaction without deleting them; Continue memory setup reopens it. Skip moves to another question. Finish ends that interview while retaining its answers and any facts already saved; another setup starts a new interview. The interview exposes only memory tools, never Calendar/Reminders changes or source reads. Normal PA chat keeps its full task tools. New interview turns are excluded from ordinary chat/history, while real answers remain eligible for existing bounded memory learning; synthetic start/skip/continue controls are excluded. A rich answer can produce several distinct concise facts from the same turn. Confident organisation is attached in the original save, rather than requiring an administration call for every fact. Questions use the notebook's known/unexplored areas to build breadth before probing details. Existing old setup messages are preserved. Fictional subscription evaluations and live personal interview acceptance are recorded separately in STATUS.
 
@@ -64,17 +68,21 @@ Occasional learning questions also exist: at most one per local day, grounded in
 
 ## Queued work and handoffs
 
-You can queue another request while the PA replies. Requests capture their account and topic and execute serially once the queue is explicitly started. Completed queued work stays in Tasks for you as a handoff.
+You can queue another request while the PA replies. Requests capture their account and current Focus and execute serially once the queue is explicitly started. Completed chat replies remain in the PA conversation; they no longer clutter Tasks for you. Pending, interrupted or answer-needed work remains visible there.
 
 A genuine clarification pauses advancement. A failed/stopped request also pauses it. On relaunch, unfinished running requests become interrupted and are not replayed automatically. This avoids blindly repeating a possible Apple change. Waiting requests can be continued explicitly.
 
-Tasks for you also shows existing grounded recommendations and prepared email replies. A draft is a proposed output, not proof that every sentence is correct or that an email has been sent.
+Tasks for you prioritises source-linked missing-plan suggestions, emails needing action and prepared replies. Monitored new emails can produce local drafts during their existing assessment job. Older eligible reply-needed cards offer Draft reply: one fresh read-only email-body lookup and bounded subscription request, with account, source, model and memory checks before saving. Drafts use placeholders for unknown availability or decisions; Review draft supports editing, saving and copying. Nothing is sent or written to Mail.
+
+Suggestions compare bounded email assessments and recent selected WhatsApp text with fresh enabled Calendar/Reminders records. Existing similar plans count as coverage; partial source access is not proof that no plan exists. Each card retains an exact source quote and identity. Review suggestion opens the native event/reminder review form; only the human's explicit Create saves it. A draft or suggestion is proposed work, not proof that it is correct, complete or accepted.
+
+Settings → WhatsApp → PA chat access → Suggest useful tasks from recent selected chats is a separate off-by-default opt-in. The existing idle proactive job may compare at most eight cached selected-chat messages from the last 48 hours, with the existing three-suggestion/day and automatic attempt/cooldown limits. Tasks refresh can request one comparison of currently shared chats even when automatic inclusion is off. Foreground chat access alone does not enable this background work. Access revocation, linked identity changes, edits and cache absence hide dependent WhatsApp suggestions and refuse stale native saves. Source refresh/reception still makes no AI request.
 
 ## Background work
 
 The app has separate bounded jobs for incoming-email assessment, morning brief preparation, conversational learning, existing-memory organisation and proactive source comparison. They respect their controls, source selections, account ownership and subscription limits. They do not all run on every refresh. Ordinary source refresh/reception makes no AI calls.
 
-Notebook organisation classifies already-saved human facts only. It preserves the original text/evidence and never scans Mail/WhatsApp or changes Apple records. Its own automatic control is default-on, additionally requiring memory and conversation learning enabled; it runs only when idle, at most two eight-fact passes per account/day with a 30-minute cooldown. A manual Organise memories action processes up to four small batches across shared/selected-topic memory. Manual pins are protected. Interrupted/failed work remains paused until explicitly resumed. These are incremental classifications, not automatic semantic merging or deletion.
+Notebook organisation classifies already-saved human facts only. It preserves the original text/evidence and never scans Mail/WhatsApp or changes Apple records. Its own automatic control is default-on, additionally requiring memory and conversation learning enabled; it runs only when idle, at most two eight-fact passes per account/day with a 30-minute cooldown. A manual Organise memories action from Focus processes up to four small batches across this account’s shared and earlier-topic human memory. Manual pins are protected. Interrupted/failed work remains paused until explicitly resumed. These are incremental classifications, not automatic semantic merging or deletion.
 
 Today's morning message is saved once. An explicit daytime update is separate and does not deliver another morning notification. Email monitoring prioritises relevant new mail rather than summarising a historical backlog. WhatsApp reception caches partial linked-device text locally; PA access and brief inclusion have separate selected-chat controls.
 

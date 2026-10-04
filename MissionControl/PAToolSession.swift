@@ -7,6 +7,7 @@ import Foundation
     let humanContext: String
     let history: [[String:String]]
     let topicID: UUID?
+    let focusAreas:[LifeArea]?
     let turnID: UUID
     let registration: String
     let localMail: MailLookup
@@ -23,8 +24,8 @@ import Foundation
     private var whatsappSearch: WhatsAppSearchCursor?
     private let evaluationMemory:PAMemoryStore?
     private var memory:PAMemoryStore { evaluationMemory ?? model.assistant.memory }
-    init(model: DashboardModel, human: String, humanContext: String, topicID: UUID?, turnID: UUID, mail: MailLookup? = nil, history: [[String:String]] = [], evaluationMemory:PAMemoryStore? = nil) {
-        self.evaluationMemory=evaluationMemory
+    init(model: DashboardModel, human: String, humanContext: String, topicID: UUID?, turnID: UUID, mail: MailLookup? = nil, history: [[String:String]] = [], evaluationMemory:PAMemoryStore? = nil,focusAreas:[LifeArea]? = nil) {
+        self.evaluationMemory=evaluationMemory;self.focusAreas=focusAreas
         self.localMail = mail ?? MailLookup(); self.history = history
         self.model = model; self.human = human; self.humanContext = humanContext; self.topicID = topicID; self.turnID = turnID; registration = model.chatGPT.activeID
         if evaluationMemory == nil {
@@ -52,7 +53,7 @@ import Foundation
         if !memoryTool, call.name != "ask_clarification", ProcessInfo.processInfo.arguments.contains("--sample") { throw ActionFailure.message("Sample mode never accesses Apple apps.") }
         var target = (args["target"] as? String).flatMap { id in reminders.reminders.first { $0.id == id }.map { $0.title + " · " + $0.sourceLabel } ?? calendar.events.first { $0.id == id }.map { $0.title + " · " + $0.sourceLabel + " · " + DateRules.localTimestamp($0.start) } }
         if call.name == "change_memory" {
-            guard let id=(args["id"] as? String).flatMap(UUID.init(uuidString:)),issuedMemory.contains(id),let record=memory.permittedRecords.first(where:{ $0.id == id && MemoryRules.usable($0,registration:registration) && MemoryRules.inScope($0,conversationID:topicID) }) else { throw ActionFailure.message("Read the current permitted memory before changing it.") }
+            guard let id=(args["id"] as? String).flatMap(UUID.init(uuidString:)),issuedMemory.contains(id),let record=memory.permittedRecords.first(where:{ $0.id == id && MemoryRules.usable($0,registration:registration) && (focusAreas != nil || MemoryRules.inScope($0,conversationID:topicID)) }) else { throw ActionFailure.message("Read the current permitted memory before changing it.") }
             target=try json(["memoryID":record.id.uuidString,"currentBeliefData":record.text,"scope":record.conversationID?.uuidString ?? "shared"])
         }
         let organisationAccepted=try await PAToolAuthorization.check(call:call,args:args,human:human,history:history,target:target,model:model)
@@ -164,20 +165,20 @@ import Foundation
             let result = try await model.undoAssistantAppleChange(); receipts.append(result); return try json(["verified":true,"result":result])
         case "read_memory":
             guard memory.enabled else { throw ActionFailure.message("Memory is disabled.") }
-            let selection = memory.selection(registration,conversationID:topicID,query:text("query"),focus:assistant.conversation(topicID)?.notebookAreas ?? [])
+            let selection = memory.selection(registration,conversationID:topicID,includeTopics:focusAreas != nil,query:text("query"),focus:focusAreas ?? assistant.conversation(topicID)?.notebookAreas ?? [])
             issuedMemory.formUnion(selection.records.compactMap { $0["id"].flatMap(UUID.init(uuidString:)) })
-            return try json(["records":selection.records,"eligible":selection.eligibleCount,"selected":selection.records.count,"coverage":"Bounded relevant shared/current-topic memory; not exhaustive recall."])
+            return try json(["records":selection.records,"eligible":selection.eligibleCount,"selected":selection.records.count,"coverage":focusAreas != nil ? "Bounded account-owned relevant memory with life-area focus; not exhaustive recall." : "Bounded relevant shared/current-topic memory; not exhaustive recall."])
         case "read_life_notebook":
             guard memory.enabled else { throw ActionFailure.message("Memory is disabled.") }
-            let notebook=memory.notebook(registration,topic:topicID)
-            let focus=assistant.conversation(topicID)?.notebookAreas ?? []
-            let selection=memory.selection(registration,conversationID:topicID,query:text("query"),focus:focus)
+            let notebook=memory.notebook(registration,topic:topicID,includeTopics:focusAreas != nil)
+            let focus=focusAreas ?? assistant.conversation(topicID)?.notebookAreas ?? []
+            let selection=memory.selection(registration,conversationID:topicID,includeTopics:focusAreas != nil,query:text("query"),focus:focus)
             issuedMemory.formUnion(selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))})
             let notes=try JSONSerialization.jsonObject(with:Data(notebook.context(query:text("query"),focus:focus).utf8)) as! [String:Any]
             for area in notes["areas"] as? [[String:Any]] ?? [] { issuedMemory.formUnion((area["facts"] as? [[String:String]] ?? []).compactMap{$0["id"].flatMap(UUID.init(uuidString:))}) }
-            return try json(["notes":notes,"records":selection.records,"entities":notebook.entities.filter{!$0.memoryIDs.isDisjoint(with:issuedMemory)}.prefix(40).map{["id":$0.id,"label":$0.label,"kind":$0.kind.rawValue,"areas":$0.areas.map(\.rawValue).sorted()] as [String:Any]},"coverage":"Partial bounded shared/current-topic notebook; no other-topic facts or source reads."])
+            return try json(["notes":notes,"records":selection.records,"entities":notebook.entities.filter{!$0.memoryIDs.isDisjoint(with:issuedMemory)}.prefix(40).map{["id":$0.id,"label":$0.label,"kind":$0.kind.rawValue,"areas":$0.areas.map(\.rawValue).sorted()] as [String:Any]},"coverage":focusAreas != nil ? "Partial bounded account-owned notebook with life-area focus; source permissions still apply." : "Partial bounded shared/current-topic notebook; no other-topic facts or source reads."])
         case "organise_memory":
-            guard memory.enabled,let id=UUID(uuidString:text("id")!),issuedMemory.contains(id),let record=memory.permittedRecords.first(where:{$0.id == id && $0.source == nil && $0.registration == registration && MemoryRules.inScope($0,conversationID:topicID)}) else { throw ActionFailure.message("Read a permitted human memory before organising it. Source interpretations keep their separate evidence and provisional areas.") }
+            guard memory.enabled,let id=UUID(uuidString:text("id")!),issuedMemory.contains(id),let record=memory.permittedRecords.first(where:{$0.id == id && $0.source == nil && $0.registration == registration && (focusAreas != nil || MemoryRules.inScope($0,conversationID:topicID))}) else { throw ActionFailure.message("Read a permitted human memory before organising it. Source interpretations keep their separate evidence and provisional areas.") }
             var object=args;object.removeValue(forKey:"id")
             let value=try JSONDecoder().decode(LifeMemoryOrganisation.self,from:JSONSerialization.data(withJSONObject:object))
             guard LifeMemoryOrganisation.valid(value,record:record) else { throw ActionFailure.message("Unsupported organisation or self identity; memory was not changed.") }
@@ -215,7 +216,7 @@ import Foundation
         case "change_memory":
             guard memory.enabled else { throw ActionFailure.message("Memory is disabled.") }
             try PAToolProtocol.evidence(text("authorization"),human:human)
-            guard let id = UUID(uuidString:text("id")!), issuedMemory.contains(id), let record = memory.permittedRecords.first(where:{ $0.id == id && $0.registration == registration && MemoryRules.inScope($0,conversationID:topicID) }) else { throw ActionFailure.message("Read the memory's permitted identity before changing it.") }
+            guard let id = UUID(uuidString:text("id")!), issuedMemory.contains(id), let record = memory.permittedRecords.first(where:{ $0.id == id && $0.registration == registration && (focusAreas != nil || MemoryRules.inScope($0,conversationID:topicID)) }) else { throw ActionFailure.message("Read the memory's permitted identity before changing it.") }
             let success: Bool
             var resultID=id
             switch text("operation")! {

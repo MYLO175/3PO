@@ -155,7 +155,7 @@ enum MemoryRetrieval {
     static func select(_ memories: [PAMemory], registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, now: Date = .now, limit: Int = 40, bytes: Int = byteLimit, focus:[LifeArea] = []) -> MemorySelection {
         let eligible = memories.filter { MemoryRules.usable($0,registration:registration,now:now) && MemoryRules.inScope($0,conversationID:conversationID,includeTopics:includeTopics) }
         let terms = tokens(query ?? "")
-        let notebook=LifeNotebook.build(eligible,registration:registration,topic:conversationID,now:now)
+        let notebook=LifeNotebook.build(eligible,registration:registration,topic:conversationID,now:now,includeTopics:includeTopics)
         let seeds=Set(notebook.entities.filter { $0.id != LifeNotebook.selfID && !tokens($0.label).isDisjoint(with:terms) }.prefix(20).map(\.id))
         var neighbours=seeds,connected=Set<UUID>()
         // Two bounded hops. The universal self node is never a bridge to the whole life.

@@ -10,9 +10,9 @@ Calendar, Reminders, Mail, permissions and linked-device data require this Mac. 
 
 Ordinary conversation expresses intent. Typed local tools resolve exact records and verify changes. Command-word templates are unnecessary; imported text and saved memory remain information rather than permission to change Apple records.
 
-## One PA, separate topic transcripts
+## One PA conversation with multi-area Focus
 
-General and each optional topic have their own continuing thread. We do not need a browser for creating and revisiting arbitrary old chats. Topics optionally prefer a life area over one linked notebook, while keeping transcript and deliberate scope boundaries. Focus is a recall preference, not a permission grant.
+The latest user direction replaces named-topic navigation with a multi-select lens over life areas. Keep one ongoing general conversation; capture Focus on each request and use it to prioritise relevant memories. Focus is a relevance preference, not source access or write permission. Prior topic transcripts and drafts remain saved without merging or deletion; earlier topic memories become available to this account's Focus notebook while retaining their original evidence and tags. Legacy queued work retains its captured ownership.
 
 ## Memory must be inspectable and correctable
 

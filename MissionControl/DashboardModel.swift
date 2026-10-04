@@ -138,6 +138,15 @@ import EventKit
     func start() {
         guard !started else { return }; started = true
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--validate-focus-workflow") {
+            Task {
+                let result:[String:Any]
+                do { result=try await WorkflowEvaluation.run(self) }
+                catch { result=["error":error.localizedDescription,"completed":Date.now.ISO8601Format()] }
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-workflow-evaluation.json"),options:.atomic) }
+                NSApp.terminate(nil)
+            };return
+        }
         if ProcessInfo.processInfo.arguments.contains("--validate-source-context") {
             Task {
                 let result:[String:Any]
@@ -148,7 +157,7 @@ import EventKit
             };return
         }
         if ProcessInfo.processInfo.arguments.contains("--render-life-map") {
-            Task { try? await Task.sleep(for:.milliseconds(250));LifeNotebookPreview.render();NSApp.terminate(nil) };return
+            Task { try? await Task.sleep(for:.milliseconds(250));LifeNotebookPreview.render();DateClockPreview.render();NSApp.terminate(nil) };return
         }
         if ProcessInfo.processInfo.arguments.contains("--validate-life-notebook") { validateLifeNotebook();return }
         #endif
@@ -347,12 +356,16 @@ import EventKit
     func newNativeItem(_ kind: NativeItemKind, date: Date? = nil) {
         editTarget = .create(NativeCreationRequest(kind:kind,registration:chatGPT.activeID,preferredDate:date))
     }
-    func reviewDiscovery(_ record: PADiscovery, as kind: NativeItemKind? = nil) {
-        guard proactive.visible(record,model:self), record.registration == chatGPT.activeID,
-              let id = UUID(uuidString:record.id), let message = emailSummaries.highlights(self).first(where:{ $0.0.id == record.mailID })?.0 else { return }
-        let selectedKind = kind ?? (record.kind == "calendar" ? .event : .reminder)
-        let request = NativeCreationRequest(id:id,kind:selectedKind,registration:record.registration,title:String(message.subject.prefix(500)),notes:"Source: " + message.account + " · " + message.subject + "\n" + record.evidence,discoveryID:record.id,evidence:record.message + "\n\nEmail: " + record.evidence,requiresDateSelection:selectedKind == .event)
-        editTarget = .create(request)
+    func reviewDiscovery(_ record:PADiscovery,as kind:NativeItemKind? = nil) {
+        guard proactive.visible(record,model:self),record.registration == chatGPT.activeID,let id=UUID(uuidString:record.id) else { return }
+        let label:String,title:String
+        if record.sourceKind == "whatsapp" { label="WhatsApp · " + (record.sourceLabel ?? "Selected chat");title=record.sourceTitle ?? "Follow up: " + (record.sourceLabel ?? "WhatsApp") }
+        else {
+            guard let message=emailSummaries.highlights(self).first(where:{$0.0.id == record.mailID})?.0 else { return }
+            label=message.account + " · " + message.subject;title=record.sourceTitle ?? message.subject
+        }
+        let selectedKind=kind ?? (record.kind == "calendar" ? .event : .reminder)
+        editTarget = .create(NativeCreationRequest(id:id,kind:selectedKind,registration:record.registration,title:String(title.prefix(500)),notes:"Source: " + label + "\n" + record.evidence,discoveryID:record.id,evidence:record.message + "\n\n" + label + ": " + record.evidence,requiresDateSelection:selectedKind == .event))
     }
     func createNativeItem(_ request: NativeCreationRequest, baseline: NativeEditDetails, edited: NativeEditDetails, dateSelected: Bool) async throws {
         guard !sample, !writing, !assistant.busy, request.registration == chatGPT.activeID else { throw ActionFailure.message("Another change or account switch is in progress; reopen the form when ready.") }

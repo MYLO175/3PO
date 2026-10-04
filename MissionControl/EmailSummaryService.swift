@@ -89,6 +89,31 @@ import SwiftData
         records[i].replyDraft=value.trimmingCharacters(in:.whitespacesAndNewlines)
         do { try save(); return true } catch { records=previous; self.error="The reply draft could not be saved."; return false }
     }
+    /// One explicit local draft, with fresh read-only source and captured account/settings.
+    func prepareReply(_ message:MailMessage,summary:EmailSummary,model:DashboardModel) {
+        guard !busy,!model.assistant.busy,!model.chatGPT.busy,!model.writing,!model.proactive.busy,!model.briefings.busy,!model.memoryLearning.busy,!model.sourceLearning.busy,
+              model.assistant.contextEnabled,model.chatGPT.inferenceVerified,!model.chatGPT.usagePaused,summary.registration == model.chatGPT.activeID,summary.needsReply == true,!message.replied,summary.replyDraft == nil,!model.assistant.excludedAccounts.contains(message.accountID),current(message,model:model)?.created == summary.created else { return }
+        let registration=model.chatGPT.activeID,selectedModel=model.chatGPT.selectedModel,memoryRevision=model.assistant.memory.revision
+        let sourceRevision=model.sourceRevision,memory=model.assistant.memory.context(registration,includeTopics:true,includeSources:false)
+        busy=true;error=nil
+        task=Task {
+            defer { busy=false }
+            @MainActor func valid()->Bool {
+                registration == model.chatGPT.activeID && !model.assistant.busy && !model.writing && selectedModel == model.chatGPT.selectedModel && memoryRevision == model.assistant.memory.revision && sourceRevision == model.sourceRevision && model.assistant.contextEnabled && !model.assistant.excludedAccounts.contains(message.accountID) && current(message,model:model)?.created == summary.created && current(message,model:model)?.replyDraft == nil && current(message,model:model)?.dismissed != true && !(model.mailData.messages.first(where:{$0.id == message.id}) ?? message).replied
+            }
+            do {
+                let body=try await model.mail.body(accountID:message.accountID,messageID:message.messageID,expectedInternetMessageID:message.internetMessageID,mailboxName:message.mailboxName)
+                try Task.checkCancellation();guard valid(),!body.isEmpty,body.count <= 16000 else { throw ActionFailure.message("The email changed or its full body is unavailable; no draft saved.") }
+                let input:[String:Any]=["subject":message.subject,"sender":message.sender,"received":message.received.ISO8601Format(),"body":body,"sharedMemory":memory]
+                let data=try JSONSerialization.data(withJSONObject:input,options:.sortedKeys)
+                let text=try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:data,as:UTF8.self)]],instructions:EmailReplyDraftRules.instructions,model:selectedModel) { _ in }
+                try Task.checkCancellation();guard valid() else { throw ActionFailure.message("Email, account or memory changed during drafting; no draft saved.") }
+                let reply=try EmailReplyDraftRules.decode(text)
+                guard saveReplyDraft(reply,summary:summary,model:model) else { throw ActionFailure.message("The draft could not be saved; try again after checking the email.") }
+            } catch is CancellationError { error="Reply drafting stopped; no incomplete draft saved." }
+            catch { self.error=error.localizedDescription }
+        }
+    }
     func coverage(_ model: DashboardModel) -> String {
         let pending = monitored(model).filter { message in
             current(message,model:model) == nil && !rejected.contains(where: { $0.matches(message,registration:model.chatGPT.activeID) }) && !decisions.contains { $0.id == message.id && $0.registration == model.chatGPT.activeID && $0.fingerprint == EmailSummary.fingerprint(message) && !$0.readBody }

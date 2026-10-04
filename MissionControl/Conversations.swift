@@ -14,6 +14,7 @@ struct AssistantTurn: Codable, Identifiable {
     var profileControl: Bool? = nil
     var memoryNotes: [String]? = nil
     var sourceMemoryIDs:[UUID]? = nil
+    var focusAreas:[LifeArea]? = nil
 }
 struct AssistantConversation: Codable, Identifiable {
     var id = UUID()

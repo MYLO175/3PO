@@ -21,6 +21,10 @@ import SwiftData
         precondition(!reload.add(registration:"one",topicID:nil,prompt:"  "))
         for i in 0..<19 { precondition(reload.add(registration:"one",topicID:nil,prompt:"Task \(i)")) }
         precondition(!reload.add(registration:"one",topicID:nil,prompt:"over limit"))
+        var greeting=PAQueuedRequest(registration:"one",prompt:"hi just checking stuff");greeting.state = .completed;greeting.result="Hi"
+        var answer=PAQueuedRequest(registration:"one",prompt:"Book a trip",focusAreas:[.studies,.career]);answer.state = .needsAnswer
+        precondition(PAQueueRules.handoffs([greeting,answer],registration:"one").map(\.id) == [answer.id])
+        let captured=try JSONDecoder().decode(PAQueuedRequest.self,from:JSONEncoder().encode(answer));precondition(captured.focusAreas == [.studies,.career])
         print("PASS: queue persistence, captured topic/account, FIFO, interrupted no-replay state, removal, unavailable storage and bounded admission")
     }
 }

@@ -9,17 +9,22 @@ struct PALifeMapWidget: View {
     @State private var areaMemory:PAMemory?
     @State private var detailOrganising:PAMemory?
     @State private var detailShowMemory=false
-    private var topic:UUID? {
-        ConversationRules.topicSelection(configuration.wrappedValue.paTopicSelections?[model.chatGPT.activeID],legacy:nil,in:model.assistant.conversations,registration:model.chatGPT.activeID)
+    private var topic:UUID? { nil }
+    private var focusAreas:[LifeArea] {
+        if let saved=configuration.wrappedValue.lifeFocusSelections?[model.chatGPT.activeID] { return LifeFocusRules.normalised(saved) }
+        let legacy=configuration.wrappedValue.paTopicSelections?[model.chatGPT.activeID].flatMap(UUID.init(uuidString:))
+        return model.assistant.conversation(legacy)?.notebookAreas ?? []
     }
-    private var notebook:LifeNotebook { model.assistant.memory.notebook(model.chatGPT.activeID,topic:topic) }
-    private var notes:[LifeAreaNote] { notebook.notes }
+    private var focusBinding:Binding<[LifeArea]> { Binding(get:{focusAreas},set:{ areas in
+        var value=configuration.wrappedValue;if value.lifeFocusSelections == nil { value.lifeFocusSelections=[:] }
+        value.lifeFocusSelections?[model.chatGPT.activeID]=areas.map(\.rawValue);configuration.wrappedValue=value;selectedArea=nil;areaDetails=nil;areaMemory=nil
+    }) }
+    private var notebook:LifeNotebook { model.assistant.memory.notebook(model.chatGPT.activeID,includeTopics:true) }
+    private var notes:[LifeAreaNote] { notebook.notes.filter { focusAreas.isEmpty || focusAreas.contains($0.area) } }
     var body:some View {
         VStack(alignment:.leading,spacing:10) {
             HStack { Label("Life map",systemImage:"point.3.connected.trianglepath.dotted").font(.title3.weight(.semibold));Spacer()
-                Picker("Map topic",selection:Binding(get:{topic?.uuidString ?? ""},set:{ value in var config=configuration.wrappedValue;if config.paTopicSelections == nil { config.paTopicSelections=[:] };config.paTopicSelections?[model.chatGPT.activeID]=value;configuration.wrappedValue=config;selectedArea=nil;areaDetails=nil;areaMemory=nil })) {
-                    Text("General").tag("");ForEach(model.assistant.topics) { Text($0.title).tag($0.id.uuidString) }
-                }.labelsHidden().frame(maxWidth:130)
+                LifeFocusPicker(selection:focusBinding).frame(maxWidth:160,alignment:.trailing)
             }
             .fixedSize(horizontal:false,vertical:true)
             Picker("Life map view",selection:$presentation) { Text("Map").tag("Map");Text("Notes").tag("Notes") }

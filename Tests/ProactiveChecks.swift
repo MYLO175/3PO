@@ -41,6 +41,21 @@ import Foundation
         let study = AssistantConversation(accountID:"A",title:"Study",isTopic:true)
         precondition(ProactiveReviewRules.reference("yes",turns:ConversationRules.thread(feed:pa,topic:study),records:records) == nil)
         precondition(ProactiveReviewRules.reference("yes",turns:ConversationRules.thread(feed:pa,topic:nil),records:records) != nil)
+        let message=WhatsAppReadMessage(id:"same-id",chat:"family",sender:"person",text:"Alex, please book the train for Friday.",sentByMe:false,time:Date.now.timeIntervalSince1970*1000)
+        let candidate=DiscoveryCandidate(alias:"wa_0",mailID:"issued-wa",evidence:"",followUpEvidence:"",sourceKind:"whatsapp",sourceChatID:message.chat,sourceMessageID:message.id,sourceIdentity:"linked",sourceRevision:SourceContextRules.revision(message),sourceLabel:"Family",sourceText:message.text)
+        let response=#"{"suggestions":[{"mailID":"wa_0","kind":"reminder","title":"Book the train","message":"Your family asked you to book the train. Shall I add a reminder?","evidence":"please book the train for Friday."}]}"#
+        let wa=try ProactiveRules.decode(response,candidates:[candidate],registration:"A",scope:"s",now:.now)[0]
+        var access=WhatsAppAccess(enabled:true,chats:["family"])
+        precondition(ProactiveRules.permittedWhatsApp(wa,access:access,identity:"linked",messages:[message]))
+        precondition(!ProactiveRules.permittedWhatsApp(wa,access:access,identity:"other",messages:[message]))
+        precondition(!ProactiveRules.permittedWhatsApp(wa,access:access,identity:"linked",messages:[]))
+        let edited=WhatsAppReadMessage(id:message.id,chat:message.chat,sender:message.sender,text:"Already booked, thanks",sentByMe:false,time:message.time)
+        precondition(!ProactiveRules.permittedWhatsApp(wa,access:access,identity:"linked",messages:[edited]))
+        access.chats=[];precondition(!ProactiveRules.permittedWhatsApp(wa,access:access,identity:"linked",messages:[message]))
+        var changed=wa;changed.sourceRevision="changed"
+        precondition(ProactiveRules.unreported([changed],prior:[wa],budget:1).count == 1)
+        do { _=try ProactiveRules.decode(response.replacingOccurrences(of:"please book the train for Friday.",with:"invented evidence"),candidates:[candidate],registration:"A",scope:"s",now:.now);fatalError("Invented WhatsApp evidence accepted") } catch {}
+        let reply=try EmailReplyDraftRules.decode(#"{"draft":"Thanks for the invitation. [Confirm availability]"}"#);precondition(reply.contains("[Confirm availability]"))
         print("PASS proactive rules: grounded aliases/quotes, prohibited kinds, account dedup/dismissal, daily budget, pause/cooldown/persistence and conservative current-thread latest-suggestion review references.")
     }
 }

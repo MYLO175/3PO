@@ -121,7 +121,7 @@ import SwiftData
         guard let record=records.first(where:{$0.id == id}),value.map({LifeMemoryOrganisation.valid($0,record:record)}) ?? true else { return false }
         return change { state in if let index=state.records.firstIndex(where:{$0.id == id}) { var value=value; value?.manual=true; state.records[index].organisation=value } }
     }
-    func notebook(_ registration:String,topic:UUID? = nil)->LifeNotebook { LifeNotebook.build(enabled ? permittedRecords : [],registration:registration,topic:topic) }
+    func notebook(_ registration:String,topic:UUID? = nil,includeTopics:Bool=false)->LifeNotebook { LifeNotebook.build(enabled ? permittedRecords : [],registration:registration,topic:topic,includeTopics:includeTopics) }
     func selection(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, focus:[LifeArea] = [],includeSources:Bool = true) -> MemorySelection {
         guard enabled else { return MemorySelection(records:[],eligibleCount:0) }
         return MemoryRetrieval.select(includeSources ? permittedRecords : records.filter{$0.source == nil},registration:registration,conversationID:conversationID,includeTopics:includeTopics,query:query,focus:focus)

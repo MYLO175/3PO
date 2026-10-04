@@ -67,9 +67,13 @@ struct WidgetConfiguration: Codable, Equatable {
     var conversationSelections: [String:UUID]? = nil
     // Empty string is explicit general PA mode, distinct from an unmigrated legacy selection.
     var paTopicSelections: [String:String]? = nil
+    var lifeFocusSelections:[String:[String]]? = nil
     var colourProfiles: [String:[String:String]]? = nil
     var clockShowsTime: Bool? = nil
     var clockShowsSeconds: Bool? = nil
+    var clockStyle:String? = nil
+    var clockAlignment:String? = nil
+    var clockUses24Hour:Bool? = nil
 }
 
 struct GridRect: Codable, Equatable {

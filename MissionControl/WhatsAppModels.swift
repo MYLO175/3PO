@@ -18,6 +18,7 @@ struct WhatsAppAccess: Codable, Equatable {
     var chats: Set<String> = []
     var includeInBrief: Bool? = nil
     var learnContext: Bool? = nil
+    var includeInSuggestions:Bool? = nil
     var briefEnabled: Bool { enabled && includeInBrief == true && !chats.isEmpty }
 }
 struct WhatsAppBriefSnapshot {

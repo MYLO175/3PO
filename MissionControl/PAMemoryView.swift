@@ -39,7 +39,7 @@ struct PAMemoryView: View {
                 HStack { Text("Uses existing saved human facts only: at most eight per pass, two automatic passes per day. No email/WhatsApp scan or extra facts. Your manual organisation stays pinned.").font(.caption).foregroundStyle(.secondary);Spacer();if organisation.busy { Button("Stop") { organisation.cancel() } } else { Button("Organise now") { organiseContext?() }.disabled(assistant?.busy == true || assistant?.connection.busy == true || assistant?.connection.inferenceVerified != true || assistant?.connection.usagePaused == true || !memory.enabled || !memory.learningEnabled) } }
                 if let error=organisation.error { Text(error).font(.caption).foregroundStyle(.orange) }
             }
-            Text("Shared memories are available everywhere; topic memories are supplied only in their topic (and when relevant in a daily brief). Explicit facts stay until you forget them. Inferred context needs review after 90 days. Stable directly stated facts persist until corrected or forgotten. Completing a commitment here only updates memory; Apple reminders are separate.").font(.callout).foregroundStyle(.secondary)
+            Text("Focus draws on this account’s permitted life notebook, including memories from earlier topics. Source access still controls source-derived context. Inferred context needs review after 90 days; stable directly stated facts persist until corrected or forgotten. Completing a commitment here only updates memory; Apple reminders are separate.").font(.callout).foregroundStyle(.secondary)
             if let error = memory.error { Text(error).foregroundStyle(.orange).font(.caption) }
             HStack {
                 Picker("Memory view",selection:$presentation) { Text("List").tag("List"); Text("Connections").tag("Connections") }.pickerStyle(.segmented).frame(width:230)
@@ -48,14 +48,14 @@ struct PAMemoryView: View {
             if presentation == "List" { Toggle("Show earlier versions",isOn:$showHistory).font(.caption) }
             ScrollView {
                 if presentation == "Connections" {
-                    let notebook=memory.notebook(registration,topic:conversationID)
+                    let notebook=memory.notebook(registration,topic:conversationID,includeTopics:true)
                     LifeNotebookMapView(notebook:notebook,notes:notebook.notes,selectedArea:$selectedArea)
                     if let note=notebook.notes.first(where:{$0.area == selectedArea}) { LifeNotebookAreaView(notebook:notebook,note:note) { item in presentation="List";search=item.text } }
                 } else {
                 LazyVStack(alignment:.leading,spacing:12) {
                     ForEach(memory.items(registration).filter { (showHistory || $0.supersededBy == nil) && (search.isEmpty || ($0.text + " " + ($0.connections ?? []).map { $0.subject + " " + $0.relation + " " + $0.object }.joined(separator:" ")).localizedCaseInsensitiveContains(search)) }) { item in
                         VStack(alignment:.leading,spacing:6) {
-                            HStack { Text(item.conversationID.map { "Topic · " + (assistant?.conversation($0)?.title ?? "Saved topic") } ?? "Shared").font(.caption).foregroundStyle(.secondary); Text(item.kind.rawValue.capitalized).font(.caption.weight(.semibold)); if item.supersededBy != nil { Text("Earlier version").font(.caption).foregroundStyle(.secondary) } else if item.supersedes != nil { Text("Corrected").font(.caption).foregroundStyle(.secondary) };if item.resolved != nil { Text(MemoryRules.archived(item) ? "Archived" : "Resolved").font(.caption).foregroundStyle(.secondary) }; if MemoryRules.needsReview(item) { Text("Review needed").foregroundStyle(.orange).font(.caption) }; Spacer() }
+                            HStack { Text(item.conversationID.map { "Earlier topic · " + (assistant?.conversation($0)?.title ?? "Saved topic") } ?? "Shared").font(.caption).foregroundStyle(.secondary); Text(item.kind.rawValue.capitalized).font(.caption.weight(.semibold)); if item.supersededBy != nil { Text("Earlier version").font(.caption).foregroundStyle(.secondary) } else if item.supersedes != nil { Text("Corrected").font(.caption).foregroundStyle(.secondary) };if item.resolved != nil { Text(MemoryRules.archived(item) ? "Archived" : "Resolved").font(.caption).foregroundStyle(.secondary) }; if MemoryRules.needsReview(item) { Text("Review needed").foregroundStyle(.orange).font(.caption) }; Spacer() }
                             Text(item.text).textSelection(.enabled)
                             if item.source != nil && !memory.sourceIsPermitted(item) { Text("Outside current source access or changed cache · excluded from PA recall").font(.caption).foregroundStyle(.secondary) }
                             ForEach(Array((item.connections ?? []).enumerated()),id:\.offset) { _, edge in Text(edge.subject + " → " + edge.relation + " → " + edge.object).font(.caption).foregroundStyle(.secondary) }

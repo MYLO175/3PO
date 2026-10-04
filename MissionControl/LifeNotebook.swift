@@ -76,8 +76,8 @@ struct LifeNotebook {
         if kind == .person || kind == .concept { return scope+":"+record.id.uuidString+":"+String(index)+":"+endpoint }
         return scope+":"+kind.rawValue+":"+key(label)
     }
-    static func build(_ records:[PAMemory],registration:String,topic:UUID? = nil,now:Date = .now)->Self {
-        let permitted=records.filter { MemoryRules.usable($0,registration:registration,now:now) && MemoryRules.inScope($0,conversationID:topic) }.sorted { $0.reviewed == $1.reviewed ? $0.id.uuidString < $1.id.uuidString : $0.reviewed > $1.reviewed }
+    static func build(_ records:[PAMemory],registration:String,topic:UUID? = nil,now:Date = .now,includeTopics:Bool=false)->Self {
+        let permitted=records.filter { MemoryRules.usable($0,registration:registration,now:now) && (includeTopics || MemoryRules.inScope($0,conversationID:topic)) }.sorted { $0.reviewed == $1.reviewed ? $0.id.uuidString < $1.id.uuidString : $0.reviewed > $1.reviewed }
         let selfLabel=permitted.filter { $0.conversationID == nil && ($0.explicit || $0.certainty == .stated) }.compactMap { record in record.organisation.flatMap { LifeMemoryOrganisation.valid($0,record:record) ? $0.selfName : nil } }.first ?? "Me"
         var entities:[String:LifeEntity]=[:],links:[LifeLink]=[],notes:[LifeArea:[PAMemory]]=[:]
         for record in permitted {
