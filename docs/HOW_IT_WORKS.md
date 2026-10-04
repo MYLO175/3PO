@@ -51,7 +51,7 @@ You can inspect, correct, confirm and forget memories. Forgetting suppresses aut
 
 ## Questions and setup
 
-Set up my PA starts an optional adaptive interview in the existing thread. It asks one useful question at a time, builds on saved context and uses the existing memory tools. Finish setup exits that account/topic's mode. It does not create a new chat archive or grant source permissions.
+Set up my PA starts an optional adaptive interview in the existing thread. It starts with an open introduction and broad life overview when little is known, then explores important areas before narrowing into details. It asks one useful question at a time, builds on saved context and saves supported facts/connections through the existing memory tools as answers arrive. Finish setup exits that account/topic's mode. It does not create a new chat archive or grant source permissions.
 
 Occasional learning questions also exist: at most one per local day, grounded in eligible human conversation and included in the existing bounded learning pass. They can be dismissed and undone. This is not yet an autonomous interview based on every source in your life.
 
