@@ -4,6 +4,7 @@ struct CalendarWidgetView: View {
     @Environment(\.workspacePalette) private var palette
     @Bindable var model: DashboardModel
     @Binding var configuration: WidgetConfiguration
+    var widgetID: UUID? = nil
     @State private var snapshot = CalendarSnapshot(sources:[],events:[])
     @State private var loading = false
     @State private var error: String?
@@ -47,7 +48,7 @@ struct CalendarWidgetView: View {
                 }
                 Spacer(minLength:4)
                 Button { navigate(-1) } label: { Image(systemName:"chevron.left") }.help("Previous calendar period").accessibilityLabel("Previous calendar period")
-                Button(mode == "day" || mode == "week" ? "Now" : "Today") { configuration.date = .now; focusRequest += 1 }
+                Button(mode == "day" || mode == "week" ? "Now" : "Today",action:returnToToday)
                 Button { navigate(1) } label: { Image(systemName:"chevron.right") }.help("Next calendar period").accessibilityLabel("Next calendar period")
             }.buttonStyle(.borderless).controlSize(.small)
             if let error { Text((updated == nil ? "" : "Stale · ") + error).font(.caption).foregroundStyle(.orange).lineLimit(2) }
@@ -56,9 +57,15 @@ struct CalendarWidgetView: View {
             else if mode == "day" || mode == "week" { timelineView }
             else { agendaView }
         }.padding(16).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+            .onAppear(perform:returnToToday)
+            .onChange(of:widgetID) { returnToToday() }
             .task(id:"\(range.start.timeIntervalSince1970):\(range.end.timeIntervalSince1970):\(model.widgetCalendars.revision)") { await load() }
             .onChange(of:configuration.date) { showDatePicker = false }
             .sheet(item:$selectedEvent) { NativeItemEditor(model:model,target:.event($0.event),proposedMove:$0.move) }
+    }
+    private func returnToToday() {
+        configuration.date = .now
+        focusRequest += 1
     }
     private func load() async {
         loading = true; defer { loading = false }

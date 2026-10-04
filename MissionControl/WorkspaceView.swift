@@ -227,7 +227,7 @@ private struct WorkspaceTile: View {
     }
     @ViewBuilder private var content: some View {
         switch widget.kind {
-        case .calendar: CalendarWidgetView(model:model,configuration:configuration)
+        case .calendar: CalendarWidgetView(model:model,configuration:configuration,widgetID:widget.id)
         case .reminders: DashboardView(model:model,widgetConfiguration:configuration).remindersPanel
         case .mail: DashboardView(model:model,widgetConfiguration:configuration).inboxPanel
         case .conversation: AssistantPanel(model:model,assistant:model.assistant,readingMode:$readingMode,supportsReadingMode:false,widgetID:widget.id,configuration:configuration)
