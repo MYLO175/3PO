@@ -12,6 +12,7 @@ struct PAMemoryView: View {
     @State private var editing: PAMemory?
     @State private var text = ""
     @State private var search = ""
+    @State private var presentation="List"
     @State private var scope: UUID?
     @State private var kind = MemoryKind.preference
     @State private var provisional = false
@@ -29,8 +30,14 @@ struct PAMemoryView: View {
             }
             Text("Shared memories are available everywhere; topic memories are supplied only in their topic (and when relevant in a daily brief). Explicit facts stay until you forget them. Inferred context needs review after 90 days. Stable directly stated facts persist until corrected or forgotten. Completing a commitment here only updates memory; Apple reminders are separate.").font(.callout).foregroundStyle(.secondary)
             if let error = memory.error { Text(error).foregroundStyle(.orange).font(.caption) }
-            TextField("Search memories and connections",text:$search)
+            HStack {
+                Picker("Memory view",selection:$presentation) { Text("List").tag("List"); Text("Connections").tag("Connections") }.pickerStyle(.segmented).frame(width:230)
+                if presentation == "List" { TextField("Search memories and connections",text:$search) }
+            }
             ScrollView {
+                if presentation == "Connections" {
+                    PAMemoryGraphView(graph:PAMemoryGraph.build(memory.records,registration:registration,topic:conversationID),records:memory.items(registration)) { item in presentation="List"; search=item.text }
+                } else {
                 LazyVStack(alignment:.leading,spacing:12) {
                     ForEach(memory.items(registration).filter { search.isEmpty || ($0.text + " " + ($0.connections ?? []).map { $0.subject + " " + $0.relation + " " + $0.object }.joined(separator:" ")).localizedCaseInsensitiveContains(search) }) { item in
                         VStack(alignment:.leading,spacing:6) {
@@ -50,6 +57,7 @@ struct PAMemoryView: View {
                     }
                     if memory.items(registration).isEmpty { Text("Tell your PA ‘Remember that…’, or add something below.").foregroundStyle(.secondary).padding(.vertical) }
                 }
+            }
             }
             if let forgotten { HStack { Text("Memory forgotten").font(.caption); Button("Undo") { if memory.put(forgotten) { self.forgotten = nil } }; Spacer() } }
             Divider()

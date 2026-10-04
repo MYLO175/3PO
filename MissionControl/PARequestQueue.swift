@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 import Observation
 
-enum PAQueuedState: String, Codable { case waiting, running, interrupted }
+enum PAQueuedState: String, Codable { case waiting, running, interrupted, needsAnswer, completed }
 struct PAQueuedRequest: Identifiable, Codable, Equatable {
     var id = UUID()
     var registration: String
@@ -10,6 +10,8 @@ struct PAQueuedRequest: Identifiable, Codable, Equatable {
     var prompt: String
     var created = Date.now
     var state: PAQueuedState = .waiting
+    var result: String? = nil
+    var finished: Date? = nil
 }
 enum PAQueueRules {
     static func recover(_ values: [PAQueuedRequest]) -> [PAQueuedRequest] {
@@ -35,10 +37,16 @@ enum PAQueueRules {
         } catch { writable=false; self.error="Saved requests could not be read; the original record is preserved." }
     }
     @discardableResult func add(registration:String,topicID:UUID?,prompt:String)->Bool {
-        guard !registration.isEmpty, !prompt.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, ConversationRules.acceptsPrompt(prompt),items.count < 100,items.filter({$0.registration == registration}).count < 20 else { error="The queue is full or the message is too long. Your draft is kept."; return false }
-        return change { $0.append(.init(registration:registration,topicID:topicID,prompt:prompt)) }
+        guard !registration.isEmpty, !prompt.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, ConversationRules.acceptsPrompt(prompt),items.filter({$0.state != .completed}).count < 100,items.filter({$0.registration == registration && $0.state != .completed}).count < 20 else { error="The queue is full or the message is too long. Your draft is kept."; return false }
+        return change { values in
+            if values.count >= 100,let i=values.firstIndex(where:{$0.state == .completed}) { values.remove(at:i) }
+            values.append(.init(registration:registration,topicID:topicID,prompt:prompt))
+        }
     }
     @discardableResult func mark(_ id:UUID,_ state:PAQueuedState)->Bool { change { values in if let i=values.firstIndex(where:{$0.id == id}) { values[i].state=state } } }
+    @discardableResult func finish(_ id:UUID,result:String,needsAnswer:Bool)->Bool {
+        change { values in if let i=values.firstIndex(where:{$0.id == id}) { values[i].state=needsAnswer ? .needsAnswer : .completed; values[i].result=String(result.prefix(6000)); values[i].finished = .now } }
+    }
     @discardableResult func remove(_ id:UUID)->Bool { change { $0.removeAll { $0.id == id } } }
     private func change(_ action:(inout [PAQueuedRequest])->Void)->Bool {
         guard writable,let container else { error="Request storage is unavailable. Your draft is kept."; return false }

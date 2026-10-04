@@ -173,6 +173,12 @@ struct AssistantPanel: View {
                                 } else if turn.role == "assistant" {
                                     Text((try? AttributedString(markdown:turn.content,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(turn.content)).textSelection(.enabled).lineSpacing(3).id(turn.completed)
                                 } else { Text(turn.content).textSelection(.enabled) }
+                                if turn.completed, turn.role == "assistant",turn.id == selected?.turns.last?.id,let choices=turn.choices {
+                                    ViewThatFits(in:.horizontal) {
+                                        HStack { ForEach(choices,id:\.self) { choice in Button(choice) { draft.wrappedValue=choice; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) } }
+                                        VStack(alignment:.leading) { ForEach(choices,id:\.self) { choice in Button(choice) { draft.wrappedValue=choice; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) } }
+                                    }.controlSize(.small)
+                                }
                                 if replyingHere && !turn.content.isEmpty {
                                     Text(assistant.toolStatus.isEmpty ? "Thinking…" : assistant.toolStatus).font(.caption).foregroundStyle(.secondary)
                                 }
@@ -224,12 +230,12 @@ struct AssistantPanel: View {
                     Text(model.briefings.busy ? "Preparing today’s brief… You can draft a message while it finishes." : model.memoryLearning.busy ? "Learning conversation context… Start drafting to pause learning." : model.proactive.busy ? "Checking useful suggestions… Start drafting to pause the check." : model.emailSummaries.busy ? "Checking incoming mail… You can draft a message while it finishes." : "Checking your ChatGPT connection…").font(.caption).foregroundStyle(.secondary)
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
-            let queued=assistant.queue.items.filter { $0.registration == model.chatGPT.activeID && $0.topicID == selectedTopicID }
+            let queued=assistant.queue.items.filter { $0.registration == model.chatGPT.activeID && $0.topicID == selectedTopicID && $0.state != .completed }
             if !queued.isEmpty {
                 DisclosureGroup("Queued requests (\(queued.count))") {
                     ForEach(queued) { item in
                         HStack(alignment:.top) {
-                            VStack(alignment:.leading) { Text(item.prompt).lineLimit(2); Text(item.state == .interrupted ? "Interrupted — check the transcript before submitting again" : item.state == .running ? "Working…" : "Waiting").font(.caption).foregroundStyle(.secondary) }
+                            VStack(alignment:.leading) { Text(item.prompt).lineLimit(2); Text(item.state == .interrupted ? "Interrupted — check the transcript before submitting again" : item.state == .running ? "Working…" : item.state == .needsAnswer ? "Waiting for your answer in chat" : "Waiting").font(.caption).foregroundStyle(.secondary) }
                             Spacer()
                             if item.state != .running { Button { assistant.discardQueued(item.id) } label:{ Image(systemName:"xmark") }.buttonStyle(.plain).help("Remove queued request") }
                         }

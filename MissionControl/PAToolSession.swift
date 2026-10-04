@@ -15,6 +15,7 @@ import Foundation
     var emails: [String:MailMessage] = [:]
     var issuedMemory: Set<UUID> = []
     var receipts: [String] = []
+    var clarification: (String,[String])?
     var mutationCount = 0
     var mailContinuations = 0
     var issuedSuggestions: Set<String> = []
@@ -32,13 +33,19 @@ import Foundation
         func text(_ name: String) -> String? { args[name] as? String }
         let assistant = model.assistant
         let memoryTool = ["read_memory","save_memory","remember_context","change_memory"].contains(call.name)
-        guard memoryTool || assistant.contextEnabled else { throw ActionFailure.message("Source context is disabled.") }
-        if !memoryTool, ProcessInfo.processInfo.arguments.contains("--sample") { throw ActionFailure.message("Sample mode never accesses Apple apps.") }
+        guard memoryTool || call.name == "ask_clarification" || assistant.contextEnabled else { throw ActionFailure.message("Source context is disabled.") }
+        if !memoryTool, call.name != "ask_clarification", ProcessInfo.processInfo.arguments.contains("--sample") { throw ActionFailure.message("Sample mode never accesses Apple apps.") }
         let target = (args["target"] as? String).flatMap { id in reminders.reminders.first { $0.id == id }.map { $0.title + " · " + $0.sourceLabel } ?? calendar.events.first { $0.id == id }.map { $0.title + " · " + $0.sourceLabel + " · " + DateRules.localTimestamp($0.start) } }
         try await PAToolAuthorization.check(call:call,args:args,human:human,history:history,target:target,model:model)
         try Task.checkCancellation()
         guard valid() else { throw ActionFailure.message("Configuration changed during intent validation; no tool operation executed.") }
         switch call.name {
+        case "ask_clarification":
+            guard let question=text("question"),let options=args["options"] as? [String],
+                  !question.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,
+                  options.allSatisfy({!$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty}),Set(options).count == options.count else { throw ActionFailure.message("Clarification choices are empty or repeated.") }
+            clarification=(question,options)
+            return try json(["question":question,"options":options,"waitingForHuman":true])
         case "read_calendar":
             let start = try ActionRules.date(text("start")!,dateOnly:true), end = try ActionRules.date(text("end")!,dateOnly:true)
             guard end > start, end.timeIntervalSince(start) <= 91*86400 else { throw ActionFailure.message("Choose a calendar range of at most 90 days.") }

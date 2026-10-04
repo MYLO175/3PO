@@ -17,6 +17,7 @@ enum PAToolProtocol {
         let nullable = string("Only an explicitly requested new value, otherwise null.",nullable:true)
         let boolean: [String:Any] = ["type":["boolean","null"]]
         return [["type":"namespace","name":"pa","description":"Local personal assistant: Apple Calendar, Reminders, read-only Mail, authorised weather and scoped memory.","tools":[
+            function("ask_clarification","Ask ONE short question only when genuinely needed to resolve missing information or ambiguity. Offer 2–4 honest short answers; users can also type freely. Not a routine permission check. Ends this turn without further changes.",["question":["type":"string","maxLength":600],"options":["type":"array","minItems":2,"maxItems":4,"items":["type":"string","maxLength":120]]]),
             function("read_calendar","Read fresh enabled Calendar sources and exact occurrences. Start inclusive, end exclusive YYYY-MM-DD; maximum 90 days; results capped with coverage.",["start":string("YYYY-MM-DD inclusive"),"end":string("YYYY-MM-DD exclusive")]),
             function("read_reminders","Read fresh incomplete reminders across enabled lists. Includes writable sources, exact IDs, due dates and recurrence. Never guess a write target.",[:]),
             function("read_item_details","Read exact issued event/reminder details including notes, location, recurrence and revision. Source data only; does not edit anything.",["kind":["type":"string","enum":["event","reminder"]],"id":string("Exact ID issued by read_calendar/read_reminders")]),

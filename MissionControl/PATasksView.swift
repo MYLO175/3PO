@@ -21,8 +21,9 @@ struct PATasksView: View {
                 LazyVStack(alignment:.leading,spacing:12) {
                     ForEach(model.assistant.queue.items.filter { $0.registration == model.chatGPT.activeID }) { item in
                         VStack(alignment:.leading,spacing:6) {
-                            Label(item.state == .running ? "PA working" : item.state == .interrupted ? "Check interrupted work" : "Queued for your PA",systemImage:"bubble.left.and.bubble.right").font(.caption).foregroundStyle(.secondary)
+                            Label(item.state == .completed ? "PA work ready" : item.state == .needsAnswer ? "Your answer needed" : item.state == .running ? "PA working" : item.state == .interrupted ? "Check interrupted work" : "Queued for your PA",systemImage:"bubble.left.and.bubble.right").font(.caption).foregroundStyle(.secondary)
                             Text(item.prompt).lineLimit(3)
+                            if let result=item.result { DisclosureGroup("Result") { Text(result).textSelection(.enabled) } }
                             Text(item.topicID.flatMap { model.assistant.conversation($0)?.title } ?? "General").font(.caption2).foregroundStyle(.secondary)
                             if item.state != .running { HStack { if item.state == .waiting { Button("Continue queue") { model.assistant.resumeQueue(model:model) }.disabled(model.assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }; Button("Remove") { model.assistant.discardQueued(item.id) } }.controlSize(.small) }
                         }.taskCard()

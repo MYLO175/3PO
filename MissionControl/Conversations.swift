@@ -9,6 +9,7 @@ struct AssistantTurn: Codable, Identifiable {
     var created: Date? = .now
     /// Context captured when sent; changing a widget's topic never retargets a reply.
     var contextID: UUID?
+    var choices: [String]? = nil
 }
 struct AssistantConversation: Codable, Identifiable {
     var id = UUID()
