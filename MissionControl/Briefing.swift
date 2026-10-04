@@ -11,6 +11,8 @@ struct BriefingSource: Codable, Identifiable {
     var kind: String
     var date: Date?
     var originalID: String? = nil
+    var chatID: String? = nil
+    var linkedIdentity: String? = nil
 }
 struct DailyBriefing: Codable, Identifiable {
     var id: String

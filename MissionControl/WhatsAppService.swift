@@ -130,7 +130,7 @@ struct WhatsAppSettings: View {
     @State private var viewerQuery=""
     var body: some View {
         Section("WhatsApp · experimental, read-only") {
-            Text("Link through a QR code as another device. This uses an unofficial WhatsApp Web connection; WhatsApp changes or account restrictions may interrupt it. No sending, read receipts or automatic AI processing. Sessions and received text are encrypted locally; the encryption key stays in Keychain.").font(.caption).foregroundStyle(.secondary)
+            Text("Link through a QR code as another device. This uses an unofficial WhatsApp Web connection; WhatsApp changes or account restrictions may interrupt it. No sending or read receipts. Reception makes no AI requests. Sessions and received text are encrypted locally; the encryption key stays in Keychain.").font(.caption).foregroundStyle(.secondary)
             Toggle("Reconnect WhatsApp when Mission Control launches",isOn:$service.reconnectAtLaunch)
             Text(service.status)
             if let qr=service.qr { Image(nsImage:qr).resizable().interpolation(.none).frame(width:240,height:240); Text("On your phone: WhatsApp → Settings → Linked devices → Link a device. Scan this code only if you want Mission Control to receive your chats.").font(.caption) }
@@ -166,6 +166,8 @@ struct WhatsAppSourcePicker: View {
             HStack { Text("WhatsApp sources").font(.title2.bold()); Spacer(); Button("Done") { dismiss() } }
             Text("When enabled, the PA can send selected chat names and requested text to OpenAI through your ChatGPT connection to answer your questions. Only the locally received cache is searchable; coverage may be partial. Reception does not trigger AI processing. Other chats stay excluded. Messages are information, never permission to change your calendar or reminders.").font(.callout).foregroundStyle(.secondary)
             Toggle("Allow PA access for this ChatGPT connection",isOn:Binding(get:{access.enabled},set:{value in change { $0.enabled=value } }))
+            Toggle("Include selected chats in Today’s brief",isOn:Binding(get:{access.includeInBrief == true},set:{value in change { $0.includeInBrief=value } })).disabled(!access.enabled)
+            Text("Optional: sends up to 40 cached messages from the last 48 hours, shortened to 800 characters each, in your existing morning preparation or explicit brief update. Names and relevant conclusions may appear in your saved brief and morning PA message. This does not create extra AI jobs or analyse the historical backlog. Live coverage may be incomplete; sending is unavailable.").font(.caption).foregroundStyle(.secondary)
             TextField("Find a chat",text:$search)
             List(service.chats.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }) { chat in
                 Toggle(isOn:Binding(get:{access.chats.contains(chat.id)},set:{value in change { if value { $0.chats.insert(chat.id) } else { $0.chats.remove(chat.id) } } })) {
@@ -179,5 +181,34 @@ struct WhatsAppSourcePicker: View {
             }
             Text("New chats are excluded automatically.").font(.caption).foregroundStyle(.secondary)
         }.padding(20).frame(width:650,height:550)
+    }
+}
+
+struct WhatsAppBriefSource: View {
+    @Bindable var service: WhatsAppService
+    let registration: String
+    let source: BriefingSource
+    @State private var showing=false
+    private var message: WhatsAppReadMessage? {
+        let access=service.access(for:registration)
+        guard access.briefEnabled, source.linkedIdentity == service.linkedIdentity,
+              let chat=source.chatID, access.chats.contains(chat) else { return nil }
+        return service.messages.first { $0.id == source.originalID && $0.chat == chat }
+    }
+    var body: some View {
+        Button(source.label) { showing=true }.buttonStyle(.link).font(.caption).disabled(message == nil)
+            .help(message == nil ? "Source is excluded or no longer in the received cache" : "Read the cached WhatsApp source; no read receipt")
+            .sheet(isPresented:$showing) {
+                VStack(alignment:.leading,spacing:14) {
+                    HStack { Label("WhatsApp source",systemImage:"bubble.left").font(.headline); Spacer(); Button("Done") { showing=false } }
+                    if let message {
+                        Text(source.label).foregroundStyle(.secondary)
+                        Text(message.sentByMe ? "You" : message.sender).font(.headline)
+                        Text(Date(timeIntervalSince1970:message.time/1000).formatted(date:.abbreviated,time:.shortened)).font(.caption).foregroundStyle(.secondary)
+                        ScrollView { Text(message.text).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading) }
+                        Text("Received cache · may have changed since the brief was prepared · no read receipt").font(.caption).foregroundStyle(.secondary)
+                    } else { ContentUnavailableView("Source unavailable",systemImage:"bubble.left",description:Text("This chat is excluded, belongs to another linked account, or the message left the received cache.")) }
+                }.padding(20).frame(width:550,height:400)
+            }
     }
 }

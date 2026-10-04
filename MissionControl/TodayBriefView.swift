@@ -30,6 +30,7 @@ struct TodayBriefView: View {
                                         if let source = record.sources.first(where: { $0.id == id }) {
                                             if source.kind == "mail", let message = model.emailSummaries.highlights(model).first(where:{ $0.0.id == source.originalID })?.0 { Button(source.label) { model.select(message) }.buttonStyle(.link).font(.caption) }
                                             else if source.kind == "weather" { Link(source.label,destination:WeatherRules.provider).font(.caption) }
+                                            else if source.kind == "whatsapp" { WhatsAppBriefSource(service:model.whatsapp,registration:model.chatGPT.activeID,source:source) }
                                             else { Label(source.label,systemImage:source.kind == "calendar" ? "calendar" : "checklist").font(.caption).foregroundStyle(.secondary) }
                                         }
                                     }
