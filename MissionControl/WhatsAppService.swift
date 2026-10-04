@@ -3,19 +3,18 @@ import AppKit
 import Security
 import CryptoKit
 
-struct WhatsAppReadMessage: Codable, Identifiable {
-    let id: String
-    let chat: String
-    let sender: String
-    let text: String
-    let sentByMe: Bool
-    let time: Double
-}
 @MainActor @Observable final class WhatsAppService {
     var status = "Not connected"
+    var reconnectAtLaunch = UserDefaults.standard.bool(forKey:"whatsappReconnectAtLaunch") {
+        didSet { UserDefaults.standard.set(reconnectAtLaunch,forKey:"whatsappReconnectAtLaunch") }
+    }
     var connected = false
     var qr: NSImage?
     var messages: [WhatsAppReadMessage] = []
+    var chats: [WhatsAppChat] = []
+    var linkedIdentity = ""
+    var accessRevision = UUID()
+    private var accesses: [String:WhatsAppAccess] = [:]
     var coverage = "No WhatsApp data received."
     private var process: Process?
     private var input: FileHandle?
@@ -34,66 +33,151 @@ struct WhatsAppReadMessage: Codable, Identifiable {
         guard SecItemAdd(item as CFDictionary,nil)==errSecSuccess else { throw CocoaError(.fileWriteNoPermission) }
         return data
     }
+    init() {
+        guard !ProcessInfo.processInfo.arguments.contains("--sample") else { return }
+        let path=directory.appendingPathComponent("access.enc")
+        if let bytes=try? Data(contentsOf:path) {
+            do { let decrypted=try AES.GCM.open(AES.GCM.SealedBox(combined:bytes),using:SymmetricKey(data:try key())); accesses=try JSONDecoder().decode([String:WhatsAppAccess].self,from:decrypted) }
+            catch { status="WhatsApp access preferences could not be read. AI access stays off." }
+        }
+    }
+    func access(for registration: String) -> WhatsAppAccess {
+        guard !linkedIdentity.isEmpty else { return .init() }
+        return accesses[registration + ":" + linkedIdentity] ?? .init()
+    }
+    func setAccess(_ access: WhatsAppAccess, registration: String) {
+        guard !linkedIdentity.isEmpty else { return }
+        let id=registration + ":" + linkedIdentity
+        var updated=accesses; updated[id]=access
+        do {
+            try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
+            let bytes=try JSONEncoder().encode(updated)
+            let sealed=try AES.GCM.seal(bytes,using:SymmetricKey(data:try key())).combined!
+            let path=directory.appendingPathComponent("access.enc")
+            try sealed.write(to:path,options:.atomic)
+            try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:path.path)
+            accesses=updated; accessRevision=UUID()
+        } catch { status="Could not save WhatsApp source choices; previous choices retained." }
+    }
+    func resumeAtLaunch() {
+        if reconnectAtLaunch && FileManager.default.fileExists(atPath:directory.appendingPathComponent("auth.enc").path) { connect() }
+    }
     func connect() {
-        guard process == nil else { return }
+        guard !ProcessInfo.processInfo.arguments.contains("--sample") else { status="WhatsApp is unavailable in sample mode."; return }
+        if process != nil { if connected || qr != nil { return }; stop(persistPause:false) }
         guard let root=Bundle.main.resourceURL?.appendingPathComponent("WhatsAppBridge"), FileManager.default.fileExists(atPath:root.appendingPathComponent("reader.mjs").path) else { status="WhatsApp helper is missing from this build."; return }
-        guard let node=["/usr/local/bin/node","/opt/homebrew/bin/node"].first(where:{ FileManager.default.isExecutableFile(atPath:$0) }) else { status="This experimental connector requires Node.js 20 or later installed on this Mac."; return }
+        guard let node=[root.appendingPathComponent("Runtime/node").path,"/usr/local/bin/node","/opt/homebrew/bin/node"].first(where:{ FileManager.default.isExecutableFile(atPath:$0) }) else { status="This experimental connector requires Node.js 20 or later installed on this Mac."; return }
         do {
             let secret=try key(), task=Process(), incoming=Pipe(), outgoing=Pipe()
             let token=UUID(); generation=token
+            task.environment=ProcessInfo.processInfo.environment.filter { !["NODE_OPTIONS","NODE_PATH","NODE_TLS_REJECT_UNAUTHORIZED","SSLKEYLOGFILE"].contains($0.key) && !$0.key.hasPrefix("DYLD_") }
             task.executableURL=URL(fileURLWithPath:node); task.arguments=[root.appendingPathComponent("reader.mjs").path]
             task.standardInput=incoming; task.standardOutput=outgoing; task.standardError=FileHandle.nullDevice
             let receiver=WhatsAppOutputReader { [weak self] data in Task { @MainActor in if self?.generation == token { self?.receive(data) } } }
-            outgoing.fileHandleForReading.readabilityHandler={ handle in receiver.read(handle.availableData) }
-            task.terminationHandler={ [weak self] _ in Task { @MainActor in guard self?.generation == token else { return }; self?.process=nil; self?.connected=false; self?.qr=nil; self?.status="Stopped · reconnect to resume reading" } }
+            outgoing.fileHandleForReading.readabilityHandler={ handle in let data=handle.availableData; if data.isEmpty { handle.readabilityHandler=nil } else { receiver.read(data) } }
+            task.terminationHandler={ [weak self] _ in Task { @MainActor in
+                guard let self, self.generation == token else { return }
+                let unexpected=self.connected || self.status == "Connecting…" || self.status == "Reconnecting…"
+                self.process=nil; self.connected=false; self.qr=nil; self.input=nil; self.reader=nil
+                if unexpected { self.status="Stopped · reconnect to resume reading" }
+            } }
+
             try task.run(); process=task; input=incoming.fileHandleForWriting; reader=receiver; status="Connecting…"
             let command:[String:String]=["action":"start","directory":directory.path,"key":secret.base64EncodedString()]
             try input?.write(contentsOf:JSONSerialization.data(withJSONObject:command)+Data([10]))
         } catch { stop(); status="Cannot start WhatsApp or access its encrypted session." }
     }
-    func stop() { generation=UUID(); process?.terminationHandler=nil; input?.closeFile(); process?.terminate(); process=nil; input=nil; reader=nil; connected=false; qr=nil; status="Paused · session retained" }
+    func stop(persistPause: Bool = true) { if persistPause { reconnectAtLaunch=false }; generation=UUID(); process?.terminationHandler=nil; input?.closeFile(); process?.terminate(); process=nil; input=nil; reader=nil; connected=false; qr=nil; status="Paused · session retained" }
     func disconnect() {
-        stop()
-        do { if FileManager.default.fileExists(atPath:directory.path) { try FileManager.default.removeItem(at:directory) }; SecItemDelete(query as CFDictionary); messages=[]; status="Disconnected · also remove Mission Control from WhatsApp’s Linked devices." }
-        catch { status="Disconnected, but local encrypted session could not be removed." }
+        stop(); messages=[]; chats=[]; accesses=[:]; linkedIdentity=""; accessRevision=UUID()
+        do {
+            if FileManager.default.fileExists(atPath:directory.path) { try FileManager.default.removeItem(at:directory) }
+            let result=SecItemDelete(query as CFDictionary)
+            guard result == errSecSuccess || result == errSecItemNotFound else { throw CocoaError(.fileWriteNoPermission) }
+            status="Disconnected · also remove Mission Control from WhatsApp’s Linked devices."
+        } catch { status="PA access stopped, but local session cleanup failed. Try Disconnect again." }
     }
-    private func receive(_ data: Data) {
-        guard process != nil, let event=try? JSONSerialization.jsonObject(with:data) as? [String:Any] else { return }
-        if let value=event["status"] as? String { status=value }
-        if let value=event["connected"] as? Bool { connected=value; if value { qr=nil } }
-        if let png=event["png"] as? String, let encoded=png.split(separator:",").last, let image=Data(base64Encoded:String(encoded)) { qr=NSImage(data:image) }
-        if let list=event["messages"], let encoded=try? JSONSerialization.data(withJSONObject:list), let values=try? JSONDecoder().decode([WhatsAppReadMessage].self,from:encoded) { messages=values }
-        if let value=event["coverage"] as? String { coverage=value }
+    private func receive(_ event: WhatsAppReadEvent) {
+        guard process != nil else { return }
+        if let identity=event.identity, identity != linkedIdentity { linkedIdentity=identity; accessRevision=UUID() }
+        if let values=event.chats { chats=values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending } }
+        if let value=event.status { status=value }
+        if let value=event.connected { connected=value; if value || status.contains("revoked") { qr=nil } }
+        if let png=event.png, let encoded=png.split(separator:",").last, let image=Data(base64Encoded:String(encoded)) { qr=NSImage(data:image) }
+        if let values=event.messages { messages=values }
+        if let value=event.coverage { coverage=value }
     }
+
 }
 private final class WhatsAppOutputReader: @unchecked Sendable {
     private let lock=NSLock()
     private var buffer=Data()
-    private let deliver: (Data)->Void
-    init(deliver:@escaping(Data)->Void) { self.deliver=deliver }
+    private let deliver: (WhatsAppReadEvent)->Void
+    init(deliver:@escaping(WhatsAppReadEvent)->Void) { self.deliver=deliver }
     func read(_ data: Data) {
         guard !data.isEmpty else { return }
         lock.lock(); defer { lock.unlock() }; buffer.append(data)
         guard buffer.count < 40_000_000 else { buffer.removeAll(); return }
-        while let newline=buffer.firstIndex(of:10) { let line=Data(buffer[..<newline]); buffer.removeSubrange(...newline); deliver(line) }
+        while let newline=buffer.firstIndex(of:10) { let line=Data(buffer[..<newline]); buffer.removeSubrange(...newline); if let event=try? JSONDecoder().decode(WhatsAppReadEvent.self,from:line) { deliver(event) } }
     }
 }
 struct WhatsAppSettings: View {
     @Bindable var service: WhatsAppService
+    let registration: String
     @State private var showMessages=false
+    @State private var showSources=false
+    @State private var viewerChat=""
+    @State private var viewerQuery=""
     var body: some View {
         Section("WhatsApp · experimental, read-only") {
             Text("Link through a QR code as another device. This uses an unofficial WhatsApp Web connection; WhatsApp changes or account restrictions may interrupt it. No sending, read receipts or automatic AI processing. Sessions and received text are encrypted locally; the encryption key stays in Keychain.").font(.caption).foregroundStyle(.secondary)
+            Toggle("Reconnect WhatsApp when Mission Control launches",isOn:$service.reconnectAtLaunch)
             Text(service.status)
             if let qr=service.qr { Image(nsImage:qr).resizable().interpolation(.none).frame(width:240,height:240); Text("On your phone: WhatsApp → Settings → Linked devices → Link a device. Scan this code only if you want Mission Control to receive your chats.").font(.caption) }
             HStack { Button("Connect / show QR") { service.connect() }; Button("Pause") { service.stop() }; Button("Disconnect") { service.disconnect() }; Button("Received text (\(service.messages.count))") { showMessages=true } }
+            Button("PA chat access…") { showSources=true }.disabled(service.linkedIdentity.isEmpty)
+            Text(service.access(for:registration).enabled ? "PA access enabled for \(service.access(for:registration).chats.count) selected chats" : "PA access off") .font(.caption)
             Text(service.coverage).font(.caption).foregroundStyle(.secondary)
+        }.sheet(isPresented:$showSources) {
+            WhatsAppSourcePicker(service:service,registration:registration)
         }.sheet(isPresented:$showMessages) {
             VStack(alignment:.leading) {
                 HStack { Text("WhatsApp received text").font(.title2); Spacer(); Button("Done") { showMessages=false } }
                 Text(service.coverage).font(.caption).foregroundStyle(.secondary)
-                List(service.messages) { message in VStack(alignment:.leading,spacing:4) { Text(message.sender).font(.headline); Text(message.text).textSelection(.enabled); Text(Date(timeIntervalSince1970:message.time/1000),style:.date).font(.caption).foregroundStyle(.secondary) } }
+                HStack {
+                    Picker("Chat",selection:$viewerChat) { Text("All received chats").tag(""); ForEach(service.chats) { Text($0.name).tag($0.id) } }.frame(maxWidth:250)
+                    TextField("Search received text",text:$viewerQuery)
+                }
+                List(service.messages.filter { (viewerChat.isEmpty || $0.chat == viewerChat) && (viewerQuery.isEmpty || ($0.text + " " + $0.sender).localizedCaseInsensitiveContains(viewerQuery)) }) { message in VStack(alignment:.leading,spacing:4) { Text(message.sender).font(.headline); Text(service.chats.first(where:{$0.id == message.chat})?.name ?? message.chat).font(.caption).foregroundStyle(.secondary); Text(message.text).textSelection(.enabled); Text(Date(timeIntervalSince1970:message.time/1000),style:.date).font(.caption).foregroundStyle(.secondary) } }
             }.padding(20).frame(width:650,height:550)
         }
+    }
+}
+
+struct WhatsAppSourcePicker: View {
+    @Bindable var service: WhatsAppService
+    let registration: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var search=""
+    private var access: WhatsAppAccess { service.access(for:registration) }
+    private func change(_ edit: (inout WhatsAppAccess)->Void) { var next=access; edit(&next); service.setAccess(next,registration:registration) }
+    var body: some View {
+        VStack(alignment:.leading,spacing:14) {
+            HStack { Text("WhatsApp sources").font(.title2.bold()); Spacer(); Button("Done") { dismiss() } }
+            Text("When enabled, the PA can send selected chat names and requested text to OpenAI through your ChatGPT connection to answer your questions. Only the locally received cache is searchable; coverage may be partial. Reception does not trigger AI processing. Other chats stay excluded. Messages are information, never permission to change your calendar or reminders.").font(.callout).foregroundStyle(.secondary)
+            Toggle("Allow PA access for this ChatGPT connection",isOn:Binding(get:{access.enabled},set:{value in change { $0.enabled=value } }))
+            TextField("Find a chat",text:$search)
+            List(service.chats.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }) { chat in
+                Toggle(isOn:Binding(get:{access.chats.contains(chat.id)},set:{value in change { if value { $0.chats.insert(chat.id) } else { $0.chats.remove(chat.id) } } })) {
+                    Label(chat.name,systemImage:chat.group ? "person.2" : "person")
+                }
+            }
+            HStack {
+                Text("\(access.chats.count) selected · \(service.chats.count) cached chats").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Clear selection") { change { $0.chats=[] } }.disabled(access.chats.isEmpty)
+            }
+            Text("New chats are excluded automatically.").font(.caption).foregroundStyle(.secondary)
+        }.padding(20).frame(width:650,height:550)
     }
 }

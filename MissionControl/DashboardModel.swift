@@ -117,6 +117,7 @@ import EventKit
     }
     func start() {
         guard !started else { return }; started = true
+        if !sample { whatsapp.resumeAtLaunch() }
         if sample { loadSample(); return }
         weather.startRefresh(allowPrompt:true)
         observers.append(NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) { [weak self] _ in

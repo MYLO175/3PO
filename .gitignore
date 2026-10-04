@@ -16,3 +16,4 @@ xcuserdata/
 !WhatsAppBridge/package.json
 !WhatsAppBridge/package-lock.json
 node_modules/
+WhatsAppBridge/Runtime/

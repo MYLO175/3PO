@@ -362,7 +362,7 @@ struct SettingsView: View {
                 Text("Calendar and Reminders use macOS permissions. Mail uses Automation permission. Calendar, Reminders and Mail refresh make no AI calls. Optional weather fetches use a rounded nearby area. Enabled assistant context is used by chat and the configured background PA jobs.").font(.callout)
                 Button("Open Privacy & Security") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security")!) }
             }
-            WhatsAppSettings(service:model.whatsapp)
+            WhatsAppSettings(service:model.whatsapp,registration:model.chatGPT.activeID)
             WeatherSettings(weather:model.weather)
             ChatGPTConnectionView(connection: model.chatGPT)
             AssistantSourceSettings(model: model, assistant: model.assistant)
