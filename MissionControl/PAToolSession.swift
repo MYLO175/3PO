@@ -15,6 +15,7 @@ import Foundation
     var emails: [String:MailMessage] = [:]
     var issuedMemory: Set<UUID> = []
     var receipts: [String] = []
+    var memoryNotes: [String] = []
     var clarification: (String,[String])?
     var mutationCount = 0
     var mailContinuations = 0
@@ -29,7 +30,16 @@ import Foundation
     func execute(_ call: PAFunctionCall, valid: @MainActor () -> Bool) async throws -> String {
         try Task.checkCancellation()
         guard registration == model.chatGPT.activeID else { throw ActionFailure.message("Account changed; tool stopped.") }
-        let args = try PAToolProtocol.arguments(call)
+        var args = try PAToolProtocol.arguments(call)
+        if ["save_memory","remember_context"].contains(call.name) {
+            if let quote=MemoryEvidence.match(args["evidence"] as? String,human:human) { args["evidence"]=quote }
+            if let values=args["connections"] as? [[String:Any]] {
+                let supplied=try JSONDecoder().decode([MemoryConnection].self,from:JSONSerialization.data(withJSONObject:values))
+                let supported=MemoryEvidence.supportedConnections(supplied,human:human)
+                if supported.count != supplied.count { memoryNotes.append("An unsupported graph link was omitted. The fact still requires valid human evidence.") }
+                args["connections"]=try JSONSerialization.jsonObject(with:JSONEncoder().encode(supported))
+            }
+        }
         func text(_ name: String) -> String? { args[name] as? String }
         let assistant = model.assistant
         let memoryTool = ["read_memory","save_memory","remember_context","change_memory"].contains(call.name)

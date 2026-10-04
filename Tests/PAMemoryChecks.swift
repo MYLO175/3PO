@@ -53,6 +53,18 @@ import Foundation
         let edge = MemoryConnection(subject:"Me",relation:"family chat",object:"The Zoo",evidence:quote)
         precondition(MemoryConnection.valid([edge],human:quote))
         precondition(!MemoryConnection.valid([edge],human:"read a different chat"))
+        let actual="I’m studying 8 modules. My work is end–to–end.\nI play football."
+        precondition(MemoryEvidence.match("i'm studying 8 modules",human:actual) == "I’m studying 8 modules")
+        precondition(MemoryEvidence.match("end-to-end",human:actual) == "end–to–end")
+        precondition(MemoryEvidence.match("end-to-end. I play",human:actual) == "end–to–end.\nI play")
+        precondition(MemoryEvidence.match("I study engineering",human:actual) == nil)
+        precondition(MemoryEvidence.match("",human:actual) == nil)
+        precondition(MemoryEvidence.match(".*",human:actual) == nil, "Quotes must not become regex instructions")
+        let supportedEdge=MemoryConnection(subject:"You",relation:"plays",object:"Football",evidence:"i play football")
+        let inventedEdge=MemoryConnection(subject:"You",relation:"lives",object:"Mars",evidence:"I live on Mars")
+        let retained=MemoryEvidence.supportedConnections([supportedEdge,inventedEdge],human:actual)
+        precondition(retained.count == 1 && retained[0].evidence == "I play football")
+        precondition(MemoryConnection.valid(retained,human:actual))
         var family = older; family.text = "The Zoo"; family.connections = [edge]
         let connected = MemoryRetrieval.select([family],registration:"one",query:"family",now:now)
         precondition(connected.records.first?["connections"]?.contains("The Zoo") == true)

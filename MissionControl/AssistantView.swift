@@ -181,6 +181,10 @@ struct AssistantPanel: View {
                                         VStack(alignment:.leading) { ForEach(choices,id:\.self) { choice in Button(choice) { draft.wrappedValue=choice; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) } }
                                     }.controlSize(.small)
                                 }
+                                if let notes=turn.memoryNotes,!notes.isEmpty {
+                                    DisclosureGroup("Memory tool notes") { ForEach(Array(notes.enumerated()),id:\.offset) { _,note in Text(note).font(.caption).foregroundStyle(.orange).textSelection(.enabled) } }
+                                        .font(.caption)
+                                }
                                 if replyingHere && !turn.content.isEmpty {
                                     Text(assistant.toolStatus.isEmpty ? "Thinking…" : assistant.toolStatus).font(.caption).foregroundStyle(.secondary)
                                 }

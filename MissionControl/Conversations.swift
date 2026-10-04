@@ -12,6 +12,7 @@ struct AssistantTurn: Codable, Identifiable {
     var choices: [String]? = nil
     var profileSessionID: UUID? = nil
     var profileControl: Bool? = nil
+    var memoryNotes: [String]? = nil
 }
 struct AssistantConversation: Codable, Identifiable {
     var id = UUID()

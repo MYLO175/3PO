@@ -343,6 +343,7 @@ import Observation
             @MainActor func setResponse(_ text: String, completed: Bool) {
                 if let c = allConversations.firstIndex(where:{ $0.id == id }), let t = allConversations[c].turns.firstIndex(where:{ $0.id == response.id }) {
                     allConversations[c].turns[t].content = text; allConversations[c].turns[t].completed = completed
+                    allConversations[c].turns[t].memoryNotes = session.memoryNotes.isEmpty ? nil : Array(session.memoryNotes.suffix(6))
                 }
             }
             var input: [[String:Any]] = history.map { $0 as [String:Any] }
@@ -390,7 +391,12 @@ import Observation
                                 toolMail = session.localMail; toolMailRegistration = registration; mailSearchConversationID = id; mailSearchTopicID = contextID
                             }
                         } catch is CancellationError { throw CancellationError() }
-                        catch { output = String(data:try JSONSerialization.data(withJSONObject:["error":error.localizedDescription,"verified":false,"instruction":"Do not claim success or repeat a possibly attempted save. Clarify missing information if needed."]),encoding:.utf8)! }
+                        catch {
+                            if ["save_memory","remember_context","change_memory"].contains(call.name) { session.memoryNotes.append(String(error.localizedDescription.prefix(500))) }
+                            let guidance=["save_memory","remember_context"].contains(call.name)
+                                ? "Do not claim success. If evidence/connection validation failed, correct the exact quote from the current human answer or omit unsupported links within the remaining tool budget. Do not rephrase to bypass disabled, paused, suppressed or unavailable storage; report those limitations. Never repeat a possibly attempted storage save."
+                                : "Do not claim success or repeat a possibly attempted save. Clarify missing information if needed."
+                            output = String(data:try JSONSerialization.data(withJSONObject:["error":error.localizedDescription,"verified":false,"instruction":guidance]),encoding:.utf8)! }
                         guard valid() else { throw ActionFailure.message("Configuration changed during tool execution; check any saved receipt before repeating.") }
                         input.append(["type":"function_call_output","call_id":call.id,"output":output])
                         if !session.receipts.isEmpty { setResponse(session.receipts.joined(separator:"\n"),completed:false); save() }
@@ -400,6 +406,7 @@ import Observation
             } catch is CancellationError { error = "Stopped. " + (session.receipts.isEmpty ? "No verified changes were reported." : "Verified changes are retained below.") }
             catch { self.error = error.localizedDescription }
             if !session.receipts.isEmpty { setResponse(session.receipts.joined(separator:"\n") + "\n\nRemaining work stopped; see the message below.",completed:false) }
+            else if !session.memoryNotes.isEmpty { setResponse("",completed:false) }
         }
     }
     func snapshot(_ model: DashboardModel) -> String? {

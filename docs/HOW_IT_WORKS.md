@@ -82,3 +82,5 @@ Selected source context is sent to subscription inference when the corresponding
 ## How we know a change works
 
 There are separate checks for compilation, signing, deterministic fixtures, process launch and live interface/source behaviour. Some recent graph/setup/queue interaction checks remain pending because app control was unavailable. [STATUS](../STATUS.md) is the record of what was actually verified, not merely intended.
+
+Memory tool failures now appear in **Memory tool notes** on the relevant reply or interview. Supporting quotes preserve the actual current human wording while tolerating formatting differences. Unsupported graph-link evidence can be omitted independently of a fact, but facts and retained relationships still need human-statement validation. Old failures cannot be reconstructed if their tool details were never saved.

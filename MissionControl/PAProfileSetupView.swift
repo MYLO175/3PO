@@ -57,6 +57,9 @@ struct PAProfileSetupPanel: View {
                 }.frame(minHeight:100,maxHeight:170)
                 TextEditor(text:answer).font(.body).padding(8).frame(minHeight:120,maxHeight:180).background(.background,in:RoundedRectangle(cornerRadius:12)).overlay(RoundedRectangle(cornerRadius:12).stroke(.quaternary)).focused($answerFocused).disabled(working || !owned || !assistant.drafts.writable)
                 if let error=assistant.error,assistant.errorTopicID == topicID,assistant.errorProfileSessionID == session { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+                if let notes=reply?.memoryNotes,!notes.isEmpty {
+                    DisclosureGroup("Memory tool notes") { ScrollView { VStack(alignment:.leading) { ForEach(Array(notes.enumerated()),id:\.offset) { _,note in Text(note).font(.caption).foregroundStyle(.orange).textSelection(.enabled) } } }.frame(maxHeight:80) }.font(.caption)
+                }
                 HStack {
                     if working { Button("Stop") { assistant.cancel() } }
                     else {

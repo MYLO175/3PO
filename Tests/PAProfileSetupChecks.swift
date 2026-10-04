@@ -13,7 +13,7 @@ import Foundation
         let session=UUID(),otherSession=UUID(),topic=AssistantConversation(accountID:"one",title:"Study")
         var feed=AssistantConversation(accountID:"one",title:"PA");feed.isPrimary=true
         let ordinary=AssistantTurn(role:"user",content:"A normal task",completed:true)
-        let answer=AssistantTurn(role:"user",content:"I play football",completed:true,profileSessionID:session,profileControl:false)
+        let answer=AssistantTurn(role:"user",content:"I play football",completed:true,profileSessionID:session,profileControl:false,memoryNotes:["A link was omitted"])
         let control=AssistantTurn(role:"user",content:"Start interview",completed:true,profileSessionID:session,profileControl:true)
         let unrelated=AssistantTurn(role:"user",content:"Another session",completed:true,profileSessionID:otherSession)
         let scoped=AssistantTurn(role:"user",content:"Other topic",completed:true,contextID:topic.id,profileSessionID:session)
@@ -22,6 +22,7 @@ import Foundation
         precondition(ConversationRules.history(feed:saved,topic:nil).map(\.id) == [ordinary.id])
         precondition(ConversationRules.profileThread(feed:saved,topic:nil,session:session).map(\.id) == [control.id,answer.id])
         precondition(ConversationRules.profileThread(feed:saved,topic:topic,session:session).map(\.id) == [scoped.id])
+        precondition(saved.turns[2].memoryNotes == ["A link was omitted"])
         precondition(saved.turns[2].profileControl == false && saved.turns[1].profileControl == true)
         let legacy=try JSONDecoder().decode(AssistantTurn.self,from:Data(#"{"id":"00000000-0000-0000-0000-000000000001","role":"user","content":"old answer","completed":true}"#.utf8))
         precondition(legacy.profileSessionID == nil && legacy.profileControl == nil)

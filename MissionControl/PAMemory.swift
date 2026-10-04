@@ -15,6 +15,38 @@ struct MemoryConnection: Codable, Equatable {
         }
     }
 }
+/// Recover a literal span from the current human message, allowing presentation-only differences.
+/// This never paraphrases, borrows prior messages or bypasses semantic human-fact validation.
+enum MemoryEvidence {
+    static func match(_ quote:String?,human:String)->String? {
+        guard let quote else { return nil }
+        let value=quote.trimmingCharacters(in:.whitespacesAndNewlines)
+        guard !value.isEmpty,value.count <= 2000 else { return nil }
+        if let range=human.range(of:value) { return String(human[range]) }
+        var pattern="",spacing=false
+        for character in value {
+            if character.isWhitespace { if !spacing { pattern += "\\s+" }; spacing=true; continue }
+            spacing=false
+            switch character {
+            case "'","’","‘": pattern += "['’‘]"
+            case "\"","“","”": pattern += "[\"“”]"
+            case "-","‐","‑","–","—": pattern += "[-‐‑–—]"
+            default: pattern += NSRegularExpression.escapedPattern(for:String(character))
+            }
+        }
+        guard let regex=try? NSRegularExpression(pattern:pattern,options:.caseInsensitive),
+              let match=regex.firstMatch(in:human,range:NSRange(human.startIndex...,in:human)),let range=Range(match.range,in:human) else { return nil }
+        return String(human[range])
+    }
+    static func supportedConnections(_ values:[MemoryConnection],human:String)->[MemoryConnection] {
+        values.prefix(4).compactMap { value in
+            var result=value
+            guard let quote=match(value.evidence,human:human) else { return nil }
+            result.evidence=quote
+            return MemoryConnection.valid([result],human:human) ? result : nil
+        }
+    }
+}
 struct PAMemory: Codable, Identifiable, Equatable {
     var id = UUID()
     var registration: String
