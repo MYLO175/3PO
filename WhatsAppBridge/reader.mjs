@@ -2,7 +2,7 @@ import makeWASocket, { initAuthCreds, BufferJSON, DisconnectReason, proto } from
 import pino from 'pino';
 import QRCode from 'qrcode';
 import { createInterface } from 'node:readline';
-import { seal, open, textMessage, boundedMessages } from './data.mjs';
+import { seal, open, textMessage, boundedMessages, applyMessageUpdates, applyMessageDeletes } from './data.mjs';
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -41,8 +41,9 @@ async function connect() {
   on('messages.upsert',({messages})=>ingest(messages));
   on('messaging-history.set',({messages,chats,contacts})=>{updateChats(chats);updateChats(contacts);ingest(messages);});
   on('chats.upsert',updateChats);on('chats.update',updateChats);on('contacts.upsert',updateChats);on('contacts.update',updateChats);
-  on('messages.update',updates=>{for(const {key,update} of updates){const id=key.remoteJid+':'+key.id;if(update.message===null)delete state.messages[id];else if(update.message){const old=state.messages[id];if(old)ingest([{key,message:update.message,messageTimestamp:old.time/1000,pushName:old.sender}]);}}ingest([]);});
-  on('messages.delete',({keys,jid,all})=>{if(all&&jid)for(const [id,m]of Object.entries(state.messages))if(m.chat===jid)delete state.messages[id];for(const key of keys??[])delete state.messages[key.remoteJid+':'+key.id];save('messages.enc',state.messages);emit({type:'messages',messages:Object.values(state.messages)});});
+  on('messages.update',updates=>{state.messages=applyMessageUpdates(state.messages,updates);ingest([]);});
+  on('messages.delete',event=>{state.messages=applyMessageDeletes(state.messages,event);ingest([]);});
+  on('chats.delete',ids=>{for(const jid of ids??[]){delete state.chats[jid];state.messages=applyMessageDeletes(state.messages,{all:true,jid});}save('chats.enc',state.chats);ingest([]);});
   on('connection.update',async update=>{
     if(update.qr)emit({type:'qr',png:await QRCode.toDataURL(update.qr,{width:280,margin:2}),status:'Scan in WhatsApp → Settings → Linked devices → Link a device.'});
     if(update.connection==='open'){

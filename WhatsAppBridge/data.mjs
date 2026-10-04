@@ -14,7 +14,7 @@ export function textMessage(m) {
   if(!id||!chat||chat==='status@broadcast') return;
   let content=m.message;
   for(let depth=0;depth<4;depth++) {
-    const wrapped=content?.ephemeralMessage?.message || content?.viewOnceMessage?.message || content?.documentWithCaptionMessage?.message;
+    const wrapped=content?.ephemeralMessage?.message || content?.viewOnceMessage?.message || content?.viewOnceMessageV2?.message || content?.viewOnceMessageV2Extension?.message || content?.documentWithCaptionMessage?.message || content?.editedMessage?.message;
     if(!wrapped) break; content=wrapped;
   }
   const body=content?.conversation ?? content?.extendedTextMessage?.text;
@@ -24,4 +24,23 @@ export function textMessage(m) {
 }
 export function boundedMessages(messages) {
   return Object.fromEntries(Object.entries(messages).sort((a,b)=>b[1].time-a[1].time).slice(0,2000));
+}
+export function applyMessageUpdates(messages,updates) {
+  const result={...messages};
+  for(const {key,update} of updates??[]) {
+    if(!key?.remoteJid||!key?.id||!update)continue;
+    const id=key.remoteJid+':'+key.id,old=result[id];
+    if(update.message===null){delete result[id];continue;}
+    if(!old||!update.message)continue; // Status-only events never change received content.
+    const value=textMessage({key:{...key,fromMe:old.sentByMe},message:update.message,messageTimestamp:old.time/1000,pushName:old.sender});
+    if(value)result[id]=value;
+    else delete result[id]; // An edited non-text payload must not leave stale text visible.
+  }
+  return boundedMessages(result);
+}
+export function applyMessageDeletes(messages,{keys,jid,all}={}) {
+  const result={...messages};
+  if(all&&jid)for(const [id,message] of Object.entries(result))if(message.chat===jid)delete result[id];
+  for(const key of keys??[])if(key?.remoteJid&&key?.id)delete result[key.remoteJid+':'+key.id];
+  return result;
 }
