@@ -51,7 +51,9 @@ You can inspect, correct, confirm and forget memories. Forgetting suppresses aut
 
 ## Questions and setup
 
-Set up my PA starts an optional adaptive interview in the existing thread. It starts with an open introduction and broad life overview when little is known, then explores important areas before narrowing into details. It asks one useful question at a time, builds on saved context and saves supported facts/connections through the existing memory tools as answers arrive. Finish setup exits that account/topic's mode. It does not create a new chat archive or grant source permissions.
+Set up my PA opens a dedicated memory interview, separate from your normal chat and its unfinished draft. Start it explicitly, then answer one short question at a time. It builds breadth across questions, using existing shared/current-topic memory to avoid repeating what it already knows. Questions have a completed-output length/format check; a failed response offers Continue instead of pasting a long answer into the normal chat.
+
+The interview has its own saved account/topic/session transcript and answer draft. Close pauses your interaction without deleting them; Continue memory setup reopens it. Skip moves to another question. Finish ends that interview while retaining its answers and any facts already saved; another setup starts a new interview. The interview exposes only memory tools, never Calendar/Reminders changes or source reads. Normal PA chat keeps its full task tools. New interview turns are excluded from ordinary chat/history, while real answers remain eligible for existing bounded memory learning; synthetic start/skip/continue controls are excluded. Existing old setup messages are preserved. Actual recall and question quality still need live evaluation.
 
 Occasional learning questions also exist: at most one per local day, grounded in eligible human conversation and included in the existing bounded learning pass. They can be dismissed and undone. This is not yet an autonomous interview based on every source in your life.
 

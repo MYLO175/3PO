@@ -13,7 +13,7 @@ struct AssistantPanel: View {
     private var selectedID: UUID? { assistant.feed?.id }
     private var selected: AssistantConversation? {
         guard var feed = assistant.feed else { return nil }
-        feed.turns = ConversationRules.thread(feed:feed,topic:topic)
+        feed.turns = ConversationRules.thread(feed:feed,topic:topic).filter { $0.profileSessionID == nil }
         return feed
     }
     private var selectedTopicID: UUID? {
@@ -22,8 +22,8 @@ struct AssistantPanel: View {
     }
     private var topic: AssistantConversation? { assistant.conversation(selectedTopicID) }
     private var draftKey: UUID? { selectedTopicID ?? selectedID }
-    private var sendingHere: Bool { assistant.busy && assistant.requestConversationID == selectedID && assistant.requestTopicID == selectedTopicID }
-    private var errorHere: Bool { assistant.errorConversationID == nil || (assistant.errorConversationID == selectedID && assistant.errorTopicID == selectedTopicID) }
+    private var sendingHere: Bool { assistant.busy && !assistant.profileBusy(selectedTopicID) && assistant.requestConversationID == selectedID && assistant.requestTopicID == selectedTopicID }
+    private var errorHere: Bool { assistant.errorProfileSessionID == nil && (assistant.errorConversationID == nil || (assistant.errorConversationID == selectedID && assistant.errorTopicID == selectedTopicID)) }
     private var draft: Binding<String> {
         Binding(get:{ if let widgetID { return assistant.drafts.text(registration:model.chatGPT.activeID,widget:widgetID,conversation:draftKey) }; return assistant.draft },set:{ text in
             if let widgetID { assistant.drafts.set(text,registration:model.chatGPT.activeID,widget:widgetID,conversation:draftKey) } else { assistant.draft = text }
@@ -67,6 +67,7 @@ struct AssistantPanel: View {
     @State private var dictation = DictationService()
     @State private var showDictation = false
     @State private var showMemory = false
+    @State private var showProfileSetup = false
     @State private var showTopic = false
     @State private var showTopicChoices = false
     @State private var editingTopicID: UUID?
@@ -135,17 +136,13 @@ struct AssistantPanel: View {
                     }
                 Menu {
                     Button("Memory…") { showMemory = true }
-                    if assistant.setupActive(selectedTopicID) { Button("Finish profile setup") { assistant.endSetup(selectedTopicID) } }
-                    else { Button("Set up my PA…") { _ = assistant.beginSetup(model:model,topic:selectedTopicID) }.disabled(model.chatGPT.busy || model.chatGPT.usagePaused || !model.chatGPT.inferenceVerified) }
+                    Button(assistant.setupActive(selectedTopicID) ? "Continue memory setup…" : "Set up my PA…") { showProfileSetup=true }
                     if let selectedTopicID { Button("Edit topic focus…") { editTopic(selectedTopicID) } }
                     Button("Add topic…") { editTopic(nil) }
                     Text(assistant.contextEnabled ? "Apple source context enabled" : "Apple source context off")
                 } label: { Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Topic options").accessibilityLabel("Topic options").disabled(assistant.busy)
                 if supportsReadingMode { Button { readingMode.toggle() } label: { Image(systemName:readingMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") }.help(readingMode ? "Compact chat" : "Expand chat") }
             }.buttonStyle(.borderless).controlSize(.small)
-            if assistant.setupActive(selectedTopicID) {
-                HStack { Label("Getting to know you",systemImage:"person.crop.circle.badge.questionmark").font(.caption); Spacer(); Button("Finish setup") { assistant.endSetup(selectedTopicID) }.controlSize(.small) }.foregroundStyle(.secondary)
-            }
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
@@ -275,14 +272,16 @@ struct AssistantPanel: View {
             model.assistantFocusRequest = nil
         }.onDisappear { if let widgetID { assistant.drafts.hide(widget:widgetID) }; assistant.drafts.flush() }
         .onChange(of:selectedID) { showDraft() }
-        .onChange(of:selectedTopicID) { showDraft() }
-        .onChange(of:model.chatGPT.activeID) { assistant.drafts.flush(); assistant.openPA(); showTopic = false; showTopicChoices = false; showMemory = false; showDraft() }
+        .onChange(of:selectedTopicID) { showProfileSetup=false; showDraft() }
+        .onChange(of:model.chatGPT.activeID) { assistant.drafts.flush(); assistant.openPA(); showTopic = false; showTopicChoices = false; showMemory = false; showProfileSetup=false; showDraft() }
         .onChange(of:draft.wrappedValue) { _, draft in
             if !draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && model.memoryLearning.busy { model.memoryLearning.cancel() }
         }.onChange(of:model.chatGPT.usagePaused) { _, paused in
             if !paused, assistant.error?.contains("subscription_sharing_usage_limit_exceeded") == true { assistant.error = nil }
         }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { PAMemoryView(memory:assistant.memory,registration:model.chatGPT.activeID,conversationID:selectedTopicID,topicTitle:topic?.title,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) }) }.sheet(isPresented:$showTopic) {
             TopicFocusEditor(assistant:assistant,topicID:$editingTopicID,registration:$editorRegistration,name:$topicName,focus:$topicFocus,onSelected:select)
+        }.sheet(isPresented:$showProfileSetup) {
+            PAProfileSetupPanel(model:model,assistant:assistant,topicID:selectedTopicID,registration:model.chatGPT.activeID)
         }.sheet(isPresented:$showDictation) {
             DictationView(dictation:dictation) { text in draft.wrappedValue = draft.wrappedValue.isEmpty ? text : draft.wrappedValue + " " + text }
         }.padding(16)

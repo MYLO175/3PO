@@ -10,6 +10,8 @@ struct AssistantTurn: Codable, Identifiable {
     /// Context captured when sent; changing a widget's topic never retargets a reply.
     var contextID: UUID?
     var choices: [String]? = nil
+    var profileSessionID: UUID? = nil
+    var profileControl: Bool? = nil
 }
 struct AssistantConversation: Codable, Identifiable {
     var id = UUID()
@@ -41,8 +43,11 @@ enum ConversationRules {
             return lhs == rhs ? $0.offset < $1.offset : lhs < rhs
         }.map(\.element)
     }
+    static func profileThread(feed:AssistantConversation,topic:AssistantConversation?,session:UUID)->[AssistantTurn] {
+        thread(feed:feed,topic:topic).filter { $0.profileSessionID == session }
+    }
     static func history(feed: AssistantConversation, topic: AssistantConversation?, excludedDeliveries: Set<String> = []) -> [AssistantTurn] {
-        Array(thread(feed:feed,topic:topic).filter { $0.completed && ($0.deliveryID.map { !excludedDeliveries.contains($0) } ?? true) }.suffix(20))
+        Array(thread(feed:feed,topic:topic).filter { $0.completed && $0.profileSessionID == nil && ($0.deliveryID.map { !excludedDeliveries.contains($0) } ?? true) }.suffix(20))
     }
     static let promptByteLimit = 16_000
     static func acceptsPrompt(_ prompt: String) -> Bool {

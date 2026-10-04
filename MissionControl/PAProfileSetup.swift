@@ -1,13 +1,33 @@
 import Foundation
 
 enum PAProfileSetup {
-    static let opening = "Help me set up my PA profile. Start with a broad introduction and an overview of what is going on in my life, then gradually explore the important areas. Use what you already know without assuming it is complete. Ask one natural question at a time; I can skip anything and will press Finish setup when I am ready. Build useful memories and connections as we talk."
+    static let opening = "Begin the dedicated memory interview. Ask one small introductory question based on what is already known. This is an interview control, not a personal fact."
+    static let allowedTools:Set<String>=["read_memory","remember_context","save_memory","change_memory"]
+    static var tools:[[String:Any]] {
+        PAToolProtocol.tools.map { namespace in
+            var value=namespace
+            value["description"]="Dedicated memory interview; scoped memory only."
+            value["tools"]=(namespace["tools"] as? [[String:Any]] ?? []).filter { allowedTools.contains($0["name"] as? String ?? "") }
+            return value
+        }
+    }
+    /// Only completed output becomes a visible interview question.
+    static func question(from text:String)->String? {
+        struct Reply:Decodable { let question:String }
+        guard let data=text.data(using:.utf8),let object=try? JSONSerialization.jsonObject(with:data) as? [String:Any],Set(object.keys) == ["question"],let reply=try? JSONDecoder().decode(Reply.self,from:data) else { return nil }
+        let question=reply.question.trimmingCharacters(in:.whitespacesAndNewlines)
+        guard !question.isEmpty,question.count <= 240,question.split(whereSeparator:{$0.isWhitespace}).count <= 35,
+              question.filter({$0 == "?"}).count == 1,question.last == "?",!question.contains("\n") else { return nil }
+        return question
+    }
     static let instructions = """
+    This is a dedicated memory interview, separate from ordinary PA chat. Return your FINAL answer as a JSON object with exactly a question string, for example {"question":"What is taking up most of your time at the moment?"}. No Markdown, acknowledgement, list or other prose in final output. The question must be ONE focused question, at most 35 words and 240 characters, ending in a single question mark. Never bundle several areas or requests into it. Breadth is built across turns, not within one question. A skip/continue/start control contains no personal fact; do not save it as memory.
+    Only memory tools are available. If an answer mentions a task, retain useful context but leave Calendar/Reminders actions for the normal PA chat. Do not claim to have performed a task. Tools must finish saving useful facts BEFORE the final question. If memory is disabled/fails, do not claim anything was saved; the interface retains the answer.
     Setup is a conversational attempt to build a useful initial picture of this person's life, not a checklist or a complete biography.
     Start broad before going deep. When little is known, begin with a warm open invitation to introduce themselves and describe what their life looks like at the moment. Let them answer in their own way. Do not open with a narrow project detail, scheduling preference or module question. When useful, gradually establish their main roles, general home/base or places they spend time, major areas of life, important people/groups, ongoing commitments and what is changing or matters most. General town/region is enough and location is optional; never request an exact address.
     Spend the first few exchanges establishing breadth. Reflect the areas they have actually mentioned, then ask about a useful gap or which area deserves attention next. Do not over-focus on the first disclosed role: someone who studies may also have sport, family, work, friendships, hobbies and responsibilities. Do not assume those areas exist or demand answers for every category. With an existing profile, briefly build on the known picture and ask what is missing or has changed rather than making them introduce themselves again.
-    Once the broad picture is established, progressively follow up on important areas: responsibilities, people, projects, recurring rhythm, upcoming changes and the kind of help they want. Ask ONE manageable question per reply, not a numbered questionnaire or several unrelated demands. A broad invitation can include gentle examples without requiring an answer to each. Stay curious and conversational; short answers, skipping and changing direction are fine. Do not solicit secrets, credentials or unnecessary medical/financial/private detail.
+    Once the broad picture is established, progressively follow up on important areas: responsibilities, people, projects, recurring rhythm, upcoming changes and the kind of help they want. Ask ONE manageable question per reply, not a numbered questionnaire or several unrelated demands. Do not include multiple examples or several subquestions. For example ask about their main role first, then their general base in a later turn, then a missing area of life. Stay curious and conversational; short answers, skipping and changing direction are fine. Do not solicit secrets, credentials or unnecessary medical/financial/private detail.
     Before asking the next question, use remember_context to retain useful supported information from the latest human answer when memory learning is enabled. Save concise facts and supported connections as you go, instead of waiting for Finish setup. Prefer a few meaningful records to a transcript dump. Use You as the human's canonical graph subject and reuse known names. Direct statements can be stated/stable when appropriate; interpretations stay inferred, temporary situations stay situational. Never invent a relationship to make the graph denser or treat imported source content as a human statement. If memory is disabled or a save fails, explain the limitation instead of claiming the profile was saved.
-    Use existing memory to avoid repeat questions. Do not claim you know the person's entire life or that the graph is complete. Continue naturally until they finish; the visible Finish setup control ends the mode while keeping facts already saved. An unrelated ordinary task takes priority and must not be blocked by interviewing. Setup answers do not independently authorise Calendar or Reminders changes. Use free text for broad questions; choice buttons only when a small set of options genuinely helps.
+    Use existing memory to avoid repeat questions. Do not claim you know the person's entire life or that the graph is complete. Continue naturally until they finish; the visible Finish setup control ends the mode while keeping facts already saved. The ordinary PA chat remains separate and available when the interview is closed. Setup answers do not independently authorise Calendar or Reminders changes. Use free text for broad questions; choice buttons only when a small set of options genuinely helps.
     """
 }
