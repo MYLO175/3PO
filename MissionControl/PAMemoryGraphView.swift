@@ -3,6 +3,7 @@ struct PAMemoryGraphView: View {
     var graph:PAMemoryGraph
     var records:[PAMemory]
     var inspect:(PAMemory)->Void
+    var height:CGFloat = 350
     @State private var selected:String?
     private func position(_ i:Int,_ count:Int,_ size:CGSize)->CGPoint {
         if count == 1 { return .init(x:size.width/2,y:size.height/2) }
@@ -31,7 +32,7 @@ struct PAMemoryGraphView: View {
                             }.buttonStyle(.plain).position(points[node.id] ?? .zero).accessibilityLabel("Inspect " + node.label)
                         }
                     }
-                }.frame(height:350)
+                }.frame(height:height)
                 if let selected {
                     ForEach(graph.edges.filter { $0.from == selected || $0.to == selected }) { edge in
                         VStack(alignment:.leading,spacing:5) {

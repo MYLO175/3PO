@@ -234,6 +234,7 @@ private struct WorkspaceTile: View {
         case .overview:
             TodayBriefView(model:model,briefings:model.briefings).padding(16)
         case .emailSummary: EmailOverviewView(model:model,summaries:model.emailSummaries,configuration:configuration).padding(16)
+        case .memoryGraph: PALifeMapWidget(model:model,configuration:configuration).padding(16)
         case .tasks: PATasksView(model:model).padding(16)
         case .clock: DateClockWidget(configuration:configuration)
         case nil: ContentUnavailableView("Widget unavailable",systemImage:"square.dashed",description:Text("Its saved placement is preserved for a future app version."))

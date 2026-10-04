@@ -9,6 +9,7 @@ enum WidgetKind: String, Codable, CaseIterable {
     case emailSummary
     case clock
     case tasks
+    case memoryGraph
 
     var title: String {
         switch self {
@@ -18,6 +19,7 @@ enum WidgetKind: String, Codable, CaseIterable {
         case .conversation: return "Conversation"
         case .overview: return "Today’s brief"
         case .emailSummary: return "Email summary"
+        case .memoryGraph: return "Life map"
         case .tasks: return "Tasks for you"
         case .clock: return "Date & clock"
         }
@@ -31,6 +33,7 @@ enum WidgetKind: String, Codable, CaseIterable {
         case .conversation: return "bubble.left.and.bubble.right"
         case .overview: return "sun.max"
         case .emailSummary: return "envelope.badge"
+        case .memoryGraph: return "point.3.connected.trianglepath.dotted"
         case .tasks: return "tray.full"
         case .clock: return "clock"
         }
@@ -38,7 +41,7 @@ enum WidgetKind: String, Codable, CaseIterable {
 
     var minimumColumns: Int {
         switch self {
-        case .calendar, .conversation, .overview, .emailSummary, .tasks: return 4
+        case .calendar, .conversation, .overview, .emailSummary, .tasks, .memoryGraph: return 4
         case .reminders: return 3
         case .mail: return 4
         case .clock: return 3
@@ -49,7 +52,7 @@ enum WidgetKind: String, Codable, CaseIterable {
         switch self {
         case .calendar, .conversation: return 5
         case .reminders: return 4
-        case .mail, .overview, .emailSummary, .tasks: return 4
+        case .mail, .overview, .emailSummary, .tasks, .memoryGraph: return 4
         case .clock: return 2
         }
     }

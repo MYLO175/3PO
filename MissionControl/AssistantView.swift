@@ -135,12 +135,17 @@ struct AssistantPanel: View {
                     }
                 Menu {
                     Button("Memory…") { showMemory = true }
+                    if assistant.setupActive(selectedTopicID) { Button("Finish profile setup") { assistant.endSetup(selectedTopicID) } }
+                    else { Button("Set up my PA…") { _ = assistant.beginSetup(model:model,topic:selectedTopicID) }.disabled(model.chatGPT.busy || model.chatGPT.usagePaused || !model.chatGPT.inferenceVerified) }
                     if let selectedTopicID { Button("Edit topic focus…") { editTopic(selectedTopicID) } }
                     Button("Add topic…") { editTopic(nil) }
                     Text(assistant.contextEnabled ? "Apple source context enabled" : "Apple source context off")
                 } label: { Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Topic options").accessibilityLabel("Topic options").disabled(assistant.busy)
                 if supportsReadingMode { Button { readingMode.toggle() } label: { Image(systemName:readingMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") }.help(readingMode ? "Compact chat" : "Expand chat") }
             }.buttonStyle(.borderless).controlSize(.small)
+            if assistant.setupActive(selectedTopicID) {
+                HStack { Label("Getting to know you",systemImage:"person.crop.circle.badge.questionmark").font(.caption); Spacer(); Button("Finish setup") { assistant.endSetup(selectedTopicID) }.controlSize(.small) }.foregroundStyle(.secondary)
+            }
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
