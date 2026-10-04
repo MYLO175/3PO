@@ -175,6 +175,7 @@ actor MailService {
             "messageID": messageID
         ]
         if let mailboxName { arguments["mailboxName"] = mailboxName }
+        if let expectedInternetMessageID, !expectedInternetMessageID.isEmpty { arguments["expectedInternetMessageID"] = expectedInternetMessageID }
         let data = try run(arguments:arguments)
         let response = try JSONDecoder().decode(BodyResponse.self, from: data)
         if let error = response.errors.first {
@@ -183,7 +184,10 @@ actor MailService {
         if let expected = expectedInternetMessageID, !expected.isEmpty, expected != response.internetMessageID {
             throw MailServiceError.mail("This message changed or moved. Refresh the inbox before previewing it.")
         }
-        if let before = response.unreadBefore, let after = response.unreadAfter, before != after {
+        guard let before = response.unreadBefore, let after = response.unreadAfter else {
+            throw MailServiceError.mail("Mail read state could not be verified. No preview was returned.")
+        }
+        if before != after {
             throw MailServiceError.mail("Mail changed the read state during preview retrieval. Refresh Mail before continuing.")
         }
         return response.body

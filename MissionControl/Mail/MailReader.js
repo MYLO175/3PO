@@ -156,19 +156,35 @@ function runBody(mail, input) {
         const inbox = resolveSearchMailbox(mail, account, input);
         const message = inbox.messages.byId(messageID)();
         if (!message) throw new Error('Message not found in its original account mailbox');
-        const unreadBefore = !Boolean(message.readStatus());
+        const identityBefore = stringValue(message.messageId());
+        if (input.expectedInternetMessageID && String(input.expectedInternetMessageID) !== identityBefore) {
+            throw new Error('Message identity changed; refresh before previewing');
+        }
+        const unreadBefore = previewUnread(message);
         const body = stringValue(message.content());
-        const unreadAfter = !Boolean(message.readStatus());
+        const unreadAfter = previewUnread(message);
+        const identityAfter = stringValue(message.messageId());
+        if (identityBefore !== identityAfter) throw new Error('Message identity changed during preview retrieval');
+        if (unreadBefore !== unreadAfter) throw new Error('Mail changed the read state during preview retrieval');
         return {
             body: body,
             unreadBefore: unreadBefore,
             unreadAfter: unreadAfter,
-            internetMessageID: stringValue(message.messageId()),
+            internetMessageID: identityAfter,
             errors: []
         };
     } catch (error) {
         return { body: '', internetMessageID: '', errors: [accountError(accountID, error)] };
     }
+}
+
+function previewUnread(message) {
+    const value = ObjC.unwrap(message.readStatus());
+    if (typeof value === 'boolean') return !value;
+    // NSNumber bridges can expose the Boolean as 0/1. Missing/other values
+    // cannot establish preservation and must not be guessed as unread.
+    if (value === 0 || value === 1) return value === 0;
+    throw new Error('Mail read state is unavailable; preview was not verified');
 }
 
 // Resolve one date window once, then paginate a persisted list of message IDs.
