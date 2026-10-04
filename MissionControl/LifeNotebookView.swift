@@ -17,14 +17,31 @@ struct LifeNotebookMapView:View {
     var notebook:LifeNotebook
     var notes:[LifeAreaNote]
     @Binding var selectedArea:LifeArea?
+    var fitsAvailableSpace=false
     private func related(_ note:LifeAreaNote)->Bool {
         guard let selected=notes.first(where:{$0.area == selectedArea}),selected.area != note.area else { return false }
         return !Set(selected.records.map(\.id)).isDisjoint(with:note.records.map(\.id))
     }
     var body:some View {
-        LifeMapSizing(count:notes.count) {
-        GeometryReader { geometry in
-            let layout=LifeMapLayout(width:geometry.size.width,count:notes.count)
+        Group {
+            if fitsAvailableSpace {
+                GeometryReader { geometry in
+                    let fit=LifeMapFit(available:geometry.size,count:notes.count)
+                    canvas(fit.layout)
+                        .frame(width:fit.layout.width,height:fit.layout.height)
+                        .scaleEffect(fit.scale,anchor:.topLeading)
+                        .offset(x:fit.origin.x,y:fit.origin.y)
+                }.clipped()
+            } else {
+                LifeMapSizing(count:notes.count) {
+                    GeometryReader { geometry in
+                        canvas(LifeMapLayout(width:geometry.size.width,count:notes.count))
+                    }
+                }
+            }
+        }.animation(.easeInOut(duration:0.18),value:selectedArea)
+    }
+    private func canvas(_ layout:LifeMapLayout)->some View {
             ZStack(alignment:.topLeading) {
                 Canvas { context,_ in
                     if layout.compact,!notes.isEmpty {
@@ -41,18 +58,18 @@ struct LifeNotebookMapView:View {
                     }
                 }.accessibilityHidden(true)
                 VStack(spacing:6) {
-                    Image(systemName:"person.crop.circle.fill").font(.system(size:28)).foregroundStyle(palette[.accent])
-                    Text(notebook.selfLabel).font(.headline).lineLimit(2).minimumScaleFactor(0.7)
-                }.padding(10).frame(width:88,height:88).background(palette[.widget],in:RoundedRectangle(cornerRadius:24))
+                    Image(systemName:"person.crop.circle.fill").font(.system(size:layout.dense ? 22 : 28)).foregroundStyle(palette[.accent])
+                    Text(notebook.selfLabel).font(.system(size:layout.dense ? 13 : 15,weight:.semibold)).lineLimit(2).minimumScaleFactor(0.7)
+                }.padding(8).frame(width:layout.rootSize,height:layout.rootSize).background(palette[.widget],in:RoundedRectangle(cornerRadius:24))
                     .overlay(RoundedRectangle(cornerRadius:24).stroke(palette[.accent].opacity(0.25))).position(layout.root)
                 ForEach(Array(notes.enumerated()),id:\.element.id) { index,note in
                     let rect=layout.card(index),active=selectedArea == note.area
                     Button { selectedArea = active ? nil : note.area } label: {
                         HStack(spacing:9) {
-                            Image(systemName:note.area.symbol).font(.system(size:18)).foregroundStyle(note.area.colour).frame(width:24)
+                            Image(systemName:note.area.symbol).font(.system(size:layout.dense ? 16 : 18)).foregroundStyle(note.area.colour).frame(width:24)
                             VStack(alignment:.leading,spacing:4) {
-                                Text(note.area.title).font(.callout.weight(.semibold)).lineLimit(2).minimumScaleFactor(0.85)
-                                Text("\(note.records.count) \(note.records.count == 1 ? "fact" : "facts")").font(.caption).foregroundStyle(.secondary)
+                                Text(note.area.title).font(.system(size:layout.dense ? 13 : 14,weight:.semibold)).lineLimit(2).minimumScaleFactor(0.85)
+                                Text("\(note.records.count) \(note.records.count == 1 ? "fact" : "facts")").font(.system(size:layout.dense ? 11 : 12)).foregroundStyle(.secondary)
                             }
                             Spacer(minLength:0)
                         }.padding(.horizontal,12).frame(width:rect.width,height:rect.height)
@@ -65,8 +82,6 @@ struct LifeNotebookMapView:View {
                         .accessibilityAddTraits(active ? .isSelected : [])
                 }
             }.foregroundStyle(palette[.text])
-        }
-        }.animation(.easeInOut(duration:0.18),value:selectedArea)
     }
 
 }
@@ -86,10 +101,11 @@ struct LifeNotebookAreaView:View {
     var notebook:LifeNotebook
     var note:LifeAreaNote
     var inspect:(PAMemory)->Void
+    var showsHeading=true
     private var entities:[LifeEntity] { let ids=Set(note.records.map(\.id));return notebook.entities.filter{$0.id != LifeNotebook.selfID && $0.areas.contains(note.area) && !$0.memoryIDs.isDisjoint(with:ids)} }
     var body:some View {
         VStack(alignment:.leading,spacing:12) {
-            Label(note.area.title,systemImage:note.area.symbol).font(.headline).foregroundStyle(note.area.colour)
+            if showsHeading { Label(note.area.title,systemImage:note.area.symbol).font(.headline).foregroundStyle(note.area.colour) }
             if !entities.isEmpty {
                 LazyVGrid(columns:[GridItem(.adaptive(minimum:140),alignment:.leading)],alignment:.leading,spacing:8) {
                     ForEach(Array(entities.prefix(24))) { entity in

@@ -168,3 +168,6 @@ First PA-understanding checkpoint (4 October): canonical scoped self, additive a
 
 
 4 October continuation: first phase6 source-learning slice implemented for explicitly selected WhatsApp chats, separately off-by-default, with typed provenance, exact-version recall filtering, bounded paused cursors and a shared learning-only quota. Broader source ingestion and source-memory-backed automatic brief/suggestion artifacts remain upcoming. Approved UX additions: balanced adaptive Life map, complete optional 3PO light/dark theme, and local user-chosen PA display name. Preserve account/thread/widget IDs and current colour selection on install.
+
+
+4 October Life map refinement supersedes the widget search row: retain compact Map/Notes controls, scale and centre the entire map within the available widget canvas, and keep scrolling in Notes/area detail rather than the map overview. Capped intrinsic width avoids stretching connections across full-screen dashboards. No storage or learning change. See STATUS for visual/build/install evidence and pending live interaction acceptance.
