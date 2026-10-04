@@ -9,7 +9,7 @@ struct TodayBriefView: View {
                 Label("Today’s brief",systemImage:"sun.max").font(.title3.weight(.semibold))
                 Spacer()
                 if briefings.busy { ProgressView().controlSize(.small); Button("Stop") { briefings.cancel() } }
-                else { Button { briefings.updateToday(model) } label: { Image(systemName:"arrow.clockwise") }.help(briefings.today(model) == nil ? "Prepare today’s brief" : "Update brief with fresh sources; keeps the morning message").accessibilityLabel(briefings.today(model) == nil ? "Prepare today’s brief" : "Update today’s brief").disabled((!briefings.enabled && briefings.today(model) == nil) || !model.assistant.contextEnabled || model.chatGPT.busy || model.assistant.busy || !model.chatGPT.inferenceVerified || model.chatGPT.usagePaused) }
+                else { Button { briefings.updateToday(model) } label: { Image(systemName:"arrow.clockwise") }.help(!briefings.hasMorningToday(model) ? "Prepare today’s brief" : "Update brief with fresh sources; keeps the morning message").accessibilityLabel(!briefings.hasMorningToday(model) ? "Prepare today’s brief" : "Update today’s brief").disabled((!briefings.enabled && !briefings.hasMorningToday(model)) || !model.assistant.contextEnabled || model.chatGPT.busy || model.assistant.busy || !model.chatGPT.inferenceVerified || model.chatGPT.usagePaused) }
             }.buttonStyle(.borderless)
             if let record = briefings.current(model) {
                 ScrollView {
@@ -42,7 +42,7 @@ struct TodayBriefView: View {
                 Text("\(record.morningID == nil ? "Prepared" : "Updated") \(record.created.formatted(date:.omitted,time:.shortened)) · Refresh to reflect changes").font(.caption2).foregroundStyle(.secondary)
             } else {
                 WeatherBriefCard(weather:model.weather)
-                ContentUnavailableView("A clear start to your day",systemImage:"sun.horizon",description:Text(!model.assistant.contextEnabled ? "Enable assistant source context in Settings." : !briefings.enabled ? "Enable the 7:30 morning brief in Settings, then prepare today’s brief." : model.chatGPT.usagePaused ? "Subscription access is paused. Your Apple sources remain available." : briefings.busy ? "Your PA is preparing today’s message…" : "Your PA brings together today’s calendar, reminders and relevant recent mail. Prepared at 7:30, with catch-up after launch or wake."))
+                ContentUnavailableView("A clear start to your day",systemImage:"sun.horizon",description:Text(!model.assistant.contextEnabled ? "Enable assistant source context in Settings." : briefings.hasMorningToday(model) ? "Your morning message is saved with earlier source choices. Update the brief to use your current sources." : !briefings.enabled ? "Enable the 7:30 morning brief in Settings, then prepare today’s brief." : model.chatGPT.usagePaused ? "Subscription access is paused. Your Apple sources remain available." : briefings.busy ? "Your PA is preparing today’s message…" : "Your PA brings together today’s calendar, reminders and relevant recent mail. Prepared at 7:30, with catch-up after launch or wake."))
             }
             if let error = briefings.error { DisclosureGroup("Briefing details") { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }.font(.caption) }
             if model.chatGPT.usagePaused { Button("Check subscription access") { model.chatGPT.testConnection() }.controlSize(.small).disabled(model.chatGPT.busy || model.assistant.busy) }

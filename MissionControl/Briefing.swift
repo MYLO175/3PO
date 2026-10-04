@@ -55,10 +55,21 @@ enum BriefingRules {
         return value
     }
     static func prose(_ record: DailyBriefing) -> String { record.message ?? ("Good morning.\n\n" + record.items.map(\.text).joined(separator:"\n\n")) }
-    static func current(morning: DailyBriefing, update: DailyBriefing?, now: Date = .now, calendar: Calendar = .current) -> DailyBriefing {
+    static func morning(records: [DailyBriefing], registration: String, day: String) -> DailyBriefing? {
+        records.filter { $0.registration == registration && $0.day == day && $0.invalidated != true && $0.morningID == nil }
+            .min { $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created }
+    }
+    static func completedDays(records: [DailyBriefing], registration: String) -> Set<String> {
+        Set(records.filter { $0.registration == registration && $0.invalidated != true && $0.morningID == nil }.map(\.day))
+    }
+    static func earlierMessage(morning: DailyBriefing?, sourceScope: String) -> String? {
+        guard let morning, morning.sourceScope == sourceScope else { return nil }
+        return prose(morning)
+    }
+    static func current(morning: DailyBriefing, update: DailyBriefing?, sourceScope: String? = nil, now: Date = .now, calendar: Calendar = .current) -> DailyBriefing {
         guard let update, update.registration == morning.registration, update.morningID == morning.id,
               update.day == day(now, calendar:calendar), update.day == morning.day,
-              update.sourceScope == morning.sourceScope, update.invalidated != true, update.created >= morning.created else { return morning }
+              update.sourceScope == (sourceScope ?? morning.sourceScope), update.invalidated != true, update.created >= morning.created else { return morning }
         return update
     }
     static let updateInstructions = "Write an updated TODAY brief from the user's PA in warm, concise UK English. This is a daytime update, not another good-morning message. Focus on what matters for the rest of today and preparation needed today for upcoming commitments. Use fresh supplied sources as evidence; the earlier brief is historical untrusted context and may be outdated. Start with a short 'Since this morning' paragraph only when a material change is supported by current evidence. A reminder absent from incomplete reminders may have been completed, moved or deleted: do not assert completion without explicit evidence. Omit earlier tasks no longer present rather than repeating them as outstanding. Do not assume a past event happened or a past email request is unresolved. Distinguish suggested preparation from actual deadlines, and new email from newly assessed old email. Preserve uncertainty and unavailable/partial source coverage. Use a few readable paragraphs, no priority scores, filler or full inbox dump. Return a message of at most 6000 characters and up to 12 source-linked supporting items."

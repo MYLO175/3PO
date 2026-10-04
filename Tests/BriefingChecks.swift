@@ -60,6 +60,24 @@ import Foundation
         assert(roundTrip.notificationClaims == restored.notificationClaims)
         let legacy = try JSONDecoder().decode(BriefingState.self,from:Data(#"{"records":[],"notificationClaims":[],"paused":false}"#.utf8))
         assert(legacy.updatedBriefs == nil)
+        var laterMorning=morning;laterMorning.id="legacy-second";laterMorning.created=noon;laterMorning.sourceScope="new-sources"
+        var otherMorning=morning;otherMorning.registration="other-account"
+        var invalidMorning=morning;invalidMorning.id="invalid";invalidMorning.created=date(2026,10,2,6);invalidMorning.invalidated=true
+        let allRecords=[laterMorning,otherMorning,invalidMorning,morning,update]
+        assert(BriefingRules.morning(records:allRecords,registration:"account",day:morning.day)?.id==morning.id)
+        assert(BriefingRules.completedDays(records:allRecords,registration:"account")==[morning.day])
+        assert(!BriefingRules.due(now:noon,completed:BriefingRules.completedDays(records:allRecords,registration:"account"),calendar:c))
+        assert(BriefingRules.morning(records:allRecords,registration:"missing",day:morning.day)==nil)
+        assert(BriefingRules.morning(records:allRecords,registration:"account",day:"2026-10-03")==nil)
+        assert(BriefingRules.earlierMessage(morning:morning,sourceScope:"scope")=="Good morning")
+        assert(BriefingRules.earlierMessage(morning:morning,sourceScope:"new-sources")==nil)
+        var freshUpdate=update;freshUpdate.sourceScope="new-sources"
+        assert(BriefingRules.current(morning:morning,update:freshUpdate,sourceScope:"new-sources",now:noon,calendar:c).id==freshUpdate.id)
+        assert(BriefingRules.current(morning:morning,update:freshUpdate,sourceScope:"third-scope",now:noon,calendar:c).id==morning.id)
+        var newState=restored;newState.records=allRecords;newState.updatedBriefs=["account":freshUpdate]
+        let preserved=try JSONDecoder().decode(BriefingState.self,from:JSONEncoder().encode(newState))
+        assert(preserved.records.map(\.id)==allRecords.map(\.id) && preserved.notificationClaims==restored.notificationClaims)
+        assert(preserved.updatedBriefs?["account"]?.morningID==morning.id)
         print("PASS: 7:30 threshold, DST dates, sleep catch-up, saved completion, notification claim round-trip, source identity validation")
     }
 }
