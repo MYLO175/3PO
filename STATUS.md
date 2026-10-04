@@ -717,3 +717,10 @@ CalendarWidgetView now shares one returnToToday action between Today/Now, appear
 Validation: signed Xcode build succeeded (/tmp/missioncontrol-calendar-opening-build.log); focused existing timeline checks passed (work-day focus, repeated-hour anchors, DST and overlap geometry). No implementation-mirroring test added for this small lifecycle hook. Live page-switch/scroll interaction remains unverified; previous Computer Use limitations still apply. Usage55%five-hour/54%weekly used at start; no resets/billing/model changes/delegation.
 
 Installed signed app in place, strict/deep signature and exact installed executable process verified. Bundle ID/data/preferences retained. Recoverable previous bundle: /tmp/missioncontrol-before-calendar-opening-20261004-230020.app.
+
+
+## 4 October — Adaptive clock fills the widget
+Replaced Adaptive's conservative font caps/width guesses with measured rounded-font text fitting. Wide widgets give about three quarters of the content width to a large clock and the remainder to day/month; compact widgets stack date and large time. Text sizes follow actual localised string width and available height, including optional seconds and date-only mode. Digital/Calendar styles, alignment preference, colours, saved settings and local-only ticking remain unchanged.
+Validation: signed Xcode build succeeded (/tmp/missioncontrol-adaptive-clock-build.log). Fictional ImageRenderer previews rendered at compact, wide, screenshot-size, large and seconds-enabled dimensions; inspected all five for filling/containment/readability. Previews/reports are outside Git. No AI request or Apple write required; no unnecessary test suite reruns. Live resizing/native menu interaction remains separate from these visual fixtures.
+
+Installed signed update in place; strict/deep signature and exact executable launch verified. Stored data/preferences/bundle identity preserved. Prior bundle: /tmp/missioncontrol-before-adaptive-clock-20261004-230353.app.

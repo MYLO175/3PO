@@ -10,7 +10,7 @@ Current widgets include Calendar, Reminders, Mail, Today's brief, Email summary,
 
 Opening a Calendar widget returns it to today, including when switching dashboards or calendar widgets in Focused view. Day/Week also refocuses the current time, like Now. Browsing dates while the widget stays open still works; view mode and source filters are preserved.
 
-Date & clock scales its typography to the widget. Adaptive layout puts the date and time side by side in wide widgets; Digital and Calendar layouts are selectable from its ellipsis menu, alongside Centre/Leading alignment, clock visibility, seconds and 24-hour time. These are local per-widget preferences. Ellipsis menus use only three dots.
+Date & clock’s Adaptive face measures the localised date/time text and scales it to fill the available width and height, without a fixed maximum font size. Adaptive layout puts the date and time side by side in wide widgets; Digital and Calendar layouts are selectable from its ellipsis menu, alongside Centre/Leading alignment, clock visibility, seconds and 24-hour time. These are local per-widget preferences. Ellipsis menus use only three dots.
 
 ## A PA conversation
 

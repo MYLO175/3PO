@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct DateClockWidget:View {
     @Binding var configuration:WidgetConfiguration
@@ -38,25 +39,51 @@ struct DateClockFace:View {
         }
         return seconds ? date.formatted(.dateTime.hour().minute().second()) : date.formatted(date:.omitted,time:.shortened)
     }
+    // Measure the actual localised text rather than guessing its width or capping large widgets.
+    private func fittedFont(_ text:String,width:CGFloat,height:CGFloat,weight:NSFont.Weight,monospaced:Bool=false)->CGFloat {
+        let base=monospaced ? NSFont.monospacedDigitSystemFont(ofSize:100,weight:weight) : NSFont.systemFont(ofSize:100,weight:weight)
+        let font=base.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor:$0,size:100) } ?? base
+        let measured=(text as NSString).size(withAttributes:[.font:font])
+        let lineHeight=max(measured.height,font.ascender-font.descender+font.leading)
+        return max(1,100*min(max(1,width)/max(1,measured.width),max(1,height)/max(1,lineHeight))*0.96)
+    }
+    @ViewBuilder private func adaptiveFace(size:CGSize)->some View {
+        let alignment:HorizontalAlignment=leading ? .leading : .center
+        let day=date.formatted(.dateTime.day()),month=date.formatted(.dateTime.month(.wide))
+        if showsTime && size.width > size.height*1.8 {
+            let gap=min(24,size.width*0.035),dateWidth=(size.width-gap)*0.26,timeWidth=size.width-gap-dateWidth
+            HStack(spacing:gap) {
+                VStack(alignment:alignment,spacing:size.height*0.035) {
+                    Text(day).font(.system(size:fittedFont(day,width:dateWidth,height:size.height*0.72,weight:.semibold),weight:.semibold,design:.rounded))
+                    Text(month).font(.system(size:fittedFont(month,width:dateWidth,height:size.height*0.2,weight:.medium),weight:.medium,design:.rounded)).foregroundStyle(.secondary)
+                }.frame(width:dateWidth,height:size.height,alignment:leading ? .leading : .center)
+                Text(time).font(.system(size:fittedFont(time,width:timeWidth,height:size.height*0.94,weight:.light,monospaced:true),weight:.light,design:.rounded)).monospacedDigit().frame(width:timeWidth,height:size.height)
+            }
+        } else if showsTime {
+            let dateLabel=date.formatted(.dateTime.day().month(.wide))
+            VStack(alignment:alignment,spacing:size.height*0.04) {
+                Text(dateLabel).font(.system(size:fittedFont(dateLabel,width:size.width,height:size.height*0.25,weight:.medium),weight:.medium,design:.rounded)).foregroundStyle(.secondary)
+                Text(time).font(.system(size:fittedFont(time,width:size.width,height:size.height*0.65,weight:.light,monospaced:true),weight:.light,design:.rounded)).monospacedDigit()
+            }
+        } else {
+            VStack(alignment:alignment,spacing:size.height*0.035) {
+                Text(day).font(.system(size:fittedFont(day,width:size.width,height:size.height*0.72,weight:.semibold),weight:.semibold,design:.rounded))
+                Text(month).font(.system(size:fittedFont(month,width:size.width,height:size.height*0.2,weight:.medium),weight:.medium,design:.rounded)).foregroundStyle(.secondary)
+            }
+        }
+    }
     var body:some View {
         GeometryReader { geometry in
             let size=geometry.size,style=configuration.clockStyle ?? "auto"
-            let horizontal=style == "auto" && size.width > size.height*1.8 && showsTime
             let alignment:HorizontalAlignment=leading ? .leading : .center
             Group {
-                if style == "calendar" {
+                if style == "auto" {
+                    adaptiveFace(size:size)
+                } else if style == "calendar" {
                     VStack(alignment:alignment,spacing:4) {
                         Text(date.formatted(.dateTime.day())).font(.system(size:min(180,max(36,min(size.width*0.42,size.height*0.5))),weight:.semibold,design:.rounded))
                         Text(date.formatted(.dateTime.month(.wide).year())).font(.system(size:min(32,max(16,size.height*0.1)),weight:.medium,design:.rounded)).foregroundStyle(.secondary)
                         if showsTime { Text(time).font(.system(size:min(42,max(18,size.height*0.14)),weight:.light,design:.rounded)).monospacedDigit() }
-                    }
-                } else if horizontal {
-                    HStack(spacing:24) {
-                        VStack(alignment:alignment,spacing:4) {
-                            Text(date.formatted(.dateTime.day())).font(.system(size:min(140,max(32,size.height*0.55)),weight:.semibold,design:.rounded))
-                            Text(date.formatted(.dateTime.month(.wide))).font(.system(size:min(32,max(15,size.height*0.12)),weight:.medium,design:.rounded)).foregroundStyle(.secondary)
-                        }.frame(maxWidth:.infinity,alignment:leading ? .leading : .center)
-                        Text(time).font(.system(size:min(180,max(28,min(size.width*0.065,size.height*0.38))),weight:.light,design:.rounded)).monospacedDigit().frame(maxWidth:.infinity)
                     }
                 } else {
                     VStack(alignment:alignment,spacing:10) {

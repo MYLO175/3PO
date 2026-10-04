@@ -4,8 +4,8 @@ import AppKit
 @MainActor enum DateClockPreview {
     static func render() {
         let date=ISO8601DateFormatter().date(from:"2026-10-04T21:30:00Z")!
-        for (name,width,height,style) in [("compact",CGFloat(320),CGFloat(240),"auto"),("wide",CGFloat(1000),CGFloat(350),"auto"),("calendar",CGFloat(480),CGFloat(460),"calendar"),("digital",CGFloat(500),CGFloat(350),"digital")] {
-            var configuration=WidgetConfiguration();configuration.clockStyle=style;configuration.clockUses24Hour=true
+        for (name,width,height,style) in [("compact",CGFloat(320),CGFloat(240),"auto"),("wide",CGFloat(1000),CGFloat(350),"auto"),("user-size",CGFloat(650),CGFloat(320),"auto"),("large",CGFloat(1200),CGFloat(700),"auto"),("seconds",CGFloat(650),CGFloat(320),"auto"),("calendar",CGFloat(480),CGFloat(460),"calendar"),("digital",CGFloat(500),CGFloat(350),"digital")] {
+            var configuration=WidgetConfiguration();configuration.clockStyle=style;configuration.clockUses24Hour=true;configuration.clockShowsSeconds=name == "seconds"
             var colours=WorkspaceColorOverrides();colours.profiles=WorkspaceColorTheme.threePO.profiles
             let palette=WorkspacePalette.resolved(raw:colours.encoded,mode:"dark",theme:"warm",accent:"sage")
             let view=VStack(alignment:.leading,spacing:10) {
