@@ -1,6 +1,20 @@
 import Foundation
 
 enum MemoryKind: String, Codable, CaseIterable { case preference, context, commitment }
+enum MemoryCertainty: String, Codable { case stated, inferred }
+enum MemoryDurability: String, Codable { case stable, situational }
+struct MemoryConnection: Codable, Equatable {
+    var subject: String
+    var relation: String
+    var object: String
+    var evidence: String
+    static func valid(_ values: [Self]?, human: String) -> Bool {
+        guard let values else { return true }
+        return values.count <= 4 && values.allSatisfy { value in
+            [value.subject,value.relation,value.object].allSatisfy { !$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && $0.count <= 120 } && (8...500).contains(value.evidence.count) && human.contains(value.evidence)
+        }
+    }
+}
 struct PAMemory: Codable, Identifiable, Equatable {
     var id = UUID()
     var registration: String
@@ -15,10 +29,13 @@ struct PAMemory: Codable, Identifiable, Equatable {
     var evidence: String?
     var sourceDate: Date?
     var conversationID: UUID? = nil
+    var certainty: MemoryCertainty? = nil
+    var durability: MemoryDurability? = nil
+    var connections: [MemoryConnection]? = nil
 }
 enum MemoryRules {
     static func needsReview(_ memory: PAMemory, now: Date = .now) -> Bool {
-        !memory.explicit && now.timeIntervalSince(memory.reviewed) >= 90 * 86400
+        !memory.explicit && !(memory.certainty == .stated && memory.durability == .stable) && now.timeIntervalSince(memory.reviewed) >= 90 * 86400
     }
     static func archived(_ memory: PAMemory, now: Date = .now) -> Bool {
         guard let resolved = memory.resolved else { return false }
@@ -50,13 +67,24 @@ enum MemoryRetrieval {
         Set(text.folding(options:[.caseInsensitive,.diacriticInsensitive],locale:Locale(identifier:"en_GB")).split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 2 && !ignored.contains($0) })
     }
     static func record(_ memory: PAMemory) -> [String:String] {
-        ["id":memory.id.uuidString,"scope":memory.conversationID?.uuidString ?? "shared","text":memory.text,"kind":memory.kind.rawValue,"certainty":memory.explicit ? "Explicitly provided or confirmed by user" : "Provisional; verify when relevant","provenance":memory.provenance,"evidence":memory.evidence ?? "","messageDate":memory.sourceDate?.ISO8601Format() ?? "unknown","reviewed":memory.reviewed.ISO8601Format()]
+        var value = ["id":memory.id.uuidString,"scope":memory.conversationID?.uuidString ?? "shared","text":memory.text,"kind":memory.kind.rawValue,"certainty":memory.explicit ? "Confirmed by user" : memory.certainty == .stated ? "Directly stated by user" : "Provisional; verify when relevant","provenance":memory.provenance,"evidence":memory.evidence ?? "","messageDate":memory.sourceDate?.ISO8601Format() ?? "unknown","reviewed":memory.reviewed.ISO8601Format()]
+        value["durability"]=memory.durability?.rawValue ?? "legacy"
+        if let connections=memory.connections, let data=try? JSONEncoder().encode(connections) { value["connections"]=String(data:data,encoding:.utf8) }
+        return value
     }
     /// Local relevance retrieval never changes stored facts, certainty or scope.
     static func select(_ memories: [PAMemory], registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, now: Date = .now, limit: Int = 40, bytes: Int = byteLimit) -> MemorySelection {
         let eligible = memories.filter { MemoryRules.usable($0,registration:registration,now:now) && MemoryRules.inScope($0,conversationID:conversationID,includeTopics:includeTopics) }
-        let terms = tokens(query ?? "")
-        func relevance(_ memory: PAMemory) -> Int { tokens(memory.text).intersection(terms).reduce(0) { $0 + min($1.count,12) } }
+        var terms = tokens(query ?? "")
+        // Expand once through permitted evidence-backed edges, never across topic/account boundaries.
+        let seed=terms
+        for memory in eligible {
+            for edge in memory.connections ?? [] {
+                let linked=tokens(edge.subject + " " + edge.relation + " " + edge.object)
+                if !linked.isDisjoint(with:seed) { terms.formUnion(linked) }
+            }
+        }
+        func relevance(_ memory: PAMemory) -> Int { tokens(memory.text + " " + (memory.connections ?? []).map { $0.subject + " " + $0.relation + " " + $0.object }.joined(separator:" ")).intersection(terms).reduce(0) { $0 + min($1.count,12) } }
         func ordered(_ lhs: PAMemory, _ rhs: PAMemory) -> Bool {
             let a = relevance(lhs), b = relevance(rhs)
             if a != b { return a > b }

@@ -1,0 +1,53 @@
+import Foundation
+import SwiftData
+import Observation
+
+enum PAQueuedState: String, Codable { case waiting, running, interrupted }
+struct PAQueuedRequest: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var registration: String
+    var topicID: UUID?
+    var prompt: String
+    var created = Date.now
+    var state: PAQueuedState = .waiting
+}
+enum PAQueueRules {
+    static func recover(_ values: [PAQueuedRequest]) -> [PAQueuedRequest] {
+        values.map { value in var item=value; if item.state == .running { item.state = .interrupted }; return item }
+    }
+    static func next(_ values:[PAQueuedRequest],registration:String) -> PAQueuedRequest? {
+        values.first { $0.registration == registration && $0.state == .waiting }
+    }
+}
+@MainActor @Observable final class PARequestQueue {
+    private(set) var items:[PAQueuedRequest] = []
+    private(set) var error:String?
+    private let container:ModelContainer?
+    private var writable=true
+    init(container:ModelContainer?) {
+        self.container=container
+        do {
+            if let record=try container?.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first(where:{ $0.key == "paRequestQueue" }) {
+                let values=try JSONDecoder().decode([PAQueuedRequest].self,from:record.data)
+                guard values.count <= 100, Set(values.map(\.id)).count == values.count else { throw CocoaError(.fileReadCorruptFile) }
+                items=PAQueueRules.recover(values)
+            }
+        } catch { writable=false; self.error="Saved requests could not be read; the original record is preserved." }
+    }
+    @discardableResult func add(registration:String,topicID:UUID?,prompt:String)->Bool {
+        guard !registration.isEmpty, !prompt.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, ConversationRules.acceptsPrompt(prompt),items.count < 100,items.filter({$0.registration == registration}).count < 20 else { error="The queue is full or the message is too long. Your draft is kept."; return false }
+        return change { $0.append(.init(registration:registration,topicID:topicID,prompt:prompt)) }
+    }
+    @discardableResult func mark(_ id:UUID,_ state:PAQueuedState)->Bool { change { values in if let i=values.firstIndex(where:{$0.id == id}) { values[i].state=state } } }
+    @discardableResult func remove(_ id:UUID)->Bool { change { $0.removeAll { $0.id == id } } }
+    private func change(_ action:(inout [PAQueuedRequest])->Void)->Bool {
+        guard writable,let container else { error="Request storage is unavailable. Your draft is kept."; return false }
+        var revised=items; action(&revised)
+        do {
+            let context=container.mainContext,data=try JSONEncoder().encode(revised)
+            if let record=try context.fetch(FetchDescriptor<CachedDashboard>()).first(where:{$0.key == "paRequestQueue"}) { record.data=data; record.updated = .now }
+            else { context.insert(CachedDashboard(key:"paRequestQueue",data:data)) }
+            try context.save(); items=revised; error=nil; return true
+        } catch { container.mainContext.rollback(); self.error="The request queue could not be saved."; return false }
+    }
+}

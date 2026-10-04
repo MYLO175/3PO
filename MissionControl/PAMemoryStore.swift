@@ -40,7 +40,7 @@ import SwiftData
         change { state in
             for entry in learned where !state.suppressed[registration,default:[]].contains(entry.turnID) {
                 guard !state.records.contains(where:{  $0.registration == registration && $0.conversationID == sourceTopics[entry.turnID] && MemoryLearningRules.normalised($0.text) == MemoryLearningRules.normalised(entry.text) }) else { continue }
-                state.records.append(PAMemory(registration:registration,text:entry.text,kind:entry.kind,explicit:false,provenance:"Learned from your conversation",sourceTurnID:entry.turnID,evidence:entry.evidence,sourceDate:sourceDates[entry.turnID],conversationID:sourceTopics[entry.turnID]))
+                state.records.append(PAMemory(registration:registration,text:entry.text,kind:entry.kind,explicit:false,provenance:"Learned from your conversation",sourceTurnID:entry.turnID,evidence:entry.evidence,sourceDate:sourceDates[entry.turnID],conversationID:sourceTopics[entry.turnID],certainty:entry.certainty,durability:entry.durability,connections:entry.connections))
             }
         }
     }

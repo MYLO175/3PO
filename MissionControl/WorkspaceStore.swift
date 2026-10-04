@@ -54,13 +54,19 @@ import SwiftData
         catch { state = old; self.error = "Workspace change was not saved. " + error.localizedDescription }
     }
     func select(_ id: UUID) { guard state.pages.contains(where: { $0.id == id }) else { return }; change({ $0.selectedPageID = id },undoable:false) }
-    func addPage(_ title: String = "New dashboard") {
-        let page = DashboardPage(title:String(title.trimmingCharacters(in:.whitespacesAndNewlines).prefix(80)).isEmpty ? "New dashboard" : String(title.prefix(80)),widgets:[],canvasRows:8)
+    func addPage(_ title: String = "New dashboard", symbol: String? = nil) {
+        var page = DashboardPage(title:String(title.trimmingCharacters(in:.whitespacesAndNewlines).prefix(80)).isEmpty ? "New dashboard" : String(title.prefix(80)),widgets:[],canvasRows:8)
+        page.symbol = symbol.flatMap { DashboardSymbols.choices.contains($0) ? $0 : nil }
         change { $0.pages.append(page); $0.selectedPageID = page.id }
     }
     func rename(_ id: UUID, title: String) {
         let value = String(title.trimmingCharacters(in:.whitespacesAndNewlines).prefix(80)); guard !value.isEmpty else { return }
         change { if let i = $0.pages.firstIndex(where: { $0.id == id }) { $0.pages[i].title = value } }
+    }
+    func configurePage(_ id: UUID, title: String, symbol: String?) {
+        let title=String(title.trimmingCharacters(in:.whitespacesAndNewlines).prefix(80))
+        guard !title.isEmpty, symbol == nil || DashboardSymbols.choices.contains(symbol!) else { return }
+        change { state in if let index=state.pages.firstIndex(where:{$0.id == id}) { state.pages[index].title=title; state.pages[index].symbol=symbol } }
     }
     func duplicate(_ id: UUID) {
         guard var page = state.pages.first(where: { $0.id == id }) else { return }

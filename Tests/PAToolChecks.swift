@@ -23,6 +23,13 @@ import Foundation
         var rejected = false
         do { _ = try PAToolProtocol.arguments(.init(id:"bad",name:"change_reminder",namespace:"pa",arguments:String(data:try JSONSerialization.data(withJSONObject:bad),encoding:.utf8)!)) } catch { rejected = true }
         assert(rejected)
+        var context: [String:Any] = ["text":"The Zoo is my family chat", "kind":"context", "scope":"shared", "certainty":"stated", "durability":"stable", "evidence":"my family chat is The Zoo", "connections":[["subject":"Me","relation":"family chat","object":"The Zoo","evidence":"my family chat is The Zoo"]]]
+        func contextCall(_ value:[String:Any]) throws -> PAFunctionCall { .init(id:"memory",name:"remember_context",namespace:"pa",arguments:String(data:try JSONSerialization.data(withJSONObject:value),encoding:.utf8)!) }
+        _ = try PAToolProtocol.arguments(contextCall(context))
+        context["connections"] = [["subject":"Me","relation":"family chat","object":"The Zoo","evidence":"my family chat is The Zoo","unknown":"bad"]]
+        var nestedRejected=false
+        do { _ = try PAToolProtocol.arguments(contextCall(context)) } catch { nestedRejected=true }
+        assert(nestedRejected)
         var stream = ChatGPTStream(allowsTools:true)
         let output: [[String:Any]] = [["type":"reasoning","id":"reason","summary":[],"encrypted_content":"opaque"],["type":"function_call","status":"completed","call_id":"call1","name":"change_reminder","namespace":"pa","arguments":encoded]]
         _ = try stream.line("data: " + String(data:try JSONSerialization.data(withJSONObject:["type":"response.completed","response":["id":"resp_test","output":output]]),encoding:.utf8)!)

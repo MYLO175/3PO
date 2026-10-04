@@ -45,6 +45,23 @@ import Foundation
         precondition(many.count == 66 && many.contains { $0 == older }, "Retrieval never deletes or edits saved records")
         var huge = older; huge.id = UUID(); huge.text = String(repeating:"🧠",count:6000)
         precondition(MemoryRetrieval.select([huge,older],registration:"one",now:now).records.map { $0["id"] } == [older.id.uuidString])
+        var stable = stale; stable.certainty = .stated; stable.durability = .stable
+        precondition(MemoryRules.usable(stable,registration:"one",now:now))
+        stable.certainty = .inferred
+        precondition(!MemoryRules.usable(stable,registration:"one",now:now))
+        let quote = "read my family group chat (it is called The Zoo)"
+        let edge = MemoryConnection(subject:"Me",relation:"family chat",object:"The Zoo",evidence:quote)
+        precondition(MemoryConnection.valid([edge],human:quote))
+        precondition(!MemoryConnection.valid([edge],human:"read a different chat"))
+        var family = older; family.text = "The Zoo"; family.connections = [edge]
+        let connected = MemoryRetrieval.select([family],registration:"one",query:"family",now:now)
+        precondition(connected.records.first?["connections"]?.contains("The Zoo") == true)
+        family.registration = "two"
+        precondition(MemoryRetrieval.select([family],registration:"one",query:"family",now:now).records.isEmpty)
+        var legacy = try JSONSerialization.jsonObject(with:JSONEncoder().encode(stable)) as! [String:Any]
+        for key in ["certainty","durability","connections"] { legacy.removeValue(forKey:key) }
+        let legacyMemory = try JSONDecoder().decode(PAMemory.self,from:JSONSerialization.data(withJSONObject:legacy))
+        precondition(legacyMemory.certainty == nil && legacyMemory.durability == nil && legacyMemory.connections == nil)
         print("PASS: explicit retention, provisional review, account scope, resolved archive, anchored human memory request and round-trip")
     }
 }

@@ -224,14 +224,27 @@ struct AssistantPanel: View {
                     Text(model.briefings.busy ? "Preparing today’s brief… You can draft a message while it finishes." : model.memoryLearning.busy ? "Learning conversation context… Start drafting to pause learning." : model.proactive.busy ? "Checking useful suggestions… Start drafting to pause the check." : model.emailSummaries.busy ? "Checking incoming mail… You can draft a message while it finishes." : "Checking your ChatGPT connection…").font(.caption).foregroundStyle(.secondary)
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
-            if assistant.busy && !sendingHere { Text("Your PA is replying in another topic. You can keep drafting here.").font(.caption).foregroundStyle(.secondary) }
+            let queued=assistant.queue.items.filter { $0.registration == model.chatGPT.activeID && $0.topicID == selectedTopicID }
+            if !queued.isEmpty {
+                DisclosureGroup("Queued requests (\(queued.count))") {
+                    ForEach(queued) { item in
+                        HStack(alignment:.top) {
+                            VStack(alignment:.leading) { Text(item.prompt).lineLimit(2); Text(item.state == .interrupted ? "Interrupted — check the transcript before submitting again" : item.state == .running ? "Working…" : "Waiting").font(.caption).foregroundStyle(.secondary) }
+                            Spacer()
+                            if item.state != .running { Button { assistant.discardQueued(item.id) } label:{ Image(systemName:"xmark") }.buttonStyle(.plain).help("Remove queued request") }
+                        }
+                    }
+                    Button("Continue waiting requests") { assistant.resumeQueue(model:model) }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused)
+                }.font(.caption)
+            }
+            if let queueError=assistant.queue.error { Text(queueError).font(.caption).foregroundStyle(.orange) }
             if let error = assistant.drafts.error, widgetID != nil { Text(error).font(.caption).foregroundStyle(.orange) }
             HStack {
                 Button { showDictation = true } label: { Image(systemName:"mic") }.help("Dictate a message").accessibilityLabel("Dictate a message").disabled(widgetID != nil && !assistant.drafts.writable)
                 TextField("Message your PA", text: draft,axis:.vertical).lineLimit(1...4).textFieldStyle(.plain).padding(9).background(palette[.input],in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).stroke(palette[.border])).onSubmit { send() }.focused($composerFocused).disabled(widgetID != nil && !assistant.drafts.writable)
-                Button(sendingHere ? "Stop" : "Send") { if sendingHere { assistant.cancel() } else { send() } }
+                Button(sendingHere && draft.wrappedValue.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty ? "Stop" : assistant.busy ? "Queue" : "Send") { if sendingHere && draft.wrappedValue.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { assistant.cancel() } else { send() } }
                     .frame(width:56)
-                    .disabled(!sendingHere && (assistant.busy || (widgetID != nil && !assistant.drafts.writable) || draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (!model.chatGPT.inferenceVerified || model.chatGPT.busy || model.chatGPT.usagePaused)))
+                    .disabled(!sendingHere && ((widgetID != nil && !assistant.drafts.writable) || draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (!model.chatGPT.inferenceVerified || (!assistant.busy && model.chatGPT.busy) || model.chatGPT.usagePaused)))
             }
             if errorHere && assistant.error?.contains("Choose the specific target") == true {
                 Picker("Specific action target", selection: $model.assistantActions.selectedTarget) {

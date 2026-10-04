@@ -11,6 +11,7 @@ struct WorkspaceView: View {
     @AppStorage("workspaceToolbarHidden") private var toolbarHidden = ""
     @Environment(\.colorScheme) private var scheme
     @State private var editing = false
+    @State private var dashboardSymbol: String?
     @State private var naming: UUID?
     @State private var name = ""
     @State private var showName = false
@@ -75,7 +76,7 @@ struct WorkspaceView: View {
                 editing = false
                 focusedWidgetID = request.widgetID
             }
-            .sheet(isPresented:$showName) { VStack(alignment:.leading,spacing:16) { Text(naming == nil ? "New dashboard" : "Rename dashboard").font(.title2.weight(.semibold)); TextField("Name",text:$name).onSubmit { saveName() }; HStack { Spacer(); Button("Cancel") { showName = false }.keyboardShortcut(.cancelAction); Button("Save") { saveName() }.keyboardShortcut(.defaultAction).disabled(name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty) } }.padding(24).frame(width:360) }
+            .sheet(isPresented:$showName) { VStack(alignment:.leading,spacing:16) { Text(naming == nil ? "New dashboard" : "Edit dashboard").font(.title2.weight(.semibold)); TextField("Name",text:$name).onSubmit { saveName() }; Text("Icon").font(.headline); LazyVGrid(columns:Array(repeating:GridItem(.fixed(38)),count:6),spacing:8) { ForEach(DashboardSymbols.choices,id:\.self) { symbol in Button { dashboardSymbol=symbol } label: { Image(systemName:symbol).frame(width:32,height:32).background(dashboardSymbol == symbol ? Color.accentColor.opacity(0.15) : Color.clear,in:RoundedRectangle(cornerRadius:7)) }.buttonStyle(.borderless).accessibilityLabel(symbol).help(symbol) } }; Button("Automatic icon") { dashboardSymbol=nil }.controlSize(.small); HStack { Spacer(); Button("Cancel") { showName = false }.keyboardShortcut(.cancelAction); Button("Save") { saveName() }.keyboardShortcut(.defaultAction).disabled(name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty) } }.padding(24).frame(width:360) }
             .sheet(item:$model.selectedMessage) { DashboardView(model:model).previewSheet($0) }
             .sheet(item:$model.editTarget) { NativeItemEditor(model:model,target:$0) }
             .sheet(isPresented:$legacy) { DashboardView(model:model).frame(width:1150,height:750) }
@@ -133,7 +134,7 @@ struct WorkspaceView: View {
         ToolbarItem(id:"settings") { SettingsLink { Label("Settings",systemImage:"gearshape") } }.sharedBackgroundVisibility(.hidden)
         }
     }
-    private func newDashboard() { naming = nil; name = "New dashboard"; showName = true }
+    private func newDashboard() { naming = nil; dashboardSymbol=nil; name = "New dashboard"; showName = true }
     private func addWidget(_ kind: WidgetKind) { store.addWidget(kind); editing = true }
     private func customiseToolbar() { NSApp.keyWindow?.runToolbarCustomizationPalette(nil) }
     private func showAssistant() { model.openAssistantComposer() }
@@ -148,8 +149,8 @@ struct WorkspaceView: View {
             ScrollView {
                 VStack(spacing:5) {
                     ForEach(store.state.pages) { page in
-                        Button { store.select(page.id) } label: { HStack(spacing:8) { Image(systemName:page.widgets.count == 1 ? page.widgets[0].kind?.icon ?? "square" : "square.grid.2x2"); Text(page.title).lineLimit(1); Spacer(minLength:0) }.font(.callout).padding(10).frame(maxWidth:.infinity,alignment:.leading).background(page.id == store.selected.id ? accentColor.opacity(0.12) : Color.clear,in:RoundedRectangle(cornerRadius:9)) }.buttonStyle(.plain)
-                            .contextMenu { Button("Rename") { naming = page.id; name = page.title; showName = true }; Button("Duplicate") { store.duplicate(page.id) }; Button("Move up") { store.movePage(page.id,offset:-1) }; Button("Move down") { store.movePage(page.id,offset:1) }; Divider(); Button("Remove dashboard") { store.removePage(page.id) }.disabled(store.state.pages.count == 1) }
+                        Button { store.select(page.id) } label: { HStack(spacing:8) { Image(systemName:page.displayIcon); Text(page.title).lineLimit(1); Spacer(minLength:0) }.font(.callout).padding(10).frame(maxWidth:.infinity,alignment:.leading).background(page.id == store.selected.id ? accentColor.opacity(0.12) : Color.clear,in:RoundedRectangle(cornerRadius:9)) }.buttonStyle(.plain)
+                            .contextMenu { Button("Edit name and icon…") { naming = page.id; name = page.title; dashboardSymbol=page.symbol; showName = true }; Button("Duplicate") { store.duplicate(page.id) }; Button("Move up") { store.movePage(page.id,offset:-1) }; Button("Move down") { store.movePage(page.id,offset:1) }; Divider(); Button("Remove dashboard") { store.removePage(page.id) }.disabled(store.state.pages.count == 1) }
                     }
                 }
             }
@@ -157,7 +158,7 @@ struct WorkspaceView: View {
             Text("Each page is yours to arrange.").font(.caption).foregroundStyle(.secondary)
         }.padding(12)
     }
-    private func saveName() { if let naming { store.rename(naming,title:name) } else { store.addPage(name) }; showName = false }
+    private func saveName() { if let naming { store.configurePage(naming,title:name,symbol:dashboardSymbol) } else { store.addPage(name,symbol:dashboardSymbol) }; showName = false }
     private func widgetBinding(_ original: WidgetPlacement) -> Binding<WidgetPlacement> { Binding(get:{ store.selected.widgets.first { $0.id == original.id } ?? original },set:{ store.update($0) }) }
 }
 private struct WorkspaceTile: View {
@@ -233,6 +234,7 @@ private struct WorkspaceTile: View {
         case .overview:
             TodayBriefView(model:model,briefings:model.briefings).padding(16)
         case .emailSummary: EmailOverviewView(model:model,summaries:model.emailSummaries,configuration:configuration).padding(16)
+        case .tasks: PATasksView(model:model).padding(16)
         case .clock: DateClockWidget(configuration:configuration)
         case nil: ContentUnavailableView("Widget unavailable",systemImage:"square.dashed",description:Text("Its saved placement is preserved for a future app version."))
         }

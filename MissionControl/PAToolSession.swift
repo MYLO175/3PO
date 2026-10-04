@@ -31,7 +31,7 @@ import Foundation
         let args = try PAToolProtocol.arguments(call)
         func text(_ name: String) -> String? { args[name] as? String }
         let assistant = model.assistant
-        let memoryTool = ["read_memory","save_memory","change_memory"].contains(call.name)
+        let memoryTool = ["read_memory","save_memory","remember_context","change_memory"].contains(call.name)
         guard memoryTool || assistant.contextEnabled else { throw ActionFailure.message("Source context is disabled.") }
         if !memoryTool, ProcessInfo.processInfo.arguments.contains("--sample") { throw ActionFailure.message("Sample mode never accesses Apple apps.") }
         let target = (args["target"] as? String).flatMap { id in reminders.reminders.first { $0.id == id }.map { $0.title + " · " + $0.sourceLabel } ?? calendar.events.first { $0.id == id }.map { $0.title + " · " + $0.sourceLabel + " · " + DateRules.localTimestamp($0.start) } }
@@ -140,19 +140,24 @@ import Foundation
             let selection = assistant.memory.selection(registration,conversationID:topicID,query:text("query"))
             issuedMemory.formUnion(selection.records.compactMap { $0["id"].flatMap(UUID.init(uuidString:)) })
             return try json(["records":selection.records,"eligible":selection.eligibleCount,"selected":selection.records.count,"coverage":"Bounded relevant shared/current-topic memory; not exhaustive recall."])
-        case "save_memory":
+        case "save_memory","remember_context":
             guard assistant.memory.enabled else { throw ActionFailure.message("Memory is disabled.") }
             try PAToolProtocol.evidence(text("evidence"),human:human)
             let value = text("text")!
             guard !value.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, value.count <= 2000, text("scope") != "topic" || topicID != nil else { throw ActionFailure.message("Invalid memory content or unavailable topic scope.") }
             let explicit = args["explicit"] as? Bool == true
+            let certainty=text("certainty").flatMap(MemoryCertainty.init(rawValue:))
+            let durability=text("durability").flatMap(MemoryDurability.init(rawValue:))
+            let connections: [MemoryConnection]?
+            if let values=args["connections"] as? [[String:Any]] { connections=try JSONDecoder().decode([MemoryConnection].self,from:JSONSerialization.data(withJSONObject:values)) } else { connections=nil }
+            guard MemoryConnection.valid(connections,human:human) else { throw ActionFailure.message("Memory connections lack valid human evidence.") }
             guard explicit || assistant.memory.learningEnabled else { throw ActionFailure.message("Automatic memory learning is paused; ask explicitly to remember this.") }
             guard explicit || !assistant.memory.suppressed(registration).contains(turnID.uuidString) else { throw ActionFailure.message("This conversation's forgotten memory must not be learned again automatically.") }
             let scope = text("scope") == "topic" ? topicID : nil
             if let existing = assistant.memory.records.first(where:{ $0.registration == registration && $0.conversationID == scope && MemoryLearningRules.normalised($0.text) == MemoryLearningRules.normalised(value) }) { return try json(["saved":true,"id":existing.id.uuidString,"result":"Already saved","explicit":existing.explicit]) }
-            let record = PAMemory(registration:registration,text:value,kind:MemoryKind(rawValue:text("kind")!)!,explicit:explicit,provenance:"PA tool from human conversation",sourceTurnID:turnID.uuidString,evidence:text("evidence"),sourceDate:.now,conversationID:scope)
+            let record = PAMemory(registration:registration,text:value,kind:MemoryKind(rawValue:text("kind")!)!,explicit:explicit,provenance:"PA tool from human conversation",sourceTurnID:turnID.uuidString,evidence:text("evidence"),sourceDate:.now,conversationID:scope,certainty:certainty,durability:durability,connections:connections)
             guard assistant.memory.put(record) else { throw ActionFailure.message(assistant.memory.error ?? "Memory save failed.") }
-            issuedMemory.insert(record.id); let receipt = explicit ? "Saved memory: " + value : "Noted provisional memory: " + value
+            issuedMemory.insert(record.id); let receipt = explicit ? "Saved memory: " + value : certainty == .stated ? "Remembered context: " + value : "Noted provisional memory: " + value
             receipts.append(receipt); return try json(["saved":true,"id":record.id.uuidString,"explicit":explicit,"result":receipt])
         case "change_memory":
             guard assistant.memory.enabled else { throw ActionFailure.message("Memory is disabled.") }
@@ -164,7 +169,7 @@ import Foundation
             case "resolve": success = assistant.memory.resolve(id)
             default:
                 guard let value = text("text"), !value.isEmpty, value.count <= 2000 else { throw ActionFailure.message("Specify the corrected memory.") }
-                var revised = record; revised.text = value; revised.explicit = true; revised.evidence = text("authorization"); success = assistant.memory.put(revised)
+                var revised = record; revised.text = value; revised.explicit = true; revised.connections = nil; revised.certainty = .stated; revised.durability = nil; revised.evidence = text("authorization"); success = assistant.memory.put(revised)
             }
             guard success else { throw ActionFailure.message(assistant.memory.error ?? "Memory change failed.") }
             receipts.append("Memory change saved: " + text("operation")!); return try json(["saved":true,"operation":text("operation")!])

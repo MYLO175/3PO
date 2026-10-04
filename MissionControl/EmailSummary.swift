@@ -19,6 +19,7 @@ struct EmailSummary: Codable, Identifiable {
     var dismissed: Bool? = nil
     var worthReading: Bool? = nil
     var needsReply: Bool? = nil
+    var replyDraft: String? = nil
     func retain(after cutoff: Date) -> Bool {
         (messageReceived ?? created) >= cutoff || (dismissed != true && (attention || followUpDate != nil))
     }
@@ -46,7 +47,7 @@ struct EmailSummary: Codable, Identifiable {
         return SHA256.hash(data: Data(fields.joined(separator: "\n").utf8)).map { String(format: "%02x", $0) }.joined()
     }
     static func decode(_ response: String, message: MailMessage, body: String, registration: String) throws -> EmailSummary {
-        struct Output: Decodable { let summary: String; let attention: Bool; let reason: String; let evidence: String; let followUpDate: String?; let followUpEvidence: String?; let worthReading: Bool?; let needsReply: Bool? }
+        struct Output: Decodable { let summary: String; let attention: Bool; let reason: String; let evidence: String; let followUpDate: String?; let followUpEvidence: String?; let worthReading: Bool?; let needsReply: Bool?; let replyDraft: String? }
         let output = try JSONDecoder().decode(Output.self, from: Data(response.utf8))
         guard !output.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw SummaryFailure.emptySummary }
         guard output.summary.count <= 1200, output.reason.count <= 600, output.evidence.count <= 500 else { throw SummaryFailure.tooLong }
@@ -58,7 +59,9 @@ struct EmailSummary: Codable, Identifiable {
             let formatter = DateFormatter(); formatter.locale = Locale(identifier:"en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"; formatter.isLenient = false
             guard let parsed = formatter.date(from:date), formatter.string(from:parsed) == date, let quote = output.followUpEvidence, verbatimEvidence(quote,body:body,subject:message.subject) != nil else { throw SummaryFailure.unsupportedEvidence }
         }
-        return .init(id: message.id, registration: registration, fingerprint: fingerprint(message), summary: output.summary, attention: output.attention, reason: output.reason, evidence: exactEvidence ?? "", messageReceived: message.received, message:message, followUpDate:output.followUpDate, followUpEvidence:output.followUpEvidence.flatMap { verbatimEvidence($0,body:body,subject:message.subject) },worthReading:output.worthReading,needsReply:output.needsReply)
+        if let draft=output.replyDraft { guard draft.count <= 4000 else { throw SummaryFailure.tooLong } }
+        let draft = output.needsReply == true && output.attention && !message.replied ? output.replyDraft?.trimmingCharacters(in:.whitespacesAndNewlines) : nil
+        return .init(id: message.id, registration: registration, fingerprint: fingerprint(message), summary: output.summary, attention: output.attention, reason: output.reason, evidence: exactEvidence ?? "", messageReceived: message.received, message:message, followUpDate:output.followUpDate, followUpEvidence:output.followUpEvidence.flatMap { verbatimEvidence($0,body:body,subject:message.subject) },worthReading:output.worthReading,needsReply:output.needsReply,replyDraft:draft?.isEmpty == false ? draft : nil)
     }
 }
 enum SummaryFailure: LocalizedError {

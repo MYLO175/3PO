@@ -7,6 +7,11 @@ import Foundation
         let good = #"{"summary":"An attendance confirmation is requested.","attention":true,"reason":"Reply requested; no explicit deadline.","evidence":"Please confirm whether you can attend on Monday."}"#
         let summary = try EmailSummary.decode(good, message: message, body: body, registration: "registration-a")
         assert(summary.attention && summary.registration == "registration-a")
+        let withDraft=good.dropLast() + ",\"needsReply\":true,\"replyDraft\":\"Thanks for asking. [Confirm availability]\"}"
+        let ready=try EmailSummary.decode(String(withDraft),message:message,body:body,registration:"registration-a")
+        assert(ready.replyDraft?.contains("[Confirm availability]") == true)
+        let replied=try JSONDecoder().decode(MailMessage.self,from:Data(raw.replacingOccurrences(of:"\"replied\":false",with:"\"replied\":true").utf8))
+        let alreadyReplied=try EmailSummary.decode(String(withDraft),message:replied,body:body,registration:"registration-a"); assert(alreadyReplied.replyDraft == nil)
         let saved = try JSONDecoder().decode(EmailSummary.self, from: JSONEncoder().encode(summary))
         assert(saved.fingerprint == summary.fingerprint && saved.evidence == summary.evidence)
         assert(EmailSummary.fingerprintBody(body) == EmailSummary.fingerprintBody(body))

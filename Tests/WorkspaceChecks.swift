@@ -4,6 +4,12 @@ import CoreGraphics
 @main
 struct WorkspaceChecks {
     static func main() throws {
+        var page=DashboardPage(title:"Study",widgets:[]); page.symbol="graduationcap"
+        let decodedPage=try JSONDecoder().decode(DashboardPage.self,from:JSONEncoder().encode(page))
+        assert(decodedPage.displayIcon == "graduationcap" && decodedPage == page)
+        var legacyPage=try JSONSerialization.jsonObject(with:JSONEncoder().encode(page)) as! [String:Any]
+        legacyPage.removeValue(forKey:"symbol")
+        let oldPage=try JSONDecoder().decode(DashboardPage.self,from:JSONSerialization.data(withJSONObject:legacyPage)); assert(oldPage.symbol == nil)
         let defaults = WidgetConfiguration()
         assert(defaults.sourceExclusions.isEmpty)
         assert(defaults.calendarMode == "agenda" && defaults.reminderGrouping == "lists")

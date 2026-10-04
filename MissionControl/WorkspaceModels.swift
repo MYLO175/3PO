@@ -8,6 +8,7 @@ enum WidgetKind: String, Codable, CaseIterable {
     case overview // Saved legacy kind, now Today’s brief.
     case emailSummary
     case clock
+    case tasks
 
     var title: String {
         switch self {
@@ -17,6 +18,7 @@ enum WidgetKind: String, Codable, CaseIterable {
         case .conversation: return "Conversation"
         case .overview: return "Today’s brief"
         case .emailSummary: return "Email summary"
+        case .tasks: return "Tasks for you"
         case .clock: return "Date & clock"
         }
     }
@@ -29,13 +31,14 @@ enum WidgetKind: String, Codable, CaseIterable {
         case .conversation: return "bubble.left.and.bubble.right"
         case .overview: return "sun.max"
         case .emailSummary: return "envelope.badge"
+        case .tasks: return "tray.full"
         case .clock: return "clock"
         }
     }
 
     var minimumColumns: Int {
         switch self {
-        case .calendar, .conversation, .overview, .emailSummary: return 4
+        case .calendar, .conversation, .overview, .emailSummary, .tasks: return 4
         case .reminders: return 3
         case .mail: return 4
         case .clock: return 3
@@ -46,7 +49,7 @@ enum WidgetKind: String, Codable, CaseIterable {
         switch self {
         case .calendar, .conversation: return 5
         case .reminders: return 4
-        case .mail, .overview, .emailSummary: return 4
+        case .mail, .overview, .emailSummary, .tasks: return 4
         case .clock: return 2
         }
     }
@@ -108,11 +111,16 @@ struct WidgetPlacement: Identifiable, Codable, Equatable {
     }
 }
 
+enum DashboardSymbols {
+    static let choices=["square.grid.2x2","sun.max","calendar","checklist","bubble.left.and.bubble.right","envelope","graduationcap","book","pencil","wrench.and.screwdriver","briefcase","sportscourt","figure.run","person.2","house","heart","airplane","map","leaf","star","music.note","cup.and.saucer","brain","sparkles"]
+}
 struct DashboardPage: Identifiable, Codable, Equatable {
     var id: UUID = UUID()
     var title: String
     var widgets: [WidgetPlacement]
     var canvasRows: Int?
+    var symbol: String? = nil
+    var displayIcon: String { symbol ?? (widgets.count == 1 ? widgets[0].kind?.icon ?? "square" : "square.grid.2x2") }
 
     init(id: UUID = UUID(), title: String, widgets: [WidgetPlacement], canvasRows: Int? = nil) {
         self.id = id
