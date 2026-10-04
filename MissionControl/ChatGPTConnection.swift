@@ -111,13 +111,37 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         responseRequestID = nil; responseHTTPStatus = 0; responseModel = ""
         let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse { responseRequestID = http.value(forHTTPHeaderField:"x-request-id"); responseHTTPStatus = http.statusCode }
-        guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else { throw apiError(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0, registration:registration) }
+        guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
+            let status=(response as? HTTPURLResponse)?.statusCode ?? 0
+            let code=errorCode(data)
+            if ChatGPTRecovery.terminalRefresh(code:code,status:status,grant:fields?["grant_type"]),
+               let failedToken=fields?["refresh_token"], let client=fields?["client_id"],
+               var rejected=registrations.first(where:{$0.clientID == client && $0.refreshToken == failedToken}) {
+                // Preserve client/subject ownership so reconnect keeps transcripts and sources.
+                rejected.accessToken=""; rejected.refreshToken=""; rejected.idToken=""; rejected.scopes=[]
+                rejected.expiry = .distantPast; rejected.verifiedAt=nil; rejected.verifiedModel=nil
+                if activeID == client { inferenceVerified=false; models=[] }
+                let failure=apiError(data,status:status,registration:client)
+                do { try save(rejected,select:false) }
+                catch {
+                    // Fail closed in this process even if Keychain refuses the update.
+                    registrations.removeAll { $0.clientID == client }; registrations.append(rejected); labels()
+                    throw ChatGPTError.message("ChatGPT rejected the renewable session. Local renewal is stopped, but Keychain could not save that state. Your dashboard and account identity are retained. Continue with ChatGPT to reconnect.")
+                }
+                throw ChatGPTError.message(failure.localizedDescription + " The unusable tokens were cleared; Continue with ChatGPT to reconnect the same account. Your chats and source choices are retained.")
+            }
+            throw apiError(data,status:status,registration:registration)
+        }
         return data
+    }
+    private func errorCode(_ data: Data) -> String {
+        let root=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any]
+        return (root?["error"] as? [String:Any])?["code"] as? String ?? root?["error"] as? String ?? "request_failed"
     }
     private func apiError(_ data: Data, status: Int, registration: String? = nil) -> ChatGPTError {
         let root = (try? JSONSerialization.jsonObject(with: data)) as? [String:Any]
         let error = root?["error"]
-        let code = (error as? [String:Any])?["code"] as? String ?? error as? String ?? "request_failed"
+        let code = errorCode(data)
         return responseError(code, status: status, param:(error as? [String:Any])?["param"] as? String, shape:error is [String:Any] ? "HTTP error object" : root?["detail"] != nil ? "HTTP admission detail" : "HTTP other body",registration:registration)
     }
     private func responseError(_ raw: String, status: Int = 0, param: String? = nil, shape: String = "stream error", registration: String? = nil) -> ChatGPTError {

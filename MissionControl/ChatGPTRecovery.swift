@@ -3,6 +3,10 @@ import Foundation
 /// Only the documented quota code proves a subscription-limit rejection.
 /// A generic 429 or usage-check outage must not permanently latch quota state.
 enum ChatGPTRecovery {
+    static func terminalRefresh(code: String, status: Int, grant: String?) -> Bool {
+        guard grant == "refresh_token", (400..<500).contains(status) else { return false }
+        return ["invalid_grant","invalid_refresh_token","token_expired","refresh_token_expired","refresh_token_invalidated","refresh_token_reused"].contains(code)
+    }
     static func quota(_ code: String) -> Bool { code == "subscription_sharing_usage_limit_exceeded" }
     static func blocked(after code: String, registration: String, existing: Set<String>) -> Set<String> {
         guard quota(code), !registration.isEmpty else { return existing }

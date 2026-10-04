@@ -12,6 +12,14 @@ import Foundation
         assert(ChatGPTRecovery.message(code:"subscription_sharing_usage_unavailable",status:503).contains("session is retained"))
         assert(ChatGPTRecovery.safe("req_test-123") == "req_test-123")
         assert(ChatGPTRecovery.safe("Bearer private token") == "unavailable")
+        for code in ["invalid_grant","invalid_refresh_token","token_expired","refresh_token_expired","refresh_token_invalidated","refresh_token_reused"] {
+            assert(ChatGPTRecovery.terminalRefresh(code:code,status:400,grant:"refresh_token"))
+            assert(!ChatGPTRecovery.terminalRefresh(code:code,status:503,grant:"refresh_token"))
+            assert(!ChatGPTRecovery.terminalRefresh(code:code,status:400,grant:"authorization_code"))
+        }
+        for code in ["invalid_client","subscription_sharing_usage_limit_exceeded","subscription_sharing_usage_unavailable","request_failed"] {
+            assert(!ChatGPTRecovery.terminalRefresh(code:code,status:401,grant:"refresh_token"))
+        }
         var quotaFailure = ChatGPTStream()
         do {
             _ = try quotaFailure.line(#"data: {"type":"response.failed","response":{"id":"resp_test123","error":{"code":"subscription_sharing_usage_limit_exceeded","param":"model"}}}"#)
