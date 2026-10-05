@@ -28,7 +28,7 @@ struct WorkspaceView: View {
             if let error = store.error { HStack { Label(error,systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange); Spacer(); if store.readOnly { Button("Original dashboard") { legacy = true } } else { Button("Dismiss") { store.error = nil } } }.padding(10) }
             if let error = model.storageError ?? model.writeError { Text(error).font(.caption).foregroundStyle(.orange).frame(maxWidth:.infinity,alignment:.leading).padding(10) }
             HStack(spacing:0) {
-                if sidebarVisible { sidebar.frame(width:170).background(palette[.sidebar]); Divider() }
+                sidebar.frame(width:sidebarVisible ? 190 : 56)
                 GeometryReader { geometry in
                     let width = max(1,geometry.size.width-32), height = max(1,geometry.size.height-32)
                     let rows = GridRules.rows(store.selected)
@@ -59,14 +59,17 @@ struct WorkspaceView: View {
                         }.frame(width:width,height:height,alignment:.topLeading).coordinateSpace(name:"workspaceGrid").padding(16)
                     }
                 }.clipped()
+                    .background(background,in:RoundedRectangle(cornerRadius:20,style:.continuous))
+                    .clipShape(RoundedRectangle(cornerRadius:20,style:.continuous))
+                    .padding(.vertical,8).padding(.trailing,8)
 
             }
-        }.background(background).tint(accentColor).foregroundStyle(palette[.text]).environment(\.workspacePalette,palette).frame(minWidth:780,minHeight:580)
+        }.background(palette[.sidebar]).tint(accentColor).foregroundStyle(palette[.text]).environment(\.workspacePalette,palette).frame(minWidth:780,minHeight:580)
             .toolbar(id:"mission-control.workspace.native-toolbar") { windowToolbar }
-            .toolbarBackground(background,for:.windowToolbar)
+            .toolbarBackground(palette[.sidebar],for:.windowToolbar)
             .toolbarBackground(.visible,for:.windowToolbar)
             .windowToolbarFullScreenVisibility(.visible)
-            .background(WorkspaceWindowColour(colour:NSColor(background)))
+            .background(WorkspaceWindowColour(colour:NSColor(palette[.sidebar])))
             .focusedSceneValue(\.workspaceMenu,WorkspaceMenuActions(sidebar:$sidebarVisible,editing:$editing,newDashboard:newDashboard,addWidget:addWidget,customiseToolbar:customiseToolbar,customiseColors:{ showColors = true }))
             .sheet(isPresented:$showColors) { WorkspaceColorEditor() }
             .task { model.start() }
@@ -85,7 +88,7 @@ struct WorkspaceView: View {
     @ToolbarContentBuilder private var windowToolbar: some CustomizableToolbarContent {
         Group {
         ToolbarItem(id:"sidebar",placement:.navigation) {
-            Button { sidebarVisible.toggle() } label: { Label("Sidebar",systemImage:"sidebar.left") }.help("Show dashboard pages")
+            Button { sidebarVisible.toggle() } label: { Label("Sidebar",systemImage:"sidebar.left") }.help(sidebarVisible ? "Collapse dashboard sidebar" : "Expand dashboard sidebar")
         }.customizationBehavior(.reorderable).sharedBackgroundVisibility(.hidden)
         ToolbarSpacer(.flexible)
         ToolbarItem(id:"feedback") {
@@ -145,18 +148,37 @@ struct WorkspaceView: View {
     }
     private var sidebar: some View {
         VStack(alignment:.leading,spacing:12) {
-            Text("3PO").font(.caption2.weight(.semibold)).tracking(1.2).foregroundStyle(.secondary).padding(.top,8)
+            if sidebarVisible {
+                Text("3PO").font(.caption2.weight(.semibold)).tracking(1.2)
+                    .foregroundStyle(.secondary).padding(.horizontal,12).padding(.top,8)
+            }
             ScrollView {
-                VStack(spacing:5) {
+                VStack(spacing:4) {
                     ForEach(store.state.pages) { page in
-                        Button { store.select(page.id) } label: { HStack(spacing:8) { Image(systemName:page.displayIcon); Text(page.title).lineLimit(1); Spacer(minLength:0) }.font(.callout).padding(10).frame(maxWidth:.infinity,alignment:.leading).background(page.id == store.selected.id ? accentColor.opacity(0.12) : Color.clear,in:RoundedRectangle(cornerRadius:9)) }.buttonStyle(.plain)
+                        Button { store.select(page.id) } label: {
+                            HStack(spacing:10) {
+                                Image(systemName:page.displayIcon).font(.system(size:16)).frame(width:22)
+                                if sidebarVisible { Text(page.title).lineLimit(1); Spacer(minLength:0) }
+                            }
+                            .font(.callout).padding(.horizontal,sidebarVisible ? 12 : 0)
+                            .frame(maxWidth:.infinity,minHeight:40,alignment:sidebarVisible ? .leading : .center)
+                            .background(page.id == store.selected.id ? accentColor.opacity(0.14) : Color.clear,
+                                        in:RoundedRectangle(cornerRadius:12,style:.continuous))
+                            .contentShape(RoundedRectangle(cornerRadius:12,style:.continuous))
+                        }.buttonStyle(.plain).accessibilityLabel(page.title).help(page.title)
                             .contextMenu { Button("Edit name and icon…") { naming = page.id; name = page.title; dashboardSymbol=page.symbol; showName = true }; Button("Duplicate") { store.duplicate(page.id) }; Button("Move up") { store.movePage(page.id,offset:-1) }; Button("Move down") { store.movePage(page.id,offset:1) }; Divider(); Button("Remove dashboard") { store.removePage(page.id) }.disabled(store.state.pages.count == 1) }
                     }
                 }
-            }
-            Button { newDashboard() } label: { Label("New dashboard",systemImage:"plus") }.buttonStyle(.borderless)
-            Text("Each page is yours to arrange.").font(.caption).foregroundStyle(.secondary)
-        }.padding(12)
+            }.scrollIndicators(.hidden)
+            Button { newDashboard() } label: {
+                HStack(spacing:10) {
+                    Image(systemName:"plus").font(.system(size:17)).frame(width:22)
+                    if sidebarVisible { Text("New dashboard"); Spacer(minLength:0) }
+                }.padding(.horizontal,sidebarVisible ? 12 : 0)
+                    .frame(maxWidth:.infinity,minHeight:40,alignment:sidebarVisible ? .leading : .center)
+                    .contentShape(RoundedRectangle(cornerRadius:12,style:.continuous))
+            }.buttonStyle(.plain).help("New dashboard").accessibilityLabel("New dashboard")
+        }.padding(.horizontal,8).padding(.vertical,12)
     }
     private func saveName() { if let naming { store.configurePage(naming,title:name,symbol:dashboardSymbol) } else { store.addPage(name,symbol:dashboardSymbol) }; showName = false }
     private func widgetBinding(_ original: WidgetPlacement) -> Binding<WidgetPlacement> { Binding(get:{ store.selected.widgets.first { $0.id == original.id } ?? original },set:{ store.update($0) }) }
