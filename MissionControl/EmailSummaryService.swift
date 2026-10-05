@@ -241,7 +241,12 @@ import SwiftData
                 rejected.removeAll { $0.received < cutoff }
                 if previous.count != records.count || previousRejected.count != rejected.count { do { try save() } catch { records = previous; rejected = previousRejected; throw error } }
             } catch is CancellationError { error = "Summary processing stopped. Completed summaries are saved."; paused = true }
-            catch { self.error = phase + ": " + error.localizedDescription; paused = true }
+            catch {
+                if let network = error as? URLError, [.notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed].contains(network.code) {
+                    self.error = "Email processing paused after a connection failure. Completed summaries are saved. When your connection is available, choose Resume email processing."
+                } else { self.error = phase + ": " + error.localizedDescription }
+                paused = true
+            }
         }
     }
 }

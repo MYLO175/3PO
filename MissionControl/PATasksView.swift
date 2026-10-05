@@ -20,7 +20,17 @@ struct PATasksView: View {
         VStack(alignment:.leading,spacing:12) {
             HStack { Label("Tasks for you",systemImage:"tray.full").font(.title3.weight(.semibold));Spacer();Button { model.proactive.check(model,manual:true) } label:{Image(systemName:"arrow.clockwise")}.buttonStyle(.borderless).help("Check for useful suggestions").disabled(model.proactive.busy || model.assistant.busy || model.chatGPT.busy || model.writing) }
             if model.proactive.busy || model.emailSummaries.busy { Text(model.proactive.busy ? "Looking for useful suggestions…" : "Preparing email work…").font(.caption).foregroundStyle(.secondary) }
-            if let error=model.proactive.error ?? model.emailSummaries.error { Text(error).font(.caption).foregroundStyle(.orange).lineLimit(3) }
+            if let error=model.proactive.error { Text(error).font(.caption).foregroundStyle(.orange).lineLimit(3) }
+            if let error=model.emailSummaries.error {
+                VStack(alignment:.leading,spacing:6) {
+                    Text(error).font(.caption).foregroundStyle(.orange).lineLimit(4)
+                    if model.emailSummaries.paused && model.emailSummaries.enabled {
+                        Button("Resume email processing") { model.emailSummaries.process(model,resume:true) }
+                            .buttonStyle(.borderless).font(.caption)
+                            .disabled(model.emailSummaries.busy || model.proactive.busy || model.assistant.busy || model.chatGPT.busy || model.writing)
+                    }
+                }
+            }
             ScrollView {
                 LazyVStack(alignment:.leading,spacing:12) {
                     ForEach(discoveries) { item in
