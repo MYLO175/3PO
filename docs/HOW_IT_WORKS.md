@@ -152,3 +152,5 @@ The PA uses the same native operations. It reads exact IDs and current item deta
 These controls are not complete Apple-app parity. Tags, subtasks, attachments, invitations, provider-specific features, completed-history browsing, source administration and specialised location-alert editing are not implemented in this increment. Unsupported native metadata remains owned by Apple apps.
 
 The macOS app icon uses the supplied artwork in a standard Xcode AppIcon asset catalog. Xcode generates the bundled ICNS and icon metadata; launch explicitly loads that ICNS for the running Dock icon. Updating the app retains its bundle identity and local data.
+
+PA replies and newly prepared/updated briefs request restrained inline Markdown emphasis: bold key headings/actions/times and occasional italics. The current brief, original morning disclosure and supporting prose render both while preserving paragraphs. Existing saved prose remains unchanged.
