@@ -11,7 +11,7 @@ import Foundation
         wrong = draft; wrong.end = wrong.start; rejects(wrong,base)
         wrong = draft; wrong.title = " \n"; rejects(wrong,base)
         var readOnly = base; readOnly.writable = false; rejects(draft,readOnly)
-        var recurring = base; recurring.recurring = true; var move = recurring; move.sourceID = "different"; rejects(move,recurring)
+        var recurring = base; recurring.recurring = true; var move = recurring; move.sourceID = "different"; try NativeEditRules.validate(move,baseline:recurring)
         let proposal = NativeEventMoveProposal(occurrenceID:base.occurrenceID,sourceID:base.sourceID,originalStart:base.start,originalEnd:base.end,start:date(26,23))
         let moved = try NativeEditRules.moved(base,proposal:proposal)
         precondition(moved.start == proposal.start && moved.end.timeIntervalSince(moved.start) == base.end.timeIntervalSince(base.start))
@@ -48,7 +48,37 @@ import Foundation
         let reminder = NativeEditDetails(kind:.reminder,itemID:"reminder",occurrenceID:"reminder",sourceID:"list",title:"Same title",notes:"",writable:true)
         var due = reminder; due.hasTime = true; rejects(due,reminder)
         due.due = date(25,8); try NativeEditRules.validate(due,baseline:reminder)
-        var recurringReminder = reminder; recurringReminder.recurring = true; rejects(recurringReminder,recurringReminder)
+        var recurringReminder = reminder; recurringReminder.recurring = true
+        try NativeEditRules.validate(recurringReminder,baseline:recurringReminder)
+        try NativeEditRules.validateDeletion(.reminderSeries,baseline:recurringReminder)
+        func rejectsScope(_ scope:NativeChangeScope,_ baseline:NativeEditDetails,_ edited:NativeEditDetails) { do {try NativeEditRules.validateScope(scope,baseline:baseline,edited:edited);preconditionFailure("Invalid scope accepted")} catch {} }
+        rejectsScope(.occurrence,recurring,move)
+        try NativeEditRules.validateScope(.futureEvents,baseline:recurring,edited:move)
+        rejectsScope(.occurrence,recurringReminder,recurringReminder)
+        rejectsScope(.futureEvents,base,base)
+        rejectsScope(.reminderSeries,recurring,recurring)
+        try NativeEditRules.validateDeletion(.futureEvents,baseline:recurring)
+        try NativeEditRules.validateDeletion(.occurrence,baseline:recurring)
+        var repeated=recurring;repeated.recurrenceRules=[.init(frequency:"weekly",interval:2,weekdays:[.init(weekday:2),.init(weekday:6)])]
+        rejectsScope(.occurrence,recurring,repeated)
+        try NativeEditRules.validateScope(.futureEvents,baseline:recurring,edited:repeated)
+        precondition(!NativeEditRules.supportsUndo(baseline:recurring,edited:repeated,scope:.futureEvents))
+        try repeated.recurrenceRules[0].validate()
+        for rule in [NativeRecurrence(interval:0),NativeRecurrence(frequency:"weekly",weekdays:[.init(weekday:2,week:1)]),NativeRecurrence(frequency:"monthly",monthDays:[0]),NativeRecurrence(frequency:"yearly",months:[13]),NativeRecurrence(endDate:.now,count:4)] {do {try rule.validate();preconditionFailure("Invalid recurrence accepted")} catch {}}
+        try NativeRecurrence(frequency:"monthly",weekdays:[.init(weekday:6,week:-1)]).validate()
+        try NativeRecurrence(frequency:"monthly",monthDays:[-1]).validate()
+        var repeatDue=recurringReminder;repeatDue.recurrenceRules=[.init()];rejects(repeatDue,reminder)
+        repeatDue.due=date(25);try NativeEditRules.validate(repeatDue,baseline:reminder)
+        var imported=recurring;imported.recurrenceRules=[.init(calendarIdentifier:"hebrew")]
+        var replaceImported=imported;replaceImported.recurrenceRules=[.init()]
+        rejectsScope(.futureEvents,imported,replaceImported)
+        var renameImported=imported;renameImported.title="Renamed"
+        try NativeEditRules.validate(renameImported,baseline:imported)
+        try NativeEditRules.validateScope(.futureEvents,baseline:imported,edited:renameImported)
+        replaceImported.recurrenceRules=[];try NativeEditRules.validateScope(.futureEvents,baseline:imported,edited:replaceImported)
+        var tooMany=base;tooMany.alarms=[.init(offset:.infinity)];rejects(tooMany,base)
+        var outside=base;outside.priority=10;rejects(outside,base)
+        var link=base;link.url="javascript:alert(1)";rejects(link,base)
         precondition(reminder == NativeEditDetails(kind:.reminder,itemID:"reminder",occurrenceID:"reminder",sourceID:"list",title:"Same title",notes:"",writable:true), "Reminder baseline fields are stable across fresh reads")
         print("PASS: edit identity, stale-field comparison foundation, read-only/recurrence rules, date validation, deterministic reminder baseline and inclusive all-day/DST boundaries")
     }

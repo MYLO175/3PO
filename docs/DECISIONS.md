@@ -47,3 +47,6 @@ Git records implementation and documentation history. This docs folder explains 
 ## Document update rule
 
 A meaningful implementation should update the relevant explanation and roadmap item. A significant change of direction should add or revise a decision. Describe the resulting behaviour, distinguish planned from implemented, and retain verification limits.
+
+## 5 October — Recurrence and deletion use native scope
+The user asked for Apple-style recurrence functionality and equivalent PA control. Both entry points use EventKit, exact occurrence IDs and fresh exposed-field/revision readback; no title-based writes or simulated local recurrence. Calendar future-events scope includes the selected occurrence and preserves history. Reminders exposes one repeating task rather than pretending EventKit has Calendar-style reminder occurrence spans. Semantic human validation resolves explicit scope or asks one ambiguity question. Canonical persistent claims prevent replay after an uncertain write. Series edits/deletion have no claimed Undo; restoring multi-record recurrence history needs separate design. Keep specialised native alert metadata unchanged, and distinguish public API coverage from Apple-app parity.

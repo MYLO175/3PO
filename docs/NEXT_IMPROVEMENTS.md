@@ -39,3 +39,8 @@ Examples include how two similar project names relate, which recurring commitmen
 
 
 4 October useful-work update: Tasks now hides completed chat tests, prioritises actionable email cards and offers an explicit local Draft reply for older eligible emails. Separately opted-in WhatsApp proactive comparison uses recent selected cached messages and source-version guards. Native Create remains explicit. Fictional subscription checks cover missing-plan detection, already-covered plans, source-injection refusal and unknown availability placeholders. Goal-based ranking, richer prepared work artifacts and live personal-source interaction remain next.
+
+## Calendar and Reminders parity follow-through
+The first recurrence/deletion/editor/PA increment is recorded in STATUS. Next acceptance should include moving a future series to another writable calendar, complex imported/multiple/non-Gregorian rules, source/provider normalisation, and account/source revocation during async writes. Scope choices must match the actual native effect; no simulated Calendar span for recurring Reminders and no unsupported Undo claim.
+
+Further product gaps: completed reminder history/reopening, Calendar/list creation/renaming/colour administration, structured location and location-alert editing, and public-API audits for travel time, attachments, invitations, tags, subtasks, sections and Smart Lists. Keep Apple apps as source of truth. Unsupported features must be honestly identified, never emulated by losing existing metadata or silently sending invitations. Full functionality is not yet an acceptance claim.

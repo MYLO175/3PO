@@ -15,10 +15,12 @@ extension EventKitService {
         let item = NativeEditDetails(kind:request.kind,itemID:request.id.uuidString,occurrenceID:request.id.uuidString,sourceID:destination.calendarIdentifier,title:request.title,notes:request.notes,start:start,end:start.addingTimeInterval(3600),due:request.kind == .reminder ? request.preferredDate.map { calendar.startOfDay(for:$0) } : nil,writable:true)
         return NativeEditSession(item:item,sources:choices.map(option).sorted { $0.label < $1.label })
     }
-    func createItem(request: NativeCreationRequest, baseline: NativeEditDetails, edited: NativeEditDetails, scope: String) async throws -> NativeCreationReceipt {
+    func createItem(request: NativeCreationRequest, baseline: NativeEditDetails, edited: NativeEditDetails, scope: String, valid: NativeWriteValidity? = nil) async throws -> NativeCreationReceipt {
         try NativeCreationRules.validate(request:request,baseline:baseline,edited:edited)
         let type: EKEntityType = request.kind == .event ? .event : .reminder
-        try await access(type); store.reset()
+        try await access(type)
+        if let valid {guard await valid() else {throw ActionFailure.message("Account or assistant controls changed before creation; nothing created.")}}
+        try Task.checkCancellation();store.reset()
         guard let destination = store.calendar(withIdentifier:edited.sourceID), destination.allowsContentModifications, destination.allowedEntityTypes.contains(request.kind == .event ? .event : .reminder) else { throw IntegrationError.readOnly }
         let identifier: String
         if request.kind == .event {
@@ -27,22 +29,26 @@ extension EventKitService {
             event.location = edited.location.isEmpty ? nil : edited.location
             event.timeZone = TimeZone(identifier:edited.timeZoneID) ?? .current; event.isAllDay = edited.allDay
             event.startDate = edited.start; event.endDate = edited.allDay ? edited.end.addingTimeInterval(-1) : edited.end
+            try applyExtendedFields(edited,baseline:nil,to:event)
             try store.save(event,span:.thisEvent,commit:true); identifier = event.calendarItemIdentifier
             store.reset()
             guard let savedCalendar = store.calendar(withIdentifier:edited.sourceID) else { throw IntegrationError.verification }
             let matches = store.events(matching:store.predicateForEvents(withStart:edited.start.addingTimeInterval(-1),end:edited.end.addingTimeInterval(1),calendars:[savedCalendar])).filter { $0.calendarItemIdentifier == identifier && $0.startDate == edited.start }
             guard matches.count == 1, let saved = matches.first else { throw IntegrationError.verification }
             let value = editorDetails(saved)
+            try verifyExtendedFields(value,expected:edited,baseline:nil)
             guard value.title == edited.title, value.notes == edited.notes, value.location == edited.location, value.end == edited.end, value.allDay == edited.allDay, value.sourceID == edited.sourceID else { throw IntegrationError.verification }
         } else {
             let reminder = EKReminder(eventStore:store)
             reminder.calendar = destination; reminder.title = edited.title; reminder.notes = edited.notes.isEmpty ? nil : edited.notes
             var calendar = Calendar.current; calendar.timeZone = TimeZone(identifier:edited.timeZoneID) ?? .current
             reminder.dueDateComponents = edited.due.map { calendar.dateComponents(edited.hasTime ? [.year,.month,.day,.hour,.minute,.second,.timeZone] : [.year,.month,.day],from:$0) }
+            try applyExtendedFields(edited,baseline:nil,to:reminder)
             try store.save(reminder,commit:true); identifier = reminder.calendarItemIdentifier
             store.reset()
             guard let saved = store.calendarItem(withIdentifier:identifier) as? EKReminder, !saved.isCompleted else { throw IntegrationError.verification }
             let value = editorDetails(saved)
+            try verifyExtendedFields(value,expected:edited,baseline:nil)
             guard value.title == edited.title, value.notes == edited.notes, value.sourceID == edited.sourceID, value.hasTime == edited.hasTime else { throw IntegrationError.verification }
             if edited.hasTime { guard value.due == edited.due else { throw IntegrationError.verification } }
             else { guard value.due.map({ DateRules.localDate($0) }) == edited.due.map({ DateRules.localDate($0) }) else { throw IntegrationError.verification } }

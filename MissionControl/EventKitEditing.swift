@@ -4,8 +4,15 @@ import EventKit
 extension EventKitService {
     func editorDetails(_ item: EKCalendarItem) -> NativeEditDetails {
         var value = NativeEditDetails(kind:item is EKEvent ? .event : .reminder,itemID:item.calendarItemIdentifier,occurrenceID:item.calendarItemIdentifier,sourceID:item.calendar.calendarIdentifier,title:item.title ?? "",notes:item.notes ?? "",recurring:item.hasRecurrenceRules,writable:item.calendar.allowsContentModifications,modified:item.lastModifiedDate)
+        value.recurrenceRules = (item.recurrenceRules ?? []).map(NativeRecurrence.init)
+        value.url = item.url?.absoluteString ?? ""
+        value.alarms = (item.alarms ?? []).filter { $0.structuredLocation == nil && $0.emailAddress == nil && $0.soundName == nil && $0.type.rawValue == 0 }.map { NativeTimeAlarm(absolute:$0.absoluteDate,offset:$0.relativeOffset) }
+        value.otherAlarmSignatures = (item.alarms ?? []).map { alarm in
+            [alarm.absoluteDate.map { String($0.timeIntervalSince1970) } ?? "",String(alarm.relativeOffset),String(alarm.proximity.rawValue),alarm.structuredLocation?.title ?? "",alarm.structuredLocation?.geoLocation.map { "\($0.coordinate.latitude),\($0.coordinate.longitude)" } ?? "",String(alarm.structuredLocation?.radius ?? 0),alarm.emailAddress ?? "",alarm.soundName ?? "",String(alarm.type.rawValue)].joined(separator:"|")
+        }.sorted()
         if let event = item as? EKEvent {
             value.occurrenceID = DateRules.occurrenceID(event.eventIdentifier ?? event.calendarItemIdentifier,start:event.startDate)
+            value.availability = event.availability.rawValue
             value.start = event.startDate; value.end = event.endDate; value.allDay = event.isAllDay; value.location = event.location ?? ""
             if event.isAllDay {
                 let endDay = Calendar.current.startOfDay(for:event.endDate)
@@ -13,6 +20,7 @@ extension EventKitService {
             }
             value.timeZoneID = event.isAllDay ? TimeZone.current.identifier : (event.timeZone?.identifier ?? TimeZone.current.identifier)
         } else if let reminder = item as? EKReminder {
+            value.priority = Int(reminder.priority)
             var calendar = reminder.dueDateComponents?.calendar ?? Calendar.current
             calendar.timeZone = reminder.dueDateComponents?.timeZone ?? .current
             value.due = reminder.dueDateComponents.flatMap { calendar.date(from:$0) }
@@ -20,7 +28,7 @@ extension EventKitService {
         }
         return value
     }
-    private func editorEvent(_ id: String, sourceID: String, start: Date, end: Date) throws -> EKEvent {
+    func editorEvent(_ id: String, sourceID: String, start: Date, end: Date) throws -> EKEvent {
         guard let source = store.calendar(withIdentifier:sourceID) else { throw IntegrationError.missing }
         let matches = store.events(matching:store.predicateForEvents(withStart:start.addingTimeInterval(-1),end:max(end,start).addingTimeInterval(1),calendars:[source])).filter { DateRules.occurrenceID($0.eventIdentifier ?? $0.calendarItemIdentifier,start:$0.startDate) == id }
         guard matches.count == 1, let event = matches.first else { throw IntegrationError.missing }; return event
@@ -41,32 +49,50 @@ extension EventKitService {
             return NativeEditSession(item:details,sources:store.calendars(for:.reminder).map(option))
         }
     }
-    @discardableResult func saveEdit(baseline: NativeEditDetails, edited: NativeEditDetails) async throws -> NativeEditDetails {
+    @discardableResult func saveEdit(baseline: NativeEditDetails, edited: NativeEditDetails, scope: NativeChangeScope = .occurrence, valid: NativeWriteValidity? = nil) async throws -> NativeEditDetails {
+        #if DEBUG
+        nativeCheckMismatch=nil
+        #endif
         try NativeEditRules.validate(edited,baseline:baseline)
+        try NativeEditRules.validateScope(scope,baseline:baseline,edited:edited)
         try await access(baseline.kind == .event ? .event : .reminder)
+        if let valid {guard await valid() else {throw ActionFailure.message("Account or assistant controls changed before saving; no native change attempted.")}}
+        try Task.checkCancellation()
         store.reset()
         do {
             let verified: NativeEditDetails
             let native: EKCalendarItem
             if baseline.kind == .event { native = try editorEvent(baseline.occurrenceID,sourceID:baseline.sourceID,start:baseline.start,end:baseline.end) }
             else {
-                guard let reminder = store.calendarItem(withIdentifier:baseline.itemID) as? EKReminder, !reminder.isCompleted else { throw IntegrationError.missing }; native = reminder
+                guard let reminder = store.calendarItem(withIdentifier:baseline.itemID) as? EKReminder, !reminder.isCompleted else {
+                    #if DEBUG
+                    nativeCheckMismatch="native reminder lookup"
+                    #endif
+                    throw IntegrationError.missing
+                }; native = reminder
             }
             // Compare all exposed fields and revision before mutating, including notes not held in dashboard caches.
-            guard editorDetails(native) == baseline else { throw IntegrationError.missing }
+            let fresh=editorDetails(native)
+            guard fresh == baseline else {
+                #if DEBUG
+                nativeCheckMismatch=NativeEditRules.differingFields(fresh,baseline).joined(separator:", ")
+                #endif
+                throw IntegrationError.missing
+            }
             guard let destination = store.calendar(withIdentifier:edited.sourceID), destination.allowsContentModifications,
                   destination.allowedEntityTypes.contains(baseline.kind == .event ? .event : .reminder) else { throw IntegrationError.readOnly }
             native.title = edited.title; native.notes = edited.notes.isEmpty ? nil : edited.notes; native.calendar = destination
             if let event = native as? EKEvent {
                 event.location = edited.location.isEmpty ? nil : edited.location
-                if edited.start != baseline.start || edited.end != baseline.end || edited.allDay != baseline.allDay {
+                if edited.start != baseline.start || edited.end != baseline.end || edited.allDay != baseline.allDay || edited.timeZoneID != baseline.timeZoneID {
                     event.timeZone = TimeZone(identifier:edited.timeZoneID) ?? .current
                     event.isAllDay = edited.allDay
                     // EventKit normalises dates when changing all-day/time-zone state.
                     // Set the requested boundaries after that conversion.
                     event.startDate = edited.start; event.endDate = edited.allDay ? edited.end.addingTimeInterval(-1) : edited.end
                 }
-                try store.save(event,span:.thisEvent,commit:true)
+                try applyExtendedFields(edited,baseline:baseline,to:event)
+                try store.save(event,span:scope == .futureEvents ? .futureEvents : .thisEvent,commit:true)
                 let matches = store.events(matching:store.predicateForEvents(withStart:edited.start.addingTimeInterval(-1),end:edited.end.addingTimeInterval(1),calendars:[destination])).filter { $0.calendarItemIdentifier == event.calendarItemIdentifier && $0.startDate == edited.start }
                 guard matches.count == 1, let saved = matches.first else {
                     #if DEBUG
@@ -83,17 +109,20 @@ extension EventKitService {
                     #endif
                 }
                 verified = editorDetails(saved)
+                try verifyExtendedFields(verified,expected:edited,baseline:baseline)
             } else if let reminder = native as? EKReminder {
                 if edited.due != baseline.due || edited.hasTime != baseline.hasTime {
                     var calendar = Calendar.current; calendar.timeZone = TimeZone(identifier:edited.timeZoneID) ?? .current
                     reminder.dueDateComponents = edited.due.map { calendar.dateComponents(edited.hasTime ? [.year,.month,.day,.hour,.minute,.second,.timeZone] : [.year,.month,.day],from:$0) }
                 }
+                try applyExtendedFields(edited,baseline:baseline,to:reminder)
                 try store.save(reminder,commit:true)
                 guard let saved = store.calendarItem(withIdentifier:reminder.calendarItemIdentifier) as? EKReminder, !saved.isCompleted else { throw IntegrationError.verification }
                 let details = editorDetails(saved)
                 guard details.title == edited.title, details.notes == edited.notes, details.sourceID == edited.sourceID, details.hasTime == edited.hasTime else { throw IntegrationError.verification }
                 if edited.hasTime { guard details.due == edited.due else { throw IntegrationError.verification } }
                 else { let savedDay = details.due.map { DateRules.localDate($0) }, editedDay = edited.due.map { DateRules.localDate($0) }; guard savedDay == editedDay else { throw IntegrationError.verification } }
+                try verifyExtendedFields(details,expected:edited,baseline:baseline)
                 verified = details
             }
             else { throw IntegrationError.missing }
@@ -157,8 +186,13 @@ extension EventKitService {
             let event = EKEvent(eventStore:store); event.title = marker; event.notes = marker; event.calendar = calendar
             event.startDate = Date(timeIntervalSince1970:floor(Date.now.addingTimeInterval(86400).timeIntervalSince1970)); event.endDate = event.startDate.addingTimeInterval(3600)
             try store.save(event,span:.thisEvent,commit:true); fixtures.append((event.calendarItemIdentifier,.event))
-            let eventBaseline = editorDetails(event)
-            var eventEdit = eventBaseline; eventEdit.title += " edited"; eventEdit.notes += "\nEditor notes"; eventEdit.location = "Fictional test room"
+            stage = "read persisted event fixture"
+            let fixtureEventID=event.calendarItemIdentifier,fixtureEventStart=event.startDate!,fixtureEventEnd=event.endDate!
+            store.reset()
+            let persistedEvents=store.events(matching:store.predicateForEvents(withStart:fixtureEventStart.addingTimeInterval(-1),end:fixtureEventEnd.addingTimeInterval(1),calendars:[calendar])).filter{$0.calendarItemIdentifier == fixtureEventID && $0.startDate == fixtureEventStart}
+            guard persistedEvents.count == 1 else {throw IntegrationError.verification}
+            let eventBaseline = editorDetails(persistedEvents[0])
+            var eventEdit = eventBaseline; eventEdit.title += " edited"; eventEdit.notes += "\nEditor notes"; eventEdit.location = "Fictional test room";eventEdit.timeZoneID="America/New_York"
             eventEdit.start = eventEdit.start.addingTimeInterval(3600); eventEdit.end = eventEdit.end.addingTimeInterval(3600)
             stage = "save timed event"; try await saveEdit(baseline:eventBaseline,edited:eventEdit)
             store.reset()
@@ -181,19 +215,134 @@ extension EventKitService {
             series.startDate = Calendar.current.date(byAdding:.day,value:2,to:fixtureStart)!.addingTimeInterval(12*3600); series.endDate = series.startDate.addingTimeInterval(3600)
             series.addRecurrenceRule(EKRecurrenceRule(recurrenceWith:.daily,interval:1,end:EKRecurrenceEnd(occurrenceCount:2)))
             try store.save(series,span:.thisEvent,commit:true); store.reset()
-            let occurrences = store.events(matching:store.predicateForEvents(withStart:series.startDate,end:fixtureEnd,calendars:[calendar])).filter { $0.notes == marker && $0.title == marker }.sorted { $0.startDate < $1.startDate }
+            let occurrences = store.events(matching:store.predicateForEvents(withStart:series.startDate,end:fixtureEnd,calendars:[calendar])).filter { $0.notes == marker }.sorted { $0.startDate < $1.startDate }
             guard occurrences.count == 2 else { throw IntegrationError.verification }
             let occurrence = editorDetails(occurrences[0]); var one = occurrence; one.title += " selected occurrence"
             try await saveEdit(baseline:occurrence,edited:one); store.reset()
             let after = store.events(matching:store.predicateForEvents(withStart:occurrence.start,end:fixtureEnd,calendars:[calendar])).filter { $0.notes == marker }.sorted { $0.startDate < $1.startDate }
             guard after.count == 2, after[0].title == one.title, after[1].title == marker, after[1].startDate == occurrences[1].startDate else { throw IntegrationError.verification }
+            stage = "create forever repeat and delete future events"
+            let forever = EKEvent(eventStore:store); forever.calendar=calendar;forever.title=marker;forever.notes=marker
+            forever.startDate=Calendar.current.date(byAdding:.day,value:1,to:fixtureStart)!.addingTimeInterval(8*3600);forever.endDate=forever.startDate.addingTimeInterval(1800)
+            forever.addRecurrenceRule(EKRecurrenceRule(recurrenceWith:.daily,interval:1,end:nil));try store.save(forever,span:.thisEvent,commit:true);store.reset()
+            let foreverItems=store.events(matching:store.predicateForEvents(withStart:forever.startDate,end:fixtureEnd,calendars:[calendar])).filter{$0.calendarItemIdentifier == forever.calendarItemIdentifier}.sorted{$0.startDate < $1.startDate}
+            guard foreverItems.count >= 3 else {throw IntegrationError.verification}
+            let futureBaseline=editorDetails(foreverItems[1])
+            var futureEdit=futureBaseline;futureEdit.location="Fictional future room";futureEdit.alarms=[.init(offset:-600)];futureEdit.url="https://example.com/test"
+            let futureSaved=try await saveEdit(baseline:futureBaseline,edited:futureEdit,scope:.futureEvents)
+            store.reset()
+            let preserved=store.events(matching:store.predicateForEvents(withStart:foreverItems[0].startDate,end:foreverItems[0].endDate,calendars:[calendar])).filter{$0.calendarItemIdentifier == foreverItems[0].calendarItemIdentifier && $0.startDate == foreverItems[0].startDate}
+            guard preserved.count == 1,(preserved[0].location ?? "").isEmpty else {throw IntegrationError.verification}
+            let issuedFuture=AgendaEvent(id:futureSaved.occurrenceID,calendarID:futureSaved.sourceID,title:futureSaved.title,start:futureSaved.start,end:futureSaved.end,allDay:futureSaved.allDay,location:futureSaved.location,sourceLabel:"Disposable fixture")
+            let deletionDraft=ActionDraft(kind:.deleteEvent,target:issuedFuture.id,scope:"futureEvents")
+            var lateControlRejected=false
+            do {_ = try await applyTool(deletionDraft,reminder:nil,event:issuedFuture,marker:marker,allowedCalendars:[calendar.calendarIdentifier],allowedLists:[],expectedDetails:futureSaved,valid:{false})} catch {lateControlRejected=true}
+            guard lateControlRejected else {throw IntegrationError.verification}
+            _ = try await applyTool(deletionDraft,reminder:nil,event:issuedFuture,marker:marker,allowedCalendars:[calendar.calendarIdentifier],allowedLists:[],expectedDetails:futureSaved)
+            store.reset()
+            let earlier=store.events(matching:store.predicateForEvents(withStart:foreverItems[0].startDate,end:foreverItems[0].endDate,calendars:[calendar])).filter{$0.notes == marker && $0.startDate == foreverItems[0].startDate}
+            guard earlier.count == 1 else {throw IntegrationError.verification}
+            stage = "recurring reminder creation and edit"
+            let repeating=EKReminder(eventStore:store);repeating.calendar=list;repeating.title=marker;repeating.notes=marker
+            repeating.dueDateComponents=Calendar.current.dateComponents([.year,.month,.day],from:fixtureStart)
+            repeating.addRecurrenceRule(try NativeRecurrence(frequency:"monthly",monthDays:[-1],count:4).native());try store.save(repeating,commit:true);fixtures.append((repeating.calendarItemIdentifier,.reminder));store.reset()
+            let repeatingBase=editorDetails(store.calendarItem(withIdentifier:repeating.calendarItemIdentifier)!)
+            var repeatingEdit=repeatingBase;repeatingEdit.priority=1;repeatingEdit.url="https://example.com/reminder";repeatingEdit.alarms=[.init(absolute:fixtureStart.addingTimeInterval(10*3600))]
+            repeatingEdit.recurrenceRules=[.init(frequency:"weekly",interval:2,weekdays:[.init(weekday:2)],count:5)]
+            let repeatingSaved=try await saveEdit(baseline:repeatingBase,edited:repeatingEdit,scope:.reminderSeries)
+            stage = "stale deletion rejection"
+            var rejectedDelete=false
+            do {_ = try await deleteItem(baseline:repeatingBase,scope:.reminderSeries)} catch IntegrationError.missing {rejectedDelete=true}
+            guard rejectedDelete else {throw IntegrationError.verification}
+            _ = try await deleteItem(baseline:repeatingSaved,scope:.reminderSeries);fixtures.removeAll{$0.0 == repeatingSaved.itemID}
+            stage = "native form repeat creation"
+            let creation=NativeCreationRequest(kind:.event,registration:"disposable",preferredDate:Calendar.current.date(byAdding:.day,value:1,to:fixtureStart),title:marker,notes:marker)
+            let creationBase=try await creationSession(creation).item
+            var creationEdit=creationBase;creationEdit.sourceID=calendar.calendarIdentifier;creationEdit.recurrenceRules=[.init(frequency:"weekly",count:3)]
+            let repeatOptions=String(data:try JSONSerialization.data(withJSONObject:["recurrence":[["frequency":"weekly","interval":1,"weekdays":[],"monthDays":[],"months":[],"yearWeeks":[],"yearDays":[],"positions":[],"endDate":NSNull(),"count":3]]]),encoding:.utf8)!
+            _ = try await applyTool(.init(kind:.createEvent,destination:calendar.calendarIdentifier,title:marker,start:creationEdit.start.ISO8601Format(),end:creationEdit.end.ISO8601Format(),allDay:false,notes:marker,options:repeatOptions),reminder:nil,event:nil,marker:marker,allowedCalendars:[calendar.calendarIdentifier],allowedLists:[])
             stage = "cleanup"; try cleanup()
-            return "PASS native editors: duplicate identity, notes, reminder/event edit Undo, date-only/timed/undated reminder, event title/location/time/all-day, single recurring occurrence, stale/external-change Undo refusal; fixtures removed and absence verified."
+            return "PASS native editors: duplicate identity, notes, reminder/event edit Undo, date-only/timed/undated reminder, event title/location/time/all-day, single recurring occurrence, future-event edit/delete preserving earlier occurrence, forever recurrence, PA native adapter repeat creation/default weekday and future deletion, late-control refusal, reminder recurrence/priority/URL/alerts, stale-delete rejection, stale/external-change Undo refusal; fixtures removed and absence verified."
         } catch {
             do { try cleanup() } catch { throw ActionFailure.message("Native editor validation failed and fixture cleanup needs review. Only UUID-marked editor fixtures were touched.") }
-            throw ActionFailure.message("Native editor check (" + stage + "): " + error.localizedDescription + " Fixtures removed.")
+            throw ActionFailure.message("Native editor check (" + stage + "): " + error.localizedDescription + (nativeCheckMismatch.map { " Compared fields: " + $0 + "." } ?? "") + " Fixtures removed.")
         }
     }
     #endif
 
+}
+
+extension NativeRecurrence {
+    init(_ rule: EKRecurrenceRule) {
+        self.init(frequency:["daily","weekly","monthly","yearly"][rule.frequency.rawValue],interval:rule.interval,weekdays:(rule.daysOfTheWeek ?? []).map { NativeRepeatDay(weekday:$0.dayOfTheWeek.rawValue,week:$0.weekNumber) },monthDays:(rule.daysOfTheMonth ?? []).map(\.intValue),months:(rule.monthsOfTheYear ?? []).map(\.intValue),yearWeeks:(rule.weeksOfTheYear ?? []).map(\.intValue),yearDays:(rule.daysOfTheYear ?? []).map(\.intValue),positions:(rule.setPositions ?? []).map(\.intValue),endDate:rule.recurrenceEnd?.endDate,count:rule.recurrenceEnd?.occurrenceCount ?? 0,calendarIdentifier:rule.calendarIdentifier,firstWeekday:rule.firstDayOfTheWeek)
+    }
+    func native() throws -> EKRecurrenceRule {
+        try validate()
+        guard calendarIdentifier == "gregorian" else { throw ActionFailure.message("This calendar system's repeat rule must be changed in Apple Calendar; it is preserved by other edits.") }
+        let frequency: EKRecurrenceFrequency = ["daily":.daily,"weekly":.weekly,"monthly":.monthly,"yearly":.yearly][frequency]!
+        let end = endDate.map { EKRecurrenceEnd(end:$0) } ?? (count > 0 ? EKRecurrenceEnd(occurrenceCount:count) : nil)
+        func numbers(_ values: [Int]) -> [NSNumber]? { values.isEmpty ? nil : values.map { NSNumber(value:$0) } }
+        return EKRecurrenceRule(recurrenceWith:frequency,interval:interval,daysOfTheWeek:weekdays.isEmpty ? nil : weekdays.map { EKRecurrenceDayOfWeek(EKWeekday(rawValue:$0.weekday)!,weekNumber:$0.week) },daysOfTheMonth:numbers(monthDays),monthsOfTheYear:numbers(months),weeksOfTheYear:numbers(yearWeeks),daysOfTheYear:numbers(yearDays),setPositions:numbers(positions),end:end)
+    }
+}
+extension EventKitService {
+    func applyExtendedFields(_ edited: NativeEditDetails, baseline: NativeEditDetails?, to item: EKCalendarItem) throws {
+        if baseline == nil || edited.url != baseline?.url { item.url = edited.url.isEmpty ? nil : URL(string:edited.url) }
+        if baseline == nil || edited.recurrenceRules != baseline?.recurrenceRules { item.recurrenceRules = try edited.recurrenceRules.map { try $0.native() } }
+        if baseline == nil || edited.alarms != baseline?.alarms {
+            // Preserve non-time alerts, including geofences, email and sound configuration.
+            let preserved = (item.alarms ?? []).filter { $0.structuredLocation != nil || $0.emailAddress != nil || $0.soundName != nil || $0.type.rawValue != 0 }
+            item.alarms = preserved + edited.alarms.map { $0.absolute.map { EKAlarm(absoluteDate:$0) } ?? EKAlarm(relativeOffset:$0.offset) }
+        }
+        if let reminder = item as? EKReminder, baseline == nil || edited.priority != baseline?.priority { reminder.priority = edited.priority }
+        if let event = item as? EKEvent, baseline == nil || edited.availability != baseline?.availability {
+            if let availability = EKEventAvailability(rawValue:edited.availability), availability != .notSupported {
+                guard event.calendar.supportedEventAvailabilities.rawValue & (1 << edited.availability) != 0 else {throw ActionFailure.message("This calendar does not support the requested availability.")}
+                event.availability = availability
+            }
+        }
+    }
+    func verifyExtendedFields(_ saved: NativeEditDetails, expected: NativeEditDetails, baseline: NativeEditDetails?) throws {
+        func verify(_ matches:Bool,_ field:String) throws {if !matches {throw ActionFailure.message("The saved " + field + " could not be verified. Refresh before retrying.")}}
+        try verify(saved.url == expected.url,"URL")
+        try verify(saved.priority == expected.priority,"priority")
+        if expected.kind == .event && !expected.allDay && (baseline == nil || expected.timeZoneID != baseline?.timeZoneID) {
+            guard let requested=TimeZone(identifier:expected.timeZoneID),let actual=TimeZone(identifier:saved.timeZoneID) else {throw IntegrationError.verification}
+            try verify(requested == actual || (requested as NSTimeZone).data == (actual as NSTimeZone).data,"time zone")
+        }
+        // All-day/date conversion can legitimately normalise the provider's default
+        // alerts. Check an explicitly changed alert list, then retain fresh readback.
+        if baseline == nil ? !expected.alarms.isEmpty : expected.alarms != baseline?.alarms {
+            try verify(saved.alarms == expected.alarms,"time alerts")
+        }
+        if expected.availability != -1 { try verify(saved.availability == expected.availability,"availability") }
+        // Native providers may fill in implicit BYDAY/BYMONTH and first-weekday values.
+        if baseline == nil || expected.recurrenceRules != baseline?.recurrenceRules {
+            let native = try expected.recurrenceRules.map { NativeRecurrence(try $0.native()) }
+            try verify(saved.recurrenceRules == native,"repeat pattern")
+        }
+    }
+    func deleteItem(baseline: NativeEditDetails, scope: NativeChangeScope, valid: NativeWriteValidity? = nil) async throws -> String {
+        try NativeEditRules.validateDeletion(scope,baseline:baseline)
+        try await access(baseline.kind == .event ? .event : .reminder)
+        if let valid {guard await valid() else {throw ActionFailure.message("Account or assistant controls changed before deletion; nothing removed.")}}
+        try Task.checkCancellation();store.reset()
+        if baseline.kind == .event {
+            let event = try editorEvent(baseline.occurrenceID,sourceID:baseline.sourceID,start:baseline.start,end:baseline.end)
+            guard editorDetails(event) == baseline else { throw IntegrationError.missing }
+            try store.remove(event,span:scope == .futureEvents ? .futureEvents : .thisEvent,commit:true)
+            store.reset()
+            guard let calendar = store.calendar(withIdentifier:baseline.sourceID) else { throw IntegrationError.verification }
+            let end = scope == .futureEvents ? Calendar.current.date(byAdding:.year,value:4,to:baseline.start)! : baseline.end.addingTimeInterval(1)
+            let remaining = store.events(matching:store.predicateForEvents(withStart:baseline.start.addingTimeInterval(-1),end:end,calendars:[calendar]))
+            guard !remaining.contains(where:{ candidate in
+                scope == .futureEvents ? candidate.calendarItemIdentifier == baseline.itemID && candidate.startDate >= baseline.start : DateRules.occurrenceID(candidate.eventIdentifier ?? candidate.calendarItemIdentifier,start:candidate.startDate) == baseline.occurrenceID
+            }) else { throw IntegrationError.verification }
+        } else {
+            guard let reminder = store.calendarItem(withIdentifier:baseline.itemID) as? EKReminder, !reminder.isCompleted, editorDetails(reminder) == baseline else { throw IntegrationError.missing }
+            try store.remove(reminder,commit:true); store.reset()
+            guard store.calendarItem(withIdentifier:baseline.itemID) == nil else { throw IntegrationError.verification }
+        }
+        return baseline.kind == .event ? (scope == .futureEvents ? "Deleted this and all future events: " : "Deleted event: ") + baseline.title : (baseline.recurring ? "Deleted repeating reminder: " : "Deleted reminder: ") + baseline.title
+    }
 }

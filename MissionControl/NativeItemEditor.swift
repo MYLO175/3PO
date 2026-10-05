@@ -12,6 +12,9 @@ struct NativeItemEditor: View {
     @State private var error: String?
     @State private var saving = false
     @State private var dateSelected = false
+    @State private var changeScope: NativeChangeScope = .occurrence
+    @State private var showingDelete = false
+    @State private var deleteRequestID = UUID()
     private var creation: NativeCreationRequest? { if case .create(let request) = target { return request }; return nil }
     private var canCreate: Bool { creation.map { !($0.requiresDateSelection) || dateSelected } ?? true }
     private var isEvent: Bool { switch target { case .event: return true; case .reminder: return false; case .create(let request): return request.kind == .event } }
@@ -37,15 +40,17 @@ struct NativeItemEditor: View {
                 if let evidence = creation?.evidence { Text(evidence).font(.callout).foregroundStyle(.secondary).lineLimit(5).textSelection(.enabled) }
                 if !canCreate { Text("Choose the event date and time from the email before creating it. The suggested form is not a confirmed booking.").font(.caption).foregroundStyle(.secondary) }
                 if !baseline.writable { Label("This source is read-only.",systemImage:"lock").font(.callout).foregroundStyle(.secondary) }
-                else if !baseline.canEdit { Text("Recurring reminder editing is deferred. You can still complete an occurrence and Undo from the dashboard.").font(.callout).foregroundStyle(.secondary) }
-                else if baseline.recurring { Text("Changes apply to this occurrence only; the rest of the series stays unchanged.").font(.callout).foregroundStyle(.secondary) }
+                else if baseline.recurring && isEvent {
+                    Picker("Apply changes to",selection:$changeScope) { Text("Only this event").tag(NativeChangeScope.occurrence);Text("This and all future events").tag(NativeChangeScope.futureEvents) }
+                    Text("Earlier events stay unchanged. Repeat-pattern changes require this and all future events. Series changes cannot be undone here.").font(.caption).foregroundStyle(.secondary)
+                } else if baseline.recurring { Text("Edits apply to the repeating reminder. Deleting removes that reminder and its future repeats. Series changes cannot be undone here.").font(.caption).foregroundStyle(.secondary) }
                 if proposedMove != nil { Text("Review the proposed time below. The event keeps its duration and is only moved when you save.").font(.callout).foregroundStyle(.secondary) }
                 ScrollView {
                     VStack(alignment:.leading,spacing:16) {
                         TextField("Title",text:field(\.title,fallback:"")).textFieldStyle(.roundedBorder)
                         Picker(isEvent ? "Calendar" : "List",selection:field(\.sourceID,fallback:baseline.sourceID)) {
                             ForEach(sources.filter { $0.writable || $0.id == baseline.sourceID }) { Text($0.label + ($0.writable ? "" : " · Read-only")).tag($0.id) }
-                        }.disabled(baseline.recurring && isEvent)
+                        }.disabled(baseline.recurring && isEvent && changeScope == .occurrence)
                         if isEvent {
                             Toggle("All day",isOn:Binding(get:{ self.edited?.allDay ?? false },set:{ enabled in if let value = self.edited { self.edited = NativeEditRules.allDay(value,enabled:enabled) } }))
                             DatePicker("Starts",selection:eventDate(\.start),displayedComponents:edited.allDay ? .date : [.date,.hourAndMinute])
@@ -60,11 +65,34 @@ struct NativeItemEditor: View {
                                 DatePicker("Due",selection:Binding(get:{ self.edited?.due ?? .now },set:{ self.edited?.due = $0 }),displayedComponents:edited.hasTime ? [.date,.hourAndMinute] : .date)
                             }
                         }
+                        NativeRepeatEditor(rules:field(\.recurrenceRules,fallback:[]))
+                            .disabled(baseline.recurring && isEvent && changeScope == .occurrence)
+                        TextField("URL",text:field(\.url,fallback:"")).textFieldStyle(.roundedBorder)
+                        if !isEvent {
+                            Picker("Priority",selection:field(\.priority,fallback:0)) { Text("None").tag(0);Text("High").tag(1);Text("Medium").tag(5);Text("Low").tag(9); if ![0,1,5,9].contains(edited.priority) { Text("Native priority \(edited.priority)").tag(edited.priority) } }
+                        } else {
+                            Picker("Availability",selection:field(\.availability,fallback:-1)) { Text("Not supported").tag(-1);Text("Busy").tag(0);Text("Free").tag(1);Text("Tentative").tag(2);Text("Unavailable").tag(3) }.disabled(baseline.availability == -1 && creation == nil)
+                            Picker("Time zone",selection:field(\.timeZoneID,fallback:TimeZone.current.identifier)) { ForEach(TimeZone.knownTimeZoneIdentifiers,id:\.self) { Text($0).tag($0) } }.disabled(edited.allDay)
+                        }
+                        VStack(alignment:.leading,spacing:8) {
+                            HStack { Text("Alerts").font(.subheadline.weight(.semibold));Spacer();Button("Add alert") { self.edited?.alarms.append(.init(offset:-900)) }.disabled(edited.alarms.count >= 8) }
+                            ForEach(edited.alarms.indices,id:\.self) { index in
+                                HStack {
+                                    if edited.alarms[index].absolute != nil {
+                                        DatePicker("At",selection:Binding(get:{self.edited?.alarms[index].absolute ?? .now},set:{self.edited?.alarms[index].absolute=$0}))
+                                    } else {
+                                        TextField("Minutes before",value:Binding(get:{-(self.edited?.alarms[index].offset ?? 0)/60},set:{self.edited?.alarms[index].offset = -$0*60}),format:.number)
+                                    }
+                                    Button("Remove") { self.edited?.alarms.remove(at:index) }
+                                }
+                            }
+                            Text("Location, email and sound alerts already attached to the native item are preserved.").font(.caption).foregroundStyle(.secondary)
+                        }
                         Text("Notes").font(.subheadline.weight(.semibold))
                         TextEditor(text:field(\.notes,fallback:"")).frame(minHeight:115).padding(5).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.primary.opacity(0.12)))
-                        if isEvent && !edited.allDay || !isEvent && edited.hasTime { Text("Times shown in " + TimeZone.current.identifier).font(.caption).foregroundStyle(.secondary) }
+                        if isEvent && !edited.allDay || !isEvent && edited.hasTime { Text("Times shown in " + (isEvent ? edited.timeZoneID : TimeZone.current.identifier)).font(.caption).foregroundStyle(.secondary) }
                     }.disabled(!baseline.canEdit || saving).padding(2)
-                        .environment(\.timeZone,TimeZone.current)
+                        .environment(\.timeZone,isEvent ? (TimeZone(identifier:edited.timeZoneID) ?? .current) : .current)
                 }
             } else if loading { Text("Loading the current Apple item…").foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity) }
             Spacer(minLength:0)
@@ -72,12 +100,24 @@ struct NativeItemEditor: View {
             HStack {
                 Button(saving ? "Saving…" : "Cancel") { dismiss() }.disabled(saving).keyboardShortcut(.cancelAction)
                 if error != nil && !saving { Button(creation == nil ? "Reload current item" : "Reset form") { Task { await load() } } }
+                if creation == nil, let baseline, baseline.writable {
+                    Button("Delete…",role:.destructive) { showingDelete=true }.disabled(saving || model.writing || model.assistant.busy)
+                }
                 Spacer()
                 if let baseline, baseline.canEdit {
-                    Button(creation == nil ? (baseline.recurring ? "Save this occurrence" : "Save changes") : (isEvent ? "Create event" : "Create reminder")) { Task { await save() } }.keyboardShortcut(.defaultAction).disabled(saving || model.writing || model.assistant.busy || (creation == nil && edited == baseline) || !canCreate || (creation.map { !NativeCreationRules.allowed(model.nativeCreations.state,key:$0.key) } ?? false))
+                    Button(creation == nil ? (baseline.recurring && isEvent ? (changeScope == .futureEvents ? "Save future events" : "Save this event") : "Save changes") : (isEvent ? "Create event" : "Create reminder")) { Task { await save() } }.keyboardShortcut(.defaultAction).disabled(saving || model.writing || model.assistant.busy || (creation == nil && edited == baseline) || !canCreate || (creation.map { !NativeCreationRules.allowed(model.nativeCreations.state,key:$0.key) } ?? false))
                 }
             }
         }.padding(24).frame(width:520,height:620).interactiveDismissDisabled(saving).task { await load() }
+            .confirmationDialog(isEvent ? "Delete event?" : "Delete reminder?",isPresented:$showingDelete,titleVisibility:.visible) {
+                if let baseline {
+                    if isEvent {
+                        Button("Delete only this event",role:.destructive) { Task { await delete(.occurrence) } }
+                        if baseline.recurring { Button("Delete all future events",role:.destructive) { Task { await delete(.futureEvents) } } }
+                    } else { Button(baseline.recurring ? "Delete repeating reminder" : "Delete reminder",role:.destructive) { Task { await delete(baseline.recurring ? .reminderSeries : .occurrence) } } }
+                }
+                Button("Cancel",role:.cancel) {}
+            } message: { Text("Deletion cannot be undone in Mission Control. Deleting future events also removes this event; earlier events remain.") }
 
     }
     private func load() async {
@@ -85,16 +125,22 @@ struct NativeItemEditor: View {
         guard !ProcessInfo.processInfo.arguments.contains("--sample") else { error = "Sample items are read-only; open the normal app to edit Apple items."; return }
         do {
             let session = try await model.eventKit.editSession(target)
-            try Task.checkCancellation(); baseline = session.item; edited = session.item; sources = session.sources
+            try Task.checkCancellation(); baseline = session.item; edited = session.item; changeScope = session.item.kind == .reminder && session.item.recurring ? .reminderSeries : .occurrence; sources = session.sources
             if let proposedMove { edited = try NativeEditRules.moved(session.item,proposal:proposedMove) }
         } catch is CancellationError {} catch { self.error = error.localizedDescription }
+    }
+    private func delete(_ scope: NativeChangeScope) async {
+        guard let baseline else { return }
+        saving=true;error=nil;defer {saving=false}
+        do { try await model.deleteNativeItem(baseline:baseline,scope:scope,requestID:deleteRequestID);dismiss() }
+        catch { self.error=error.localizedDescription }
     }
     private func save() async {
         guard let baseline, let edited else { return }
         saving = true; error = nil; defer { saving = false }
         do {
             if let request = creation { try await model.createNativeItem(request,baseline:baseline,edited:edited,dateSelected:dateSelected) }
-            else { try await model.saveNativeEdit(baseline:baseline,edited:edited) }
+            else { try await model.saveNativeEdit(baseline:baseline,edited:edited,scope:changeScope) }
             dismiss()
         }
         catch { self.error = error.localizedDescription }

@@ -15,6 +15,10 @@ import Foundation
         try ActionRules.validate(.init(kind:.editReminder,target:"issued-id",title:"Sort out card",due:"undated",hasTime:false))
         try ActionRules.validate(.init(kind:.editEvent,target:"occurrence-id",notes:"Preparation",location:"New room"))
         try ActionRules.validate(.init(kind:.createEvent,title:"Disposable",start:"2026-10-04T14:00:00+01:00",end:"2026-10-04T14:30:00+01:00",allDay:false,location:"Test room"))
+        try ActionRules.validate(.init(kind:.deleteEvent,target:"exact-occurrence",scope:"futureEvents"))
+        try ActionRules.validate(.init(kind:.deleteReminder,target:"exact-reminder",scope:"reminderSeries"))
+        try ActionRules.validate(.init(kind:.editEvent,target:"exact-occurrence",scope:"futureEvents",options:"{}"))
+        for action in [ActionDraft(kind:.deleteEvent,target:"id",title:"Should not change"),ActionDraft(kind:.deleteReminder,target:"id",scope:"futureEvents"),ActionDraft(kind:.completeReminder,target:"id",options:"{}"),ActionDraft(kind:.createEvent,title:"test",start:"a",end:"b",allDay:false,scope:"futureEvents")] {do {try ActionRules.validate(action);assertionFailure("Unsupported mutation accepted")} catch {}}
         let key = ActionRules.key(registration:"account",request:"Complete fictional")
         let repeatedKey = ActionRules.key(registration:"account",request:"Complete fictional")
         let otherKey = ActionRules.key(registration:"other",request:"Complete fictional")

@@ -25,14 +25,14 @@ private struct ActionLedgerEntry: Codable { var result: String?; var attempted =
     }
     /// Executes a completed model tool call using only identities issued in this turn.
     /// The latest human message authorises the operation; imported records never do.
-    func performTool(_ draft: ActionDraft, human: String, authorization: String?, turnID: UUID, model: DashboardModel, calendar: CalendarSnapshot, reminders: ReminderSnapshot) async throws -> String {
+    func performTool(_ draft: ActionDraft, human: String, authorization: String?, turnID: UUID, model: DashboardModel, calendar: CalendarSnapshot, reminders: ReminderSnapshot, expectedDetails: NativeEditDetails? = nil, valid: NativeWriteValidity? = nil) async throws -> String {
         try PAToolProtocol.evidence(authorization,human:human)
         try ActionRules.validate(draft)
         guard model.assistant.contextEnabled, !model.writing, !ProcessInfo.processInfo.arguments.contains("--sample") else { throw ActionFailure.message("Apple writes are unavailable; no change attempted.") }
         let reminder = reminders.reminders.first { $0.id == draft.target }, event = calendar.events.first { $0.id == draft.target }
         switch draft.kind {
-        case .editReminder,.completeReminder: guard reminder != nil else { throw ActionFailure.message("Read the reminder's exact identity before changing it.") }
-        case .editEvent: guard event != nil else { throw ActionFailure.message("Read the event's exact occurrence before changing it.") }
+        case .editReminder,.completeReminder,.deleteReminder: guard reminder != nil else { throw ActionFailure.message("Read the reminder's exact identity before changing it.") }
+        case .editEvent,.deleteEvent: guard event != nil else { throw ActionFailure.message("Read the event's exact occurrence before changing it.") }
         default: break
         }
         if !selectedTarget.isEmpty, let target = draft.target, target != selectedTarget { throw ActionFailure.message("The tool target differs from your selected item.") }
@@ -54,7 +54,7 @@ private struct ActionLedgerEntry: Codable { var result: String?; var attempted =
         model.writing = true; defer { model.writing = false }
         ledger[key] = ActionLedgerEntry()
         do { try save() } catch { ledger.removeValue(forKey:key); throw error }
-        let result = try await model.eventKit.applyTool(draft,reminder:reminder,event:event,marker:key,allowedCalendars:allowedCalendars,allowedLists:allowedLists)
+        let result = try await model.eventKit.applyTool(draft,reminder:reminder,event:event,marker:key,allowedCalendars:allowedCalendars,allowedLists:allowedLists,expectedDetails:expectedDetails,valid:valid)
         ledger[key]?.result = result.message; ledger[key]?.itemID = result.itemID; ledger[key]?.undoToken = result.undoToken
         #if DEBUG
         if let title = draft.title, (draft.kind == .createReminder || draft.kind == .createEvent), title.hasPrefix("Mission Control tool validation "), UUID(uuidString:String(title.dropFirst("Mission Control tool validation ".count))) != nil, draft.notes == nil { ledger[key]?.fixtureTitle = title }
@@ -63,10 +63,21 @@ private struct ActionLedgerEntry: Codable { var result: String?; var attempted =
         }
         #endif
         if let token = result.undoToken { model.undoToken = token; model.undoTitle = reminder?.title ?? "Reminder" }
+        if draft.scope == "futureEvents" || draft.scope == "reminderSeries" || draft.kind == .deleteEvent || draft.kind == .deleteReminder || (draft.kind == .editEvent || draft.kind == .editReminder) && result.nativeUndo == nil { model.clearNativeEditUndo() }
         if let undo = result.nativeUndo { model.recordAssistantEditUndo(undo) }
         model.showFeedback(result.message); selectedTarget = ""; model.refresh(retryMail:false)
         do { try save() } catch { return result.message + " Apple save verified, but receipt storage failed. Check the original before repeating." }
         return result.message
+    }
+    func performNativeDeletion(baseline: NativeEditDetails, scope: NativeChangeScope, requestID: UUID, model: DashboardModel) async throws -> String {
+        let key=ActionRules.key(registration:model.chatGPT.activeID,request:requestID.uuidString,selectedTarget:baseline.occurrenceID + ":delete:" + scope.rawValue)
+        if let prior=ledger[key] { if let result=prior.result {return result};throw ActionFailure.message("A deletion is already recorded as pending. Check Apple Calendar or Reminders; it will not be repeated.") }
+        try NativeEditRules.validateDeletion(scope,baseline:baseline)
+        ledger[key]=ActionLedgerEntry();do {try save()} catch {ledger.removeValue(forKey:key);throw error}
+        let result=try await model.eventKit.deleteItem(baseline:baseline,scope:scope)
+        ledger[key]?.result=result;ledger[key]?.itemID=baseline.itemID
+        do {try save()} catch {throw ActionFailure.message(result + " Native deletion verified, but receipt storage failed; check the original before repeating.")}
+        return result
     }
     func recordUndo(token: String) throws {
         for (key, entry) in ledger where entry.undoToken == token { ledger[key]?.undone = true }

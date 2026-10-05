@@ -138,6 +138,22 @@ import EventKit
     func start() {
         guard !started else { return }; started = true
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--validate-native-editors") {
+            Task { [self] in
+                let result:String
+                do {result=try await eventKit.validateNativeEditors()} catch {result=error.localizedDescription}
+                try? Data(result.utf8).write(to:URL(fileURLWithPath:"/tmp/missioncontrol-native-editors-result.txt"),options:.atomic)
+                NSApp.terminate(nil)
+            };return
+        }
+        if ProcessInfo.processInfo.arguments.contains("--validate-native-capabilities") {
+            Task { [self] in
+                let result:[String:Any]
+                do {result=try await NativeCapabilitiesEvaluation.run(self)} catch {result=["error":error.localizedDescription]}
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-native-capabilities-evaluation.json"),options:.atomic)}
+                NSApp.terminate(nil)
+            };return
+        }
         if ProcessInfo.processInfo.arguments.contains("--validate-focus-workflow") {
             Task {
                 let result:[String:Any]
@@ -390,18 +406,26 @@ import EventKit
             writeError = text; throw ActionFailure.message(text)
         }
     }
-    func saveNativeEdit(baseline: NativeEditDetails, edited: NativeEditDetails) async throws {
+    func saveNativeEdit(baseline: NativeEditDetails, edited: NativeEditDetails, scope: NativeChangeScope = .occurrence) async throws {
         guard !sample, !writing, !assistant.busy else { throw ActionFailure.message("Another change is in progress; wait before saving.") }
         writing = true; writeError = nil
         defer { writing = false }
         do {
-            let saved = try await eventKit.saveEdit(baseline:baseline,edited:edited)
-            editUndo = NativeEditUndo(original:baseline,saved:saved)
+            let saved = try await eventKit.saveEdit(baseline:baseline,edited:edited,scope:scope)
+            editUndo = NativeEditRules.supportsUndo(baseline:baseline,edited:edited,scope:scope) ? NativeEditUndo(original:baseline,saved:saved) : nil
             showFeedback("Updated: " + saved.title)
             widgetCalendars.invalidate()
             await refreshCalendar(); await refreshReminders()
         } catch { writeError = error.localizedDescription; throw error }
     }
+    func deleteNativeItem(baseline: NativeEditDetails, scope: NativeChangeScope, requestID: UUID) async throws {
+        guard !sample, !writing, !assistant.busy else { throw ActionFailure.message("Another change is in progress.") }
+        writing=true;defer {writing=false}
+        let result=try await assistantActions.performNativeDeletion(baseline:baseline,scope:scope,requestID:requestID,model:self)
+        editUndo=nil;showFeedback(result);widgetCalendars.invalidate()
+        await refreshCalendar();await refreshReminders();await refreshPAOrientation()
+    }
+    func clearNativeEditUndo() { editUndo=nil }
     func recordAssistantEditUndo(_ receipt: NativeEditUndo) { editUndo = receipt; widgetCalendars.invalidate() }
     func showFeedback(_ text: String) { nativeWriteNotice = text; feedbackDate = .now }
     var latestUndo: String? {

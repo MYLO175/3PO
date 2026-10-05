@@ -18,6 +18,7 @@ extension EventKitService {
     private func applyChecked(_ draft: ActionDraft, reminder expected: TaskItem?, event expectedEvent: AgendaEvent?, marker: String, allowedCalendars: Set<String>, allowedLists: Set<String>) async throws -> ActionResult {
         try ActionRules.validate(draft)
         switch draft.kind {
+        case .deleteEvent,.deleteReminder: throw ActionFailure.message("Deletion requires the fresh native tool path.")
         case .createReminder, .editReminder, .completeReminder:
             try await access(.reminder)
             let item: EKReminder

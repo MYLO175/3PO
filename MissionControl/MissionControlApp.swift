@@ -36,8 +36,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
     var body: some Scene {
         Window("Mission Control", id: "dashboard") {
-            WorkspaceView(model: model)
-                .preferredColorScheme(selectedColorScheme)
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--validate-native-capabilities") || ProcessInfo.processInfo.arguments.contains("--validate-native-editors") {
+                Text("Running disposable validation…").padding().task {model.start()}
+            } else { WorkspaceView(model:model).preferredColorScheme(selectedColorScheme) }
+            #else
+            WorkspaceView(model:model).preferredColorScheme(selectedColorScheme)
+            #endif
         }.defaultSize(width: ProcessInfo.processInfo.arguments.contains("--small-window") ? 820 : 1200, height: ProcessInfo.processInfo.arguments.contains("--small-window") ? 640 : 780)
         .windowToolbarStyle(.unifiedCompact(showsTitle:false))
         .commands {

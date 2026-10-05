@@ -3,6 +3,9 @@ import EventKit
 import AppKit
 
 actor EventKitService {
+    #if DEBUG
+    var nativeCheckMismatch: String?
+    #endif
     let store = EKEventStore()
     private struct CompletionRecord {
         let originalID: String
