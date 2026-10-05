@@ -11,6 +11,8 @@ xcuserdata/
 
 # Public app artwork
 !MissionControl/Resources/AppIcon.png
+!MissionControl/Resources/Assets.xcassets/**/Contents.json
+!MissionControl/Resources/Assets.xcassets/**/*.png
 
 # WhatsApp reader dependency manifests are public; sessions never live here.
 !WhatsAppBridge/package.json

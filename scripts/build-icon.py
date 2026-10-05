@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Package the supplied artwork as a multiresolution macOS icon using sips."""
+"""Prepare the supplied artwork for Xcode app-icon compilation and ICNS fallback."""
 from pathlib import Path
+import json
 import struct
 import subprocess
 import tempfile
@@ -20,3 +21,21 @@ with tempfile.TemporaryDirectory(prefix="mission-control-icon-") as directory:
         chunks.append(kind.encode("ascii") + struct.pack(">I", len(png) + 8) + png)
 payload = b"".join(chunks)
 target.write_bytes(b"icns" + struct.pack(">I", len(payload) + 8) + payload)
+
+# Let Xcode compile the app icon and emit its system metadata. Retain the
+# standalone ICNS for older bundle readers and an explicit Dock fallback.
+catalog = root / "MissionControl/Resources/Assets.xcassets"
+app_icon = catalog / "AppIcon.appiconset"
+app_icon.mkdir(parents=True, exist_ok=True)
+(catalog / "Contents.json").write_text(json.dumps({"info": {"author": "xcode", "version": 1}}, indent=2) + "\n")
+images = []
+for points in (16, 32, 128, 256, 512):
+    for scale in (1, 2):
+        filename = f"icon_{points}x{points}@{scale}x.png"
+        size = points * scale
+        subprocess.run(["/usr/bin/sips", "-z", str(size), str(size), str(source),
+                        "--out", str(app_icon / filename)], check=True, stdout=subprocess.DEVNULL)
+        images.append({"idiom": "mac", "size": f"{points}x{points}",
+                       "scale": f"{scale}x", "filename": filename})
+(app_icon / "Contents.json").write_text(json.dumps({"images": images,
+    "info": {"author": "xcode", "version": 1}}, indent=2) + "\n")
