@@ -56,3 +56,6 @@ Use the user-selected top-left gold robot icon and 3PO as app/product/window nam
 
 ## 5 October — Continuous navigation chrome
 Use the sidebar palette role for the sidebar and native toolbar/window background, with a continuous rounded inset canvas boundary. Collapse to icons instead of removing navigation; retain the existing visibility preference, toolbar identifiers and menu controls. Dashboard geometry is recomputed for available space without modifying saved widget rectangles.
+
+## 5 October — Left/top navigation colour only
+User refined the sidebar treatment: remove right/bottom canvas inset and those corner masks. Keep only upper-left canvas rounding/top spacing, so sidebar colour forms an L rather than a frame.

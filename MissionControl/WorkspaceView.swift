@@ -59,9 +59,9 @@ struct WorkspaceView: View {
                         }.frame(width:width,height:height,alignment:.topLeading).coordinateSpace(name:"workspaceGrid").padding(16)
                     }
                 }.clipped()
-                    .background(background,in:RoundedRectangle(cornerRadius:20,style:.continuous))
-                    .clipShape(RoundedRectangle(cornerRadius:20,style:.continuous))
-                    .padding(.vertical,8).padding(.trailing,8)
+                    .background(background,in:UnevenRoundedRectangle(topLeadingRadius:20,style:.continuous))
+                    .clipShape(UnevenRoundedRectangle(topLeadingRadius:20,style:.continuous))
+                    .padding(.top,8)
 
             }
         }.background(palette[.sidebar]).tint(accentColor).foregroundStyle(palette[.text]).environment(\.workspacePalette,palette).frame(minWidth:780,minHeight:580)
