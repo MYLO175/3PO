@@ -31,6 +31,15 @@ struct LifeWorkspaceEditUndo {
             if let record = try container?.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first(where: { $0.key == "lifeWorkspace" }) {
                 let value = try JSONDecoder().decode(LifeWorkspaceState.self, from: record.data)
                 try LifeWorkspaceRules.validate(value); state = value
+                if state.items.contains(where:{$0.placement?.status == "running"}) {
+                    var recovered=state
+                    for index in recovered.items.indices where recovered.items[index].placement?.status == "running" {
+                        recovered.items[index].placement?.status="paused";recovered.items[index].placement?.reason="Placement was interrupted. Continue explicitly to try again."
+                        recovered.items[index].revision=UUID()
+                    }
+                    try persist(recovered)
+                }
+
             }
         } catch { writable = false; self.error = "Projects could not be read. Their saved record is preserved; editing is disabled." }
     }
@@ -48,6 +57,7 @@ struct LifeWorkspaceEditUndo {
         if let index = candidate.items.firstIndex(where: { $0.id == item.id }) {
             let old = candidate.items[index]
             guard old.registration == item.registration && old.conversationID == item.conversationID && old.revision == expected else { throw LifeWorkspaceFailure.message("This item changed while you were editing. Reopen it before saving.") }
+            if item.placement?.status == "running" { item.placement?.status="paused";item.placement?.reason="Project edited during placement. Continue explicitly to reconsider it." }
             item.created = old.created; item.updated = .now; item.revision = UUID(); candidate.items[index] = item
             before = old
         } else {
@@ -88,6 +98,39 @@ struct LifeWorkspaceEditUndo {
         guard revision == expectedRevision, state.links.contains(where: { $0.id == id && $0.registration == registration }) else { throw LifeWorkspaceFailure.message("This relationship changed. Read it again before removing it.") }
         var candidate = state; candidate.links.removeAll { $0.id == id && $0.registration == registration }
         try addReceipt(receipt, to: &candidate); try persist(candidate)
+    }
+
+    @discardableResult func placementStatus(_ id:UUID,expected:UUID,status:String,reason:String) throws -> LifeItem {
+        guard let index=state.items.firstIndex(where:{$0.id == id && $0.revision == expected && $0.placement != nil}) else { throw LifeWorkspaceFailure.message("Project changed before placement. Saved work is kept.") }
+        var candidate=state;candidate.items[index].placement?.status=status;candidate.items[index].placement?.reason=reason;candidate.items[index].revision=UUID()
+        try persist(candidate);return candidate.items[index]
+    }
+    @discardableResult func applyPlacement(_ plan:LifePlacementPlan,to project:LifeItem,expectedRevision:UUID,anchors:[LifeItem]=[]) throws -> LifeItem {
+        guard revision == expectedRevision,let index=state.items.firstIndex(where:{$0.id == project.id && $0.revision == project.revision}),let request=project.placement else { throw LifeWorkspaceFailure.message("Life map changed during placement. Existing organisation is kept.") }
+        guard !request.parentPinned || plan.parent == project.parentID else { throw LifeWorkspaceFailure.message("Your chosen parent is pinned.") }
+        let operation="placement:"+project.id.uuidString+":"+request.requestID.uuidString
+        guard receipt(operation,registration:project.registration) == nil else { throw LifeWorkspaceFailure.message("This placement already has a saved result.") }
+        var candidate=state,item=project
+        guard anchors.count <= 8,anchors.allSatisfy({ anchor in [.organisation,.course].contains(anchor.kind) && anchor.registration == project.registration && anchor.conversationID == project.conversationID && !state.items.contains(where:{$0.id == anchor.id}) }) else { throw LifeWorkspaceFailure.message("Unsupported candidate anchors.") }
+        candidate.items.append(contentsOf:anchors)
+        item.placement?.status=plan.decision == "clear" ? "placed" : plan.decision == "ambiguous" ? "question" : "unplaced"
+        item.placement?.reason=plan.reason;item.placement?.question=plan.question;item.placement?.choices=plan.choices
+        if plan.decision != "ambiguous" {
+            if !request.parentPinned { item.parentID=plan.parent }
+            if item.areas.isEmpty { item.areas=plan.areas }
+            for proposed in plan.links {
+                let link=LifeItemLink(registration:item.registration,conversationID:item.conversationID,from:item.id,relation:proposed.relation,target:.init(kind:.item,id:proposed.target.uuidString),inferred:true,reason:plan.reason)
+                if !candidate.links.contains(where:{$0.from == link.from && $0.relation == link.relation && $0.target == link.target}) { candidate.links.append(link) }
+            }
+            for binding in plan.bindings {
+                let link=LifeItemLink(registration:item.registration,conversationID:item.conversationID,from:item.id,relation:.identifies,target:.init(kind:.memory,id:binding.memory.uuidString,containerID:binding.entity),inferred:true,reason:plan.reason)
+                if !candidate.links.contains(where:{$0.from == link.from && $0.relation == link.relation && $0.target == link.target}) { candidate.links.append(link) }
+            }
+        }
+        item.revision=UUID();item.updated = .now;candidate.items[index]=item
+        try addReceipt(.init(id:operation,registration:item.registration,result:plan.reason,itemID:item.id),to:&candidate);try persist(candidate)
+        if project.parentID != item.parentID { var before=project;before.placement?.status="paused";before.placement?.reason="Automatic placement was undone. Your chosen home takes priority.";before.placement?.parentPinned=true;edits[item.registration] = .init(before:before,savedRevision:item.revision) }
+        return item
     }
     private func addReceipt(_ receipt: LifeWorkspaceReceipt?, to value: inout LifeWorkspaceState) throws {
         guard let receipt else { return }

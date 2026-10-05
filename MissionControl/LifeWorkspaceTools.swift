@@ -110,6 +110,7 @@ import CryptoKit
                 if let parent { scope = parent.conversationID } else { scope = topic }
                 values.append(.init(registration:registration, conversationID:scope, kind:LifeItemKind(rawValue:entry["kind"] as! String)!, title:(entry["title"] as! String).trimmingCharacters(in:.whitespacesAndNewlines), parentID:parent?.id, notes:entry["notes"] as! String, due:entry["due"] as? String, estimateMinutes:entry["estimateMinutes"] as? Int, areas:(entry["areas"] as! [String]).compactMap(LifeArea.init(rawValue:)), sourceTurnID:turnID.uuidString, humanEvidence:String((text("authorization") ?? "").prefix(2000))))
             }
+            for index in values.indices where values[index].kind == .project { values[index].placement = .init(parentPinned:values[index].parentID != nil) }
             let summary = "Created \(values.count) local project items."
             let saved = try store.create(values, receipt:.init(id:operationKey, registration:registration, result:summary, itemID:values.first?.id))
             for item in saved { issued[item.id] = item }; changes += 1
@@ -121,7 +122,10 @@ import CryptoKit
             if let status = text("status").flatMap(LifeItemStatus.init(rawValue:)) { item.status = status }
             if let due = text("due") { item.due = due.isEmpty ? nil : due }
             if let minutes = args["estimateMinutes"] as? Int { item.estimateMinutes = minutes == 0 ? nil : minutes }
-            if args["move"] as? Bool == true { item.parentID = try text("parent").map { try current($0).id } }
+            if args["move"] as? Bool == true {
+                item.parentID = try text("parent").map { try current($0).id }
+                if item.kind == .project { item.placement = .init(status:"placed",reason:"Your chosen home is pinned.",parentPinned:true) }
+            }
             let summary = "Updated “\(item.title)” locally. Linked sources are unchanged."
             let saved = try store.save(item, expected:expected, receipt:.init(id:operationKey, registration:registration, result:summary, itemID:item.id))
             issued[item.id] = saved; changes += 1

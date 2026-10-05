@@ -2,6 +2,7 @@ import SwiftUI
 struct PALifeMapWidget: View {
     @Bindable var model:DashboardModel
     var configuration:Binding<WidgetConfiguration>
+    @State private var selectedProject:LifeItem?
     @State private var selected:PAMemory?
     @State private var selectedArea:LifeArea?
     @State private var presentation="Map"
@@ -31,6 +32,8 @@ struct PALifeMapWidget: View {
                 .pickerStyle(.segmented).labelsHidden().frame(width:230).fixedSize(horizontal:false,vertical:true)
             if presentation == "Structure" {
                 LifeProjectWidget(model:model,configuration:configuration,showsHeader:false,focusAreas:focusAreas)
+            } else if presentation == "Map",!notebook.anchors.isEmpty {
+                LifeCanonicalMapView(notebook:notebook,focus:focusAreas) { id in selectedProject=model.assistant.projects.items(model.chatGPT.activeID,includeTopics:true).first{$0.id == id} }
             } else if !model.assistant.memory.enabled {
                 Text("Saved memory is off. Enable it in Memory to use your life notebook.").foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity)
             } else if notes.isEmpty {
@@ -52,6 +55,9 @@ struct PALifeMapWidget: View {
             }.controlSize(.small)
             if let error=model.lifeOrganisation.error { Text(error).font(.caption).foregroundStyle(.orange).lineLimit(3) }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+        .sheet(item:$selectedProject) { item in
+            LifeMapProjectDetails(model:model,item:item)
+        }
         .sheet(item:$areaDetails) { area in
             VStack(alignment:.leading,spacing:14) {
                 HStack { Label(area.title,systemImage:area.symbol).font(.title3.weight(.semibold));Spacer();Button("Done") { areaDetails=nil } }
@@ -61,7 +67,7 @@ struct PALifeMapWidget: View {
         }
         .sheet(item:$selected) { memory in memoryDetails(memory)
         }
-        .onChange(of:model.chatGPT.activeID) { selected=nil;areaDetails=nil;areaMemory=nil;detailOrganising=nil;detailShowMemory=false;selectedArea=nil }
+        .onChange(of:model.chatGPT.activeID) { selectedProject=nil;selected=nil;areaDetails=nil;areaMemory=nil;detailOrganising=nil;detailShowMemory=false;selectedArea=nil }
     }
     private func memoryDetails(_ memory:PAMemory,fromArea:Bool=false)->some View {
             VStack(alignment:.leading,spacing:14) {
@@ -75,5 +81,19 @@ struct PALifeMapWidget: View {
                 .sheet(item:$detailOrganising) { memory in LifeOrganisationEditor(memory:model.assistant.memory,record:memory) }
                 .sheet(isPresented:$detailShowMemory) { PAMemoryView(memory:model.assistant.memory,registration:model.chatGPT.activeID,conversationID:topic,topicTitle:model.assistant.conversation(topic)?.title,learning:model.memoryLearning,assistant:model.assistant,checkContext:{model.memoryLearning.check(model,manual:true)},organisation:model.lifeOrganisation,organiseContext:{model.lifeOrganisation.check(model,manual:true,topic:topic)}) }
 
+    }
+}
+
+private struct LifeMapProjectDetails:View {
+    @Bindable var model:DashboardModel
+    var item:LifeItem
+    @State private var configuration=WidgetConfiguration()
+    @Environment(\.dismiss) private var dismiss
+    var body:some View {
+        VStack(alignment:.leading,spacing:12) {
+            HStack { Text("Life map").font(.headline);Spacer();Button("Done") { dismiss() } }
+            LifeProjectWidget(model:model,configuration:$configuration,showsHeader:false)
+        }.padding(24).frame(width:540,height:620)
+        .onAppear { configuration.projectRoots=[item.registration:item.id.uuidString] }
     }
 }

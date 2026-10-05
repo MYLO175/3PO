@@ -170,8 +170,30 @@ struct LifeProjectWidget: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack { if item.status != .planned || item.kind.isWork || item.kind == .project || item.kind == .goal { Text(item.status.title) }; if let due = item.due { Text(LifeWorkspaceRules.displayDate(due)) }; if let minutes = item.estimateMinutes { Text("\(minutes) min") } }.font(.caption).foregroundStyle(.secondary)
             if !item.notes.isEmpty { Text(item.notes).font(.callout).textSelection(.enabled) }
+            if let placement=item.placement {
+                if let question=placement.question,placement.status == "question" {
+                    Text(question).font(.callout.weight(.medium))
+                    ForEach(placement.choices) { choice in Button(choice.label) { model.projectPlacement.choose(choice,for:item,model:model) }.controlSize(.small) }
+                } else {
+                    HStack(alignment:.top) {
+                        Text(placement.reason.isEmpty ? "Waiting for PA placement…" : placement.reason).font(.caption).foregroundStyle(.secondary)
+                        if ["paused","unplaced"].contains(placement.status) { Button("Continue placement") { model.projectPlacement.retry(item,model:model) }.font(.caption).disabled(model.projectPlacement.busy) }
+                    }
+                }
+                if placement.parentPinned { Label("Your chosen home",systemImage:"pin.fill").font(.caption2).foregroundStyle(.secondary) }
+            }
             if let evidence = item.humanEvidence {
                 DisclosureGroup("Created from your PA conversation") { Text(evidence).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }.font(.caption)
+            }
+            let understanding=model.assistant.memory.notebook(registration,topic:item.conversationID)
+            let factIDs=understanding.entities.first{$0.id == "life:"+item.id.uuidString}?.memoryIDs ?? []
+            let facts=understanding.notes.flatMap(\.records).filter{factIDs.contains($0.id)}
+            if !facts.isEmpty {
+                DisclosureGroup("PA understanding · \(Set(facts.map(\.id)).count) facts") {
+                    ForEach(Array(Dictionary(facts.map{($0.id,$0)},uniquingKeysWith:{a,_ in a}).values.sorted{$0.id.uuidString < $1.id.uuidString}.prefix(12))) { fact in
+                        VStack(alignment:.leading,spacing:3) { Text(fact.text).font(.callout).textSelection(.enabled);Text(fact.attribution).font(.caption).foregroundStyle(.secondary) }.padding(.vertical,4)
+                    }
+                }.font(.caption)
             }
             let links = store.state.links.filter { $0.from == item.id && $0.registration == registration }
             ForEach(links) { link in
@@ -183,6 +205,7 @@ struct LifeProjectWidget: View {
                                 Button(target.title) { open(node) }.buttonStyle(.plain).font(.callout).lineLimit(3)
                             } else { Text(target.title).font(.callout).lineLimit(3).textSelection(.enabled) }
                             Text(target.detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            if link.inferred == true { Text("PA connection" + (link.reason.map { " · " + $0 } ?? "")).font(.caption2).foregroundStyle(.secondary).lineLimit(3) }
                         }
                         Spacer()
                         Button { do { try store.unlink(link.id, registration: registration, expectedRevision: store.revision) } catch { notice = error.localizedDescription } } label: { Image(systemName: "link.badge.plus").rotationEffect(.degrees(45)) }.buttonStyle(.plain).accessibilityLabel("Remove relationship")
@@ -209,6 +232,8 @@ struct LifeItemEditor: View {
     @State private var dueEnabled = false
     @State private var dueDate = Date.now
     @State private var estimate = ""
+    @State private var parentChanged=false
+    @State private var autoPlace=true
     private var original: LifeItem? { model.assistant.projects.state.items.first { $0.id == item.id } }
     @State private var expected: UUID?
     private var parents: [LifeItem] {
@@ -227,6 +252,7 @@ struct LifeItemEditor: View {
                     ForEach(parents) { parent in Text(LifeItemQuery.path(parent, in: parents).map(\.title).joined(separator: " / ")).tag(Optional(parent.id)) }
                 }
                 Picker("Status", selection: $item.status) { ForEach(LifeItemStatus.allCases) { Text($0.title).tag($0) } }
+                if item.kind == .project,expected == nil { Toggle("Let PA find its place in my Life map",isOn:$autoPlace) }
                 Toggle("Deadline", isOn: $dueEnabled)
                 if dueEnabled { DatePicker("Due", selection: $dueDate, displayedComponents: .date) }
                 TextField("Estimate (minutes, optional)", text: $estimate)
@@ -243,6 +269,7 @@ struct LifeItemEditor: View {
             if let error { Text(error).foregroundStyle(.orange).font(.callout) }
             HStack { Button("Cancel", action: close).keyboardShortcut(.cancelAction); Spacer(); Button("Save") { save() }.keyboardShortcut(.defaultAction).disabled(item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || item.registration != model.chatGPT.activeID) }
         }.padding(24).frame(width: 500).frame(maxHeight: 720)
+        .onChange(of:item.parentID) { parentChanged=true }
         .onAppear {
             expected = original == nil ? nil : item.revision
             dueEnabled = item.due != nil
@@ -256,7 +283,11 @@ struct LifeItemEditor: View {
         if !value.isEmpty, Int(value).map({ (1...100000).contains($0) }) != true { error = "Enter a positive estimate in minutes, or leave it empty."; return }
         item.title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
         item.due = dueEnabled ? DateRules.localDate(dueDate) : nil; item.estimateMinutes = Int(value)
-        do { _ = try model.assistant.projects.save(item, expected: expected); close() } catch { self.error = error.localizedDescription }
+        if item.kind == .project {
+            if expected == nil,autoPlace { item.placement = .init(parentPinned:parentChanged || item.parentID != nil) }
+            else if parentChanged { item.placement = .init(status:"placed",reason:"Your chosen home is pinned.",parentPinned:true) }
+        }
+        do { _ = try model.assistant.projects.save(item, expected: expected); model.projectPlacement.check(model); close() } catch { self.error = error.localizedDescription }
     }
 }
 
@@ -277,7 +308,7 @@ struct LifeItemLinkEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Link to " + item.title).font(.title2.weight(.semibold)).lineLimit(2)
-            Picker("Relationship", selection: $relation) { ForEach(LifeRelation.allCases) { Text($0.title).tag($0) } }
+            Picker("Relationship", selection: $relation) { ForEach(LifeRelation.allCases.filter{$0 != .identifies}) { Text($0.title).tag($0) } }
             Picker("Look in", selection: $kind) { ForEach(LifeReferenceKind.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) } }
             TextField("Find an item", text: $search).textFieldStyle(.roundedBorder)
             ScrollView {

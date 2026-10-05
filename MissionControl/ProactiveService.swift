@@ -66,7 +66,7 @@ import SwiftData
     func check(_ model: DashboardModel, manual: Bool = false) {
         let assistant = model.assistant, registration = model.chatGPT.activeID, now = Date.now
         guard manual || now.timeIntervalSince(lastCheck) >= 300 else { return }
-        guard readable, enabled, !busy, assistant.contextEnabled, !assistant.hasDraft, !assistant.busy, !model.writing, !model.chatGPT.busy, model.chatGPT.inferenceVerified, !model.chatGPT.usagePaused, !model.briefings.busy, !model.sourceLearning.busy, !model.memoryLearning.busy, !model.emailSummaries.busy, !registration.isEmpty else { return }
+        guard readable, enabled, !busy, assistant.contextEnabled, !assistant.hasDraft, !assistant.busy, !model.writing, !model.chatGPT.busy,!model.projectPlacement.busy, model.chatGPT.inferenceVerified, !model.chatGPT.usagePaused, !model.briefings.busy, !model.sourceLearning.busy, !model.memoryLearning.busy, !model.emailSummaries.busy, !registration.isEmpty else { return }
         lastCheck = now
         let day = BriefingRules.day(now)
         var progress = state.accounts[registration] ?? ProactiveProgress()
@@ -97,7 +97,7 @@ import SwiftData
                 input["whatsappCoverage"]="Selected chats, last 48 hours, at most eight cached messages; partial linked-device history."
                 let data = try JSONSerialization.data(withJSONObject:input,options:[.sortedKeys]), fingerprint = SHA256.hash(data:data).map { String(format:"%02x",$0) }.joined()
                 try Task.checkCancellation()
-                guard enabled, revision == model.sourceRevision, scope == self.scope(model), waScope == model.whatsapp.scope(for:registration), whatsapp.allSatisfy({ original in model.whatsapp.messages.contains { $0.id == original.itemID && $0.chat == original.chatID && SourceContextRules.revision($0) == original.revision } }), registration == model.chatGPT.activeID, memory == assistant.sharedMemoryContext(includeSources:false), preferences == assistant.preferences, selectedModel == model.chatGPT.selectedModel, !assistant.hasDraft, !assistant.busy, !model.writing, !model.chatGPT.busy, !model.briefings.busy, !model.sourceLearning.busy, !model.memoryLearning.busy, !model.emailSummaries.busy else { return }
+                guard enabled, revision == model.sourceRevision, scope == self.scope(model), waScope == model.whatsapp.scope(for:registration), whatsapp.allSatisfy({ original in model.whatsapp.messages.contains { $0.id == original.itemID && $0.chat == original.chatID && SourceContextRules.revision($0) == original.revision } }), registration == model.chatGPT.activeID, memory == assistant.sharedMemoryContext(includeSources:false), preferences == assistant.preferences, selectedModel == model.chatGPT.selectedModel, !assistant.hasDraft, !assistant.busy, !model.writing, !model.chatGPT.busy,!model.projectPlacement.busy, !model.briefings.busy, !model.sourceLearning.busy, !model.memoryLearning.busy, !model.emailSummaries.busy else { return }
                 guard manual || progress.fingerprint != fingerprint else { return }
                 let previous = state
                 progress.paused = true; progress.attempts += 1; progress.lastAttempt = now; state.accounts[registration] = progress

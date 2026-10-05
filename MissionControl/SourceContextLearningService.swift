@@ -31,7 +31,7 @@ import SwiftData
         let scope=model.whatsapp.scope(for:registration),access=model.whatsapp.access(for:registration)
         guard readable,!busy,access.enabled,access.learnContext == true,!scope.linkedIdentity.isEmpty,!access.chats.isEmpty,
               memory.enabled,memory.learningEnabled,assistant.contextEnabled,!assistant.busy,!assistant.hasDraft,!model.writing,
-              !model.chatGPT.busy,!model.chatGPT.usagePaused,model.chatGPT.inferenceVerified,!model.memoryLearning.busy,
+              !model.chatGPT.busy,!model.projectPlacement.busy,!model.chatGPT.usagePaused,model.chatGPT.inferenceVerified,!model.memoryLearning.busy,
               !model.lifeOrganisation.busy,!model.proactive.busy,!model.briefings.busy,!model.emailSummaries.busy else { return }
         let scopeKey=key(scope),progress=state.scopes[scopeKey] ?? .init()
         guard manual || !progress.paused else { return }

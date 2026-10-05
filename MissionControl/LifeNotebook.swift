@@ -60,12 +60,16 @@ struct LifeAreaNote:Identifiable {
     var records:[PAMemory]
     var id:String { area.rawValue }
 }
+struct LifeNotebookAnchor {
+    var id:String;var label:String;var kind:String;var parent:String?;var areas:[LifeArea];var notes:String;var path:[String];var relations:[String]
+}
 struct LifeNotebook {
     var selfLabel:String
     var entities:[LifeEntity]
     var links:[LifeLink]
     var notes:[LifeAreaNote]
     var eligibleCount:Int
+    var anchors:[LifeNotebookAnchor]=[]
     static let selfID="self"
     static func key(_ label:String)->String { label.folding(options:[.caseInsensitive,.diacriticInsensitive],locale:Locale(identifier:"en_GB")).split(whereSeparator:{$0.isWhitespace}).joined(separator:" ") }
     static func firstPerson(_ label:String)->Bool { ["you","i","me","myself","the user","user"].contains(key(label)) }
@@ -111,6 +115,21 @@ struct LifeNotebook {
         func encoded(_ value:[String:Any])->String { (try? String(data:JSONSerialization.data(withJSONObject:value,options:[.sortedKeys]),encoding:.utf8)) ?? "{}" }
         if encoded(value).utf8.count > maxBytes { value["knownAreas"]=[];value["coverage"]="Partial saved memory." }
         guard encoded(value).utf8.count <= maxBytes else { return maxBytes >= 2 ? "{}" : "" }
+        var structure:[[String:Any]]=[]
+        for anchor in anchors.sorted(by:{ a,b in
+            func rank(_ value:LifeNotebookAnchor)->Int { MemoryRetrieval.tokens(value.label+" "+value.notes+" "+value.path.joined(separator:" ")).intersection(terms).count*4 + (focus.isEmpty || !Set(value.areas).isDisjoint(with:focus) ? 2 : 0) }
+            return rank(a) == rank(b) ? a.id < b.id : rank(a)>rank(b)
+        }).prefix(12) {
+            let row:[String:Any]=["id":anchor.id,"label":anchor.label,"kind":anchor.kind,"parent":anchor.parent as Any? ?? NSNull(),"path":anchor.path,"areas":anchor.areas.map(\.rawValue),"notes":String(anchor.notes.prefix(250)),"relationships":anchor.relations]
+            var candidate=value;candidate["lifeStructure"]=structure+[row]
+            if encoded(candidate).utf8.count <= min(maxBytes,4000) { structure.append(row) }
+        }
+        value["lifeStructure"]=structure
+        value["structureCoverage"]="\(structure.count) of \(anchors.count) durable items; read_life_items explores exact records. life: IDs identify the same saved item used by Projects."
+        if encoded(value).utf8.count > maxBytes { value.removeValue(forKey:"structureCoverage") }
+        if encoded(value).utf8.count > maxBytes { value.removeValue(forKey:"lifeStructure") }
+
+
         for note in notes.sorted(by:{score($0)==score($1) ? $0.id < $1.id : score($0)>score($1)}).prefix(4) {
             let records=note.records.sorted { recordScore($0) == recordScore($1) ? ($0.reviewed == $1.reviewed ? $0.id.uuidString < $1.id.uuidString : $0.reviewed > $1.reviewed) : recordScore($0)>recordScore($1) }
             var facts:[[String:String]]=[]

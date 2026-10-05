@@ -16,11 +16,15 @@ import AppKit
         do {
             _ = try model.assistant.projects.create([university,engineering,project,research,paper,baseline,experiments,module], receipt:.init(id:"preview-only", registration:registration, result:"Fictional preview", itemID:university.id))
         } catch { return nil }
+        var memory=PAMemory(registration:registration,text:"Sensor Garden is my Engineering project at Example University.",kind:.context,provenance:"Fictional preview",evidence:"Sensor Garden is my Engineering project at Example University.",certainty:.stated,connections:[.init(subject:"Me",relation:"works on",object:"Sensor Garden",evidence:"Sensor Garden is my Engineering project at Example University.")])
+        memory.organisation = .init(areas:[.studies],connections:[.init(connection:"0",subjectKind:.person,objectKind:.project,subjectIsSelf:true,objectIsSelf:false)])
+        _ = model.assistant.memory.put(memory)
         return (registration, university, engineering, project)
     }
     static func render(_ model: DashboardModel) async {
         guard let (registration,university,engineering,project) = seed(model) else { return }
         for (name,width,height,mode,view,root) in [
+            ("life-map",CGFloat(620),CGFloat(500),"light","LifeMap",engineering.id),
             ("overview",CGFloat(620),CGFloat(500),"light","Overview",engineering.id),
             ("detail",CGFloat(520),CGFloat(570),"dark","Overview",project.id),
             ("narrow",CGFloat(300),CGFloat(400),"dark","Overview",engineering.id),
@@ -31,7 +35,8 @@ import AppKit
             var overrides = WorkspaceColorOverrides(); overrides.profiles = WorkspaceColorTheme.threePO.profiles
             let palette = WorkspacePalette.resolved(raw:overrides.encoded, mode:mode, theme:"warm", accent:"sage")
             var config = WidgetConfiguration(); config.projectRoots = [registration:root.uuidString]; config.projectView = view
-            let content = LifeProjectWidget(model:model, configuration:.constant(config), previewRegistration:registration)
+            let widget = view == "LifeMap" ? AnyView(PALifeMapWidget(model:model,configuration:.constant(config))) : AnyView(LifeProjectWidget(model:model, configuration:.constant(config), previewRegistration:registration))
+            let content = widget
                 .padding(16).frame(width:width,height:height).foregroundStyle(palette[.text]).background(palette[.widget],in:RoundedRectangle(cornerRadius:16))
                 .environment(\.workspacePalette,palette).tint(palette[.accent]).preferredColorScheme(mode == "dark" ? .dark : .light)
             // ImageRenderer omits AppKit-backed controls/ScrollView content. Capture a real
@@ -55,14 +60,16 @@ struct LifeProjectInteractivePreview: View {
     @Bindable var model: DashboardModel
     @State private var configuration = WidgetConfiguration()
     @State private var registration = ""
+    @State private var lifeMap=false
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
             HStack {
                 Text("Fictional project preview · disposable storage").font(.caption).foregroundStyle(.secondary)
                 Spacer()
+                Toggle("Life map",isOn:$lifeMap).toggleStyle(.button)
                 Button("Undo project edit") { try? model.assistant.projects.undo(registration) }.disabled(model.assistant.projects.undoDate(registration) == nil)
             }
-            LifeProjectWidget(model:model,configuration:$configuration,previewRegistration:registration)
+            if lifeMap { PALifeMapWidget(model:model,configuration:$configuration) } else { LifeProjectWidget(model:model,configuration:$configuration,previewRegistration:registration) }
         }.padding(20).frame(minWidth:350,minHeight:500)
         .task {
             guard registration.isEmpty, let (identity,_,engineering,_) = LifeProjectPreview.seed(model) else { return }

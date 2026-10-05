@@ -11,6 +11,7 @@ import SwiftData
     var learningEnabled = UserDefaults.standard.object(forKey:"paMemoryLearningEnabled") as? Bool ?? true { didSet { UserDefaults.standard.set(learningEnabled,forKey:"paMemoryLearningEnabled") } }
     private let container: ModelContainer?
     private var writable = true
+    @ObservationIgnored var notebookProjection: ((LifeNotebook,String,UUID?,Bool)->LifeNotebook)?
     @ObservationIgnored var sourceIsPermitted:(PAMemory)->Bool = { _ in false }
     var permittedRecords:[PAMemory] { records.filter{$0.source == nil || sourceIsPermitted($0)} }
     init(container: ModelContainer?) {
@@ -121,7 +122,10 @@ import SwiftData
         guard let record=records.first(where:{$0.id == id}),value.map({LifeMemoryOrganisation.valid($0,record:record)}) ?? true else { return false }
         return change { state in if let index=state.records.firstIndex(where:{$0.id == id}) { var value=value; value?.manual=true; state.records[index].organisation=value } }
     }
-    func notebook(_ registration:String,topic:UUID? = nil,includeTopics:Bool=false)->LifeNotebook { LifeNotebook.build(enabled ? permittedRecords : [],registration:registration,topic:topic,includeTopics:includeTopics) }
+    func notebook(_ registration:String,topic:UUID? = nil,includeTopics:Bool=false)->LifeNotebook {
+        let base=LifeNotebook.build(enabled ? permittedRecords : [],registration:registration,topic:topic,includeTopics:includeTopics)
+        return notebookProjection?(base,registration,topic,includeTopics) ?? base
+    }
     func selection(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, focus:[LifeArea] = [],includeSources:Bool = true) -> MemorySelection {
         guard enabled else { return MemorySelection(records:[],eligibleCount:0) }
         return MemoryRetrieval.select(includeSources ? permittedRecords : records.filter{$0.source == nil},registration:registration,conversationID:conversationID,includeTopics:includeTopics,query:query,focus:focus)

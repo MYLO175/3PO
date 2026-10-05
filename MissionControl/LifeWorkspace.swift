@@ -34,14 +34,16 @@ struct LifeItem: Codable, Identifiable, Equatable {
     var revision = UUID()
     var sourceTurnID: String? = nil
     var humanEvidence: String? = nil
+    var placement: LifeProjectPlacement? = nil
+    var notebookEntityID: String? = nil
 }
 enum LifeRelation: String, Codable, CaseIterable, Identifiable {
-    case related, partOf, dependsOn, preparesFor, supports, supervisedBy, discusses, evidence
+    case related, partOf, dependsOn, preparesFor, supports, supervisedBy, discusses, evidence, identifies
     var id: String { rawValue }
     var title: String { switch self {
     case .related: "Related to"; case .partOf: "Also part of"; case .dependsOn: "Depends on"
     case .preparesFor: "Prepares for"; case .supports: "Supports"; case .supervisedBy: "Supervised by"
-    case .discusses: "Discusses"; case .evidence: "Supported by"
+    case .discusses: "Discusses"; case .evidence: "Supported by"; case .identifies: "Same item in memory"
     } }
 }
 enum LifeReferenceKind: String, Codable, CaseIterable { case item, memory, event, reminder, mail, whatsapp }
@@ -61,6 +63,8 @@ struct LifeItemLink: Codable, Identifiable, Equatable {
     var relation: LifeRelation
     var target: LifeReference
     var created = Date.now
+    var inferred: Bool? = nil
+    var reason: String? = nil
 }
 struct LifeWorkspaceReceipt: Codable, Identifiable, Equatable {
     var id: String
@@ -114,6 +118,9 @@ enum LifeWorkspaceRules {
         for item in state.items {
             try require(!item.registration.isEmpty && !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && item.title.count <= 160 && item.notes.count <= 12000 && dateValid(item.due) && item.estimateMinutes.map { (1...100000).contains($0) } != false && item.areas.count <= 3 && Set(item.areas).count == item.areas.count, "A project field is empty, too long or invalid.")
             try require(item.humanEvidence.map { !$0.isEmpty && $0.count <= 2000 } != false, "The project origin evidence is invalid.")
+            if let placement = item.placement {
+                try require(["pending","running","paused","placed","question","unplaced"].contains(placement.status) && placement.reason.count <= 500 && placement.choices.count <= 3 && (placement.question?.count ?? 0) <= 200,"Project placement metadata is invalid.")
+            }
             if let parentID = item.parentID {
                 try require(byID[parentID].map { $0.registration == item.registration && $0.conversationID == item.conversationID } == true, "A parent must belong to the same account and scope.")
                 var seen: Set<UUID> = [item.id], cursor: UUID? = parentID

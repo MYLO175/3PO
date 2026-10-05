@@ -33,7 +33,7 @@ import SwiftData
     func check(_ model:DashboardModel,manual:Bool=false,topic:UUID?=nil) {
         let assistant=model.assistant,memory=assistant.memory,registration=model.chatGPT.activeID
         guard readable,!busy,(manual || automatic),memory.enabled,memory.learningEnabled,!assistant.busy,(manual || !assistant.hasDraft),
-              !model.chatGPT.busy,!model.chatGPT.usagePaused,model.chatGPT.inferenceVerified,!model.writing,
+              !model.chatGPT.busy,!model.projectPlacement.busy,!model.chatGPT.usagePaused,model.chatGPT.inferenceVerified,!model.writing,
               !model.sourceLearning.busy,!model.memoryLearning.busy,!model.proactive.busy,!model.briefings.busy,!model.emailSummaries.busy,!registration.isEmpty else { return }
         let accountScopes:[UUID?]=[nil]+assistant.topics.sorted{$0.id.uuidString < $1.id.uuidString}.map{Optional($0.id)}
         let requestedScopes:[UUID?]=manual && topic != nil ? [nil,topic] : accountScopes

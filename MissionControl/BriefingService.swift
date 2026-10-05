@@ -27,7 +27,7 @@ import UserNotifications
         .init(contextEnabled:model.assistant.contextEnabled,verified:model.chatGPT.inferenceVerified,paused:model.chatGPT.usagePaused,connectionBusy:model.chatGPT.busy,assistantBusy:model.assistant.busy,writing:model.writing,hasAccount:!model.chatGPT.activeID.isEmpty)
     }
     private func backgroundBusy(_ model:DashboardModel)->Bool {
-        model.emailSummaries.busy || model.sourceLearning.busy || model.memoryLearning.busy || model.proactive.busy || model.lifeOrganisation.busy
+        model.emailSummaries.busy || model.projectPlacement.busy || model.sourceLearning.busy || model.memoryLearning.busy || model.proactive.busy || model.lifeOrganisation.busy
     }
     func updateToday(_ model: DashboardModel) {
         guard !busy else { return }

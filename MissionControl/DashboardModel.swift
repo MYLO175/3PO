@@ -98,6 +98,7 @@ import EventKit
     @ObservationIgnored lazy var memoryLearning = MemoryLearningService(container:container)
     @ObservationIgnored lazy var sourceLearning = SourceContextLearningService(container:container)
     @ObservationIgnored lazy var learningBudget = LearningBudget(container:container)
+    @ObservationIgnored let projectPlacement = LifePlacementService()
     @ObservationIgnored lazy var lifeOrganisation = LifeOrganisationService(container:container)
     @ObservationIgnored lazy var nativeCreations = NativeCreationStore(container:container)
     @ObservationIgnored lazy var proactive = ProactiveService(container:container)
@@ -129,7 +130,7 @@ import EventKit
         excludedAccounts = savedAccounts
         do {
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-projects") || ProcessInfo.processInfo.arguments.contains("--preview-projects") {
+            if ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-projects") || ProcessInfo.processInfo.arguments.contains("--preview-projects") || ProcessInfo.processInfo.arguments.contains("--validate-placement") {
                 container = try ModelContainer(for: CachedDashboard.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
                 return
             }
@@ -145,6 +146,15 @@ import EventKit
         guard !started else { return }; started = true
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--preview-projects") { return }
+        if ProcessInfo.processInfo.arguments.contains("--validate-placement") {
+            Task {
+                let result:[String:Any]
+                do { result=try await LifePlacementEvaluation.run(self) } catch { result=["error":error.localizedDescription,"completed":Date.now.ISO8601Format()] }
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-placement-evaluation.json"),options:.atomic) }
+                NSApp.terminate(nil)
+            };return
+        }
+
         if ProcessInfo.processInfo.arguments.contains("--render-projects") {
             Task { try? await Task.sleep(for:.milliseconds(250)); await LifeProjectPreview.render(self); NSApp.terminate(nil) }; return
         }
@@ -225,7 +235,7 @@ import EventKit
         }
         briefingPoll = Task { [weak self] in
             while !Task.isCancelled {
-                if let self { self.briefings.check(self); self.memoryLearning.recoverDelivery(self); self.memoryLearning.check(self); self.proactive.recoverDelivery(self); self.proactive.check(self); self.sourceLearning.check(self); self.lifeOrganisation.check(self); if Date.now.timeIntervalSince(self.lastOrientationCheck) >= 900 { await self.refreshPAOrientation() } }
+                if let self { self.projectPlacement.check(self); self.briefings.check(self); self.memoryLearning.recoverDelivery(self); self.memoryLearning.check(self); self.proactive.recoverDelivery(self); self.proactive.check(self); self.sourceLearning.check(self); self.lifeOrganisation.check(self); if Date.now.timeIntervalSince(self.lastOrientationCheck) >= 900 { await self.refreshPAOrientation() } }
                 try? await Task.sleep(for: .seconds(60))
             }
         }
