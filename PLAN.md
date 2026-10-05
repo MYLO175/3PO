@@ -183,3 +183,7 @@ User requested a dedicated attractive Weather widget and diagnosis of a missing 
 
 ## 4 October — readable WhatsApp sources
 User requested missing contact names (including their father) and a neat view of selected sources. Keep a priority-aware encrypted display directory with explicit phone/linked-address aliases and recover existing contact metadata without message-history reads. Preserve exact selected IDs and all PA source controls. Add named source summary, Selected/All views and cache-coverage captions; validate identity isolation, encryption and live lookup separately from selection write tests.
+
+
+## 5 October — selective and stable brief preparation
+User reported another preparation cancellation and requested attention-based selection, with short quiet email/WhatsApp status. Preserve stale-output/privacy controls while distinguishing sync invalidation hints from changed supplied native records. Bound coherent-source collection, avoid irrelevant WhatsApp dependency when brief inclusion is off, and explain the specific failed check. Inference chooses useful actions/updates instead of all new items; absent data or disabled sources must not be reported as a quiet full inbox/chat history. Verify focused source-equivalence/identity regressions and the signed installed preparation flow.

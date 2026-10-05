@@ -8,6 +8,20 @@ import Foundation
         ]
         precondition(blocked.allSatisfy { $0.reason?.isEmpty == false },"Every skipped explicit brief request needs a visible explanation")
         precondition(BriefingRequestAvailability(verified:false,paused:true).reason?.contains("paused") == true,"Explain paused subscription access before verification")
+        let originalSource=BriefingSource(id:"calendar_0",label:"Test event",kind:"calendar",date:nil,originalID:"stable-event")
+        let nativePayload:[String:Any]=["calendar":[["id":"calendar_0","title":"Test event","start":"2026-10-05T10:00:00+01:00"]],"calendarCoverage":"Seven days"]
+        let originalSnapshot=try BriefingRules.sourceSnapshot(nativePayload,sources:[originalSource])
+        for _ in 0..<100 {
+            let reordered:[String:Any]=["calendarCoverage":"Seven days","calendar":[["start":"2026-10-05T10:00:00+01:00","title":"Test event","id":"calendar_0"]]]
+            let reread=try BriefingRules.sourceSnapshot(reordered,sources:[originalSource])
+            precondition(reread == originalSnapshot,"Equivalent re-read after a notification must remain valid")
+        }
+        var changedPayload=nativePayload;changedPayload["calendar"]=[["id":"calendar_0","title":"Test event","start":"2026-10-05T11:00:00+01:00"]]
+        let changedSnapshot=try BriefingRules.sourceSnapshot(changedPayload,sources:[originalSource])
+        precondition(changedSnapshot != originalSnapshot,"Real timing changes must reject stale prose")
+        var changedIdentity=originalSource;changedIdentity.originalID="different-event"
+        let identitySnapshot=try BriefingRules.sourceSnapshot(nativePayload,sources:[changedIdentity])
+        precondition(identitySnapshot != originalSnapshot,"Equal titles must never hide a changed source identity")
         var london = Calendar(identifier: .gregorian)
         london.timeZone = TimeZone(identifier: "Europe/London")!
         let midnight = ISO8601DateFormatter().date(from: "2026-10-01T23:00:00Z")!
