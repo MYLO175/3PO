@@ -158,3 +158,10 @@ PA replies and newly prepared/updated briefs request restrained inline Markdown 
 The app is now named 3PO (`~/Applications/3PO.app`). Bundle ID `com.mylomichael.missioncontrol`, Swift module `MissionControl`, Application Support/Mission Control, account registration, Keychain identities and stored transcripts/layouts remain unchanged. The assistant's separately customisable display name remains its existing preference.
 
 The dashboard sidebar and native top toolbar share the sidebar palette colour in light/dark modes. The canvas has a rounded upper-left corner and reaches the right and bottom window edges; sidebar colour covers only the left and top. Sidebar collapse keeps a 56-point icon rail with page tooltips/accessibility names, page context menus and a bottom New dashboard +; expanding restores labels. Existing workspaceSidebar preference still controls expansion, and page/widget IDs/layouts are unchanged.
+
+
+## Durable life and projects
+
+The optional Projects widget and Life map Structure tab display a durable shared hierarchy of areas, organisations, courses, projects, sections and work. Open branches, edit details, search, or choose Overview/List/Board/Outline/Deadlines. Each widget keeps its own view and account-specific starting branch. The PA reads and edits the same records using ordinary understood human intent and exact issued identities. Cross-links can connect branches, permitted memory and available source records without changing their source. Local task completion is separate from native Reminder completion. No project inference runs on refresh.
+
+See [Life and project workspace](PROJECT_WORKSPACE.md) for use, memory/source distinctions, Undo and current limits.

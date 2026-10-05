@@ -78,7 +78,7 @@ enum PAToolProtocol {
                 "connections":["type":"array","maxItems":4,"items":["type":"object","additionalProperties":false,"required":["subject","relation","object","evidence"],"properties":["subject":["type":"string","maxLength":120],"relation":["type":"string","maxLength":120],"object":["type":"string","maxLength":120],"evidence":["type":"string","minLength":8,"maxLength":500,"description":"Exact 8-500 character excerpt of the CURRENT human message supporting this relationship; use an empty connections array if no supported link is needed."]]]],"organisation":organisationSchema]),
             function("change_memory","Correct, forget or resolve an issued shared/current-topic memory on human request. Never auto-resolve a commitment just because its date passed.",[
                 "id":string("Exact issued memory UUID"),"operation":["type":"string","enum":["correct","forget","resolve"]],"text":nullable,"authorization":quote])
-        ]]]
+        ] + LifeWorkspaceTools.definitions]]
     }
     static func arguments(_ call: PAFunctionCall) throws -> [String:Any] {
         guard call.namespace == "pa", let definitions = tools.first?["tools"] as? [[String:Any]],

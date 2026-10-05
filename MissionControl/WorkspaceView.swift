@@ -260,6 +260,7 @@ private struct WorkspaceTile: View {
         case .tasks: PATasksView(model:model).padding(16)
         case .clock: DateClockWidget(configuration:configuration)
         case .weather: WeatherWidgetView(weather:model.weather).padding(16)
+        case .projects: LifeProjectWidget(model:model,configuration:configuration).padding(16)
         case nil: ContentUnavailableView("Widget unavailable",systemImage:"square.dashed",description:Text("Its saved placement is preserved for a future app version."))
         }
     }

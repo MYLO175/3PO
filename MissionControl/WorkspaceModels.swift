@@ -11,6 +11,7 @@ enum WidgetKind: String, Codable, CaseIterable {
     case weather
     case tasks
     case memoryGraph
+    case projects
 
     var title: String {
         switch self {
@@ -24,6 +25,7 @@ enum WidgetKind: String, Codable, CaseIterable {
         case .tasks: return "Tasks for you"
         case .clock: return "Date & clock"
         case .weather: return "Weather"
+        case .projects: return "Projects"
         }
     }
 
@@ -39,12 +41,13 @@ enum WidgetKind: String, Codable, CaseIterable {
         case .tasks: return "tray.full"
         case .clock: return "clock"
         case .weather: return "cloud.sun"
+        case .projects: return "folder"
         }
     }
 
     var minimumColumns: Int {
         switch self {
-        case .calendar, .conversation, .overview, .emailSummary, .tasks, .memoryGraph: return 4
+        case .calendar, .conversation, .overview, .emailSummary, .tasks, .memoryGraph, .projects: return 4
         case .reminders: return 3
         case .mail: return 4
         case .clock: return 3
@@ -56,7 +59,7 @@ enum WidgetKind: String, Codable, CaseIterable {
         switch self {
         case .calendar, .conversation: return 5
         case .reminders: return 4
-        case .mail, .overview, .emailSummary, .tasks, .memoryGraph: return 4
+        case .mail, .overview, .emailSummary, .tasks, .memoryGraph, .projects: return 4
         case .clock: return 2
         case .weather: return 3
         }
@@ -79,6 +82,9 @@ struct WidgetConfiguration: Codable, Equatable {
     var clockStyle:String? = nil
     var clockAlignment:String? = nil
     var clockUses24Hour:Bool? = nil
+    var projectRoots: [String:String]? = nil
+    var projectView: String? = nil
+    var projectOnlyUnfinished: Bool? = nil
 }
 
 struct GridRect: Codable, Equatable {

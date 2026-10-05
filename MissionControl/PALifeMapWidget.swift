@@ -27,9 +27,11 @@ struct PALifeMapWidget: View {
                 LifeFocusPicker(selection:focusBinding).frame(maxWidth:160,alignment:.trailing)
             }
             .fixedSize(horizontal:false,vertical:true)
-            Picker("Life map view",selection:$presentation) { Text("Map").tag("Map");Text("Notes").tag("Notes") }
-                .pickerStyle(.segmented).labelsHidden().frame(width:125).fixedSize(horizontal:false,vertical:true)
-            if !model.assistant.memory.enabled {
+            Picker("Life map view",selection:$presentation) { Text("Map").tag("Map");Text("Notes").tag("Notes");Text("Structure").tag("Structure") }
+                .pickerStyle(.segmented).labelsHidden().frame(width:230).fixedSize(horizontal:false,vertical:true)
+            if presentation == "Structure" {
+                LifeProjectWidget(model:model,configuration:configuration,showsHeader:false,focusAreas:focusAreas)
+            } else if !model.assistant.memory.enabled {
                 Text("Saved memory is off. Enable it in Memory to use your life notebook.").foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity)
             } else if notes.isEmpty {
                 Text("Your life notebook grows from useful things you tell your PA. Set up your profile in the PA menu, or organise saved memories below.").foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity)

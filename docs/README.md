@@ -10,6 +10,7 @@ The detailed next-stage architecture and acceptance plan is **[Building a useful
 | --- | --- |
 | [How it works](HOW_IT_WORKS.md) | Current behaviour and the pieces behind it |
 | [Next improvements](NEXT_IMPROVEMENTS.md) | Desired behaviour, gaps and success criteria |
+| [Life and project workspace](PROJECT_WORKSPACE.md) | Shared durable structure, views, PA edits and source relationships |
 | [PA intelligence plan](PA_INTELLIGENCE_PLAN.md) | Detailed phases and tests for a PA that understands useful life context |
 | [Decisions](DECISIONS.md) | Significant choices and their consequences |
 | [PLAN](../PLAN.md) | Full approved implementation scope |
@@ -22,4 +23,4 @@ After a meaningful feature changes, update its explanation here and the relevant
 
 Git is the history and backup mechanism; these Markdown pages are the explanation. They can be read in Codex, a text editor or Obsidian. Obsidian is optional and is not part of Mission Control's runtime. These files document the software, not your personal life: emails, chats, credentials and private memory remain outside the repository.
 
-Last checked against the implementation: 4 October 2026. An installed build and a passing test are different from a completed live acceptance check; see STATUS for those boundaries.
+Last checked against the implementation: 5 October 2026. An installed build and a passing test are different from a completed live acceptance check; see STATUS for those boundaries.

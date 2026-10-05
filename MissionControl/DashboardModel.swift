@@ -128,6 +128,12 @@ import EventKit
         excludedLists = savedLists
         excludedAccounts = savedAccounts
         do {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-projects") || ProcessInfo.processInfo.arguments.contains("--preview-projects") {
+                container = try ModelContainer(for: CachedDashboard.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+                return
+            }
+            #endif
             let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Mission Control", isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             let configuration = ModelConfiguration(url: directory.appendingPathComponent("Dashboard.store"), cloudKitDatabase: .none)
@@ -138,6 +144,19 @@ import EventKit
     func start() {
         guard !started else { return }; started = true
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--preview-projects") { return }
+        if ProcessInfo.processInfo.arguments.contains("--render-projects") {
+            Task { try? await Task.sleep(for:.milliseconds(250)); await LifeProjectPreview.render(self); NSApp.terminate(nil) }; return
+        }
+        if ProcessInfo.processInfo.arguments.contains("--validate-projects") {
+            Task {
+                let result: [String:Any]
+                do { result = try await LifeWorkspaceEvaluation.run(self) }
+                catch { result = ["error":error.localizedDescription, "completed":Date.now.ISO8601Format()] }
+                if let data = try? JSONSerialization.data(withJSONObject:result, options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-project-evaluation.json"), options:.atomic) }
+                NSApp.terminate(nil)
+            }; return
+        }
         if ProcessInfo.processInfo.arguments.contains("--validate-native-editors") {
             Task { [self] in
                 let result:String
@@ -429,7 +448,7 @@ import EventKit
     func recordAssistantEditUndo(_ receipt: NativeEditUndo) { editUndo = receipt; widgetCalendars.invalidate() }
     func showFeedback(_ text: String) { nativeWriteNotice = text; feedbackDate = .now }
     var latestUndo: String? {
-        UndoOrder.latest(layout:workspace.canUndo ? workspace.undoDate : nil,completion:undoToken == nil ? nil : completionUndoDate,edit:editUndo?.created,email:emailSummaries.undoDate(chatGPT.activeID),discovery:proactive.undoDate(chatGPT.activeID),question:memoryLearning.undoDate(chatGPT.activeID))
+        UndoOrder.latest(layout:workspace.canUndo ? workspace.undoDate : nil,completion:undoToken == nil ? nil : completionUndoDate,edit:editUndo?.created,email:emailSummaries.undoDate(chatGPT.activeID),discovery:proactive.undoDate(chatGPT.activeID),question:memoryLearning.undoDate(chatGPT.activeID),project:assistant.projects.undoDate(chatGPT.activeID))
     }
     var latestUndoDate: Date? {
         switch latestUndo {
@@ -439,6 +458,7 @@ import EventKit
         case "email": return emailSummaries.undoDate(chatGPT.activeID)
         case "discovery": return proactive.undoDate(chatGPT.activeID)
         case "question": return memoryLearning.undoDate(chatGPT.activeID)
+        case "project": return assistant.projects.undoDate(chatGPT.activeID)
         default: return nil
         }
     }
@@ -450,6 +470,7 @@ import EventKit
         case "email": return "Undo email dismissal"
         case "discovery": return "Undo suggestion dismissal"
         case "question": return "Undo question dismissal"
+        case "project": return "Undo project edit"
         default: return "Undo"
         }
     }
@@ -469,6 +490,10 @@ import EventKit
     }
     func undoLatest() {
         guard !writing, !assistant.busy else { return }
+        if latestUndo == "project" {
+            do { try assistant.projects.undo(chatGPT.activeID); showFeedback("Project edit undone") } catch { writeError = error.localizedDescription }
+            return
+        }
         if latestUndo == "email" { emailSummaries.undoDismiss(self); return }
         if latestUndo == "discovery" { proactive.undo(self); return }
         if latestUndo == "question" { memoryLearning.undoQuestion(chatGPT.activeID); return }

@@ -4,6 +4,11 @@ import Foundation
         let definitions = PAToolProtocol.tools[0]["tools"] as! [[String:Any]]
         assert(PAToolProtocol.tools[0]["type"] as? String == "namespace")
         assert(Set(definitions.compactMap { $0["name"] as? String }).count == definitions.count)
+        let batch: [String:Any] = ["items":[["title":"Fictional project", "kind":"project", "parent":NSNull(), "notes":"", "due":NSNull(), "estimateMinutes":NSNull(), "areas":["projects"]], ["title":"Read paper", "kind":"task", "parent":"batch:0", "notes":"", "due":NSNull(), "estimateMinutes":30, "areas":["studies"]]], "authorization":"Set up that project"]
+        _ = try PAToolProtocol.arguments(.init(id:"create-life", name:"create_life_items", namespace:"pa", arguments:String(data:try JSONSerialization.data(withJSONObject:batch), encoding:.utf8)!))
+        var malformedBatch = batch; malformedBatch["items"] = [["title":"Hidden command", "kind":"run_script", "parent":NSNull(), "notes":"", "due":NSNull(), "estimateMinutes":NSNull(), "areas":[]]] as [[String:Any]]
+        var badKindRejected = false
+        do { _ = try PAToolProtocol.arguments(.init(id:"bad-life", name:"create_life_items", namespace:"pa", arguments:String(data:try JSONSerialization.data(withJSONObject:malformedBatch), encoding:.utf8)!)) } catch { badKindRejected = true }; assert(badKindRejected)
         let human = "I emailed Keisha about the card. Update my reminder to just 'sort out card' with no due date"
         try PAToolProtocol.evidence("Update my reminder to just 'sort out card' with no due date",human:human)
         for acceptance in ["yes", "do that", "👍", "y"] { try PAToolProtocol.evidence(acceptance,human:acceptance) }

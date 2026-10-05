@@ -59,3 +59,8 @@ Use the sidebar palette role for the sidebar and native toolbar/window backgroun
 
 ## 5 October — Left/top navigation colour only
 User refined the sidebar treatment: remove right/bottom canvas inset and those corner masks. Keep only upper-left canvas rounding/top spacing, so sidebar colour forms an L rather than a frame.
+
+
+## 5 October — Shared durable life structure alongside memory
+
+Use a small typed local registry for enduring areas/courses/projects/work, rather than rebuilding Notion or deriving every identity from free-text memory. Stable IDs, one navigation parent and typed cross-links make manual widgets and PA edits act on the same objects. Memory retains its evidence and correction lineage; source pointers obey current permissions and Apple apps remain authoritative. Organisation and meaningful work state are separate from AI belief, and missing times/progress stay unknown. Store this as a separate versioned CachedDashboard payload, preserving existing SwiftData types, caches, layouts and conversations. Foreground semantic human intent, fresh revisions and atomic operation receipts govern PA changes; no additional background inference is enabled.
