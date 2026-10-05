@@ -105,7 +105,7 @@ import CryptoKit
             if FileManager.default.fileExists(atPath:directory.path) { try FileManager.default.removeItem(at:directory) }
             let result=SecItemDelete(query as CFDictionary)
             guard result == errSecSuccess || result == errSecItemNotFound else { throw CocoaError(.fileWriteNoPermission) }
-            status="Disconnected · also remove Mission Control from WhatsApp’s Linked devices."
+            status="Disconnected · also remove 3PO from WhatsApp’s Linked devices."
         } catch { status="PA access stopped, but local session cleanup failed. Try Disconnect again." }
     }
     private func receive(_ event: WhatsAppReadEvent) {
@@ -145,9 +145,9 @@ struct WhatsAppSettings: View {
     var body: some View {
         Section("WhatsApp · experimental, read-only") {
             Text("Link through a QR code as another device. This uses an unofficial WhatsApp Web connection; WhatsApp changes or account restrictions may interrupt it. No sending or read receipts. Reception makes no AI requests. Sessions and received text are encrypted locally; the encryption key stays in Keychain.").font(.caption).foregroundStyle(.secondary)
-            Toggle("Reconnect WhatsApp when Mission Control launches",isOn:$service.reconnectAtLaunch)
+            Toggle("Reconnect WhatsApp when 3PO launches",isOn:$service.reconnectAtLaunch)
             Text(service.status)
-            if let qr=service.qr { Image(nsImage:qr).resizable().interpolation(.none).frame(width:240,height:240); Text("On your phone: WhatsApp → Settings → Linked devices → Link a device. Scan this code only if you want Mission Control to receive your chats.").font(.caption) }
+            if let qr=service.qr { Image(nsImage:qr).resizable().interpolation(.none).frame(width:240,height:240); Text("On your phone: WhatsApp → Settings → Linked devices → Link a device. Scan this code only if you want 3PO to receive your chats.").font(.caption) }
             HStack { Button("Connect / show QR") { service.connect() }; Button("Pause") { service.stop() }; Button("Disconnect") { service.disconnect() }; Button("Received text (\(service.messages.count))") { showMessages=true } }
             Button("PA chat access…") { showSources=true }.disabled(service.linkedIdentity.isEmpty)
             WhatsAppSourceSummary(service:service,registration:registration)

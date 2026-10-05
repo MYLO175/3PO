@@ -481,7 +481,7 @@ import EventKit
             do {
                 try await eventKit.undoEdit(ticket); editUndo = nil; showFeedback("Edit undone: " + ticket.original.title)
                 widgetCalendars.invalidate(); await refreshCalendar(); await refreshReminders(); await refreshPAOrientation()
-            } catch { writeError = "Could not undo the edit. The item may have changed outside Mission Control. " + error.localizedDescription }
+            } catch { writeError = "Could not undo the edit. The item may have changed outside 3PO. " + error.localizedDescription }
         }
     }
     func undo() {

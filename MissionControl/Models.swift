@@ -86,7 +86,7 @@ enum IntegrationError: LocalizedError {
     case denied(String), missing, readOnly, verification
     var errorDescription: String? {
         switch self {
-        case .denied(let name): return "\(name) access denied. Enable Mission Control in System Settings → Privacy & Security."
+        case .denied(let name): return "\(name) access denied. Enable 3PO in System Settings → Privacy & Security."
         case .missing: return "The item changed or disappeared. Refresh and try again."
         case .readOnly: return "This source is read-only."
         case .verification: return "The saved change could not be verified. Refresh before retrying."

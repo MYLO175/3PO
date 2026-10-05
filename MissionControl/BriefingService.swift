@@ -98,7 +98,7 @@ import UserNotifications
         Task {
             let settings = await UNUserNotificationCenter.current().notificationSettings()
             guard settings.authorizationStatus != .denied else {
-                notificationStatus = "Notifications are off. Enable Mission Control in System Settings → Notifications. Saved briefings remain available."
+                notificationStatus = "Notifications are off. Enable 3PO in System Settings → Notifications. Saved briefings remain available."
                 return
             }
             do { notificationStatus = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert,.sound]) ? "Notifications enabled." : "Notifications denied; saved briefings remain available." }
@@ -111,11 +111,11 @@ import UserNotifications
             let center = UNUserNotificationCenter.current()
             let settings = await center.notificationSettings()
             guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else {
-                notificationStatus = "Test not sent: enable Mission Control in System Settings → Notifications."
+                notificationStatus = "Test not sent: enable 3PO in System Settings → Notifications."
                 return
             }
             let content = UNMutableNotificationContent()
-            content.title = "Mission Control notification test"
+            content.title = "3PO notification test"
             content.body = "Morning briefings will use this notification style. No AI request was made."
             content.sound = .default
             do {
@@ -272,7 +272,7 @@ import UserNotifications
         let previous = state
         guard state.claimNotification(day: day) else { return }
         do { try save() } catch { state = previous; notificationStatus = "Briefing saved; notification checkpoint failed."; return }
-        let content = UNMutableNotificationContent(); content.title = "Your morning briefing is ready"; content.body = "Open Mission Control to read it."; content.sound = .default
+        let content = UNMutableNotificationContent(); content.title = "Your morning briefing is ready"; content.body = "Open 3PO to read it."; content.sound = .default
         do { try await center.add(UNNotificationRequest(identifier: "missioncontrol-briefing-" + day, content: content, trigger: nil)); notificationStatus = "Briefing notification scheduled." }
         catch { notificationStatus = "Briefing saved; notification could not be delivered. It will not be retried automatically." }
     }

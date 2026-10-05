@@ -31,7 +31,7 @@ enum WeatherFailure: LocalizedError {
         case .unavailable: return "Weather is unavailable. Try refreshing shortly."
         case .invalid: return "The weather provider returned an incomplete forecast."
         case .timeout: return "Location did not arrive within 30 seconds. Try again when Wi-Fi is available."
-        case .denied: return "Allow Mission Control in System Settings → Privacy & Security → Location Services."
+        case .denied: return "Allow 3PO in System Settings → Privacy & Security → Location Services."
         case .disabled: return "Local weather is turned off."
         }
     }

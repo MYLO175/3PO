@@ -50,3 +50,6 @@ A meaningful implementation should update the relevant explanation and roadmap i
 
 ## 5 October — Recurrence and deletion use native scope
 The user asked for Apple-style recurrence functionality and equivalent PA control. Both entry points use EventKit, exact occurrence IDs and fresh exposed-field/revision readback; no title-based writes or simulated local recurrence. Calendar future-events scope includes the selected occurrence and preserves history. Reminders exposes one repeating task rather than pretending EventKit has Calendar-style reminder occurrence spans. Semantic human validation resolves explicit scope or asks one ambiguity question. Canonical persistent claims prevent replay after an uncertain write. Series edits/deletion have no claimed Undo; restoring multi-record recurrence history needs separate design. Keep specialised native alert metadata unchanged, and distinguish public API coverage from Apple-app parity.
+
+## 5 October — 3PO branding
+Use the user-selected top-left gold robot icon and 3PO as app/product/window name. Keep the existing bundle ID, Swift module and storage/registration/Keychain identities so this remains an update of the same app. Preserve the independent PA display-name preference. Use the supplied tile as a direct crop; no redesign.

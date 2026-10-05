@@ -24,13 +24,13 @@ import Speech
         let speech = await withCheckedContinuation { continuation in SFSpeechRecognizer.requestAuthorization { continuation.resume(returning:$0) } }
         guard generation == token else { return }
         guard speech == .authorized else {
-            status = "Speech permission is unavailable. Enable Mission Control in Privacy & Security → Speech Recognition, or keep typing."
+            status = "Speech permission is unavailable. Enable 3PO in Privacy & Security → Speech Recognition, or keep typing."
             return
         }
         let microphone = await AVCaptureDevice.requestAccess(for:.audio)
         guard generation == token else { return }
         guard microphone else {
-            status = "Microphone permission is denied. Enable Mission Control in Privacy & Security → Microphone, or keep typing."
+            status = "Microphone permission is denied. Enable 3PO in Privacy & Security → Microphone, or keep typing."
             return
         }
         guard let recognizer = SFSpeechRecognizer(locale:Locale(identifier:"en-GB")), recognizer.isAvailable, recognizer.supportsOnDeviceRecognition else {

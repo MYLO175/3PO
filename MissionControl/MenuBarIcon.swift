@@ -27,7 +27,7 @@ enum MenuBarIcon {
             return true
         }
         image.isTemplate = true
-        image.accessibilityDescription = "Mission Control"
+        image.accessibilityDescription = "3PO"
         return image
     }()
 }

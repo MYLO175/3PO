@@ -1,17 +1,17 @@
-# Mission Control
+# 3PO
 A local native macOS dashboard for Apple Calendar, Reminders and Mail. Apple-source caches remain local; optional nearby weather fetches use Open-Meteo. Stage 2 adds optional subscription-powered chat, email summaries and a saved morning briefing. Personal sources are sent only when their AI controls are enabled.
 
 ## Understand the app
 Start with the [Mission Control notebook](docs/README.md) for a readable explanation of memory, tools, topics, background work and next improvements. Git tracks this documentation alongside implementation.
 
 ## Run
-Requires macOS 26+, Xcode and an Apple Development signing identity. The installed app is `~/Applications/Mission Control.app`. Open it and grant Calendar full access, Reminders access and Automation access to Apple Mail when macOS asks. Permissions belong to this app, not helper scripts.
+Requires macOS 26+, Xcode and an Apple Development signing identity. The installed app is `~/Applications/3PO.app`. Open it and grant Calendar full access, Reminders access and Automation access to Apple Mail when macOS asks. Permissions belong to this app, not helper scripts.
 
 ## Build
 ```sh
 ./scripts/build.sh
 ./scripts/test.sh
-open '/tmp/missioncontrol-derived/Build/Products/Debug/Mission Control.app'
+open '/tmp/missioncontrol-derived/Build/Products/Debug/3PO.app'
 ```
 The build regenerates the macOS icon from `MissionControl/Resources/AppIcon.png` using the bundled icon script and macOS sips. The menu bar uses a matching monochrome template symbol.
 
@@ -100,7 +100,7 @@ Use the sidebar to switch between Today, Planning, Sources and Assistant. The to
 
 The native window toolbar puts the close/minimise/fullscreen controls, sidebar toggle, page/date and action buttons on one line; widgets start directly below it. A short green confirmation appears there without moving widgets. Use the sliders menu → Customise toolbar… to drag items into your preferred order, add/remove buttons and choose flexible spacing. The Actions menu keeps hidden commands accessible. macOS saves the toolbar configuration across relaunch and app updates; it is separate from dashboard layouts. Date & clock is an optional widget with Show clock and Show seconds options; it uses the Mac’s timezone and time format.
 
-Toolbar commands are also always available from the macOS menu bar. **Dashboard** contains Open/New dashboard, Add widget, Edit layout and Refresh Apple sources (⌘R). **View** contains Show dashboard sidebar, Show assistant (⌘J), Customise dashboard toolbar and Dashboard appearance. **Edit** contains the latest supported dashboard/reminder/native-form Undo (⌥⌘Z), alongside standard text Undo/Redo. **Mission Control → Settings…** (⌘,) remains available even without a Settings toolbar button. Menu choices use the same saved preferences and actions; page-editing commands disable when a different window is active.
+Toolbar commands are also always available from the macOS menu bar. **Dashboard** contains Open/New dashboard, Add widget, Edit layout and Refresh Apple sources (⌘R). **View** contains Show dashboard sidebar, Show assistant (⌘J), Customise dashboard toolbar and Dashboard appearance. **Edit** contains the latest supported dashboard/reminder/native-form Undo (⌥⌘Z), alongside standard text Undo/Redo. **3PO → Settings…** (⌘,) remains available even without a Settings toolbar button. Menu choices use the same saved preferences and actions; page-editing commands disable when a different window is active.
 
 ### Your PA and memory
 **Your PA** has an ongoing general thread (**No topic**) and a distinct ongoing thread for each configured topic such as Study. Selecting a topic changes the visible transcript and adds that topic's focused memory/context; shared PA memory remains available everywhere. There is no Home button, arbitrary new-chat action or browser of old chats. The context menu beside Topic adds/edits a topic. Each dashboard keeps its own selection and draft per registration. Replies keep the thread captured when sent; other topic work does not redirect them. Morning briefs appear in the general PA thread, and learned-memory acknowledgements appear in their source-topic thread. Say “Remember that…” or “Add this to memory: …” to save explicit facts locally, through the PA tool loop when inference is available; the Memory editor remains available while inference is paused. Old messages and scoped memory identifiers are preserved. Model history is bounded to the current thread's 20 completed turns, with shared plus current-topic saved memory. One worker serves all widgets; Mail continuation stays with its original topic.

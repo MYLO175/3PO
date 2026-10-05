@@ -19,7 +19,7 @@ struct DashboardView: View {
         VStack(spacing: 0) {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Mission Control").font(.system(size: 26, weight: .semibold, design: .rounded))
+                    Text("3PO").font(.system(size: 26, weight: .semibold, design: .rounded))
                     TimelineView(.periodic(from: .now, by: 60)) { context in
                         Text(context.date.formatted(date: .complete, time: .omitted)).foregroundStyle(.secondary)
                     }
@@ -354,7 +354,7 @@ struct SettingsView: View {
                     do { if value { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }; error = nil }
                     catch { self.error = error.localizedDescription }
                     enabled = SMAppService.mainApp.status == .enabled
-                    if SMAppService.mainApp.status == .requiresApproval { error = "Allow Mission Control in System Settings → General → Login Items." }
+                    if SMAppService.mainApp.status == .requiresApproval { error = "Allow 3PO in System Settings → General → Login Items." }
                 }
                 Text("Closing the dashboard keeps the menu bar app running. Choose Quit to stop it.").font(.caption).foregroundStyle(.secondary)
             }

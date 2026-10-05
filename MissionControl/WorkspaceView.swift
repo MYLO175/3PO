@@ -145,7 +145,7 @@ struct WorkspaceView: View {
     }
     private var sidebar: some View {
         VStack(alignment:.leading,spacing:12) {
-            Text("MISSION CONTROL").font(.caption2.weight(.semibold)).tracking(1.2).foregroundStyle(.secondary).padding(.top,8)
+            Text("3PO").font(.caption2.weight(.semibold)).tracking(1.2).foregroundStyle(.secondary).padding(.top,8)
             ScrollView {
                 VStack(spacing:5) {
                     ForEach(store.state.pages) { page in

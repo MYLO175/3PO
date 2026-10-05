@@ -41,7 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         switch appearance { case "light": return .light; case "dark": return .dark; default: return nil }
     }
     var body: some Scene {
-        Window("Mission Control", id: "dashboard") {
+        Window("3PO", id: "dashboard") {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--validate-native-capabilities") || ProcessInfo.processInfo.arguments.contains("--validate-native-editors") {
                 Text("Running disposable validation…").padding().task {model.start()}
@@ -74,7 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             MenuContent(model: model)
         } label: {
             Image(nsImage: MenuBarIcon.image)
-                .accessibilityLabel("Mission Control")
+                .accessibilityLabel("3PO")
         }
         Settings { SettingsView(model: model).preferredColorScheme(selectedColorScheme) }
     }
@@ -87,6 +87,6 @@ struct MenuContent: View {
         Button("Refresh") { model.refresh() }
         SettingsLink { Text("Settings…") }
         Divider()
-        Button("Quit Mission Control") { NSApp.terminate(nil) }.keyboardShortcut("q")
+        Button("Quit 3PO") { NSApp.terminate(nil) }.keyboardShortcut("q")
     }
 }

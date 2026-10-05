@@ -56,7 +56,7 @@ final class ChatGPTCallback: @unchecked Sendable {
                 if pieces.count == 3, pieces[0] == "GET", pieces[1].hasPrefix("/auth/callback?"),
                    let url = URL(string: "http://127.0.0.1" + pieces[1]) { values = try? ChatGPTOAuth.query(url, expectedState: self.state) }
                 let success = values != nil
-                let body = success ? "Mission Control received your sign-in. You can return to the app." : "Invalid sign-in callback. Return to Mission Control and try again."
+                let body = success ? "3PO received your sign-in. You can return to the app." : "Invalid sign-in callback. Return to 3PO and try again."
                 let reply = "HTTP/1.1 \(success ? "200 OK" : "400 Bad Request")\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\nContent-Security-Policy: default-src 'none'\r\nConnection: close\r\nContent-Length: \(body.utf8.count)\r\n\r\n\(body)"
                 connection.send(content: Data(reply.utf8), completion: .contentProcessed { _ in connection.cancel() })
                 if let values { self.finish(.success(values)) }

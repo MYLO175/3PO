@@ -117,7 +117,7 @@ struct NativeItemEditor: View {
                     } else { Button(baseline.recurring ? "Delete repeating reminder" : "Delete reminder",role:.destructive) { Task { await delete(baseline.recurring ? .reminderSeries : .occurrence) } } }
                 }
                 Button("Cancel",role:.cancel) {}
-            } message: { Text("Deletion cannot be undone in Mission Control. Deleting future events also removes this event; earlier events remain.") }
+            } message: { Text("Deletion cannot be undone in 3PO. Deleting future events also removes this event; earlier events remain.") }
 
     }
     private func load() async {

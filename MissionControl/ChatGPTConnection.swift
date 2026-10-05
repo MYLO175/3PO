@@ -334,7 +334,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
             }
             account.accessToken = ""; account.refreshToken = ""; account.idToken = ""; account.scopes = []; account.expiry = .distantPast; account.verifiedModel = nil; account.verifiedAt = nil
             try self.save(account); self.models = []
-            self.message = revoked ? "Signed out; renewable session revoked." : "Signed out locally. Remote revocation was not confirmed; disconnect Mission Control in ChatGPT Settings if needed."
+            self.message = revoked ? "Signed out; renewable session revoked." : "Signed out locally. Remote revocation was not confirmed; disconnect 3PO in ChatGPT Settings if needed."
         }
     }
 }
