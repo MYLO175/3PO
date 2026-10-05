@@ -8,12 +8,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
-        // Load the bundled artwork directly so a restored Dock entry cannot
-        // keep displaying a placeholder from an earlier local build.
-        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
-           let icon = NSImage(contentsOf: url) {
-            NSApp.applicationIconImage = icon
-        }
         let arguments = ProcessInfo.processInfo.arguments
         guard arguments.contains("--small-window") || arguments.contains("--dark-window") else { return }
         // SwiftUI may restore a fullscreen window after didFinishLaunching.
