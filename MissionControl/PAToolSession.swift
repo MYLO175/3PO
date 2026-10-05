@@ -174,7 +174,7 @@ import Foundation
             guard localMail.hasMore || localMail.hasUnavailable else { return try json(["coverage":"No pending search in this turn. Start search_mail using the current thread's human query."]) }
             guard mailContinuations < 2 else { throw ActionFailure.message("Mail continuation bound reached; ask to continue in another turn.") }
             let retry = args["retryUnavailable"] as? Bool == true
-            guard !retry || human.range(of:#"\bretry\b"#,options:[.regularExpression,.caseInsensitive]) != nil else { throw ActionFailure.message("Failed Mail reads require an explicit retry request.") }
+            guard !retry || MailLookupRules.retryRequested(human) else { throw ActionFailure.message("Failed Mail reads require an explicit request to try again.") }
             mailContinuations += 1
             let output = try await localMail.context(request:retry ? "Retry unavailable mail reads." : "Continue the email search.",model:model)
             localMail.commitAnswer(); for message in localMail.results { emails[message.id] = message; issuedLifeMail.insert(message.id) }; return output

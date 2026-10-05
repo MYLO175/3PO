@@ -86,10 +86,10 @@ struct DashboardView: View {
     func errorBanner(_ text: String) -> some View {
         HStack { Image(systemName: "exclamationmark.triangle"); Text(text).textSelection(.enabled); Spacer() }.font(.callout).foregroundStyle(.orange).padding(10)
     }
-    func panelHeader(_ title: String, icon: String, health: SourceHealth) -> some View {
+    func panelHeader(_ title: String, icon: String, health: SourceHealth, loadingLabel: String = "Refreshing…") -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack { Label(title, systemImage: icon).font(.title3.weight(.semibold)); Spacer(); if health.loading { ProgressView().controlSize(.small) } }
-            Text(health.detail).font(.caption).foregroundStyle(health.error == nil ? Color.secondary : Color.orange).lineLimit(3).textSelection(.enabled)
+            Text(health.loading && health.error == nil ? loadingLabel : health.detail).font(.caption).foregroundStyle(health.error == nil ? Color.secondary : Color.orange).lineLimit(3).textSelection(.enabled)
         }
     }
     func sourceMenu(_ title: String, sources: [SourceOption], exclusions: Binding<Set<String>>) -> some View {
@@ -271,7 +271,7 @@ struct DashboardView: View {
     }
     var inboxPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            panelHeader("Inbox", icon: "tray", health: model.mailHealth)
+            panelHeader("Inbox", icon: "tray", health: model.mailHealth, loadingLabel:"Checking for mail changes…")
             HStack {
                 Menu {
                     Button("Enable all") { accountExclusions.wrappedValue = [] }

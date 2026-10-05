@@ -18,6 +18,10 @@ import Foundation
         let plan = MailLookupPlan(message:"",terms:["Alice","Course"],start:"2026-09-01",end:"2026-10-01")
         let terms = try MailLookupRules.terms(plan,request:"Find Alice's Course email from September")
         assert(terms == ["Alice","Course"])
+        let expanded = try MailLookupRules.terms(MailLookupPlan(message:"",terms:["COMET","module selection"],start:nil,end:nil),request:"when do I submit engineering modules on commet?")
+        assert(expanded == ["COMET","module selection"], "Read-only typo corrections and topic synonyms must not demand exact subjects")
+        assert(MailLookupRules.retryRequested("try again") && MailLookupRules.retryRequested("check again please"))
+        assert(!MailLookupRules.retryRequested("what happened?"))
         let raw = #"{"id":"test:1","accountID":"test","account":"Test","messageID":1,"internetMessageID":"fake@example.invalid","sender":"ALICE@example.invalid","subject":"Private invitation","received":"2026-09-15T12:00:00Z","unread":true,"replied":false,"flagged":false}"#
         let message = try JSONDecoder().decode(MailMessage.self,from:Data(raw.utf8))
         assert(message.mailboxName == nil)
@@ -30,7 +34,7 @@ import Foundation
         assert(!MailLookupRules.matches(sent,terms:["Bob"]))
         assert(MailLookupRules.matches(message,terms:terms))
         assert(!MailLookupRules.matches(message,terms:["Unrelated"]))
-        for bad in [MailLookupPlan(message:"",terms:["invented"],start:nil,end:nil),MailLookupPlan(message:"",terms:["email"],start:nil,end:nil),MailLookupPlan(message:"",terms:[],start:nil,end:nil)] {
+        for bad in [MailLookupPlan(message:"",terms:["email"],start:nil,end:nil),MailLookupPlan(message:"",terms:[],start:nil,end:nil)] {
             var failed = false
             do { _ = try MailLookupRules.terms(bad,request:"Find Alice's email") } catch { failed = true }
             assert(failed)
@@ -56,6 +60,6 @@ import Foundation
         assert(MailLookupRules.retriesUnavailable("Retry unavailable mail reads."))
         assert(MailLookupRules.continues("Continue the email search.") && MailLookupRules.requested("Retry unavailable mail reads."))
         assert(!MailLookupRules.retriesUnavailable("Retry unavailable mail reads and delete them"))
-        print("PASS: mail-specific request routing, literal meaningful terms, case-insensitive sender/subject matches, unknown/generic terms rejected, failed-folder isolation, cursor preservation, incomplete-body coverage and retry intent")
+        print("PASS: mail-specific request routing, meaningful bounded topic expansion, case-insensitive sender/subject matches, generic terms rejected, failed-folder isolation, cursor preservation, incomplete-body coverage and retry intent")
     }
 }

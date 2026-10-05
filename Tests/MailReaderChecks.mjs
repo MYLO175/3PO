@@ -5,7 +5,7 @@ import { createContext, runInContext } from 'node:vm';
 
 const source=readFileSync(new URL('../MissionControl/Mail/MailReader.js',import.meta.url),'utf8');
 function reader() {
-  const context=createContext({ObjC:{import:()=>{},unwrap:value=>value}});
+  const context=createContext({Date,ObjC:{import:()=>{},unwrap:value=>value}});
   runInContext(source,context);return context;
 }
 function fixture({names=['Inbox','Sent','Archive'],enabled=true,before=false,after=before,identity='fixture@example.invalid',changedIdentity=identity,throwBody=false}={}) {
@@ -61,4 +61,45 @@ test('identity changes during content retrieval or unavailable content never bec
   for(const f of [fixture({changedIdentity:'changed@example.invalid'}),fixture({throwBody:true})]){
     const result=reader().runBody(f.mail,request);assert.equal(result.body,'');assert.equal(result.errors.length,1);
   }
+});
+
+function batchFixture({count=75,changed=false}={}) {
+  let idReads=0,individualReads=0,filterReads=0;
+  const ids=Array.from({length:count},(_,i)=>i+1);
+  const dated={
+    id:()=>{idReads++;return changed&&idReads>1?ids.slice().reverse():ids},
+    subject:()=>ids.map(id=>id===70?'Engineering Part IIB: module choices':'Unrelated newsletter'),
+    sender:()=>ids.map(()=> 'Coordinator <fixture@example.invalid>')
+  };
+  const box={messages:{
+    whose:()=>{filterReads++;return dated},
+    byId:id=>()=>{individualReads++;return {
+      dateReceived:()=>new Date('2026-10-05T12:00:00Z'),dateSent:()=>new Date('2026-10-05T12:00:00Z'),
+      messageId:()=>`fixture${id}@example.invalid`,sender:()=> 'Coordinator <fixture@example.invalid>',
+      subject:()=>id===70?'Engineering Part IIB: module choices':'Unrelated newsletter',
+      readStatus:()=>false,wasRepliedTo:()=>false,flaggedStatus:()=>false,
+      toRecipients:{address:()=>['Alice@example.invalid'],name:()=>['Alice']}
+    }}
+  }};
+  const mailboxes=[()=>box];mailboxes.name=()=>['Inbox'];
+  const account={enabled:()=>true,name:()=> 'Fixture',mailboxes};
+  return {mail:{accounts:{byId:()=>()=>account}},reads:()=>({idReads,individualReads,filterReads})};
+}
+const batchRequest={accountID:'fixture-account',start:Date.parse('2026-10-05T00:00:00Z')/1000,end:Date.parse('2026-10-06T00:00:00Z')/1000,offset:0,limit:20};
+test('arrival scan gets date-filtered IDs in one bulk read, then only the bounded page',()=>{
+  const f=batchFixture(),result=reader().runBatch(f.mail,batchRequest);
+  assert.equal(result.messages.length,20);assert.equal(result.complete,false);assert.equal(result.nextOffset,20);
+  assert.deepEqual(f.reads(),{idReads:1,individualReads:20,filterReads:1});
+  const second=reader().runBatch(f.mail,{...batchRequest,messageIDs:Array.from(result.messageIDs),offset:20});
+  assert.equal(second.messages.length,20);assert.equal(f.reads().idReads,1,'resuming must reuse exact saved IDs');
+});
+test('on-demand header matching finds a later hit without spending pages on unrelated mail',()=>{
+  const f=batchFixture(),result=reader().runBatch(f.mail,{...batchRequest,searchTerms:['Part IIB'],mailboxRole:'inbox'});
+  assert.equal(result.messages.length,1);assert.equal(result.messages[0].messageID,70);assert.equal(result.complete,true);
+  assert.equal(f.reads().individualReads,1);assert.equal(f.reads().idReads,2);
+});
+test('changing header collection fails closed; Sent retains recipient-only candidates',()=>{
+  assert.throws(()=>reader().runBatch(batchFixture({changed:true}).mail,{...batchRequest,searchTerms:['IIB']}),/changed or moved/);
+  const result=reader().runBatch(batchFixture().mail,{...batchRequest,searchTerms:['Alice'],mailboxRole:'sent'});
+  assert.equal(result.messages.length,20);assert.equal(result.messages[0].recipients[0],'Alice <Alice@example.invalid>');
 });

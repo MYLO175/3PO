@@ -126,6 +126,31 @@ actor MailService {
         try JSONDecoder().decode(MailFolderDiscovery.self,from:run(arguments:["operation":"folders"]))
     }
     #if DEBUG
+    func validateMonitoring() async throws -> [String:Any] {
+        let discovery = try await discoverAccounts()
+        let initial = Date.now
+        var reports: [[String:Any]] = []
+        // Disposable state, aggregate-only output, no inference or personal cache
+        // mutation. Two small arrival scans and one targeted header page/account.
+        for account in discovery.accounts.prefix(4) {
+            do {
+                let window = MailWindowProgress(id:"monitor:"+account.id,accountID:account.id,start:initial.addingTimeInterval(-660),end:initial.addingTimeInterval(-60))
+                var state = MailIndexState(); state.monitors = [window]
+                var snapshot = MailSnapshot(messages:[],accounts:[account],errors:[])
+                let first = try await batch(accountID:account.id,window:window)
+                snapshot = state.apply(first,to:window.id,snapshot:snapshot)
+                state = try JSONDecoder().decode(MailIndexState.self,from:JSONEncoder().encode(state))
+                state.prepare(accounts:[account])
+                guard let next = state.monitor(account.id) else { throw IntegrationError.verification }
+                let second = try await batch(accountID:account.id,window:next)
+                _ = state.apply(second,to:next.id,snapshot:snapshot)
+                let searchWindow = MailWindowProgress(id:"search",accountID:account.id,start:initial.addingTimeInterval(-86400),end:initial,mailboxRole:.inbox)
+                let search = try await batch(accountID:account.id,window:searchWindow,searchTerms:["Engineering"])
+                reports.append(["firstHeaders":first.messages.count,"secondHeaders":second.messages.count,"secondRangeSeconds":next.end.timeIntervalSince(next.start),"resumedExactCursor":!first.complete! ? next.messageIDs == first.messageIDs && next.offset == first.nextOffset : true,"keywordHeaders":search.messages.count,"keywordPageComplete":search.complete == true,"keywordsVerified":search.messages.allSatisfy { $0.subject.localizedCaseInsensitiveContains("Engineering") || $0.sender.localizedCaseInsensitiveContains("Engineering") }])
+            } catch { reports.append(["unavailable":true]) }
+        }
+        return ["accounts":discovery.accounts.count,"discoveryErrors":discovery.errors.count,"checks":reports,"elapsedSeconds":Date.now.timeIntervalSince(initial),"personalCacheChanged":false,"inferenceRequests":0]
+    }
     func validateSearchFolders() async throws -> String {
         let discovery = try await discoverSearchFolders()
         var checks: [String] = ["\(discovery.accounts.count) accounts, \(discovery.folders.count) discovered Inbox/Sent/Archive folders"]
@@ -151,17 +176,21 @@ actor MailService {
     }
     #endif
 
-    func batch(accountID: String, window: MailWindowProgress) async throws -> MailBatch {
+    func batch(accountID: String, window: MailWindowProgress, searchTerms: [String]? = nil) async throws -> MailBatch {
         var arguments: [String: Any] = ["operation": "batch", "accountID": accountID,
             "start": window.start.timeIntervalSince1970, "end": window.end.timeIntervalSince1970,
             "offset": window.offset, "limit": 20]
         if let ids = window.messageIDs { arguments["messageIDs"] = ids }
         if let name = window.mailboxName { arguments["mailboxName"] = name }
         if let role = window.mailboxRole { arguments["mailboxRole"] = role.rawValue }
+        if let searchTerms { arguments["searchTerms"] = searchTerms }
         let response = try JSONDecoder().decode(MailBatch.self, from: run(arguments: arguments))
         if let error = response.errors.first { throw MailServiceError.mail(error) }
         guard let ids = response.messageIDs, let offset = response.nextOffset, let complete = response.complete,
               offset >= window.offset, offset <= ids.count, Set(ids).count == ids.count,
+              response.messages.count == offset-window.offset,
+              response.messages.map(\.messageID) == Array(ids[window.offset..<offset]),
+              response.messages.allSatisfy({ $0.accountID == accountID && $0.received >= window.start && $0.received < window.end }),
               complete == (offset == ids.count), complete || offset > window.offset else {
             throw MailServiceError.process("Mail returned incomplete batch metadata")
         }

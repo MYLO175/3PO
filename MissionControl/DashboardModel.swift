@@ -112,11 +112,9 @@ import EventKit
     private var changes: Task<Void, Never>?
     private var poll: Task<Void, Never>?
     private var previewTask: Task<Void, Never>?
-    private var mailContinuation: Task<Void, Never>?
     private var pendingCalendarRefresh = false
     private var pendingReminderRefresh = false
     private var started = false
-    private var mailSuspended = UserDefaults.standard.bool(forKey: "mailSuspended")
     private var sample: Bool { ProcessInfo.processInfo.arguments.contains("--sample") }
 
     init() {
@@ -130,7 +128,7 @@ import EventKit
         excludedAccounts = savedAccounts
         do {
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-projects") || ProcessInfo.processInfo.arguments.contains("--preview-projects") || ProcessInfo.processInfo.arguments.contains("--validate-placement") {
+            if ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-projects") || ProcessInfo.processInfo.arguments.contains("--preview-projects") || ProcessInfo.processInfo.arguments.contains("--validate-placement") || ProcessInfo.processInfo.arguments.contains("--validate-mail-monitoring") {
                 container = try ModelContainer(for: CachedDashboard.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
                 return
             }
@@ -145,6 +143,14 @@ import EventKit
     func start() {
         guard !started else { return }; started = true
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--validate-mail-monitoring") {
+            Task {
+                let result:[String:Any]
+                do { result = try await mail.validateMonitoring() } catch { result = ["unavailable":true] }
+                if let data = try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-mail-monitor-live.json"),options:.atomic) }
+                NSApp.terminate(nil)
+            };return
+        }
         if ProcessInfo.processInfo.arguments.contains("--preview-projects") { return }
         if ProcessInfo.processInfo.arguments.contains("--validate-placement") {
             Task {
@@ -227,7 +233,7 @@ import EventKit
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.refresh(retryMail: false); if let self { self.briefings.check(self) } } })
         poll = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(300))
+                try? await Task.sleep(for: .seconds(60))
                 guard !Task.isCancelled else { return }
                 await self?.refreshMail()
                 self?.weather.startRefresh()
@@ -257,7 +263,7 @@ import EventKit
     }
     func refresh(retryMail: Bool = true) {
         widgetCalendars.invalidate()
-        if retryMail { mailContinuation?.cancel(); mailSuspended = false; UserDefaults.standard.set(false, forKey: "mailSuspended") }
+        if retryMail { mailIndex.resume() }
         guard !sample else { loadSample(); return }
         weather.startRefresh()
         Task { await refreshCalendar() }
@@ -321,72 +327,52 @@ import EventKit
     func refreshMail() async {
         if ProcessInfo.processInfo.arguments.contains("--skip-mail") { mailHealth.error = "Mail paused for validation"; return }
         guard !sample, !mailHealth.loading else { return }
-        if mailSuspended { mailHealth.error = "Mail paused after timeout. Click Refresh to resume when Mail is responsive."; return }
         mailHealth.loading = true
+        defer { mailHealth.loading = false }
         do {
             let discovery = try await mail.discoverAccounts()
             if !discovery.errors.isEmpty { throw MailServiceError.mail(discovery.errors.joined(separator: "; ")) }
             let accounts = discovery.accounts
             let enabled = Set(accounts.map(\.id))
             mailData = MailSnapshot(messages: mailData.messages.filter { enabled.contains($0.accountID) && $0.received >= Date.now.addingTimeInterval(-30 * 86400) }, accounts: accounts, errors: [])
-            mailIndex.prepare(accounts: accounts)
+            mailIndex.prepare(accounts: accounts,lastCheck:mailHealth.lastSuccess)
             persistMailCheckpoint()
-            // Round-robin accounts, newest unfinished day first. Six small pages
-            // form a checkpoint; each page is saved and displayed immediately.
-            for job in 0..<6 where !accounts.isEmpty {
-                let account = accounts[job % accounts.count]
-                guard let window = mailIndex.windows.filter({ $0.accountID == account.id && !$0.complete }).sorted(by: { $0.start > $1.start }).first else { continue }
-                do {
-                    let batch = try await mail.batch(accountID: account.id, window: window)
-                    mailData = mailIndex.apply(batch, to: window.id, snapshot: mailData)
-                    mailHealth.lastSuccess = .now; mailHealth.error = nil
-                    persistMailCheckpoint()
-                    persist("mailHealth", SourceHealth(lastSuccess: .now))
-                } catch {
-                    // A changed/moved message invalidates the saved ID list for
-                    // this day. Rebuild it on a user retry; keep cached rows.
-                    if case MailServiceError.mail(let detail) = error,
-                       detail.contains("changed or moved") || detail.contains("-1728"),
-                       let index = mailIndex.windows.firstIndex(where: { $0.id == window.id }) {
-                        mailIndex.windows[index].offset = 0
-                        mailIndex.windows[index].messageIDs = nil
-                        mailIndex.windows[index].seenIDs = []
-                    }
-                    // Timeout/transport errors preserve the last successful page
-                    // cursor and ID list, so Refresh retries only the failed page.
-                    persistMailCheckpoint()
-                    mailHealth.error = account.title + " Inbox: " + error.localizedDescription
-                    if case MailServiceError.timedOut = error {
-                        mailSuspended = true; UserDefaults.standard.set(true, forKey: "mailSuspended")
-                        mailHealth.error = (mailHealth.error ?? "Mail timed out") + " Automatic reads paused; Refresh resumes saved progress."
-                    }
-                    mailHealth.loading = false
-                    return
-                }
+            // All accounts get an arrival page before background work. Two arrival
+            // pages/account/check; only one history/reconciliation page per five
+            // minutes. Never recursively drain or rebuild the month's cache.
+            for account in accounts where mailIndex.available(account.id) {
+                if let window = mailIndex.monitor(account.id) { await readMailPage(window,account:account) }
             }
-            mailHealth.loading = false
+            for account in accounts where mailIndex.available(account.id) {
+                if let window = mailIndex.monitor(account.id) { await readMailPage(window,account:account) }
+                if mailIndex.available(account.id), let window = mailIndex.background(account.id) { await readMailPage(window,account:account) }
+            }
+            mailHealth.error = accounts.compactMap { account in
+                mailIndex.accountErrors?[account.id].map { account.title + " Inbox: " + $0 + " Cached mail retained; automatic retry backs off up to 30 minutes. Refresh retries now." }
+            }.joined(separator:"; ")
+            if mailHealth.error?.isEmpty == true { mailHealth.error = nil }
             if accounts.isEmpty { mailHealth.lastSuccess = .now }
-            // A relaunch inside the refresh interval can have no due windows.
-            // Successful discovery confirms availability; retain the real last
-            // header timestamp but clear the temporary launch-cache banner.
-            if !mailIndex.pending {
-                mailHealth.error = nil
-                persist("mailHealth", SourceHealth(lastSuccess: mailHealth.lastSuccess))
-            }
-            if mailIndex.pending {
-                mailContinuation = Task { [weak self] in
-                    try? await Task.sleep(for: .seconds(2))
-                    guard !Task.isCancelled else { return }
-                    await self?.refreshMail()
-                }
-            }
+            persistMailCheckpoint()
+            persist("mailHealth", SourceHealth(lastSuccess:mailHealth.lastSuccess,error:mailHealth.error))
         } catch {
-            mailHealth.error = error.localizedDescription; mailHealth.loading = false
-            if case MailServiceError.timedOut = error {
-                mailSuspended = true; UserDefaults.standard.set(true, forKey: "mailSuspended")
-                mailHealth.error = "Mail timed out. Automatic reads paused; Refresh resumes saved progress."
-            }
+            mailHealth.error = error.localizedDescription + " Cached mail retained; monitoring retries on its next check."
         }
+    }
+    private func readMailPage(_ window: MailWindowProgress, account: MailAccount) async {
+        do {
+            let batch = try await mail.batch(accountID:account.id,window:window)
+            mailData = mailIndex.apply(batch,to:window.id,snapshot:mailData)
+            mailHealth.lastSuccess = .now
+        } catch {
+            // Reset only a stale exact page, retaining cached rows and all other
+            // account cursors. Transport failures keep their immutable ID list.
+            if case MailServiceError.mail(let detail) = error,
+               detail.contains("changed or moved") || detail.contains("-1728") {
+                mailIndex.resetCursor(window.id)
+            }
+            mailIndex.failed(account.id,detail:error.localizedDescription)
+        }
+        persistMailCheckpoint()
     }
     func complete(_ reminder: TaskItem) {
         guard !sample, !writing else { return }

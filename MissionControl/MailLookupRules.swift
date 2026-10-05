@@ -21,6 +21,9 @@ enum MailLookupRules {
     static func retriesUnavailable(_ request: String) -> Bool {
         request.trimmingCharacters(in:.whitespacesAndNewlines).lowercased().trimmingCharacters(in:CharacterSet(charactersIn:".!")) == "retry unavailable mail reads"
     }
+    static func retryRequested(_ request: String) -> Bool {
+        request.range(of:#"\b(?:retry|try again|search again|check again|have another go)\b"#,options:[.regularExpression,.caseInsensitive]) != nil
+    }
     static func continues(_ request: String) -> Bool {
         retriesUnavailable(request) || request.lowercased().contains("continue") && requested(request)
     }
@@ -31,8 +34,13 @@ enum MailLookupRules {
         return mail && value.range(of:#"\b(?:find|search|old|earlier|last|when|what|look|continue)\b"#,options:.regularExpression) != nil
     }
     static func terms(_ plan: MailLookupPlan, request: String) throws -> [String] {
-        guard let terms = plan.terms, !terms.isEmpty, terms.count <= 5, terms.allSatisfy({ !$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && $0.count >= 2 && $0.count <= 80 && !["email","emails","mail","inbox","find","search","old","earlier","last","the","from","to","sent","archive","archived"].contains($0.lowercased()) && request.localizedCaseInsensitiveContains($0) }) else { throw ActionFailure.message("Please name a sender or subject keyword for the email search.") }
-        return terms
+        guard !request.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, let terms = plan.terms, !terms.isEmpty, terms.count <= 5,
+              terms.allSatisfy({ $0.trimmingCharacters(in:.whitespacesAndNewlines).count >= 2 && $0.count <= 80 && !["email","emails","mail","inbox","find","search","old","earlier","last","the","from","to","sent","archive","archived"].contains($0.lowercased()) }) else {
+            throw ActionFailure.message("Choose one to five meaningful Mail search keywords. This is an app search-plan validation error; Apple Mail has not been queried.")
+        }
+        // Read-only search can correct spelling and expand a topic. Literal
+        // current-human evidence remains mandatory for writes, not header reads.
+        return terms.map { $0.trimmingCharacters(in:.whitespacesAndNewlines) }
     }
     static func matches(_ message: MailMessage, terms: [String]) -> Bool {
         terms.contains { term in message.subject.localizedCaseInsensitiveContains(term) || message.sender.localizedCaseInsensitiveContains(term) || (message.mailboxRole == .sent && (message.recipients ?? []).contains(where:{ $0.localizedCaseInsensitiveContains(term) })) }

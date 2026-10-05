@@ -204,8 +204,17 @@ function runBatch(mail, input) {
     let ids = input.messageIDs;
     if (!Array.isArray(ids)) {
         const lower = {}, upper = {}; lower[dateField] = { _greaterThanEquals:start }; upper[dateField] = { _lessThan:end };
-        const refs = listValue(inbox.messages.whose({ _and:[lower,upper] })());
-        ids = refs.map(message => Number(message.id()));
+        // One bulk Apple event rather than resolving every dated message ID.
+        const dated = inbox.messages.whose({ _and:[lower,upper] });
+        ids = listValue(dated.id()).map(Number);
+        if (input.searchTerms && input.mailboxRole !== 'sent') {
+            if (!Array.isArray(input.searchTerms) || !input.searchTerms.length || input.searchTerms.length > 5 || input.searchTerms.some(term => typeof term !== 'string' || term.length < 2 || term.length > 80)) throw new Error('Invalid header search terms');
+            const terms = input.searchTerms.map(term => term.toLowerCase());
+            const subjects = listValue(dated.subject()), senders = listValue(dated.sender());
+            const checkedIDs = listValue(dated.id()).map(Number);
+            if (subjects.length !== ids.length || senders.length !== ids.length || checkedIDs.length !== ids.length || checkedIDs.some((id,index) => id !== ids[index])) throw new Error('Mailbox headers changed or moved during search; retry this date window');
+            ids = ids.filter((id,index) => terms.some(term => stringValue(subjects[index]).toLowerCase().includes(term) || stringValue(senders[index]).toLowerCase().includes(term)));
+        }
     }
     if (ids.some(id => !Number.isSafeInteger(id) || id < 0)) throw new Error('Invalid message identity in batch');
     const title = stringValue(account.name());
