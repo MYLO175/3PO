@@ -4,6 +4,12 @@ import Foundation
         var london = Calendar(identifier:.gregorian); london.timeZone = TimeZone(identifier:"Europe/London")!
         let date = try ActionRules.date("2026-10-02",dateOnly:true,calendar:london)
         assert(DateRules.localDate(date,calendar:london) == "2026-10-02")
+        let opening=try ActionRules.date("2026-11-09",dateOnly:true,calendar:london)
+        assert(DateRules.localDate(opening,calendar:london) == "2026-11-09")
+        let refused=PAIntentFailure(reason:"Resolve the opening date before scheduling.")
+        assert(refused.localizedDescription == "Resolve the opening date before scheduling.")
+        assert(refused.note.contains("before executing"))
+        assert(PAIntentFailure.guidance.contains("before any native save"))
         let firstFold = try ActionRules.date("2026-10-25T01:30:00+01:00",dateOnly:false)
         let secondFold = try ActionRules.date("2026-10-25T01:30:00+00:00",dateOnly:false)
         assert(secondFold.timeIntervalSince(firstFold) == 3600)

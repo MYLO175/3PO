@@ -13,6 +13,8 @@ struct AssistantTurn: Codable, Identifiable {
     var profileSessionID: UUID? = nil
     var profileControl: Bool? = nil
     var memoryNotes: [String]? = nil
+    /// Local failure reasons, without raw tool arguments, source bodies or credentials.
+    var toolErrors: [String]? = nil
     var sourceMemoryIDs:[UUID]? = nil
     var focusAreas:[LifeArea]? = nil
 }

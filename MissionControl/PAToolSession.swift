@@ -84,7 +84,10 @@ import Foundation
             }
             target = try json(resolved)
         }
-        let organisationAccepted=try await PAToolAuthorization.check(call:call,args:args,human:human,history:history,target:target,model:model)
+        let organisationAccepted: Bool
+        do { organisationAccepted=try await PAToolAuthorization.check(call:call,args:args,human:human,history:history,target:target,model:model) }
+        catch is CancellationError { throw CancellationError() }
+        catch { throw PAIntentFailure(reason:error.localizedDescription) }
         if !organisationAccepted,args["organisation"] as? [String:Any] != nil { args["organisation"]=NSNull();memoryNotes.append("Unsupported organisation was omitted; the validated personal fact can still be saved.") }
         try Task.checkCancellation()
         guard valid() else { throw ActionFailure.message("Configuration changed during intent validation; no tool operation executed.") }

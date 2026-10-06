@@ -85,3 +85,8 @@ Live heartbeat validation found a repeated older deadline. Keep heartbeat email 
 Projects and their authored content belong to the human. Ordinary facts learn life context; only an explicit workspace request or accepted concrete proposal creates/edits project content. The PA can organise supported life anchors and place/link an existing project without inventing work. Tombstones preserve recovery and prevent background resurrection. Structure, Map and notebook share stable record identity; matching is reviewed, never a silent fuzzy merge.
 
 Collection and thought have independent clocks: local Mail collection every five minutes, received WhatsApp cache between checks, configurable hourly AI heartbeat. A persisted whole-run request allowance charges each actual assessment request; limits leave pending work and do not interrupt collection. Morning brief priority retains its original daily identity. The continuous transcript remains saved while display and inference history are independently bounded, with human dialogue protected from background update volume.
+
+
+## 6 October — Keep actual failure reasons with the reply
+
+A generated explanation is not an execution trace. New PA replies retain bounded original tool errors locally, and pre-operation intent refusals identify that no native save was attempted. Existing receipts still govern uncertain saves and prevent replay. Older replies are preserved without invented retrospective diagnostics. Source-relative timing is resolved before proposing a write; the human request remains its authority.

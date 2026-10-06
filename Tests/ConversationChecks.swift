@@ -101,6 +101,11 @@ import Foundation
         precondition(protectedReplay.last?["content"] == reply.content)
         var later=reply;later.created=origin.addingTimeInterval(5*3600)
         precondition(ConversationRules.separator(before:later,previous:reply,previousHuman:question) != nil)
+        let legacyTurn=try JSONDecoder().decode(AssistantTurn.self,from:Data(#"{"role":"assistant","content":"Saved old reply","completed":true,"id":"84E20284-7BCE-41BD-B801-D600733F2068"}"#.utf8))
+        precondition(legacyTurn.toolErrors == nil)
+        var failureTurn=legacyTurn;failureTurn.toolErrors=["3PO stopped this request before executing the operation: Resolve the opening date."]
+        let restoredFailure=try JSONDecoder().decode(AssistantTurn.self,from:JSONEncoder().encode(failureTurn))
+        precondition(restoredFailure.toolErrors == failureTurn.toolErrors && restoredFailure.id == legacyTurn.id && restoredFailure.content == legacyTurn.content)
         print("PASS: legacy data preservation, configured-topic-only selection, explicit no-topic/account isolation, distinct persisted topic threads, bounded isolated history and memory-learning scope")
     }
 }

@@ -56,3 +56,6 @@ Durable hierarchy, manual forms, shared PA tools and five local views are implem
 
 
 6 October ownership/workflow acceptance: recoverable deletion/restore, sibling ordering, collapsible Structure, graphical Map, explicit source-backed project proposals and bounded paged chat are implemented. Remaining: sustained real heartbeat allowance exhaustion/day rollover, prioritised morning catch-up after prolonged sleep, personally useful proposals over multiple days, large real hierarchies and every account/focus race. Human-reviewed identity matching deliberately declines duplicate durable identities; semantic alias/consolidation is still separate. No full historical chat browser, background operation while quit/asleep, permanent delete, or automatic project content maintenance is claimed.
+
+
+6 October PA failure follow-through: original bounded failure reasons and pre-operation intent-check stage are now retained on new replies. Historical turns without a trace cannot establish the exact rejected argument. Still evaluate source-relative timing and multi-step recovery on personally requested reminders; do not claim a successful native save from a later successful source lookup, and never repeat an uncertain attempted save.
