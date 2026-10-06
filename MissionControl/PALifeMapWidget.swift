@@ -31,10 +31,8 @@ struct PALifeMapWidget: View {
             Picker("Life map view",selection:$presentation) { Text("Map").tag("Map");Text("Notes").tag("Notes");Text("Structure").tag("Structure") }
                 .pickerStyle(.segmented).labelsHidden().frame(width:230).fixedSize(horizontal:false,vertical:true)
             if presentation == "Structure" {
-                LifeProjectWidget(model:model,configuration:configuration,showsHeader:false,focusAreas:focusAreas)
-            } else if presentation == "Map",!notebook.anchors.isEmpty {
-                LifeCanonicalMapView(notebook:notebook,focus:focusAreas) { id in selectedProject=model.assistant.projects.items(model.chatGPT.activeID,includeTopics:true).first{$0.id == id} }
-            } else if !model.assistant.memory.enabled {
+                LifeProjectWidget(model:model,configuration:configuration,showsHeader:false,structureMode:true,focusAreas:focusAreas)
+            } else if !model.assistant.memory.enabled && notebook.anchors.isEmpty {
                 Text("Saved memory is off. Enable it in Memory to use your life notebook.").foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity)
             } else if notes.isEmpty {
                 Text("Your life notebook grows from useful things you tell your PA. Set up your profile in the PA menu, or organise saved memories below.").foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity)
@@ -55,15 +53,16 @@ struct PALifeMapWidget: View {
             }.controlSize(.small)
             if let error=model.lifeOrganisation.error { Text(error).font(.caption).foregroundStyle(.orange).lineLimit(3) }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
-        .sheet(item:$selectedProject) { item in
-            LifeMapProjectDetails(model:model,item:item)
-        }
         .sheet(item:$areaDetails) { area in
             VStack(alignment:.leading,spacing:14) {
                 HStack { Label(area.title,systemImage:area.symbol).font(.title3.weight(.semibold));Spacer();Button("Done") { areaDetails=nil } }
-                ScrollView { if let note=notes.first(where:{$0.area == area}) { LifeNotebookAreaView(notebook:notebook,note:note,showsHeading:false) { areaMemory=$0 } } }
+                ScrollView { VStack(alignment:.leading,spacing:12) { if let note=notes.first(where:{$0.area == area}) {
+                    let ids=notebook.anchors.filter{$0.areas.contains(area)}
+                    if !ids.isEmpty { Text("Your workspace").font(.headline);ForEach(Array(ids.prefix(60)),id:\.id) { node in Button { if let id=UUID(uuidString:String(node.id.dropFirst(5))) { selectedProject=model.assistant.projects.items(model.chatGPT.activeID,includeTopics:true).first{$0.id == id} } } label:{Label(node.path.joined(separator:" / "),systemImage:LifeItemKind(rawValue:node.kind)?.symbol ?? "folder").frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).padding(.vertical,4) };Divider() }
+                    LifeNotebookAreaView(notebook:notebook,note:note,showsHeading:false) { areaMemory=$0 } } } }
             }.padding(24).frame(width:520,height:580)
                 .sheet(item:$areaMemory) { memory in memoryDetails(memory,fromArea:true) }
+                .sheet(item:$selectedProject) { item in LifeMapProjectDetails(model:model,item:item) }
         }
         .sheet(item:$selected) { memory in memoryDetails(memory)
         }
@@ -92,7 +91,7 @@ private struct LifeMapProjectDetails:View {
     var body:some View {
         VStack(alignment:.leading,spacing:12) {
             HStack { Text("Life map").font(.headline);Spacer();Button("Done") { dismiss() } }
-            LifeProjectWidget(model:model,configuration:$configuration,showsHeader:false)
+            LifeProjectWidget(model:model,configuration:$configuration,showsHeader:false,topicScope:item.conversationID)
         }.padding(24).frame(width:540,height:620)
         .onAppear { configuration.projectRoots=[item.registration:item.id.uuidString] }
     }

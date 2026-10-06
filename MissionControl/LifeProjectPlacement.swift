@@ -37,10 +37,10 @@ enum LifePlacementRules {
         var result=items
         for entity in notebook.entities.filter({ [.organisation,.course].contains($0.kind) && $0.id.hasPrefix((project.conversationID?.uuidString ?? "shared")+":") }).prefix(30) {
             guard notebook.notes.flatMap(\.records).contains(where:{entity.memoryIDs.contains($0.id) && $0.source == nil && ($0.explicit || $0.certainty == .stated)}),
-                  !result.contains(where:{ $0.conversationID == project.conversationID && $0.kind.rawValue == entity.kind.rawValue && LifeWorkspaceRules.key($0.title) == LifeWorkspaceRules.key(entity.label) }) else { continue }
+                  !result.contains(where:{ $0.conversationID == project.conversationID && $0.kind.rawValue == entity.kind.rawValue && ($0.notebookEntityID == entity.id || LifeWorkspaceRules.key($0.title) == LifeWorkspaceRules.key(entity.label)) }) else { continue }
             let hash=Array(SHA256.hash(data:Data((project.registration+":"+entity.id).utf8)).prefix(16))
             let id=UUID(uuid:(hash[0],hash[1],hash[2],hash[3],hash[4],hash[5],hash[6],hash[7],hash[8],hash[9],hash[10],hash[11],hash[12],hash[13],hash[14],hash[15]))
-            result.append(.init(id:id,registration:project.registration,conversationID:project.conversationID,kind:entity.kind == .course ? .course : .organisation,title:entity.label,areas:Array(entity.areas).sorted{$0.rawValue < $1.rawValue}.prefix(3).map{$0},notebookEntityID:entity.id))
+            result.append(.init(id:id,registration:project.registration,conversationID:project.conversationID,kind:entity.kind == .course ? .course : .organisation,title:entity.label,areas:Array(entity.areas).sorted{$0.rawValue < $1.rawValue}.prefix(3).map{$0},notebookEntityID:entity.id,ownership:"life"))
         }
         let originals=Set(items.map(\.id))
         for index in result.indices where !originals.contains(result[index].id) && result[index].kind == .course {

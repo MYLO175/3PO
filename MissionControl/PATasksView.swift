@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 struct PATasksView: View {
     @Bindable var model: DashboardModel
+    @State private var reviewingProject:PADiscovery?
     @State private var editing: EmailSummary?
     @State private var draft=""
     @State private var copied=false
@@ -39,7 +40,7 @@ struct PATasksView: View {
                             if let title=item.sourceTitle { Text(title).font(.callout.weight(.semibold)) }
                             Text(item.message).textSelection(.enabled)
                             Button("Source evidence") { sourceDiscovery=item }.buttonStyle(.borderless).font(.caption)
-                            HStack { if item.kind != "update" { Button("Review suggestion") { model.reviewDiscovery(item) } }; Spacer(); Button("Dismiss") { model.proactive.dismiss(item) } }.controlSize(.small)
+                            HStack { if item.kind == "project" { if model.assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) == nil { Button("Review project…") { reviewingProject=item } } else { Label("Created",systemImage:"checkmark.circle") } } else if item.kind != "update" { Button("Review suggestion") { model.reviewDiscovery(item) } }; Spacer(); Button("Dismiss") { model.proactive.dismiss(item) } }.controlSize(.small)
                         }.taskCard()
                     }
                     ForEach(emails,id:\.0.id) { message,summary in
@@ -71,6 +72,7 @@ struct PATasksView: View {
             }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
         .sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record) }
+        .sheet(item:$reviewingProject) { record in LifeItemEditor(model:model,item:.init(registration:record.registration,kind:.project,title:String((record.sourceTitle ?? "New project").prefix(160)),notes:record.evidence),close:{reviewingProject=nil},reviewedSuggestion:record) }
         .sheet(item:$editing) { summary in
             VStack(alignment:.leading,spacing:14) {
                 Text("Review reply draft").font(.title2.weight(.semibold))

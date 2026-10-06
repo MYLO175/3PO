@@ -128,7 +128,7 @@ import EventKit
         excludedAccounts = savedAccounts
         do {
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-projects") || ProcessInfo.processInfo.arguments.contains("--preview-projects") || ProcessInfo.processInfo.arguments.contains("--validate-placement") || ProcessInfo.processInfo.arguments.contains("--validate-mail-monitoring") || ProcessInfo.processInfo.arguments.contains("--validate-mail-dates") {
+            if ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-projects") || ProcessInfo.processInfo.arguments.contains("--preview-projects") || ProcessInfo.processInfo.arguments.contains("--validate-placement") || ProcessInfo.processInfo.arguments.contains("--validate-ownership") || ProcessInfo.processInfo.arguments.contains("--validate-mail-monitoring") || ProcessInfo.processInfo.arguments.contains("--validate-mail-dates") {
                 container = try ModelContainer(for: CachedDashboard.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
                 return
             }
@@ -159,6 +159,14 @@ import EventKit
             };return
         }
         if ProcessInfo.processInfo.arguments.contains("--preview-projects") { return }
+        if ProcessInfo.processInfo.arguments.contains("--validate-ownership") {
+            Task {
+                let result:[String:Any]
+                do { result=try await LifeOwnershipEvaluation.run(self) } catch { result=["error":error.localizedDescription,"completed":Date.now.ISO8601Format()] }
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-ownership-evaluation.json"),options:.atomic) }
+                NSApp.terminate(nil)
+            };return
+        }
         if ProcessInfo.processInfo.arguments.contains("--validate-placement") {
             Task {
                 let result:[String:Any]
@@ -237,23 +245,23 @@ import EventKit
                 }
             }
         })
-        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.refresh(retryMail: false); if let self { self.heartbeat.check(self); self.briefings.check(self) } } })
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.refresh(retryMail: false); if let self { self.briefings.check(self);if !self.briefings.busy { self.heartbeat.check(self) } } } })
         poll = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1800))
+                try? await Task.sleep(for: .seconds(300))
                 guard !Task.isCancelled else { return }
-                if let self { self.heartbeat.check(self) }
+                if let self { await self.refreshMail() }
                 self?.weather.startRefresh()
             }
         }
         briefingPoll = Task { [weak self] in
             while !Task.isCancelled {
-                if let self { self.heartbeat.check(self); if !self.heartbeat.busy { self.projectPlacement.check(self); self.briefings.check(self); self.memoryLearning.recoverDelivery(self); self.memoryLearning.check(self); self.proactive.recoverDelivery(self); self.sourceLearning.check(self); self.lifeOrganisation.check(self); if Date.now.timeIntervalSince(self.lastOrientationCheck) >= 900 { await self.refreshPAOrientation() } } }
+                if let self { self.briefings.check(self); if !self.briefings.busy { self.heartbeat.check(self) }; if !self.heartbeat.busy && !self.briefings.busy { self.projectPlacement.check(self); self.memoryLearning.recoverDelivery(self); self.memoryLearning.check(self); self.proactive.recoverDelivery(self); self.sourceLearning.check(self); self.lifeOrganisation.check(self); if Date.now.timeIntervalSince(self.lastOrientationCheck) >= 900 { await self.refreshPAOrientation() } } }
                 try? await Task.sleep(for: .seconds(60))
             }
         }
         refresh(retryMail: false)
-        heartbeat.check(self)
+        briefings.check(self);if !briefings.busy { heartbeat.check(self) }
         if ProcessInfo.processInfo.arguments.contains("--validate-live") {
             Task {
                 do { validationReport = try await eventKit.validateDisposableReminders() }

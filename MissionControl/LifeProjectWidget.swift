@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum LifeProjectPresentation: String, CaseIterable, Identifiable {
     case overview = "Overview", list = "List", board = "Board", outline = "Outline", deadlines = "Deadlines"
@@ -8,6 +9,8 @@ struct LifeProjectWidget: View {
     @Bindable var model: DashboardModel
     var configuration: Binding<WidgetConfiguration>
     var showsHeader = true
+    var structureMode = false
+    var topicScope:UUID? = nil
     var previewRegistration: String? = nil
     var focusAreas: [LifeArea] = []
     @Environment(\.workspacePalette) private var palette
@@ -16,19 +19,25 @@ struct LifeProjectWidget: View {
     @State private var editing: LifeItem?
     @State private var linking: LifeItem?
     @State private var notice: String?
+    @State private var moving:LifeItem?
+    @State private var deleting:LifeItem?
+    @State private var showDeleted=false
+    @State private var matching:LifeItem?
+    @State private var drag:LifeProjectDrag?
+    @State private var dropHover:String?
     private var registration: String { previewRegistration ?? model.chatGPT.activeID }
     private var store: LifeWorkspaceStore { model.assistant.projects }
     private var items: [LifeItem] {
-        let all = store.items(registration)
+        let all = store.items(registration,topic:topicScope)
         guard !focusAreas.isEmpty else { return all }
-        let matching = all.filter { !Set(LifeItemQuery.path($0, in:all).flatMap(\.areas)).isDisjoint(with:focusAreas) }
+        let matching = all.filter { !Set(LifeWorkspaceRules.navigationAreas($0,in:all)).isDisjoint(with:focusAreas) }
         let included = Set(matching.flatMap { LifeItemQuery.path($0, in:all).map(\.id) })
         return all.filter { included.contains($0.id) }
     }
     private var savedRoot: UUID? { configuration.wrappedValue.projectRoots?[registration].flatMap(UUID.init(uuidString:)) }
     private var currentID: UUID? { path.last ?? savedRoot }
     private var current: LifeItem? { items.first { $0.id == currentID } }
-    private var presentation: LifeProjectPresentation { LifeProjectPresentation(rawValue: configuration.wrappedValue.projectView ?? "") ?? .overview }
+    private var presentation: LifeProjectPresentation { structureMode ? .outline : LifeProjectPresentation(rawValue: configuration.wrappedValue.projectView ?? "") ?? .overview }
     private var unfinished: Bool { configuration.wrappedValue.projectOnlyUnfinished == true }
     private var filtered: [LifeItem] { LifeItemQuery(root: current?.id, query: search, unfinished: unfinished).matching(items).filter { $0.id != current?.id } }
     var body: some View {
@@ -45,6 +54,7 @@ struct LifeProjectWidget: View {
                         Divider()
                         Button("Start here") { setRoot(current?.id) }
                         Button("Start at all projects") { setRoot(nil) }
+                        Divider();Button("Recently deleted…") { showDeleted=true }
                     } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel("Project view options")
                 }
             }
@@ -52,15 +62,20 @@ struct LifeProjectWidget: View {
                 if current != nil {
                     Button { if !path.isEmpty { path.removeLast() } else { setRoot(current?.parentID) }; search = "" } label: { Image(systemName: "chevron.left") }.buttonStyle(.plain).accessibilityLabel("Back to parent")
                 }
-                Text(current?.title ?? "Your projects").font(.headline).lineLimit(1)
+                Text(current?.title ?? (structureMode ? "Me" : "Your projects")).font(.headline).lineLimit(1)
+                    .onDrop(of:[LifeProjectDrag.type],delegate:LifeProjectDrop(target:nil,parent:current?.id,before:nil,drag:$drag,hover:$dropHover,key:"home",store:store,activeRegistration:{model.chatGPT.activeID},report:{notice=$0}))
+                if !showsHeader { Button { showDeleted=true } label:{Image(systemName:"trash")}.buttonStyle(.plain).help("Recently deleted") }
                 Spacer(minLength: 4)
                 if let current {
                     Menu {
                         Button("Edit details") { editing = current }
                         Button("Link something") { linking = current }
+                        Button("Match PA understanding…") { matching=current }
+                        Button("Move…") { moving=current }
+                        Button("Delete…",role:.destructive) { deleting=current }
                     } label: { Image(systemName: "pencil") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel("Edit project or links")
                 }
-                Button { editing = LifeItem(registration: registration, kind: current == nil ? .project : .task, title: "", parentID: current?.id, areas: current?.areas ?? []) } label: { Image(systemName: "plus") }
+                Button { editing = LifeItem(registration: registration,conversationID:current?.conversationID ?? topicScope, kind: current == nil ? .project : .task, title: "", parentID: current?.id, areas: current?.areas ?? []) } label: { Image(systemName: "plus") }
                     .buttonStyle(.plain).accessibilityLabel("Add project item").disabled(registration.isEmpty || store.readOnly)
             }
             HStack {
@@ -87,8 +102,13 @@ struct LifeProjectWidget: View {
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .sheet(item: $editing) { item in LifeItemEditor(model: model, item: item) { editing = nil } }
+        .sheet(item:$matching) { item in LifeIdentitySheet(model:model,item:item) { matching=nil } }
+        .sheet(item:$moving) { item in LifeMoveSheet(model:model,item:item) { moving=nil } }
+        .sheet(item:$deleting) { item in LifeDeleteSheet(model:model,item:item) { deleting=nil } }
+        .sheet(isPresented:$showDeleted) { LifeRecentlyDeleted(model:model,registration:registration) }
         .sheet(item: $linking) { item in LifeItemLinkEditor(model: model, item: item) { linking = nil } }
-        .onChange(of: registration) { path = []; search = ""; editing = nil; linking = nil; notice = nil }
+        .onChange(of: registration) { path = []; search = ""; editing = nil; linking = nil;moving=nil;deleting=nil;matching=nil;drag=nil;showDeleted=false; notice = nil }
+        .onChange(of:store.revision) { if let id=path.last,!items.contains(where:{$0.id == id}) { path=[] } }
         .onChange(of: savedRoot) { path = []; search = "" }
     }
     private func setRoot(_ id: UUID?) {
@@ -116,6 +136,10 @@ struct LifeProjectWidget: View {
                 Spacer(minLength: 0); Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)
             }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(palette[.input].opacity(0.6), in: RoundedRectangle(cornerRadius: 10))
         }.buttonStyle(.plain)
+        .contextMenu { Button("Open") { open(item) };Button("Edit details…") { editing=item };Button("Move…") { moving=item };Button("Link something…") { linking=item };Button("Match PA understanding…") { matching=item };Divider();Button("Delete…",role:.destructive) { deleting=item } }
+        .onDrag { drag = .init(id:item.id,registration:registration,revision:store.revision);let provider=NSItemProvider();provider.registerDataRepresentation(forTypeIdentifier:LifeProjectDrag.type.identifier,visibility:.ownProcess) { complete in complete(Data(item.id.uuidString.utf8),nil);return nil };return provider }
+        .onDrop(of:[LifeProjectDrag.type],delegate:LifeProjectDrop(target:item.id,parent:item.kind.isWork ? item.parentID : item.id,before:item.kind.isWork ? item.id : nil,drag:$drag,hover:$dropHover,key:item.id.uuidString,store:store,activeRegistration:{model.chatGPT.activeID},report:{notice=$0}))
+        .overlay(RoundedRectangle(cornerRadius:10).stroke(dropHover == item.id.uuidString ? palette[.accent] : .clear,lineWidth:2))
     }
     private var overview: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -132,14 +156,29 @@ struct LifeProjectWidget: View {
     private func rows(_ values: [LifeItem]) -> some View {
         VStack(alignment: .leading, spacing: 6) { ForEach(values) { item in card(item) } }
     }
-    private var outline: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(filtered.sorted { a, b in
-                LifeItemQuery.path(a, in: items).map { $0.created }.lexicographicallyPrecedes(LifeItemQuery.path(b, in: items).map { $0.created })
-            }) { item in
-                let depth = max(0, LifeItemQuery.path(item, in: items).count - (current.map { LifeItemQuery.path($0, in: items).count } ?? 0) - 1)
-                card(item).padding(.leading, CGFloat(min(depth, 6)) * 12)
+    private func collapsed(_ id:UUID)->Bool { configuration.wrappedValue.projectCollapsed?[registration]?.contains(id.uuidString) == true }
+    private func toggle(_ id:UUID) { var config=configuration.wrappedValue;var values=Set(config.projectCollapsed?[registration] ?? []);if !values.insert(id.uuidString).inserted { values.remove(id.uuidString) };if config.projectCollapsed == nil { config.projectCollapsed=[:] };config.projectCollapsed?[registration]=values.sorted();configuration.wrappedValue=config }
+    private var outlineItems:[LifeItem] {
+        guard search.isEmpty else { return filtered }
+        let ids=Set(filtered.map(\.id));var result:[LifeItem]=[]
+        func visit(_ parent:UUID?) { for item in items.filter({$0.parentID == parent && ids.contains($0.id)}) { result.append(item);if !collapsed(item.id) { visit(item.id) } } }
+        visit(current?.id);return result
+    }
+    private var outline:some View {
+        LazyVStack(alignment:.leading,spacing:4) {
+            ForEach(Array(outlineItems.prefix(120))) { item in
+                let depth=max(0,LifeItemQuery.path(item,in:items).count-(current.map{LifeItemQuery.path($0,in:items).count} ?? 0)-1)
+                VStack(spacing:0) {
+                    if drag != nil { Rectangle().fill(dropHover == "before:"+item.id.uuidString ? palette[.accent] : palette[.border].opacity(0.4)).frame(height:6)
+                        .onDrop(of:[LifeProjectDrag.type],delegate:LifeProjectDrop(target:item.id,parent:item.parentID,before:item.id,drag:$drag,hover:$dropHover,key:"before:"+item.id.uuidString,store:store,activeRegistration:{model.chatGPT.activeID},report:{notice=$0})) }
+                    HStack(spacing:5) {
+                        if items.contains(where:{$0.parentID == item.id}) { Button { toggle(item.id) } label:{Image(systemName:collapsed(item.id) ? "chevron.right" : "chevron.down").frame(width:16)}.buttonStyle(.plain).accessibilityLabel((collapsed(item.id) ? "Expand " : "Collapse ")+item.title) }
+                        else { Color.clear.frame(width:16,height:1) }
+                        card(item)
+                    }
+                }.padding(.leading,CGFloat(min(depth,8))*14)
             }
+            if outlineItems.count > 120 { Text("Showing 120 items. Search to narrow this branch.").font(.caption).foregroundStyle(.secondary) }
         }
     }
     private var board: some View {
@@ -168,6 +207,7 @@ struct LifeProjectWidget: View {
     }
     @ViewBuilder private func details(_ item: LifeItem) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            Text(item.ownership == "life" ? "PA life context · you can correct its organisation" : "Your workspace · the PA edits it when asked").font(.caption).foregroundStyle(.secondary)
             HStack { if item.status != .planned || item.kind.isWork || item.kind == .project || item.kind == .goal { Text(item.status.title) }; if let due = item.due { Text(LifeWorkspaceRules.displayDate(due)) }; if let minutes = item.estimateMinutes { Text("\(minutes) min") } }.font(.caption).foregroundStyle(.secondary)
             if !item.notes.isEmpty { Text(item.notes).font(.callout).textSelection(.enabled) }
             if let placement=item.placement {
@@ -228,6 +268,7 @@ struct LifeItemEditor: View {
     @Bindable var model: DashboardModel
     @State var item: LifeItem
     var close: () -> Void
+    var reviewedSuggestion:PADiscovery? = nil
     @State private var error: String?
     @State private var dueEnabled = false
     @State private var dueDate = Date.now
@@ -281,13 +322,25 @@ struct LifeItemEditor: View {
         guard item.registration == model.chatGPT.activeID else { error = "Account changed; your draft has not been saved."; return }
         let value = estimate.trimmingCharacters(in: .whitespacesAndNewlines)
         if !value.isEmpty, Int(value).map({ (1...100000).contains($0) }) != true { error = "Enter a positive estimate in minutes, or leave it empty."; return }
+        if [.project,.section,.task,.milestone,.resource].contains(item.kind) { item.ownership="workspace" }
         item.title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
         item.due = dueEnabled ? DateRules.localDate(dueDate) : nil; item.estimateMinutes = Int(value)
         if item.kind == .project {
             if expected == nil,autoPlace { item.placement = .init(parentPinned:parentChanged || item.parentID != nil) }
             else if parentChanged { item.placement = .init(status:"placed",reason:"Your chosen home is pinned.",parentPinned:true) }
         }
-        do { _ = try model.assistant.projects.save(item, expected: expected); model.projectPlacement.check(model); close() } catch { self.error = error.localizedDescription }
+        do {
+            if let proposal=reviewedSuggestion {
+                guard expected == nil,model.proactive.visible(proposal,model:model),proposal.registration == model.chatGPT.activeID else { throw LifeWorkspaceFailure.message("The source suggestion changed or is no longer permitted. Your draft is kept.") }
+                item.humanEvidence="Accepted a reviewed PA project suggestion."
+                let reference:LifeReference
+                if proposal.sourceKind == "whatsapp",let chat=proposal.sourceChatID,let message=proposal.sourceMessageID,let identity=proposal.sourceIdentity,let version=proposal.sourceRevision { reference = .init(kind:.whatsapp,id:message,containerID:chat,linkedIdentity:identity,contentRevision:version) }
+                else if let message=model.emailSummaries.highlights(model).first(where:{$0.0.id == proposal.mailID})?.0 { reference = .init(kind:.mail,id:message.id,containerID:message.accountID,contentRevision:message.internetMessageID) }
+                else { throw LifeWorkspaceFailure.message("The original source is unavailable; no project saved.") }
+                _ = try model.assistant.projects.create([item],receipt:.init(id:"project-suggestion:"+proposal.id,registration:item.registration,result:"Created a human-reviewed project.",itemID:item.id),links:[.init(registration:item.registration,conversationID:item.conversationID,from:item.id,relation:.evidence,target:reference)])
+            } else { _ = try model.assistant.projects.save(item, expected: expected) }
+            model.projectPlacement.check(model);close()
+        } catch { self.error = error.localizedDescription }
     }
 }
 

@@ -36,6 +36,11 @@ struct LifeItem: Codable, Identifiable, Equatable {
     var humanEvidence: String? = nil
     var placement: LifeProjectPlacement? = nil
     var notebookEntityID: String? = nil
+    /// Missing ownership is the existing human workspace. Life anchors contain navigation only.
+    var ownership: String? = nil
+    var sortOrder: Int? = nil
+    var deletedAt: Date? = nil
+    var deletedRoot: UUID? = nil
 }
 enum LifeRelation: String, Codable, CaseIterable, Identifiable {
     case related, partOf, dependsOn, preparesFor, supports, supervisedBy, discusses, evidence, identifies
@@ -88,6 +93,20 @@ enum LifeWorkspaceRules {
     static func scoped(_ item: LifeItem, registration: String, topic: UUID?, includeTopics: Bool) -> Bool {
         item.registration == registration && (includeTopics || item.conversationID == nil || item.conversationID == topic)
     }
+    static func ordered(_ items: [LifeItem]) -> [LifeItem] {
+        var positions:[UUID:Int]=[:],counts:[String:Int]=[:]
+        for item in items { let key=item.registration+":"+(item.conversationID?.uuidString ?? "shared")+":"+(item.parentID?.uuidString ?? "home");positions[item.id]=counts[key,default:0];counts[key,default:0]+=1 }
+        return items.sorted { a,b in
+            if a.parentID != b.parentID { return (a.parentID?.uuidString ?? "") < (b.parentID?.uuidString ?? "") }
+            if a.parentID == b.parentID { let x=a.sortOrder ?? positions[a.id] ?? 0,y=b.sortOrder ?? positions[b.id] ?? 0;if x != y { return x < y } }
+            return a.created == b.created ? a.id.uuidString < b.id.uuidString : a.created < b.created
+        }
+    }
+    static func navigationAreas(_ item: LifeItem, in items: [LifeItem]) -> [LifeArea] {
+        let known = LifeItemQuery.path(item,in:items).flatMap(\.areas)
+        if !known.isEmpty { return Array(Set(known)).sorted{$0.rawValue < $1.rawValue} }
+        return item.kind == .course ? [.studies] : item.kind == .project ? [.projects] : [.unsorted]
+    }
     static func dateValid(_ value: String?) -> Bool {
         guard let value else { return true }
         let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -118,10 +137,13 @@ enum LifeWorkspaceRules {
         for item in state.items {
             try require(!item.registration.isEmpty && !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && item.title.count <= 160 && item.notes.count <= 12000 && dateValid(item.due) && item.estimateMinutes.map { (1...100000).contains($0) } != false && item.areas.count <= 3 && Set(item.areas).count == item.areas.count, "A project field is empty, too long or invalid.")
             try require(item.humanEvidence.map { !$0.isEmpty && $0.count <= 2000 } != false, "The project origin evidence is invalid.")
+            try require(item.ownership == nil || ["workspace","life"].contains(item.ownership!), "Unknown item ownership.")
+            try require(item.ownership != "life" || [.area,.organisation,.course,.person,.goal].contains(item.kind), "Life organisation cannot create project workspace content.")
             if let placement = item.placement {
                 try require(["pending","running","paused","placed","question","unplaced"].contains(placement.status) && placement.reason.count <= 500 && placement.choices.count <= 3 && (placement.question?.count ?? 0) <= 200,"Project placement metadata is invalid.")
             }
             if let parentID = item.parentID {
+                try require(item.deletedAt != nil || byID[parentID]?.deletedAt == nil, "An active item cannot be inside Recently deleted.")
                 try require(byID[parentID].map { $0.registration == item.registration && $0.conversationID == item.conversationID } == true, "A parent must belong to the same account and scope.")
                 var seen: Set<UUID> = [item.id], cursor: UUID? = parentID
                 while let next = cursor {

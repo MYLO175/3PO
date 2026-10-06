@@ -86,6 +86,21 @@ import Foundation
         precondition(ConversationRules.sourceMemoryHistory([sourceReply,normalReply],permitted:[]).map(\.id) == [normalReply.id],"Removed/edited sources cannot return through later AI history")
         let sourceRoundTrip=try JSONDecoder().decode(AssistantTurn.self,from:JSONEncoder().encode(sourceReply))
         precondition(sourceRoundTrip.sourceMemoryIDs == [sourceID])
+        var flooded=AssistantConversation(accountID:"one",title:"Protected dialogue")
+        let origin=Date(timeIntervalSince1970:1700000000)
+        let question=AssistantTurn(role:"user",content:"Help me plan Engineering",completed:true,created:origin)
+        let proposal=AssistantTurn(role:"assistant",content:"Create a study project?",completed:true,created:origin.addingTimeInterval(1))
+        flooded.turns=[question,proposal]
+        for n in 0..<60 { flooded.turns.append(.init(role:"assistant",content:"Background update",completed:true,deliveryID:"discovery:"+String(n),created:origin.addingTimeInterval(Double(n+2)))) }
+        let reply=AssistantTurn(role:"user",content:"Yes, do that",completed:true,created:origin.addingTimeInterval(3600))
+        flooded.turns.append(reply)
+        let protected=ConversationRules.history(feed:flooded,topic:nil)
+        precondition(protected.contains{$0.id == question.id} && protected.contains{$0.id == proposal.id} && protected.last?.id == reply.id)
+        precondition(protected.filter{$0.deliveryID != nil}.count == 4 && protected.count <= 20)
+        let protectedReplay=ConversationRules.replay(protected,currentUserID:reply.id)
+        precondition(protectedReplay.last?["content"] == reply.content)
+        var later=reply;later.created=origin.addingTimeInterval(5*3600)
+        precondition(ConversationRules.separator(before:later,previous:reply,previousHuman:question) != nil)
         print("PASS: legacy data preservation, configured-topic-only selection, explicit no-topic/account isolation, distinct persisted topic threads, bounded isolated history and memory-learning scope")
     }
 }

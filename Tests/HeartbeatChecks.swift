@@ -5,8 +5,8 @@ import Foundation
         var account=PAHeartbeatAccount()
         precondition(PAHeartbeatRules.due(account,now:now))
         account.checked=now
-        precondition(!PAHeartbeatRules.due(account,now:now.addingTimeInterval(1799)))
-        precondition(PAHeartbeatRules.due(account,now:now.addingTimeInterval(1800)))
+        precondition(!PAHeartbeatRules.due(account,now:now.addingTimeInterval(1799),minutes:30))
+        precondition(PAHeartbeatRules.due(account,now:now.addingTimeInterval(1800),minutes:30))
         account.fingerprint="same"
         precondition(!PAHeartbeatRules.needsAssessment(account,fingerprint:"same",manual:false))
         precondition(PAHeartbeatRules.needsAssessment(account,fingerprint:"new",manual:false))
@@ -18,6 +18,23 @@ import Foundation
         var state=PAHeartbeatState(accounts:["a":recovered,"b":PAHeartbeatAccount()])
         state=try JSONDecoder().decode(PAHeartbeatState.self,from:JSONEncoder().encode(state))
         precondition(state.accounts["a"]?.phase == "paused" && PAHeartbeatRules.due(state.accounts["b"]!,now:now))
-        print("PASS heartbeat: 30-minute due boundary, changed-only assessment, captured account isolation, persistence and interrupted inference requiring explicit resume")
+        precondition(!PAHeartbeatRules.due(account,now:now.addingTimeInterval(3599),minutes:60))
+        precondition(PAHeartbeatRules.due(account,now:now.addingTimeInterval(3600),minutes:60))
+        precondition(PAHeartbeatRules.due(account,now:now.addingTimeInterval(900),minutes:15))
+        var budget=PAHeartbeatAccount()
+        budget=try PAHeartbeatRules.claim(budget,day:"2026-10-06",limit:2)
+        budget=try PAHeartbeatRules.claim(budget,day:"2026-10-06",limit:2)
+        do { _ = try PAHeartbeatRules.claim(budget,day:"2026-10-06",limit:2);preconditionFailure("Allowance exceeded") } catch is HeartbeatBudgetExhausted {}
+        precondition(PAHeartbeatRules.callCount(budget,day:"2026-10-06") == 2)
+        budget.pending=true
+        precondition(PAHeartbeatRules.needsAssessment(budget,fingerprint:budget.fingerprint ?? "",manual:false))
+        budget.phase="paused"
+        precondition(!PAHeartbeatRules.needsAssessment(budget,fingerprint:"new",manual:false))
+        budget.phase="idle"
+        let next=try PAHeartbeatRules.claim(budget,day:"2026-10-07",limit:2)
+        precondition(next.calls == 1 && next.budgetDay == "2026-10-07")
+        let savedBudget=try JSONDecoder().decode(PAHeartbeatAccount.self,from:JSONEncoder().encode(budget))
+        precondition(savedBudget.calls == 2 && savedBudget.phase == "idle")
+        print("PASS heartbeat: configurable due boundaries, changed/pending assessment, persisted daily request allowance, day rollover, captured account isolation and interrupted inference requiring explicit resume")
     }
 }

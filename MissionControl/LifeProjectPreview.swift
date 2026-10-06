@@ -61,18 +61,22 @@ struct LifeProjectInteractivePreview: View {
     @State private var configuration = WidgetConfiguration()
     @State private var registration = ""
     @State private var lifeMap=false
+    @State private var chat=false
+    @State private var reading=false
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
             HStack {
                 Text("Fictional project preview · disposable storage").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Toggle("Life map",isOn:$lifeMap).toggleStyle(.button)
+                Toggle("PA chat",isOn:$chat).toggleStyle(.button)
                 Button("Undo project edit") { try? model.assistant.projects.undo(registration) }.disabled(model.assistant.projects.undoDate(registration) == nil)
             }
-            if lifeMap { PALifeMapWidget(model:model,configuration:$configuration) } else { LifeProjectWidget(model:model,configuration:$configuration,previewRegistration:registration) }
+            if chat { AssistantPanel(model:model,assistant:model.assistant,readingMode:$reading,configuration:$configuration) } else if lifeMap { PALifeMapWidget(model:model,configuration:$configuration) } else { LifeProjectWidget(model:model,configuration:$configuration,previewRegistration:registration) }
         }.padding(20).frame(minWidth:350,minHeight:500)
         .task {
             guard registration.isEmpty, let (identity,_,engineering,_) = LifeProjectPreview.seed(model) else { return }
+            model.assistant.seedWorkflowPreview()
             registration = identity; configuration.projectRoots = [identity:engineering.id.uuidString]
         }
     }

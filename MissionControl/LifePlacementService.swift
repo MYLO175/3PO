@@ -20,7 +20,8 @@ import Observation
                 let sourceIDs=Set(assistant.memory.permittedRecords.filter{$0.source != nil}.map(\.id))
                 let notebook=LifeNotebook.build(assistant.memory.enabled ? assistant.memory.permittedRecords.filter{$0.source == nil} : [],registration:registration,topic:current.conversationID)
                 let savedItems=store.items(registration,topic:current.conversationID)
-                let items=LifePlacementRules.candidates(project:current,items:savedItems,notebook:notebook)
+                let deleted=store.items(registration,topic:current.conversationID,includeDeleted:true).filter{$0.deletedAt != nil}
+                let items=LifePlacementRules.candidates(project:current,items:savedItems,notebook:notebook).filter{candidate in !deleted.contains{$0.id == candidate.id || (candidate.notebookEntityID != nil && $0.notebookEntityID == candidate.notebookEntityID) || ($0.kind == candidate.kind && LifeWorkspaceRules.key($0.title) == LifeWorkspaceRules.key(candidate.title))}}
                 let input=try LifePlacementRules.input(project:current,items:items,notebook:notebook)
                 let output=try await model.chatGPT.streamResponse(input:[["role":"user","content":input]],instructions:LifePlacementRules.instructions,model:selectedModel) { _ in }
                 try Task.checkCancellation()

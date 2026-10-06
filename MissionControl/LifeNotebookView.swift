@@ -20,7 +20,11 @@ struct LifeNotebookMapView:View {
     var fitsAvailableSpace=false
     private func related(_ note:LifeAreaNote)->Bool {
         guard let selected=notes.first(where:{$0.area == selectedArea}),selected.area != note.area else { return false }
-        return !Set(selected.records.map(\.id)).isDisjoint(with:note.records.map(\.id))
+        if !Set(selected.records.map(\.id)).isDisjoint(with:note.records.map(\.id)) { return true }
+        let left=Set(notebook.anchors.filter{$0.areas.contains(selected.area)}.map(\.id)),right=Set(notebook.anchors.filter{$0.areas.contains(note.area)}.map(\.id))
+        if !left.isDisjoint(with:right) { return true }
+        return notebook.anchors.contains{node in node.relations.contains{relation in guard let target=relation.split(separator:":",maxSplits:1).last else { return false };let id="life:"+target;return (left.contains(node.id) && right.contains(id)) || (right.contains(node.id) && left.contains(id))}}
+
     }
     var body:some View {
         Group {
@@ -69,7 +73,7 @@ struct LifeNotebookMapView:View {
                             Image(systemName:note.area.symbol).font(.system(size:layout.dense ? 16 : 18)).foregroundStyle(note.area.colour).frame(width:24)
                             VStack(alignment:.leading,spacing:4) {
                                 Text(note.area.title).font(.system(size:layout.dense ? 13 : 14,weight:.semibold)).lineLimit(2).minimumScaleFactor(0.85)
-                                Text("\(note.records.count) \(note.records.count == 1 ? "fact" : "facts")").font(.system(size:layout.dense ? 11 : 12)).foregroundStyle(.secondary)
+                                Text("\(notebook.anchors.filter{$0.areas.contains(note.area)}.count) items · \(note.records.count) facts").font(.system(size:layout.dense ? 11 : 12)).foregroundStyle(.secondary)
                             }
                             Spacer(minLength:0)
                         }.padding(.horizontal,12).frame(width:rect.width,height:rect.height)

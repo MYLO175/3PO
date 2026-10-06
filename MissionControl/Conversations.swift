@@ -51,7 +51,19 @@ enum ConversationRules {
         thread(feed:feed,topic:topic).filter { $0.profileSessionID == session }
     }
     static func history(feed: AssistantConversation, topic: AssistantConversation?, excludedDeliveries: Set<String> = []) -> [AssistantTurn] {
-        Array(thread(feed:feed,topic:topic).filter { $0.completed && $0.profileSessionID == nil && ($0.deliveryID.map { !excludedDeliveries.contains($0) } ?? true) }.suffix(20))
+        let eligible=thread(feed:feed,topic:topic).filter { $0.completed && $0.profileSessionID == nil && ($0.deliveryID.map { !excludedDeliveries.contains($0) } ?? true) }
+        // Background deliveries must not evict the actual human conversation.
+        let updates=eligible.filter{$0.deliveryID != nil && $0.role != "user"}.suffix(4)
+        let dialogue=eligible.filter{$0.deliveryID == nil || $0.role == "user"}.suffix(20-updates.count)
+        let ids=Set((Array(dialogue)+Array(updates)).map(\.id))
+        return eligible.filter{ids.contains($0.id)}
+
+    }
+    static func separator(before turn:AssistantTurn,previous:AssistantTurn?,previousHuman:AssistantTurn?,calendar:Calendar = .current)->String? {
+        guard let date=turn.created else { return nil }
+        if previous?.created.map({!calendar.isDate($0,inSameDayAs:date)}) ?? true { return date.formatted(date:.abbreviated,time:.omitted) }
+        if turn.role == "user",let old=previousHuman?.created,date.timeIntervalSince(old) >= 4*3600 { return "Conversation resumed" }
+        return nil
     }
     static func sourceMemoryHistory(_ turns:[AssistantTurn],permitted:Set<UUID>)->[AssistantTurn] {
         turns.filter{($0.sourceMemoryIDs ?? []).allSatisfy(permitted.contains)}
@@ -74,14 +86,20 @@ enum ConversationRules {
         guard let current = turns.last(where:{ $0.id == currentUserID && $0.role == "user" && $0.completed }) else { return [] }
         let last = ["role":current.role,"content":current.content]
         guard let encoded = try? JSONSerialization.data(withJSONObject:last), encoded.count + 2 <= bytes else { return [] }
-        var result = [last], used = encoded.count + 2
-        let before = turns.prefix(while:{ $0.id != currentUserID })
-        for turn in before.suffix(19).reversed() where turn.completed && ["user","assistant"].contains(turn.role) {
-            let content = turn.content.utf8.count > 3000 ? utf8Prefix(turn.content,bytes:3000) + "\n[Earlier message excerpt; remaining text omitted.]" : turn.content
-            let value = ["role":turn.role,"content":content]
-            guard let data = try? JSONSerialization.data(withJSONObject:value), used + data.count + 1 <= bytes else { break }
-            result.insert(value,at:0); used += data.count + 1
+        var used=encoded.count+2,selected:[UUID:[String:String]]=[:]
+        let before=Array(turns.prefix(while:{$0.id != currentUserID}).filter{$0.completed && ["user","assistant"].contains($0.role)}.suffix(19))
+        func add(_ turn:AssistantTurn,limit:Int)->Bool {
+            guard selected[turn.id] == nil else { return true }
+            let content=turn.content.utf8.count > limit ? utf8Prefix(turn.content,bytes:limit)+"\n[Earlier message excerpt; remaining text omitted.]" : turn.content
+            let value=["role":turn.role,"content":content]
+            guard let data=try? JSONSerialization.data(withJSONObject:value),used+data.count+1 <= bytes else { return false }
+            selected[turn.id]=value;used+=data.count+1;return true
         }
+        // Preserve a just-delivered proposal for a short human acceptance, then give dialogue priority.
+        if let prior=before.last,prior.deliveryID != nil { _ = add(prior,limit:1000) }
+        for turn in before.reversed() where turn.deliveryID == nil || turn.role == "user" { if !add(turn,limit:3000) { break } }
+        for turn in before.reversed() where turn.deliveryID != nil && turn.role != "user" { _ = add(turn,limit:500) }
+        let result=before.compactMap{selected[$0.id]}+[last]
         return result
     }
     static func context(for turn: AssistantTurn, in conversation: AssistantConversation) -> UUID? {

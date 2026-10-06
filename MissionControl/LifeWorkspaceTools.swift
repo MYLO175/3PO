@@ -28,16 +28,16 @@ import CryptoKit
     }
     func targetData(_ args: [String:Any]) throws -> String? {
         var requested = Set<UUID>()
-        for key in ["id", "from", "parent", "root"] {
+        for key in ["id", "from", "parent", "root", "before"] {
             if let token = args[key] as? String, let id = UUID(uuidString:token) { requested.insert(id) }
         }
         for entry in args["items"] as? [[String:Any]] ?? [] {
             if let token = entry["parent"] as? String, let id = UUID(uuidString:token) { requested.insert(id) }
         }
-        let all = store.items(registration, topic:topic, includeTopics:includeTopics)
+        let all = store.items(registration, topic:topic, includeTopics:includeTopics,includeDeleted:true)
         var targets: [[String:Any]] = requested.sorted { $0.uuidString < $1.uuidString }.compactMap { id in
             guard let item = issued[id], all.contains(where: { $0.id == id && $0.revision == item.revision }) else { return nil }
-            return ["id":item.id.uuidString, "titleData":item.title, "kind":item.kind.rawValue, "status":item.status.rawValue, "pathData":LifeItemQuery.path(item, in:all).map(\.title)]
+            return ["id":item.id.uuidString, "titleData":item.title, "kind":item.kind.rawValue, "status":item.status.rawValue, "pathData":LifeItemQuery.path(item, in:all).map(\.title), "directContentCount":all.filter{$0.parentID == item.id && $0.deletedAt == nil}.count, "directContentsData":Array(all.filter{$0.parentID == item.id && $0.deletedAt == nil}.prefix(20)).map{["id":$0.id.uuidString,"title":$0.title,"kind":$0.kind.rawValue]}]
         }
         if args.count == 1, args["authorization"] != nil, let ticket = store.undoEdit(registration) {
             targets.append(["undoItemID":ticket.before.id.uuidString, "titleData":ticket.before.title, "kind":ticket.before.kind.rawValue])
@@ -51,7 +51,7 @@ import CryptoKit
         return try json(["resolvedIssuedItems":targets, "proposedBatchStructureData":batch])
     }
     private func object(_ item: LifeItem) -> [String:Any] {
-        ["id":item.id.uuidString, "title":item.title, "kind":item.kind.rawValue, "parent":item.parentID?.uuidString as Any? ?? NSNull(), "status":item.status.rawValue, "notes":String(item.notes.prefix(2000)), "notesTruncated":item.notes.count > 2000, "due":item.due as Any? ?? NSNull(), "estimateMinutes":item.estimateMinutes as Any? ?? NSNull(), "areas":item.areas.map(\.rawValue), "path":LifeItemQuery.path(item, in:store.items(registration, topic:topic, includeTopics:includeTopics)).map(\.title)]
+        ["id":item.id.uuidString, "title":item.title, "kind":item.kind.rawValue, "parent":item.parentID?.uuidString as Any? ?? NSNull(), "status":item.status.rawValue, "notes":String(item.notes.prefix(2000)), "notesTruncated":item.notes.count > 2000, "due":item.due as Any? ?? NSNull(), "estimateMinutes":item.estimateMinutes as Any? ?? NSNull(), "areas":item.areas.map(\.rawValue), "ownership":item.ownership ?? "workspace", "deleted":item.deletedAt != nil, "sortOrder":item.sortOrder as Any? ?? NSNull(), "path":LifeItemQuery.path(item, in:store.items(registration, topic:topic, includeTopics:includeTopics)).map(\.title)]
     }
     private func resolve(_ reference: LifeReference) -> LifeLinkOption? {
         if reference.kind == .item, let id = UUID(uuidString:reference.id), let item = store.items(registration, topic:topic, includeTopics:includeTopics).first(where: { $0.id == id }) {
@@ -78,7 +78,7 @@ import CryptoKit
         case "read_life_items":
             let root = try text("root").map { try current($0).id }
             guard LifeWorkspaceRules.dateValid(text("dueBefore")), (args["maxMinutes"] as? Int).map({ (1...100000).contains($0) }) != false else { throw LifeWorkspaceFailure.message("Use a date-only deadline or a positive estimate limit.") }
-            let all = store.items(registration, topic: topic, includeTopics: includeTopics)
+            let all = store.items(registration, topic: topic, includeTopics: includeTopics,includeDeleted:args["deleted"] as? Bool == true).filter{(args["deleted"] as? Bool == true) == ($0.deletedAt != nil)}
             let found = LifeItemQuery(root:root, query:text("query") ?? "", unfinished:args["unfinished"] as? Bool == true, dueBefore:text("dueBefore"), maxMinutes:args["maxMinutes"] as? Int).matching(all)
             var returned = Array(found.prefix(60))
             // Issue ancestors too: searching a module must expose its real parent, not invite title guessing.
@@ -97,6 +97,21 @@ import CryptoKit
             let widgets = model.workspace.selected.widgets.filter { $0.kind == .projects }
             for widget in widgets { issuedWidgets[widget.id] = widget }
             return try json(["items":returned.map(object), "relationships":relationships, "widgets":widgets.map { ["id":$0.id.uuidString, "view":$0.configuration.projectView ?? "Overview"] }, "coverage":"\(min(60,found.count)) of \(found.count) matching local records, plus issued ancestors. Relationships capped at120; unavailable source identities/content withheld. Local task state is not native completion. Missing records/links are not proof of absence."])
+        case "delete_life_item":
+            let item=try current(text("id")),summary="Moved “\(item.title)” to Recently deleted. Memory and external sources are retained."
+            try store.trash(item.id,registration:registration,keepChildren:args["keepChildren"] as? Bool == true,expectedRevision:store.revision,receipt:.init(id:operationKey,registration:registration,result:summary,itemID:item.id));changes+=1;issued.removeValue(forKey:item.id)
+            return try json(["saved":true,"result":summary])
+        case "restore_life_item":
+            guard let id=text("id").flatMap(UUID.init(uuidString:)),let prior=issued[id],store.state.items.contains(where:{$0.id == id && $0.registration == registration && $0.revision == prior.revision && $0.deletedAt != nil}) else { throw LifeWorkspaceFailure.message("Read the exact Recently deleted item before restoring.") }
+            let summary="Restored “\(prior.title)” with its saved identities and links."
+            try store.restore(id,registration:registration,expectedRevision:store.revision,receipt:.init(id:operationKey,registration:registration,result:summary,itemID:id));changes+=1
+            return try json(["saved":true,"result":summary])
+        case "reorder_life_item":
+            let item=try current(text("id")),parent=try text("parent").map{try current($0).id},before=try text("before").map{try current($0).id}
+            let summary="Rearranged “\(item.title)” and preserved its contents."
+            try store.move(item.id,registration:registration,parent:parent,before:before,expectedRevision:store.revision,receipt:.init(id:operationKey,registration:registration,result:summary,itemID:item.id));changes+=1
+            issued[item.id]=store.items(registration,topic:topic,includeTopics:includeTopics).first{$0.id == item.id}
+            return try json(["saved":true,"result":summary])
         case "create_life_items":
             guard !issued.isEmpty || store.items(registration, topic:topic, includeTopics:includeTopics).isEmpty else { throw LifeWorkspaceFailure.message("Read the current structure before adding items.") }
             var values: [LifeItem] = []

@@ -67,7 +67,12 @@ struct AssistantPanel: View {
     @State private var showMemory = false
     @State private var showProfileSetup = false
     @State private var showBriefing = false
+    @State private var visibleTurnLimit=40
+    private var visibleTurns:[AssistantTurn] { (selected?.turns ?? []).filter(turnVisible) }
+    private var displayedTurns:[AssistantTurn] { Array(visibleTurns.suffix(visibleTurnLimit)) }
+    private func divider(_ turn:AssistantTurn)->String? { guard let index=visibleTurns.firstIndex(where:{$0.id == turn.id}) else { return nil };return ConversationRules.separator(before:turn,previous:index > 0 ? visibleTurns[index-1] : nil,previousHuman:visibleTurns.prefix(index).last{$0.role == "user"}) }
     @State private var sourceDiscovery:PADiscovery?
+    @State private var reviewingProject:PADiscovery?
     @ViewBuilder private func discoveryActions(_ record: PADiscovery, compact: Bool = false) -> some View {
         if compact {
             HStack { reviewDiscoveryButtons(record) }
@@ -83,6 +88,9 @@ struct AssistantPanel: View {
     @ViewBuilder private func reviewDiscoveryButtons(_ record: PADiscovery) -> some View {
         if let claim = discoveryClaim(record) {
             Label(claim.receipt == nil ? "Check save outcome" : "Created",systemImage:claim.receipt == nil ? "exclamationmark.circle" : "checkmark.circle").font(.caption).foregroundStyle(.secondary)
+        } else if record.kind == "project" {
+            if model.assistant.projects.receipt("project-suggestion:"+record.id,registration:record.registration) != nil { Label("Created",systemImage:"checkmark.circle").font(.caption) }
+            else { Button("Review project…") { reviewingProject=record }.disabled(model.writing || model.assistant.projects.readOnly) }
         } else if ["calendar","reminder"].contains(record.kind) {
             Button(record.kind == "calendar" ? "Review event" : "Review reminder") { model.reviewDiscovery(record) }.disabled(model.writing)
             Menu("Instead…") {
@@ -122,7 +130,10 @@ struct AssistantPanel: View {
                                 }
                             }.padding(.vertical,12)
                         }
-                        ForEach((selected?.turns ?? []).filter(turnVisible)) { turn in
+                        if visibleTurns.count > visibleTurnLimit { Button("Earlier conversation (\(visibleTurns.count-visibleTurnLimit) messages)") { visibleTurnLimit+=40 }.font(.caption).frame(maxWidth:.infinity) }
+                        if visibleTurnLimit > 40 { Button("Collapse older conversation") { visibleTurnLimit=40 }.font(.caption).frame(maxWidth:.infinity) }
+                        ForEach(displayedTurns) { turn in
+                            if let separator=divider(turn) { Text(separator).font(.caption.weight(.medium)).foregroundStyle(.secondary).frame(maxWidth:.infinity).padding(.vertical,6) }
                             let replyingHere = turn.role == "assistant" && sendingHere && assistant.requestTurnID == turn.id
                             HStack(alignment:.top) {
                             if turn.role == "user" { Spacer(minLength:35) }
@@ -173,8 +184,8 @@ struct AssistantPanel: View {
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.onChange(of: selected?.turns.last?.content) { if let id = selected?.turns.last?.id { proxy.scrollTo(id, anchor: .bottom) } }
-                .onChange(of:selectedID) { if let id = selected?.turns.last?.id { proxy.scrollTo(id,anchor:.bottom) } }
-                .onChange(of:selectedTopicID) { if let id = selected?.turns.last?.id { proxy.scrollTo(id,anchor:.bottom) } }
+                .onChange(of:selectedID) { visibleTurnLimit=40;if let id = selected?.turns.last?.id { proxy.scrollTo(id,anchor:.bottom) } }
+                .onChange(of:selectedTopicID) { visibleTurnLimit=40;if let id = selected?.turns.last?.id { proxy.scrollTo(id,anchor:.bottom) } }
                 .onAppear { if let id = selected?.turns.last?.id { proxy.scrollTo(id,anchor:.bottom) } }
             }
             if model.memoryLearning.canUndoQuestion(model.chatGPT.activeID) { HStack { Text("Question dismissed").font(.caption).foregroundStyle(.secondary); Button("Undo") { model.memoryLearning.undoQuestion(model.chatGPT.activeID) }.controlSize(.small); Spacer() } }
@@ -248,6 +259,8 @@ struct AssistantPanel: View {
             if !draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && model.memoryLearning.busy { model.memoryLearning.cancel() }
         }.onChange(of:model.chatGPT.usagePaused) { _, paused in
             if !paused, assistant.error?.contains("subscription_sharing_usage_limit_exceeded") == true { assistant.error = nil }
+        }.sheet(item:$reviewingProject) { record in
+            LifeItemEditor(model:model,item:.init(registration:record.registration,kind:.project,title:String((record.sourceTitle ?? "New project").prefix(160)),notes:record.evidence),close:{reviewingProject=nil},reviewedSuggestion:record)
         }.sheet(isPresented:$showRename) { PANameEditor(assistant:assistant) }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { PAMemoryView(memory:assistant.memory,registration:model.chatGPT.activeID,conversationID:selectedTopicID,topicTitle:topic?.title,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) },organisation:model.lifeOrganisation,organiseContext:{ model.lifeOrganisation.check(model,manual:true,topic:selectedTopicID) }) }.sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record) }.sheet(isPresented:$showProfileSetup) {
             PAProfileSetupPanel(model:model,assistant:assistant,topicID:selectedTopicID,registration:model.chatGPT.activeID)
         }.sheet(isPresented:$showDictation) {
@@ -275,11 +288,15 @@ struct AssistantSourceSettings: View {
                 if model.sourceLearning.busy { Button("Stop learning") { model.sourceLearning.cancel() } }
             }
             if let error=model.sourceLearning.error { Text(error).font(.caption).foregroundStyle(.orange) }
-            Toggle("30-minute source heartbeat",isOn:$model.heartbeat.enabled)
+            Toggle("Automatic PA assessment",isOn:$model.heartbeat.enabled)
+            Picker("AI assessment interval",selection:$model.heartbeat.intervalMinutes) { Text("15 minutes").tag(15);Text("30 minutes").tag(30);Text("1 hour").tag(60);Text("2 hours").tag(120) }
+            Picker("Daily heartbeat AI requests",selection:$model.heartbeat.dailyCallLimit) { ForEach([8,16,32,64,96],id:\.self) { Text(String($0)).tag($0) } }
+            Picker("Daily worthwhile updates",selection:$model.heartbeat.dailyUpdateLimit) { ForEach([1,3,6,10],id:\.self) { Text(String($0)).tag($0) } }
+            Text(model.heartbeat.budgetStatus(model.chatGPT.activeID)).font(.caption).foregroundStyle(.secondary)
             Toggle("Check selected WhatsApp chats",isOn:$model.heartbeat.whatsappEnabled)
             Toggle("Notify for worthwhile heartbeat updates",isOn:$model.heartbeat.notificationsEnabled)
             Text(model.heartbeat.status).font(.caption).foregroundStyle(.secondary)
-            Text("Refreshes sources first; AI runs only for changed permitted material. Up to eight comparison attempts and three updates per day. WhatsApp uses received selected-chat text, not full history. Notifications use existing macOS permission.").font(.caption).foregroundStyle(.secondary)
+            Text("Mail collects every five minutes independently of AI assessment. Changed or pending material uses the daily AI-request allowance, including email classification and comparison. Source checks continue at the limit. WhatsApp uses received selected-chat text, not full history. Notifications use existing macOS permission. Runs while 3PO is open; catches up on wake.").font(.caption).foregroundStyle(.secondary)
             Button("Check heartbeat now") { model.heartbeat.check(model,manual:true) }.disabled(model.heartbeat.busy || model.assistant.busy || model.chatGPT.busy)
             Toggle("Quiet proactive suggestions",isOn:$model.proactive.enabled)
             Text(model.proactive.status(model)).font(.caption).foregroundStyle(.secondary)

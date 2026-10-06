@@ -22,7 +22,7 @@ extension LifeNotebook {
         for item in items {
             let id = "life:" + item.id.uuidString
             var entity = merged[id] ?? .init(id:id,label:item.title,kind:kind(item),areas:[],memoryIDs:[])
-            entity.label=item.title;entity.kind=kind(item);entity.areas.formUnion(LifeItemQuery.path(item,in:items).flatMap(\.areas));merged[id]=entity
+            entity.label=item.title;entity.kind=kind(item);entity.areas.formUnion(LifeWorkspaceRules.navigationAreas(item,in:items));merged[id]=entity
         }
         result.entities=merged.values.sorted { $0.id < $1.id }
         result.links=links.map { edge in var edge=edge;edge.from=mapping[edge.from] ?? edge.from;edge.to=mapping[edge.to] ?? edge.to;return edge }

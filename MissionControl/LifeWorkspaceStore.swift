@@ -6,6 +6,8 @@ struct LifeWorkspaceEditUndo {
     var before: LifeItem
     var savedRevision: UUID
     var created = Date.now
+    var others: [LifeItem] = []
+    var versions: [UUID:UUID] = [:]
 }
 
 @MainActor @Observable final class LifeWorkspaceStore {
@@ -17,13 +19,15 @@ struct LifeWorkspaceEditUndo {
     private var edits: [String:LifeWorkspaceEditUndo] = [:]
     var readOnly: Bool { !writable || container == nil }
     func undoEdit(_ registration: String) -> LifeWorkspaceEditUndo? {
-        guard let ticket = edits[registration], state.items.contains(where: { $0.id == ticket.before.id && $0.registration == registration && $0.revision == ticket.savedRevision }) else { return nil }
+        guard let ticket = edits[registration], state.items.contains(where: { $0.id == ticket.before.id && $0.registration == registration && $0.revision == ticket.savedRevision }), ticket.versions.allSatisfy({ id,version in state.items.contains{$0.id == id && $0.registration == registration && $0.revision == version} }) else { return nil }
         return ticket
     }
     func undoDate(_ registration: String) -> Date? { undoEdit(registration)?.created }
     func undo(_ registration: String, receipt: LifeWorkspaceReceipt? = nil) throws {
         guard let ticket = undoEdit(registration) else { throw LifeWorkspaceFailure.message("No unchanged project edit remains to undo. Creation and relationship changes are outside this Undo.") }
-        _ = try save(ticket.before, expected:ticket.savedRevision, receipt:receipt); edits.removeValue(forKey:registration)
+        var candidate=state
+        for var before in [ticket.before]+ticket.others { if ["pending","running"].contains(before.placement?.status ?? "") { before.placement?.status="paused";before.placement?.reason="Organisation was undone. Continue explicitly to reconsider." };if before.kind == .project { before.placement?.parentPinned=true };guard let index=candidate.items.firstIndex(where:{$0.id == before.id}) else { throw LifeWorkspaceFailure.message("Undo item unavailable.") };before.revision=UUID();before.updated = .now;candidate.items[index]=before }
+        try addReceipt(receipt,to:&candidate);try persist(candidate);edits.removeValue(forKey:registration)
     }
     init(container: ModelContainer?) {
         self.container = container
@@ -43,9 +47,56 @@ struct LifeWorkspaceEditUndo {
             }
         } catch { writable = false; self.error = "Projects could not be read. Their saved record is preserved; editing is disabled." }
     }
-    func items(_ registration: String, topic: UUID? = nil, includeTopics: Bool = false) -> [LifeItem] {
-        state.items.filter { LifeWorkspaceRules.scoped($0, registration: registration, topic: topic, includeTopics: includeTopics) }
-            .sorted { $0.created == $1.created ? $0.id.uuidString < $1.id.uuidString : $0.created < $1.created }
+    func items(_ registration: String, topic: UUID? = nil, includeTopics: Bool = false, includeDeleted: Bool = false) -> [LifeItem] {
+        LifeWorkspaceRules.ordered(state.items.filter { (includeDeleted || $0.deletedAt == nil) && LifeWorkspaceRules.scoped($0, registration: registration, topic: topic, includeTopics: includeTopics) })
+    }
+    /// A single revision-checked atomic structural edit, with exact multi-record Undo.
+    private func structural(_ before: [LifeItem], candidate: LifeWorkspaceState, receipt: LifeWorkspaceReceipt? = nil) throws {
+        try persistWithReceipt(candidate,receipt:receipt)
+        if let first=before.first { edits[first.registration] = .init(before:first,savedRevision:state.items.first{$0.id == first.id}!.revision,others:Array(before.dropFirst()),versions:[:])
+            // Capture each actual saved revision, never infer identity from a label.
+            edits[first.registration]?.versions=Dictionary(uniqueKeysWithValues:before.compactMap{old in state.items.first{$0.id == old.id}.map{(old.id,$0.revision)}})
+        }
+    }
+    private func persistWithReceipt(_ value:LifeWorkspaceState,receipt:LifeWorkspaceReceipt?) throws { var value=value;try addReceipt(receipt,to:&value);try persist(value) }
+    func move(_ id:UUID,registration:String,parent:UUID?,before sibling:UUID? = nil,expectedRevision:UUID,receipt:LifeWorkspaceReceipt? = nil) throws {
+        if self.receipt(receipt?.id,registration:registration) != nil { return }
+        guard revision == expectedRevision,let item=items(registration,includeTopics:true).first(where:{$0.id == id}),parent != id else { throw LifeWorkspaceFailure.message("Structure changed. Read it again before moving.") }
+        let all=items(registration,topic:item.conversationID)
+        if let parent { guard all.contains(where:{$0.id == parent && $0.conversationID == item.conversationID}),!LifeWorkspaceRules.descendants(id,in:all).contains(parent) else { throw LifeWorkspaceFailure.message("Choose a parent outside this branch in the same scope.") } }
+        var siblings=all.filter{$0.parentID == parent && $0.id != id && $0.conversationID == item.conversationID}
+        if let sibling { guard let offset=siblings.firstIndex(where:{$0.id == sibling}) else { throw LifeWorkspaceFailure.message("Insertion target changed.") };siblings.insert(item,at:offset) } else { siblings.append(item) }
+        var candidate=state,before:[LifeItem]=[]
+        for (order,var value) in siblings.enumerated() {
+            guard let index=candidate.items.firstIndex(where:{$0.id == value.id}) else { continue }
+            if value.id == id { value.parentID=parent; if value.kind == .project { value.placement = .init(status:"placed",reason:"Your chosen home is pinned.",parentPinned:true) } }
+            if value != candidate.items[index] || value.sortOrder != order { before.append(candidate.items[index]);if value.placement?.status == "running" { value.placement?.status="paused";value.placement?.reason="Filing changed during placement. Continue explicitly to reconsider." };value.sortOrder=order;value.revision=UUID();value.updated = .now;candidate.items[index]=value }
+        }
+        if !before.isEmpty { try structural(before,candidate:candidate,receipt:receipt) } else if receipt != nil { try persistWithReceipt(state,receipt:receipt) }
+    }
+    func trash(_ id:UUID,registration:String,keepChildren:Bool,expectedRevision:UUID,receipt:LifeWorkspaceReceipt? = nil) throws {
+        if self.receipt(receipt?.id,registration:registration) != nil { return }
+        guard revision == expectedRevision,let item=items(registration,includeTopics:true).first(where:{$0.id == id}) else { throw LifeWorkspaceFailure.message("This branch changed. Reopen before deleting.") }
+        let active=items(registration,includeTopics:true),ids=keepChildren ? Set([id]) : LifeWorkspaceRules.descendants(id,in:active).union([id])
+        var candidate=state,before:[LifeItem]=[]
+        for index in candidate.items.indices where ids.contains(candidate.items[index].id) || (keepChildren && candidate.items[index].parentID == id && candidate.items[index].deletedAt == nil) {
+            before.append(candidate.items[index]);candidate.items[index].revision=UUID();candidate.items[index].updated = .now
+            if ids.contains(candidate.items[index].id) { candidate.items[index].deletedAt = .now;candidate.items[index].deletedRoot=id;if candidate.items[index].placement != nil { candidate.items[index].placement?.status="paused";candidate.items[index].placement?.reason="Project is in Recently deleted." } }
+            else { candidate.items[index].parentID=item.parentID;candidate.items[index].sortOrder=nil }
+        }
+        try structural(before,candidate:candidate,receipt:receipt)
+    }
+    func restore(_ id:UUID,registration:String,expectedRevision:UUID,receipt:LifeWorkspaceReceipt? = nil) throws {
+        if self.receipt(receipt?.id,registration:registration) != nil { return }
+        guard revision == expectedRevision,let root=state.items.first(where:{$0.id == id && $0.registration == registration && $0.deletedAt != nil}) else { throw LifeWorkspaceFailure.message("Deleted branch changed. Reopen Recently deleted.") }
+        let batch=root.deletedRoot ?? root.id
+        var candidate=state,before:[LifeItem]=[]
+        let ids=Set(state.items.filter{$0.registration == registration && $0.deletedRoot == batch && $0.deletedAt != nil}.map(\.id)).union([id])
+        for index in candidate.items.indices where ids.contains(candidate.items[index].id) {
+            before.append(candidate.items[index]);candidate.items[index].deletedAt=nil;candidate.items[index].deletedRoot=nil;candidate.items[index].revision=UUID();candidate.items[index].updated = .now
+            if let parent=candidate.items[index].parentID,!ids.contains(parent),state.items.first(where:{$0.id == parent})?.deletedAt != nil { candidate.items[index].parentID=nil;candidate.items[index].sortOrder=nil }
+        }
+        try structural(before,candidate:candidate,receipt:receipt)
     }
     func receipt(_ key: String?, registration: String) -> LifeWorkspaceReceipt? {
         key.flatMap { key in state.receipts.first { $0.id == key && $0.registration == registration } }
@@ -56,8 +107,9 @@ struct LifeWorkspaceEditUndo {
         var before: LifeItem?
         if let index = candidate.items.firstIndex(where: { $0.id == item.id }) {
             let old = candidate.items[index]
-            guard old.registration == item.registration && old.conversationID == item.conversationID && old.revision == expected else { throw LifeWorkspaceFailure.message("This item changed while you were editing. Reopen it before saving.") }
+            guard old.registration == item.registration && old.conversationID == item.conversationID && old.revision == expected && old.deletedAt == nil else { throw LifeWorkspaceFailure.message("This item changed while you were editing. Reopen it before saving.") }
             if item.placement?.status == "running" { item.placement?.status="paused";item.placement?.reason="Project edited during placement. Continue explicitly to reconsider it." }
+            if item.parentID != old.parentID { item.sortOrder=candidate.items.filter{$0.registration == item.registration && $0.conversationID == item.conversationID && $0.parentID == item.parentID && $0.deletedAt == nil}.count }
             item.created = old.created; item.updated = .now; item.revision = UUID(); candidate.items[index] = item
             before = old
         } else {
@@ -65,14 +117,14 @@ struct LifeWorkspaceEditUndo {
             if candidate.items.contains(where: { $0.registration == item.registration && $0.conversationID == item.conversationID && $0.parentID == item.parentID && $0.kind == item.kind && LifeWorkspaceRules.key($0.title) == LifeWorkspaceRules.key(item.title) }) {
                 throw LifeWorkspaceFailure.message("That item already exists here. Open it rather than adding another copy.")
             }
-            item.updated = .now; candidate.items.append(item)
+            item.updated = .now;item.ownership = item.ownership ?? "workspace";item.sortOrder = max(candidate.items.filter{$0.parentID == item.parentID && $0.registration == item.registration}.count,(candidate.items.filter{$0.parentID == item.parentID && $0.registration == item.registration}.compactMap(\.sortOrder).max() ?? -1)+1); candidate.items.append(item)
         }
         try addReceipt(receipt, to: &candidate); try persist(candidate)
         if let before { edits[item.registration] = .init(before:before, savedRevision:item.revision) }
         return item
     }
     /// Batch creation is atomic, including references to earlier entries in the same batch.
-    func create(_ items: [LifeItem], receipt: LifeWorkspaceReceipt) throws -> [LifeItem] {
+    func create(_ items: [LifeItem], receipt: LifeWorkspaceReceipt,links:[LifeItemLink]=[]) throws -> [LifeItem] {
         if self.receipt(receipt.id, registration: receipt.registration) != nil {
             throw LifeWorkspaceFailure.message("This batch is already saved. Read projects to inspect it; do not recreate it.")
         }
@@ -80,9 +132,10 @@ struct LifeWorkspaceEditUndo {
         var candidate = state
         for item in items {
             guard !candidate.items.contains(where: { $0.id == item.id || ($0.registration == item.registration && $0.conversationID == item.conversationID && $0.kind == item.kind && $0.parentID == item.parentID && LifeWorkspaceRules.key($0.title) == LifeWorkspaceRules.key(item.title)) }) else { throw LifeWorkspaceFailure.message("An item in this batch already exists here. Read the current structure before adding it.") }
-            candidate.items.append(item)
+            var item=item;item.ownership = item.ownership ?? "workspace";candidate.items.append(item)
         }
-        try addReceipt(receipt, to: &candidate); try persist(candidate); return items
+        candidate.links.append(contentsOf:links)
+        try addReceipt(receipt, to: &candidate); try persist(candidate); return items.compactMap{value in state.items.first{$0.id == value.id}}
     }
     @discardableResult func link(_ value: LifeItemLink, expected: UUID, receipt: LifeWorkspaceReceipt? = nil) throws -> LifeItemLink {
         guard let owner = state.items.first(where: { $0.id == value.from && $0.registration == value.registration && $0.conversationID == value.conversationID }), owner.revision == expected else { throw LifeWorkspaceFailure.message("Read the current project before linking it.") }
@@ -101,17 +154,17 @@ struct LifeWorkspaceEditUndo {
     }
 
     @discardableResult func placementStatus(_ id:UUID,expected:UUID,status:String,reason:String) throws -> LifeItem {
-        guard let index=state.items.firstIndex(where:{$0.id == id && $0.revision == expected && $0.placement != nil}) else { throw LifeWorkspaceFailure.message("Project changed before placement. Saved work is kept.") }
+        guard let index=state.items.firstIndex(where:{$0.id == id && $0.revision == expected && $0.placement != nil && $0.deletedAt == nil}) else { throw LifeWorkspaceFailure.message("Project changed before placement. Saved work is kept.") }
         var candidate=state;candidate.items[index].placement?.status=status;candidate.items[index].placement?.reason=reason;candidate.items[index].revision=UUID()
         try persist(candidate);return candidate.items[index]
     }
     @discardableResult func applyPlacement(_ plan:LifePlacementPlan,to project:LifeItem,expectedRevision:UUID,anchors:[LifeItem]=[]) throws -> LifeItem {
-        guard revision == expectedRevision,let index=state.items.firstIndex(where:{$0.id == project.id && $0.revision == project.revision}),let request=project.placement else { throw LifeWorkspaceFailure.message("Life map changed during placement. Existing organisation is kept.") }
+        guard revision == expectedRevision,let index=state.items.firstIndex(where:{$0.id == project.id && $0.revision == project.revision && $0.deletedAt == nil}),let request=project.placement else { throw LifeWorkspaceFailure.message("Life map changed during placement. Existing organisation is kept.") }
         guard !request.parentPinned || plan.parent == project.parentID else { throw LifeWorkspaceFailure.message("Your chosen parent is pinned.") }
         let operation="placement:"+project.id.uuidString+":"+request.requestID.uuidString
         guard receipt(operation,registration:project.registration) == nil else { throw LifeWorkspaceFailure.message("This placement already has a saved result.") }
         var candidate=state,item=project
-        guard anchors.count <= 8,anchors.allSatisfy({ anchor in [.organisation,.course].contains(anchor.kind) && anchor.registration == project.registration && anchor.conversationID == project.conversationID && !state.items.contains(where:{$0.id == anchor.id}) }) else { throw LifeWorkspaceFailure.message("Unsupported candidate anchors.") }
+        guard anchors.count <= 8,anchors.allSatisfy({ anchor in anchor.ownership == "life" && [.organisation,.course].contains(anchor.kind) && anchor.registration == project.registration && anchor.conversationID == project.conversationID && !state.items.contains(where:{$0.id == anchor.id}) }) else { throw LifeWorkspaceFailure.message("Unsupported candidate anchors.") }
         candidate.items.append(contentsOf:anchors)
         item.placement?.status=plan.decision == "clear" ? "placed" : plan.decision == "ambiguous" ? "question" : "unplaced"
         item.placement?.reason=plan.reason;item.placement?.question=plan.question;item.placement?.choices=plan.choices
