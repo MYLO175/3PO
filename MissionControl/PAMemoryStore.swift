@@ -13,7 +13,8 @@ import SwiftData
     private var writable = true
     @ObservationIgnored var notebookProjection: ((LifeNotebook,String,UUID?,Bool)->LifeNotebook)?
     @ObservationIgnored var sourceIsPermitted:(PAMemory)->Bool = { _ in false }
-    var permittedRecords:[PAMemory] { records.filter{$0.source == nil || sourceIsPermitted($0)} }
+    var permittedRecords:[PAMemory] { records.filter{record in record.source == nil || (!record.sourceSuppressionKeys.contains{state.suppressed[record.registration,default:[]].contains($0)} && sourceIsPermitted(record))} }
+    func sourceAssessmentDate(_ key:String)->Date? { state.sourceAssessmentReceipts?[key] }
     init(container: ModelContainer?) {
         self.container = container
         do {
@@ -33,8 +34,23 @@ import SwiftData
     @discardableResult func forget(_ id: UUID) -> Bool {
         let family=versionFamily(id),ids=Set(family.map(\.id))
         return change { state in
-            for memory in family { if let turn=memory.sourceTurnID { state.suppressed[memory.registration,default:[]].insert(turn) };if let key=memory.sourceSuppressionKey { state.suppressed[memory.registration,default:[]].insert(key) } }
+            var owners=state.sourceForgetOwners ?? [:],baseline=state.sourceSuppressionBaseline ?? [:]
+            for memory in family {
+                if let turn=memory.sourceTurnID { state.suppressed[memory.registration,default:[]].insert(turn) }
+                for key in memory.sourceSuppressionKeys {
+                    // A legacy suppression without an owner is never removed by a newer Undo.
+                    if state.suppressed[memory.registration,default:[]].contains(key) && owners[memory.registration]?[key] == nil { baseline[memory.registration,default:[]].insert(key) }
+                    var account=owners[memory.registration] ?? [:]
+                    account[key,default:[]].insert(memory.id);owners[memory.registration]=account
+                    state.suppressed[memory.registration,default:[]].insert(key)
+                }
+            }
+            state.sourceForgetOwners=owners;state.sourceSuppressionBaseline=baseline
             state.records.removeAll { ids.contains($0.id) }
+            for index in state.records.indices {
+                let record=state.records[index]
+                if record.sourceSuppressionKeys.contains(where:{state.suppressed[record.registration,default:[]].contains($0)}) { state.records[index].sourceInvalidation = .forgotten }
+            }
         }
     }
     /// Forget a current belief's whole correction lineage; an explicitly selected earlier version only removes that version.
@@ -48,7 +64,26 @@ import SwiftData
     }
     @discardableResult func restoreForgotten(_ records:[PAMemory])->Bool {
         guard !records.isEmpty,Set(records.map(\.id)).count == records.count,records.allSatisfy({record in !self.records.contains(where:{$0.id == record.id})}) else { error="Memory changed after Forget; restoration stopped.";return false }
-        return change { state in state.records.append(contentsOf:records) }
+        return change { state in
+            state.records.append(contentsOf:records)
+            var owners=state.sourceForgetOwners ?? [:]
+            for record in records {
+                for key in record.sourceSuppressionKeys {
+                    guard var account=owners[record.registration],var ids=account[key] else { continue }
+                    ids.remove(record.id)
+                    if ids.isEmpty {
+                        account.removeValue(forKey:key)
+                        if state.sourceSuppressionBaseline?[record.registration]?.contains(key) != true { state.suppressed[record.registration,default:[]].remove(key) }
+                    } else { account[key]=ids }
+                    owners[record.registration]=account
+                }
+            }
+            state.sourceForgetOwners=owners
+            for index in state.records.indices where state.records[index].sourceInvalidation == .forgotten {
+                let record=state.records[index]
+                if !record.sourceSuppressionKeys.contains(where:{state.suppressed[record.registration,default:[]].contains($0)}) { state.records[index].sourceInvalidation=nil }
+            }
+        }
     }
     /// Only an executor with a captured source snapshot can call this. No ingestion is enabled by this API.
     /// Human memories cannot be overwritten by a source fact, even if the wording matches.
@@ -56,18 +91,53 @@ import SwiftData
         putSources([value],sourceTexts:[value.id:sourceText],expectedRevision:expectedRevision)
     }
     @discardableResult func putSources(_ values:[PAMemory],sourceTexts:[UUID:String],expectedRevision:UUID)->Bool {
-        guard revision == expectedRevision,values.count <= 4,Set(values.map(\.id)).count == values.count,
+        let evidenceTexts=Dictionary(values.compactMap{value in value.source.flatMap{source in sourceTexts[value.id].map{(source.identity,$0)}}},uniquingKeysWith:{first,_ in first})
+        return putSources(values,evidenceTexts:evidenceTexts,expectedRevision:expectedRevision)
+    }
+    /// A source may supersede only an issued, current provisional belief from that same conversation.
+    /// Every quotation is checked, and the old/new version links are saved in one transaction.
+    @discardableResult func putSources(_ values:[PAMemory],evidenceTexts:[MemorySourceIdentity:String],expectedRevision:UUID,assessmentIDs:[String]=[])->Bool {
+        guard revision == expectedRevision,assessmentIDs.count <= 8,Set(assessmentIDs).count == assessmentIDs.count,assessmentIDs.allSatisfy({$0.range(of:"^source-assessment:[a-f0-9]{64}$",options:.regularExpression) != nil}) else { error="Source assessment identity or captured state changed.";return false }
+        if !assessmentIDs.isEmpty && assessmentIDs.allSatisfy({state.sourceAssessmentReceipts?[$0] != nil}) { return true }
+        guard values.count <= 4,Set(values.map(\.id)).count == values.count,
+              Set(values.compactMap(\.supersedes)).count == values.compactMap(\.supersedes).count,
               values.allSatisfy({ value in
-            guard let source=value.source,let sourceText=sourceTexts[value.id] else { return false }
-            return source.valid(in:sourceText) && !value.registration.isEmpty && value.sourceInvalidation == nil && value.sourceTurnID == nil && value.conversationID == nil && !value.explicit && value.certainty == .inferred && value.durability == .situational && value.kind != .preference && !value.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && value.text.count <= 500 && value.evidence == source.quote && MemoryConnection.valid(value.connections,human:sourceText) && value.organisation?.selfName == nil && value.organisation?.manual != true && (value.organisation.map({LifeMemoryOrganisation.valid($0,record:value)}) ?? true) && value.supersedes == nil && value.supersededBy == nil && !records.contains(where:{$0.id == value.id})
+            guard let source=value.source,let sourceText=evidenceTexts[source.identity],value.allSourceEvidence.count <= 3,
+                  Set(value.allSourceEvidence.map(\.identity)).count == value.allSourceEvidence.count,
+                  value.allSourceEvidence.allSatisfy({evidence in evidence.identity.kind == source.identity.kind && evidence.identity.accountID == source.identity.accountID && evidence.identity.containerID == source.identity.containerID && evidence.identity.linkedIdentity == source.identity.linkedIdentity && evidenceTexts[evidence.identity].map{evidence.valid(in:$0)} == true}),
+                  (value.supportingSources ?? []).allSatisfy({evidence in guard let date=evidence.sourceDate,let primaryDate=source.sourceDate else { return false };return date <= primaryDate}),
+                  value.sourceState == nil || value.kind == .commitment else { return false }
+            if let previous=value.supersedes {
+                guard let old=records.first(where:{$0.id == previous}),MemoryRules.usable(old,registration:value.registration),!old.explicit,old.sourceTurnID == nil,old.source != nil,sourceIsPermitted(old),
+                      old.organisation?.manual != true,source.identity.kind == old.source?.identity.kind,source.identity.accountID == old.source?.identity.accountID,
+                      source.identity.containerID == old.source?.identity.containerID,source.identity.linkedIdentity == old.source?.identity.linkedIdentity,
+                      value.allSourceEvidence.contains(where:{$0.identity == old.source?.identity && $0.revision == old.source?.revision}),
+                      let date=source.sourceDate,let oldDate=old.source?.sourceDate,
+                      date > oldDate else { return false }
+            }
+            return !value.registration.isEmpty && value.sourceInvalidation == nil && value.sourceTurnID == nil && value.conversationID == nil && !value.explicit && value.certainty == .inferred && value.durability == .situational && value.kind != .preference && !value.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && value.text.count <= 500 && value.evidence == source.quote && MemoryConnection.valid(value.connections,human:sourceText) && value.organisation?.selfName == nil && value.organisation?.manual != true && (value.organisation.map({LifeMemoryOrganisation.valid($0,record:value)}) ?? true) && value.supersededBy == nil && !records.contains(where:{$0.id == value.id})
         }) else { error="Source memory failed its evidence or captured-state checks.";return false }
-        let fresh=values.filter { value in !(value.sourceSuppressionKey.map{state.suppressed[value.registration,default:[]].contains($0)} ?? false) && !records.contains(where:{$0.registration == value.registration && MemoryLearningRules.normalised($0.text) == MemoryLearningRules.normalised(value.text) && ($0.explicit || ($0.source?.identity == value.source?.identity && $0.source?.revision == value.source?.revision))}) }
-        guard !fresh.isEmpty else { return true }
-        return change { state in state.records.append(contentsOf:fresh) }
+        let fresh=values.filter { value in !value.sourceSuppressionKeys.contains{state.suppressed[value.registration,default:[]].contains($0)} && !records.contains(where:{$0.registration == value.registration && MemoryLearningRules.normalised($0.text) == MemoryLearningRules.normalised(value.text) && ($0.explicit || ($0.source?.identity == value.source?.identity && $0.source?.revision == value.source?.revision))}) }
+        guard !fresh.isEmpty || !assessmentIDs.isEmpty else { return true }
+        return change { state in
+            for value in fresh { if let previous=value.supersedes,let index=state.records.firstIndex(where:{$0.id == previous}) { state.records[index].supersededBy=value.id };state.records.append(value) }
+            if !assessmentIDs.isEmpty {
+                let now=Date.now
+                var receipts=(state.sourceAssessmentReceipts ?? [:]).filter{$0.value >= now.addingTimeInterval(-7*86400)}
+                for id in assessmentIDs { receipts[id]=now }
+                let sorted=receipts.sorted { left,right in
+                    if left.value == right.value { return left.key < right.key }
+                    return left.value > right.value
+                }
+                var retained:[String:Date]=[:]
+                for item in sorted.prefix(4000) { retained[item.key]=item.value }
+                state.sourceAssessmentReceipts=retained
+            }
+        }
     }
     /// Invalidate only the exact observed version, so delayed edits cannot hide a newer belief.
     @discardableResult func invalidateSource(_ identity:MemorySourceIdentity,registration:String,previousRevision:String,reason:MemorySourceInvalidation)->Bool {
-        let ids=Set(records.filter{$0.registration == registration && $0.source?.identity == identity && $0.source?.revision == previousRevision && $0.sourceInvalidation == nil}.map(\.id))
+        let ids=Set(records.filter{$0.registration == registration && $0.allSourceEvidence.contains{$0.identity == identity && $0.revision == previousRevision} && $0.sourceInvalidation == nil}.map(\.id))
         guard !ids.isEmpty else { return true }
         return change { state in for index in state.records.indices where ids.contains(state.records[index].id) { state.records[index].sourceInvalidation=reason } }
     }
@@ -90,7 +160,7 @@ import SwiftData
             current=record
         }
         var restored=original;restored.id=UUID();restored.conversationID=current.conversationID;restored.explicit=true;restored.certainty = .stated
-        restored.resolved=nil;restored.source=nil;restored.sourceInvalidation=nil;restored.sourceTurnID=nil;restored.provenance="Earlier version restored by you";restored.sourceDate = .now
+        restored.resolved=nil;restored.source=nil;restored.supportingSources=nil;restored.sourceState=nil;restored.sourceInvalidation=nil;restored.sourceTurnID=nil;restored.provenance="Earlier version restored by you";restored.sourceDate = .now
         if restored.conversationID != nil { restored.organisation?.selfName=nil }
         return correct(current.id,with:restored)
     }

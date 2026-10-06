@@ -284,7 +284,7 @@ import Foundation
             default:
                 guard let value = text("text"), !value.isEmpty, value.count <= 2000 else { throw ActionFailure.message("Specify the corrected memory.") }
                 if value == record.text { return try json(["saved":true,"id":record.id.uuidString,"result":"Already consistent with the requested fact."]) }
-                var revised = record;revised.id=UUID();revised.text = value; revised.explicit = true; revised.connections = nil; revised.organisation=nil; revised.certainty = .stated; revised.durability = nil; revised.evidence = text("authorization");revised.sourceTurnID=turnID.uuidString;revised.sourceDate = .now;revised.provenance="Corrected from your PA conversation";revised.source=nil;revised.sourceInvalidation=nil
+                var revised = record;revised.id=UUID();revised.text = value; revised.explicit = true; revised.connections = nil; revised.organisation=nil; revised.certainty = .stated; revised.durability = nil; revised.evidence = text("authorization");revised.sourceTurnID=turnID.uuidString;revised.sourceDate = .now;revised.provenance="Corrected from your PA conversation";revised.source=nil;revised.supportingSources=nil;revised.sourceState=nil;revised.sourceInvalidation=nil
                 success = memory.correct(id,with:revised)
                 if success { issuedMemory.insert(revised.id);resultID=revised.id }
             }

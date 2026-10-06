@@ -21,6 +21,9 @@ struct MemoryEnvelope: Codable {
     var version = 1
     var records: [PAMemory] = []
     var suppressed: [String:Set<String>] = [:]
+    var sourceAssessmentReceipts:[String:Date]? = nil
+    var sourceForgetOwners:[String:[String:Set<UUID>]]? = nil
+    var sourceSuppressionBaseline:[String:Set<String>]? = nil
     static func decode(_ data: Data) throws -> Self {
         if let legacy = try? JSONDecoder().decode([PAMemory].self,from:data) { return Self(records:legacy) }
         let state = try JSONDecoder().decode(Self.self,from:data)

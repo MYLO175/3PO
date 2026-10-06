@@ -59,7 +59,11 @@ struct PAMemoryView: View {
                             Text(item.text).textSelection(.enabled)
                             if item.source != nil && !memory.sourceIsPermitted(item) { Text("Outside current source access or changed cache · excluded from PA recall").font(.caption).foregroundStyle(.secondary) }
                             ForEach(Array((item.connections ?? []).enumerated()),id:\.offset) { _, edge in Text(edge.subject + " → " + edge.relation + " → " + edge.object).font(.caption).foregroundStyle(.secondary) }
-                            if let evidence = item.evidence { Text("“" + evidence + "”").font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
+                            if item.sourceInvalidation != .forgotten,let evidence = item.evidence { Text("“" + evidence + "”").font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
+                            if let state=item.sourceState { Text("Source reports: " + state.rawValue + " · Apple reminders are separate").font(.caption).foregroundStyle(.secondary) }
+                            ForEach(Array((item.sourceInvalidation == .forgotten ? [] : item.supportingSources ?? []).enumerated()),id:\.offset) { _, source in
+                                Text(source.label + " · “" + source.quote + "”").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                            }
                             Text(item.attribution + " · " + item.provenance).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                             HStack {
                                 if item.supersededBy != nil { Button("Restore this version") { memory.restoreVersion(item.id) } }
@@ -88,7 +92,7 @@ struct PAMemoryView: View {
             HStack { if editing != nil { Button("Cancel edit") { clear() } }; Spacer(); Button("Save memory") {
                 if let editing,memory.records.first(where:{$0.id == editing.id}) != editing { editError="This memory changed while you were editing. Reopen it before saving.";return }
                 var item = editing ?? PAMemory(registration:registration,text:text,kind:kind,provenance:"Added by you in Memory")
-                if item.text != text { item.connections=nil; item.organisation=nil; item.source=nil; item.sourceInvalidation=nil; item.certainty=nil; item.durability=nil; item.evidence=text; item.provenance="Edited by you in Memory"; item.sourceTurnID=nil; item.sourceDate = .now }
+                if item.text != text { item.connections=nil; item.organisation=nil; item.source=nil; item.supportingSources=nil; item.sourceState=nil; item.sourceInvalidation=nil; item.certainty=nil; item.durability=nil; item.evidence=text; item.provenance="Edited by you in Memory"; item.sourceTurnID=nil; item.sourceDate = .now }
                 item.text = text; item.kind = kind; item.explicit = !provisional; item.conversationID = scope
                 if scope != nil { item.organisation?.selfName=nil }
                 if let editing,editing.text != text {

@@ -43,7 +43,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 ChatImageInteractivePreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-projects") {
                 LifeProjectInteractivePreview(model:model)
-            } else if ProcessInfo.processInfo.arguments.contains("--validate-native-capabilities") || ProcessInfo.processInfo.arguments.contains("--validate-native-editors") {
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-source-timeline") {
+                SourceTimelinePreview(model:model)
+            } else if ProcessInfo.processInfo.arguments.contains("--validate-source-timeline") || ProcessInfo.processInfo.arguments.contains("--validate-native-capabilities") || ProcessInfo.processInfo.arguments.contains("--validate-native-editors") {
                 Text("Running disposable validation…").padding().task {model.start()}
             } else { WorkspaceView(model:model).preferredColorScheme(selectedColorScheme) }
             #else

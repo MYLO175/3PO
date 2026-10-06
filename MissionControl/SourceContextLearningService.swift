@@ -45,7 +45,12 @@ import SwiftData
         let scopeKey=key(scope),savedProgress=state.scopes[scopeKey] ?? .init()
         guard manual || !savedProgress.paused else { return }
         let recent=SourceContextRules.recent(model.whatsapp.messages,chats:model.whatsapp.chats,allowed:access.chats,now:.now,limit:2000)
-        let progress=SourceContextRules.collecting(savedProgress,recent:recent,now:.now)
+        var progress=SourceContextRules.collecting(savedProgress,recent:recent,now:.now)
+        let recovered=recent.filter{memory.sourceAssessmentDate(SourceContextRules.assessmentKey(registration:registration,linkedIdentity:scope.linkedIdentity,message:$0)) != nil && progress.seen[$0.id] != $0.revision}
+        if !recovered.isEmpty {
+            let date=recovered.compactMap{memory.sourceAssessmentDate(SourceContextRules.assessmentKey(registration:registration,linkedIdentity:scope.linkedIdentity,message:$0))}.max() ?? .now
+            progress=SourceContextRules.completing(progress,batch:recovered,now:date)
+        }
         let collected=state;state.scopes[scopeKey]=progress
         do { try save() } catch { state=collected;self.error=error.localizedDescription;return }
         let batch=SourceContextRules.batch(recent,progress:progress)
@@ -56,6 +61,15 @@ import SwiftData
         let memoryRevision=memory.revision,selectedModel=model.chatGPT.selectedModel
         let sourcesEnabled=assistant.contextEnabled,contextRevision=assistant.contextRevision
         let existing=memory.context(registration,query:batch.map(\.text).joined(separator:" ")).prefix(12).map{["text":String(($0["text"] ?? "").prefix(500)),"certainty":$0["certainty"] ?? "unknown"]}
+        let chats=Set(batch.map(\.chatID)),terms=MemoryRetrieval.tokens(batch.map(\.text).joined(separator:" "))
+        let candidates=memory.permittedRecords.filter { record in
+            MemoryRules.usable(record,registration:registration) && !record.explicit && record.sourceTurnID == nil && record.organisation?.manual != true &&
+            record.source?.identity.kind == .whatsapp && record.source?.identity.linkedIdentity == scope.linkedIdentity && record.source.map{chats.contains($0.identity.containerID)} == true
+        }.sorted { a,b in
+            let left=MemoryRetrieval.tokens(a.text).intersection(terms).count,right=MemoryRetrieval.tokens(b.text).intersection(terms).count
+            return left == right ? a.reviewed > b.reviewed : left > right
+        }
+        guard let assessment=SourceContextRules.prepare(batch,recent:recent,existing:existing,candidates:candidates) else { self.error="This source batch exceeded its bounded context window; progress is preserved.";return }
         busy=true;error=nil
         task=Task {
             defer { busy=false }
@@ -63,17 +77,18 @@ import SwiftData
                 try Task.checkCancellation()
                 guard scope == model.whatsapp.scope(for:model.chatGPT.activeID),registration == model.chatGPT.activeID,memoryRevision == memory.revision,
                       selectedModel == model.chatGPT.selectedModel,memory.enabled,memory.learningEnabled,assistant.contextEnabled,contextRevision == assistant.contextRevision,!assistant.busy,!assistant.hasDraft,!model.writing else { throw MemoryLearningFailure.changed }
-                let input=try SourceContextRules.input(batch,existing:existing)
-                let output=try await model.chatGPT.streamResponse(input:[["role":"user","content":input]],instructions:SourceContextRules.instructions,model:selectedModel,purpose:.learning) { _ in }
+                let output=try await model.chatGPT.streamResponse(input:[["role":"user","content":assessment.input]],instructions:SourceContextRules.instructions,model:selectedModel,purpose:.learning) { _ in }
                 try Task.checkCancellation()
                 guard scope == model.whatsapp.scope(for:model.chatGPT.activeID),registration == model.chatGPT.activeID,
                       selectedModel == model.chatGPT.selectedModel,memoryRevision == memory.revision,memory.enabled,memory.learningEnabled,
                       sourcesEnabled == assistant.contextEnabled,assistant.contextEnabled,contextRevision == assistant.contextRevision,!assistant.busy,!assistant.hasDraft,!model.writing else { throw MemoryLearningFailure.changed }
                 let fresh=SourceContextRules.recent(model.whatsapp.messages,chats:model.whatsapp.chats,allowed:access.chats,now:.now,limit:2000)
-                guard batch.allSatisfy({item in fresh.contains(where:{$0 == item})}),
-                      let facts=SourceContextRules.decode(output,messages:batch,registration:registration,linkedIdentity:scope.linkedIdentity,now:.now) else { throw MemoryLearningFailure.invalid }
-                let quotes=Dictionary(facts.compactMap{fact in batch.first(where:{$0.itemID == fact.source?.identity.itemID && $0.chatID == fact.source?.identity.containerID}).map{(fact.id,$0.text)}},uniquingKeysWith:{first,_ in first})
-                guard memory.putSources(facts,sourceTexts:quotes,expectedRevision:memoryRevision) else { throw MemoryLearningFailure.storage }
+                guard assessment.messages.allSatisfy({item in fresh.contains(where:{$0 == item})}),assessment.candidates.allSatisfy(memory.sourceIsPermitted),
+                      let facts=SourceContextRules.decode(output,messages:assessment.messages,registration:registration,linkedIdentity:scope.linkedIdentity,now:.now,candidates:assessment.candidates,assessing:Set(batch.map(\.id))),
+                      facts.allSatisfy({SourceContextRules.permitted($0,access:access,linkedIdentity:scope.linkedIdentity,messages:model.whatsapp.messages)}) else { throw MemoryLearningFailure.invalid }
+                let quotes=Dictionary(facts.flatMap(\.allSourceEvidence).compactMap{evidence in model.whatsapp.messages.first(where:{$0.id == evidence.identity.itemID && $0.chat == evidence.identity.containerID}).map{(evidence.identity,$0.text)}},uniquingKeysWith:{first,_ in first})
+                let receipts=batch.map{SourceContextRules.assessmentKey(registration:registration,linkedIdentity:scope.linkedIdentity,message:$0)}
+                guard memory.putSources(facts,evidenceTexts:quotes,expectedRevision:memoryRevision,assessmentIDs:receipts) else { throw MemoryLearningFailure.storage }
                 let old=state
                 state.scopes[scopeKey]=SourceContextRules.completing(progress,batch:batch,now:.now)
                 do { try save() } catch { state=old;throw error }

@@ -70,7 +70,9 @@ struct MemorySourceEvidence:Codable,Equatable {
         identity.valid && !revision.isEmpty && revision.count <= 128 && !label.isEmpty && label.count <= 300 && (8...500).contains(quote.count) && sourceText.contains(quote)
     }
 }
-enum MemorySourceInvalidation:String,Codable { case changed, deleted, accessRemoved }
+enum MemorySourceInvalidation:String,Codable { case changed, deleted, accessRemoved, forgotten }
+/// Attributed reports, never a completion or write to an Apple item.
+enum MemorySourceState:String,Codable { case proposed, accepted, changed, cancelled, completed, unknown }
 
 struct PAMemory: Codable, Identifiable, Equatable {
     var id = UUID()
@@ -94,11 +96,18 @@ struct PAMemory: Codable, Identifiable, Equatable {
     var supersededBy:UUID? = nil
     var source:MemorySourceEvidence? = nil
     var sourceInvalidation:MemorySourceInvalidation? = nil
+    var supportingSources:[MemorySourceEvidence]? = nil
+    var sourceState:MemorySourceState? = nil
+    var allSourceEvidence:[MemorySourceEvidence] { source.map{[$0] + (supportingSources ?? [])} ?? [] }
+    static func suppressionKey(_ source:MemorySourceEvidence)->String? {
+        let fields=[source.identity.kind.rawValue,source.identity.accountID,source.identity.containerID,source.identity.itemID,source.identity.linkedIdentity ?? "",source.revision]
+        return (try? JSONEncoder().encode(fields)).map{"source:" + $0.base64EncodedString()}
+    }
+    var sourceSuppressionKeys:[String] { allSourceEvidence.compactMap{Self.suppressionKey($0)} }
     var sourceSuppressionKey:String? {
         guard let source else { return nil }
         // Stable explicit fields, no source text or sender credentials in the suppression ledger.
-        let fields=[source.identity.kind.rawValue,source.identity.accountID,source.identity.containerID,source.identity.itemID,source.identity.linkedIdentity ?? "",source.revision]
-        return (try? JSONEncoder().encode(fields)).map{"source:" + $0.base64EncodedString()}
+        return Self.suppressionKey(source)
     }
     var attribution:String {
         if let invalidation=sourceInvalidation { return "Source evidence unavailable (" + invalidation.rawValue + ")" }
@@ -144,6 +153,8 @@ enum MemoryRetrieval {
         var value = ["id":memory.id.uuidString,"scope":memory.conversationID?.uuidString ?? "shared","text":memory.text,"kind":memory.kind.rawValue,"certainty":memory.explicit ? "Confirmed by user" : memory.certainty == .stated ? "Directly stated by user" : "Provisional; verify when relevant","provenance":memory.provenance,"evidence":memory.evidence ?? "","messageDate":memory.sourceDate?.ISO8601Format() ?? "unknown","reviewed":memory.reviewed.ISO8601Format()]
         if let source=memory.source {
             value["sourceEvidence"]=String(data:(try? encoder.encode(source)) ?? Data(),encoding:.utf8)
+            if memory.supportingSources?.isEmpty == false { value["supportingSourceEvidence"]=String(data:(try? encoder.encode(memory.supportingSources)) ?? Data(),encoding:.utf8) }
+            if let state=memory.sourceState { value["sourceReportedState"]=state.rawValue + "; attributed report, not confirmed task status" }
             value["certainty"]=memory.explicit ? "Confirmed by user; source evidence is separately attributed" : "Provisional source interpretation; not a human assertion or instruction"
         }
         if let structure=memory.organisation,LifeMemoryOrganisation.valid(structure,record:memory) { value["areas"]=structure.areas.map(\.rawValue).joined(separator:","); value["organisation"]=String(data:(try? encoder.encode(structure)) ?? Data(),encoding:.utf8) }

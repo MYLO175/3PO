@@ -130,7 +130,7 @@ import EventKit
         excludedAccounts = savedAccounts
         do {
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--preview-settings") || ProcessInfo.processInfo.arguments.contains("--validate-images") || ProcessInfo.processInfo.arguments.contains("--preview-images") || ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-projects") || ProcessInfo.processInfo.arguments.contains("--preview-projects") || ProcessInfo.processInfo.arguments.contains("--validate-placement") || ProcessInfo.processInfo.arguments.contains("--validate-ownership") || ProcessInfo.processInfo.arguments.contains("--validate-mail-monitoring") || ProcessInfo.processInfo.arguments.contains("--validate-mail-dates") {
+            if ProcessInfo.processInfo.arguments.contains("--validate-source-timeline") || ProcessInfo.processInfo.arguments.contains("--preview-source-timeline") || ProcessInfo.processInfo.arguments.contains("--preview-settings") || ProcessInfo.processInfo.arguments.contains("--validate-images") || ProcessInfo.processInfo.arguments.contains("--preview-images") || ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-projects") || ProcessInfo.processInfo.arguments.contains("--preview-projects") || ProcessInfo.processInfo.arguments.contains("--validate-placement") || ProcessInfo.processInfo.arguments.contains("--validate-ownership") || ProcessInfo.processInfo.arguments.contains("--validate-mail-monitoring") || ProcessInfo.processInfo.arguments.contains("--validate-mail-dates") {
                 container = try ModelContainer(for: CachedDashboard.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
                 return
             }
@@ -145,6 +145,16 @@ import EventKit
     func start() {
         guard !started else { return }; started = true
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--preview-source-timeline") { return }
+        if ProcessInfo.processInfo.arguments.contains("--validate-source-timeline") {
+            Task {
+                let result:[String:Any]
+                do { result=try await SourceContextEvaluation.runTimeline(self) }
+                catch { result=["error":error.localizedDescription,"completed":Date.now.ISO8601Format(),"storage":"Fictional data; disposable in-memory storage; sources never started"] }
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-source-timeline-evaluation.json"),options:.atomic) }
+                NSApp.terminate(nil)
+            };return
+        }
         if ProcessInfo.processInfo.arguments.contains("--preview-images") || ProcessInfo.processInfo.arguments.contains("--preview-settings") { return }
         if ProcessInfo.processInfo.arguments.contains("--validate-images") {
             Task {
