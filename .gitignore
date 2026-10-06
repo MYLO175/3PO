@@ -19,3 +19,25 @@ xcuserdata/
 !WhatsAppBridge/package-lock.json
 node_modules/
 WhatsAppBridge/Runtime/
+
+# Local credentials, personal storage and developer configuration
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.mobileprovision
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.enc
+*.heic
+*.jpeg
+*.webp
+*.pdf
+.agents/
+.codex/
+.aws/
