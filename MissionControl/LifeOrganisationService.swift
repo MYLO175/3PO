@@ -66,7 +66,7 @@ import SwiftData
                     progress.attempts += 1;progress.lastAttempt=now;progress.paused=true;state.accounts[registration]=progress
                     do { try save() } catch { state=old;throw error }
                     status="Organising \(records.count) saved facts…"
-                    let output=try await model.chatGPT.streamResponse(input:[["role":"user","content":LifeOrganisationRules.input(records)]],instructions:LifeOrganisationRules.instructions,model:selectedModel) { _ in }
+                    let output=try await model.chatGPT.streamResponse(input:[["role":"user","content":LifeOrganisationRules.input(records)]],instructions:LifeOrganisationRules.instructions,model:selectedModel,purpose:.organisation) { _ in }
                     try Task.checkCancellation()
                     guard revision == memory.revision,memory.enabled,memory.learningEnabled,registration == model.chatGPT.activeID,selectedModel == model.chatGPT.selectedModel,
                           (manual || automatic == enabledAtStart),Set(assistant.topics.map(\.id)) == capturedTopics,!assistant.busy,!model.writing,(manual || !assistant.hasDraft) else { throw MemoryLearningFailure.changed }

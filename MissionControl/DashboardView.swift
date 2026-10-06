@@ -345,30 +345,124 @@ private struct DashboardPanelStyle: ViewModifier {
 }
 struct SettingsView: View {
     @Bindable var model: DashboardModel
+    @AppStorage("settingsSelectedPage") private var selectedPage = "General"
     @State private var enabled = SMAppService.mainApp.status == .enabled
     @State private var error: String?
+    @Environment(\.openWindow) private var openWindow
+    private let pages = ["General", "Connections", "Assistant", "Background", "Memory", "Usage", "Help"]
     var body: some View {
-        Form {
-            Section("Startup") {
-                Toggle("Launch at login", isOn: $enabled).onChange(of: enabled) { _, value in
-                    do { if value { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }; error = nil }
-                    catch { self.error = error.localizedDescription }
-                    enabled = SMAppService.mainApp.status == .enabled
-                    if SMAppService.mainApp.status == .requiresApproval { error = "Allow 3PO in System Settings → General → Login Items." }
+        NavigationSplitView {
+            List(selection:selectionBinding) {
+                ForEach(pages,id:\.self) { page in
+                    NavigationLink(value:page) { Label(page,systemImage:icon(for:page)) }
                 }
-                Text("Closing the dashboard keeps the menu bar app running. Choose Quit to stop it.").font(.caption).foregroundStyle(.secondary)
             }
-            Section("Connections") {
-                Text("Calendar and Reminders use macOS permissions. Mail uses Automation permission. Calendar, Reminders and Mail refresh make no AI calls. Optional weather fetches use a rounded nearby area. Enabled assistant context is used by chat and the configured background PA jobs.").font(.callout)
-                Button("Open Privacy & Security") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security")!) }
+            .listStyle(.sidebar)
+            .navigationTitle("Settings")
+            .accessibilityLabel("Settings sections")
+        } detail: {
+            Group {
+            if selectedPage == "Usage" { AIUsageView(model:model) }
+            else {
+            Form {
+                switch selectedPage {
+                case "General":
+                    Section("Startup") {
+                        Toggle("Launch at login", isOn: $enabled).onChange(of: enabled) { _, value in
+                            do { if value { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }; error = nil }
+                            catch { self.error = error.localizedDescription }
+                            enabled = SMAppService.mainApp.status == .enabled
+                            if SMAppService.mainApp.status == .requiresApproval { error = "Allow 3PO in System Settings → General → Login Items." }
+                        }
+                        Text("Closing the dashboard keeps the menu bar app running. Choose Quit to stop it.").font(.caption).foregroundStyle(.secondary)
+                        if let error { Text(error).foregroundStyle(.orange) }
+                    }
+                    Section("Local sources") {
+                        Text("Calendar and Reminders are read from macOS. Reminders remains the source of truth for to-do and shopping tasks. Apple Mail is read-only. Refresh collects source changes locally and makes no AI calls.").font(.callout)
+                        Button("Open Privacy & Security") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security")!) }
+                    }
+                case "Connections":
+                    ChatGPTConnectionView(connection:model.chatGPT)
+                    WhatsAppSettings(service:model.whatsapp,registration:model.chatGPT.activeID)
+                    WeatherSettings(weather:model.weather)
+                case "Assistant":
+                    AssistantSourceSettings(model:model,assistant:model.assistant,page:.assistant)
+                case "Background":
+                    AssistantSourceSettings(model:model,assistant:model.assistant,page:.background)
+                    EmailSummarySettings(model:model,summaries:model.emailSummaries)
+                    BriefingSettings(model:model,briefings:model.briefings)
+                case "Memory":
+                    AssistantSourceSettings(model:model,assistant:model.assistant,page:.memory)
+                case "Help":
+                    PAHelpSections(model:model) { openWindow(id:"help") }
+                default:
+                    Section("Settings") { Text("Choose a section from the sidebar.") }
+                }
             }
-            WhatsAppSettings(service:model.whatsapp,registration:model.chatGPT.activeID)
-            WeatherSettings(weather:model.weather)
-            ChatGPTConnectionView(connection: model.chatGPT)
-            AssistantSourceSettings(model: model, assistant: model.assistant)
-            EmailSummarySettings(model: model, summaries: model.emailSummaries)
-            BriefingSettings(model: model, briefings: model.briefings)
-            if let error { Text(error).foregroundStyle(.orange) }
-        }.formStyle(.grouped).padding().frame(width: 600, height: 650)
+            .formStyle(.grouped)
+            }
+            }
+            .padding(.horizontal,12)
+            .padding(.vertical,8)
+            .accessibilityLabel("\(selectedPage) settings")
+        }
+        .frame(minWidth:760,minHeight:620)
+    }
+    private func icon(for page:String)->String {
+        switch page {
+        case "General": "gearshape"
+        case "Connections": "link"
+        case "Assistant": "sparkles"
+        case "Background": "clock.arrow.circlepath"
+        case "Memory": "brain"
+        case "Usage": "chart.bar"
+        default: "questionmark.circle"
+        }
+    }
+    private var selectionBinding:Binding<String?> {
+        Binding(get:{selectedPage},set:{selectedPage=$0 ?? "General"})
+    }
+}
+
+struct PAHelpView:View {
+    @Bindable var model:DashboardModel
+    var body:some View {
+        Form { PAHelpSections(model:model) }
+            .formStyle(.grouped)
+            .frame(minWidth:620,minHeight:560)
+    }
+}
+
+struct PAHelpSections:View {
+    @Bindable var model:DashboardModel
+    var openHelpWindow:(()->Void)? = nil
+    var body:some View {
+        Group {
+            Section("How 3PO works") {
+                Text("Sources collect without AI → periodic review of changed or pending context → a useful message or work you explicitly authorise.").font(.headline)
+                Text("Calendar, Reminders, Mail and WhatsApp refresh do not start inference. Reviews use only enabled sources and show partial coverage when history or access is limited.").font(.callout)
+                Text("3PO does not send email or WhatsApp messages. Imported messages can inform a suggestion, but never authorise a Calendar or Reminders change.").font(.callout)
+            }
+            Section("Sources and memory") {
+                Text("Calendar and Reminders use macOS access; Reminders is the to-do and shopping source of truth. Apple Mail is read-only. WhatsApp is optional and uses selected chats from its received-text cache; it is an unofficial linked-device connection and can be interrupted.").font(.callout)
+                Text("Reading, brief inclusion, task suggestions, and context learning have separate controls. Missing cached content means the evidence is unavailable, not that it was deleted or completed. Saved source memories stay attributed and provisional until you confirm them.").font(.callout)
+                Text("Only context permitted for the active account and selected chats can be used. Conversation learning is separate from source learning. Turning memory off stops its use in PA replies; it does not delete saved records.").font(.callout)
+            }
+            Section("What the PA remembers") {
+                Text("The PA keeps useful personal facts, preferences and relationships with their original evidence. It retrieves a bounded selection relevant to your question and Focus, rather than sending the whole notebook each time. Focus guides relevance; it never grants source access.").font(.callout)
+                Text("Human corrections keep a version history. Review, correct or forget facts from the PA's Memory menu or Life map. Source-derived facts are provisional; changing or disabling their source can make them unavailable to future replies. A saved belief or suggestion dismissal is never proof a task is complete.").font(.callout)
+                Text("Learning is selective: conversation learning, optional WhatsApp learning and memory organisation share four automatic passes per day with a 30-minute cooldown. Receiving a message does not mean the AI has assessed it. Source learning shows waiting and assessed versions, and versions that left its bounded window.").font(.callout)
+            }
+            Section("Background review and usage") {
+                Text(model.heartbeat.status).font(.callout).foregroundStyle(.secondary)
+                Text(model.emailSummaries.enabled ? "Incoming email assessment is on. It starts from new mail and coverage can be partial." : "Incoming email assessment is off.").font(.callout).foregroundStyle(.secondary)
+                Text("Mail collection can continue without AI. A review can use multiple model calls; the advanced daily call cap applies to email and proactive communication review only. It is separate from your ChatGPT account's subscription availability.").font(.callout)
+                Text("3PO works while the app is running and the Mac is awake. After an interrupted or failed inference, check the relevant status and choose its explicit retry or resume action. 3PO does not silently replay uncertain writes.").font(.callout)
+                Link("Manage ChatGPT usage",destination:URL(string:"https://chatgpt.com/settings/usage")!)
+            }
+            if let openHelpWindow {
+                Section { Button("Open Help in its own window",action:openHelpWindow) }
+            }
+        }
     }
 }

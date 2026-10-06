@@ -47,9 +47,9 @@ struct BriefingSettings: View {
     @Bindable var model: DashboardModel
     @Bindable var briefings: BriefingService
     var body: some View {
-        Section("7:30 morning briefing") {
+        Section("Morning brief") {
             Toggle("Prepare a daily briefing", isOn: $briefings.enabled)
-            Text("Runs in this app while your Mac is awake. A missed 7:30 run catches up at the next launch/wake. Calendar and reminders follow assistant source-context controls. Email uses saved summaries from enabled email processing; incomplete coverage is shown. Sends these enabled source snapshots and saved summaries to OpenAI through your ChatGPT plan. Each morning message is saved once; errors pause until you choose Prepare today. Update brief in the widget explicitly prepares a fresh daytime version without another chat message or notification.").font(.caption)
+            Text("Runs in this app while your Mac is awake. A missed 7:30 run catches up at the next launch or wake. Calendar and Reminders follow assistant source-context controls; email uses saved summaries from enabled email assessment. The brief shows incomplete coverage when a source is partial. Preparing it sends the enabled snapshots and saved summaries through your ChatGPT plan. Its preparation and delivery limits are separate from background communication review. Each morning message is saved once; errors pause until you choose Prepare today. Update brief prepares a fresh daytime version without another chat message or notification.").font(.caption)
             Button("Allow briefing notifications") { briefings.requestNotifications() }
             #if DEBUG
             Button("Send test notification (no AI)") { briefings.testNotification() }

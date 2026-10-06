@@ -19,6 +19,7 @@ struct ChatGPTStream {
     private(set) var text = ""
     private(set) var errorParam: String?
     private(set) var responseID: String?
+    private(set) var reportedTokens: AIReportedTokens?
     private var completed = false
     private var finishedItems: [(Int,[String:Any])] = []
     private var eventKinds: [String] = []
@@ -76,6 +77,7 @@ struct ChatGPTStream {
             }
         case "response.completed":
             guard !completed else { throw Failure.invalid }
+            reportedTokens = AIReportedTokens.parse((event["response"] as? [String:Any])?["usage"])
             let terminalItems = (event["response"] as? [String:Any])?["output"] as? [[String:Any]] ?? []
             let items = terminalItems.isEmpty && allowsTools ? finishedItems.sorted { $0.0 < $1.0 }.map { $0.1 } : terminalItems
             if !items.isEmpty {

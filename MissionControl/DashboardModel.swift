@@ -81,6 +81,7 @@ import EventKit
     var storageError: String?
     @ObservationIgnored lazy var weather = WeatherService(container:container)
     let chatGPT = ChatGPTConnection()
+    @ObservationIgnored lazy var aiUsage = AIUsageStore(container: container)
     @ObservationIgnored lazy var workspace = WorkspaceStore(container:container,calendars:excludedCalendars,lists:excludedLists,accounts:excludedAccounts,date:selectedDate)
     @ObservationIgnored lazy var widgetCalendars = WidgetCalendarStore(service:eventKit)
     @ObservationIgnored lazy var assistant:AssistantService = {
@@ -118,6 +119,7 @@ import EventKit
     private var sample: Bool { ProcessInfo.processInfo.arguments.contains("--sample") }
 
     init() {
+        defer { chatGPT.usageStore = aiUsage }
         // Read all saved filters before observable property setters persist any
         // values; otherwise the first setter erases later filters during init.
         let savedCalendars = Set(UserDefaults.standard.stringArray(forKey: "excludedCalendars") ?? [])
@@ -128,7 +130,7 @@ import EventKit
         excludedAccounts = savedAccounts
         do {
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--validate-images") || ProcessInfo.processInfo.arguments.contains("--preview-images") || ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-projects") || ProcessInfo.processInfo.arguments.contains("--preview-projects") || ProcessInfo.processInfo.arguments.contains("--validate-placement") || ProcessInfo.processInfo.arguments.contains("--validate-ownership") || ProcessInfo.processInfo.arguments.contains("--validate-mail-monitoring") || ProcessInfo.processInfo.arguments.contains("--validate-mail-dates") {
+            if ProcessInfo.processInfo.arguments.contains("--preview-settings") || ProcessInfo.processInfo.arguments.contains("--validate-images") || ProcessInfo.processInfo.arguments.contains("--preview-images") || ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-projects") || ProcessInfo.processInfo.arguments.contains("--preview-projects") || ProcessInfo.processInfo.arguments.contains("--validate-placement") || ProcessInfo.processInfo.arguments.contains("--validate-ownership") || ProcessInfo.processInfo.arguments.contains("--validate-mail-monitoring") || ProcessInfo.processInfo.arguments.contains("--validate-mail-dates") {
                 container = try ModelContainer(for: CachedDashboard.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
                 return
             }
@@ -143,7 +145,7 @@ import EventKit
     func start() {
         guard !started else { return }; started = true
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--preview-images") { return }
+        if ProcessInfo.processInfo.arguments.contains("--preview-images") || ProcessInfo.processInfo.arguments.contains("--preview-settings") { return }
         if ProcessInfo.processInfo.arguments.contains("--validate-images") {
             Task {
                 let result:[String:Any]

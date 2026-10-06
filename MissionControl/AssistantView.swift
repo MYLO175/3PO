@@ -315,44 +315,75 @@ struct AssistantPanel: View {
     }
 }
 struct AssistantSourceSettings: View {
+    enum Page { case assistant, background, memory }
     @Bindable var model: DashboardModel
     @Bindable var assistant: AssistantService
+    var page: Page = .assistant
     var body: some View {
-        Section("Assistant preferences and sources") {
-            LabeledContent("PA name",value:assistant.displayName)
-            PANameSetting(assistant:assistant)
-            Toggle("Enable assistant source context", isOn: $assistant.contextEnabled)
-            Text("When enabled, assistant requests send the enabled calendar and reminder snapshots, recent email headers and saved email summaries to OpenAI using your ChatGPT plan. Email body processing is enabled separately under Incoming email monitoring. Dashboard refresh itself makes no AI requests.").font(.caption)
-            Text("PA calendar: " + model.paOrientationHealth.detail).font(.caption).foregroundStyle(.secondary)
-            if let orientation = model.paOrientation {
-                Text(orientation.coverage(enabledCount:orientation.calendar.events.filter { !assistant.excludedCalendars.contains($0.calendarID) }.count)).font(.caption).foregroundStyle(.secondary)
+        Group {
+            switch page {
+            case .assistant:
+                Section("Assistant") {
+                    LabeledContent("PA name",value:assistant.displayName)
+                    PANameSetting(assistant:assistant)
+                    TextField("Assistant preferences", text: $assistant.preferences, axis: .vertical).lineLimit(3...6)
+                    Toggle("Use source context in assistant replies", isOn: $assistant.contextEnabled)
+                    Text("When on, a reply may send the enabled Calendar and Reminders snapshots, recent email headers, saved email summaries, and separately enabled WhatsApp context to OpenAI through your ChatGPT connection. Dashboard refresh itself makes no AI requests.").font(.caption).foregroundStyle(.secondary)
+                }
+                Section("Assistant source scope") {
+                    sourceMenu("Calendar sources", sources: model.calendarData.sources, excluded: $assistant.excludedCalendars)
+                    sourceMenu("Reminder lists", sources: model.reminderData.sources, excluded: $assistant.excludedLists)
+                    sourceMenu("Mail accounts", sources: model.mailData.accounts.map { SourceOption(id: $0.id, title: $0.title, account: "", writable: false) }, excluded: $assistant.excludedAccounts)
+                    Text("These choices control source context sent with assistant requests. Incoming email assessment, WhatsApp access, learning, task suggestions, and morning brief inclusion have separate controls.").font(.caption).foregroundStyle(.secondary)
+                    Text("Calendar status: " + model.paOrientationHealth.detail).font(.caption).foregroundStyle(.secondary)
+                    if let orientation = model.paOrientation {
+                        Text(orientation.coverage(enabledCount:orientation.calendar.events.filter { !assistant.excludedCalendars.contains($0.calendarID) }.count)).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Section("Proactive suggestions") {
+                    Toggle("Prepare quiet suggestions",isOn:$model.proactive.enabled)
+                    Text(model.proactive.status(model)).font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Button("Check suggestions once") { model.proactive.check(model,manual:true) }.disabled(model.chatGPT.busy || model.proactive.busy || model.chatGPT.usagePaused)
+                        if model.proactive.canUndo { Button("Undo dismissed suggestion") { model.proactive.undo(model) } }
+                    }
+                }
+            case .background:
+                Section("Background review") {
+                    Toggle("Review changed context automatically",isOn:$model.heartbeat.enabled)
+                    Picker("Review interval",selection:$model.heartbeat.intervalMinutes) { Text("15 minutes").tag(15);Text("30 minutes").tag(30);Text("1 hour").tag(60);Text("2 hours").tag(120) }
+                    Picker("Maximum useful messages per day",selection:$model.heartbeat.dailyUpdateLimit) { ForEach([1,3,6,10],id:\.self) { Text(String($0)).tag($0) } }
+                    Toggle("Include selected WhatsApp chats",isOn:$model.heartbeat.whatsappEnabled)
+                    Toggle("Notify about useful updates",isOn:$model.heartbeat.notificationsEnabled)
+                    let progress=model.heartbeat.state.accounts[model.chatGPT.activeID]
+                    LabeledContent("Last source check",value:progress?.checked?.formatted(date:.abbreviated,time:.shortened) ?? "Not recorded")
+                    LabeledContent("Last completed review",value:progress?.assessed?.formatted(date:.abbreviated,time:.shortened) ?? "Not recorded")
+                    if progress?.pending == true { Text("Changed or unfinished review work is waiting.").font(.caption).foregroundStyle(.secondary) }
+                    Text(model.heartbeat.status).font(.caption).foregroundStyle(.secondary)
+                    Text("Sources collect without AI. At each review, 3PO assesses changed or pending context and may prepare a useful message or work that you explicitly authorise. Collection continues when the AI review allowance is reached. WhatsApp uses selected received text, not full history. Reviews run while 3PO is open and catch up on wake.").font(.caption).foregroundStyle(.secondary)
+                    Button("Review changed context now") { model.heartbeat.check(model,manual:true) }.disabled(model.heartbeat.busy || model.assistant.busy || model.chatGPT.busy)
+                }
+                DisclosureGroup("Advanced review limits") {
+                    Picker("AI calls for email and communication review",selection:$model.heartbeat.dailyCallLimit) { ForEach([8,16,32,64,96],id:\.self) { Text(String($0)).tag($0) } }
+                    Text(model.heartbeat.budgetStatus(model.chatGPT.activeID)).font(.caption).foregroundStyle(.secondary)
+                    Text("One review can use several model calls. This cap applies to email and proactive communication review; it is not a cap for every app job or a measure of your ChatGPT subscription allowance.").font(.caption).foregroundStyle(.secondary)
+                }
+            case .memory:
+                Section("Saved memory") {
+                    Toggle("Use saved memory in PA replies",isOn:Binding(get:{assistant.memory.enabled},set:{assistant.memory.enabled=$0}))
+                    Toggle("Learn from conversations",isOn:Binding(get:{assistant.memory.learningEnabled},set:{assistant.memory.learningEnabled=$0})).disabled(!assistant.memory.enabled)
+                    Text("Human memories keep their evidence and correction history. Imported messages are attributed to their source and remain provisional. Forgetting a saved memory prevents the same evidence from being learned again.").font(.caption).foregroundStyle(.secondary)
+                }
+                Section("Optional WhatsApp context learning") {
+                    Text(model.sourceLearning.status(model)).font(.caption).foregroundStyle(.secondary)
+                    Text("This is separate from receiving chats, including them in a brief, task suggestions, and ordinary PA source context. It runs only for chats and linked identity you enabled in WhatsApp → PA chat access.").font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Button("Review recent WhatsApp context") { model.sourceLearning.check(model,manual:true) }.disabled(model.chatGPT.busy || model.sourceLearning.busy || model.chatGPT.usagePaused || model.whatsapp.access(for:model.chatGPT.activeID).learnContext != true)
+                        if model.sourceLearning.busy { Button("Stop learning") { model.sourceLearning.cancel() } }
+                    }
+                    if let error=model.sourceLearning.error { Text(error).font(.caption).foregroundStyle(.orange) }
+                }
             }
-            TextField("Assistant preferences", text: $assistant.preferences, axis: .vertical).lineLimit(3...6)
-            Text(model.sourceLearning.status(model)).font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Button("Check recent WhatsApp context") { model.sourceLearning.check(model,manual:true) }.disabled(model.chatGPT.busy || model.sourceLearning.busy || model.chatGPT.usagePaused || model.whatsapp.access(for:model.chatGPT.activeID).learnContext != true)
-                if model.sourceLearning.busy { Button("Stop learning") { model.sourceLearning.cancel() } }
-            }
-            if let error=model.sourceLearning.error { Text(error).font(.caption).foregroundStyle(.orange) }
-            Toggle("Automatic PA assessment",isOn:$model.heartbeat.enabled)
-            Picker("AI assessment interval",selection:$model.heartbeat.intervalMinutes) { Text("15 minutes").tag(15);Text("30 minutes").tag(30);Text("1 hour").tag(60);Text("2 hours").tag(120) }
-            Picker("Daily heartbeat AI requests",selection:$model.heartbeat.dailyCallLimit) { ForEach([8,16,32,64,96],id:\.self) { Text(String($0)).tag($0) } }
-            Picker("Daily worthwhile updates",selection:$model.heartbeat.dailyUpdateLimit) { ForEach([1,3,6,10],id:\.self) { Text(String($0)).tag($0) } }
-            Text(model.heartbeat.budgetStatus(model.chatGPT.activeID)).font(.caption).foregroundStyle(.secondary)
-            Toggle("Check selected WhatsApp chats",isOn:$model.heartbeat.whatsappEnabled)
-            Toggle("Notify for worthwhile heartbeat updates",isOn:$model.heartbeat.notificationsEnabled)
-            Text(model.heartbeat.status).font(.caption).foregroundStyle(.secondary)
-            Text("Mail collects every five minutes independently of AI assessment. Changed or pending material uses the daily AI-request allowance, including email classification and comparison. Source checks continue at the limit. WhatsApp uses received selected-chat text, not full history. Notifications use existing macOS permission. Runs while 3PO is open; catches up on wake.").font(.caption).foregroundStyle(.secondary)
-            Button("Check heartbeat now") { model.heartbeat.check(model,manual:true) }.disabled(model.heartbeat.busy || model.assistant.busy || model.chatGPT.busy)
-            Toggle("Quiet proactive suggestions",isOn:$model.proactive.enabled)
-            Text(model.proactive.status(model)).font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Button("Check suggestions once") { model.proactive.check(model,manual:true) }.disabled(model.chatGPT.busy || model.proactive.busy || model.chatGPT.usagePaused)
-                if model.proactive.canUndo { Button("Undo dismissed suggestion") { model.proactive.undo(model) } }
-            }
-            sourceMenu("AI calendars", sources: model.calendarData.sources, excluded: $assistant.excludedCalendars)
-            sourceMenu("AI reminder lists", sources: model.reminderData.sources, excluded: $assistant.excludedLists)
-            sourceMenu("AI email accounts", sources: model.mailData.accounts.map { SourceOption(id: $0.id, title: $0.title, account: "", writable: false) }, excluded: $assistant.excludedAccounts)
         }
     }
     private func sourceMenu(_ title: String, sources: [SourceOption], excluded: Binding<Set<String>>) -> some View {

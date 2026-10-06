@@ -37,7 +37,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     var body: some Scene {
         Window("3PO", id: "dashboard") {
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--preview-images") {
+            if ProcessInfo.processInfo.arguments.contains("--preview-settings") {
+                SettingsView(model:model).preferredColorScheme(selectedColorScheme)
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-images") {
                 ChatImageInteractivePreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-projects") {
                 LifeProjectInteractivePreview(model:model)
@@ -51,8 +53,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         .windowToolbarStyle(.unifiedCompact(showsTitle:false))
         .commands {
             WorkspaceCommands(model:model)
+            HelpCommands()
             #if DEBUG
             CommandGroup(after: .help) {
+                Menu("Developer checks") {
                 Button("Run disposable Calendar check") { model.validateCalendarIntegration() }
                 Button("Invalidate today's test briefing") { model.briefings.invalidateToday(model) }
                 Button("Check proactive suggestions (fictional)") { model.validateProactivePrompt() }.keyboardShortcut("p",modifiers:[.command,.option,.shift])
@@ -65,6 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 Button("Restore dashboard window size") { if let window = NSApp.windows.first(where:{ $0.isVisible && !$0.isFloatingPanel }) { window.setContentSize(NSSize(width:1200,height:780)); window.center() } }
                 Button("Check email triage (fictional)") { let current = model; Task { do { current.validationReport = try await current.emailSummaries.validateTriage(current) } catch { current.validationReport = error.localizedDescription } } }
                 Button("Clean assistant action fixtures") { let current = model; Task { do { current.validationReport = try await current.assistantActions.cleanupFixtures(current) } catch { current.validationReport = error.localizedDescription } } }
+                }
             }
             #endif
         }
@@ -75,6 +80,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 .accessibilityLabel("3PO")
         }
         Settings { SettingsView(model: model).preferredColorScheme(selectedColorScheme) }
+        Window("3PO Help",id:"help") {
+            PAHelpView(model:model).preferredColorScheme(selectedColorScheme)
+        }.defaultSize(width:760,height:650)
+    }
+}
+struct HelpCommands:Commands {
+    @Environment(\.openWindow) private var openWindow
+    var body:some Commands {
+        CommandGroup(replacing:.help) {
+            Button("3PO Help") { openWindow(id:"help") }.keyboardShortcut("?",modifiers:[.command,.shift])
+        }
     }
 }
 struct MenuContent: View {

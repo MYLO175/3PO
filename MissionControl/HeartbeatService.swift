@@ -22,9 +22,9 @@ import SwiftData
     var dailyUpdateLimit=UserDefaults.standard.object(forKey:"paHeartbeatUpdateLimit") as? Int ?? 3 {
         didSet { dailyUpdateLimit=min(10,max(1,dailyUpdateLimit));UserDefaults.standard.set(dailyUpdateLimit,forKey:"paHeartbeatUpdateLimit");controlsRevision=UUID();cancel() }
     }
-    func budgetStatus(_ registration:String)->String { "\(PAHeartbeatRules.callCount(state.accounts[registration] ?? .init(),day:BriefingRules.day(.now))) of \(dailyCallLimit) heartbeat AI requests today" }
+    func budgetStatus(_ registration:String)->String { "\(PAHeartbeatRules.callCount(state.accounts[registration] ?? .init(),day:BriefingRules.day(.now))) of \(dailyCallLimit) communication-review AI calls today" }
     func claimCall(_ registration:String) throws {
-        guard busy,registration == capturedRegistration,state.accounts[registration]?.phase == "assessing" else { throw ActionFailure.message("Heartbeat ownership changed before inference.") }
+        guard busy,registration == capturedRegistration,state.accounts[registration]?.phase == "assessing" else { throw ActionFailure.message("Background-review ownership changed before inference.") }
         let prior=state.accounts[registration] ?? .init()
         state.accounts[registration]=try PAHeartbeatRules.claim(prior,day:BriefingRules.day(.now),limit:dailyCallLimit)
         do { try save() } catch { state.accounts[registration]=prior;throw error }
@@ -32,7 +32,7 @@ import SwiftData
     private var capturedRegistration:String?
     private(set) var controlsRevision = UUID()
     private(set) var busy = false
-    private(set) var status = "Sources collect independently; AI assessment defaults to hourly while 3PO is running."
+    private(set) var status = "Sources collect without AI. Background reviews run when due while 3PO is running and the Mac is awake."
     private(set) var state = PAHeartbeatState()
     private let container: ModelContainer?
     private var task: Task<Void,Never>?
@@ -44,7 +44,7 @@ import SwiftData
                 state = try JSONDecoder().decode(PAHeartbeatState.self,from:record.data)
                 state.accounts = state.accounts.mapValues(PAHeartbeatRules.recovered)
             }
-        } catch { readable = false; status = "Saved heartbeat state unavailable; original record retained." }
+        } catch { readable = false; status = "Saved background-review state unavailable; original record retained." }
     }
     private var lastTyping: Date?
     var composerActive: Bool { lastTyping.map { Date.now.timeIntervalSince($0) < 120 } ?? false }
@@ -58,7 +58,7 @@ import SwiftData
         // Let foreground work win; this local due check never runs inference.
         guard !model.assistant.busy,!model.chatGPT.busy,!model.projectPlacement.busy,!model.briefings.busy,!model.proactive.busy,!model.emailSummaries.busy,!model.sourceLearning.busy,!model.memoryLearning.busy,!model.lifeOrganisation.busy,!model.writing else { return }
         let controls=controlsRevision, scope=model.proactive.scope(model)
-        busy=true;capturedRegistration=registration; status="Refreshing heartbeat sources…"
+        busy=true;capturedRegistration=registration; status="Collecting sources for background review…"
         task=Task {
             defer { busy=false;capturedRegistration=nil }
             var account=prior
@@ -68,7 +68,7 @@ import SwiftData
                 let deadline=Date.now.addingTimeInterval(180)
                 while model.mailHealth.loading || model.calendarHealth.loading || model.reminderHealth.loading {
                     try Task.checkCancellation()
-                    guard Date.now < deadline else { throw ActionFailure.message("Sources are still busy; heartbeat retained for the next check.") }
+                    guard Date.now < deadline else { throw ActionFailure.message("Sources are still busy; background review retained for the next check.") }
                     try await Task.sleep(for:.milliseconds(100))
                 }
                 await model.refreshCalendar(); await model.refreshReminders(); await model.refreshPAOrientation()
@@ -88,18 +88,18 @@ import SwiftData
                 let wantsWhatsApp=whatsappEnabled && access.enabled && !access.chats.isEmpty
                 let whatsappReady=wantsWhatsApp ? await model.whatsapp.refreshSnapshot() : false
                 try Task.checkCancellation()
-                guard (manual || enabled),controls == controlsRevision,registration == model.chatGPT.activeID,scope == model.proactive.scope(model) else { throw ActionFailure.message("Heartbeat account or source choices changed; no assessment started.") }
+                guard (manual || enabled),controls == controlsRevision,registration == model.chatGPT.activeID,scope == model.proactive.scope(model) else { throw ActionFailure.message("Background-review account or source choices changed; no assessment started.") }
                 let pendingMail=model.mailData.accounts.filter { !model.assistant.excludedAccounts.contains($0.id) && (model.mailIndex.monitor($0.id) != nil || model.mailIndex.accountErrors?[$0.id] != nil) }
                 account.checked = .now
                 if model.mailHealth.error != nil || !pendingMail.isEmpty || model.calendarHealth.error != nil || model.reminderHealth.error != nil {
                     state.accounts[registration]=account; try save()
-                    status="Sources partly refreshed; cached data retained. AI heartbeat waits for a complete permitted-source check."
+                    status="Sources partly refreshed; cached data retained. AI review waits for a complete permitted-source check."
                     return
                 }
                 let fingerprint=sourceFingerprint(model)
                 let assess=PAHeartbeatRules.needsAssessment(account,fingerprint:fingerprint,manual:manual) || (account.phase != "paused" && account.phase != "assessing" && model.emailSummaries.hasPendingIncoming(model))
                 guard assess,model.assistant.contextEnabled,model.chatGPT.inferenceVerified,!model.chatGPT.usagePaused,!composerActive else {
-                    if !assess { status=account.phase == "paused" ? "Heartbeat assessment paused; Check now resumes it." : "Heartbeat checked; no new source material." }
+                    if !assess { status=account.phase == "paused" ? "Background review paused; Review changed context now resumes it." : "Background review checked; no new source material." }
                     else { status="Sources refreshed; AI assessment waits for enabled context, allowance and an idle composer." }
                     account.phase=account.phase == "paused" ? "paused" : "idle"
                     state.accounts[registration]=account; try save();return
@@ -115,7 +115,7 @@ import SwiftData
                     try Task.checkCancellation();try await Task.sleep(for:.milliseconds(100))
                 }
                 try Task.checkCancellation()
-                guard (manual || enabled),controls == controlsRevision,registration == model.chatGPT.activeID,scope == model.proactive.scope(model),fingerprint == sourceFingerprint(model) else { throw ActionFailure.message("Sources changed during heartbeat; completed assessments retained, no stale alert started.") }
+                guard (manual || enabled),controls == controlsRevision,registration == model.chatGPT.activeID,scope == model.proactive.scope(model),fingerprint == sourceFingerprint(model) else { throw ActionFailure.message("Sources changed during background review; completed assessments retained, no stale alert started.") }
                 if PAHeartbeatRules.callCount(state.accounts[registration] ?? account,day:BriefingRules.day(.now)) >= dailyCallLimit { throw HeartbeatBudgetExhausted() }
                 if model.emailSummaries.enabled && model.emailSummaries.paused { throw ActionFailure.message("Email assessment is paused. Check now when ready to resume.") }
                 model.proactive.check(model,manual:manual,heartbeat:true,heartbeatWhatsAppReady:whatsappReady)
@@ -123,11 +123,11 @@ import SwiftData
                     try Task.checkCancellation();try await Task.sleep(for:.milliseconds(100))
                 }
                 try Task.checkCancellation()
-                guard registration == model.chatGPT.activeID,controls == controlsRevision else { throw ActionFailure.message("Heartbeat ownership changed; completed source work retained.") }
+                guard registration == model.chatGPT.activeID,controls == controlsRevision else { throw ActionFailure.message("Background-review ownership changed; completed source work retained.") }
                 if let error=model.proactive.error { throw ActionFailure.message(error) }
-                if model.proactive.enabled,model.proactive.state.accounts[registration]?.paused == true { throw ActionFailure.message("Proactive assessment is paused. Check heartbeat now to resume explicitly.") }
+                if model.proactive.enabled,model.proactive.state.accounts[registration]?.paused == true { throw ActionFailure.message("Proactive assessment is paused. Review changed context now to resume explicitly.") }
                 account=state.accounts[registration] ?? account;account.phase="idle";account.assessed = .now;let p=model.proactive.state.accounts[registration];account.pending=model.proactive.enabled && p?.day == BriefingRules.day(.now) && ((p?.delivered ?? 0) >= dailyUpdateLimit || (p?.attempts ?? 0) >= 96); if !wantsWhatsApp || whatsappReady { account.fingerprint=fingerprint }; state.accounts[registration]=account;try save()
-                status="Heartbeat checked at " + Date.now.formatted(date:.omitted,time:.shortened) + (wantsWhatsApp && !whatsappReady ? ". WhatsApp unavailable; no WhatsApp material assessed." : ". Only worthwhile updates are delivered.")
+                status="Background review checked at " + Date.now.formatted(date:.omitted,time:.shortened) + (wantsWhatsApp && !whatsappReady ? ". WhatsApp unavailable; no WhatsApp material assessed." : ". Only worthwhile updates are delivered.")
                 if !model.proactive.enabled { status += " Proactive updates are disabled." }
                 else if let p=model.proactive.state.accounts[registration],p.day == BriefingRules.day(.now),p.delivered >= dailyUpdateLimit || p.attempts >= 96 { status += " Daily comparison/update limit reached; source checks continue." }
             } catch is HeartbeatBudgetExhausted {
@@ -136,7 +136,7 @@ import SwiftData
                 let latest=state.accounts[registration] ?? account;account.budgetDay=latest.budgetDay;account.calls=latest.calls
                 if account.phase == "assessing" { account.phase="paused"; model.emailSummaries.cancel(); model.proactive.cancel() }
                 account.checked = .now; state.accounts[registration]=account;try? save()
-                status=error is CancellationError ? "Heartbeat stopped; completed work retained. Check now resumes assessment." : error.localizedDescription
+                status=error is CancellationError ? "Background review stopped; completed work retained. Review changed context now resumes assessment." : error.localizedDescription
             }
         }
     }

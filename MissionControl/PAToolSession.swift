@@ -243,7 +243,7 @@ import Foundation
             guard LifeMemoryOrganisation.valid(value,record:record) else { throw ActionFailure.message("Unsupported organisation or self identity; memory was not changed.") }
             let revision=memory.revision
             // Original evidence, not source titles/instructions, is used for independent classification.
-            let checked=try await model.chatGPT.streamResponse(input:[["role":"user","content":LifeOrganisationRules.input([record])+"\nProposed metadata DATA: "+String(data:try JSONEncoder().encode(LifeOrganisationEntry(id:id,organisation:value)),encoding:.utf8)!]],instructions:LifeOrganisationRules.instructions) { _ in }
+            let checked=try await model.chatGPT.streamResponse(input:[["role":"user","content":LifeOrganisationRules.input([record])+"\nProposed metadata DATA: "+String(data:try JSONEncoder().encode(LifeOrganisationEntry(id:id,organisation:value)),encoding:.utf8)!]],instructions:LifeOrganisationRules.instructions,purpose:.organisation) { _ in }
             try Task.checkCancellation()
             guard valid(),let accepted=LifeOrganisationRules.decode(checked,records:[record]),let final=accepted.first(where:{$0.id == id}) else { throw ActionFailure.message("Organisation did not match its original human evidence. Existing facts are preserved.") }
             guard memory.organise(id,value:final.organisation,expectedRevision:revision) else { throw ActionFailure.message(memory.error ?? "Organisation could not be saved.") }

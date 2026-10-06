@@ -40,6 +40,45 @@ import Foundation
         precondition(input.utf8.count <= 24000)
         var long=recent[0];long.text=String(repeating:"界",count:1200)
         precondition(SourceContextRules.batch(Array(repeating:long,count:8),progress:.init()).count <= 3)
+        let backlog=(0..<24).map{index in WhatsAppReadMessage(id:"backlog-\(index)",chat:index == 23 ? "quiet" : "busy",sender:"participant",text:"A concrete project update \(index)",sentByMe:false,time:now.addingTimeInterval(Double(-index)).timeIntervalSince1970*1000)}
+        let backlogRecent=SourceContextRules.recent(backlog,chats:[],allowed:["busy","quiet"],now:now)
+        var queued=SourceContextRules.collecting(.init(),recent:backlogRecent,now:now)
+        precondition(queued.coverage?.pending.count == 24 && queued.seen.isEmpty)
+        let firstBatch=SourceContextRules.batch(backlogRecent,progress:queued)
+        precondition(firstBatch.count == 8 && firstBatch.contains{$0.chatID == "quiet"},"Busy chats cannot starve a quiet selected chat")
+        queued=SourceContextRules.completing(queued,batch:firstBatch,now:now)
+        precondition(queued.seen.count == 8 && queued.coverage?.pending.count == 16,"Only assessed versions advance")
+        let persisted=try JSONDecoder().decode(SourceContextProgress.self,from:JSONEncoder().encode(queued))
+        precondition(persisted.coverage?.pending.count == 16)
+        for _ in 0..<2 {
+            queued=SourceContextRules.collecting(queued,recent:backlogRecent,now:now)
+            queued=SourceContextRules.completing(queued,batch:SourceContextRules.batch(backlogRecent,progress:queued),now:now)
+        }
+        precondition(queued.seen.count == 24 && queued.coverage?.pending.isEmpty == true)
+        let legacy=SourceContextRules.collecting(.init(seen:[recent[0].id:recent[0].revision],oriented:true),recent:recent,now:now)
+        precondition(legacy.seen.isEmpty && legacy.coverage?.baseline.count == 1 && SourceContextRules.batch(recent,progress:legacy).isEmpty,"Old orientation stays excluded but is not labelled assessed")
+        let unavailable=SourceContextRules.collecting(persisted,recent:[],now:now)
+        precondition(unavailable.coverage?.pending.isEmpty == true && unavailable.coverage?.unavailable == 16)
+        var paused=persisted;paused.paused=true
+        let roundtrip=try JSONDecoder().decode(SourceContextProgress.self,from:JSONEncoder().encode(paused))
+        precondition(roundtrip.paused && roundtrip.coverage?.pending.count == 16,"Interrupted work keeps its pending references")
+        let many=(0..<250).map{index in WhatsAppReadMessage(id:"many-\(index)",chat:"busy",sender:"participant",text:"Update \(index)",sentByMe:false,time:now.addingTimeInterval(Double(-index)).timeIntervalSince1970*1000)}+backlog.filter{$0.chat == "quiet"}
+        let fairWindow=SourceContextRules.recent(many,chats:[],allowed:["busy","quiet"],now:now)
+        precondition(fairWindow.count == 200 && fairWindow.contains{$0.chatID == "quiet"})
+        let fullWindow=SourceContextRules.recent(many,chats:[],allowed:["busy","quiet"],now:now,limit:2000)
+        precondition(fullWindow.count == 251)
+        let fullQueue=SourceContextRules.collecting(.init(),recent:fullWindow,now:now)
+        let newer=many+[WhatsAppReadMessage(id:"newer",chat:"busy",sender:"participant",text:"Newest update",sentByMe:false,time:now.timeIntervalSince1970*1000)]
+        let changedWindow=SourceContextRules.recent(newer,chats:[],allowed:["busy","quiet"],now:now,limit:2000)
+        let retainedQueue=SourceContextRules.collecting(fullQueue,recent:changedWindow,now:now)
+        precondition(retainedQueue.coverage?.pending.count == 252 && retainedQueue.coverage?.unavailable == 0,"Available references are not evicted by the smaller inference sample")
+        let encodedPending=String(decoding:try JSONEncoder().encode(retainedQueue.coverage!.pending),as:UTF8.self)
+        precondition(!encodedPending.contains("busy") && !encodedPending.contains("quiet") && !encodedPending.contains("text") && !encodedPending.contains("date"),"Pending storage uses opaque references only")
+        let legacyKey="account:linked-phone-identity",safeKey=SourceContextRules.scopeKey(legacyKey)
+        let protected=SourceContextState(scopes:[legacyKey:persisted]).protectingScopeKeys()!
+        precondition(protected[safeKey]?.coverage?.pending.count == 16 && protected[legacyKey] == nil)
+        precondition(SourceContextState(scopes:protected).protectingScopeKeys()!.keys.first == safeKey,"Opaque scope keys do not rehash on reload")
+        precondition(SourceContextState(scopes:[legacyKey:persisted,safeKey:persisted]).protectingScopeKeys() == nil,"Conflicting legacy and protected scopes preserve the original store rather than overwrite")
         var old=facts[0];old.reviewed=now.addingTimeInterval(-91*86400)
         precondition(!MemoryRules.usable(old,registration:"owner",now:now),"Source-derived beliefs age out even if incorrectly marked stable")
         old.durability = .stable;old.certainty = .stated

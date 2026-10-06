@@ -69,7 +69,7 @@ struct EmailSummarySettings: View {
     @Bindable var model: DashboardModel
     @Bindable var summaries: EmailSummaryService
     var body: some View {
-        Section("Incoming email monitoring") {
+        Section("Incoming email assessment") {
             Toggle("Assess incoming mail automatically", isOn: $summaries.enabled)
             Picker("Email summary model", selection: $summaries.modelID) {
                 Text("Use assistant model").tag("")
@@ -78,8 +78,8 @@ struct EmailSummarySettings: View {
             Picker("Email reasoning", selection: $summaries.effort) {
                 Text("Low").tag("low"); Text("Medium").tag("medium"); Text("High").tag("high")
             }.disabled(summaries.busy)
-            Text("Sends headers and relevant plain-text bodies from AI-enabled email accounts to OpenAI using your ChatGPT plan. Email model/reasoning controls are independent of chat; choose an available Luna model at High for bounded classification if desired. No attachments or sending. Starts from today, without analysing the historical inbox. Assesses up to 20 incoming headers and reads at most three selected bodies per configured heartbeat batch (or explicit check), saves each summary, and skips invalid model output while continuing other messages. Read, connection, storage and usage-limit errors pause processing. Retry skipped explicitly allows another bounded attempt. Ignorable mail is not shown. Relevant future follow-ups are retained until dismissed; existing assessments are reused.").font(.caption)
-            Text("Account controls are under AI email accounts above. Dashboard mailbox filters only change the source view. Briefing controls are below.").font(.caption).foregroundStyle(.secondary)
+            Text("When enabled, this sends headers and selected relevant plain-text bodies from enabled accounts through your ChatGPT plan. It does not read attachments or send email, and starts from new mail rather than analysing the historical inbox. Each background review assesses a bounded batch of incoming messages and saves its results. Read, connection, storage, or usage errors pause processing; use the explicit retry control to resume. Ignorable mail is hidden. Relevant follow-ups stay available until dismissed, and existing assessments are reused.").font(.caption)
+            Text("Choose which mail accounts may provide assistant context in Settings → Assistant → Assistant source scope. Dashboard mailbox filters only change the source view; morning brief controls are in this section of Background settings.").font(.caption).foregroundStyle(.secondary)
         }
     }
 }

@@ -159,13 +159,14 @@ struct WhatsAppSettings: View {
     @State private var viewerChat=""
     @State private var viewerQuery=""
     var body: some View {
-        Section("WhatsApp · experimental, read-only") {
+        Section("WhatsApp linked device · read-only") {
             Text("Link through a QR code as another device. This uses an unofficial WhatsApp Web connection; WhatsApp changes or account restrictions may interrupt it. No sending or read receipts. Reception makes no AI requests. Sessions and received text are encrypted locally; the encryption key stays in Keychain.").font(.caption).foregroundStyle(.secondary)
             Toggle("Reconnect WhatsApp when 3PO launches",isOn:$service.reconnectAtLaunch)
             Text(service.status)
             if let qr=service.qr { Image(nsImage:qr).resizable().interpolation(.none).frame(width:240,height:240); Text("On your phone: WhatsApp → Settings → Linked devices → Link a device. Scan this code only if you want 3PO to receive your chats.").font(.caption) }
             HStack { Button("Connect / show QR") { service.connect() }; Button("Pause") { service.stop() }; Button("Disconnect") { service.disconnect() }; Button("Received text (\(service.messages.count))") { showMessages=true } }
             Button("PA chat access…") { showSources=true }.disabled(service.linkedIdentity.isEmpty)
+            Text("Receiving chats is separate from including selected chats in a brief, task suggestions, or optional context learning. Choose each use in PA chat access.").font(.caption).foregroundStyle(.secondary)
             WhatsAppSourceSummary(service:service,registration:registration)
             Text(service.coverage).font(.caption).foregroundStyle(.secondary)
         }.sheet(isPresented:$showSources) {

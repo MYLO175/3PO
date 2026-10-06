@@ -61,7 +61,8 @@ import Observation
     private(set) var requestConversationID: UUID?
     private(set) var errorConversationID: UUID?
     private(set) var mailSearchConversationID: UUID?
-    var contextEnabled = UserDefaults.standard.bool(forKey: "assistantContextEnabled") { didSet { UserDefaults.standard.set(contextEnabled, forKey: "assistantContextEnabled") } }
+    private(set) var contextRevision = UUID()
+    var contextEnabled = UserDefaults.standard.bool(forKey: "assistantContextEnabled") { didSet { UserDefaults.standard.set(contextEnabled, forKey: "assistantContextEnabled");contextRevision = UUID() } }
     var displayName = PAIdentity.name(UserDefaults.standard.string(forKey:"paDisplayName")) { didSet { UserDefaults.standard.set(displayName,forKey:"paDisplayName") } }
     var standaloneFocusSelections = UserDefaults.standard.dictionary(forKey:"paLifeFocusSelections") as? [String:[String]] ?? [:] {
         didSet { UserDefaults.standard.set(standaloneFocusSelections,forKey:"paLifeFocusSelections") }
@@ -420,7 +421,7 @@ import Observation
                     input = try run.input(base:base,receipts:session.receipts)
                     toolStatus = firstRound ? "Thinking…" : "Working on your request…";firstRound=false
                     var partial = ""
-                    let result = try await connection.toolResponse(input:input,instructions:instructions + " Group independent calls when possible. Complete the requested work before giving your final reply.",tools:setupMode ? PAProfileSetup.tools : PAToolProtocol.tools,model:selectedModel) { delta in
+                    let result = try await connection.toolResponse(input:input,instructions:instructions + " Group independent calls when possible. Complete the requested work before giving your final reply.",tools:setupMode ? PAProfileSetup.tools : PAToolProtocol.tools,model:selectedModel,purpose:setupMode ? .setup : .conversation) { delta in
                         guard valid() else { return }
                         partial += delta; if !setupMode { setResponse(partial,completed:false) }
                     }

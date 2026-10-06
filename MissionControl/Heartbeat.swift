@@ -33,4 +33,4 @@ enum PAHeartbeatRules {
     }
 }
 
-struct HeartbeatBudgetExhausted:LocalizedError { var errorDescription:String? { "Daily heartbeat inference allowance reached. Source collection continues; pending assessment is kept for the next day." } }
+struct HeartbeatBudgetExhausted:LocalizedError { var errorDescription:String? { "Daily communication-review call limit reached. Source collection continues; pending assessment is kept for the next day." } }

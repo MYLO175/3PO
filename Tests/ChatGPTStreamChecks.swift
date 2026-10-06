@@ -59,6 +59,17 @@ import Foundation
         var badUTF8 = ChatGPTStream(), invalidUTF8Rejected = false
         do { _ = try badUTF8.byte(255); _ = try badUTF8.byte(10) } catch { invalidUTF8Rejected = true }
         assert(invalidUTF8Rejected)
+        var counted = ChatGPTStream()
+        _ = try counted.line(#"data: {"type":"response.output_text.delta","delta":"Answer"}"#)
+        _ = try counted.line(#"data: {"type":"response.created","response":{"usage":{"input_tokens":999,"output_tokens":1,"total_tokens":1000}}}"#)
+        assert(counted.reportedTokens == nil, "Only completed-response metadata counts")
+        _ = try counted.line(#"data: {"type":"response.completed","response":{"usage":{"input_tokens":100,"output_tokens":20,"total_tokens":120,"input_tokens_details":{"cached_tokens":40},"output_tokens_details":{"reasoning_tokens":12}}}}"#)
+        let countedAnswer = try counted.finish(); assert(countedAnswer == "Answer")
+        assert(counted.reportedTokens == .init(input:100,output:20,total:120,cachedInput:40,reasoningOutput:12))
+        var badCounts = ChatGPTStream()
+        _ = try badCounts.line(#"data: {"type":"response.output_text.delta","delta":"Valid answer"}"#)
+        _ = try badCounts.line(#"data: {"type":"response.completed","response":{"usage":{"input_tokens":true,"output_tokens":20,"total_tokens":21}}}"#)
+        let uncountedAnswer = try badCounts.finish(); assert(uncountedAnswer == "Valid answer" && badCounts.reportedTokens == nil, "Bad optional counts must not reject an answer")
         print("PASS: SSE deltas, terminal completion, multiline events, interruption, failed/incomplete/empty/malformed rejection")
     }
 }

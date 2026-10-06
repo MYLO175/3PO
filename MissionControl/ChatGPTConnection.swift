@@ -58,6 +58,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     private var responseRequestID: String?
     private var responseHTTPStatus = 0
     private var responseModel = ""
+    @ObservationIgnored weak var usageStore: AIUsageStore?
     private var blockedAccounts = Set(UserDefaults.standard.stringArray(forKey: "chatgptBlockedAccounts") ?? []) { didSet { UserDefaults.standard.set(Array(blockedAccounts), forKey: "chatgptBlockedAccounts") } }
     var usagePaused: Bool { blockedAccounts.contains(activeID) }
     private var registrations: [ChatGPTRegistration] = []
@@ -233,7 +234,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         guard models.contains(where: { $0.id == selectedModel }) else { throw ChatGPTError.message("Choose an available model before testing.") }
         let registration = activeID, model = selectedModel
         message = "Checking completed inference with \(model)…"
-        _ = try await performResponse(input: [["role":"user", "content":"Reply with exactly: Mission Control connection works."]], instructions: nil, model: model, effort: "medium", onDelta: nil)
+        _ = try await performResponse(input: [["role":"user", "content":"Reply with exactly: Mission Control connection works."]], instructions: nil, model: model, effort: "medium", purpose: .connectionCheck, onDelta: nil)
         guard activeID == registration, selectedModel == model, var account = current else { throw ChatGPTError.message("The active account or model changed; verification was not transferred.") }
         account.verifiedModel = model; account.verifiedAt = .now
         try save(account)
@@ -241,7 +242,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         blockedAccounts.remove(activeID)
         inferenceVerified = true; message = "Completed subscription inference verified with \(selectedModel). Personal sources were not sent."
     }
-    func streamResponse(input: [[String:String]], instructions: String, model: String? = nil, effort: String = "medium", onDelta: @escaping (String) -> Void) async throws -> String {
+    func streamResponse(input: [[String:String]], instructions: String, model: String? = nil, effort: String = "medium", purpose: AIRequestPurpose = .conversation, onDelta: @escaping (String) -> Void) async throws -> String {
         guard !busy else { throw ChatGPTError.message("Another ChatGPT operation is in progress.") }
         guard !usagePaused else { throw ChatGPTError.message("Subscription requests are paused after a usage failure. Use Check access in Settings once access is available.") }
         guard hasSession, inferenceVerified else { throw ChatGPTError.message("Verify completed subscription inference in Settings first.") }
@@ -251,20 +252,20 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         if models.isEmpty { try await loadModels() }
         guard activeID == registration else { throw ChatGPTError.message("The selected account changed before inference; no source request sent.") }
         guard ["low", "medium", "high"].contains(effort), models.contains(where: { $0.id == requestedModel }) else { throw ChatGPTError.message("The selected model or reasoning level is unavailable. Check Settings.") }
-        return try await performResponse(input: input, instructions: instructions, model: requestedModel, effort: effort, onDelta: onDelta)
+        return try await performResponse(input: input, instructions: instructions, model: requestedModel, effort: effort, purpose: purpose, onDelta: onDelta)
     }
-    func toolResponse(input: [[String:Any]], instructions: String, tools: [[String:Any]], model: String, onDelta: @escaping (String) -> Void) async throws -> PAResponse {
+    func toolResponse(input: [[String:Any]], instructions: String, tools: [[String:Any]], model: String, purpose: AIRequestPurpose = .conversation, onDelta: @escaping (String) -> Void) async throws -> PAResponse {
         guard !busy, !usagePaused, hasSession, inferenceVerified else { throw ChatGPTError.message("Subscription access is unavailable or another request is in progress.") }
         busy = true; defer { busy = false }
         let registration = activeID
         if models.isEmpty { try await loadModels() }
         guard activeID == registration, models.contains(where:{ $0.id == model }) else { throw ChatGPTError.message("The selected account/model is unavailable.") }
-        return try await performToolResponse(input:input,instructions:instructions,model:model,effort:"medium",tools:tools,onDelta:onDelta)
+        return try await performToolResponse(input:input,instructions:instructions,model:model,effort:"medium",tools:tools,purpose:purpose,onDelta:onDelta)
     }
-    private func performResponse(input: [[String:String]], instructions: String?, model: String, effort: String, onDelta: ((String) -> Void)?) async throws -> String {
-        try await performToolResponse(input:input.map { $0 as [String:Any] },instructions:instructions,model:model,effort:effort,tools:[],onDelta:onDelta).text
+    private func performResponse(input: [[String:String]], instructions: String?, model: String, effort: String, purpose: AIRequestPurpose = .conversation, onDelta: ((String) -> Void)?) async throws -> String {
+        try await performToolResponse(input:input.map { $0 as [String:Any] },instructions:instructions,model:model,effort:effort,tools:[],purpose:purpose,onDelta:onDelta).text
     }
-    private func performToolResponse(input: [[String:Any]], instructions: String?, model: String, effort: String, tools: [[String:Any]], onDelta: ((String) -> Void)?) async throws -> PAResponse {
+    private func performToolResponse(input: [[String:Any]], instructions: String?, model: String, effort: String, tools: [[String:Any]], purpose: AIRequestPurpose = .conversation, onDelta: ((String) -> Void)?) async throws -> PAResponse {
         let registration = activeID
         let token = try await access()
         guard activeID == registration else { throw ChatGPTError.message("The selected account changed before inference; no source request sent.") }
@@ -285,6 +286,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         let inferenceSession = URLSession(configuration:configuration,delegate:NoRedirects(),delegateQueue:nil)
         let deadline = InferenceDeadline(session:inferenceSession)
         defer { deadline.stop(); inferenceSession.invalidateAndCancel() }
+        let usageID = usageStore?.begin(registration: registration, model: model, purpose: purpose)
         do {
         let (bytes, response) = try await inferenceSession.bytes(for: request)
         if let http = response as? HTTPURLResponse { responseRequestID = http.value(forHTTPHeaderField:"x-request-id"); responseHTTPStatus = http.statusCode }
@@ -300,6 +302,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
                 if let delta = try stream.byte(byte) { onDelta?(delta) }
             }
             let text = try stream.finishBytes()
+            usageStore?.finish(usageID, outcome: .completed, tokens: stream.reportedTokens, httpStatus: responseHTTPStatus)
             return PAResponse(text:text,output:stream.output,calls:stream.calls)
         } catch let failure as ChatGPTStream.Failure {
             switch failure {
@@ -313,6 +316,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
             }
         }
         } catch {
+            usageStore?.finish(usageID, outcome: Task.isCancelled || activeID != registration ? .interrupted : .failed, httpStatus: responseHTTPStatus)
             if deadline.didExpire { throw ChatGPTError.message("The subscription response exceeded three minutes without completing. Partial output was not accepted; no automatic retry or paid fallback. Try again once when ready.") }
             if Task.isCancelled { throw CancellationError() }
             throw error
@@ -342,11 +346,11 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
 struct ChatGPTConnectionView: View {
     @Bindable var connection: ChatGPTConnection
     var body: some View {
-        Section("ChatGPT connection — Stage 2 check") {
+        Section("ChatGPT account") {
             if !connection.accounts.isEmpty {
                 Picker("Account", selection: $connection.activeID) { ForEach(connection.accounts) { Text($0.name).tag($0.id) } }.disabled(connection.busy).onChange(of: connection.activeID) { connection.switchAccount() }
             }
-            Text("This first check sends only a short test prompt through your ChatGPT plan. Calendar, reminders and emails stay local until AI features are enabled. No API key or separate API billing.").font(.caption)
+            Text("3PO uses the documented ChatGPT sign-in and subscription connection. The explicit access check sends one short, source-free inference request. No API key or separate API billing is used.").font(.caption)
             Text(connection.message).font(.callout).textSelection(.enabled).id(connection.message)
             if !connection.models.isEmpty { Picker("Model", selection: $connection.selectedModel) { Text("Select model").tag(""); ForEach(connection.models) { Text($0.name).tag($0.id) } }.disabled(connection.busy).onChange(of: connection.selectedModel) { UserDefaults.standard.set(connection.selectedModel, forKey: "assistantModel") } }
             HStack {
@@ -354,12 +358,12 @@ struct ChatGPTConnectionView: View {
                 if !connection.accounts.isEmpty { Button("Add account") { connection.signIn(addAccount: true) }.disabled(connection.busy) }
             }
             HStack {
-                Button("Check access") { connection.testConnection() }.disabled(connection.busy || !connection.hasSession)
+                Button("Check account access · 1 request") { connection.testConnection() }.disabled(connection.busy || !connection.hasSession)
                 Button("Renew session") { connection.renewSession() }.disabled(connection.busy || !connection.hasSession)
                 Button("Sign out") { connection.signOut() }.disabled(connection.busy || !connection.hasSession)
                 if connection.busy { ProgressView().controlSize(.small); Button("Cancel") { connection.cancel() } }
             }
-            if connection.usagePaused { Text("Last subscription request rejected; background AI is paused. Check access makes one source-free inference request.").font(.caption).foregroundStyle(.orange) }
+            if connection.usagePaused { Text("The last subscription request was rejected, so background AI is paused. Check access makes one source-free inference request.").font(.caption).foregroundStyle(.orange) }
             if !connection.diagnostic.isEmpty {
                 VStack(alignment:.leading,spacing:6) {
                     Text("Last failure details").font(.caption.weight(.semibold))
@@ -368,8 +372,8 @@ struct ChatGPTConnectionView: View {
                     Text("Contains only time, model, error fields and request reference. No credentials, prompts or personal sources.").font(.caption)
                 }
             }
-            Button("ChatGPT usage and app access") { NSWorkspace.shared.open(URL(string: "https://chatgpt.com/settings/usage")!) }
-            Text("Your Plus five-hour allowance is shared with Codex. Keep credit use disabled in ChatGPT's app limits.").font(.caption).foregroundStyle(.secondary)
+            Link("Manage usage and app access in ChatGPT",destination:URL(string:"https://chatgpt.com/settings/usage")!)
+            Text("Availability and limits are set by your ChatGPT account. A completed access check confirms that subscription inference is available to 3PO now.").font(.caption).foregroundStyle(.secondary)
         }
     }
 }

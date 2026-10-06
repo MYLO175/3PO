@@ -22,14 +22,14 @@ import SwiftUI
         let instructions="You are analysing fictional image fixtures. Answer the current question from the image. No tools or source access."
         let one=try store.input([first],currentUserID:first.id,registration:account)
         try PAToolProtocol.boundedInput(one)
-        let result=try await model.chatGPT.toolResponse(input:one,instructions:instructions,tools:[],model:selected,onDelta:{_ in})
+        let result=try await model.chatGPT.toolResponse(input:one,instructions:instructions,tools:[],model:selected,purpose:.diagnostic,onDelta:{_ in})
         guard model.chatGPT.activeID == account,model.chatGPT.selectedModel == selected else { throw ChatImageFailure.unavailable }
         let answer=AssistantTurn(role:"assistant",content:result.text,completed:true)
         let next=AssistantTurn(role:"user",content:"What colour is the triangle in that screenshot? Reply with one colour word.",completed:true)
         let replay=ConversationRules.replayTurns([first,answer,next],currentUserID:next.id)
         let input=try ChatImageStore(container:container).input(replay,currentUserID:next.id,registration:account)
         try PAToolProtocol.boundedInput(input)
-        let follow=try await model.chatGPT.toolResponse(input:input,instructions:instructions,tools:[],model:selected,onDelta:{_ in})
+        let follow=try await model.chatGPT.toolResponse(input:input,instructions:instructions,tools:[],model:selected,purpose:.diagnostic,onDelta:{_ in})
         let checks=["actual screenshot label":result.text.uppercased().contains("WILLOW 731"),"saved attachment follow-up":follow.text.lowercased().contains("green"),"account/model retained":model.chatGPT.activeID == account && model.chatGPT.selectedModel == selected]
         return ["passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"model":selected,"boundary":"Two completed subscription requests with fictional raster input and reloaded private attachment store. No personal sources, native writes or transcript changes."]
     }

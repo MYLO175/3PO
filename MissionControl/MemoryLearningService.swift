@@ -65,7 +65,7 @@ import SwiftData
                 try Task.checkCancellation()
                 guard !assistant.busy, !assistant.hasDraft, !model.writing, registration == model.chatGPT.activeID, selectedModel == model.chatGPT.selectedModel else { throw MemoryLearningFailure.changed }
                 let input = try MemoryLearningRules.input(turns:batch,existing:existing,timezone:TimeZone.current.identifier,questionAllowed:questionAllowed)
-                let output = try await model.chatGPT.streamResponse(input:[["role":"user","content":input]],instructions:MemoryLearningRules.instructions,model:selectedModel) { _ in }
+                let output = try await model.chatGPT.streamResponse(input:[["role":"user","content":input]],instructions:MemoryLearningRules.instructions,model:selectedModel,purpose:.learning) { _ in }
                 try Task.checkCancellation()
                 guard registration == model.chatGPT.activeID, selectedModel == model.chatGPT.selectedModel, memory.enabled, memory.learningEnabled, assistant.contextEnabled,
                       questionsEnabled == self.questionsEnabled, !assistant.hasDraft, !model.writing, memoryState.records == memory.state.records, memoryState.suppressed == memory.state.suppressed else { throw MemoryLearningFailure.changed }
@@ -115,7 +115,7 @@ import SwiftData
             MemoryLearningTurn(id:"hypothetical",text:"For a hypothetical example only: I dislike blue. This is not a fact about me.",created:.now)
         ]
         let input = try MemoryLearningRules.input(turns:batch,existing:[],timezone:TimeZone.current.identifier)
-        let output = try await model.chatGPT.streamResponse(input:[["role":"user","content":input]],instructions:MemoryLearningRules.instructions) { _ in }
+        let output = try await model.chatGPT.streamResponse(input:[["role":"user","content":input]],instructions:MemoryLearningRules.instructions,purpose:.diagnostic) { _ in }
         let learned = try MemoryLearningRules.decode(output,turns:batch)
         guard learned.count == 1, learned.first?.turnID == "preference", learned.first?.kind == .preference else { throw MemoryLearningFailure.invalid }
         return "PASS: production memory prompt selected the stated preference and rejected quoted spam, search-only and hypothetical content. No fictional memory saved."

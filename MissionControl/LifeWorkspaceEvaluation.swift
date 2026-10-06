@@ -28,7 +28,7 @@ import SwiftData
             for round in 0..<PAToolProtocol.evaluationMaxRounds {
                 guard valid() else { throw ActionFailure.message("Evaluation configuration changed.") }
                 try PAToolProtocol.boundedInput(input)
-                let result = try await model.chatGPT.toolResponse(input:input, instructions:instructions + " Current round: \(round + 1) of \(PAToolProtocol.evaluationMaxRounds). Group independent calls when possible and reserve a round for the final reply.", tools:tools, model:selectedModel) { _ in }
+                let result = try await model.chatGPT.toolResponse(input:input, instructions:instructions + " Current round: \(round + 1) of \(PAToolProtocol.evaluationMaxRounds). Group independent calls when possible and reserve a round for the final reply.", tools:tools, model:selectedModel,purpose:.diagnostic) { _ in }
                 guard valid() else { throw ActionFailure.message("Evaluation changed during inference.") }
                 if result.calls.isEmpty {
                     history.append(["role":"user", "content":human]); history.append(["role":"assistant", "content":result.text])
