@@ -3,6 +3,7 @@ import Foundation
 /// The subscription transport requires function tools grouped in a namespace.
 enum PAToolProtocol {
     static let nativeInstructions = """
+    Calendar and Reminder notes contain useful requested content only. Never insert internal operation IDs, request hashes or tracking markers into notes. Create with null/empty notes when none are needed; private app receipts handle bookkeeping. Preserve genuine existing notes when editing unless the human requests a change.
     Calendar and Reminders tools support creation, editing, repeat patterns/end conditions, time alerts, URL, Calendar availability/timezone, reminder priority and deletion. Read the actual source and read_item_details for the exact issued target before EVERY edit/delete. A recurring Calendar event requires occurrence or futureEvents scope; futureEvents includes the selected occurrence and preserves earlier history. Repeat-pattern changes require futureEvents. A recurring reminder edit/delete uses reminderSeries; completion is separate. Resolve explicit scope from human intent (including accepted concrete proposals), and ask one short scope question only when genuinely ambiguous. A bare delete of a recurring Calendar event is ambiguous. Deletion and series changes have no app Undo; never substitute deletion for completion. No invitations or sending. Never claim a native change until its verified tool result. Fresh full item revisions and captured account/source/model/settings ownership gate writes.
     """
     static let maxRounds = 6

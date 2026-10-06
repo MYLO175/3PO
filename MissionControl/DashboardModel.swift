@@ -158,6 +158,20 @@ import EventKit
                 NSApp.terminate(nil)
             };return
         }
+        if ProcessInfo.processInfo.arguments.contains("--validate-clean-notes") {
+            Task {
+                let report=await eventKit.validateCleanNotes()
+                if let data=try? JSONSerialization.data(withJSONObject:report,options:[.sortedKeys,.prettyPrinted]) {try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-clean-notes-native.json"),options:.atomic)}
+                NSApp.terminate(nil)
+            };return
+        }
+        if ProcessInfo.processInfo.arguments.contains("--cleanup-request-markers") {
+            Task {
+                let report=await assistantActions.cleanupRequestMarkers(self)
+                if let data=try? JSONSerialization.data(withJSONObject:report,options:[.sortedKeys,.prettyPrinted]) {try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-request-marker-cleanup.json"),options:.atomic)}
+                NSApp.terminate(nil)
+            };return
+        }
         if ProcessInfo.processInfo.arguments.contains("--preview-projects") { return }
         if ProcessInfo.processInfo.arguments.contains("--validate-ownership") {
             Task {

@@ -196,3 +196,6 @@ Mail collection now runs independently every five minutes while the app is runni
 ### When a PA tool fails
 
 New replies preserve bounded local tool failure reasons under **What went wrong**. These omit raw tool arguments/source bodies and remain attached to the captured account/thread reply. Human-intent checks occur before the operation: their refusal is labelled as an app check, with no native save attempted, rather than claiming Apple Calendar/Reminders rejected a date. Other failures retain the conservative rule against repeating a possibly attempted save. Source-relative timing should be resolved before proposing the change; source facts do not authorise writes. Older replies are preserved as written and have no retrospective tool trace.
+
+
+Native Calendar/Reminders creation leaves notes blank when no notes were requested. Internal operation keys and duplicate-save receipts stay in 3PO’s private local cache and are never automatically inserted into Apple notes. Supplied notes are preserved. A one-off explicitly requested cleanup can remove an exact old marker line only when both its saved native identity and operation receipt match; fresh revision checks preserve the other fields and genuine notes. Cleanup never runs from refresh or AI/source reception.

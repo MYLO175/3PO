@@ -34,7 +34,7 @@ extension EventKitService {
                 }
                 guard let destination else { throw IntegrationError.readOnly }
                 item = EKReminder(eventStore:store); item.calendar = destination; item.title = title
-                item.notes = "Mission Control request " + marker
+                item.notes = NativeRequestNotes.creation(draft.notes)
             } else {
                 guard let expected, draft.target == expected.id, allowedLists.contains(expected.listID),
                       let found = store.calendarItem(withIdentifier:expected.id) as? EKReminder,
@@ -80,7 +80,7 @@ extension EventKitService {
                 guard draft.target == nil, let title = draft.title, !title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, title.count <= 500 else { throw ActionFailure.message("Specify the event's title.") }
                 let destination = draft.destination.flatMap { store.calendar(withIdentifier:$0) } ?? store.defaultCalendarForNewEvents
                 guard let destination, allowedCalendars.contains(destination.calendarIdentifier), destination.allowsContentModifications, destination.allowedEntityTypes.contains(.event) else { throw IntegrationError.readOnly }
-                item = EKEvent(eventStore:store); item.calendar = destination; item.title = title; item.notes = "Mission Control request " + marker
+                item = EKEvent(eventStore:store); item.calendar = destination; item.title = title; item.notes = NativeRequestNotes.creation(draft.notes)
             } else {
                 guard let expectedEvent, draft.target == expectedEvent.id, allowedCalendars.contains(expectedEvent.calendarID), let calendar = store.calendar(withIdentifier:expectedEvent.calendarID) else { throw IntegrationError.missing }
                 let matches = store.events(matching:store.predicateForEvents(withStart:expectedEvent.start.addingTimeInterval(-1),end:expectedEvent.end.addingTimeInterval(1),calendars:[calendar])).filter { DateRules.occurrenceID($0.eventIdentifier ?? $0.calendarItemIdentifier,start:$0.startDate) == expectedEvent.id }
@@ -119,7 +119,7 @@ extension EventKitService {
         }
     }
     #if DEBUG
-    func removeActionFixture(id: String, title: String, marker: String) throws {
+    func removeActionFixture(id: String, title: String, marker: String, expectedNotes:String? = nil) throws {
         // Tool-edit Undo can restore the original UUID title. Keep cleanup limited
         // to the exact tracked item and its unchanged, private creation marker.
         let prefix = "Mission Control tool validation "
@@ -127,7 +127,7 @@ extension EventKitService {
         let original = UUID(uuidString:suffix) == nil ? nil : prefix + suffix
         guard let item = store.calendarItem(withIdentifier:id),
               item.title == title || (original != nil && item.title == original),
-              item.notes == "Mission Control request " + marker else { throw IntegrationError.missing }
+              (item.notes ?? "") == (expectedNotes ?? "Mission Control request " + marker) else { throw IntegrationError.missing }
         if let reminder = item as? EKReminder { try store.remove(reminder,commit:true) }
         else if let event = item as? EKEvent { try store.remove(event,span:.thisEvent,commit:true) }
         guard store.calendarItem(withIdentifier:id) == nil else { throw IntegrationError.verification }
@@ -141,8 +141,9 @@ extension EventKitService {
         var report = ""
         var stage = "reminder creation"
         do {
-            let create = ActionDraft(kind:.createReminder,destination:list.calendarIdentifier,title:title)
+            var create = ActionDraft(kind:.createReminder,destination:list.calendarIdentifier,title:title,notes:"Mission Control request " + marker+"-1")
             let first = try await apply(create,reminder:nil,event:nil,marker:marker+"-1",allowedCalendars:[],allowedLists:[list.calendarIdentifier])
+            create.notes="Mission Control request " + marker+"-2"
             let second = try await apply(create,reminder:nil,event:nil,marker:marker+"-2",allowedCalendars:[],allowedLists:[list.calendarIdentifier])
             guard let firstID = first.itemID, let secondID = second.itemID, firstID != secondID else { throw IntegrationError.verification }
             fixtures += [(firstID,title,marker+"-1"),(secondID,title,marker+"-2")]
@@ -163,7 +164,7 @@ extension EventKitService {
             guard staleRejected, (store.calendarItem(withIdentifier:secondID) as? EKReminder)?.isCompleted == false else { throw IntegrationError.verification }
             stage = "timed event creation"
             let start = Date.now.addingTimeInterval(3600), end = start.addingTimeInterval(1800)
-            let eventResult = try await apply(.init(kind:.createEvent,destination:calendar.calendarIdentifier,title:title,start:start.ISO8601Format(),end:end.ISO8601Format(),allDay:false),reminder:nil,event:nil,marker:marker+"-event",allowedCalendars:[calendar.calendarIdentifier],allowedLists:[])
+            let eventResult = try await apply(.init(kind:.createEvent,destination:calendar.calendarIdentifier,title:title,start:start.ISO8601Format(),end:end.ISO8601Format(),allDay:false,notes:"Mission Control request " + marker+"-event"),reminder:nil,event:nil,marker:marker+"-event",allowedCalendars:[calendar.calendarIdentifier],allowedLists:[])
             guard let eventID = eventResult.itemID else { throw IntegrationError.verification }
             fixtures.append((eventID,title,marker+"-event"))
             let events = try await self.calendar(from:start.addingTimeInterval(-1),to:end.addingTimeInterval(1))
@@ -174,7 +175,7 @@ extension EventKitService {
             fixtures[2].1 = title+" edited event"
             stage = "all-day event creation"
             let today = Calendar.current.startOfDay(for:.now), tomorrow = Calendar.current.date(byAdding:.day,value:1,to:today)!
-            let allDay = try await apply(.init(kind:.createEvent,destination:calendar.calendarIdentifier,title:title,start:DateRules.localDate(today),end:DateRules.localDate(tomorrow),allDay:true),reminder:nil,event:nil,marker:marker+"-allday",allowedCalendars:[calendar.calendarIdentifier],allowedLists:[])
+            let allDay = try await apply(.init(kind:.createEvent,destination:calendar.calendarIdentifier,title:title,start:DateRules.localDate(today),end:DateRules.localDate(tomorrow),allDay:true,notes:"Mission Control request " + marker+"-allday"),reminder:nil,event:nil,marker:marker+"-allday",allowedCalendars:[calendar.calendarIdentifier],allowedLists:[])
             guard let allDayID = allDay.itemID else { throw IntegrationError.verification }
             fixtures.append((allDayID,title,marker+"-allday"))
             report = "PASS action reminder create/edit/date-only/timed due/identity completion/Undo, duplicate isolation, stale-target rejection, timed/all-day event creation and duration-preserving event edit."

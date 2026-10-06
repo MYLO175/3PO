@@ -90,3 +90,8 @@ Collection and thought have independent clocks: local Mail collection every five
 ## 6 October — Keep actual failure reasons with the reply
 
 A generated explanation is not an execution trace. New PA replies retain bounded original tool errors locally, and pre-operation intent refusals identify that no native save was attempted. Existing receipts still govern uncertain saves and prevent replay. Older replies are preserved without invented retrospective diagnostics. Source-relative timing is resolved before proposing a write; the human request remains its authority.
+
+
+## 6 October — Keep internal tracking out of native notes
+
+Operation identity belongs in private local receipts. A Calendar event or Reminder’s notes contain requested content or stay blank; default request hashes are removed from both current and legacy creation adapters. Existing marker cleanup is an explicit, receipt-and-native-ID-bound notes edit, never a title search or background migration. Disposable validation markers are supplied explicitly and confined to fixtures.

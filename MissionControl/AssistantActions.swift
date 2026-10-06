@@ -3,7 +3,7 @@ import Observation
 import SwiftData
 
 struct ActionTarget: Identifiable { var id: String; var label: String }
-private struct ActionLedgerEntry: Codable { var result: String?; var attempted = Date.now; var itemID: String?; var fixtureTitle: String?; var undoToken: String?; var undone: Bool? }
+private struct ActionLedgerEntry: Codable { var result: String?; var attempted = Date.now; var itemID: String?; var fixtureTitle: String?; var undoToken: String?; var undone: Bool?; var fixtureNotes:String?;var clearedMarker:Bool? }
 
 @MainActor @Observable final class AssistantActions {
     var targets: [ActionTarget] = []
@@ -57,7 +57,7 @@ private struct ActionLedgerEntry: Codable { var result: String?; var attempted =
         let result = try await model.eventKit.applyTool(draft,reminder:reminder,event:event,marker:key,allowedCalendars:allowedCalendars,allowedLists:allowedLists,expectedDetails:expectedDetails,valid:valid)
         ledger[key]?.result = result.message; ledger[key]?.itemID = result.itemID; ledger[key]?.undoToken = result.undoToken
         #if DEBUG
-        if let title = draft.title, (draft.kind == .createReminder || draft.kind == .createEvent), title.hasPrefix("Mission Control tool validation "), UUID(uuidString:String(title.dropFirst("Mission Control tool validation ".count))) != nil, draft.notes == nil { ledger[key]?.fixtureTitle = title }
+        if let title = draft.title, (draft.kind == .createReminder || draft.kind == .createEvent), title.hasPrefix("Mission Control tool validation "), UUID(uuidString:String(title.dropFirst("Mission Control tool validation ".count))) != nil, draft.notes == nil { ledger[key]?.fixtureTitle = title;ledger[key]?.fixtureNotes=NativeRequestNotes.creation(draft.notes) }
         if let itemID = result.itemID, let title = draft.title {
             for (originalKey, original) in ledger where original.itemID == itemID && original.fixtureTitle != nil { ledger[originalKey]?.fixtureTitle = title }
         }
@@ -84,10 +84,33 @@ private struct ActionLedgerEntry: Codable { var result: String?; var attempted =
         try save()
     }
     #if DEBUG
+    /// Explicit one-off human-requested cleanup; never called by refresh/inference.
+    func cleanupRequestMarkers(_ model:DashboardModel) async -> [String:Int] {
+        let registration=model.chatGPT.activeID
+        guard storageAvailable,!model.assistant.busy,!model.writing else {return ["blocked":1]}
+        model.writing=true;defer {model.writing=false}
+        var report=["reminders":0,"events":0,"unchanged":0,"errors":0]
+        let eventScope:NativeChangeScope? = ProcessInfo.processInfo.arguments.contains("--cleanup-marker-future") ? .futureEvents : ProcessInfo.processInfo.arguments.contains("--cleanup-marker-next") ? .occurrence : nil
+        let valid:NativeWriteValidity = {model.chatGPT.activeID == registration}
+        for (key,entry) in ledger.sorted(by:{$0.key < $1.key}) where entry.result != nil && entry.itemID != nil && entry.fixtureTitle == nil {
+            guard valid() else {report["errors",default:0] += 1;break}
+            do {
+                if let kind=try await model.eventKit.clearRequestMarker(id:entry.itemID!,receiptKey:key,eventScope:eventScope,valid:valid) {
+                    report[kind == .reminder ? "reminders" : "events",default:0] += 1
+                    ledger[key]?.clearedMarker=true;try save()
+                } else {report["unchanged",default:0] += 1}
+            } catch {
+                report["errors",default:0] += 1
+                if error.localizedDescription == "Recurring Calendar notes need an explicit scope." {report["recurringCalendarSkipped",default:0] += 1}
+                else {report["otherError",default:0] += 1}
+            }
+        }
+        return report
+    }
     func cleanupFixtures(_ model: DashboardModel) async throws -> String {
         for (key, entry) in ledger where entry.fixtureTitle != nil {
             guard let id = entry.itemID, let title = entry.fixtureTitle else { continue }
-            try await model.eventKit.removeActionFixture(id:id,title:title,marker:key)
+            try await model.eventKit.removeActionFixture(id:id,title:title,marker:key,expectedNotes:entry.fixtureNotes)
             ledger[key]?.fixtureTitle = nil
             try save()
         }

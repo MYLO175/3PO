@@ -31,6 +31,9 @@ extension EventKitService {
             event.startDate = edited.start; event.endDate = edited.allDay ? edited.end.addingTimeInterval(-1) : edited.end
             try applyExtendedFields(edited,baseline:nil,to:event)
             try store.save(event,span:.thisEvent,commit:true); identifier = event.calendarItemIdentifier
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--validate-clean-notes") { creationNotesCheckIDs.append(identifier) }
+            #endif
             store.reset()
             guard let savedCalendar = store.calendar(withIdentifier:edited.sourceID) else { throw IntegrationError.verification }
             let matches = store.events(matching:store.predicateForEvents(withStart:edited.start.addingTimeInterval(-1),end:edited.end.addingTimeInterval(1),calendars:[savedCalendar])).filter { $0.calendarItemIdentifier == identifier && $0.startDate == edited.start }
@@ -45,6 +48,9 @@ extension EventKitService {
             reminder.dueDateComponents = edited.due.map { calendar.dateComponents(edited.hasTime ? [.year,.month,.day,.hour,.minute,.second,.timeZone] : [.year,.month,.day],from:$0) }
             try applyExtendedFields(edited,baseline:nil,to:reminder)
             try store.save(reminder,commit:true); identifier = reminder.calendarItemIdentifier
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--validate-clean-notes") { creationNotesCheckIDs.append(identifier) }
+            #endif
             store.reset()
             guard let saved = store.calendarItem(withIdentifier:identifier) as? EKReminder, !saved.isCompleted else { throw IntegrationError.verification }
             let value = editorDetails(saved)

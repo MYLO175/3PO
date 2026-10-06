@@ -5,6 +5,7 @@ import AppKit
 actor EventKitService {
     #if DEBUG
     var nativeCheckMismatch: String?
+    var creationNotesCheckIDs: [String] = []
     #endif
     let store = EKEventStore()
     private struct CompletionRecord {
