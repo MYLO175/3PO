@@ -141,6 +141,8 @@ enum MemoryRules {
 struct MemorySelection {
     var records: [[String:String]]
     var eligibleCount: Int
+    /// Local explanations produced by the same ranking pass; never supplied as authority.
+    var reasons: [UUID:[String]] = [:]
 }
 enum MemoryRetrieval {
     static let byteLimit = 20_000
@@ -200,13 +202,20 @@ enum MemoryRetrieval {
         // Keep a small stable core of confirmed preferences, leaving room for old relevant facts.
         let preferences = eligible.filter { $0.explicit && $0.kind == .preference }.sorted(by:ordered)
         let pinned = Array(preferences.filter { $0.conversationID == nil }.prefix(6)) + Array(preferences.filter { conversationID != nil && $0.conversationID == conversationID }.prefix(6))
-        var seen = Set<UUID>(), result: [[String:String]] = [], used = 2
+        var seen = Set<UUID>(), result: [[String:String]] = [], used = 2, reasons:[UUID:[String]]=[:]
         for memory in pinned + ranked where result.count < max(0,limit) {
             guard seen.insert(memory.id).inserted else { continue }
             let value = record(memory)
             guard let data = try? JSONSerialization.data(withJSONObject:value,options:[.sortedKeys]), used + data.count + 1 <= bytes else { continue }
             result.append(value); used += data.count + 1
+            var why:[String]=[]
+            if pinned.contains(where:{$0.id == memory.id}) { why.append("Core confirmed preference") }
+            let text=memory.text+" "+(memory.connections ?? []).map{$0.subject+" "+$0.relation+" "+$0.object}.joined(separator:" ")
+            if !tokens(text).isDisjoint(with:terms) { why.append("Words match your question") }
+            if connected.contains(memory.id) { why.append("Related recorded connection, within two hops") }
+            if memory.organisation?.areas.contains(where:focus.contains) == true { why.append("Matches your Focus") }
+            reasons[memory.id]=why.isEmpty ? ["Other available context, ranked by confirmation, kind, scope and review date"] : why
         }
-        return MemorySelection(records:result,eligibleCount:eligible.count)
+        return MemorySelection(records:result,eligibleCount:eligible.count,reasons:reasons)
     }
 }

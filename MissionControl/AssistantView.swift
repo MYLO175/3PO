@@ -90,6 +90,7 @@ struct AssistantPanel: View {
     @State private var dictation = DictationService()
     @State private var showDictation = false
     @State private var showMemory = false
+    @State private var inspectingContext:PAContextCapture?
     @State private var showProfileSetup = false
     @State private var showBriefing = false
     @State private var visibleTurnLimit=40
@@ -207,6 +208,7 @@ struct AssistantPanel: View {
                                 }
                                 if turn.role == "assistant" && !turn.completed && assistant.requestTurnID != turn.id && !turn.content.isEmpty { Text("Partial response").font(.caption).foregroundStyle(.orange) }
                                 if let date = turn.created { Text(date.formatted(date:.omitted,time:.shortened)).font(.caption2).foregroundStyle(.secondary) }
+                                if let capture=turn.contextCapture { Button("Context details") { inspectingContext=capture }.font(.caption).buttonStyle(.plain).foregroundStyle(.secondary) }
                             }.font(.callout).padding(12).frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children:.contain).accessibilityLabel(turn.role == "user" ? "Your message" : "PA message").background(palette[turn.role == "user" ? .userBubble : .assistantBubble],in:RoundedRectangle(cornerRadius:10))
                             if turn.role != "user" { Spacer(minLength:20) }
                             }.id(turn.id)
@@ -299,7 +301,7 @@ struct AssistantPanel: View {
         }.onDisappear { assistant.drafts.hide(widget:imageDraftWidget); assistant.drafts.flush() }
         .onChange(of:selectedID) { showDraft() }
         .onChange(of:selectedTopicID) { showProfileSetup=false; showDraft() }
-        .onChange(of:model.chatGPT.activeID) { assistant.drafts.flush(); assistant.openPA(); showMemory = false; showProfileSetup=false;sourceDiscovery=nil; showDraft() }
+        .onChange(of:model.chatGPT.activeID) { assistant.drafts.flush(); assistant.openPA(); showMemory = false; inspectingContext=nil;showProfileSetup=false;sourceDiscovery=nil; showDraft() }
         .onChange(of:model.proactive.state.records.filter { model.proactive.visible($0,model:model) }.map(\.id)) { if let sourceDiscovery,!model.proactive.visible(sourceDiscovery,model:model) { self.sourceDiscovery=nil } }
         .onChange(of:draft.wrappedValue) { _, draft in
             if !draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && model.memoryLearning.busy { model.memoryLearning.cancel() }
@@ -307,7 +309,7 @@ struct AssistantPanel: View {
             if !paused, assistant.error?.contains("subscription_sharing_usage_limit_exceeded") == true { assistant.error = nil }
         }.sheet(item:$reviewingProject) { record in
             LifeItemEditor(model:model,item:.init(registration:record.registration,kind:.project,title:String((record.sourceTitle ?? "New project").prefix(160)),notes:record.evidence),close:{reviewingProject=nil},reviewedSuggestion:record)
-        }.sheet(isPresented:$showRename) { PANameEditor(assistant:assistant) }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { PAMemoryView(memory:assistant.memory,registration:model.chatGPT.activeID,conversationID:selectedTopicID,topicTitle:topic?.title,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) },organisation:model.lifeOrganisation,organiseContext:{ model.lifeOrganisation.check(model,manual:true,topic:selectedTopicID) }) }.sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record) }.sheet(isPresented:$showProfileSetup) {
+        }.sheet(isPresented:$showRename) { PANameEditor(assistant:assistant) }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { PAMemoryView(memory:assistant.memory,registration:model.chatGPT.activeID,conversationID:selectedTopicID,topicTitle:topic?.title,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) },organisation:model.lifeOrganisation,organiseContext:{ model.lifeOrganisation.check(model,manual:true,topic:selectedTopicID) },model:model,focusAreas:focusAreas) }.sheet(item:$inspectingContext) { capture in PAContextCaptureView(capture:capture,model:model,registration:model.chatGPT.activeID) }.sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record) }.sheet(isPresented:$showProfileSetup) {
             PAProfileSetupPanel(model:model,assistant:assistant,topicID:selectedTopicID,registration:model.chatGPT.activeID)
         }.sheet(isPresented:$showDictation) {
             DictationView(dictation:dictation) { text in draft.wrappedValue = draft.wrappedValue.isEmpty ? text : draft.wrappedValue + " " + text }

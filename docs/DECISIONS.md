@@ -18,6 +18,8 @@ The latest user direction replaces named-topic navigation with a multi-select le
 
 Direct statements and interpretations have different confidence. Stable human-stated facts should persist. Evidence and correction/forget controls matter more than graph density. The graph is a view over knowledge records, not the underlying proof of intelligence.
 
+6 October transparency: use a read-only inspector over the existing store/projections, with saved/current/available/selected distinctions. Initial request selection and notebook input are assembled once and referenced by an optional ID/count trace on the existing assistant turn. Successful memory reads have a separate trace set; issued identities and conservative source-history dependencies keep their original safety roles. A trace is prepared input metadata, not model reasoning/attention, an exhaustive source audit or action success. Current access gates historical inspection; no duplicate prompt/source store or inference on opening.
+
 ## Separate facts, organisation and recall
 
 Original evidence-backed facts are the authority. Life areas and typed endpoints are additive metadata; they can be reclassified without rewriting that evidence. Notes/maps derive from currently usable facts. Recall selects a bounded relevant subset and follows entity links without expanding through the universal self hub. These layers should not become a single ungrounded biography prompt.

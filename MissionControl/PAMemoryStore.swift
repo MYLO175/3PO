@@ -62,6 +62,16 @@ import SwiftData
         while let previous=cursor.supersedes,seen.insert(previous).inserted,let value=byID[previous] { result.append(value);cursor=value }
         return result
     }
+    /// Inspection follows either direction without changing Forget's deliberately narrower semantics.
+    func lineage(_ id:UUID)->[PAMemory] {
+        guard let initial=records.first(where:{$0.id == id}) else { return [] }
+        let account=Dictionary(records.filter{$0.registration == initial.registration}.map{($0.id,$0)},uniquingKeysWith:{first,_ in first})
+        var ids:Set<UUID>=[id],pending=[id]
+        while let next=pending.popLast(),let record=account[next] {
+            for link in [record.supersedes,record.supersededBy].compactMap({$0}) where account[link] != nil && ids.insert(link).inserted { pending.append(link) }
+        }
+        return records.filter{ids.contains($0.id)}.sorted{$0.created == $1.created ? $0.id.uuidString < $1.id.uuidString : $0.created < $1.created}
+    }
     @discardableResult func restoreForgotten(_ records:[PAMemory])->Bool {
         guard !records.isEmpty,Set(records.map(\.id)).count == records.count,records.allSatisfy({record in !self.records.contains(where:{$0.id == record.id})}) else { error="Memory changed after Forget; restoration stopped.";return false }
         return change { state in

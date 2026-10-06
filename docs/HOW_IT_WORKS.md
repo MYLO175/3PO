@@ -32,6 +32,8 @@ A foreground request has no fixed count of changes, tool calls, inference rounds
 
 ## Memory: what exists today
 
+The [Memory and context guide](MEMORY_AND_CONTEXT.md) explains the record structure, recall gates and code/storage ownership. In the app, Memory now opens an Overview of saved/current/available facts; Facts, Life areas and Controls keep inspection separate from learning controls. Life map and Settings link to the same inspector. The local recall preview uses the production ranker without an AI call. New foreground replies expose Context details with prepared memory/notebook IDs, additional memory-read IDs, bounded dialogue counts, model/Focus and attempted tools; it stores no additional source bodies or old prose, and does not claim model attention or verified writes. Older replies retain their existing data without a retroactive trace.
+
 | Layer | What it contains | How it is used |
 | --- | --- | --- |
 | Recent conversation | Recent completed messages in the ongoing general PA conversation (legacy thread tags stay saved) | Follow-ups, references and conversational intent |

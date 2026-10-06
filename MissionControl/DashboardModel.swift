@@ -130,6 +130,9 @@ import EventKit
         excludedAccounts = savedAccounts
         do {
             #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--inspect-luna-access") || ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") || ProcessInfo.processInfo.arguments.contains("--validate-memory-inspection") {
+                container=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true));return
+            }
             if ProcessInfo.processInfo.arguments.contains("--validate-source-timeline") || ProcessInfo.processInfo.arguments.contains("--preview-source-timeline") || ProcessInfo.processInfo.arguments.contains("--preview-settings") || ProcessInfo.processInfo.arguments.contains("--validate-images") || ProcessInfo.processInfo.arguments.contains("--preview-images") || ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-projects") || ProcessInfo.processInfo.arguments.contains("--preview-projects") || ProcessInfo.processInfo.arguments.contains("--validate-placement") || ProcessInfo.processInfo.arguments.contains("--validate-ownership") || ProcessInfo.processInfo.arguments.contains("--validate-mail-monitoring") || ProcessInfo.processInfo.arguments.contains("--validate-mail-dates") {
                 container = try ModelContainer(for: CachedDashboard.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
                 return
@@ -145,6 +148,18 @@ import EventKit
     func start() {
         guard !started else { return }; started = true
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") {return}
+        if ProcessInfo.processInfo.arguments.contains("--inspect-luna-access") {
+            Task {
+                let result:[String:Any]
+                do {result=try await chatGPT.inspectLunaAccess()} catch {result=["error":error.localizedDescription,"personalSourcesSent":false,"selectedModel":chatGPT.selectedModel]}
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-luna-access.json"),options:.atomic)}
+                NSApp.terminate(nil)
+            };return
+        }
+        if ProcessInfo.processInfo.arguments.contains("--validate-memory-inspection") {
+            Task { await MemoryInspectionPreview.validate(self);NSApp.terminate(nil) };return
+        }
         if ProcessInfo.processInfo.arguments.contains("--preview-source-timeline") { return }
         if ProcessInfo.processInfo.arguments.contains("--validate-source-timeline") {
             Task {

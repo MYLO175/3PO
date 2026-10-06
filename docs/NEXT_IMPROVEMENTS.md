@@ -6,6 +6,7 @@ The [6 October PA architecture review](PA_ARCHITECTURE_REVIEW.md) recommends the
 
 | Area | Already implemented | Next improvement | Success looks like |
 | --- | --- | --- | --- |
+| Memory transparency | Saved/current/available overview, exclusion reasons, evidence/dates/lineage, production recall preview and new-reply ID/count traces | Validate sustained real-profile use, richer source-result references and request-selection quality | The creator can explain what is saved, what is usable and which facts a new reply was prepared with |
 | Life focus | One conversation, multi-select life areas, captured queue focus, two-hop permitted recall | More specific entity anchors and measured semantic recall if needed | Engineering recalls modules/projects/career links while retaining important shared context |
 | Linked notebook | One self identity, evidence-backed memories, durable editable life/project records, canonical identity projection and bounded new-project placement | Broaden evaluated identity alignment, supported aliases and semantic consolidation | One coherent person/project identity rather than several slightly different names |
 | Source learning | Foreground source tools, separately opted-in recent WhatsApp learning, fair pending coverage, multi-quote evidence, same-chat provisional updates and atomic assessment receipts | Mail/Calendar/Reminders deltas and source-aware persistent brief/suggestion dependencies | Useful supported context can be learned without requiring a chat, with its origin visible |

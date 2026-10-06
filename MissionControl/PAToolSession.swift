@@ -16,6 +16,8 @@ import Foundation
     var emails: [String:MailMessage] = [:]
     var itemDetails: [String:NativeEditDetails] = [:]
     var issuedMemory: Set<UUID> = []
+    /// Successful read outputs only; separate from identities issued by memory saves/edits.
+    var consultedMemory: Set<UUID> = []
     var receipts: [String] = []
     var memoryNotes: [String] = []
     var clarification: (String,[String])?
@@ -226,6 +228,7 @@ import Foundation
             guard memory.enabled else { throw ActionFailure.message("Memory is disabled.") }
             let selection = memory.selection(registration,conversationID:topicID,includeTopics:focusAreas != nil,query:text("query"),focus:focusAreas ?? assistant.conversation(topicID)?.notebookAreas ?? [])
             issuedMemory.formUnion(selection.records.compactMap { $0["id"].flatMap(UUID.init(uuidString:)) })
+            consultedMemory.formUnion(selection.records.compactMap { $0["id"].flatMap(UUID.init(uuidString:)) })
             return try json(["records":selection.records,"eligible":selection.eligibleCount,"selected":selection.records.count,"coverage":focusAreas != nil ? "Bounded account-owned relevant memory with life-area focus; not exhaustive recall." : "Bounded relevant shared/current-topic memory; not exhaustive recall."])
         case "read_life_notebook":
             guard memory.enabled else { throw ActionFailure.message("Memory is disabled.") }
@@ -235,6 +238,8 @@ import Foundation
             issuedMemory.formUnion(selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))})
             let notes=try JSONSerialization.jsonObject(with:Data(notebook.context(query:text("query"),focus:focus).utf8)) as! [String:Any]
             for area in notes["areas"] as? [[String:Any]] ?? [] { issuedMemory.formUnion((area["facts"] as? [[String:String]] ?? []).compactMap{$0["id"].flatMap(UUID.init(uuidString:))}) }
+            consultedMemory.formUnion(selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))})
+            for area in notes["areas"] as? [[String:Any]] ?? [] { consultedMemory.formUnion((area["facts"] as? [[String:String]] ?? []).compactMap{$0["id"].flatMap(UUID.init(uuidString:))}) }
             return try json(["notes":notes,"records":selection.records,"entities":notebook.entities.filter{!$0.memoryIDs.isDisjoint(with:issuedMemory)}.prefix(40).map{["id":$0.id,"label":$0.label,"kind":$0.kind.rawValue,"areas":$0.areas.map(\.rawValue).sorted()] as [String:Any]},"coverage":focusAreas != nil ? "Partial bounded account-owned notebook with life-area focus; source permissions still apply." : "Partial bounded shared/current-topic notebook; no other-topic facts or source reads."])
         case "organise_memory":
             guard memory.enabled,let id=UUID(uuidString:text("id")!),issuedMemory.contains(id),let record=memory.permittedRecords.first(where:{$0.id == id && $0.source == nil && $0.registration == registration && (focusAreas != nil || MemoryRules.inScope($0,conversationID:topicID))}) else { throw ActionFailure.message("Read a permitted human memory before organising it. Source interpretations keep their separate evidence and provisional areas.") }

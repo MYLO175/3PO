@@ -82,7 +82,7 @@ struct LifeNotebookMapView:View {
                             .overlay(RoundedRectangle(cornerRadius:16).fill(note.area.colour.opacity(active ? 0.12 : 0.04)))
                             .overlay(RoundedRectangle(cornerRadius:16).stroke(note.area.colour.opacity(active ? 0.7 : related(note) ? 0.5 : 0.2),lineWidth:active ? 2 : 1))
                     }.buttonStyle(.plain).position(x:rect.midX,y:rect.midY)
-                        .accessibilityLabel("\(note.area.title), \(note.records.count) saved facts" + (related(note) ? ", shares facts with the selected area" : ""))
+                        .accessibilityLabel("\(note.area.title), \(note.records.count) available facts" + (related(note) ? ", shares facts with the selected area" : ""))
                         .accessibilityAddTraits(active ? .isSelected : [])
                 }
             }.foregroundStyle(palette[.text])

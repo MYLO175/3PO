@@ -61,6 +61,7 @@ The first command is a focused baseline check, not an aggregate of every test. O
 ## Implementation notebook
 
 - [How it works](docs/HOW_IT_WORKS.md): current architecture and behaviour.
+- [Memory and context](docs/MEMORY_AND_CONTEXT.md): saved facts, usable notebook, per-reply context and inspection.
 - [Next improvements](docs/NEXT_IMPROVEMENTS.md): remaining product gaps and acceptance criteria.
 - [Decisions](docs/DECISIONS.md): significant implementation choices.
 - [PA intelligence plan](docs/PA_INTELLIGENCE_PLAN.md): staged memory and reasoning work.

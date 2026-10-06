@@ -1,0 +1,42 @@
+import Foundation
+
+/// Read-only explanations of the existing recall gates. Does not create a parallel memory store.
+enum MemoryAvailability: String, CaseIterable, Identifiable {
+    case available, earlierVersion, resolved, reviewNeeded, sourceUnavailable, otherScope
+    var id:String { rawValue }
+    var title:String { switch self {
+    case .available: "Available to PA"
+    case .earlierVersion: "Earlier version"
+    case .resolved: "Resolved or archived"
+    case .reviewNeeded: "Needs review"
+    case .sourceUnavailable: "Source evidence unavailable"
+    case .otherScope: "Outside this thread"
+    } }
+    var explanation:String { switch self {
+    case .available: "Can be selected when relevant; selection is bounded."
+    case .earlierVersion: "Kept as history; a newer belief replaced it."
+    case .resolved: "Kept for inspection; excluded from current recall. Apple reminders are separate."
+    case .reviewNeeded: "Provisional context has gone 90 days without review; confirm or correct it when useful."
+    case .sourceUnavailable: "One or more quoted versions are changed, forgotten, missing from cache or outside current source access."
+    case .otherScope: "This legacy thread cannot read other topic memories. Focus conversations can use this account's earlier topic memories."
+    } }
+}
+struct MemoryInspectionRow:Identifiable {
+    var record:PAMemory
+    var availability:MemoryAvailability
+    var id:UUID { record.id }
+}
+enum MemoryInspection {
+    static func rows(_ records:[PAMemory],permitted:Set<UUID>,registration:String,topic:UUID? = nil,includeTopics:Bool = true,now:Date = .now)->[MemoryInspectionRow] {
+        records.filter{$0.registration == registration}.map { record in
+            let status:MemoryAvailability
+            if record.supersededBy != nil { status = .earlierVersion }
+            else if record.sourceInvalidation != nil || !permitted.contains(record.id) { status = .sourceUnavailable }
+            else if record.resolved != nil { status = .resolved }
+            else if MemoryRules.needsReview(record,now:now) { status = .reviewNeeded }
+            else if !MemoryRules.inScope(record,conversationID:topic,includeTopics:includeTopics) { status = .otherScope }
+            else { status = .available }
+            return .init(record:record,availability:status)
+        }.sorted{$0.record.reviewed == $1.record.reviewed ? $0.id.uuidString < $1.id.uuidString : $0.record.reviewed > $1.record.reviewed}
+    }
+}

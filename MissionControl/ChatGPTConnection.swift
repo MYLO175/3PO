@@ -225,6 +225,30 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         models = list.compactMap { value in guard value["visibility"] as? String == "list", let slug = value["slug"] as? String else { return nil }; return .init(id: slug, name: value["display_name"] as? String ?? slug) }
     }
     func testConnection() { run { try await self.loadModels(); try await self.verifyInference() } }
+    func refreshModels() {
+        guard !busy else { return };busy=true
+        task=Task {
+            defer { busy=false }
+            do { try await loadModels();message="Account model list refreshed. Your selected model is unchanged; no inference request was made." }
+            catch { message=error.localizedDescription }
+        }
+    }
+    #if DEBUG
+    /// Explicit diagnostic, before source startup. Never changes the selected/verified model.
+    func inspectLunaAccess() async throws->[String:Any] {
+        guard !busy,!usagePaused,hasSession else { throw ChatGPTError.message("Account access is unavailable or busy.") }
+        let selected=selectedModel,registration=activeID
+        busy=true;defer {busy=false}
+        try await loadModels()
+        guard selectedModel == selected,activeID == registration else {throw ChatGPTError.message("Account/model changed during the check.")}
+        var result:[String:Any]=["checked":Date.now.ISO8601Format(),"requested":"gpt-6-luna","selectedModel":selected,"offered":models.map(\.id),"listed":models.contains{$0.id == "gpt-6-luna"},"completedInference":false,"personalSourcesSent":false]
+        if models.contains(where:{$0.id == "gpt-6-luna"}) {
+            let reply=try await performResponse(input:[["role":"user","content":"Reply with exactly: Luna access works."]],instructions:nil,model:"gpt-6-luna",effort:"medium",purpose:.connectionCheck,onDelta:nil)
+            result["completedInference"]=true;result["reply"]=reply
+        }
+        return result
+    }
+    #endif
     func renewSession() { run {
         _ = try await self.access(forceRenewal: true)
         self.inferenceVerified = self.current?.verifiedModel != nil
@@ -358,6 +382,7 @@ struct ChatGPTConnectionView: View {
                 if !connection.accounts.isEmpty { Button("Add account") { connection.signIn(addAccount: true) }.disabled(connection.busy) }
             }
             HStack {
+                Button("Refresh models · no AI") { connection.refreshModels() }.disabled(connection.busy || !connection.hasSession)
                 Button("Check account access · 1 request") { connection.testConnection() }.disabled(connection.busy || !connection.hasSession)
                 Button("Renew session") { connection.renewSession() }.disabled(connection.busy || !connection.hasSession)
                 Button("Sign out") { connection.signOut() }.disabled(connection.busy || !connection.hasSession)

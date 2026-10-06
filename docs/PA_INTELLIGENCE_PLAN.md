@@ -10,6 +10,8 @@ Example acceptance cases use fictional people/data: a person identifies themselv
 
 ## 1. Identity and evidence foundations
 
+6 October transparency increment: the [Memory and context guide](MEMORY_AND_CONTEXT.md) and shared native inspector explain the existing structure, original evidence, current/usable selection gates and remaining gaps. New foreground replies retain prepared-input identities/counts on their existing turn; local recall preview uses the production ranker. This adds inspectability without a second knowledge store, semantic retrieval, new source learning or any change to action authority. STATUS records focused checks and live visual limits.
+
 Use one stable self identity per subscription registration, independent of display name. Resolve first-person references to that identity. A named subject becomes self only through an explicit identity annotation supported by an existing human fact, never because the name matches a contact. Keep source IDs, original evidence, scope, certainty, dates and memory IDs. Organisation is additive metadata; do not rewrite/delete saved facts during migration.
 
 Create typed entities for people, groups, organisations, places, roles, courses, projects, goals, habits, interests, values and personality traits. Existing ambiguous labels remain concepts until classified. Aliases require an explicit supported identity link. Non-self people are not globally merged by display name. Account/topic filters run before identity resolution, graph projection and retrieval.

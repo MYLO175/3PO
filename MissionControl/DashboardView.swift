@@ -348,6 +348,7 @@ struct SettingsView: View {
     @AppStorage("settingsSelectedPage") private var selectedPage = "General"
     @State private var enabled = SMAppService.mainApp.status == .enabled
     @State private var error: String?
+    @State private var inspectMemory=false
     @Environment(\.openWindow) private var openWindow
     private let pages = ["General", "Connections", "Assistant", "Background", "Memory", "Usage", "Help"]
     var body: some View {
@@ -392,6 +393,10 @@ struct SettingsView: View {
                     EmailSummarySettings(model:model,summaries:model.emailSummaries)
                     BriefingSettings(model:model,briefings:model.briefings)
                 case "Memory":
+                    Section("Memory and context") {
+                        Button("Inspect saved memory and recall") { inspectMemory=true }
+                        Text("See saved/current/available records, evidence, version history and a local recall preview. Opening it makes no AI request.").font(.caption).foregroundStyle(.secondary)
+                    }
                     AssistantSourceSettings(model:model,assistant:model.assistant,page:.memory)
                 case "Help":
                     PAHelpSections(model:model) { openWindow(id:"help") }
@@ -407,6 +412,8 @@ struct SettingsView: View {
             .accessibilityLabel("\(selectedPage) settings")
         }
         .frame(minWidth:760,minHeight:620)
+        .sheet(isPresented:$inspectMemory) { PAMemoryView(memory:model.assistant.memory,registration:model.chatGPT.activeID,learning:model.memoryLearning,assistant:model.assistant,checkContext:{model.memoryLearning.check(model,manual:true)},organisation:model.lifeOrganisation,organiseContext:{model.lifeOrganisation.check(model,manual:true)},model:model) }
+        .onChange(of:model.chatGPT.activeID) { inspectMemory=false }
     }
     private func icon(for page:String)->String {
         switch page {
@@ -449,6 +456,7 @@ struct PAHelpSections:View {
                 Text("Only context permitted for the active account and selected chats can be used. Conversation learning is separate from source learning. Turning memory off stops its use in PA replies; it does not delete saved records.").font(.callout)
             }
             Section("What the PA remembers") {
+                Text("Memory has Overview, Facts, Life areas and Controls. Overview separates saved records, current versions and currently available facts, and previews recall locally. New PA replies expose Context details with the exact prepared memory IDs, notebook IDs, dialogue counts and attempted tool names. Older replies are preserved without inventing a trace.").font(.callout)
                 Text("The PA keeps useful personal facts, preferences and relationships with their original evidence. It retrieves a bounded selection relevant to your question and Focus, rather than sending the whole notebook each time. Focus guides relevance; it never grants source access.").font(.callout)
                 Text("Human corrections keep a version history. Review, correct or forget facts from the PA's Memory menu or Life map. Source-derived facts are provisional; changing or disabling their source can make them unavailable to future replies. A saved belief or suggestion dismissal is never proof a task is complete.").font(.callout)
                 Text("Learning is selective: conversation learning, optional WhatsApp learning and memory organisation share four automatic passes per day with a 30-minute cooldown. Receiving a message does not mean the AI has assessed it. Source learning shows waiting and assessed versions, and versions that left its bounded window.").font(.callout)

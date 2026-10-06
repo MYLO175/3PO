@@ -18,6 +18,31 @@ struct AssistantTurn: Codable, Identifiable {
     var sourceMemoryIDs:[UUID]? = nil
     var focusAreas:[LifeArea]? = nil
     var images:[ChatImageAttachment]? = nil
+    /// IDs/counts only. A prepared input trace, not an assertion of model attention or write success.
+    var contextCapture: PAContextCapture? = nil
+}
+struct PAContextCapture: Codable, Equatable, Identifiable {
+    var id = UUID()
+    var captured = Date.now
+    var model: String
+    var focusAreas: [LifeArea]?
+    var memoryIDs: [UUID]
+    var eligibleMemoryCount: Int
+    var notebookMemoryIDs: [UUID]
+    var workspaceIDs: [String]
+    var historyTurnIDs: [UUID]
+    var excerptedHistoryIDs: [UUID]
+    var sourceSnapshotIncluded: Bool
+    var sourceSnapshotBytes: Int
+    var profileSetup: Bool
+    var consultedMemoryIDs: [UUID] = []
+    var attemptedTools: [String] = []
+    static func notebookIDs(_ context:String)->(memories:[UUID],workspace:[String]) {
+        let object=(try? JSONSerialization.jsonObject(with:Data(context.utf8))) as? [String:Any] ?? [:]
+        let areas=object["areas"] as? [[String:Any]] ?? []
+        let ids=areas.flatMap{($0["facts"] as? [[String:String]] ?? []).compactMap{$0["id"].flatMap(UUID.init(uuidString:))}}
+        return (Array(Set(ids)).sorted{$0.uuidString < $1.uuidString},(object["lifeStructure"] as? [[String:Any]] ?? []).compactMap{$0["id"] as? String})
+    }
 }
 struct AssistantConversation: Codable, Identifiable {
     var id = UUID()

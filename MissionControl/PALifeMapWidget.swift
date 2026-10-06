@@ -10,6 +10,7 @@ struct PALifeMapWidget: View {
     @State private var areaMemory:PAMemory?
     @State private var detailOrganising:PAMemory?
     @State private var detailShowMemory=false
+    @State private var showContext=false
     private var topic:UUID? { nil }
     private var focusAreas:[LifeArea] {
         if let saved=configuration.wrappedValue.lifeFocusSelections?[model.chatGPT.activeID] { return LifeFocusRules.normalised(saved) }
@@ -46,13 +47,17 @@ struct PALifeMapWidget: View {
                 }
             }
             HStack {
-                Text("\(Set(notes.flatMap { $0.records.map(\.id) }).count) saved facts").font(.caption).foregroundStyle(.secondary).lineLimit(1).help(model.lifeOrganisation.summary(model))
+                Text("\(Set(notes.flatMap { $0.records.map(\.id) }).count) available facts").font(.caption).foregroundStyle(.secondary).lineLimit(1).help(model.lifeOrganisation.summary(model))
                 Spacer()
-                if model.lifeOrganisation.busy { Button("Stop") { model.lifeOrganisation.cancel() } }
-                else { Button("Organise memories") { model.lifeOrganisation.check(model,manual:true,topic:topic) }.disabled(!model.assistant.memory.enabled || !model.assistant.memory.learningEnabled || model.chatGPT.busy || model.assistant.busy || !model.chatGPT.inferenceVerified || model.chatGPT.usagePaused) }
+                Menu("Memory & context") {
+                    Button("Inspect memory & context") { showContext=true }
+                    if model.lifeOrganisation.busy { Button("Stop organising") { model.lifeOrganisation.cancel() } }
+                    else { Button("Organise memories · AI") { model.lifeOrganisation.check(model,manual:true,topic:topic) }.disabled(!model.assistant.memory.enabled || !model.assistant.memory.learningEnabled || model.chatGPT.busy || model.assistant.busy || !model.chatGPT.inferenceVerified || model.chatGPT.usagePaused) }
+                }
             }.controlSize(.small)
             if let error=model.lifeOrganisation.error { Text(error).font(.caption).foregroundStyle(.orange).lineLimit(3) }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+        .sheet(isPresented:$showContext) { PAMemoryView(memory:model.assistant.memory,registration:model.chatGPT.activeID,learning:model.memoryLearning,assistant:model.assistant,checkContext:{model.memoryLearning.check(model,manual:true)},organisation:model.lifeOrganisation,organiseContext:{model.lifeOrganisation.check(model,manual:true)},model:model,focusAreas:focusAreas) }
         .sheet(item:$areaDetails) { area in
             VStack(alignment:.leading,spacing:14) {
                 HStack { Label(area.title,systemImage:area.symbol).font(.title3.weight(.semibold));Spacer();Button("Done") { areaDetails=nil } }
@@ -66,19 +71,19 @@ struct PALifeMapWidget: View {
         }
         .sheet(item:$selected) { memory in memoryDetails(memory)
         }
-        .onChange(of:model.chatGPT.activeID) { selectedProject=nil;selected=nil;areaDetails=nil;areaMemory=nil;detailOrganising=nil;detailShowMemory=false;selectedArea=nil }
+        .onChange(of:model.chatGPT.activeID) { selectedProject=nil;selected=nil;areaDetails=nil;areaMemory=nil;detailOrganising=nil;detailShowMemory=false;showContext=false;selectedArea=nil }
     }
     private func memoryDetails(_ memory:PAMemory,fromArea:Bool=false)->some View {
             VStack(alignment:.leading,spacing:14) {
                 Text(memory.text).font(.title3.weight(.semibold)).textSelection(.enabled)
                 Text(memory.attribution).font(.caption).foregroundStyle(.secondary)
-                if let evidence=memory.evidence { Text("“"+evidence+"”").textSelection(.enabled) }
+                PAMemoryEvidenceView(record:memory,sourcePermitted:model.assistant.memory.permittedRecords.contains{$0.id == memory.id})
                 ForEach(Array((memory.connections ?? []).enumerated()),id:\.offset) { _,edge in Text(edge.subject+" → "+edge.relation+" → "+edge.object).font(.callout) }
                 Text(memory.provenance).font(.caption).foregroundStyle(.secondary)
                 HStack { Button("Close") { if fromArea { areaMemory=nil } else { selected=nil } };Button("Organise") { detailOrganising=memory };Spacer();Button("Manage memories") { detailShowMemory=true } }
             }.padding(24).frame(width:480)
                 .sheet(item:$detailOrganising) { memory in LifeOrganisationEditor(memory:model.assistant.memory,record:memory) }
-                .sheet(isPresented:$detailShowMemory) { PAMemoryView(memory:model.assistant.memory,registration:model.chatGPT.activeID,conversationID:topic,topicTitle:model.assistant.conversation(topic)?.title,learning:model.memoryLearning,assistant:model.assistant,checkContext:{model.memoryLearning.check(model,manual:true)},organisation:model.lifeOrganisation,organiseContext:{model.lifeOrganisation.check(model,manual:true,topic:topic)}) }
+                .sheet(isPresented:$detailShowMemory) { PAMemoryView(memory:model.assistant.memory,registration:model.chatGPT.activeID,conversationID:topic,topicTitle:model.assistant.conversation(topic)?.title,learning:model.memoryLearning,assistant:model.assistant,checkContext:{model.memoryLearning.check(model,manual:true)},organisation:model.lifeOrganisation,organiseContext:{model.lifeOrganisation.check(model,manual:true,topic:topic)},model:model,focusAreas:focusAreas) }
 
     }
 }

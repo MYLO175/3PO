@@ -39,13 +39,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--preview-settings") {
                 SettingsView(model:model).preferredColorScheme(selectedColorScheme)
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") {
+                MemoryInspectionPreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-images") {
                 ChatImageInteractivePreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-projects") {
                 LifeProjectInteractivePreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-source-timeline") {
                 SourceTimelinePreview(model:model)
-            } else if ProcessInfo.processInfo.arguments.contains("--validate-source-timeline") || ProcessInfo.processInfo.arguments.contains("--validate-native-capabilities") || ProcessInfo.processInfo.arguments.contains("--validate-native-editors") {
+            } else if ProcessInfo.processInfo.arguments.contains("--inspect-luna-access") || ProcessInfo.processInfo.arguments.contains("--validate-memory-inspection") || ProcessInfo.processInfo.arguments.contains("--validate-source-timeline") || ProcessInfo.processInfo.arguments.contains("--validate-native-capabilities") || ProcessInfo.processInfo.arguments.contains("--validate-native-editors") {
                 Text("Running disposable validation…").padding().task {model.start()}
             } else { WorkspaceView(model:model).preferredColorScheme(selectedColorScheme) }
             #else
