@@ -102,3 +102,10 @@ Operation identity belongs in private local receipts. A Calendar event or Remind
 Image input extends the existing subscription tool loop, not a separate generation service. Clipboard inspection occurs only on Paste, with a removable local preview before Send/Queue. Native readable pasteboard types must include images so AppKit enables the Paste menu; ordinary text editing/Undo stays native.
 
 Optional small references preserve legacy transcripts/drafts/queues; bytes are private separate files so routine cache scans do not load screenshots. Account and digest checks guard display and requests. Current images are mandatory; older replay images have an independent four-image/eight-MB bound and visible omission labels. Text/tool context retains its previous bound. Screenshot text remains imported data and cannot independently authorise writes or human-memory corrections. Background processing is unchanged.
+
+
+## 6 October — Foreground completion has no work-count cap
+
+A human-requested Calendar import must not stop after four changes or an arbitrary number of tool rounds/calls. Remove those foreground counters and the two-page Mail continuation counter. Preserve the actual authority, ownership, revision, cancellation and duplicate-save checks. Diagnostic fixtures remain finite; automatic heartbeat/learning allowances are separate.
+
+Recent completed reasoning/function/output rounds stay together. When transport context needs room, omit oldest complete rounds and provide bounded receipt progress data; durable receipts and session-issued native identities are retained. Stop only a genuinely stalled sequence of three identical argument/result rounds, not a numerical amount of useful work. This extends future requests without replaying the user's previously incomplete import.

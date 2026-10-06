@@ -19,8 +19,6 @@ import Foundation
     var receipts: [String] = []
     var memoryNotes: [String] = []
     var clarification: (String,[String])?
-    var mutationCount = 0
-    var mailContinuations = 0
     var issuedSuggestions: Set<String> = []
     private lazy var life = LifeWorkspaceToolSession(model:model, registration:registration, topic:topicID, includeTopics:focusAreas != nil, turnID:turnID, evaluationStore:evaluationProjects)
     private var issuedWhatsApp: [String:LifeReference] = [:]
@@ -148,7 +146,6 @@ import Foundation
             let encoder=JSONEncoder();encoder.dateEncodingStrategy = .iso8601
             return try json(["id":text("id")!,"title":item.title,"notes":String(item.notes.prefix(10000)),"notesTruncated":item.notes.count > 10000,"location":item.location,"recurring":item.recurring,"writable":item.writable,"sourceID":item.sourceID,"timeZone":item.timeZoneID,"url":item.url,"priority":item.priority,"availability":item.availability,"repeatRules":try JSONSerialization.jsonObject(with:encoder.encode(item.recurrenceRules)),"timeAlerts":try JSONSerialization.jsonObject(with:encoder.encode(item.alarms)),"repeatScope":item.kind == .event ? "occurrence or futureEvents (includes selected occurrence)" : "reminderSeries for a repeating reminder","otherNativeAlertsPreserved":item.otherAlarmSignatures.count > item.alarms.count])
         case "change_calendar","change_reminder":
-            guard mutationCount < 4 else { throw ActionFailure.message("Four changes reached this task's write bound; split remaining work into another request.") }
             let operation = text("operation")!
             if operation == "create" {
                 guard !(call.name == "change_calendar" ? calendar.sources : reminders.sources).isEmpty else {
@@ -161,7 +158,7 @@ import Foundation
             let kind: ActionKind = call.name == "change_calendar" ? (operation == "create" ? .createEvent : operation == "delete" ? .deleteEvent : .editEvent) : (operation == "create" ? .createReminder : operation == "complete" ? .completeReminder : operation == "delete" ? .deleteReminder : .editReminder)
             let draft = ActionDraft(kind:kind,target:text("target"),destination:text("destination"),title:text("title"),due:text("due"),hasTime:args["hasTime"] as? Bool,start:text("start"),end:text("end"),allDay:args["allDay"] as? Bool,scope:text("scope"),notes:text("notes"),location:text("location"),options:try (args["options"] as? [String:Any]).map { try json($0) })
             let result = try await model.assistantActions.performTool(draft,human:human,authorization:text("authorization"),turnID:turnID,model:model,calendar:calendar,reminders:reminders,expectedDetails:draft.target.flatMap {itemDetails[$0]},valid:valid)
-            mutationCount += 1; receipts.append(result)
+            receipts.append(result)
             // A subsequent edit must read the new version, never reuse the old snapshot.
             if let target = draft.target { itemDetails.removeValue(forKey:target); calendar.events.removeAll { $0.id == target }; reminders.reminders.removeAll { $0.id == target } }
             return try json(["verified":true,"result":result])
@@ -175,10 +172,8 @@ import Foundation
             return output
         case "continue_mail":
             guard localMail.hasMore || localMail.hasUnavailable else { return try json(["coverage":"No pending search in this turn. Start search_mail using the current thread's human query."]) }
-            guard mailContinuations < 2 else { throw ActionFailure.message("Mail continuation bound reached; ask to continue in another turn.") }
             let retry = args["retryUnavailable"] as? Bool == true
             guard !retry || MailLookupRules.retryRequested(human) else { throw ActionFailure.message("Failed Mail reads require an explicit request to try again.") }
-            mailContinuations += 1
             let output = try await localMail.context(request:retry ? "Retry unavailable mail reads." : "Continue the email search.",model:model)
             localMail.commitAnswer(); for message in localMail.results { emails[message.id] = message; issuedLifeMail.insert(message.id) }; return output
         case "read_email":

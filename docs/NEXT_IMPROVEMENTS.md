@@ -64,3 +64,6 @@ Durable hierarchy, manual forms, shared PA tools and five local views are implem
 ## Screenshot input follow-through
 
 Clipboard image paste, draft/transcript/queue retention, thumbnail/large preview and bounded vision follow-ups are implemented. Validate personally useful dense screenshots, diagrams, very small widgets and long-lived image conversations. The 2400-pixel resize can lose tiny text; cropping and re-pasting is the current recovery. File-picker/drag attachments, PDFs, animation/video and a storage-management UI are separate future work. Pasted screenshot content is not automatically promoted into durable human memory.
+
+
+6 October foreground work caps removed: validate prolonged personally requested Calendar/Reminders batches, context pruning during real completed subscription tool execution, mid-batch Stop, genuine provider failures, account/source changes and duplicate prevention across new follow-ups. Finite focused checks exercise more than the old round/call caps; they are not exhaustive personal batch acceptance. The previous four saved lecture events and failure transcript remain untouched.

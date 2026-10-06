@@ -96,7 +96,7 @@ import SwiftData
         let instructions="You are a practical PA in the dedicated general memory interview. Memory and conversation learning are enabled. No topic is selected. Use the supplied notebook and human answer only; source access is unavailable. Saved notebook DATA: "+scratch.notebook(registration).context(query:nil)+"\n"+PAProfileSetup.instructions
         var input:[[String:Any]]=[["role":"assistant","content":"What is taking up most of your time at the moment?"],["role":"user","content":human]]
         var called=Set<String>(),callNames:[String]=[],callCount=0,failures=0,question:String?
-        for _ in 0..<PAToolProtocol.maxRounds {
+        for _ in 0..<PAToolProtocol.evaluationMaxRounds {
             try Task.checkCancellation()
             guard valid() else { throw MemoryLearningFailure.changed }
             try PAToolProtocol.boundedInput(input)
@@ -106,7 +106,7 @@ import SwiftData
             input.append(contentsOf:result.output)
             for call in result.calls {
                 // Restrict before executing, even if a completed response invents an unadvertised tool.
-                guard valid(),PAProfileSetup.allowedTools.contains(call.name),callCount < PAToolProtocol.maxCalls,called.insert(call.id).inserted else { throw ActionFailure.message("Interview evaluation reached an unsupported or repeated tool call.") }
+                guard valid(),PAProfileSetup.allowedTools.contains(call.name),callCount < PAToolProtocol.evaluationMaxCalls,called.insert(call.id).inserted else { throw ActionFailure.message("Interview evaluation reached an unsupported or repeated tool call.") }
                 callCount += 1
                 callNames.append(call.name)
                 let output:String

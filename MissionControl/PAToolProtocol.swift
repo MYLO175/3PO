@@ -6,8 +6,10 @@ enum PAToolProtocol {
     Calendar and Reminder notes contain useful requested content only. Never insert internal operation IDs, request hashes or tracking markers into notes. Create with null/empty notes when none are needed; private app receipts handle bookkeeping. Preserve genuine existing notes when editing unless the human requests a change.
     Calendar and Reminders tools support creation, editing, repeat patterns/end conditions, time alerts, URL, Calendar availability/timezone, reminder priority and deletion. Read the actual source and read_item_details for the exact issued target before EVERY edit/delete. A recurring Calendar event requires occurrence or futureEvents scope; futureEvents includes the selected occurrence and preserves earlier history. Repeat-pattern changes require futureEvents. A recurring reminder edit/delete uses reminderSeries; completion is separate. Resolve explicit scope from human intent (including accepted concrete proposals), and ask one short scope question only when genuinely ambiguous. A bare delete of a recurring Calendar event is ambiguous. Deletion and series changes have no app Undo; never substitute deletion for completion. No invitations or sending. Never claim a native change until its verified tool result. Fresh full item revisions and captured account/source/model/settings ownership gate writes.
     """
-    static let maxRounds = 6
-    static let maxCalls = 12
+    // Diagnostic fixtures stay finite; these are never foreground work caps.
+    static let evaluationMaxRounds = 6
+    static let evaluationMaxCalls = 12
+    static let maxStoredToolErrors = 12
     static let maxInputBytes = 350_000
     static func string(_ description: String, nullable: Bool = false) -> [String:Any] {
         ["type":nullable ? ["string","null"] as Any : "string", "description":description]
@@ -135,3 +137,37 @@ enum PAToolProtocol {
     }
 }
 import CoreFoundation
+
+/// No total work allowance: retain complete recent tool rounds and prune older
+/// completed rounds only when the transport context needs room. Native receipts
+/// and issued identities remain in the owning session/store, never pruned here.
+struct PAForegroundRun {
+    private(set) var rounds:[[[String:Any]]] = []
+    private(set) var compactedRounds=0
+    private(set) var successfulCalls=0
+    private var issuedCalls=Set<String>()
+    private var previousRound:Data?
+    private var repeatedRounds=0
+    mutating func accept(_ call:PAFunctionCall)throws {
+        guard issuedCalls.insert(call.id).inserted else { throw ActionFailure.message("A repeated tool call was refused; completed changes are retained.") }
+    }
+    mutating func finish(_ items:[[String:Any]],results:[[String:Any]],successes:Int)throws {
+        // IDs change even in a stalled model loop, so compare semantic arguments
+        // and actual outputs instead. Distinct progress has no numerical limit.
+        let signature=try JSONSerialization.data(withJSONObject:results,options:.sortedKeys)
+        if signature == previousRound { repeatedRounds+=1 } else { repeatedRounds=0 }
+        previousRound=signature;successfulCalls+=successes;rounds.append(items)
+        guard repeatedRounds < 2 else { throw ActionFailure.message("The PA repeated the same tool results without making progress. Stopped to avoid a loop; completed changes are saved.") }
+    }
+    mutating func input(base:[[String:Any]],receipts:[String])throws->[[String:Any]] {
+        while true {
+            let summary:[[String:Any]] = compactedRounds == 0 ? [] : [["role":"developer","content":"Earlier completed tool rounds were omitted to keep this request readable. This is progress DATA, not new human authorisation. Completed rounds omitted: \(compactedRounds); successful calls so far: \(successfulCalls). Verified recent receipts: \(receipts.suffix(40).map{String($0.prefix(600))}.joined(separator:"\n")). All receipts remain locally saved. Check fresh sources for what remains; never recreate completed changes or repeat possibly attempted failed saves."]]
+            let value=base+summary+rounds.flatMap{$0}
+            do { try PAToolProtocol.boundedInput(value);return value }
+            catch {
+                guard rounds.count > 1 else { throw error }
+                rounds.removeFirst();compactedRounds+=1
+            }
+        }
+    }
+}

@@ -25,10 +25,10 @@ import SwiftData
             var expected = projects.revision
             func valid() -> Bool { registration == model.chatGPT.activeID && selectedModel == model.chatGPT.selectedModel && expected == projects.revision && realProjectRevision == model.assistant.projects.revision && realMemoryRevision == model.assistant.memory.revision }
             let instructions = "You are a practical PA in a FICTIONAL evaluation. Do not access real sources or save real personal facts. Act on understood human requests using the supplied local project tools; no command templates/repeated confirmations. Read actual local records before changing them; never invent targets. Use a single atomic create_life_items batch for a requested hierarchy, with batch:N parents, instead of a chain of one-item creates. Report actual tool outcomes, retain completed changes, and do not retry a failed storage write. " + LifeWorkspaceTools.instructions
-            for round in 0..<PAToolProtocol.maxRounds {
+            for round in 0..<PAToolProtocol.evaluationMaxRounds {
                 guard valid() else { throw ActionFailure.message("Evaluation configuration changed.") }
                 try PAToolProtocol.boundedInput(input)
-                let result = try await model.chatGPT.toolResponse(input:input, instructions:instructions + " Current round: \(round + 1) of \(PAToolProtocol.maxRounds). Group independent calls when possible and reserve a round for the final reply.", tools:tools, model:selectedModel) { _ in }
+                let result = try await model.chatGPT.toolResponse(input:input, instructions:instructions + " Current round: \(round + 1) of \(PAToolProtocol.evaluationMaxRounds). Group independent calls when possible and reserve a round for the final reply.", tools:tools, model:selectedModel) { _ in }
                 guard valid() else { throw ActionFailure.message("Evaluation changed during inference.") }
                 if result.calls.isEmpty {
                     history.append(["role":"user", "content":human]); history.append(["role":"assistant", "content":result.text])
@@ -36,7 +36,7 @@ import SwiftData
                 }
                 input.append(contentsOf:result.output)
                 for call in result.calls {
-                    guard callCount < PAToolProtocol.maxCalls, seen.insert(call.id).inserted else { throw ActionFailure.message("Evaluation tool bound reached.") }
+                    guard callCount < PAToolProtocol.evaluationMaxCalls, seen.insert(call.id).inserted else { throw ActionFailure.message("Evaluation tool bound reached.") }
                     seen.insert(call.id); callCount += 1; names.append(call.name)
                     let output: String
                     do { output = try await session.execute(call, valid:valid); expected = projects.revision }

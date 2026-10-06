@@ -76,10 +76,47 @@ import Foundation
         var unrelatedOversize=false
         do { try PAToolProtocol.boundedInput([["role":"user","content":[["type":"input_text","text":String(repeating:"a",count:PAToolProtocol.maxInputBytes)],["type":"input_image","image_url":screenshot]]]]) } catch { unrelatedOversize=true };assert(unrelatedOversize)
         var oversizedRejected = false; do { try PAToolProtocol.boundedInput([["role":"user","content":String(repeating:"a",count:PAToolProtocol.maxInputBytes)]]) } catch { oversizedRejected = true }; assert(oversizedRejected)
+        let base: [[String:Any]] = [["role":"user","content":"Complete all 25 fictional changes"]]
+        var longRun=PAForegroundRun()
+        for index in 0..<25 {
+            let call=PAFunctionCall(id:"progress-\(index)",name:"change_calendar",namespace:"pa",arguments:"{\"index\":\(index)}")
+            try longRun.accept(call)
+            let items: [[String:Any]] = [["type":"reasoning","encrypted_content":"opaque-\(index)"],["type":"function_call","call_id":call.id,"name":call.name,"arguments":call.arguments],["type":"function_call_output","call_id":call.id,"output":"Verified change \(index)"]]
+            try longRun.finish(items,results:[["name":call.name,"arguments":["index":index],"output":"Verified change \(index)"]],successes:1)
+            _ = try longRun.input(base:base,receipts:[])
+        }
+        assert(longRun.successfulCalls == 25 && longRun.rounds.count == 25)
+        var replayRejected=false
+        do { try longRun.accept(.init(id:"progress-0",name:"change_calendar",namespace:"pa",arguments:"{}")) } catch { replayRejected=true };assert(replayRejected)
+        var stalled=PAForegroundRun(),stallRejected=false
+        let unchanged: [[String:Any]] = [["name":"read_reminders","arguments":[:],"output":"same current results"]]
+        try stalled.finish([],results:unchanged,successes:1)
+        try stalled.finish([],results:unchanged,successes:1)
+        do { try stalled.finish([],results:unchanged,successes:1) } catch { stallRejected=true };assert(stallRejected)
+        var compacted=PAForegroundRun()
+        for index in 0..<8 {
+            let id="large-\(index)"
+            let items: [[String:Any]] = [["type":"reasoning","encrypted_content":"reason-\(index)"],["type":"function_call","call_id":id,"name":"read_calendar","arguments":"{}"],["type":"function_call_output","call_id":id,"output":String(repeating:"a",count:70_000)]]
+            try compacted.finish(items,results:[["page":index]],successes:1)
+        }
+        let compactInput=try compacted.input(base:base,receipts:["Verified fictional change"])
+        assert(compacted.compactedRounds > 0 && compacted.rounds.count > 0)
+        assert(compactInput.first?["content"] as? String == "Complete all 25 fictional changes")
+        assert(compactInput.contains { ($0["content"] as? String)?.contains("Verified fictional change") == true })
+        assert(compactInput.last?["call_id"] as? String == "large-7")
+        for index in compacted.compactedRounds..<8 {
+            assert(compactInput.contains { $0["encrypted_content"] as? String == "reason-\(index)" })
+            assert(compactInput.filter { $0["call_id"] as? String == "large-\(index)" }.count == 2)
+        }
+        try PAToolProtocol.boundedInput(compactInput)
+        var hugeRound=PAForegroundRun(),hugeRejected=false
+        try hugeRound.finish([["type":"function_call_output","call_id":"huge","output":String(repeating:"a",count:PAToolProtocol.maxInputBytes)]],results:[["page":1]],successes:1)
+        do { _ = try hugeRound.input(base:base,receipts:[]) } catch { hugeRejected=true }
+        assert(hugeRejected && hugeRound.rounds.count == 1 && hugeRound.compactedRounds == 0)
         var calendar = Calendar(identifier:.gregorian); calendar.timeZone = TimeZone(identifier:"Europe/London")!
         let day = calendar.date(from:DateComponents(year:2026,month:10,day:25))!, next = calendar.date(byAdding:.day,value:1,to:day)!
         assert(PAToolProtocol.exclusiveAllDayEnd(next.addingTimeInterval(-1),calendar:calendar) == next)
         assert(PAToolProtocol.exclusiveAllDayEnd(next,calendar:calendar) == next)
-        print("PASS: namespace schemas, natural human evidence, source/unknown/invalid tool refusal, completed-only calls, reasoning replay, duplicate call IDs, input bound and DST all-day end")
+        print("PASS: namespace schemas, natural human evidence, source/unknown/invalid tool refusal, completed-only calls, reasoning replay, duplicate call IDs, 25 progressing rounds/calls without work caps, duplicate/stalled-loop refusal, complete-round context pruning, input bound and DST all-day end")
     }
 }

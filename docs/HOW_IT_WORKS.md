@@ -28,7 +28,7 @@ The app supplies recent conversation, relevant permitted memory and bounded sour
 
 Supported Apple changes resolve exact issued record identities, check fresh revisions and verify saved results. A saved memory or an imported message cannot independently authorise a change. Mail and WhatsApp have no sending capability. Local email reply drafts can be edited, saved and copied for your own review.
 
-A foreground turn has limits: six inference rounds, twelve tool calls, at most four Apple changes and two Mail continuations. It can report partial work rather than implying an unlimited background agent completed everything.
+A foreground request has no fixed count of changes, tool calls, inference rounds or Mail continuation pages. The PA continues the requested work until it finishes, needs an answer, is stopped, encounters a real failure or its captured account/settings change. Stop remains available, and verified changes keep their receipts. Repeated identical tool results stop a stalled loop. Long requests retain complete recent tool rounds and trim older completed rounds with a progress summary when the transport context needs room; stored receipts and exact issued identities remain. Per-read/payload bounds, subscription limits and independent automatic-work budgets still apply.
 
 ## Memory: what exists today
 
