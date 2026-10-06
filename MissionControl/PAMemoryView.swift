@@ -63,6 +63,7 @@ struct PAMemoryView: View {
                                 if !item.explicit && item.certainty != .stated { Button("Confirm") { memory.accept(item.id) } }
                                 Button("Edit") { editing = item; text = item.text; kind = item.kind; provisional = !item.explicit && item.certainty != .stated; scope = item.conversationID }
                                 Button("Organise") { organising=item }
+                                if item.source == nil && item.kind != .commitment { Button(item.retiredAt == nil ? "Retire from recall" : "Restore to recall") { memory.retire(item.id,retired:item.retiredAt == nil,expectedRevision:memory.revision) } }
                                 if item.resolved == nil && item.kind == .commitment { Button("Mark resolved") { memory.resolve(item.id) } }
                                 if item.resolved != nil { Button("Reopen") { memory.reopen(item.id) } }
                                 }
@@ -87,6 +88,7 @@ struct PAMemoryView: View {
                 var item = editing ?? PAMemory(registration:registration,text:text,kind:kind,provenance:"Added by you in Memory")
                 if item.text != text { item.connections=nil; item.organisation=nil; item.source=nil; item.supportingSources=nil; item.sourceState=nil; item.sourceInvalidation=nil; item.certainty=nil; item.durability=nil; item.evidence=text; item.provenance="Edited by you in Memory"; item.sourceTurnID=nil; item.sourceDate = .now }
                 item.text = text; item.kind = kind; item.explicit = !provisional; item.conversationID = scope
+                if item.kind == .commitment { item.retiredAt=nil }
                 if scope != nil { item.organisation?.selfName=nil }
                 if let editing,editing.text != text {
                     item.id=UUID();if memory.correct(editing.id,with:item) { clear() }
@@ -106,10 +108,10 @@ struct PAMemoryView: View {
             }
             if let organisation {
                 Toggle("Organise saved facts into life areas",isOn:Binding(get:{organisation.automatic},set:{organisation.automatic=$0}))
-                HStack { Text("Uses existing saved human facts only: at most eight per pass, two automatic passes per day. No email/WhatsApp scan or extra facts. Your manual organisation stays pinned.").font(.caption).foregroundStyle(.secondary);Spacer();if organisation.busy { Button("Stop") { organisation.cancel() } } else { Button("Organise now") { organiseContext?() }.disabled(assistant?.busy == true || assistant?.connection.busy == true || assistant?.connection.inferenceVerified != true || assistant?.connection.usagePaused == true || !memory.enabled || !memory.learningEnabled) } }
+                HStack { Text("Classifies new human facts and revisits unpinned classifications after 30 days: at most eight per pass, two automatic passes per day within the shared learning allowance. Organise now can revisit them sooner. It preserves facts/evidence and your pinned organisation; it never resolves, retires or deletes facts.").font(.caption).foregroundStyle(.secondary);Spacer();if organisation.busy { Button("Stop") { organisation.cancel() } } else { Button("Organise now") { organiseContext?() }.disabled(assistant?.busy == true || assistant?.connection.busy == true || assistant?.connection.inferenceVerified != true || assistant?.connection.usagePaused == true || !memory.enabled || !memory.learningEnabled) } }
                 if let error=organisation.error { Text(error).font(.caption).foregroundStyle(.orange) }
             }
-            Text("Focus draws on this account’s permitted life notebook, including memories from earlier topics. Source access still controls source-derived context. Inferred context needs review after 90 days; stable directly stated facts persist until corrected or forgotten. Completing a commitment here only updates memory; Apple reminders are separate.").font(.callout).foregroundStyle(.secondary)
+            Text("Focus draws on this account’s permitted life notebook, including memories from earlier topics. Source access still controls source-derived context. Inferred context needs review after 90 days; stable directly stated facts persist until corrected, retired or forgotten. Retire sets human context aside reversibly; Resolve handles a remembered commitment. Apple reminders and projects keep their own state.").font(.callout).foregroundStyle(.secondary)
         } }
     private func clear() { editing = nil; text = ""; provisional = false; kind = .preference; scope = conversationID;editError=nil }
 }

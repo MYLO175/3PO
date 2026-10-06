@@ -226,12 +226,12 @@ struct LifeProjectWidget: View {
                 DisclosureGroup("Created from your PA conversation") { Text(evidence).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }.font(.caption)
             }
             let understanding=model.assistant.memory.notebook(registration,topic:item.conversationID)
-            let factIDs=understanding.entities.first{$0.id == "life:"+item.id.uuidString}?.memoryIDs ?? []
+            let factIDs=understanding.anchors.first{$0.id == "life:"+item.id.uuidString}?.memoryIDs ?? []
             let facts=understanding.notes.flatMap(\.records).filter{factIDs.contains($0.id)}
             if !facts.isEmpty {
                 DisclosureGroup("PA understanding · \(Set(facts.map(\.id)).count) facts") {
                     ForEach(Array(Dictionary(facts.map{($0.id,$0)},uniquingKeysWith:{a,_ in a}).values.sorted{$0.id.uuidString < $1.id.uuidString}.prefix(12))) { fact in
-                        VStack(alignment:.leading,spacing:3) { Text(fact.text).font(.callout).textSelection(.enabled);Text(fact.attribution).font(.caption).foregroundStyle(.secondary) }.padding(.vertical,4)
+                        VStack(alignment:.leading,spacing:3) { Text(fact.text).font(.callout).textSelection(.enabled);Text(fact.attribution).font(.caption).foregroundStyle(.secondary);PAMemoryEvidenceView(record:fact,sourcePermitted:model.assistant.memory.permittedRecords.contains{$0.id == fact.id}) }.padding(.vertical,4)
                     }
                 }.font(.caption)
             }

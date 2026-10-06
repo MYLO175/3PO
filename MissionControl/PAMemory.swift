@@ -84,6 +84,8 @@ struct PAMemory: Codable, Identifiable, Equatable {
     var created = Date.now
     var reviewed = Date.now
     var resolved: Date?
+    /// Reversible recall retirement; evidence remains saved and project content is unchanged.
+    var retiredAt: Date? = nil
     var sourceTurnID: String?
     var evidence: String?
     var sourceDate: Date?
@@ -124,7 +126,7 @@ enum MemoryRules {
         return now.timeIntervalSince(resolved) >= 30 * 86400
     }
     static func usable(_ memory: PAMemory, registration: String, now: Date = .now) -> Bool {
-        memory.registration == registration && memory.sourceInvalidation == nil && memory.resolved == nil && memory.supersededBy == nil && !needsReview(memory,now:now)
+        memory.registration == registration && memory.sourceInvalidation == nil && memory.resolved == nil && memory.retiredAt == nil && memory.supersededBy == nil && !needsReview(memory,now:now)
     }
     static func inScope(_ memory: PAMemory, conversationID: UUID?, includeTopics: Bool = false) -> Bool { includeTopics || memory.conversationID == nil || memory.conversationID == conversationID }
     static func explicitRequest(_ text: String) -> String? {
@@ -166,16 +168,19 @@ enum MemoryRetrieval {
         return value
     }
     /// Local relevance retrieval never changes stored facts, certainty or scope.
-    static func select(_ memories: [PAMemory], registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, now: Date = .now, limit: Int = 40, bytes: Int = byteLimit, focus:[LifeArea] = []) -> MemorySelection {
+    static func select(_ memories: [PAMemory], registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, now: Date = .now, limit: Int = 40, bytes: Int = byteLimit, focus:[LifeArea] = [], notebook suppliedNotebook:LifeNotebook? = nil) -> MemorySelection {
         let eligible = memories.filter { MemoryRules.usable($0,registration:registration,now:now) && MemoryRules.inScope($0,conversationID:conversationID,includeTopics:includeTopics) }
         let terms = tokens(query ?? "")
-        let notebook=LifeNotebook.build(eligible,registration:registration,topic:conversationID,now:now,includeTopics:includeTopics)
-        let seeds=Set(notebook.entities.filter { $0.id != LifeNotebook.selfID && !tokens($0.label).isDisjoint(with:terms) }.prefix(20).map(\.id))
-        var neighbours=seeds,connected=Set<UUID>()
+        let notebook=suppliedNotebook ?? LifeNotebook.build(eligible,registration:registration,topic:conversationID,now:now,includeTopics:includeTopics)
+        let eligibleIDs=Set(eligible.map(\.id))
+        let seedEntities=Array(notebook.entities.filter { $0.id != LifeNotebook.selfID && !$0.memoryIDs.isDisjoint(with:eligibleIDs) && !tokens($0.label).isDisjoint(with:terms) }.prefix(20))
+        let seeds=Set(seedEntities.map(\.id))
+        let workspaceConnected=Set(seedEntities.filter{$0.id.hasPrefix("life:")}.flatMap(\.memoryIDs)).intersection(eligibleIDs)
+        var neighbours=seeds,connected=Set(seedEntities.flatMap(\.memoryIDs)).intersection(eligibleIDs)
         // Two bounded hops. The universal self node is never a bridge to the whole life.
         for _ in 0..<2 {
             let previous=neighbours
-            for link in notebook.links where previous.contains(link.from) || previous.contains(link.to) {
+            for link in notebook.links where eligibleIDs.contains(link.memoryID) && (previous.contains(link.from) || previous.contains(link.to)) {
                 connected.insert(link.memoryID)
                 if link.from != LifeNotebook.selfID { neighbours.insert(link.from) }
                 if link.to != LifeNotebook.selfID { neighbours.insert(link.to) }
@@ -213,6 +218,7 @@ enum MemoryRetrieval {
             let text=memory.text+" "+(memory.connections ?? []).map{$0.subject+" "+$0.relation+" "+$0.object}.joined(separator:" ")
             if !tokens(text).isDisjoint(with:terms) { why.append("Words match your question") }
             if connected.contains(memory.id) { why.append("Related recorded connection, within two hops") }
+            if workspaceConnected.contains(memory.id) { why.append("Linked to a matching saved project or life item") }
             if memory.organisation?.areas.contains(where:focus.contains) == true { why.append("Matches your Focus") }
             reasons[memory.id]=why.isEmpty ? ["Other available context, ranked by confirmation, kind, scope and review date"] : why
         }

@@ -34,7 +34,7 @@ struct LifeCanonicalMapView:View {
                                         if parts.count == 2,let target=notebook.anchors.first(where:{$0.id == "life:"+parts[1]}) { Text((LifeRelation(rawValue:parts[0])?.title ?? "Related to")+" "+target.label).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
                                     }
                                 }
-                                let facts=notebook.entities.first{$0.id == node.id}?.memoryIDs.count ?? 0
+                                let facts=node.memoryIDs.count
                                 if facts > 0 { Text("\(facts) linked \(facts == 1 ? "fact" : "facts")").font(.caption2).foregroundStyle(.secondary) }
                             }
                             Spacer(minLength:0);Image(systemName:"chevron.right").font(.caption2).foregroundStyle(.secondary)

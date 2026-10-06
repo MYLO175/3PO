@@ -25,10 +25,10 @@ import SwiftData
     }
     func summary(_ model:DashboardModel)->String {
         if busy { return status }
-        let registration=model.chatGPT.activeID,records=model.assistant.memory.records.filter{MemoryRules.usable($0,registration:registration)}
+        let registration=model.chatGPT.activeID,records=model.assistant.memory.records.filter{MemoryRules.usable($0,registration:registration) && $0.source == nil}
         let organised=records.filter{$0.organisation != nil}.count
         if state.accounts[registration]?.paused == true { return "Organisation paused after a stopped or failed attempt. Saved facts are unchanged; Organise memories resumes once." }
-        return "\(organised) of \(records.count) saved facts organised · automatic limit: 2 small passes per day"
+        return "\(organised) of \(records.count) human facts organised · unpinned classifications revisited after 30 days · at most 2 small automatic passes per day"
     }
     func check(_ model:DashboardModel,manual:Bool=false,topic:UUID?=nil) {
         let assistant=model.assistant,memory=assistant.memory,registration=model.chatGPT.activeID
@@ -42,7 +42,13 @@ import SwiftData
             let old=state
             for scope in requestedScopes {
                 let key=LifeOrganisationBatch.scope(registration,scope)
-                for record in memory.records where record.registration == registration && record.conversationID == scope && record.organisation == nil { state.scopes[key]?.inspected.removeValue(forKey:record.id) }
+                for record in memory.records where record.registration == registration && record.conversationID == scope && record.source == nil && record.organisation?.manual != true {
+                    state.scopes[key,default:.init()].inspected.removeValue(forKey:record.id)
+                    if record.organisation != nil {
+                        if state.scopes[key]?.reconsidered == nil { state.scopes[key]?.reconsidered=[:] }
+                        state.scopes[key]?.reconsidered?[record.id] = .distantPast
+                    }
+                }
             }
             do { try save() } catch { state=old;self.error=error.localizedDescription;return }
         }
@@ -73,7 +79,11 @@ import SwiftData
                     guard let entries=LifeOrganisationRules.decode(output,records:records) else { throw MemoryLearningFailure.invalid }
                     guard memory.organise(entries,expectedRevision:revision) else { throw MemoryLearningFailure.storage }
                     let before=state
-                    for record in records { state.scopes[key,default:.init()].inspected[record.id]=record.reviewed }
+                    if state.scopes[key]?.reconsidered == nil { state.scopes[key,default:.init()].reconsidered=[:] }
+                    for record in records {
+                        state.scopes[key,default:.init()].inspected[record.id]=record.reviewed
+                        state.scopes[key]?.reconsidered?[record.id] = .now
+                    }
                     state.accounts[registration]?.paused=false
                     do { try save() } catch { state=before;throw error }
                     total += entries.count;passes += 1

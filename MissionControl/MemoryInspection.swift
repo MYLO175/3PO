@@ -2,11 +2,12 @@ import Foundation
 
 /// Read-only explanations of the existing recall gates. Does not create a parallel memory store.
 enum MemoryAvailability: String, CaseIterable, Identifiable {
-    case available, earlierVersion, resolved, reviewNeeded, sourceUnavailable, otherScope
+    case available, earlierVersion, retired, resolved, reviewNeeded, sourceUnavailable, otherScope
     var id:String { rawValue }
     var title:String { switch self {
     case .available: "Available to PA"
     case .earlierVersion: "Earlier version"
+    case .retired: "Retired from recall"
     case .resolved: "Resolved or archived"
     case .reviewNeeded: "Needs review"
     case .sourceUnavailable: "Source evidence unavailable"
@@ -15,6 +16,7 @@ enum MemoryAvailability: String, CaseIterable, Identifiable {
     var explanation:String { switch self {
     case .available: "Can be selected when relevant; selection is bounded."
     case .earlierVersion: "Kept as history; a newer belief replaced it."
+    case .retired: "Set aside by you. Evidence stays saved; restore it to use it again. Projects are unchanged."
     case .resolved: "Kept for inspection; excluded from current recall. Apple reminders are separate."
     case .reviewNeeded: "Provisional context has gone 90 days without review; confirm or correct it when useful."
     case .sourceUnavailable: "One or more quoted versions are changed, forgotten, missing from cache or outside current source access."
@@ -32,6 +34,7 @@ enum MemoryInspection {
             let status:MemoryAvailability
             if record.supersededBy != nil { status = .earlierVersion }
             else if record.sourceInvalidation != nil || !permitted.contains(record.id) { status = .sourceUnavailable }
+            else if record.retiredAt != nil { status = .retired }
             else if record.resolved != nil { status = .resolved }
             else if MemoryRules.needsReview(record,now:now) { status = .reviewNeeded }
             else if !MemoryRules.inScope(record,conversationID:topic,includeTopics:includeTopics) { status = .otherScope }

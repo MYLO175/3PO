@@ -22,6 +22,7 @@ struct MemoryInspectionPreview:View {
         var preference=PAMemory(registration:registration,text:"I prefer short practical plans.",kind:.preference,provenance:"Fictional human statement",evidence:"I prefer short practical plans.",certainty:.stated,durability:.stable)
         preference.organisation = .init(areas:[.about],connections:[])
         _=store.put(preference)
+        _=store.put(.init(registration:registration,text:"My temporary Orion reading group is no longer relevant.",kind:.context,provenance:"Fictional retired human context",retiredAt:now,evidence:"My temporary Orion reading group is no longer relevant.",certainty:.stated,durability:.situational))
         let old=PAMemory(registration:registration,text:"I study the Orion course.",kind:.context,provenance:"Fictional human statement",evidence:"I study the Orion course.",certainty:.stated,durability:.stable)
         _=store.put(old)
         var revised=old;revised.id=UUID();revised.text="I now study the Lyra course.";revised.evidence=revised.text

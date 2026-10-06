@@ -100,6 +100,8 @@ Selected source context is sent to subscription inference when the corresponding
 
 ## How we know a change works
 
+For the concise memory model, see [Memory and context](MEMORY_AND_CONTEXT.md): collect, remember, connect, recall, maintain. Current human context can be retired/restored locally without deleting evidence or projects. Saved project bindings now participate in recall across renames/corrections, and unpinned human-fact classifications can be reconsidered after 30 days within the existing learning allowance. This does not enable broader source learning or automatic semantic deletion/consolidation.
+
 There are separate checks for compilation, signing, deterministic fixtures, process launch, actual subscription-model quality and live interface/source behaviour. The manually invoked fictional notebook evaluation checks typed identity, areas, evidence-backed recall, unknown information and natural correction intent. It also exercises the production memory-only setup tools with a disposable in-memory database. It never stores fiction in your profile or sends real sources. Some graph/setup/queue interaction checks remain pending because app control was unavailable. [STATUS](../STATUS.md) is the record of results and limits, not merely intended behaviour.
 
 Memory tool failures now appear in **Memory tool notes** on the relevant reply or interview. Supporting quotes preserve the actual current human wording while tolerating formatting differences. Unsupported graph-link evidence can be omitted independently of a fact, but facts and retained relationships still need human-statement validation. Old failures cannot be reconstructed if their tool details were never saved.

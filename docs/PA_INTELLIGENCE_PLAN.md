@@ -105,3 +105,10 @@ Conversation learning, notebook organisation and source learning now share a per
 Source-derived memories are initially excluded from automatic briefs/proactive memory inputs until those saved outputs carry source-memory dependency information. Foreground replies carry optional source-memory dependencies and are omitted from later AI history if those beliefs lose current permission/evidence. Local transcript text is preserved. Mail/Calendar/Reminders source learning, richer inferred connections, semantic conflicts/consolidation and source-to-suggestion ranking remain upcoming.
 
 The map uses one owner and balanced coloured area hubs, with labels clear of branch paths, highlighted shared-fact areas and a compact single-spine layout. The 3PO preset supplies complete light/dark gold/ivory/bronze profiles; selecting it is optional and does not replace current colours on install. A local PA display-name preference changes the header, composer and foreground identity while preserving all storage/thread/widget IDs.
+
+
+### 7 October — Organisation and lifecycle follow-through
+
+Added human-controlled Retire/Restore for current human preferences/context, current-fact project associations in production retrieval, correction-aware exact bindings, and conservative reconsideration of unpinned classifications. The Life map and project details remain projections of the same permitted notebook. Focused fictional checks must establish: rename/correction recall under distractors, retirement/restart/Restore retaining original evidence and project state, source/commitment separation, same-evidence relearning protection, metadata review not renewing truth, manual pin protection, ambiguity/deletion exclusion and legacy optional-field decode.
+
+Phase5's semantic duplicate/conflict/retirement proposals and consolidation remain unimplemented. Calendar/Reminders/Mail permanent source learning remains phase6's next adapter work; don't confuse existing request context with assessed lasting knowledge. A graph display, number of saved facts or a successful compile is not acceptance of overall PA intelligence.

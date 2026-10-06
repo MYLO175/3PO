@@ -26,6 +26,7 @@ struct PAMemoryOverviewView:View {
                 layer("Saved facts", "Preferences, context and commitments keep certainty, dates and correction history.","brain")
                 layer("Life map", "Areas organise usable facts and your saved projects. Branches navigate areas; recorded relationships have their own evidence.","point.3.connected.trianglepath.dotted")
                 layer("Working context", "A reply also uses recent dialogue, preferences, bounded notebook notes and permitted cached sources or tool reads. Those are separate from permanent memory.","text.bubble")
+                layer("Keep it current", "Corrections keep earlier versions. Retire sets human context aside; Restore brings it back. Unpinned classifications can be revisited, while your projects and original evidence stay intact.","arrow.triangle.2.circlepath")
                 Text("Focus prefers relevant life areas; it does not grant source access. A source reporting ‘completed’ does not complete an Apple reminder.").font(.caption).foregroundStyle(.secondary)
             }
             if let model {
@@ -105,6 +106,7 @@ struct PAMemoryEvidenceView:View {
                 }
                 if let date=record.sourceDate,record.source == nil { Text("Statement date: "+date.formatted(date:.abbreviated,time:.shortened)).font(.caption) }
                 Text("Saved: "+record.created.formatted(date:.abbreviated,time:.shortened)+" · reviewed: "+record.reviewed.formatted(date:.abbreviated,time:.shortened)).font(.caption)
+                if let retired=record.retiredAt { Text("Retired from recall: "+retired.formatted(date:.abbreviated,time:.shortened)).font(.caption) }
                 if let state=record.sourceState { Text("Source reports: "+state.rawValue+". Apple task status is separate.").font(.caption) }
                 Text("Memory ID: "+record.id.uuidString).font(.caption2).textSelection(.enabled)
             }.frame(maxWidth:.infinity,alignment:.leading).padding(.top,6)

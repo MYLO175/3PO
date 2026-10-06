@@ -154,6 +154,14 @@ import SwiftData
     @discardableResult func accept(_ id: UUID) -> Bool { change { state in if let i = state.records.firstIndex(where:{ $0.id == id }) { state.records[i].explicit = true; state.records[i].reviewed = .now } } }
     @discardableResult func resolve(_ id: UUID) -> Bool { change { state in if let i = state.records.firstIndex(where:{ $0.id == id }) { state.records[i].resolved = .now } } }
     @discardableResult func reopen(_ id: UUID) -> Bool { change { state in if let i = state.records.firstIndex(where:{ $0.id == id }) { state.records[i].resolved = nil; state.records[i].reviewed = .now } } }
+    /// A human chooses what to set aside. This never deletes evidence or edits a workspace item.
+    @discardableResult func retire(_ id:UUID,retired:Bool,expectedRevision:UUID)->Bool {
+        guard revision == expectedRevision,let record=records.first(where:{$0.id == id}),record.source == nil,record.kind != .commitment,record.supersededBy == nil else { error="Memory changed, or this record uses commitment/source history instead. Nothing was retired.";return false }
+        return change { state in if let index=state.records.firstIndex(where:{$0.id == id}) {
+            state.records[index].retiredAt=retired ? .now : nil
+            if !retired { state.records[index].reviewed = .now }
+        } }
+    }
     /// Correct a current belief atomically, keeping the original ID, wording and evidence as history.
     @discardableResult func correct(_ id:UUID,with replacement:PAMemory)->Bool {
         guard let old=records.first(where:{$0.id == id}),old.supersededBy == nil,old.registration == replacement.registration,
@@ -170,7 +178,7 @@ import SwiftData
             current=record
         }
         var restored=original;restored.id=UUID();restored.conversationID=current.conversationID;restored.explicit=true;restored.certainty = .stated
-        restored.resolved=nil;restored.source=nil;restored.supportingSources=nil;restored.sourceState=nil;restored.sourceInvalidation=nil;restored.sourceTurnID=nil;restored.provenance="Earlier version restored by you";restored.sourceDate = .now
+        restored.resolved=nil;restored.retiredAt=nil;restored.source=nil;restored.supportingSources=nil;restored.sourceState=nil;restored.sourceInvalidation=nil;restored.sourceTurnID=nil;restored.provenance="Earlier version restored by you";restored.sourceDate = .now
         if restored.conversationID != nil { restored.organisation?.selfName=nil }
         return correct(current.id,with:restored)
     }
@@ -180,7 +188,7 @@ import SwiftData
                 // Revisiting an old human turn must not resurrect its corrected belief under new prose.
                 // Other distinct evidence in that rich turn remains eligible to be learned.
                 guard !state.records.contains(where:{ old in
-                    old.registration == registration && old.conversationID == sourceTopics[entry.turnID] && old.sourceTurnID == entry.turnID && old.supersededBy != nil &&
+                    old.registration == registration && old.conversationID == sourceTopics[entry.turnID] && old.sourceTurnID == entry.turnID && (old.supersededBy != nil || old.retiredAt != nil) &&
                     (MemoryLearningRules.normalised(old.text) == MemoryLearningRules.normalised(entry.text) || old.evidence.map{MemoryLearningRules.normalised($0) == MemoryLearningRules.normalised(entry.evidence)} == true)
                 }) else { continue }
                 guard !state.records.contains(where:{  $0.source == nil && $0.registration == registration && $0.conversationID == sourceTopics[entry.turnID] && $0.supersededBy == nil && $0.resolved == nil && MemoryLearningRules.normalised($0.text) == MemoryLearningRules.normalised(entry.text) }) else { continue }
@@ -208,7 +216,10 @@ import SwiftData
     }
     func selection(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, focus:[LifeArea] = [],includeSources:Bool = true) -> MemorySelection {
         guard enabled else { return MemorySelection(records:[],eligibleCount:0) }
-        return MemoryRetrieval.select(includeSources ? permittedRecords : records.filter{$0.source == nil},registration:registration,conversationID:conversationID,includeTopics:includeTopics,query:query,focus:focus)
+        let candidates=includeSources ? permittedRecords : records.filter{$0.source == nil}
+        let base=LifeNotebook.build(candidates,registration:registration,topic:conversationID,includeTopics:includeTopics)
+        let projected=notebookProjection?(base,registration,conversationID,includeTopics) ?? base
+        return MemoryRetrieval.select(candidates,registration:registration,conversationID:conversationID,includeTopics:includeTopics,query:query,focus:focus,notebook:projected)
     }
     func context(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil,includeSources:Bool = true) -> [[String:String]] {
         selection(registration,conversationID:conversationID,includeTopics:includeTopics,query:query,includeSources:includeSources).records

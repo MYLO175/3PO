@@ -62,6 +62,7 @@ struct LifeAreaNote:Identifiable {
 }
 struct LifeNotebookAnchor {
     var id:String;var label:String;var kind:String;var parent:String?;var areas:[LifeArea];var notes:String;var path:[String];var relations:[String]
+    var memoryIDs:Set<UUID> = []
 }
 struct LifeNotebook {
     var selfLabel:String
@@ -70,6 +71,8 @@ struct LifeNotebook {
     var notes:[LifeAreaNote]
     var eligibleCount:Int
     var anchors:[LifeNotebookAnchor]=[]
+    /// Derived IDs only, allowing a saved association to follow a usable corrected belief.
+    var memoryHistory:[UUID:Set<UUID>]=[:]
     static let selfID="self"
     static func key(_ label:String)->String { label.folding(options:[.caseInsensitive,.diacriticInsensitive],locale:Locale(identifier:"en_GB")).split(whereSeparator:{$0.isWhitespace}).joined(separator:" ") }
     static func firstPerson(_ label:String)->Bool { ["you","i","me","myself","the user","user"].contains(key(label)) }
@@ -101,12 +104,20 @@ struct LifeNotebook {
                 if from != to { links.append(.init(id:record.id.uuidString+":"+String(i),from:from,to:to,relation:connection.relation,memoryID:record.id,evidence:connection.evidence,inferred:!record.explicit && record.certainty != .stated)) }
             }
         }
-        return .init(selfLabel:selfLabel,entities:entities.values.sorted{$0.id < $1.id},links:links,notes:LifeArea.allCases.compactMap { area in notes[area].map { .init(area:area,records:$0) } },eligibleCount:permitted.count)
+        let byID=Dictionary(records.filter{$0.registration == registration && MemoryRules.inScope($0,conversationID:topic,includeTopics:includeTopics)}.map{($0.id,$0)},uniquingKeysWith:{first,_ in first})
+        var history:[UUID:Set<UUID>]=[:]
+        for record in permitted {
+            var ids:Set<UUID>=[record.id],cursor=record
+            while let previous=cursor.supersedes,ids.count < 100,ids.insert(previous).inserted,let old=byID[previous] { cursor=old }
+            history[record.id]=ids
+        }
+        return .init(selfLabel:selfLabel,entities:entities.values.sorted{$0.id < $1.id},links:links,notes:LifeArea.allCases.compactMap { area in notes[area].map { .init(area:area,records:$0) } },eligibleCount:permitted.count,memoryHistory:history)
     }
     /// Bounded inspectable notes, derived from facts rather than an ungrounded synthetic biography.
     func context(query:String?,focus:[LifeArea] = [],maxBytes:Int = 8000)->String {
         let terms=MemoryRetrieval.tokens(query ?? "")
-        func recordScore(_ record:PAMemory)->Int { MemoryRetrieval.tokens(record.text+" "+(record.connections ?? []).map{$0.subject+" "+$0.object}.joined(separator:" ")).intersection(terms).count }
+        let matchingItemFacts=Set(anchors.filter{!MemoryRetrieval.tokens($0.label).isDisjoint(with:terms)}.flatMap(\.memoryIDs))
+        func recordScore(_ record:PAMemory)->Int { MemoryRetrieval.tokens(record.text+" "+(record.connections ?? []).map{$0.subject+" "+$0.object}.joined(separator:" ")).intersection(terms).count + (matchingItemFacts.contains(record.id) ? 8 : 0) }
         func score(_ note:LifeAreaNote)->Int {
             return (note.records.map(recordScore).max() ?? 0)*4+MemoryRetrieval.tokens(note.area.title).intersection(terms).count*4+(focus.contains(note.area) ? 5 : 0)
         }
@@ -120,7 +131,7 @@ struct LifeNotebook {
             func rank(_ value:LifeNotebookAnchor)->Int { MemoryRetrieval.tokens(value.label+" "+value.notes+" "+value.path.joined(separator:" ")).intersection(terms).count*4 + (focus.isEmpty || !Set(value.areas).isDisjoint(with:focus) ? 2 : 0) }
             return rank(a) == rank(b) ? a.id < b.id : rank(a)>rank(b)
         }).prefix(12) {
-            let row:[String:Any]=["id":anchor.id,"label":anchor.label,"kind":anchor.kind,"parent":anchor.parent as Any? ?? NSNull(),"path":anchor.path,"areas":anchor.areas.map(\.rawValue),"notes":String(anchor.notes.prefix(250)),"relationships":anchor.relations]
+            let row:[String:Any]=["id":anchor.id,"label":anchor.label,"kind":anchor.kind,"parent":anchor.parent as Any? ?? NSNull(),"path":anchor.path,"areas":anchor.areas.map(\.rawValue),"notes":String(anchor.notes.prefix(250)),"relationships":anchor.relations,"linkedFactIDs":Array(anchor.memoryIDs.map(\.uuidString).sorted().prefix(8)),"linkedFactCount":anchor.memoryIDs.count]
             var candidate=value;candidate["lifeStructure"]=structure+[row]
             if encoded(candidate).utf8.count <= min(maxBytes,4000) { structure.append(row) }
         }
