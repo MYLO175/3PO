@@ -4,7 +4,7 @@ This is the readable explanation of the product: what exists, how it works and w
 
 Start with **[How it works](HOW_IT_WORKS.md)**. Use **[Next improvements](NEXT_IMPROVEMENTS.md)** to review priorities and **[Decisions](DECISIONS.md)** to understand why the app is organised this way.
 
-The detailed next-stage architecture and acceptance plan is **[Building a useful personal assistant](PA_INTELLIGENCE_PLAN.md)**. It separates identity, evidence, life areas, retrieval, learning, corrections and useful behaviour.
+The latest broad direction and recommended delivery sequence is **[PA architecture review](PA_ARCHITECTURE_REVIEW.md)**, covering communications, changing commitments, memory, background jobs, project space and future local models. It distinguishes the inspected implementation from proposed changes. The earlier **[Building a useful personal assistant](PA_INTELLIGENCE_PLAN.md)** remains the detailed staged memory acceptance plan.
 
 | Document | Purpose |
 | --- | --- |
@@ -12,6 +12,7 @@ The detailed next-stage architecture and acceptance plan is **[Building a useful
 | [Next improvements](NEXT_IMPROVEMENTS.md) | Desired behaviour, gaps and success criteria |
 | [Life and project workspace](PROJECT_WORKSPACE.md) | Shared durable structure, views, PA edits and source relationships |
 | [PA intelligence plan](PA_INTELLIGENCE_PLAN.md) | Detailed phases and tests for a PA that understands useful life context |
+| [PA architecture review](PA_ARCHITECTURE_REVIEW.md) | Current architecture assessment and recommended route to communications understanding, durable jobs and local inference |
 | [Decisions](DECISIONS.md) | Significant choices and their consequences |
 | [PLAN](../PLAN.md) | Full approved implementation scope |
 | [STATUS](../STATUS.md) | Detailed engineering evidence, checkpoints and unfinished validation |

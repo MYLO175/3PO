@@ -2,6 +2,8 @@
 
 This is the product roadmap to review together. The detailed next-stage architecture is in [PA intelligence plan](PA_INTELLIGENCE_PLAN.md), approved scope in [PLAN](../PLAN.md), and exact validation boundaries in [STATUS](../STATUS.md). PA quality remains the priority; map layout, 3PO palettes and local PA naming have also been refined.
 
+The [6 October PA architecture review](PA_ARCHITECTURE_REVIEW.md) recommends the next delivery sequence: measure collection/assessment coverage; persist source changes and coordinate background jobs; maintain temporal claims and cross-source commitments; improve measured retrieval and delegated artifacts; then pilot offline inference and refine project dashboards. This is a proposed architectural roadmap, not a claim that new adapters, automatic writes or recovery policies are implemented. The first unit is a coverage baseline and a fictional multi-day commitment scenario.
+
 | Area | Already implemented | Next improvement | Success looks like |
 | --- | --- | --- | --- |
 | Life focus | One conversation, multi-select life areas, captured queue focus, two-hop permitted recall | More specific entity anchors and measured semantic recall if needed | Engineering recalls modules/projects/career links while retaining important shared context |
