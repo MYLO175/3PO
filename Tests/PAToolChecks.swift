@@ -69,6 +69,12 @@ import Foundation
         var duplicate = ChatGPTStream(allowsTools:true); var duplicateRejected = false
         do { _ = try duplicate.line("data: " + String(data:try JSONSerialization.data(withJSONObject:["type":"response.completed","response":["output":[output[1],output[1]]]]),encoding:.utf8)!) } catch { duplicateRejected = true }; assert(duplicateRejected)
         try PAToolProtocol.boundedInput([["type":"function_call_output","call_id":"call1","output":"verified result"]])
+        let screenshot="data:image/png;base64,"+String(repeating:"A",count:400_000)
+        try PAToolProtocol.boundedInput([["role":"user","content":[["type":"input_text","text":"Read this"],["type":"input_image","image_url":screenshot,"detail":"auto"]]]])
+        var tooManyImages=false
+        do { try PAToolProtocol.boundedInput([["role":"user","content":Array(repeating:["type":"input_image","image_url":screenshot],count:5)]]) } catch { tooManyImages=true };assert(tooManyImages)
+        var unrelatedOversize=false
+        do { try PAToolProtocol.boundedInput([["role":"user","content":[["type":"input_text","text":String(repeating:"a",count:PAToolProtocol.maxInputBytes)],["type":"input_image","image_url":screenshot]]]]) } catch { unrelatedOversize=true };assert(unrelatedOversize)
         var oversizedRejected = false; do { try PAToolProtocol.boundedInput([["role":"user","content":String(repeating:"a",count:PAToolProtocol.maxInputBytes)]]) } catch { oversizedRejected = true }; assert(oversizedRejected)
         var calendar = Calendar(identifier:.gregorian); calendar.timeZone = TimeZone(identifier:"Europe/London")!
         let day = calendar.date(from:DateComponents(year:2026,month:10,day:25))!, next = calendar.date(byAdding:.day,value:1,to:day)!

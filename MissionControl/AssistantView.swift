@@ -10,7 +10,7 @@ struct AssistantPanel: View {
     var widgetID: UUID? = nil
     var configuration: Binding<WidgetConfiguration>? = nil
     @State private var showRename = false
-    @FocusState private var composerFocused: Bool
+    @State private var composerFocused = false
     private var selectedID: UUID? { assistant.feed?.id }
     private var selected: AssistantConversation? {
         guard var feed = assistant.feed else { return nil }
@@ -51,16 +51,41 @@ struct AssistantPanel: View {
         }
         return true
     }
+    private var imageDraftWidget:UUID { widgetID ?? UUID(uuidString:"00000000-0000-0000-0000-000000000001")! }
+    private var attachedImages:[ChatImageAttachment] { assistant.drafts.images(registration:model.chatGPT.activeID,widget:imageDraftWidget,conversation:draftKey) }
+    private var composerEmpty:Bool { draft.wrappedValue.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && attachedImages.isEmpty }
+    @State private var imageError:String?
+    @State private var composerHeight:CGFloat=22
+    private func pasteImage(_ board:NSPasteboard) {
+        let registration=model.chatGPT.activeID,key=draftKey,widget=imageDraftWidget
+        var added:[ChatImageAttachment]=[]
+        do {
+            guard attachedImages.count < ChatImageStore.maxImages else { throw ChatImageFailure.size }
+            added=try assistant.images.paste(board,registration:registration)
+            guard attachedImages.count+added.count <= ChatImageStore.maxImages else { throw ChatImageFailure.size }
+            guard assistant.drafts.setImages(attachedImages+added,registration:registration,widget:widget,conversation:key) else { throw ChatImageFailure.storage }
+            imageError=nil;model.memoryLearning.cancel();model.proactive.cancel();model.heartbeat.userStartedTyping()
+        } catch { added.forEach(assistant.images.discard);imageError=error.localizedDescription }
+    }
+    private func removeImage(_ image:ChatImageAttachment) {
+        if assistant.drafts.setImages(attachedImages.filter{$0.id != image.id},registration:model.chatGPT.activeID,widget:imageDraftWidget,conversation:draftKey) {
+            assistant.images.discard(image);imageError=nil
+        }
+    }
     private func send() {
+        let attachments=attachedImages
         let value = draft.wrappedValue, contextID = selectedTopicID, key = draftKey, registration = model.chatGPT.activeID
-        if assistant.send(model:model,topicID:contextID,prompt:value,focusAreas:focusAreas) {
+        if assistant.send(model:model,topicID:contextID,prompt:value,focusAreas:focusAreas,images:attachments) {
             if let widgetID { assistant.drafts.set("",registration:registration,widget:widgetID,conversation:key) } else { assistant.draft = "" }
+            _ = assistant.drafts.setImages([],registration:registration,widget:imageDraftWidget,conversation:key)
+            imageError=nil
             assistant.drafts.flush()
         }
     }
     private func showDraft() {
-        if let widgetID { assistant.drafts.show(registration:model.chatGPT.activeID,widget:widgetID,conversation:draftKey) }
-        if !draft.wrappedValue.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { model.memoryLearning.cancel(); model.proactive.cancel();model.heartbeat.userStartedTyping() }
+        assistant.drafts.show(registration:model.chatGPT.activeID,widget:imageDraftWidget,conversation:draftKey)
+        imageError=nil
+        if !composerEmpty { model.memoryLearning.cancel(); model.proactive.cancel();model.heartbeat.userStartedTyping() }
     }
     @State private var dictation = DictationService()
     @State private var showDictation = false
@@ -138,7 +163,8 @@ struct AssistantPanel: View {
                             HStack(alignment:.top) {
                             if turn.role == "user" { Spacer(minLength:35) }
                             VStack(alignment: .leading, spacing: 5) {
-                                if turn.content.isEmpty {
+                                if let images=turn.images { ForEach(images) { image in PAImagePreview(image:image,store:assistant.images,registration:model.chatGPT.activeID) } }
+                                if turn.content.isEmpty && (turn.images ?? []).isEmpty {
                                     Text(replyingHere ? (assistant.toolStatus.isEmpty ? "Thinking…" : assistant.toolStatus) : "This request didn't complete.").foregroundStyle(.secondary)
                                 } else if turn.role == "assistant", turn.deliveryID?.hasPrefix("learned:") == true {
                                     HStack {
@@ -150,7 +176,7 @@ struct AssistantPanel: View {
                                     DisclosureGroup("Details") { Text(turn.content).textSelection(.enabled) }.font(.caption)
                                 } else if turn.role == "assistant" {
                                     Text((try? AttributedString(markdown:turn.content,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(turn.content)).textSelection(.enabled).lineSpacing(3).id(turn.completed)
-                                } else { Text(turn.content).textSelection(.enabled) }
+                                } else if !turn.content.isEmpty { Text(turn.content).textSelection(.enabled) }
                                 if turn.completed, turn.role == "assistant",turn.id == selected?.turns.last?.id,let choices=turn.choices {
                                     ViewThatFits(in:.horizontal) {
                                         HStack { ForEach(choices,id:\.self) { choice in Button(choice) { draft.wrappedValue=choice; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) } }
@@ -220,7 +246,7 @@ struct AssistantPanel: View {
                 DisclosureGroup("Queued requests (\(queued.count))") {
                     ForEach(queued) { item in
                         HStack(alignment:.top) {
-                            VStack(alignment:.leading) { Text(item.prompt).lineLimit(2); Text(item.state == .interrupted ? "Interrupted — check the transcript before submitting again" : item.state == .running ? "Working…" : item.state == .needsAnswer ? "Waiting for your answer in chat" : "Waiting").font(.caption).foregroundStyle(.secondary) }
+                            VStack(alignment:.leading) { Text(item.prompt.isEmpty ? "Attached image" : item.prompt).lineLimit(2);if let images=item.images,!images.isEmpty { Text("\(images.count) attached image(s)").font(.caption) }; Text(item.state == .interrupted ? "Interrupted — check the transcript before submitting again" : item.state == .running ? "Working…" : item.state == .needsAnswer ? "Waiting for your answer in chat" : "Waiting").font(.caption).foregroundStyle(.secondary) }
                             Spacer()
                             if item.state != .running { Button { assistant.discardQueued(item.id) } label:{ Image(systemName:"xmark") }.buttonStyle(.plain).help("Remove queued request") }
                         }
@@ -230,12 +256,29 @@ struct AssistantPanel: View {
             }
             if let queueError=assistant.queue.error { Text(queueError).font(.caption).foregroundStyle(.orange) }
             if let error = assistant.drafts.error, widgetID != nil { Text(error).font(.caption).foregroundStyle(.orange) }
+            if let imageError { Text(imageError).font(.caption).foregroundStyle(.orange) }
+            if !attachedImages.isEmpty {
+                ScrollView(.horizontal) {
+                    HStack(alignment:.top,spacing:10) {
+                        ForEach(attachedImages) { image in
+                            VStack(spacing:3) {
+                                PAImagePreview(image:image,store:assistant.images,registration:model.chatGPT.activeID,compact:true)
+                                Button { removeImage(image) } label:{ Label("Remove",systemImage:"xmark") }.font(.caption).buttonStyle(.plain).accessibilityLabel("Remove attached image")
+                            }
+                        }
+                    }
+                }.frame(height:88)
+            }
             HStack {
                 Button { showDictation = true } label: { Image(systemName:"mic") }.help("Dictate a message").accessibilityLabel("Dictate a message").disabled(widgetID != nil && !assistant.drafts.writable)
-                TextField(PAIdentity.placeholder(assistant.displayName), text: draft,axis:.vertical).lineLimit(1...4).textFieldStyle(.plain).padding(9).background(palette[.input],in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).stroke(palette[.border])).onSubmit { send() }.focused($composerFocused).disabled(widgetID != nil && !assistant.drafts.writable)
-                Button(sendingHere && draft.wrappedValue.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty ? "Stop" : assistant.busy ? "Queue" : "Send") { if sendingHere && draft.wrappedValue.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { assistant.cancel() } else { send() } }
+                ZStack(alignment:.topLeading) {
+                    if draft.wrappedValue.isEmpty { Text(PAIdentity.placeholder(assistant.displayName)).foregroundStyle(.secondary).padding(.top,2).allowsHitTesting(false) }
+                    PAChatComposer(text:draft,focused:Binding(get:{composerFocused},set:{composerFocused=$0}),height:$composerHeight,scope:ChatDraftRules.key(registration:model.chatGPT.activeID,widget:imageDraftWidget,conversation:draftKey),enabled:assistant.drafts.writable,textColor:NSColor(palette[.text]),pasteImage:pasteImage,submit:send)
+                        .frame(height:composerHeight)
+                }.padding(9).background(palette[.input],in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).stroke(palette[.border]))
+                Button(sendingHere && composerEmpty ? "Stop" : assistant.busy ? "Queue" : "Send") { if sendingHere && composerEmpty { assistant.cancel() } else { send() } }
                     .frame(width:56)
-                    .disabled(!sendingHere && ((widgetID != nil && !assistant.drafts.writable) || draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (!model.chatGPT.inferenceVerified || (!assistant.busy && model.chatGPT.busy) || model.chatGPT.usagePaused)))
+                    .disabled(!sendingHere && ((widgetID != nil && !assistant.drafts.writable) || composerEmpty || (!model.chatGPT.inferenceVerified || (!assistant.busy && model.chatGPT.busy) || model.chatGPT.usagePaused)))
             }
             if errorHere && assistant.error?.contains("Choose the specific target") == true {
                 Picker("Specific action target", selection: $model.assistantActions.selectedTarget) {
@@ -253,7 +296,7 @@ struct AssistantPanel: View {
             guard !Task.isCancelled, model.assistantFocusRequest == request else { return }
             composerFocused = true
             model.assistantFocusRequest = nil
-        }.onDisappear { if let widgetID { assistant.drafts.hide(widget:widgetID) }; assistant.drafts.flush() }
+        }.onDisappear { assistant.drafts.hide(widget:imageDraftWidget); assistant.drafts.flush() }
         .onChange(of:selectedID) { showDraft() }
         .onChange(of:selectedTopicID) { showProfileSetup=false; showDraft() }
         .onChange(of:model.chatGPT.activeID) { assistant.drafts.flush(); assistant.openPA(); showMemory = false; showProfileSetup=false;sourceDiscovery=nil; showDraft() }

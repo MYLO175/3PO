@@ -13,6 +13,7 @@ struct PAQueuedRequest: Identifiable, Codable, Equatable {
     var result: String? = nil
     var finished: Date? = nil
     var focusAreas:[LifeArea]? = nil
+    var images:[ChatImageAttachment]? = nil
 }
 enum PAQueueRules {
     static func recover(_ values: [PAQueuedRequest]) -> [PAQueuedRequest] {
@@ -38,11 +39,11 @@ enum PAQueueRules {
             }
         } catch { writable=false; self.error="Saved requests could not be read; the original record is preserved." }
     }
-    @discardableResult func add(registration:String,topicID:UUID?,prompt:String,focusAreas:[LifeArea]? = nil)->Bool {
-        guard !registration.isEmpty, !prompt.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, ConversationRules.acceptsPrompt(prompt),items.filter({$0.state != .completed}).count < 100,items.filter({$0.registration == registration && $0.state != .completed}).count < 20 else { error="The queue is full or the message is too long. Your draft is kept."; return false }
+    @discardableResult func add(registration:String,topicID:UUID?,prompt:String,focusAreas:[LifeArea]? = nil,images:[ChatImageAttachment] = [])->Bool {
+        guard !registration.isEmpty, (!prompt.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || !images.isEmpty),images.count <= 4,images.allSatisfy({$0.registration == registration}), ConversationRules.acceptsPrompt(prompt),items.filter({$0.state != .completed}).count < 100,items.filter({$0.registration == registration && $0.state != .completed}).count < 20 else { error="The queue is full or the message is too long. Your draft is kept."; return false }
         return change { values in
             if values.count >= 100,let i=values.firstIndex(where:{$0.state == .completed}) { values.remove(at:i) }
-            values.append(.init(registration:registration,topicID:topicID,prompt:prompt,focusAreas:focusAreas))
+            values.append(.init(registration:registration,topicID:topicID,prompt:prompt,focusAreas:focusAreas,images:images.isEmpty ? nil : images))
         }
     }
     @discardableResult func mark(_ id:UUID,_ state:PAQueuedState)->Bool { change { values in if let i=values.firstIndex(where:{$0.id == id}) { values[i].state=state } } }

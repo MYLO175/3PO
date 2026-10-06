@@ -36,10 +36,22 @@ import AppKit
             self?.flush()
         }
     }
+    func images(registration:String,widget:UUID,conversation:UUID?)->[ChatImageAttachment] {
+        state.images?[ChatDraftRules.key(registration:registration,widget:widget,conversation:conversation)] ?? []
+    }
+    @discardableResult func setImages(_ images:[ChatImageAttachment],registration:String,widget:UUID,conversation:UUID?)->Bool {
+        guard writable,!registration.isEmpty,images.count <= 4,images.allSatisfy({$0.registration == registration}) else { return false }
+        let key=ChatDraftRules.key(registration:registration,widget:widget,conversation:conversation)
+        let previous=state
+        if state.images == nil { state.images=[:] }
+        if images.isEmpty { state.images?.removeValue(forKey:key) } else { state.images?[key]=images }
+        dirty=true;flush()
+        guard !dirty else { state=previous;return false };return true
+    }
     func show(registration: String, widget: UUID, conversation: UUID?) { visibleKeys[widget] = ChatDraftRules.key(registration:registration,widget:widget,conversation:conversation) }
     func hide(widget: UUID) { visibleKeys.removeValue(forKey:widget) }
     func hasDraft(registration: String) -> Bool {
-        visibleKeys.values.contains { $0.hasPrefix(registration+":") && !(state.values[$0] ?? "").trimmingCharacters(in:.whitespacesAndNewlines).isEmpty }
+        visibleKeys.values.contains { $0.hasPrefix(registration+":") && (!(state.values[$0] ?? "").trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || !(state.images?[$0] ?? []).isEmpty) }
     }
     func flush() {
         pending?.cancel(); pending = nil

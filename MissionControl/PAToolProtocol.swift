@@ -120,7 +120,18 @@ enum PAToolProtocol {
         return end == midnight ? end : calendar.date(byAdding:.day,value:1,to:midnight)!
     }
     static func boundedInput(_ input: [[String:Any]]) throws {
-        guard try JSONSerialization.data(withJSONObject:input).count <= maxInputBytes else { throw ActionFailure.message("This task reached its context limit. Completed changes are retained; please narrow the remaining request.") }
+        var textInput=input,imageCount=0,imageBytes=0
+        for index in textInput.indices {
+            guard var content=textInput[index]["content"] as? [[String:Any]] else { continue }
+            for part in content.indices where content[part]["type"] as? String == "input_image" {
+                guard textInput[index]["role"] as? String == "user",let url=content[part]["image_url"] as? String,
+                      url.hasPrefix("data:image/png;base64,") || url.hasPrefix("data:image/jpeg;base64,"),url.utf8.count <= 2_666_700 else { throw ActionFailure.message("Invalid or oversized image input; your saved message is kept.") }
+                imageCount+=1;imageBytes+=url.utf8.count;content[part]["image_url"]="[bounded image]"
+            }
+            textInput[index]["content"]=content
+        }
+        guard imageCount <= 4,imageBytes <= 10_666_800 else { throw ActionFailure.message("The image context limit was reached. Paste fewer or smaller images.") }
+        guard try JSONSerialization.data(withJSONObject:textInput).count <= maxInputBytes else { throw ActionFailure.message("This task reached its context limit. Completed changes are retained; please narrow the remaining request.") }
     }
 }
 import CoreFoundation

@@ -95,3 +95,10 @@ A generated explanation is not an execution trace. New PA replies retain bounded
 ## 6 October — Keep internal tracking out of native notes
 
 Operation identity belongs in private local receipts. A Calendar event or Reminder’s notes contain requested content or stay blank; default request hashes are removed from both current and legacy creation adapters. Existing marker cleanup is an explicit, receipt-and-native-ID-bound notes edit, never a title search or background migration. Disposable validation markers are supplied explicitly and confined to fixtures.
+
+
+## 6 October — Explicit pasted images in the PA
+
+Image input extends the existing subscription tool loop, not a separate generation service. Clipboard inspection occurs only on Paste, with a removable local preview before Send/Queue. Native readable pasteboard types must include images so AppKit enables the Paste menu; ordinary text editing/Undo stays native.
+
+Optional small references preserve legacy transcripts/drafts/queues; bytes are private separate files so routine cache scans do not load screenshots. Account and digest checks guard display and requests. Current images are mandatory; older replay images have an independent four-image/eight-MB bound and visible omission labels. Text/tool context retains its previous bound. Screenshot text remains imported data and cannot independently authorise writes or human-memory corrections. Background processing is unchanged.

@@ -199,3 +199,14 @@ New replies preserve bounded local tool failure reasons under **What went wrong*
 
 
 Native Calendar/Reminders creation leaves notes blank when no notes were requested. Internal operation keys and duplicate-save receipts stay in 3PO’s private local cache and are never automatically inserted into Apple notes. Supplied notes are preserved. A one-off explicitly requested cleanup can remove an exact old marker line only when both its saved native identity and operation receipt match; fresh revision checks preserve the other fields and genuine notes. Cleanup never runs from refresh or AI/source reception.
+
+
+## Pasting screenshots into the PA
+
+Take a screenshot onto the clipboard (Control–Command–Shift–4 on macOS), click the PA message box and press Command–V. A small preview appears above your draft. Add a question or send the image alone for a brief description. Remove clears an unsent attachment; clicking its preview opens a larger view. Return sends; Shift–Return inserts a new line. Ordinary text paste and native text Undo/Redo remain available.
+
+Pasting and viewing are local. Pressing Send or explicitly queuing a message allows its image input to use the existing ChatGPT subscription connection. There is no image generation, Files upload endpoint, new source permission or API-key fallback. The selected model must support vision; a rejected request preserves the saved message/image rather than switching models.
+
+Image drafts follow the same account/widget/thread scope as text drafts. Sent messages and queued requests retain small optional attachment references; image bytes live separately in the private local ChatImages directory, with private file permissions and exact account/identity/content checks. Old records decode without images and keep their original IDs. Re-encoding removes EXIF/location metadata, keeps PNG when small enough and uses JPEG for larger images. Up to four still images per message, at most 2 MB each after resizing to a 2400-pixel longest edge; clipboard input is capped at 32 MB per image.
+
+Follow-ups can include up to four images from the bounded recent conversation, preferring current/newer attachments. Older unavailable/omitted images are explicitly labelled; the PA should ask for them again when needed. Saved pictures remain in the transcript even after leaving inference context. Image text is source data, never human action authorisation or evidence of a human-stated memory. Images are not read by background learning, heartbeat or source refresh.

@@ -59,3 +59,8 @@ Durable hierarchy, manual forms, shared PA tools and five local views are implem
 
 
 6 October PA failure follow-through: original bounded failure reasons and pre-operation intent-check stage are now retained on new replies. Historical turns without a trace cannot establish the exact rejected argument. Still evaluate source-relative timing and multi-step recovery on personally requested reminders; do not claim a successful native save from a later successful source lookup, and never repeat an uncertain attempted save.
+
+
+## Screenshot input follow-through
+
+Clipboard image paste, draft/transcript/queue retention, thumbnail/large preview and bounded vision follow-ups are implemented. Validate personally useful dense screenshots, diagrams, very small widgets and long-lived image conversations. The 2400-pixel resize can lose tiny text; cropping and re-pasting is the current recovery. File-picker/drag attachments, PDFs, animation/video and a storage-management UI are separate future work. Pasted screenshot content is not automatically promoted into durable human memory.

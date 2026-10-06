@@ -17,6 +17,7 @@ struct AssistantTurn: Codable, Identifiable {
     var toolErrors: [String]? = nil
     var sourceMemoryIDs:[UUID]? = nil
     var focusAreas:[LifeArea]? = nil
+    var images:[ChatImageAttachment]? = nil
 }
 struct AssistantConversation: Codable, Identifiable {
     var id = UUID()
@@ -85,23 +86,26 @@ enum ConversationRules {
     }
     /// The current human request is intact; only older saved turns may become labelled excerpts.
     static func replay(_ turns: [AssistantTurn], currentUserID: UUID, bytes: Int = 24_000) -> [[String:String]] {
+        replayTurns(turns,currentUserID:currentUserID,bytes:bytes).map { ["role":$0.role,"content":$0.content] }
+    }
+    static func replayTurns(_ turns:[AssistantTurn],currentUserID:UUID,bytes:Int = 24_000)->[AssistantTurn] {
         guard let current = turns.last(where:{ $0.id == currentUserID && $0.role == "user" && $0.completed }) else { return [] }
         let last = ["role":current.role,"content":current.content]
         guard let encoded = try? JSONSerialization.data(withJSONObject:last), encoded.count + 2 <= bytes else { return [] }
-        var used=encoded.count+2,selected:[UUID:[String:String]]=[:]
+        var used=encoded.count+2,selected:[UUID:AssistantTurn]=[:]
         let before=Array(turns.prefix(while:{$0.id != currentUserID}).filter{$0.completed && ["user","assistant"].contains($0.role)}.suffix(19))
         func add(_ turn:AssistantTurn,limit:Int)->Bool {
             guard selected[turn.id] == nil else { return true }
             let content=turn.content.utf8.count > limit ? utf8Prefix(turn.content,bytes:limit)+"\n[Earlier message excerpt; remaining text omitted.]" : turn.content
             let value=["role":turn.role,"content":content]
             guard let data=try? JSONSerialization.data(withJSONObject:value),used+data.count+1 <= bytes else { return false }
-            selected[turn.id]=value;used+=data.count+1;return true
+            var excerpt=turn;excerpt.content=content;selected[turn.id]=excerpt;used+=data.count+1;return true
         }
         // Preserve a just-delivered proposal for a short human acceptance, then give dialogue priority.
         if let prior=before.last,prior.deliveryID != nil { _ = add(prior,limit:1000) }
         for turn in before.reversed() where turn.deliveryID == nil || turn.role == "user" { if !add(turn,limit:3000) { break } }
         for turn in before.reversed() where turn.deliveryID != nil && turn.role != "user" { _ = add(turn,limit:500) }
-        let result=before.compactMap{selected[$0.id]}+[last]
+        let result=before.compactMap{selected[$0.id]}+[current]
         return result
     }
     static func context(for turn: AssistantTurn, in conversation: AssistantConversation) -> UUID? {
@@ -121,8 +125,20 @@ enum ConversationRules {
 struct ChatDraftState: Codable {
     var version = 1
     var values: [String:String] = [:]
+    var images: [String:[ChatImageAttachment]]? = nil
 }
 enum ChatDraftRules {
     static func key(registration: String, widget: UUID, conversation: UUID?) -> String { registration + ":" + widget.uuidString + ":" + (conversation?.uuidString ?? "unselected") }
     static func hasDraft(_ state: ChatDraftState, registration: String) -> Bool { state.values.contains { $0.key.hasPrefix(registration+":") && !$0.value.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty } }
+}
+
+/// Small references only; screenshot bytes are stored separately in private local storage.
+struct ChatImageAttachment: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var registration: String
+    var mimeType: String
+    var width: Int
+    var height: Int
+    var byteCount: Int
+    var digest: String
 }

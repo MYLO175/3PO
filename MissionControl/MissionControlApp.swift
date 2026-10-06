@@ -37,7 +37,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     var body: some Scene {
         Window("3PO", id: "dashboard") {
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--preview-projects") {
+            if ProcessInfo.processInfo.arguments.contains("--preview-images") {
+                ChatImageInteractivePreview(model:model)
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-projects") {
                 LifeProjectInteractivePreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--validate-native-capabilities") || ProcessInfo.processInfo.arguments.contains("--validate-native-editors") {
                 Text("Running disposable validation…").padding().task {model.start()}

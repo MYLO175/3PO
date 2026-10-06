@@ -212,3 +212,8 @@ User explicitly requested the agreed behaviour: manual creation, PA-described cr
 ## 6 October — Approved ownership, organisation and heartbeat extension
 
 User explicitly authorised implementation after reviewing the plan. Human-owned Projects support move/order, collapsible Structure and recoverable delete/restore; the graphical Map remains a distinct view of the same life context. The PA creates/edits workspace content only on understood human request or accepted proposal, while managing supported life anchors and project placement. Project proposals are reviewable before save. Independent no-AI collection, configurable hourly heartbeat with persisted whole-run request/update allowances, morning brief priority and bounded continuous-chat display/inference are implemented. Current checks/install and remaining live acceptance are recorded in STATUS. Preserve personal identities/content/transcripts/preferences and no-source-write boundaries.
+
+
+## 6 October — Approved screenshot paste
+
+User explicitly authorised implementing clipboard screenshots in the PA chatbox. Add removable local previews, image input through the current subscription connection, saved account/widget/thread drafts and transcript/queue references, and bounded follow-ups. Preserve normal text editing/Undo, native/source/account guards and no-AI refresh. Screenshot contents are imported source data, not human action authorisation. Current implementation is documented in HOW_IT_WORKS; signed build, fictional subscription/native paste checks, installation and remaining personal-image acceptance belong in STATUS. General file/PDF input and image generation are outside this increment.
