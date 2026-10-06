@@ -7,7 +7,7 @@ import Observation
     private var task:Task<Void,Never>?
     func check(_ model:DashboardModel) {
         let assistant=model.assistant,store=assistant.projects,registration=model.chatGPT.activeID
-        guard !busy,!registration.isEmpty,!assistant.busy,!model.chatGPT.busy,!model.writing,!model.briefings.busy,!model.memoryLearning.busy,!model.sourceLearning.busy,!model.lifeOrganisation.busy,!model.proactive.busy,!model.emailSummaries.busy,
+        guard !busy,!registration.isEmpty,!assistant.busy,!model.heartbeat.busy,!model.chatGPT.busy,!model.writing,!model.briefings.busy,!model.memoryLearning.busy,!model.sourceLearning.busy,!model.lifeOrganisation.busy,!model.proactive.busy,!model.emailSummaries.busy,
               model.chatGPT.inferenceVerified,!model.chatGPT.usagePaused,
               let project=store.items(registration,includeTopics:true).first(where:{$0.kind == .project && $0.placement?.status == "pending"}) else { return }
         busy=true

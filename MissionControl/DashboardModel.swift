@@ -93,7 +93,7 @@ import EventKit
     }()
     @ObservationIgnored lazy var assistantActions = AssistantActions(container: container)
     @ObservationIgnored lazy var emailSummaries = EmailSummaryService(container: container)
-    private var summaryPoll: Task<Void, Never>?
+    @ObservationIgnored lazy var heartbeat = HeartbeatService(container:container)
     private var briefingPoll: Task<Void, Never>?
     @ObservationIgnored lazy var memoryLearning = MemoryLearningService(container:container)
     @ObservationIgnored lazy var sourceLearning = SourceContextLearningService(container:container)
@@ -128,7 +128,7 @@ import EventKit
         excludedAccounts = savedAccounts
         do {
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-projects") || ProcessInfo.processInfo.arguments.contains("--preview-projects") || ProcessInfo.processInfo.arguments.contains("--validate-placement") || ProcessInfo.processInfo.arguments.contains("--validate-mail-monitoring") {
+            if ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-projects") || ProcessInfo.processInfo.arguments.contains("--preview-projects") || ProcessInfo.processInfo.arguments.contains("--validate-placement") || ProcessInfo.processInfo.arguments.contains("--validate-mail-monitoring") || ProcessInfo.processInfo.arguments.contains("--validate-mail-dates") {
                 container = try ModelContainer(for: CachedDashboard.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
                 return
             }
@@ -143,6 +143,13 @@ import EventKit
     func start() {
         guard !started else { return }; started = true
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--validate-mail-dates") {
+            Task {
+                let result=(try? await mail.validateDates()) ?? "Unavailable"
+                try? Data(result.utf8).write(to:URL(fileURLWithPath:"/tmp/missioncontrol-mail-dates.json"),options:.atomic)
+                NSApp.terminate(nil)
+            };return
+        }
         if ProcessInfo.processInfo.arguments.contains("--validate-mail-monitoring") {
             Task {
                 let result:[String:Any]
@@ -230,28 +237,23 @@ import EventKit
                 }
             }
         })
-        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.refresh(retryMail: false); if let self { self.briefings.check(self) } } })
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.refresh(retryMail: false); if let self { self.heartbeat.check(self); self.briefings.check(self) } } })
         poll = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(60))
+                try? await Task.sleep(for: .seconds(1800))
                 guard !Task.isCancelled else { return }
-                await self?.refreshMail()
+                if let self { self.heartbeat.check(self) }
                 self?.weather.startRefresh()
             }
         }
         briefingPoll = Task { [weak self] in
             while !Task.isCancelled {
-                if let self { self.projectPlacement.check(self); self.briefings.check(self); self.memoryLearning.recoverDelivery(self); self.memoryLearning.check(self); self.proactive.recoverDelivery(self); self.proactive.check(self); self.sourceLearning.check(self); self.lifeOrganisation.check(self); if Date.now.timeIntervalSince(self.lastOrientationCheck) >= 900 { await self.refreshPAOrientation() } }
+                if let self { self.heartbeat.check(self); if !self.heartbeat.busy { self.projectPlacement.check(self); self.briefings.check(self); self.memoryLearning.recoverDelivery(self); self.memoryLearning.check(self); self.proactive.recoverDelivery(self); self.sourceLearning.check(self); self.lifeOrganisation.check(self); if Date.now.timeIntervalSince(self.lastOrientationCheck) >= 900 { await self.refreshPAOrientation() } } }
                 try? await Task.sleep(for: .seconds(60))
             }
         }
-        summaryPoll = Task { [weak self] in
-            while !Task.isCancelled {
-                if let self, !self.briefings.busy { self.emailSummaries.process(self) }
-                try? await Task.sleep(for: .seconds(300))
-            }
-        }
         refresh(retryMail: false)
+        heartbeat.check(self)
         if ProcessInfo.processInfo.arguments.contains("--validate-live") {
             Task {
                 do { validationReport = try await eventKit.validateDisposableReminders() }
@@ -360,7 +362,7 @@ import EventKit
     }
     private func readMailPage(_ window: MailWindowProgress, account: MailAccount) async {
         do {
-            let batch = try await mail.batch(accountID:account.id,window:window)
+            let batch = try await mail.batch(accountID:account.id,window:window,knownMessages:window.id.hasPrefix("monitor:") ? mailData.messages : nil)
             mailData = mailIndex.apply(batch,to:window.id,snapshot:mailData)
             mailHealth.lastSuccess = .now
         } catch {

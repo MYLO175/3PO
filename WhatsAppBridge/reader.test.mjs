@@ -62,7 +62,7 @@ async function exerciseReader(switchAccount=false) {
   }`);
   writeFileSync(join(root,'register.mjs'),`import {register} from 'node:module';register(${JSON.stringify(pathToFileURL(join(root,'loader.mjs')).href)});`);
   const child=spawn(process.execPath,['--import',join(root,'register.mjs'),fileURLToPath(new URL('./reader.mjs',import.meta.url))],{stdio:['pipe','pipe','pipe']});
-  let buffer='',stderr='',timer;
+  let buffer='',stderr='',timer,snapshotRequested=false;
   try {
     const finished=new Promise((resolve,reject)=>{
       timer=setTimeout(()=>reject(Error('Offline reader fixture timed out')),6000);
@@ -72,7 +72,8 @@ async function exerciseReader(switchAccount=false) {
         let newline;
         while((newline=buffer.indexOf('\n'))>=0){events.push(JSON.parse(buffer.slice(0,newline)));buffer=buffer.slice(newline+1);}
         if(events.filter(event=>event.connected).length>=2 && events.filter(event=>event.type==='messages').length>=7){
-          child.stdin.write(JSON.stringify({action:'stop'})+'\n');
+          if(!snapshotRequested){snapshotRequested=true;child.stdin.write(JSON.stringify({action:'snapshot',requestID:'fixture-heartbeat'})+'\n');}
+          else if(events.some(event=>event.snapshotID==='fixture-heartbeat')) child.stdin.write(JSON.stringify({action:'stop'})+'\n');
         }
       });
       child.on('error',reject);
@@ -82,6 +83,9 @@ async function exerciseReader(switchAccount=false) {
     await finished;
     const final=events.filter(event=>event.type==='messages').at(-1);
     assert.deepEqual(final.messages.map(message=>[message.id,message.text]),switchAccount?[['a:same','Original'],['b:same','Original']]:[['a:same','Corrected']]);
+    const snapshot=events.find(event=>event.snapshotID==='fixture-heartbeat');
+    assert.deepEqual(snapshot.messages,final.messages);
+    assert.ok(snapshot.coverage.includes('partial'));
     const journal=JSON.parse(open(readFileSync(join(root,'storage/revisions.enc')),key));
     if(switchAccount)assert.equal(Object.keys(journal.entries).length,0);
     assert.equal(events.some(event=>event.type==='qr'),false);

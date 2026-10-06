@@ -49,6 +49,14 @@ import SwiftData
         catch { rejected = previous; self.error = "Retry progress could not be saved."; paused = true }
     }
     func monitored(_ model: DashboardModel) -> [MailMessage] { MailMonitoringRules.incoming(eligible(model),since:monitoringSince) }
+    func hasPendingIncoming(_ model:DashboardModel) -> Bool {
+        guard enabled,!paused else { return false }
+        return monitored(model).contains { message in
+            guard current(message,model:model) == nil,!rejected.contains(where:{$0.matches(message,registration:model.chatGPT.activeID)}) else { return false }
+            let decision=decisions.first { $0.id == message.id && $0.registration == model.chatGPT.activeID && $0.fingerprint == EmailSummary.fingerprint(message) }
+            return decision == nil || decision?.readBody == true
+        }
+    }
     func memories(_ model: DashboardModel) -> [(MailMessage,EmailSummary)] {
         records.filter { $0.registration == model.chatGPT.activeID && $0.dismissed != true && ($0.attention || $0.followUpDate != nil) }.compactMap { summary in
             guard let message = model.mailData.messages.first(where: { $0.id == summary.id }) ?? summary.message, model.mailData.accounts.contains(where: { $0.id == message.accountID }), !model.assistant.excludedAccounts.contains(message.accountID) else { return nil }
@@ -149,9 +157,9 @@ import SwiftData
         else { context.insert(CachedDashboard(key:"mailHeaderDecisions",data:decisionsData)) }
         try context.save()
     }
-    func process(_ model: DashboardModel, resume: Bool = false) {
+    func process(_ model: DashboardModel, resume: Bool = false, heartbeat: Bool = false) {
         if resume { paused = false; error = nil }
-        guard enabled, !paused, !model.chatGPT.usagePaused, !busy, !model.chatGPT.busy,!model.projectPlacement.busy, !model.assistant.busy, !model.briefings.busy, !model.sourceLearning.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing, model.chatGPT.inferenceVerified else { return }
+        guard (!model.heartbeat.busy || heartbeat), enabled, !paused, !model.chatGPT.usagePaused, !busy, !model.chatGPT.busy,!model.projectPlacement.busy, !model.assistant.busy, !model.briefings.busy, !model.sourceLearning.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing, model.chatGPT.inferenceVerified else { return }
         let registration = model.chatGPT.activeID, selectedModel = modelID.isEmpty ? model.chatGPT.selectedModel : modelID, selectedEffort = effort
         let requestedModel = modelID
         busy = true

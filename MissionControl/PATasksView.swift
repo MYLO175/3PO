@@ -35,11 +35,11 @@ struct PATasksView: View {
                 LazyVStack(alignment:.leading,spacing:12) {
                     ForEach(discoveries) { item in
                         VStack(alignment:.leading,spacing:8) {
-                            Label(item.sourceKind == "whatsapp" ? "WhatsApp · " + (item.sourceLabel ?? "Selected chat") : "Missing plan",systemImage:item.kind == "calendar" ? "calendar.badge.plus" : "checklist").font(.caption).foregroundStyle(.secondary)
+                            Label(item.sourceKind == "whatsapp" ? "WhatsApp · " + (item.sourceLabel ?? "Selected chat") : item.kind == "update" ? "Update" : "Missing plan",systemImage:item.kind == "calendar" ? "calendar.badge.plus" : "checklist").font(.caption).foregroundStyle(.secondary)
                             if let title=item.sourceTitle { Text(title).font(.callout.weight(.semibold)) }
                             Text(item.message).textSelection(.enabled)
                             Button("Source evidence") { sourceDiscovery=item }.buttonStyle(.borderless).font(.caption)
-                            HStack { Button("Review suggestion") { model.reviewDiscovery(item) }; Spacer(); Button("Dismiss") { model.proactive.dismiss(item) } }.controlSize(.small)
+                            HStack { if item.kind != "update" { Button("Review suggestion") { model.reviewDiscovery(item) } }; Spacer(); Button("Dismiss") { model.proactive.dismiss(item) } }.controlSize(.small)
                         }.taskCard()
                     }
                     ForEach(emails,id:\.0.id) { message,summary in

@@ -16,7 +16,7 @@ import Foundation
         var snapshot = MailSnapshot(messages:[],accounts:accounts,errors:[])
         snapshot = state.apply(empty,to:first.id,snapshot:snapshot,now:now)
         state.prepare(accounts:accounts,now:now.addingTimeInterval(60),calendar:calendar)
-        assert(state.monitor("a")!.start == now.addingTimeInterval(-600))
+        assert(state.monitor("a")!.start == now.addingTimeInterval(60-48*3600))
         assert(state.windows.allSatisfy(\.complete), "Polling must not reopen the month's history")
         let monitor = state.monitor("a")!
         _ = state.apply(MailBatch(messages:[],messageIDs:[1,2],nextOffset:1,complete:false,errors:[]),to:monitor.id,snapshot:snapshot,now:now)
@@ -57,6 +57,10 @@ import Foundation
         reconcile.resetCursor(reconcile.monitor("a")!.id)
         let end = reconcile.apply(MailBatch(messages:[kept],messageIDs:[1],nextOffset:1,complete:true,errors:[]),to:reconcile.monitor("a")!.id,snapshot:part,now:now)
         assert(Set(end.messages.map(\.id)) == ["a:1","a:3","b:4"])
-        print("PASS Mail monitoring: legacy migration, overlapping arrival watermark, immutable interrupted cursors, bounded rotating audit/history, per-account retry isolation, offline catch-up, source removal and exact-range reconciliation")
+        var late=MailIndexState(); late.prepare(accounts:accounts,now:now,calendar:calendar)
+        let unseen=try message(5,account:"a",received:now.addingTimeInterval(-3*3600))
+        let observed=late.apply(MailBatch(messages:[unseen],messageIDs:[5],nextOffset:1,complete:true,errors:[],retainedIDs:[1]),to:late.monitor("a")!.id,snapshot:original,now:now)
+        assert(Set(observed.messages.map(\.id)) == ["a:1","a:3","a:5","b:4"], "Late delivery is added, verified known identities retained and vanished messages removed")
+        print("PASS Mail monitoring: legacy migration, late-delivery overlap and arrival watermark, immutable interrupted cursors, bounded rotating audit/history, per-account retry isolation, offline catch-up, source removal and exact-range reconciliation")
     }
 }

@@ -202,11 +202,20 @@ function runBatch(mail, input) {
     const inbox = resolveSearchMailbox(mail, account, input);
     const dateField = input.mailboxRole === 'sent' ? 'dateSent' : 'dateReceived';
     let ids = input.messageIDs;
+    let retainedIDs = [];
     if (!Array.isArray(ids)) {
         const lower = {}, upper = {}; lower[dateField] = { _greaterThanEquals:start }; upper[dateField] = { _lessThan:end };
         // One bulk Apple event rather than resolving every dated message ID.
         const dated = inbox.messages.whose({ _and:[lower,upper] });
         ids = listValue(dated.id()).map(Number);
+        if (input.knownMessages) {
+            const internetIDs=listValue(dated.messageId());
+            const checkedIDs=listValue(dated.id()).map(Number);
+            if(internetIDs.length!==ids.length||checkedIDs.length!==ids.length||checkedIDs.some((id,index)=>id!==ids[index])) throw new Error('Mailbox identities changed or moved; retry this date window');
+            retainedIDs=ids.filter((id,index)=>input.knownMessages[String(id)]===stringValue(internetIDs[index]));
+            const retained=new Set(retainedIDs);
+            ids=ids.filter(id=>!retained.has(id));
+        }
         if (input.searchTerms && input.mailboxRole !== 'sent') {
             if (!Array.isArray(input.searchTerms) || !input.searchTerms.length || input.searchTerms.length > 5 || input.searchTerms.some(term => typeof term !== 'string' || term.length < 2 || term.length > 80)) throw new Error('Invalid header search terms');
             const terms = input.searchTerms.map(term => term.toLowerCase());
@@ -234,7 +243,7 @@ function runBatch(mail, input) {
             replied: Boolean(message.wasRepliedTo()), flagged: Boolean(message.flaggedStatus()), mailboxName:input.mailboxName ? String(input.mailboxName) : null, mailboxRole:input.mailboxRole || null, recipients:recipients };
     });
     return { messages: messages, messageIDs: ids, nextOffset: offset + page.length,
-        complete: offset + page.length >= ids.length, errors: [] };
+        complete: offset + page.length >= ids.length, retainedIDs:retainedIDs, errors: [] };
 }
 
 function probeInboxes(mail) {
@@ -247,6 +256,17 @@ function probeInboxes(mail) {
     });
     return { accounts: accounts, errors: errors };
 }
+function probeDates(mail,input) {
+    return {checks:mail.accounts().filter(account=>account.enabled()).map(account=>{
+        const accountID=stringValue(account.id());
+        const inbox=resolveInbox(mail,account,accountID);
+        const start=new Date(Number(input.start)*1000),end=new Date(Number(input.end)*1000);
+        const dated=inbox.messages.whose({_and:[{dateReceived:{_greaterThanEquals:start}},{dateReceived:{_lessThan:end}}]});
+        const bulk=listValue(dated.id()).map(Number);
+        const resolved=listValue(dated()).map(message=>Number(message.id()));
+        return {bulkCount:bulk.length,resolvedCount:resolved.length,sameIDs:bulk.length===resolved.length&&bulk.every(id=>resolved.includes(id))};
+    })};
+}
 function run(argv) {
     try {
         if (!argv || argv.length !== 1) {
@@ -255,7 +275,9 @@ function run(argv) {
         const input = JSON.parse(argv[0]);
         const mail = Application('Mail');
         let output;
-        if (input.operation === 'folders') {
+        if (input.operation === 'probe-dates') {
+            output=probeDates(mail,input);
+        } else if (input.operation === 'folders') {
             output = searchFolders(mail);
         } else if (input.operation === 'batch') {
             output = runBatch(mail, input);

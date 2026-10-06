@@ -126,6 +126,10 @@ actor MailService {
         try JSONDecoder().decode(MailFolderDiscovery.self,from:run(arguments:["operation":"folders"]))
     }
     #if DEBUG
+    func validateDates() async throws -> String {
+        let day=Calendar.current.startOfDay(for:.now),end=Calendar.current.date(byAdding:.day,value:1,to:day)!
+        return String(decoding:try run(arguments:["operation":"probe-dates","start":day.timeIntervalSince1970,"end":end.timeIntervalSince1970]),as:UTF8.self)
+    }
     func validateMonitoring() async throws -> [String:Any] {
         let discovery = try await discoverAccounts()
         let initial = Date.now
@@ -176,7 +180,7 @@ actor MailService {
     }
     #endif
 
-    func batch(accountID: String, window: MailWindowProgress, searchTerms: [String]? = nil) async throws -> MailBatch {
+    func batch(accountID: String, window: MailWindowProgress, searchTerms: [String]? = nil, knownMessages: [MailMessage]? = nil) async throws -> MailBatch {
         var arguments: [String: Any] = ["operation": "batch", "accountID": accountID,
             "start": window.start.timeIntervalSince1970, "end": window.end.timeIntervalSince1970,
             "offset": window.offset, "limit": 20]
@@ -184,6 +188,9 @@ actor MailService {
         if let name = window.mailboxName { arguments["mailboxName"] = name }
         if let role = window.mailboxRole { arguments["mailboxRole"] = role.rawValue }
         if let searchTerms { arguments["searchTerms"] = searchTerms }
+        if window.messageIDs == nil, let knownMessages {
+            arguments["knownMessages"] = Dictionary(knownMessages.filter { $0.accountID == accountID && $0.received >= window.start && $0.received < window.end && !$0.internetMessageID.isEmpty && $0.internetMessageID.utf8.count <= 300 }.prefix(500).map { (String($0.messageID),$0.internetMessageID) },uniquingKeysWith:{ _,new in new })
+        }
         let response = try JSONDecoder().decode(MailBatch.self, from: run(arguments: arguments))
         if let error = response.errors.first { throw MailServiceError.mail(error) }
         guard let ids = response.messageIDs, let offset = response.nextOffset, let complete = response.complete,
@@ -191,6 +198,8 @@ actor MailService {
               response.messages.count == offset-window.offset,
               response.messages.map(\.messageID) == Array(ids[window.offset..<offset]),
               response.messages.allSatisfy({ $0.accountID == accountID && $0.received >= window.start && $0.received < window.end }),
+              Set(response.retainedIDs ?? []).count == (response.retainedIDs ?? []).count,
+              (response.retainedIDs ?? []).allSatisfy({ retained in !ids.contains(retained) && (knownMessages ?? []).contains { $0.accountID == accountID && $0.messageID == retained } }),
               complete == (offset == ids.count), complete || offset > window.offset else {
             throw MailServiceError.process("Mail returned incomplete batch metadata")
         }

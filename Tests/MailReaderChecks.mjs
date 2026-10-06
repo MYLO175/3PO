@@ -69,7 +69,8 @@ function batchFixture({count=75,changed=false}={}) {
   const dated={
     id:()=>{idReads++;return changed&&idReads>1?ids.slice().reverse():ids},
     subject:()=>ids.map(id=>id===70?'Engineering Part IIB: module choices':'Unrelated newsletter'),
-    sender:()=>ids.map(()=> 'Coordinator <fixture@example.invalid>')
+    sender:()=>ids.map(()=> 'Coordinator <fixture@example.invalid>'),
+    messageId:()=>ids.map(id=>`fixture${id}@example.invalid`)
   };
   const box={messages:{
     whose:()=>{filterReads++;return dated},
@@ -102,4 +103,14 @@ test('changing header collection fails closed; Sent retains recipient-only candi
   assert.throws(()=>reader().runBatch(batchFixture({changed:true}).mail,{...batchRequest,searchTerms:['IIB']}),/changed or moved/);
   const result=reader().runBatch(batchFixture().mail,{...batchRequest,searchTerms:['Alice'],mailboxRole:'sent'});
   assert.equal(result.messages.length,20);assert.equal(result.messages[0].recipients[0],'Alice <Alice@example.invalid>');
+});
+
+test('identity delta finds late received mail without rehydrating known headers; reused native IDs do not hide replacements',()=>{
+  const known=Object.fromEntries(Array.from({length:75},(_,i)=>[String(i+1),`fixture${i+1}@example.invalid`]));
+  delete known['70'];known['71']='old-replaced@example.invalid';
+  const f=batchFixture(),result=reader().runBatch(f.mail,{...batchRequest,knownMessages:known});
+  assert.deepEqual(Array.from(result.messageIDs),[70,71]);assert.equal(result.messages.length,2);
+  assert.equal(result.retainedIDs.length,73);assert.equal(f.reads().individualReads,2);
+  const allKnown=reader().runBatch(batchFixture().mail,{...batchRequest,knownMessages:Object.fromEntries(Array.from({length:75},(_,i)=>[String(i+1),`fixture${i+1}@example.invalid`]))});
+  assert.equal(allKnown.messages.length,0);assert.equal(allKnown.retainedIDs.length,75);assert.equal(allKnown.complete,true);
 });

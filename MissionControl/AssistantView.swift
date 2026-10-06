@@ -60,7 +60,7 @@ struct AssistantPanel: View {
     }
     private func showDraft() {
         if let widgetID { assistant.drafts.show(registration:model.chatGPT.activeID,widget:widgetID,conversation:draftKey) }
-        if !draft.wrappedValue.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { model.memoryLearning.cancel(); model.proactive.cancel() }
+        if !draft.wrappedValue.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { model.memoryLearning.cancel(); model.proactive.cancel();model.heartbeat.userStartedTyping() }
     }
     @State private var dictation = DictationService()
     @State private var showDictation = false
@@ -83,7 +83,7 @@ struct AssistantPanel: View {
     @ViewBuilder private func reviewDiscoveryButtons(_ record: PADiscovery) -> some View {
         if let claim = discoveryClaim(record) {
             Label(claim.receipt == nil ? "Check save outcome" : "Created",systemImage:claim.receipt == nil ? "exclamationmark.circle" : "checkmark.circle").font(.caption).foregroundStyle(.secondary)
-        } else {
+        } else if ["calendar","reminder"].contains(record.kind) {
             Button(record.kind == "calendar" ? "Review event" : "Review reminder") { model.reviewDiscovery(record) }.disabled(model.writing)
             Menu("Instead…") {
                 Button(record.kind == "calendar" ? "Remind me instead…" : "Review as an event…") { model.reviewDiscovery(record,as:record.kind == "calendar" ? .reminder : .event) }
@@ -275,6 +275,12 @@ struct AssistantSourceSettings: View {
                 if model.sourceLearning.busy { Button("Stop learning") { model.sourceLearning.cancel() } }
             }
             if let error=model.sourceLearning.error { Text(error).font(.caption).foregroundStyle(.orange) }
+            Toggle("30-minute source heartbeat",isOn:$model.heartbeat.enabled)
+            Toggle("Check selected WhatsApp chats",isOn:$model.heartbeat.whatsappEnabled)
+            Toggle("Notify for worthwhile heartbeat updates",isOn:$model.heartbeat.notificationsEnabled)
+            Text(model.heartbeat.status).font(.caption).foregroundStyle(.secondary)
+            Text("Refreshes sources first; AI runs only for changed permitted material. Up to eight comparison attempts and three updates per day. WhatsApp uses received selected-chat text, not full history. Notifications use existing macOS permission.").font(.caption).foregroundStyle(.secondary)
+            Button("Check heartbeat now") { model.heartbeat.check(model,manual:true) }.disabled(model.heartbeat.busy || model.assistant.busy || model.chatGPT.busy)
             Toggle("Quiet proactive suggestions",isOn:$model.proactive.enabled)
             Text(model.proactive.status(model)).font(.caption).foregroundStyle(.secondary)
             HStack {

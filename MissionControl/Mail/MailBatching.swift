@@ -20,6 +20,7 @@ struct MailBatch: Decodable, Sendable {
     var nextOffset: Int?
     var complete: Bool?
     var errors: [String]
+    var retainedIDs: [Int]? = nil
 }
 
 struct MailIndexState: Codable {
@@ -55,7 +56,9 @@ struct MailIndexState: Codable {
             if let saved = previous.first(where:{ $0.accountID == account.id }) {
                 // Never expand or replace an interrupted page's range/IDs.
                 if !saved.complete || now.timeIntervalSince(saved.end) < 30 { return saved }
-                return MailWindowProgress(id:id,accountID:account.id,start:max(cutoff,saved.end.addingTimeInterval(-600)),end:now)
+                // Received timestamps can precede local delivery by hours. Recheck
+                // recent identities, hydrating only new/replaced messages.
+                return MailWindowProgress(id:id,accountID:account.id,start:max(cutoff,min(saved.end.addingTimeInterval(-600),now.addingTimeInterval(-48*3600))),end:now)
             }
             // First connection/migration checks recent arrivals; a known offline
             // gap is included once, rather than rebuilding history every refresh.
@@ -112,6 +115,7 @@ struct MailIndexState: Codable {
         collection[index].messageIDs = batch.messageIDs
         collection[index].offset = batch.nextOffset ?? 0
         collection[index].seenIDs.formUnion(batch.messages.map(\.id))
+        collection[index].seenIDs.formUnion((batch.retainedIDs ?? []).map { collection[index].accountID + ":" + String($0) })
         collection[index].complete = batch.complete == true
         collection[index].lastSuccess = now
         let window = collection[index]

@@ -22,6 +22,7 @@ import CryptoKit
     private var input: FileHandle?
     private var reader: WhatsAppOutputReader?
     private var generation=UUID()
+    private var snapshotID: String?
     private let directory = FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("Mission Control/WhatsApp",isDirectory:true)
     private let query: [String:Any] = [kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"com.mylomichael.missioncontrol.whatsapp",kSecAttrAccount as String:"session-encryption"]
     private func key() throws -> Data {
@@ -61,6 +62,20 @@ import CryptoKit
             try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:path.path)
             accesses=updated; accessRevision=UUID()
         } catch { status="Could not save WhatsApp source choices; previous choices retained." }
+    }
+    func refreshSnapshot() async -> Bool {
+        guard connected,let input else { return false }
+        let request=UUID().uuidString,owner=generation
+        do {
+            try input.write(contentsOf:JSONSerialization.data(withJSONObject:["action":"snapshot","requestID":request])+Data([10]))
+            let deadline=Date.now.addingTimeInterval(5)
+            while Date.now < deadline,connected,generation == owner {
+                try Task.checkCancellation()
+                if snapshotID == request { return true }
+                try await Task.sleep(for:.milliseconds(50))
+            }
+        } catch { return false }
+        return false
     }
     func refreshNames() {
         guard connected,!namesBusy else { return }
@@ -110,6 +125,7 @@ import CryptoKit
     }
     private func receive(_ event: WhatsAppReadEvent) {
         guard process != nil else { return }
+        if let id=event.snapshotID { snapshotID=id }
         if event.revoked == true { linkedIdentity=""; accessRevision=UUID() }
         if let identity=event.identity, identity != linkedIdentity { linkedIdentity=identity; accessRevision=UUID() }
         if let busy=event.namesBusy { namesBusy=busy }

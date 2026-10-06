@@ -230,15 +230,16 @@ import Observation
         allConversations[index].turns.append(AssistantTurn(role:"assistant",content:message,completed:true,deliveryID:delivery))
         if !save() { allConversations = previous }
     }
-    func deliverDiscovery(_ record: PADiscovery) {
+    @discardableResult func deliverDiscovery(_ record: PADiscovery) -> Bool {
         guard record.registration == connection.activeID, conversationsWritable,
-              !ConversationRules.hasDelivery(allConversations,registration:record.registration,key:record.deliveryID) else { return }
+              !ConversationRules.hasDelivery(allConversations,registration:record.registration,key:record.deliveryID) else { return false }
         let previous = allConversations
         let index: Int
         if let existing = allConversations.firstIndex(where:{ $0.accountID == record.registration && $0.isPrimary == true }) { index = existing }
         else { var primary = AssistantConversation(accountID:record.registration,title:"Your PA"); primary.isPrimary = true; allConversations.append(primary); index = allConversations.count-1 }
         allConversations[index].turns.append(.init(role:"assistant",content:record.message,completed:true,deliveryID:record.deliveryID))
-        if !save() { allConversations = previous }
+        if !save() { allConversations = previous;return false }
+        return true
     }
     func deliverLearningQuestion(_ record: PALearningQuestion) {
         guard record.registration == connection.activeID, conversationsWritable,
