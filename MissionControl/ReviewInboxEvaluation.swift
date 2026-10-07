@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import SwiftData
 import SwiftUI
 import EventKit
 
@@ -77,54 +78,45 @@ import EventKit
         let checks:[String:Bool]=["actual subscription produces a source-linked current brief":!items.isEmpty && snapshot.message?.isEmpty == false,"actual subscription returns a valid important clarification":question != nil,"actual subscription prepares a local WhatsApp reply":proposals.contains{$0.kind == "reply" && $0.replyDraft != nil},"reply creates no native proposal":proposals.filter{$0.kind == "reply"}.allSatisfy{$0.proposedChange == nil},"actual reply proposal is deduplicated":ProactiveRules.unreported(proposals,prior:proposals).isEmpty,"account and model remain captured":owner == model.chatGPT.activeID && selected == model.chatGPT.selectedModel,"real preferences unchanged":preferences.isEqual(to:UserDefaults.standard.dictionaryRepresentation())]
         return ["checks":checks,"passed":checks.values.filter{$0}.count,"total":checks.count,"AIRequests":2,"nativeChanges":0,"storage":"Fictional inputs, no source startup or normal records","model":selected]
     }
-    /// Three growing source snapshots; production prompts/decoder, fictional data only.
+    /// Four actual subscription passes across Mail/WhatsApp, using the real cache transaction.
     static func runProposalTimeline(_ model:DashboardModel) async throws->[String:Any] {
         let registration=model.chatGPT.activeID,selected=model.chatGPT.selectedModel
-        let texts=[
-            "The Orion prototype report deadline has moved to 20 October 2026.",
-            "Correction: your Orion prototype report deadline is now 22 October 2026, replacing 20 October.",
-            "The Vega prototype report is still due on 18 October 2026; nothing has changed.",
-            "Your Orion prototype report submission has been cancelled. You no longer need to submit it on 22 October 2026.",
-            "Sam's Orion prototype report is due on 24 October 2026. That is Sam's separate assignment, not yours."
-        ]
         let base=Calendar.current.date(from:DateComponents(year:2026,month:10,day:15,hour:10))!
+        let texts=["Your Orion prototype report deadline has moved to 20 October 2026.","Correction: your Orion prototype report deadline is now 22 October 2026, replacing 20 October.","Final correction: your Orion prototype report deadline is now 23 October 2026, replacing 22 October.","Your Orion prototype report submission is cancelled. You no longer need to submit it on 23 October 2026."]
         let task=TaskItem(id:"fictional-orion",listID:"fictional-studies",title:"Submit Orion prototype report",due:Calendar.current.date(from:DateComponents(year:2026,month:10,day:16)),hasTime:false,sourceLabel:"Fictional",writable:true,recurring:false)
         var vega=task;vega.id="fictional-vega";vega.title="Submit Vega prototype report";vega.due=Calendar.current.date(from:DateComponents(year:2026,month:10,day:18))
         let targets=["reminder_0":DiscoveryNativeTarget.reminder(task),"reminder_1":DiscoveryNativeTarget.reminder(vega)]
-        var checks:[String:Bool]=[:],trace:[[String:Any]]=[]
-        var delivered:[String]=[]
-        for (round,count) in [3,4,5].enumerated() {
-            let candidates=Array(texts.prefix(count)).enumerated().map {DiscoveryCandidate(alias:"wa_\($0.offset)",mailID:"fictional-\($0.offset)",evidence:"",followUpEvidence:"",sourceKind:"whatsapp",sourceChatID:"fictional-studies",sourceMessageID:"fictional-\($0.offset)",sourceIdentity:"fictional-link",sourceRevision:"v1",sourceLabel:"Fictional studies",sourceText:$0.element)}
-            let input:[String:Any]=[
-                "localDay":"2026-10-15","timezone":TimeZone.current.identifier,
-                "calendarCoverage":"Complete fictional fixture; no events.","events":[],
-                "reminderCoverage":"Complete fictional fixture; only two reminders.",
-                "reminders":targets.keys.sorted().map { ["id":$0,"title":targets[$0]!.title,"due":targets[$0]!.originalDate,"hasTime":false,"writable":true] as [String:Any] },
-                "whatsapp":Array(texts.prefix(count)).enumerated().map { ["id":"wa_\($0.offset)","chat":"Fictional studies","sender":"Tutor","sentByMe":false,"received":base.addingTimeInterval(Double($0.offset)*600).ISO8601Format(),"text":$0.element] as [String:Any] },
-                "whatsappCoverage":"Only the supplied fictional messages; chronological source snapshots, no asserted memory identity.",
-                "emails":[],"paMemory":"{}","recentGeneralChat":[],"preferences":"","reviewFeedback":[],
-                "completedReminders":[],"completionCoverage":"No completion evidence.","deliveredSuggestions":delivered
-            ]
-            let data=try JSONSerialization.data(withJSONObject:input,options:[.sortedKeys])
-            let instructions=ProactiveRules.heartbeatInstructions+" "+MemoryDependencyRules.instructions+" "+CommitmentRules.instructions+" "+ProactiveRules.changeInstructions+" "+ProactiveRules.evidenceInstructions+" "+EmailReviewRules.instructions+" "+EmailReviewRules.feedbackInstructions+" "+SourceDateGrounding.instructions
-            let response=try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:data,as:UTF8.self)]],instructions:instructions,model:selected,purpose:.diagnostic) {_ in}
-            let records=try ProactiveRules.decode(response,candidates:candidates,registration:registration,scope:"fictional-timeline",now:base.addingTimeInterval(Double(count)*600),targets:targets)
-            if round == 0 {
-                checks["latest correction wins over the earlier deadline"]=records.contains{$0.mailID == "fictional-1" && $0.proposedChange?.target.itemID == task.id && $0.proposedChange?.newDate == "2026-10-22"}
-                checks["earlier date does not produce a competing edit"] = !records.contains{$0.proposedChange?.newDate == "2026-10-20"}
-                checks["unchanged similar project does not produce an edit"] = !records.contains{$0.proposedChange?.target.itemID == vega.id}
-            } else if round == 1 {
-                checks["cancellation replaces the earlier deadline with an informational update"]=records.contains{$0.mailID == "fictional-3" && $0.kind == "update"}
-                checks["cancelled deadline cannot generate any native edit"]=records.allSatisfy{$0.proposedChange == nil && $0.kind == "update"}
-            } else {
-                checks["another person's newer message cannot revive the cancelled task"]=records.allSatisfy{$0.proposedChange == nil && $0.kind == "update"}
-                checks["previously delivered cancellation is not repeated"]=records.isEmpty
+        let cache=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+        var service=ProactiveService(container:cache),checks:[String:Bool]=[:],trace:[[String:Any]]=[]
+        for round in 0..<4 {
+            let now=base.addingTimeInterval(Double(round)*3600),isMail=round%2 == 0,alias=isMail ? "mail_0" : "wa_0"
+            let candidate=DiscoveryCandidate(alias:alias,mailID:"fictional-source-\(round)",evidence:isMail ? texts[round] : "",followUpEvidence:"",sourceKind:isMail ? nil : "whatsapp",sourceIdentity:isMail ? nil : "fictional-link",sourceRevision:"v1",sourceText:isMail ? nil : texts[round],sourceDate:now)
+            let pending=service.state.records.filter{!$0.dismissed && $0.supersededBy == nil && $0.reviewState == nil}
+            let earlier=Dictionary(uniqueKeysWithValues:pending.enumerated().map{("review_\($0.offset)",$0.element)})
+            var wa:[[String:Any]]=isMail ? [] : [["id":alias,"chat":"Fictional studies","sender":"Tutor","sentByMe":false,"received":now.ISO8601Format(),"text":texts[round]]]
+            if round == 3 {wa.append(["id":"wa_1","chat":"Fictional studies","sender":"Sam","sentByMe":false,"received":now.addingTimeInterval(60).ISO8601Format(),"text":"My Orion report is due 24 October. This is Sam's separate assignment, not yours. The Vega report deadline remains 18 October."])}
+            let input:[String:Any]=["localDay":"2026-10-15","timezone":TimeZone.current.identifier,"calendarCoverage":"Complete fictional fixture","events":[],"reminderCoverage":"Complete fictional fixture; two reminders","reminders":targets.keys.sorted().map{["id":$0,"title":targets[$0]!.title,"due":targets[$0]!.originalDate,"hasTime":false,"writable":true] as [String:Any]},"emails":isMail ? [["id":alias,"received":now.ISO8601Format(),"sender":"Tutor","subject":"Orion report correction","summary":texts[round],"evidence":texts[round],"evidenceID":alias+":primary"]] : [],"whatsapp":wa,"whatsappCoverage":"Only supplied fictional messages","paMemory":"{}","recentGeneralChat":[],"preferences":"","reviewFeedback":[],"completedReminders":[],"completionCoverage":"No completed reminders","deliveredSuggestions":[],"earlierProposals":ProactiveRules.earlierRows(earlier,targets:targets)]
+            let instructions=ProactiveRules.heartbeatInstructions+" "+ProactiveRules.changeInstructions+" "+ProactiveRules.evidenceInstructions+" "+ProactiveRules.replacementInstructions
+            let response=try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:try JSONSerialization.data(withJSONObject:input,options:[.sortedKeys]),as:UTF8.self)]],instructions:instructions,model:selected,purpose:.diagnostic){_ in}
+            var candidates=[candidate]
+            if round == 3 {candidates.append(.init(alias:"wa_1",mailID:"fictional-sam",evidence:"",followUpEvidence:"",sourceKind:"whatsapp",sourceIdentity:"fictional-link",sourceRevision:"v1",sourceText:wa[1]["text"] as? String,sourceDate:now.addingTimeInterval(60)))}
+            let decoded=try ProactiveRules.decode(response,candidates:candidates,registration:registration,scope:"fictional",now:now,targets:targets,earlier:earlier)
+            let additions=ProactiveRules.unreported(decoded,prior:service.state.records)
+            try service.commitComparison(additions,issued:earlier,permittedEarlier:Set(earlier.values.map(\.id)),registration:registration,progress:.init(),now:now)
+            service=ProactiveService(container:cache)
+            let active=service.state.records.filter{!$0.dismissed && $0.supersededBy == nil && $0.reviewState == nil}
+            checks["round \(round+1) has one persisted latest suggestion"]=active.count == 1 && active.first?.mailID == candidate.mailID
+            if round < 3 {checks["round \(round+1) proposes only the latest exact Orion date"]=active.first?.proposedChange?.target.itemID == task.id && active.first?.proposedChange?.newDate == ["2026-10-20","2026-10-22","2026-10-23"][round]}
+            else {
+                checks["cancellation retires obsolete native edits without deleting or completing anything"]=active.first?.kind == "update" && active.first?.proposedChange == nil && service.state.records.filter{$0.supersededBy != nil}.count == 3
+                checks["same-name different-person plan and unchanged Vega are ignored"]=decoded.allSatisfy{$0.mailID != "fictional-sam" && $0.proposedChange?.target.itemID != vega.id}
+                checks["evidence history follows all three earlier suggestions"]=active.first.map{service.earlierVersions($0).count == 3} ?? false
+                if let latest=active.first {service.dismiss(latest);service=ProactiveService(container:cache);checks["dismissal after reopen cannot resurrect old deadlines"]=service.state.records.allSatisfy{$0.dismissed || $0.supersededBy != nil}}
             }
-            trace.append(["round":round+1,"suppliedSources":count,"outputs":records.map{["source":$0.mailID,"kind":$0.kind,"target":$0.proposedChange?.target.itemID ?? "","date":$0.proposedChange?.newDate ?? ""]}])
-            delivered += records.map(\.message)
+            trace.append(["round":round+1,"source":isMail ? "Mail" : "WhatsApp","active":active.map{["kind":$0.kind,"date":$0.proposedChange?.newDate ?? "","replaces":$0.replaces ?? []] as [String:Any]}])
         }
-        checks["captured model/account preserved; no native writes"]=registration == model.chatGPT.activeID && selected == model.chatGPT.selectedModel && !model.writing
-        return ["requests":3,"model":selected,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"trace":trace,"storage":"Fictional chronological source snapshots, production prompt/decoder, disposable SwiftData. No source startup, native writes or personal retry. Not full asynchronous scheduler or exhaustive semantic matching."]
+        checks["captured account/model and native records preserved"]=registration == model.chatGPT.activeID && selected == model.chatGPT.selectedModel && !model.writing
+        return ["requests":4,"model":selected,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"trace":trace,"storage":"Fictional source snapshots; production decoder and ProactiveService cache commits/reopening. No source startup, native writes or personal retry. Not exhaustive semantic matching or real sleep/wake."]
     }
     static func seed(_ model:DashboardModel)throws->PADiscovery {
         let account=model.chatGPT.activeID,now=Date.now,quote="The Orion prototype report deadline has moved to 20 October 2026."

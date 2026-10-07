@@ -107,7 +107,7 @@ Live follow-through: the user explicitly authorised resuming the paused personal
 
 ### 7 October Projects checkpoint
 
-Structure is now Projects. The latest folder-first correction adds direct-child folder tiles, clickable paths, quiet notes and a three-stage board; native installed navigation is checked. The initial home task rollup and search field are superseded. Task-stage dragging now has a direct pointer preview, column highlight, release-only saves and native fictional interaction checks including Undo. Next workspace quality checks are larger branches, folder-specific preferences and longer boards/scrolling (STATUS has exact acceptance boundaries). Block editing, attachments and richer relational databases remain separate future design choices. Background source/assessment recovery, persistent cross-message proposal supersession and measured memory/commitment quality still take priority over unrelated features.
+Structure is now Projects. The latest folder-first correction adds direct-child folder tiles, clickable paths, quiet notes and a three-stage board; native installed navigation is checked. The initial home task rollup and search field are superseded. Task-stage dragging now has a direct pointer preview, column highlight, release-only saves and native fictional interaction checks including Undo. Folder-specific view preferences, optional folder icons and board edge scrolling are now implemented and checked on a 36-task fictional native preview. Next workspace quality checks are larger real branches and narrow-window/long-held gesture use (STATUS has exact acceptance boundaries). Block editing, attachments and richer relational databases remain separate future design choices. Sustained real background recovery and broader measured memory/commitment quality still take priority over unrelated features; bounded persistent pending-proposal supersession is now implemented.
 
 
 ### Folder-first workspace follow-up
@@ -118,3 +118,10 @@ The latest user direction prioritises a calm folder hierarchy, direct contents, 
 ## After the regular-heartbeat increment
 
 The coordinated refresh/review/latest-brief cycle, time-aware morning/afternoon/evening briefs, Review inbox questions, optional learning-question routing and local WhatsApp reply drafts are implemented. Remaining acceptance is sustained real sleep/wake/traffic, allowance/day/timezone transitions, reply/clarification usefulness and broader chronology/supersession. Focused fictional checks and short live acceptance do not establish those long-term cases. Further work should improve measured proposal quality and memory/commitment links before adding another autonomous lane.
+
+
+### After the four-priority follow-through
+
+Pending advice now has an inspectable replacement chain across newer Mail/WhatsApp evidence, protecting exact native identities and in-flight approvals. The four-pass actual subscription chronology fixture passes; it does not establish exhaustive semantic identity matching. Life map exposes existing belief availability and correction history directly. Folder views/icons and real viewport edge scrolling are checked without adding project-home clutter.
+
+Next acceptance priorities: an actual missed-heartbeat reopen/wake while permitted Mail/WhatsApp traffic arrives; multiple real days of quiet versus useful proposals; longer histories, recurring/native completion and cross-source ambiguities. The virtual persisted 72-slot service timeline proves cache claims/completion/recovery and allowance preservation, not real OS scheduling, unattended background operation while quit/asleep, or complete source history. Keep uncertain failed AI jobs on explicit resume and retain the documented source coverage limits.

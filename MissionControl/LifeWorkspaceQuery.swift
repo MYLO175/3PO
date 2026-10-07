@@ -90,3 +90,14 @@ struct LifeTaskProgress:Equatable {
         return rounded
     }
 }
+
+/// Forty-millisecond steps; no persistence or status change while scrolling.
+enum LifeBoardScrollRules {
+    static func step(pointerY:CGFloat,height:CGFloat,offset:CGFloat,contentHeight:CGFloat)->CGFloat {
+        guard height > 0,contentHeight > height,pointerY >= 0,pointerY <= height else {return 0}
+        let edge=min(48,height/4)
+        let speed:CGFloat=pointerY < edge ? -(edge-pointerY)/edge : pointerY > height-edge ? (pointerY-height+edge)/edge : 0
+        let next=min(max(0,offset+speed*10),max(0,contentHeight-height))
+        return next-offset
+    }
+}

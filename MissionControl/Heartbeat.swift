@@ -50,7 +50,7 @@ enum PAHeartbeatRules {
         return account.checked?.addingTimeInterval(Double(minutes)*60) ?? now
     }
     static func due(_ account: PAHeartbeatAccount, now: Date, minutes:Int = defaultMinutes,day:String? = nil,allowance:Int? = nil) -> Bool {
-        nextReview(account,now:now,minutes:minutes,day:day,allowance:allowance) <= now
+        account.phase != "paused" && nextReview(account,now:now,minutes:minutes,day:day,allowance:allowance) <= now
     }
     enum WaitReason:String {case foreground,sources,allowance}
     static func deferred(_ account:PAHeartbeatAccount,now:Date,reason:WaitReason,calendar:Calendar = .current)->PAHeartbeatAccount {

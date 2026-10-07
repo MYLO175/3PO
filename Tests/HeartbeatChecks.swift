@@ -13,6 +13,7 @@ import Foundation
         precondition(PAHeartbeatRules.needsAssessment(account,fingerprint:"new",manual:false))
         account.phase="assessing"
         let recovered=PAHeartbeatRules.recovered(account)
+        precondition(!PAHeartbeatRules.due(recovered,now:now.addingTimeInterval(86400*3)),"Paused assessment cannot start repeated automatic cycles on wake")
         precondition(recovered.phase == "paused" && recovered.checked == account.checked && recovered.fingerprint == "same")
         precondition(!PAHeartbeatRules.needsAssessment(recovered,fingerprint:"new",manual:false))
         precondition(!PAHeartbeatRules.needsAssessment(recovered,fingerprint:"same",manual:false,pendingSources:true))

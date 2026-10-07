@@ -86,6 +86,8 @@ struct WidgetConfiguration: Codable, Equatable {
     var projectCollapsed: [String:[String]]? = nil
     var lifeMapView: String? = nil
     var projectView: String? = nil
+    /// Widget-local presentation, separately remembered for each account's folder.
+    var projectFolderViews:[String:[String:String]]? = nil
     var projectOnlyUnfinished: Bool? = nil
 }
 

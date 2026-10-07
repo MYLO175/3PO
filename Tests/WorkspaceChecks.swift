@@ -4,6 +4,9 @@ import CoreGraphics
 @main
 struct WorkspaceChecks {
     static func main() throws {
+        var folderConfig=WidgetConfiguration();folderConfig.projectView="Overview";folderConfig.projectFolderViews=["fictional-a":["folder-1":"Board","folder-2":"List"],"fictional-b":["folder-1":"Outline"]]
+        let folderRestored=try JSONDecoder().decode(WidgetConfiguration.self,from:JSONEncoder().encode(folderConfig))
+        precondition(folderRestored == folderConfig && folderRestored.projectFolderViews?["fictional-a"]?["folder-1"] == "Board")
         var page=DashboardPage(title:"Study",widgets:[]); page.symbol="graduationcap"
         let decodedPage=try JSONDecoder().decode(DashboardPage.self,from:JSONEncoder().encode(page))
         assert(decodedPage.displayIcon == "graduationcap" && decodedPage == page)

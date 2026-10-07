@@ -41,6 +41,14 @@ struct LifeItem: Codable, Identifiable, Equatable {
     var sortOrder: Int? = nil
     var deletedAt: Date? = nil
     var deletedRoot: UUID? = nil
+    var icon:String? = nil
+    var displaySymbol:String { icon.flatMap{LifeProjectIcons.symbols.contains($0) ? $0 : nil} ?? kind.symbol }
+}
+enum LifeProjectIcons {
+    static let symbols=["folder","book.closed","graduationcap","briefcase","laptopcomputer","lightbulb","wrench.and.screwdriver","leaf","house","person.2","star","flag","doc.text","chart.bar"]
+    static func title(_ symbol:String)->String {
+        switch symbol {case "folder":"Folder";case "book.closed":"Book";case "graduationcap":"Studies";case "briefcase":"Work";case "laptopcomputer":"Computer";case "lightbulb":"Idea";case "wrench.and.screwdriver":"Tools";case "leaf":"Wellbeing";case "house":"Home";case "person.2":"People";case "star":"Star";case "flag":"Goal";case "doc.text":"Note";default:"Progress"}
+    }
 }
 enum LifeRelation: String, Codable, CaseIterable, Identifiable {
     case related, partOf, dependsOn, preparesFor, supports, supervisedBy, discusses, evidence, identifies
@@ -135,6 +143,7 @@ enum LifeWorkspaceRules {
         let byID = Dictionary(state.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         for receipt in state.receipts { try require(!receipt.id.isEmpty && !receipt.registration.isEmpty && receipt.result.count <= 2000, "An operation receipt is invalid.") }
         for item in state.items {
+            try require(item.icon.map{LifeProjectIcons.symbols.contains($0)} != false,"Choose a supported project icon.")
             try require(!item.registration.isEmpty && !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && item.title.count <= 160 && item.notes.count <= 12000 && dateValid(item.due) && item.estimateMinutes.map { (1...100000).contains($0) } != false && item.areas.count <= 3 && Set(item.areas).count == item.areas.count, "A project field is empty, too long or invalid.")
             try require(item.humanEvidence.map { !$0.isEmpty && $0.count <= 2000 } != false, "The project origin evidence is invalid.")
             try require(item.ownership == nil || ["workspace","life"].contains(item.ownership!), "Unknown item ownership.")

@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import AppKit
 
 enum LifeProjectPresentation: String, CaseIterable, Identifiable {
     // Raw values are saved layout/tool identities; only display names change.
@@ -33,6 +34,7 @@ struct LifeProjectWidget: View {
     @State private var boardDrag:LifeBoardDrag?
     @State private var stageFrames:[String:CGRect]=[:]
     @State private var availableWidth:CGFloat=300
+    @State private var boardScroll=LifeBoardScrollController()
     private var registration: String { previewRegistration ?? model.chatGPT.activeID }
     private var store: LifeWorkspaceStore { model.assistant.projects }
     private var items: [LifeItem] {
@@ -46,7 +48,10 @@ struct LifeProjectWidget: View {
     private var currentID: UUID? { navigation.destination(startingAt:savedRoot) }
     private var current: LifeItem? { items.first { $0.id == currentID } }
     private var atHome:Bool { current == nil && !unfiled }
-    private var presentation: LifeProjectPresentation { LifeProjectPresentation(rawValue: configuration.wrappedValue.projectView ?? "") ?? .overview }
+    private var presentation: LifeProjectPresentation {
+        let saved=currentID.flatMap{configuration.wrappedValue.projectFolderViews?[registration]?[$0.uuidString]}
+        return LifeProjectPresentation(rawValue:saved ?? configuration.wrappedValue.projectView ?? "") ?? .overview
+    }
     private var unfinished: Bool { configuration.wrappedValue.projectOnlyUnfinished == true }
     private var children:[LifeItem] { LifeFolderContents.children(of:current?.id,in:items,unfinished:unfinished) }
     private var folders:[LifeItem] { children.filter{!$0.kind.isWork} }
@@ -102,8 +107,8 @@ struct LifeProjectWidget: View {
             }.padding(24).frame(width:540,height:460)
         }
         .onGeometryChange(for:CGFloat.self) { $0.size.width } action: { availableWidth=$0 }
-        .onChange(of: registration) { navigation = .init(); unfiled=false;quickTask="";notesEditing=nil; editing = nil; linking = nil;moving=nil;deleting=nil;matching=nil;drag=nil;boardDrag=nil;dropHover=nil;showDeleted=false;inspecting=false; notice = nil }
-        .onChange(of:store.revision) { navigation.reconcile(items:items) }
+        .onChange(of: registration) { boardScroll.stop();navigation = .init(); unfiled=false;quickTask="";notesEditing=nil; editing = nil; linking = nil;moving=nil;deleting=nil;matching=nil;drag=nil;boardDrag=nil;dropHover=nil;showDeleted=false;inspecting=false; notice = nil }
+        .onChange(of:store.revision) { navigation.reconcile(items:items);boardScroll.stop();boardDrag=nil;dropHover=nil }
         .onChange(of:focusAreas) { navigation.reconcile(items:items);resetPage() }
         .onChange(of: savedRoot) { navigation = .init();unfiled=false;resetPage() }
     }
@@ -164,8 +169,13 @@ struct LifeProjectWidget: View {
             if unfiled { Image(systemName:"chevron.right").font(.caption2).foregroundStyle(.secondary);Text("Unfiled tasks").font(.callout.weight(.semibold)) }
         }.fixedSize(horizontal:!compact,vertical:false)
     }
-    private func setPresentation(_ value:LifeProjectPresentation) { var config=configuration.wrappedValue;config.projectView=value.rawValue;configuration.wrappedValue=config }
-    private func resetPage() { quickTask="";notice=nil;inspecting=false;boardDrag=nil;drag=nil;dropHover=nil }
+    private func setPresentation(_ value:LifeProjectPresentation) {
+        var config=configuration.wrappedValue
+        if let currentID { var accounts=config.projectFolderViews ?? [:];var folders=accounts[registration] ?? [:];folders[currentID.uuidString]=value.rawValue;accounts[registration]=folders;config.projectFolderViews=accounts }
+        else {config.projectView=value.rawValue}
+        configuration.wrappedValue=config
+    }
+    private func resetPage() { quickTask="";notice=nil;inspecting=false;boardScroll.stop();boardDrag=nil;drag=nil;dropHover=nil }
     private func navigateHome() { navigation.home();unfiled=false;resetPage() }
     private func setRoot(_ id: UUID?) {
         var config = configuration.wrappedValue
@@ -238,8 +248,8 @@ struct LifeProjectWidget: View {
                 interactive(item) {
                     Button { open(item) } label: {
                         VStack(spacing:12) {
-                            Image(systemName:item.kind == .resource ? "doc.text.fill" : "folder.fill").font(.system(size:48,weight:.regular)).foregroundStyle(palette[.accent].opacity(0.85))
-                                .overlay(alignment:.bottomTrailing) { if ![LifeItemKind.section,.resource,.project].contains(item.kind) { Image(systemName:item.kind.symbol).font(.system(size:13,weight:.semibold)).foregroundStyle(palette[.widget]).padding(4) } }
+                            Image(systemName:item.icon ?? (item.kind == .resource ? "doc.text.fill" : "folder.fill")).font(.system(size:48,weight:.regular)).foregroundStyle(palette[.accent].opacity(0.85))
+                                .overlay(alignment:.bottomTrailing) { if item.icon == nil,![LifeItemKind.section,.resource,.project].contains(item.kind) { Image(systemName:item.displaySymbol).font(.system(size:13,weight:.semibold)).foregroundStyle(palette[.widget]).padding(4) } }
                             Text(item.title).font(.callout.weight(.medium)).foregroundStyle(palette[.text]).multilineTextAlignment(.center).lineLimit(3).frame(maxWidth:.infinity)
                             let progress=LifeFolderContents.progress(under:item.id,in:items)
                             if progress.total > 0 { LifeTaskProgressView(progress:progress,showsLegend:false).frame(maxWidth:100) }
@@ -264,7 +274,7 @@ struct LifeProjectWidget: View {
             HStack(alignment:.top,spacing:9) {
                 if item.kind.isWork {
                     Button { complete(item) } label:{Image(systemName:item.status == .done ? "checkmark.circle.fill" : "circle").font(.body).foregroundStyle(item.status == .done ? LifeTaskStage.done.color : palette[.text].opacity(0.4))}.buttonStyle(.plain).accessibilityLabel((item.status == .done ? "Mark incomplete: " : "Complete task: ")+item.title).help("Changes this workspace task only").disabled(store.readOnly).padding(.top,2)
-                } else { Image(systemName:item.kind.symbol).foregroundStyle(palette[.accent]).padding(.top,2) }
+                } else { Image(systemName:item.displaySymbol).foregroundStyle(palette[.accent]).padding(.top,2) }
                 Group {
                     VStack(alignment:.leading,spacing:5) {
                         Text(item.title).font(.callout.weight(.medium)).foregroundStyle(palette[.text]).fixedSize(horizontal:false,vertical:true)
@@ -333,7 +343,7 @@ struct LifeProjectWidget: View {
                     .background(GeometryReader { proxy in Color.clear.preference(key:LifeBoardStageFrames.self,value:[stage.id:proxy.frame(in:.named("project-board"))]) })
                     .zIndex(tasks.contains(where:{$0.id == boardDrag?.capture.id}) ? 1 : 0)
             }
-        }.coordinateSpace(name:"project-board").onPreferenceChange(LifeBoardStageFrames.self) { stageFrames=$0 }.onDisappear { boardDrag=nil;dropHover=nil }
+        }.background(LifeBoardScrollProbe(controller:boardScroll).allowsHitTesting(false)).coordinateSpace(name:"project-board").onPreferenceChange(LifeBoardStageFrames.self) { stageFrames=$0 }.onDisappear { boardScroll.stop();boardDrag=nil;dropHover=nil }
     }
     private func boardGesture(_ item:LifeItem)->some Gesture {
         DragGesture(minimumDistance:6,coordinateSpace:.named("project-board"))
@@ -343,11 +353,17 @@ struct LifeProjectWidget: View {
                 guard boardDrag?.capture.id == item.id else { return }
                 boardDrag?.translation=value.translation
                 dropHover=LifeTaskStage.allCases.first(where:{stageFrames[$0.id]?.contains(value.location) == true}).map{"stage:"+$0.id}
+                boardScroll.track(value.location) { delta,point in
+                    guard boardDrag?.capture.id == item.id,boardDrag?.capture.revision == store.revision,registration == model.chatGPT.activeID else {boardScroll.stop();return}
+                    boardDrag?.translation.height += delta
+                    dropHover=LifeTaskStage.allCases.first(where:{stageFrames[$0.id]?.contains(point) == true}).map{"stage:"+$0.id}
+                }
             }
             .onEnded { value in
-                defer { boardDrag=nil;dropHover=nil }
+                let location=boardScroll.currentPoint() ?? value.location
+                defer { boardScroll.stop();boardDrag=nil;dropHover=nil }
                 guard let captured=boardDrag,captured.capture.id == item.id,
-                      let stage=LifeTaskStage.allCases.first(where:{stageFrames[$0.id]?.contains(value.location) == true}) else { return }
+                      let stage=LifeTaskStage.allCases.first(where:{stageFrames[$0.id]?.contains(location) == true}) else { return }
                 do {
                     try LifeTaskStageChange.applyDrag(captured.capture.id,stage:stage,capturedParent:captured.parent,currentParent:current?.id,registration:captured.capture.registration,activeRegistration:model.chatGPT.activeID,capturedIDs:captured.permittedIDs,currentIDs:Set(work.map(\.id)),expectedRevision:captured.capture.revision,store:store)
                     notice=nil
@@ -486,6 +502,12 @@ struct LifeItemEditor: View {
             Form {
                 TextField("Name", text: $item.title)
                 Picker("Type", selection: $item.kind) { ForEach(LifeItemKind.allCases) { Text($0.title).tag($0) } }
+                if !item.kind.isWork {
+                    Picker("Icon",selection:$item.icon) {
+                        Label("Default",systemImage:item.kind.symbol).tag(Optional<String>.none)
+                        ForEach(LifeProjectIcons.symbols,id:\.self) { symbol in Label(LifeProjectIcons.title(symbol),systemImage:symbol).tag(Optional(symbol)) }
+                    }
+                }
                 Picker("Inside", selection: $item.parentID) {
                     Text("Projects home").tag(Optional<UUID>.none)
                     ForEach(parents) { parent in Text(LifeItemQuery.path(parent, in: parents).map(\.title).joined(separator: " / ")).tag(Optional(parent.id)) }
@@ -591,4 +613,76 @@ struct LifeItemLinkEditor: View {
         }.padding(24).frame(width: 500)
         .onChange(of: kind) { selected = nil }
     }
+}
+
+/// The gesture still owns drop validation; this only scrolls the enclosing project viewport.
+@MainActor private final class LifeBoardScrollController {
+    weak var probe:NSView?
+    private var timer:Timer?
+    private var viewportPoint:CGPoint?
+    private var changed:((CGFloat,CGPoint)->Void)?
+    #if DEBUG
+    private var fixtureChecked=false
+    func checkFixtureIfRequested() {
+        guard !fixtureChecked,ProcessInfo.processInfo.arguments.contains("--preview-projects"),ProcessInfo.processInfo.arguments.contains("--check-board-scroll") else {return}
+        fixtureChecked=true
+        Task { [weak self] in
+            try? await Task.sleep(for:.milliseconds(250))
+            guard let self,let probe,let scroll=probe.enclosingScrollView else {
+                try? Data("{\"error\":\"Project board probe did not attach to a native scroll viewport\"}".utf8).write(to:URL(fileURLWithPath:"/tmp/missioncontrol-board-scroll-evaluation.json"));return
+            }
+            let clip=scroll.contentView,before=clip.bounds.origin
+            let point=probe.convert(CGPoint(x:clip.bounds.midX,y:clip.bounds.maxY-1),from:clip)
+            var moves=0,pointerValid=true
+            track(point) {delta,local in
+                moves+=1
+                let converted=probe.convert(local,to:clip)
+                pointerValid = pointerValid && abs(converted.y-clip.bounds.maxY+1) < 1 && delta > 0
+            }
+            for _ in 0..<12 {step()}
+            let after=clip.bounds.origin
+            stop();step()
+            let checks=["probe owns the project viewport":scroll.documentView != nil,"edge tracking advances the real native viewport":after.y > before.y && moves > 0,"drag point remains at the viewport edge during scrolling":pointerValid,"stop prevents another scroll step":clip.bounds.origin == after,"scrolling remains within content bounds":after.y <= max(0,(scroll.documentView?.bounds.height ?? 0)-clip.bounds.height)]
+            clip.scroll(to:before);scroll.reflectScrolledClipView(clip)
+            let report:[String:Any]=["checks":checks,"passed":checks.values.filter{$0}.count,"total":checks.count,"scrollSteps":moves,"advancedPoints":after.y-before.y,"nativeChanges":0,"storage":"Fictional preview; real project scroll controller/viewport, no task gesture or status save"]
+            if let data=try? JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-board-scroll-evaluation.json"))}
+        }
+    }
+    #endif
+    func track(_ point:CGPoint,changed:@escaping(CGFloat,CGPoint)->Void) {
+        guard let probe,let scroll=probe.enclosingScrollView else {return}
+        let clip=scroll.contentView,converted=probe.convert(point,to:clip)
+        viewportPoint=CGPoint(x:converted.x-clip.bounds.minX,y:converted.y-clip.bounds.minY)
+        self.changed=changed
+        guard timer == nil else {return}
+        let tick=Timer(timeInterval:0.04,repeats:true) { [weak self] _ in
+            MainActor.assumeIsolated {self?.step()}
+        }
+        timer=tick;RunLoop.main.add(tick,forMode:.common)
+    }
+    func currentPoint()->CGPoint? {
+        guard let probe,let clip=probe.enclosingScrollView?.contentView,let point=viewportPoint else {return nil}
+        return probe.convert(CGPoint(x:point.x+clip.bounds.minX,y:point.y+clip.bounds.minY),from:clip)
+    }
+    private func step() {
+        guard let probe,let scroll=probe.enclosingScrollView,let document=scroll.documentView,let point=viewportPoint else {stop();return}
+        let clip=scroll.contentView,bounds=clip.bounds
+        let delta=LifeBoardScrollRules.step(pointerY:point.y,height:bounds.height,offset:bounds.minY,contentHeight:document.bounds.height)
+        guard delta != 0 else {return}
+        clip.scroll(to:CGPoint(x:bounds.minX,y:bounds.minY+delta));scroll.reflectScrolledClipView(clip)
+        if let local=currentPoint() {changed?(delta,local)}
+    }
+    func stop() {timer?.invalidate();timer=nil;changed=nil;viewportPoint=nil}
+}
+private struct LifeBoardScrollProbe:NSViewRepresentable {
+    let controller:LifeBoardScrollController
+    final class Probe:NSView {override var isFlipped:Bool {true}}
+    func makeNSView(context:Context)->Probe {let view=Probe();controller.probe=view;return view}
+    func updateNSView(_ view:Probe,context:Context) {
+        controller.probe=view
+        #if DEBUG
+        controller.checkFixtureIfRequested()
+        #endif
+    }
+    static func dismantleNSView(_ view:Probe,coordinator:()) { }
 }

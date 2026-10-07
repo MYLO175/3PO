@@ -69,11 +69,7 @@ struct PALifeMapWidget: View {
     }
     private func memoryDetails(_ memory:PAMemory,fromArea:Bool=false)->some View {
             VStack(alignment:.leading,spacing:14) {
-                Text(memory.text).font(.title3.weight(.semibold)).textSelection(.enabled)
-                Text(memory.attribution).font(.caption).foregroundStyle(.secondary)
-                PAMemoryEvidenceView(record:memory,sourcePermitted:model.assistant.memory.permittedRecords.contains{$0.id == memory.id})
-                ForEach(Array((memory.connections ?? []).enumerated()),id:\.offset) { _,edge in Text(edge.subject+" → "+edge.relation+" → "+edge.object).font(.callout) }
-                Text(memory.provenance).font(.caption).foregroundStyle(.secondary)
+                ScrollView { LifeMemoryInspection(model:model,id:memory.id).frame(maxWidth:.infinity,alignment:.leading) }.frame(maxHeight:540)
                 if memory.kind == .commitment { Button("Remembered plan reports…") { detailPlanReports=memory } }
                 HStack { Button("Close") { if fromArea { areaMemory=nil } else { selected=nil } };Button("Organise") { detailOrganising=memory };Spacer();Button("Manage memories") { detailShowMemory=true } }
             }.padding(24).frame(width:480)
@@ -81,6 +77,47 @@ struct PALifeMapWidget: View {
                 .sheet(item:$detailPlanReports) { memory in CommitmentReportsView(memory:model.assistant.memory,recordID:memory.id,registration:memory.registration) }
                 .sheet(isPresented:$detailShowMemory) { PAMemoryView(memory:model.assistant.memory,registration:model.chatGPT.activeID,conversationID:topic,topicTitle:model.assistant.conversation(topic)?.title,learning:model.memoryLearning,assistant:model.assistant,checkContext:{model.memoryLearning.check(model,manual:true)},organisation:model.lifeOrganisation,organiseContext:{model.lifeOrganisation.check(model,manual:true,topic:topic)},model:model,focusAreas:focusAreas) }
 
+    }
+}
+
+/// The map inspects saved beliefs; it neither broadens recall nor edits project content.
+private struct LifeMemoryInspection:View {
+    var model:DashboardModel
+    var id:UUID
+    private var store:PAMemoryStore {model.assistant.memory}
+    private var permitted:Set<UUID> {Set(store.permittedRecords.map(\.id))}
+    private var record:PAMemory? {store.records.first{$0.id == id && $0.registration == model.chatGPT.activeID}}
+    var body:some View {
+        VStack(alignment:.leading,spacing:14) {
+            if let record {
+                Text(record.source != nil && !permitted.contains(record.id) ? "Source-derived fact unavailable" : record.text).font(.title3.weight(.semibold)).textSelection(.enabled)
+                Text(record.attribution).font(.caption).foregroundStyle(.secondary)
+                if let row=MemoryInspection.rows([record],permitted:permitted,registration:record.registration).first {
+                    VStack(alignment:.leading,spacing:4) {
+                        Label(!store.enabled && row.availability == .available ? "Memory use paused" : row.availability.title,systemImage:row.availability == .available ? "checkmark.circle" : "clock").font(.callout.weight(.medium))
+                        Text(!store.enabled && row.availability == .available ? "Saved for inspection. PA recall resumes when memory use is enabled." : row.availability.explanation).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                PAMemoryEvidenceView(record:record,sourcePermitted:permitted.contains(record.id))
+                if record.source == nil || permitted.contains(record.id) {
+                    ForEach(Array((record.connections ?? []).enumerated()),id:\.offset) { _,edge in Text(edge.subject+" → "+edge.relation+" → "+edge.object).font(.callout) }
+                }
+                let history=store.lineage(id)
+                if history.count > 1 {
+                    DisclosureGroup("Version history (\(history.count))") {
+                        ForEach(Array(history.suffix(12))) { version in
+                            VStack(alignment:.leading,spacing:5) {
+                                Text((version.supersededBy == nil ? "Current belief" : "Earlier version")+" · "+version.reviewed.formatted(date:.abbreviated,time:.shortened)).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                                Text(version.source != nil && !permitted.contains(version.id) ? "Source-derived fact unavailable" : version.text).textSelection(.enabled)
+                                Text(version.attribution).font(.caption).foregroundStyle(.secondary)
+                                PAMemoryEvidenceView(record:version,sourcePermitted:permitted.contains(version.id))
+                            }.padding(.vertical,6)
+                        }
+                        if history.count > 12 {Text("The latest 12 versions are shown. Manage memories to inspect the full history.").font(.caption).foregroundStyle(.secondary)}
+                    }
+                }
+            } else {Text("This memory is no longer saved.").foregroundStyle(.secondary)}
+        }
     }
 }
 

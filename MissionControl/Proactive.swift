@@ -27,6 +27,14 @@ struct PADiscovery: Codable, Identifiable, Equatable {
     var replyDraft:String? = nil
     var reviewState: String? = nil // pending save / approved, independent of source truth
     var reviewedAt: Date? = nil
+    var sourceDate:Date? = nil
+    /// Review history only. Replacement never changes an Apple or workspace item.
+    var replaces:[String]? = nil
+    var replacementReason:String? = nil
+    var supersededBy:String? = nil
+    var supersededAt:Date? = nil
+    /// Original communication records quoted in this comparison; no generated-history replay.
+    var comparisonSourceIDs:[String]? = nil
     var deliveryID: String { "discovery:" + id }
     var needsDateClarification:Bool { SourceDateGrounding.needsWeekAnchor(evidence) && !["project","reply"].contains(kind) }
 }
@@ -104,6 +112,7 @@ struct DiscoveryCandidate {
     var sourceLabel:String? = nil
     var sourceText:String? = nil
     var sourceAssessmentRevision:String? = nil
+    var sourceDate:Date? = nil
 }
 enum ReviewValidationFailure:LocalizedError {
     case format,source,quote,target,date
@@ -144,11 +153,13 @@ enum ProactiveRules {
         return manual || progress.lastAttempt.map { now.timeIntervalSince($0) >= cooldown } ?? true
     }
     static let evidenceInstructions = "For each Mail suggestion, choose its supplied evidenceID or followUpEvidenceID and return that exact ID as evidenceID; omit the evidence field. The app will attach the original exact quote. Never invent an ID or reference a different source. WhatsApp still requires an exact 8-500-character quote in evidence. An evidence reference is data attribution only, not proof of identity or authority to write."
-    static func decode(_ text: String, candidates: [DiscoveryCandidate], registration: String, scope: String, now: Date, targets:[String:DiscoveryNativeTarget] = [:]) throws -> [PADiscovery] {
-        struct Suggestion: Decodable { var mailID: String; var kind: String; var message: String; var evidence: String?;var evidenceID:String?;var title:String?;var targetID:String?;var newDate:String?;var hasTime:Bool?;var connection:String?;var draft:String? }
+    static let replacementInstructions = "earlierProposals contains issued pending review aliases and their original evidence, not accepted plans. If NEWER supplied communication clearly corrects, cancels or already addresses exactly the same personal plan, return its useful replacement with replaces:[exact review_N aliases] and replacementReason (max500characters), explaining the evidence connecting them. Prefer the latest explicit correction; cancellation is kind update only, with no native deletion/completion. Never retire an earlier proposal merely because names/dates overlap, it was dismissed, a different person's project is mentioned, or evidence is uncertain. A changed-date proposal must retain the same exact native target as the earlier changed-date proposal. At most three replacements per suggestion. Omit replaces when unsure. This only retires old advice in the Review inbox; the human still approves native changes."
+    static func decode(_ text: String, candidates: [DiscoveryCandidate], registration: String, scope: String, now: Date, targets:[String:DiscoveryNativeTarget] = [:], earlier:[String:PADiscovery] = [:]) throws -> [PADiscovery] {
+        struct Suggestion: Decodable { var mailID: String; var kind: String; var message: String; var evidence: String?;var evidenceID:String?;var title:String?;var targetID:String?;var newDate:String?;var hasTime:Bool?;var connection:String?;var draft:String?;var replaces:[String]?;var replacementReason:String? }
         struct Output: Decodable { var suggestions: [Suggestion] }
         guard let output = try? JSONDecoder().decode(Output.self,from:Data(text.utf8)) else {throw ReviewValidationFailure.format}
         guard output.suggestions.count <= 3, Set(output.suggestions.map(\.mailID)).count == output.suggestions.count else { throw ReviewValidationFailure.format }
+        var used=Set<String>()
         return try output.suggestions.map { value in
             guard let candidate = candidates.first(where:{ $0.alias == value.mailID }) else {throw ReviewValidationFailure.source}
             let evidence:String
@@ -172,8 +183,47 @@ enum ProactiveRules {
                 guard let parsed=proposal.date(),target.kind != "event" || target.hasTime == hasTime,(hasTime ? (target.start ?? target.due) != parsed : target.originalDate != date) else { throw ReviewValidationFailure.date }
                 change=proposal
             } else if value.targetID != nil || value.newDate != nil || value.hasTime != nil || value.connection != nil { throw ReviewValidationFailure.format }
-            return reviewProjection(PADiscovery(id:UUID().uuidString,registration:registration,mailID:candidate.mailID,kind:value.kind,message:value.message,evidence:evidence,created:now,scope:scope,sourceKind:candidate.sourceKind,sourceChatID:candidate.sourceChatID,sourceMessageID:candidate.sourceMessageID,sourceIdentity:candidate.sourceIdentity,sourceRevision:candidate.sourceRevision,sourceLabel:candidate.sourceLabel,sourceTitle:value.title,sourceAssessmentRevision:candidate.sourceAssessmentRevision,proposedChange:change,replyDraft:value.draft))
+            var replacementIDs:[String]=[]
+            if let aliases=value.replaces,!aliases.isEmpty {
+                guard aliases.count <= 3,Set(aliases).count == aliases.count,["change","update","calendar","reminder"].contains(value.kind),let reason=value.replacementReason,!reason.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,reason.count <= 500 else {throw ReviewValidationFailure.format}
+                for alias in aliases {
+                    guard let old=earlier[alias],old.registration == registration,!old.dismissed,old.reviewState == nil,old.supersededBy == nil,["change","update","calendar","reminder"].contains(old.kind),used.insert(old.id).inserted else {throw ReviewValidationFailure.source}
+                    let sameSource=old.mailID == candidate.mailID && old.sourceKind == candidate.sourceKind && old.sourceIdentity == candidate.sourceIdentity && old.sourceChatID == candidate.sourceChatID
+                    guard (sameSource && old.sourceRevision != candidate.sourceRevision) || candidate.sourceDate.map({$0 > (old.sourceDate ?? old.created)}) == true else {throw ReviewValidationFailure.source}
+                    if let previous=old.proposedChange,let change {guard previous.target.kind == change.target.kind,previous.target.itemID == change.target.itemID,previous.target.sourceID == change.target.sourceID else {throw ReviewValidationFailure.target}}
+                    replacementIDs.append(old.id)
+                }
+            } else if value.replacementReason != nil {throw ReviewValidationFailure.format}
+            return reviewProjection(PADiscovery(id:UUID().uuidString,registration:registration,mailID:candidate.mailID,kind:value.kind,message:value.message,evidence:evidence,created:now,scope:scope,sourceKind:candidate.sourceKind,sourceChatID:candidate.sourceChatID,sourceMessageID:candidate.sourceMessageID,sourceIdentity:candidate.sourceIdentity,sourceRevision:candidate.sourceRevision,sourceLabel:candidate.sourceLabel,sourceTitle:value.title,sourceAssessmentRevision:candidate.sourceAssessmentRevision,proposedChange:change,replyDraft:value.draft,sourceDate:candidate.sourceDate,replaces:replacementIDs.isEmpty ? nil : replacementIDs,replacementReason:value.replacementReason))
         }
+    }
+    /// Atomic in the containing cache save. Exact issued snapshots reject approval/dismissal races.
+    static func reconciled(_ additions:[PADiscovery],prior:[PADiscovery],issued:[String:PADiscovery],now:Date,permittedEarlier:Set<String>? = nil)throws->[PADiscovery] {
+        guard Set(issued.values.map(\.id)).count == issued.count,Set(prior.map(\.id)).count == prior.count,Set(additions.map(\.id)).count == additions.count,Set(additions.map(\.id)).isDisjoint(with:Set(prior.map(\.id))) else {throw ReviewValidationFailure.source}
+        guard issued.values.allSatisfy({ original in (permittedEarlier?.contains(original.id) ?? true) && prior.contains(original) }) else {throw ReviewValidationFailure.source}
+        let snapshots=Dictionary(uniqueKeysWithValues:issued.values.map{($0.id,$0)})
+        var result=prior
+        for value in additions {
+            for id in value.replaces ?? [] {
+                guard let original=snapshots[id],let index=result.firstIndex(where:{$0.id == id}),result[index] == original,original.registration == value.registration,original.reviewState == nil,!original.dismissed,original.supersededBy == nil else {throw ReviewValidationFailure.source}
+                result[index].supersededBy=value.id;result[index].supersededAt=now
+            }
+            result.append(value)
+        }
+        return result
+    }
+    static func earlierRows(_ earlier:[String:PADiscovery],targets:[String:DiscoveryNativeTarget])->[[String:Any]] {
+        earlier.keys.sorted().map { alias in
+            let old=earlier[alias]!
+            var row:[String:Any]=["id":alias,"kind":old.kind,"received":(old.sourceDate ?? old.created).ISO8601Format(),"source":old.sourceKind ?? "mail","evidence":old.evidence]
+            if let change=old.proposedChange {row["targetID"]=targets.first(where:{$0.value.kind == change.target.kind && $0.value.itemID == change.target.itemID && $0.value.sourceID == change.target.sourceID})?.key;row["proposedDate"]=change.newDate}
+            return row
+        }
+    }
+    static func comparisonEvidenceAvailable(_ record:PADiscovery,records:[PADiscovery],available:(PADiscovery)->Bool)->Bool {
+        let ids=record.comparisonSourceIDs ?? []
+        guard ids.count <= 12,Set(ids).count == ids.count else {return false}
+        return ids.allSatisfy {id in records.first{$0.id == id && $0.registration == record.registration}.map(available) ?? false}
     }
     static func reviewProjection(_ record:PADiscovery)->PADiscovery {
         guard record.reviewState == nil,record.needsDateClarification else {return record}

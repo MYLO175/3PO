@@ -20,8 +20,19 @@ import AppKit
         do {
             _ = try model.assistant.projects.create([university,engineering,project,research,paper,baseline,experiments,module,waiting,archived,unfiled,personal], receipt:.init(id:"preview-only", registration:registration, result:"Fictional preview", itemID:university.id))
         } catch { return nil }
+        if ProcessInfo.processInfo.arguments.contains("--long-board") {
+            let extra=(1...32).map{LifeItem(registration:registration,kind:.task,title:"Fictional board task \($0)",parentID:project.id,status:.planned)}
+            do {
+                for start in stride(from:0,to:extra.count,by:12) {
+                    _=try model.assistant.projects.create(Array(extra[start..<min(start+12,extra.count)]),receipt:.init(id:"preview-long-board-\(start)",registration:registration,result:"Fictional long board",itemID:project.id))
+                }
+            } catch {return nil}
+        }
         var memory=PAMemory(registration:registration,text:"Sensor Garden is my Engineering project at Example University.",kind:.context,provenance:"Fictional preview",evidence:"Sensor Garden is my Engineering project at Example University.",certainty:.stated,connections:[.init(subject:"Me",relation:"works on",object:"Sensor Garden",evidence:"Sensor Garden is my Engineering project at Example University.")])
         memory.organisation = .init(areas:[.studies],connections:[.init(connection:"0",subjectKind:.person,objectKind:.project,subjectIsSelf:true,objectIsSelf:false)])
+        var earlier=memory;earlier.id=UUID();earlier.text="Sensor Garden is my weekend hobby project.";earlier.evidence=earlier.text;earlier.created=Date.now.addingTimeInterval(-86400);earlier.supersededBy=memory.id
+        memory.supersedes=earlier.id
+        _=model.assistant.memory.put(earlier)
         _ = model.assistant.memory.put(memory)
         return (registration, university, engineering, project)
     }
@@ -86,9 +97,9 @@ struct LifeProjectInteractivePreview: View {
             if chat { AssistantPanel(model:model,assistant:model.assistant,readingMode:$reading,configuration:$configuration) } else if lifeMap { PALifeMapWidget(model:model,configuration:$configuration) } else { LifeProjectWidget(model:model,configuration:$configuration,previewRegistration:registration) }
         }.padding(20).frame(minWidth:350,minHeight:500)
         .task {
-            guard registration.isEmpty, let (identity,_,engineering,_) = LifeProjectPreview.seed(model) else { return }
+            guard registration.isEmpty, let (identity,_,engineering,project) = LifeProjectPreview.seed(model) else { return }
             model.assistant.seedWorkflowPreview()
-            registration = identity; configuration.projectRoots = [identity:engineering.id.uuidString]
+            registration = identity; configuration.projectRoots = [identity:(ProcessInfo.processInfo.arguments.contains("--check-board-scroll") ? project.id : engineering.id).uuidString]
         }
     }
 }

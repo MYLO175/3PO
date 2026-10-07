@@ -253,3 +253,9 @@ Board cards use a direct in-app pointer gesture rather than the separate native 
 ## 7 October — Briefs throughout the day
 
 A brief is current advice for the time it was prepared. Supply one system-local clock/day/period/greeting to all three preparation paths: initial daily message, explicit update and heartbeat. Afternoon/evening greetings replace the morning-only prompt restriction; a missed morning preparation must also use the current greeting. Refresh the clock after source collection, retain timezone ownership, and focus on remaining commitments without inferring completion from elapsed time. Keep the immutable daily delivery and latest widget cache separate. A clock tick alone does not rewrite saved prose or start another inference job.
+
+## 7 October — Replace advice without rewriting plans
+
+Newer source communication may supersede pending Review inbox advice through issued earlier-record aliases. Preserve the original record and evidence plus a directed replacement link; save the new advice and retired old advice atomically. Never supersede an in-flight/approved native save, infer native completion/deletion from that link, or revive old advice when the replacement is dismissed. Evidence chronology and exact native identities constrain matching; semantic cross-source matching remains measured, inferred review advice.
+
+Life map inspection reuses existing recall availability and memory lineage, rather than a second memory hierarchy. Folder view choices belong to the account/widget presentation; optional icons belong to the human-owned item. Board edge scrolling is transient and never saves task state before release.

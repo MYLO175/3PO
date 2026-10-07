@@ -88,6 +88,42 @@ import Foundation
         let savedReply=try JSONDecoder().decode(PADiscovery.self,from:JSONEncoder().encode(localReplies[0]))
         precondition(savedReply == localReplies[0])
         do {_ = try ProactiveRules.decode(replyPayload.replacingOccurrences(of:"Could you confirm whether you can join our project meeting?",with:"invented quote"),candidates:[replyCandidate],registration:"account",scope:"scope",now:.now);preconditionFailure("Ungrounded reply accepted")} catch {}
+        // Exact source chronology and persistent replacement chains; no native mutation.
+        let target=DiscoveryNativeTarget(kind:"reminder",itemID:"orion",sourceID:"studies",title:"Orion",hasTime:false,writable:true,recurring:false,fingerprint:"native-v1")
+        let initialDate=Date(timeIntervalSince1970:1791000000)
+        var old=records[0];old.kind="change";old.sourceDate=initialDate;old.proposedChange = .init(target:target,newDate:"2026-10-20",hasTime:false,connection:"Same report",timeZoneID:TimeZone.current.identifier)
+        let newSource=DiscoveryCandidate(alias:"wa_new",mailID:"new-revision",evidence:"",followUpEvidence:"",sourceKind:"whatsapp",sourceIdentity:"link",sourceRevision:"v2",sourceText:"Your Orion report deadline is now 22 October 2026.",sourceDate:initialDate.addingTimeInterval(3600))
+        let correction = #"{"suggestions":[{"mailID":"wa_new","kind":"change","message":"Your deadline moved to 22 October.","evidence":"Your Orion report deadline is now 22 October 2026.","targetID":"reminder_0","newDate":"2026-10-22","hasTime":false,"connection":"Same Orion report.","replaces":["review_0"],"replacementReason":"A later correction replaces the earlier deadline for the same report."}]}"#
+        func parse(_ payload:String,_ prior:PADiscovery=old,_ source:DiscoveryCandidate=newSource)throws->[PADiscovery] {try ProactiveRules.decode(payload,candidates:[source],registration:"A",scope:"s",now:initialDate.addingTimeInterval(7200),targets:["reminder_0":target],earlier:["review_0":prior])}
+        func replacementRejected(_ body:()throws->Void) {do {try body();preconditionFailure("Unsafe replacement accepted")} catch {}}
+        let corrected=try parse(correction)[0]
+        let chain=try ProactiveRules.reconciled([corrected],prior:[old],issued:["review_0":old],now:corrected.created)
+        precondition(chain[0].supersededBy == corrected.id && chain[1].replaces == [old.id] && chain[0].proposedChange?.newDate == "2026-10-20")
+        let restoredChain=try JSONDecoder().decode([PADiscovery].self,from:JSONEncoder().encode(chain));precondition(restoredChain == chain)
+        replacementRejected {_ = try parse(correction.replacingOccurrences(of:"review_0",with:"made-up"))}
+        var foreign=old;foreign.registration="B";replacementRejected {_ = try parse(correction,foreign)}
+        var pending=old;pending.reviewState="pending";replacementRejected {_ = try parse(correction,pending)}
+        var approved=old;approved.reviewState="approved";replacementRejected {_ = try parse(correction,approved)}
+        var superseded=old;superseded.supersededBy="newer";replacementRejected {_ = try parse(correction,superseded)}
+        var otherPlan=old;otherPlan.proposedChange?.target.itemID="vega";replacementRejected {_ = try parse(correction,otherPlan)}
+        var olderSource=newSource;olderSource.sourceDate=initialDate.addingTimeInterval(-1);replacementRejected {_ = try parse(correction,old,olderSource)}
+        var raced=old;raced.dismissed=true;replacementRejected {_ = try ProactiveRules.reconciled([corrected],prior:[raced],issued:["review_0":old],now:.now)}
+        replacementRejected {_ = try ProactiveRules.reconciled([corrected],prior:[old],issued:["review_0":old],now:.now,permittedEarlier:[])}
+        replacementRejected {_ = try ProactiveRules.reconciled([],prior:[raced],issued:["review_0":old],now:.now,permittedEarlier:[old.id])}
+        var dependent=corrected;dependent.comparisonSourceIDs=[old.id]
+        precondition(ProactiveRules.comparisonEvidenceAvailable(dependent,records:[old],available:{_ in true}))
+        precondition(!ProactiveRules.comparisonEvidenceAvailable(dependent,records:[old],available:{_ in false}))
+        precondition(!ProactiveRules.comparisonEvidenceAvailable(dependent,records:[],available:{_ in true}))
+        precondition(!ProactiveRules.comparisonEvidenceAvailable(dependent,records:[foreign],available:{_ in true}))
+        var cancellationSource=newSource;cancellationSource.mailID="cancellation";cancellationSource.sourceText="Your Orion report submission is cancelled.";cancellationSource.sourceDate=corrected.created.addingTimeInterval(3600)
+        let cancellation = #"{"suggestions":[{"mailID":"wa_new","kind":"update","message":"Your Orion submission is cancelled; check the existing reminder when convenient.","evidence":"Your Orion report submission is cancelled.","replaces":["review_0"],"replacementReason":"The tutor cancelled the same Orion submission."}]}"#
+        let cancelled=try parse(cancellation,corrected,cancellationSource)[0]
+        var cancelledChain=try ProactiveRules.reconciled([cancelled],prior:chain,issued:["review_0":corrected],now:cancelled.created)
+        precondition(cancelledChain.last?.proposedChange == nil && cancelledChain.filter{$0.supersededBy == nil}.map(\.id) == [cancelled.id])
+        cancelledChain[2].dismissed=true
+        precondition(cancelledChain[0].supersededBy != nil && cancelledChain[1].supersededBy != nil,"Dismissing the cancellation cannot revive obsolete advice")
+        let staleTurn=AssistantTurn(role:"assistant",content:old.message,completed:true,deliveryID:old.deliveryID)
+        precondition(ProactiveReviewRules.reference("yes",turns:[staleTurn],records:cancelledChain) == nil)
         print("PASS proactive rules: grounded aliases/quotes, prohibited kinds, account dedup/dismissal, daily budget, pause/cooldown/persistence and conservative current-thread latest-suggestion review references.")
     }
 }

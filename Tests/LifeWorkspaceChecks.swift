@@ -6,6 +6,16 @@ import SwiftData
         let container = try ModelContainer(for: CachedDashboard.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let store = LifeWorkspaceStore(container: container)
         func rejects(_ body: () throws -> Void) { var rejected = false; do { try body() } catch { rejected = true }; precondition(rejected) }
+        precondition(LifeBoardScrollRules.step(pointerY:300,height:600,offset:100,contentHeight:2000) == 0)
+        precondition(LifeBoardScrollRules.step(pointerY:599,height:600,offset:100,contentHeight:2000) > 0)
+        precondition(LifeBoardScrollRules.step(pointerY:1,height:600,offset:100,contentHeight:2000) < 0)
+        precondition(LifeBoardScrollRules.step(pointerY:1,height:600,offset:0,contentHeight:2000) == 0)
+        precondition(LifeBoardScrollRules.step(pointerY:599,height:600,offset:1400,contentHeight:2000) == 0)
+        precondition(LifeBoardScrollRules.step(pointerY:700,height:600,offset:100,contentHeight:2000) == 0)
+        let iconItem=LifeItem(registration:"icons",kind:.project,title:"Research",icon:"lightbulb")
+        _=try store.save(iconItem,expected:nil)
+        precondition(LifeWorkspaceStore(container:container).state.items.first{$0.id == iconItem.id}?.displaySymbol == "lightbulb")
+        var badIcon=iconItem;badIcon.icon="unissued-symbol";rejects {_ = try store.save(badIcon,expected:iconItem.revision)}
         let root = try store.save(LifeItem(registration: "fictional-a", kind: .organisation, title: "Example university"), expected: nil)
         let course = try store.save(LifeItem(registration: "fictional-a", kind: .course, title: "Engineering", parentID: root.id), expected: nil)
         let task = try store.save(LifeItem(registration: "fictional-a", kind: .task, title: "Read paper", parentID: course.id, due: "2026-10-10", estimateMinutes: 45), expected: nil)
