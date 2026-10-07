@@ -292,3 +292,6 @@ This increment reuses the existing Tasks widget as Review inbox and stages infer
 ### 7 October — Regular PA heartbeat correction
 
 User requests a current AI review each configured interval: refresh enabled sources → selective email/proposal/draft work → current Today brief → Review inbox questions. Latest widget updates use the heartbeat allowance and preserve immutable morning delivery. Catch up once after launch/wake, without overlapping or replaying uncertain failed AI jobs; foreground work wins. Ordinary Refresh remains no-AI. New source-grounded questions/drafts never authorise Calendar/Reminders writes. Local preflight diagnostics are separate from unresolved chat failures. Implementation/check/install boundaries are recorded in STATUS.
+
+
+7 October task-board follow-up: cards now follow the pointer across measured To do/In progress/Done columns, highlight the target and save their local stage only on release. Native fictional gesture/progress/Undo acceptance and final installed checks are recorded in STATUS; original project identities, Apple authority and exact captured account/folder/revision/permission guards remain. Larger boards/edge autoscroll are separate work.

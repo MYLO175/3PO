@@ -30,6 +30,8 @@ struct LifeProjectWidget: View {
     @State private var matching:LifeItem?
     @State private var drag:LifeProjectDrag?
     @State private var dropHover:String?
+    @State private var boardDrag:LifeBoardDrag?
+    @State private var stageFrames:[String:CGRect]=[:]
     @State private var availableWidth:CGFloat=300
     private var registration: String { previewRegistration ?? model.chatGPT.activeID }
     private var store: LifeWorkspaceStore { model.assistant.projects }
@@ -100,10 +102,10 @@ struct LifeProjectWidget: View {
             }.padding(24).frame(width:540,height:460)
         }
         .onGeometryChange(for:CGFloat.self) { $0.size.width } action: { availableWidth=$0 }
-        .onChange(of: registration) { navigation = .init(); unfiled=false;quickTask="";notesEditing=nil; editing = nil; linking = nil;moving=nil;deleting=nil;matching=nil;drag=nil;showDeleted=false;inspecting=false; notice = nil }
+        .onChange(of: registration) { navigation = .init(); unfiled=false;quickTask="";notesEditing=nil; editing = nil; linking = nil;moving=nil;deleting=nil;matching=nil;drag=nil;boardDrag=nil;dropHover=nil;showDeleted=false;inspecting=false; notice = nil }
         .onChange(of:store.revision) { navigation.reconcile(items:items) }
-        .onChange(of:focusAreas) { navigation.reconcile(items:items);quickTask="";inspecting=false }
-        .onChange(of: savedRoot) { navigation = .init();unfiled=false;quickTask="";inspecting=false }
+        .onChange(of:focusAreas) { navigation.reconcile(items:items);resetPage() }
+        .onChange(of: savedRoot) { navigation = .init();unfiled=false;resetPage() }
     }
     private var controls:some View {
         HStack(spacing:14) {
@@ -163,7 +165,7 @@ struct LifeProjectWidget: View {
         }.fixedSize(horizontal:!compact,vertical:false)
     }
     private func setPresentation(_ value:LifeProjectPresentation) { var config=configuration.wrappedValue;config.projectView=value.rawValue;configuration.wrappedValue=config }
-    private func resetPage() { quickTask="";notice=nil;inspecting=false }
+    private func resetPage() { quickTask="";notice=nil;inspecting=false;boardDrag=nil;drag=nil;dropHover=nil }
     private func navigateHome() { navigation.home();unfiled=false;resetPage() }
     private func setRoot(_ id: UUID?) {
         var config = configuration.wrappedValue
@@ -263,26 +265,27 @@ struct LifeProjectWidget: View {
                 if item.kind.isWork {
                     Button { complete(item) } label:{Image(systemName:item.status == .done ? "checkmark.circle.fill" : "circle").font(.body).foregroundStyle(item.status == .done ? LifeTaskStage.done.color : palette[.text].opacity(0.4))}.buttonStyle(.plain).accessibilityLabel((item.status == .done ? "Mark incomplete: " : "Complete task: ")+item.title).help("Changes this workspace task only").disabled(store.readOnly).padding(.top,2)
                 } else { Image(systemName:item.kind.symbol).foregroundStyle(palette[.accent]).padding(.top,2) }
-                Button { open(item) } label: {
+                Group {
                     VStack(alignment:.leading,spacing:5) {
                         Text(item.title).font(.callout.weight(.medium)).foregroundStyle(palette[.text]).fixedSize(horizontal:false,vertical:true)
                         if showStage && item.kind.isWork || item.status == .waiting { Text(item.status.title).font(.caption).foregroundStyle(.secondary) }
                         HStack(spacing:8) { properties(item) }.font(.caption2).foregroundStyle(.secondary)
                     }.frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
-                }.buttonStyle(.plain)
+                }.contentShape(Rectangle()).onTapGesture { open(item) }.accessibilityAddTraits(.isButton).accessibilityAction { open(item) }
             }.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(palette[.input].opacity(0.5),in:RoundedRectangle(cornerRadius:9))
         }
     }
-    private func interactive<Content:View>(_ item:LifeItem,filing:Bool=true,@ViewBuilder content:()->Content)->some View {
-        content()
+    @ViewBuilder private func interactive<Content:View>(_ item:LifeItem,filing:Bool=true,@ViewBuilder content:()->Content)->some View {
+        let actions=content().contentShape(Rectangle())
             .contextMenu {
                 Button("Open") { open(item) }
                 if item.kind.isWork { Menu("Stage") { ForEach(LifeTaskStage.allCases) { stage in Button(stage.rawValue) { setStatus(item,stage.status) } } } }
                 Button("Edit details…") { editing=item };Button("Edit notes…") { notesEditing=item };Button("Move…") { moving=item };Button("Link something…") { linking=item };Button("Match PA understanding…") { matching=item };Divider();Button("Delete…",role:.destructive) { deleting=item }
             }
-            .onDrag { drag = .init(id:item.id,registration:registration,revision:store.revision);let provider=NSItemProvider();provider.registerDataRepresentation(forTypeIdentifier:LifeProjectDrag.type.identifier,visibility:.ownProcess) { complete in complete(Data(item.id.uuidString.utf8),nil);return nil };return provider }
-            .onDrop(of:[LifeProjectDrag.type],delegate:LifeProjectDrop(target:item.id,parent:item.kind.isWork ? item.parentID : item.id,before:item.kind.isWork ? item.id : nil,drag:$drag,hover:$dropHover,key:item.id.uuidString,store:store,activeRegistration:{model.chatGPT.activeID},report:{notice=$0},enabled:filing))
+        if filing {
+            actions.onDrag { drag = .init(id:item.id,registration:registration,revision:store.revision);let provider=NSItemProvider();provider.registerDataRepresentation(forTypeIdentifier:LifeProjectDrag.type.identifier,visibility:.ownProcess) { complete in complete(Data(item.id.uuidString.utf8),nil);return nil };return provider }.onDrop(of:[LifeProjectDrag.type],delegate:LifeProjectDrop(target:item.id,parent:item.kind.isWork ? item.parentID : item.id,before:item.kind.isWork ? item.id : nil,drag:$drag,hover:$dropHover,key:item.id.uuidString,store:store,activeRegistration:{model.chatGPT.activeID},report:{notice=$0}))
             .overlay(RoundedRectangle(cornerRadius:12).stroke(dropHover == item.id.uuidString ? palette[.accent] : .clear,lineWidth:2))
+        } else {actions}
     }
     private func rows(_ values: [LifeItem]) -> some View { LazyVStack(alignment:.leading,spacing:7) { ForEach(values) { card($0) } } }
     private func collapsed(_ id:UUID)->Bool { configuration.wrappedValue.projectCollapsed?[registration]?.contains(id.uuidString) == true }
@@ -317,13 +320,39 @@ struct LifeProjectWidget: View {
                 let tasks=work.filter{LifeTaskStage.stage(for:$0.status) == stage}
                 VStack(alignment:.leading,spacing:9) {
                     HStack(spacing:6) { Circle().fill(stage.color).frame(width:7,height:7);Text(stage.rawValue).font(.caption.weight(.medium));Text(String(tasks.count)).font(.caption).foregroundStyle(.secondary);Spacer(minLength:0) }.padding(.horizontal,3)
-                    ForEach(tasks) { card($0,filing:false,showStage:false) }
+                    ForEach(tasks) { item in
+                        card(item,filing:false,showStage:false)
+                            .highPriorityGesture(boardGesture(item))
+                            .offset(boardDrag?.capture.id == item.id ? boardDrag?.translation ?? .zero : .zero)
+                            .zIndex(boardDrag?.capture.id == item.id ? 1 : 0)
+                    }
                     if tasks.isEmpty { Color.clear.frame(height:28) }
-                }.padding(9).frame(maxWidth:.infinity,minHeight:90,alignment:.topLeading).background(stage.color.opacity(0.055),in:RoundedRectangle(cornerRadius:12))
+                    Spacer(minLength:12)
+                }.padding(9).frame(maxWidth:.infinity,minHeight:150,maxHeight:.infinity,alignment:.topLeading).contentShape(Rectangle()).background(stage.color.opacity(0.055),in:RoundedRectangle(cornerRadius:12))
                     .overlay(RoundedRectangle(cornerRadius:12).stroke(dropHover == "stage:"+stage.id ? stage.color : .clear,lineWidth:2))
-                    .onDrop(of:[LifeProjectDrag.type],delegate:LifeProjectStageDrop(stage:stage,parent:current?.id,drag:$drag,hover:$dropHover,store:store,activeRegistration:{model.chatGPT.activeID},permittedIDs:Set(work.map(\.id)),report:{notice=$0}))
+                    .background(GeometryReader { proxy in Color.clear.preference(key:LifeBoardStageFrames.self,value:[stage.id:proxy.frame(in:.named("project-board"))]) })
+                    .zIndex(tasks.contains(where:{$0.id == boardDrag?.capture.id}) ? 1 : 0)
             }
-        }
+        }.coordinateSpace(name:"project-board").onPreferenceChange(LifeBoardStageFrames.self) { stageFrames=$0 }.onDisappear { boardDrag=nil;dropHover=nil }
+    }
+    private func boardGesture(_ item:LifeItem)->some Gesture {
+        DragGesture(minimumDistance:6,coordinateSpace:.named("project-board"))
+            .onChanged { value in
+                guard !store.readOnly,registration == model.chatGPT.activeID else { return }
+                if boardDrag == nil { boardDrag = .init(capture:.init(id:item.id,registration:registration,revision:store.revision),parent:current?.id,permittedIDs:Set(work.map(\.id)),translation:.zero) }
+                guard boardDrag?.capture.id == item.id else { return }
+                boardDrag?.translation=value.translation
+                dropHover=LifeTaskStage.allCases.first(where:{stageFrames[$0.id]?.contains(value.location) == true}).map{"stage:"+$0.id}
+            }
+            .onEnded { value in
+                defer { boardDrag=nil;dropHover=nil }
+                guard let captured=boardDrag,captured.capture.id == item.id,
+                      let stage=LifeTaskStage.allCases.first(where:{stageFrames[$0.id]?.contains(value.location) == true}) else { return }
+                do {
+                    try LifeTaskStageChange.applyDrag(captured.capture.id,stage:stage,capturedParent:captured.parent,currentParent:current?.id,registration:captured.capture.registration,activeRegistration:model.chatGPT.activeID,capturedIDs:captured.permittedIDs,currentIDs:Set(work.map(\.id)),expectedRevision:captured.capture.revision,store:store)
+                    notice=nil
+                } catch { notice=error.localizedDescription }
+            }
     }
     private var deadlines:some View {
         VStack(alignment:.leading,spacing:10) {

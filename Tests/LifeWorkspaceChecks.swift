@@ -109,7 +109,11 @@ import SwiftData
         rejects { try LifeTaskStageChange.apply(task.id,stage:.done,parent:root.id,registration:"fictional-a",permittedIDs:[task.id],expectedRevision:stageRevision,store:store) }
         rejects { try LifeTaskStageChange.apply(task.id,stage:.done,parent:course.id,registration:"fictional-b",permittedIDs:[task.id],expectedRevision:stageRevision,store:store) }
         rejects { try LifeTaskStageChange.apply(task.id,stage:.done,parent:course.id,registration:"fictional-a",permittedIDs:[],expectedRevision:stageRevision,store:store) }
-        try LifeTaskStageChange.apply(task.id,stage:.done,parent:course.id,registration:"fictional-a",permittedIDs:[task.id],expectedRevision:stageRevision,store:store)
+        rejects {try LifeTaskStageChange.applyDrag(task.id,stage:.done,capturedParent:course.id,currentParent:course.id,registration:"fictional-a",activeRegistration:"fictional-b",capturedIDs:[task.id],currentIDs:[task.id],expectedRevision:stageRevision,store:store)}
+        rejects {try LifeTaskStageChange.applyDrag(task.id,stage:.done,capturedParent:course.id,currentParent:root.id,registration:"fictional-a",activeRegistration:"fictional-a",capturedIDs:[task.id],currentIDs:[task.id],expectedRevision:stageRevision,store:store)}
+        rejects {try LifeTaskStageChange.applyDrag(task.id,stage:.done,capturedParent:course.id,currentParent:course.id,registration:"fictional-a",activeRegistration:"fictional-a",capturedIDs:[task.id],currentIDs:[],expectedRevision:stageRevision,store:store)}
+        precondition(store.revision == stageRevision,"A changed account, page or permission must not save any task")
+        try LifeTaskStageChange.applyDrag(task.id,stage:.done,capturedParent:course.id,currentParent:course.id,registration:"fictional-a",activeRegistration:"fictional-a",capturedIDs:[task.id],currentIDs:[task.id],expectedRevision:stageRevision,store:store)
         let afterStage=store.items("fictional-a").first{$0.id == task.id}!
         precondition(afterStage.status == .done && afterStage.parentID == beforeStage.parentID && afterStage.notes == beforeStage.notes)
         rejects { try LifeTaskStageChange.apply(task.id,stage:.todo,parent:course.id,registration:"fictional-a",permittedIDs:[task.id],expectedRevision:stageRevision,store:store) }

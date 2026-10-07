@@ -107,7 +107,7 @@ Live follow-through: the user explicitly authorised resuming the paused personal
 
 ### 7 October Projects checkpoint
 
-Structure is now Projects. The latest folder-first correction adds direct-child folder tiles, clickable paths, quiet notes and a three-stage board; native installed navigation is checked. The initial home task rollup and search field are superseded. Next workspace quality checks are larger branches, folder-specific preferences and native board drag/resize ergonomics (STATUS has exact acceptance boundaries). Block editing, attachments and richer relational databases remain separate future design choices. Background source/assessment recovery, persistent cross-message proposal supersession and measured memory/commitment quality still take priority over unrelated features.
+Structure is now Projects. The latest folder-first correction adds direct-child folder tiles, clickable paths, quiet notes and a three-stage board; native installed navigation is checked. The initial home task rollup and search field are superseded. Task-stage dragging now has a direct pointer preview, column highlight, release-only saves and native fictional interaction checks including Undo. Next workspace quality checks are larger branches, folder-specific preferences and longer boards/scrolling (STATUS has exact acceptance boundaries). Block editing, attachments and richer relational databases remain separate future design choices. Background source/assessment recovery, persistent cross-message proposal supersession and measured memory/commitment quality still take priority over unrelated features.
 
 
 ### Folder-first workspace follow-up

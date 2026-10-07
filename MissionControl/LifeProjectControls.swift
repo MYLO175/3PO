@@ -5,6 +5,16 @@ struct LifeProjectDrag {
     static let type=UTType(exportedAs:"com.mylomichael.missioncontrol.life-item")
     var id:UUID;var registration:String;var revision:UUID
 }
+struct LifeBoardDrag {
+    var capture:LifeProjectDrag
+    var parent:UUID?
+    var permittedIDs:Set<UUID>
+    var translation:CGSize
+}
+struct LifeBoardStageFrames:PreferenceKey {
+    static let defaultValue:[String:CGRect]=[:]
+    static func reduce(value:inout [String:CGRect],nextValue:()->[String:CGRect]) { value.merge(nextValue(),uniquingKeysWith:{$1}) }
+}
 struct LifeProjectDrop:DropDelegate {
     var target:UUID?;var parent:UUID?;var before:UUID?
     @Binding var drag:LifeProjectDrag?
@@ -22,27 +32,6 @@ struct LifeProjectDrop:DropDelegate {
         guard let captured=drag,validateDrop(info:info) else { return false }
         defer { drag=nil;hover=nil }
         do { try store.move(captured.id,registration:captured.registration,parent:parent,before:before,expectedRevision:captured.revision);return true }
-        catch { report(error.localizedDescription);return false }
-    }
-}
-struct LifeProjectStageDrop:DropDelegate {
-    var stage:LifeTaskStage
-    var parent:UUID?
-    @Binding var drag:LifeProjectDrag?
-    @Binding var hover:String?
-    var store:LifeWorkspaceStore
-    var activeRegistration:()->String
-    var permittedIDs:Set<UUID>
-    var report:(String)->Void
-    private var key:String { "stage:"+stage.id }
-    func validateDrop(info:DropInfo)->Bool { info.hasItemsConforming(to:[LifeProjectDrag.type.identifier]) && drag?.registration == activeRegistration() && drag.map{permittedIDs.contains($0.id)} == true }
-    func dropEntered(info:DropInfo) { if validateDrop(info:info) { hover=key } }
-    func dropExited(info:DropInfo) { if hover == key { hover=nil } }
-    func dropUpdated(info:DropInfo)->DropProposal? { validateDrop(info:info) ? .init(operation:.move) : .init(operation:.forbidden) }
-    func performDrop(info:DropInfo)->Bool {
-        guard let captured=drag,validateDrop(info:info) else { return false }
-        defer { drag=nil;hover=nil }
-        do { try LifeTaskStageChange.apply(captured.id,stage:stage,parent:parent,registration:captured.registration,permittedIDs:permittedIDs,expectedRevision:captured.revision,store:store);return true }
         catch { report(error.localizedDescription);return false }
     }
 }

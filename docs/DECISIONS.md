@@ -244,3 +244,8 @@ Useful source-grounded questions live in Review inbox, with an explicit human an
 Chat preflight recovery is tracked separately from genuine tool/provider failures. Exact native-details targets matter; reading another record cannot clear an unresolved preparation failure. Historical exact prerequisites are preserved as preparation diagnostics, not portrayed as native provider rejections.
 
 Live integration exposed a rejected brief citation. Standardise the citation field across native, communication, memory and human workspace records, supply the exact allowed aliases, and keep original memory IDs separate. Workspace evidence uses exact account-owned record/revision guards. Do not repair an unknown citation by guessing its intended source; reject it with a specific diagnostic. Running activity uses the live phase rather than presenting its initial zero counts as a final result.
+
+
+## 7 October — Task-board dragging
+
+Board cards use a direct in-app pointer gesture rather than the separate native folder-filing drag session. This avoids nested clickable/drop surfaces interrupting stage moves, provides a continuous preview, and saves only on release inside a measured column. Empty and occupied columns share the same target; outside release is a no-op. Exact captured task/account/parent/permissions/store revision guard the save, with existing local edit Undo. Folder filing keeps its existing native protocol. No Apple record is changed by moving a workspace task.
