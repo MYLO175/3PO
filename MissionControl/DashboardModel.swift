@@ -187,8 +187,9 @@ import EventKit
                 let evidenceOnly=ProcessInfo.processInfo.arguments.contains("--mail-evidence-only")
                 let emailWork=ProcessInfo.processInfo.arguments.contains("--email-work-only")
                 let schedulerOnly=ProcessInfo.processInfo.arguments.contains("--scheduler-only")
-                do {result=try await (schedulerOnly ? HeartbeatService.evaluateScheduling() : emailWork ? ReviewInboxEvaluation.runEmailWork(self) : evidenceOnly ? ReviewInboxEvaluation.runMailEvidence(self) : mailOnly ? ReviewInboxEvaluation.runMailReview(self) : approvalOnly ? ReviewInboxEvaluation.runApproval(self) : ReviewInboxEvaluation.run(self))} catch {result=["error":error.localizedDescription,"storage":"Fictional disposable source-free startup"]}
-                let path=schedulerOnly ? "/tmp/missioncontrol-review-scheduler-evaluation.json" : emailWork ? "/tmp/missioncontrol-email-work-evaluation.json" : evidenceOnly ? "/tmp/missioncontrol-mail-evidence-evaluation.json" : mailOnly ? "/tmp/missioncontrol-mail-review-evaluation.json" : approvalOnly ? "/tmp/missioncontrol-review-approval-evaluation.json" : "/tmp/missioncontrol-review-inbox-evaluation.json"
+                let proposalTimeline=ProcessInfo.processInfo.arguments.contains("--proposal-timeline-only")
+                do {result=try await (proposalTimeline ? ReviewInboxEvaluation.runProposalTimeline(self) : schedulerOnly ? HeartbeatService.evaluateScheduling() : emailWork ? ReviewInboxEvaluation.runEmailWork(self) : evidenceOnly ? ReviewInboxEvaluation.runMailEvidence(self) : mailOnly ? ReviewInboxEvaluation.runMailReview(self) : approvalOnly ? ReviewInboxEvaluation.runApproval(self) : ReviewInboxEvaluation.run(self))} catch {result=["error":error.localizedDescription,"storage":"Fictional disposable source-free startup"]}
+                let path=proposalTimeline ? "/tmp/missioncontrol-proposal-timeline-evaluation.json" : schedulerOnly ? "/tmp/missioncontrol-review-scheduler-evaluation.json" : emailWork ? "/tmp/missioncontrol-email-work-evaluation.json" : evidenceOnly ? "/tmp/missioncontrol-mail-evidence-evaluation.json" : mailOnly ? "/tmp/missioncontrol-mail-review-evaluation.json" : approvalOnly ? "/tmp/missioncontrol-review-approval-evaluation.json" : "/tmp/missioncontrol-review-inbox-evaluation.json"
                 if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:path),options:.atomic)}
                 NSApp.terminate(nil)
             };return
@@ -490,11 +491,11 @@ import EventKit
             // pages/account/check; only one history/reconciliation page per five
             // minutes. Never recursively drain or rebuild the month's cache.
             for account in accounts where mailIndex.available(account.id) {
-                if let window = mailIndex.monitor(account.id) { await readMailPage(window,account:account) }
+                if let window = mailIndex.monitor(account.id) { try await readMailPage(window,account:account) }
             }
             for account in accounts where mailIndex.available(account.id) {
-                if let window = mailIndex.monitor(account.id) { await readMailPage(window,account:account) }
-                if mailIndex.available(account.id), let window = mailIndex.background(account.id) { await readMailPage(window,account:account) }
+                if let window = mailIndex.monitor(account.id) { try await readMailPage(window,account:account) }
+                if mailIndex.available(account.id), let window = mailIndex.background(account.id) { try await readMailPage(window,account:account) }
             }
             mailHealth.error = accounts.compactMap { account in
                 mailIndex.accountErrors?[account.id].map { account.title + " Inbox: " + $0 + " Cached mail retained; automatic retry backs off up to 30 minutes. Refresh retries now." }
@@ -503,6 +504,10 @@ import EventKit
             if accounts.isEmpty { mailHealth.lastSuccess = .now }
             persistMailCheckpoint()
             persist("mailHealth", SourceHealth(lastSuccess:mailHealth.lastSuccess,error:mailHealth.error))
+        } catch is CancellationError {
+            // Keep completed pages and the interrupted cursor. Foreground
+            // ownership is not an account outage and must not add backoff.
+            persistMailCheckpoint()
         } catch {
             mailIndex.discovered(error:error.localizedDescription)
             mailHealth.error = error.localizedDescription + " Cached mail retained; monitoring retries on its next check."
@@ -514,12 +519,13 @@ import EventKit
         mailHealth.error=mailData.accounts.compactMap{account in mailIndex.accountErrors?[account.id].map{account.title+": "+$0}}.joined(separator:"; ")
         persistMailCheckpoint()
     }
-    private func readMailPage(_ window: MailWindowProgress, account: MailAccount) async {
+    private func readMailPage(_ window: MailWindowProgress, account: MailAccount) async throws {
         do {
             let batch = try await mail.batch(accountID:account.id,window:window,knownMessages:window.id.hasPrefix("monitor:") ? mailData.messages : nil)
             mailData = mailIndex.apply(batch,to:window.id,snapshot:mailData)
             mailHealth.lastSuccess = .now
-        } catch {
+        } catch is CancellationError {throw CancellationError()}
+        catch {
             // Reset only a stale exact page, retaining cached rows and all other
             // account cursors. Transport failures keep their immutable ID list.
             if case MailServiceError.mail(let detail) = error,

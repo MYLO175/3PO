@@ -232,6 +232,7 @@ actor MailService {
     }
 
     private func run(arguments: [String: Any]) throws -> Data {
+        try Task.checkCancellation()
         guard let scriptURL, FileManager.default.isReadableFile(atPath: scriptURL.path) else {
             throw MailServiceError.scriptUnavailable
         }
@@ -275,7 +276,14 @@ actor MailService {
             throw MailServiceError.launch(error.localizedDescription)
         }
 
-        if exited.wait(timeout: .now() + timeout) == .timedOut {
+        // Keep this actor's Mail bridge serial, but allow a stopped parent to
+        // release its child promptly instead of holding it until the timeout.
+        let deadline = DispatchTime.now() + timeout
+        var interrupted = false
+        while exited.wait(timeout:min(deadline,.now() + 0.1)) == .timedOut {
+            if Task.isCancelled || DispatchTime.now() >= deadline {interrupted=true;break}
+        }
+        if interrupted {
             process.terminate()
             if exited.wait(timeout: .now() + 2) == .timedOut {
                 let killer = Process()
@@ -289,8 +297,10 @@ actor MailService {
                     // Preserve the timeout result if the fallback kill command cannot launch.
                 }
             }
+            try Task.checkCancellation()
             throw MailServiceError.timedOut
         }
+        try Task.checkCancellation()
         _ = outputRead.wait(timeout: .now() + 2)
         _ = errorRead.wait(timeout: .now() + 2)
 
