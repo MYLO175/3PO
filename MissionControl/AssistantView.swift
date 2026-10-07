@@ -64,7 +64,7 @@ struct AssistantPanel: View {
             added=try assistant.images.paste(board,registration:registration)
             guard attachedImages.count+added.count <= ChatImageStore.maxImages else { throw ChatImageFailure.size }
             guard assistant.drafts.setImages(attachedImages+added,registration:registration,widget:widget,conversation:key) else { throw ChatImageFailure.storage }
-            imageError=nil;model.memoryLearning.cancel();model.proactive.cancel();model.heartbeat.userStartedTyping()
+            imageError=nil;model.memoryLearning.cancel();model.sourceLearning.cancel();model.nativeSourceLearning.cancel();model.memoryMaintenance.cancel();model.proactive.cancel();model.heartbeat.userStartedTyping()
         } catch { added.forEach(assistant.images.discard);imageError=error.localizedDescription }
     }
     private func removeImage(_ image:ChatImageAttachment) {
@@ -85,7 +85,7 @@ struct AssistantPanel: View {
     private func showDraft() {
         assistant.drafts.show(registration:model.chatGPT.activeID,widget:imageDraftWidget,conversation:draftKey)
         imageError=nil
-        if !composerEmpty { model.memoryLearning.cancel(); model.proactive.cancel();model.heartbeat.userStartedTyping() }
+        if !composerEmpty { model.memoryLearning.cancel();model.sourceLearning.cancel();model.nativeSourceLearning.cancel();model.memoryMaintenance.cancel(); model.proactive.cancel();model.heartbeat.userStartedTyping() }
     }
     @State private var dictation = DictationService()
     @State private var showDictation = false
@@ -373,7 +373,7 @@ struct AssistantSourceSettings: View {
             case .memory:
                 Section("Saved memory") {
                     Toggle("Use saved memory in PA replies",isOn:Binding(get:{assistant.memory.enabled},set:{assistant.memory.enabled=$0}))
-                    Toggle("Learn from conversations",isOn:Binding(get:{assistant.memory.learningEnabled},set:{assistant.memory.learningEnabled=$0})).disabled(!assistant.memory.enabled)
+                    Toggle("Allow memory learning",isOn:Binding(get:{assistant.memory.learningEnabled},set:{assistant.memory.learningEnabled=$0})).disabled(!assistant.memory.enabled)
                     Text("Human memories keep their evidence and correction history. Imported messages are attributed to their source and remain provisional. Forgetting a saved memory prevents the same evidence from being learned again.").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Optional WhatsApp context learning") {
@@ -384,6 +384,21 @@ struct AssistantSourceSettings: View {
                         if model.sourceLearning.busy { Button("Stop learning") { model.sourceLearning.cancel() } }
                     }
                     if let error=model.sourceLearning.error { Text(error).font(.caption).foregroundStyle(.orange) }
+                }
+                Section("Optional source memory") {
+                    Text("Learning is separate from source access and Refresh. New opt-ins keep existing content as a baseline; Review once can assess a small existing batch. All source memories stay attributed and provisional. These controls belong to the signed-in account.").font(.caption).foregroundStyle(.secondary)
+                    ForEach(NativeLearningRules.kinds,id:\.rawValue) { kind in
+                        VStack(alignment:.leading,spacing:6) {
+                            Toggle("Learn from " + NativeSourceLearningService.title(kind),isOn:Binding(get:{model.nativeSourceLearning.enabled(kind,registration:model.chatGPT.activeID)},set:{model.nativeSourceLearning.setEnabled($0,kind:kind,model:model)}))
+                            Text(model.nativeSourceLearning.status(kind,model:model)).font(.caption).foregroundStyle(.secondary)
+                            Text(NativeSourceLearningService.coverage(kind)).font(.caption).foregroundStyle(.secondary)
+                            Button("Review " + NativeSourceLearningService.title(kind) + " once") { model.nativeSourceLearning.check(model,kind:kind,manual:true) }
+                                .disabled(!model.nativeSourceLearning.enabled(kind,registration:model.chatGPT.activeID) || !assistant.memory.enabled || !assistant.memory.learningEnabled || !assistant.contextEnabled || model.chatGPT.busy || model.nativeSourceLearning.busy || model.sourceLearning.busy || model.chatGPT.usagePaused)
+                        }
+                    }
+                    Text("At most 8 items and 4 facts per pass. Conversation, source learning and organisation share 4 automatic passes/day with a 30-minute gap. Review once is an explicit extra assessment, not a permission to edit Apple apps.").font(.caption).foregroundStyle(.secondary)
+                    if model.nativeSourceLearning.busy { Button("Stop source learning") { model.nativeSourceLearning.cancel() } }
+                    if let error=model.nativeSourceLearning.error { Text(error).font(.caption).foregroundStyle(.orange) }
                 }
             }
         }

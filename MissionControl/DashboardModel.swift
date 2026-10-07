@@ -8,6 +8,8 @@ import EventKit
     var calendarData = CalendarSnapshot(sources: [], events: [])
     var paOrientation: PAOrientation?
     var paOrientationHealth = SourceHealth()
+    private(set) var orientationCollectionRevision = -1
+    private(set) var reminderCollectionRevision = -1
     private var lastOrientationCheck = Date.distantPast
     var reminderData = ReminderSnapshot(sources: [], reminders: [])
     var mailData = MailSnapshot(messages: [], accounts: [], errors: [])
@@ -88,7 +90,27 @@ import EventKit
         let service=AssistantService(connection:chatGPT,container:container)
         service.memory.sourceIsPermitted = { [weak self,weak service] record in
             guard let self,service?.contextEnabled == true else { return false }
-            return SourceContextRules.permitted(record,access:self.whatsapp.access(for:record.registration),linkedIdentity:self.whatsapp.linkedIdentity,messages:self.whatsapp.messages)
+            if record.source?.identity.kind == .whatsapp {
+                return SourceContextRules.permitted(record,access:self.whatsapp.access(for:record.registration),linkedIdentity:self.whatsapp.linkedIdentity,messages:self.whatsapp.messages)
+            }
+            return self.nativeSourceLearning.permits(record,model:self)
+        }
+        service.memory.sourcePermissionProjection = { [weak self,weak service] in
+            guard let self,let service,service.contextEnabled else { return [] }
+            let registration=self.chatGPT.activeID
+            var result=Set<UUID>()
+            // Hash each native snapshot once per projection, rather than once per saved fact.
+            for kind in NativeLearningRules.kinds where self.nativeSourceLearning.enabled(kind,registration:registration) {
+                if let items=self.nativeLearningItems(kind) {
+                    for record in service.memory.records where record.registration == registration && record.source?.identity.kind == kind {
+                        if NativeLearningRules.permitted(record,items:items) { result.insert(record.id) }
+                    }
+                }
+            }
+            for record in service.memory.records where record.source?.identity.kind == .whatsapp {
+                if service.memory.sourceIsPermitted(record) { result.insert(record.id) }
+            }
+            return result
         }
         return service
     }()
@@ -98,6 +120,8 @@ import EventKit
     private var briefingPoll: Task<Void, Never>?
     @ObservationIgnored lazy var memoryLearning = MemoryLearningService(container:container)
     @ObservationIgnored lazy var sourceLearning = SourceContextLearningService(container:container)
+    @ObservationIgnored lazy var nativeSourceLearning = NativeSourceLearningService(container:container)
+    @ObservationIgnored lazy var memoryMaintenance = MemoryMaintenanceService(container:container)
     @ObservationIgnored lazy var learningBudget = LearningBudget(container:container)
     @ObservationIgnored let projectPlacement = LifePlacementService()
     @ObservationIgnored lazy var lifeOrganisation = LifeOrganisationService(container:container)
@@ -130,7 +154,7 @@ import EventKit
         excludedAccounts = savedAccounts
         do {
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--inspect-luna-access") || ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") || ProcessInfo.processInfo.arguments.contains("--validate-memory-inspection") {
+            if ProcessInfo.processInfo.arguments.contains("--validate-native-memory") || ProcessInfo.processInfo.arguments.contains("--preview-memory-review") || ProcessInfo.processInfo.arguments.contains("--inspect-luna-access") || ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") || ProcessInfo.processInfo.arguments.contains("--validate-memory-inspection") {
                 container=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true));return
             }
             if ProcessInfo.processInfo.arguments.contains("--validate-source-timeline") || ProcessInfo.processInfo.arguments.contains("--preview-source-timeline") || ProcessInfo.processInfo.arguments.contains("--preview-settings") || ProcessInfo.processInfo.arguments.contains("--validate-images") || ProcessInfo.processInfo.arguments.contains("--preview-images") || ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-projects") || ProcessInfo.processInfo.arguments.contains("--preview-projects") || ProcessInfo.processInfo.arguments.contains("--validate-placement") || ProcessInfo.processInfo.arguments.contains("--validate-ownership") || ProcessInfo.processInfo.arguments.contains("--validate-mail-monitoring") || ProcessInfo.processInfo.arguments.contains("--validate-mail-dates") {
@@ -148,7 +172,15 @@ import EventKit
     func start() {
         guard !started else { return }; started = true
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") {return}
+        if ProcessInfo.processInfo.arguments.contains("--preview-memory-review") || ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") {return}
+        if ProcessInfo.processInfo.arguments.contains("--validate-native-memory") {
+            Task {
+                let result:[String:Any]
+                do { result=try await NativeMemoryEvaluation.run(self) } catch { result=["error":error.localizedDescription,"storage":"Fictional data; disposable storage; sources never started"] }
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-native-memory-evaluation.json"),options:.atomic) }
+                NSApp.terminate(nil)
+            };return
+        }
         if ProcessInfo.processInfo.arguments.contains("--inspect-luna-access") {
             Task {
                 let result:[String:Any]
@@ -306,7 +338,19 @@ import EventKit
         }
         briefingPoll = Task { [weak self] in
             while !Task.isCancelled {
-                if let self { self.briefings.check(self); if !self.briefings.busy { self.heartbeat.check(self) }; if !self.heartbeat.busy && !self.briefings.busy { self.projectPlacement.check(self); self.memoryLearning.recoverDelivery(self); self.memoryLearning.check(self); self.proactive.recoverDelivery(self); self.sourceLearning.check(self); self.lifeOrganisation.check(self); if Date.now.timeIntervalSince(self.lastOrientationCheck) >= 900 { await self.refreshPAOrientation() } } }
+                if let self {
+                    self.briefings.check(self)
+                    if !self.briefings.busy { self.heartbeat.check(self) }
+                    if !self.heartbeat.busy && !self.briefings.busy {
+                        self.projectPlacement.check(self);self.memoryLearning.recoverDelivery(self);self.memoryLearning.check(self);self.proactive.recoverDelivery(self)
+                        if self.nativeSourceLearning.lastAssessment(self.chatGPT.activeID) <= self.sourceLearning.lastAssessment(self) {
+                            self.nativeSourceLearning.check(self);self.sourceLearning.check(self)
+                        } else { self.sourceLearning.check(self);self.nativeSourceLearning.check(self) }
+                        self.lifeOrganisation.check(self)
+                        self.memoryMaintenance.check(self)
+                        if Date.now.timeIntervalSince(self.lastOrientationCheck) >= 900 { await self.refreshPAOrientation() }
+                    }
+                }
                 try? await Task.sleep(for: .seconds(60))
             }
         }
@@ -358,6 +402,7 @@ import EventKit
             guard revision == sourceRevision else { paOrientationHealth.loading = false; paOrientationHealth.error = "Source changed during orientation; refresh pending."; return }
             paOrientation = PAOrientation(start:start,end:end,refreshed:.now,calendar:snapshot)
             paOrientationHealth = .init(lastSuccess:.now)
+            orientationCollectionRevision = revision
             persist("paOrientation",paOrientation); persist("paOrientationHealth",paOrientationHealth)
         } catch { paOrientationHealth.error = error.localizedDescription; paOrientationHealth.loading = false }
     }
@@ -365,10 +410,12 @@ import EventKit
         guard !sample else { return }
         if reminderHealth.loading { pendingReminderRefresh = true; return }
         reminderHealth.loading = true
+        let collectionRevision=sourceRevision
         do {
             let snapshot = try await eventKit.reminders()
             reminderData = snapshot
             reminderHealth = .init(lastSuccess: .now)
+            reminderCollectionRevision = collectionRevision == sourceRevision ? collectionRevision : -1
             persist("reminders", snapshot); persist("reminderHealth", reminderHealth)
         } catch { reminderHealth.error = error.localizedDescription; reminderHealth.loading = false }
         if pendingReminderRefresh { pendingReminderRefresh = false; await refreshReminders() }
@@ -504,7 +551,7 @@ import EventKit
     func recordAssistantEditUndo(_ receipt: NativeEditUndo) { editUndo = receipt; widgetCalendars.invalidate() }
     func showFeedback(_ text: String) { nativeWriteNotice = text; feedbackDate = .now }
     var latestUndo: String? {
-        UndoOrder.latest(layout:workspace.canUndo ? workspace.undoDate : nil,completion:undoToken == nil ? nil : completionUndoDate,edit:editUndo?.created,email:emailSummaries.undoDate(chatGPT.activeID),discovery:proactive.undoDate(chatGPT.activeID),question:memoryLearning.undoDate(chatGPT.activeID),project:assistant.projects.undoDate(chatGPT.activeID))
+        UndoOrder.latest(layout:workspace.canUndo ? workspace.undoDate : nil,completion:undoToken == nil ? nil : completionUndoDate,edit:editUndo?.created,email:emailSummaries.undoDate(chatGPT.activeID),discovery:proactive.undoDate(chatGPT.activeID),question:memoryLearning.undoDate(chatGPT.activeID),project:assistant.projects.undoDate(chatGPT.activeID),memoryReview:memoryMaintenance.undoDate(chatGPT.activeID))
     }
     var latestUndoDate: Date? {
         switch latestUndo {
@@ -514,6 +561,7 @@ import EventKit
         case "email": return emailSummaries.undoDate(chatGPT.activeID)
         case "discovery": return proactive.undoDate(chatGPT.activeID)
         case "question": return memoryLearning.undoDate(chatGPT.activeID)
+        case "memoryReview": return memoryMaintenance.undoDate(chatGPT.activeID)
         case "project": return assistant.projects.undoDate(chatGPT.activeID)
         default: return nil
         }
@@ -526,6 +574,7 @@ import EventKit
         case "email": return "Undo email dismissal"
         case "discovery": return "Undo suggestion dismissal"
         case "question": return "Undo question dismissal"
+        case "memoryReview": return "Undo memory review dismissal"
         case "project": return "Undo project edit"
         default: return "Undo"
         }
@@ -550,6 +599,7 @@ import EventKit
             do { try assistant.projects.undo(chatGPT.activeID); showFeedback("Project edit undone") } catch { writeError = error.localizedDescription }
             return
         }
+        if latestUndo == "memoryReview" { memoryMaintenance.undo(chatGPT.activeID); return }
         if latestUndo == "email" { emailSummaries.undoDismiss(self); return }
         if latestUndo == "discovery" { proactive.undo(self); return }
         if latestUndo == "question" { memoryLearning.undoQuestion(chatGPT.activeID); return }

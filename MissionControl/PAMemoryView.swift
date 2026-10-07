@@ -27,17 +27,20 @@ struct PAMemoryView: View {
     @State private var editError:String?
     @State private var lineage:Set<UUID>?
     var body: some View {
+        let permittedIDs=Set(memory.permittedRecords.map(\.id))
         VStack(alignment:.leading,spacing:16) {
             HStack { Label("What your PA remembers",systemImage:"brain").font(.title2.weight(.semibold)); Spacer(); Button("Done") { dismiss() } }
             if let error = memory.error { Text(error).foregroundStyle(.orange).font(.caption) }
             HStack {
-                Picker("Memory view",selection:$presentation) { Text("Overview").tag("Overview"); Text("Facts").tag("List"); Text("Life areas").tag("Connections"); Text("Controls").tag("Controls") }.pickerStyle(.segmented).labelsHidden().frame(width:400)
+                Picker("Memory view",selection:$presentation) { Text("Overview").tag("Overview"); Text("Facts").tag("List"); Text("Life areas").tag("Connections"); if model != nil { Text("Review").tag("Review") };Text("Controls").tag("Controls") }.pickerStyle(.segmented).labelsHidden().frame(width:470)
                 if presentation == "List" { TextField("Search memories and connections",text:$search) }
             }
             if presentation == "List" { HStack { Toggle("Show earlier versions",isOn:$showHistory).font(.caption);if lineage != nil { Button("Show all facts") { lineage=nil;search="" } } } }
             ScrollView {
                 if presentation == "Overview" {
                     PAMemoryOverviewView(memory:memory,registration:registration,topic:conversationID,focus:focusAreas,model:model) { item in presentation="List";lineage=nil;search=item.text;showHistory=item.supersededBy != nil }
+                } else if presentation == "Review",let model {
+                    MemoryMaintenanceView(model:model) { ids in presentation="List";search="";lineage=Set(ids);showHistory=false }
                 } else if presentation == "Controls" { controls
                 } else if presentation == "Connections" {
                     Text("Areas organise currently usable facts and workspace items. Area branches are navigation; inspect facts for their recorded relationships.").font(.caption).foregroundStyle(.secondary)
@@ -50,10 +53,10 @@ struct PAMemoryView: View {
                         VStack(alignment:.leading,spacing:6) {
                             HStack { Text(item.conversationID.map { "Earlier topic · " + (assistant?.conversation($0)?.title ?? "Saved topic") } ?? "Shared").font(.caption).foregroundStyle(.secondary); Text(item.kind.rawValue.capitalized).font(.caption.weight(.semibold)); if item.supersededBy != nil { Text("Earlier version").font(.caption).foregroundStyle(.secondary) } else if item.supersedes != nil { Text("Corrected").font(.caption).foregroundStyle(.secondary) };if item.resolved != nil { Text(MemoryRules.archived(item) ? "Archived" : "Resolved").font(.caption).foregroundStyle(.secondary) }; if MemoryRules.needsReview(item) { Text("Review needed").foregroundStyle(.orange).font(.caption) }; Spacer() }
                             Text(item.text).textSelection(.enabled)
-                            let availability=MemoryInspection.rows([item],permitted:Set(memory.permittedRecords.map(\.id)),registration:registration).first?.availability ?? .sourceUnavailable
+                            let availability=MemoryInspection.rows([item],permitted:permittedIDs,registration:registration).first?.availability ?? .sourceUnavailable
                             Text((memory.enabled ? "" : "Memory use paused · ")+availability.title+" · "+availability.explanation).font(.caption).foregroundStyle(.secondary)
                             ForEach(Array((item.connections ?? []).enumerated()),id:\.offset) { _, edge in Text(edge.subject + " → " + edge.relation + " → " + edge.object).font(.caption).foregroundStyle(.secondary) }
-                            PAMemoryEvidenceView(record:item,sourcePermitted:memory.permittedRecords.contains{$0.id == item.id})
+                            PAMemoryEvidenceView(record:item,sourcePermitted:permittedIDs.contains(item.id))
                             if item.supersedes != nil || item.supersededBy != nil {
                                 Button("View version history") { search="";showHistory=true;lineage=Set(memory.lineage(item.id).map(\.id)) }.controlSize(.small)
                             }
@@ -95,12 +98,12 @@ struct PAMemoryView: View {
                 } else if memory.put(item) { clear() }
             }.disabled(text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || registration.isEmpty) }
             }
-        }.sheet(item:$organising) { item in LifeOrganisationEditor(memory:memory,record:item) }.onAppear { scope = conversationID }.onChange(of:memory.learningEnabled) { _, enabled in if !enabled { learning?.cancel();organisation?.cancel() } }.onChange(of:memory.enabled) { _, enabled in if !enabled { learning?.cancel();organisation?.cancel() } }.padding(24).frame(width:720,height:720)
+        }.sheet(item:$organising) { item in LifeOrganisationEditor(memory:memory,record:item) }.onAppear { scope = conversationID }.onChange(of:memory.learningEnabled) { _, enabled in if !enabled { learning?.cancel();organisation?.cancel();model?.sourceLearning.cancel();model?.nativeSourceLearning.cancel();model?.memoryMaintenance.cancel() } }.onChange(of:memory.enabled) { _, enabled in if !enabled { learning?.cancel();organisation?.cancel();model?.sourceLearning.cancel();model?.nativeSourceLearning.cancel();model?.memoryMaintenance.cancel() } }.padding(24).frame(width:720,height:720)
     }
     private var controls:some View { VStack(alignment:.leading,spacing:14) {
             Toggle("Use saved memory in chats and briefs",isOn:$memory.enabled)
-            Toggle("Learn useful context from conversations",isOn:$memory.learningEnabled)
-            Text("When on, small batches of your chat messages are assessed through your ChatGPT plan. Directly stated stable facts persist; inferred entries remain provisional. Connections help the PA recall related context. No email backlog is processed. Pausing stops future learning; you can still save explicit memories.").font(.caption).foregroundStyle(.secondary)
+            Toggle("Allow memory learning",isOn:$memory.learningEnabled)
+            Text("Allows conversation learning, separately opted-in source learning, organisation and optional memory review through your ChatGPT plan. Directly stated stable facts persist; inferred entries remain provisional. Source opt-ins are in Settings → Memory. No email backlog is processed. Pausing stops future learning; explicit memories still work.").font(.caption).foregroundStyle(.secondary)
             if let learning, let assistant { HStack { Text(learning.status(assistant)).font(.caption).foregroundStyle(.secondary); Spacer(); if learning.busy { Button("Stop") { learning.cancel() } } else { Button("Check context") { checkContext?() }.disabled(assistant.connection.busy || assistant.busy || assistant.connection.usagePaused || !assistant.connection.inferenceVerified || !assistant.contextEnabled || assistant.hasDraft || !memory.enabled || !memory.learningEnabled) } }; if let error = learning.error { Text(error).font(.caption).foregroundStyle(.orange) } }
             if let learning {
                 Toggle("Ask occasional useful learning questions",isOn:Binding(get:{ learning.questionsEnabled },set:{ learning.questionsEnabled = $0; learning.cancel() }))

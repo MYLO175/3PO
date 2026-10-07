@@ -40,7 +40,7 @@ import SwiftData
     func check(_ model: DashboardModel, manual: Bool = false) {
         let assistant = model.assistant, memory = assistant.memory, registration = model.chatGPT.activeID, now = Date.now
         guard readable, !busy, memory.enabled, memory.learningEnabled, assistant.contextEnabled, !assistant.busy, !assistant.hasDraft,
-              !model.heartbeat.busy,!model.chatGPT.busy,!model.projectPlacement.busy, !model.chatGPT.usagePaused, model.chatGPT.inferenceVerified, !model.writing, !model.sourceLearning.busy, !model.lifeOrganisation.busy, !model.proactive.busy, !model.briefings.busy, !model.emailSummaries.busy, !registration.isEmpty else { return }
+              !model.heartbeat.busy,!model.chatGPT.busy,!model.projectPlacement.busy, !model.chatGPT.usagePaused, model.chatGPT.inferenceVerified, !model.writing, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.lifeOrganisation.busy, !model.proactive.busy, !model.briefings.busy, !model.emailSummaries.busy, !registration.isEmpty else { return }
         let turns = assistant.learningTurns(), day = BriefingRules.day(now)
         var progress = MemoryLearningRules.progress(turns:turns,prior:state.accounts[registration],suppressed:memory.suppressed(registration),day:day)
         guard MemoryLearningRules.allowed(progress,now:now,manual:manual) else { return }

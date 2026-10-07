@@ -12,6 +12,7 @@ struct SourceOption: Identifiable, Codable, Hashable {
     var account: String
     var writable: Bool
     var color: SourceRGB? = nil
+    var providerID: String? = nil
     var label: String { account.isEmpty ? title : "\(title) · \(account)" }
     var displayLabel: String { title.caseInsensitiveCompare(account) == .orderedSame ? title : label }
 }
@@ -24,6 +25,9 @@ struct AgendaEvent: Identifiable, Codable {
     var allDay: Bool
     var location: String
     var sourceLabel: String
+    var modified: Date? = nil
+    /// Memory identity is independent of the dashboard's start-based occurrence ID.
+    var memoryItemID: String? = nil
 }
 struct TaskItem: Identifiable, Codable {
     var id: String
@@ -34,6 +38,7 @@ struct TaskItem: Identifiable, Codable {
     var sourceLabel: String
     var writable: Bool
     var recurring: Bool
+    var modified: Date? = nil
 }
 struct CalendarSnapshot: Codable { var sources: [SourceOption]; var events: [AgendaEvent] }
 struct ReminderSnapshot: Codable { var sources: [SourceOption]; var reminders: [TaskItem] }

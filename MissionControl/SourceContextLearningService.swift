@@ -21,6 +21,11 @@ import SwiftData
         } catch { readable=false;self.error="Source-learning progress could not be read; its saved record is preserved." }
     }
     private func key(_ scope:WhatsAppSourceScope)->String { SourceContextRules.scopeKey(scope.registration+":"+scope.linkedIdentity) }
+    func lastAssessment(_ model:DashboardModel)->Date {
+        let scope=model.whatsapp.scope(for:model.chatGPT.activeID),access=model.whatsapp.access(for:scope.registration)
+        guard access.enabled,access.learnContext == true,state.scopes[key(scope)]?.paused != true else { return .distantFuture }
+        return state.scopes[key(scope)]?.coverage?.lastAssessment ?? .distantPast
+    }
     func status(_ model:DashboardModel)->String {
         if busy { return "Learning from a small recent WhatsApp batch…" }
         let scope=model.whatsapp.scope(for:model.chatGPT.activeID),access=model.whatsapp.access(for:scope.registration)
@@ -41,7 +46,7 @@ import SwiftData
         guard readable,!busy,access.enabled,access.learnContext == true,!scope.linkedIdentity.isEmpty,!access.chats.isEmpty,
               memory.enabled,memory.learningEnabled,assistant.contextEnabled,!assistant.busy,!assistant.hasDraft,!model.writing,
               !model.heartbeat.busy,!model.chatGPT.busy,!model.projectPlacement.busy,!model.chatGPT.usagePaused,model.chatGPT.inferenceVerified,!model.memoryLearning.busy,
-              !model.lifeOrganisation.busy,!model.proactive.busy,!model.briefings.busy,!model.emailSummaries.busy else { return }
+              !model.lifeOrganisation.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy,!model.proactive.busy,!model.briefings.busy,!model.emailSummaries.busy else { return }
         let scopeKey=key(scope),savedProgress=state.scopes[scopeKey] ?? .init()
         guard manual || !savedProgress.paused else { return }
         let recent=SourceContextRules.recent(model.whatsapp.messages,chats:model.whatsapp.chats,allowed:access.chats,now:.now,limit:2000)

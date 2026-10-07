@@ -99,7 +99,7 @@ import SwiftData
     }
     /// One explicit local draft, with fresh read-only source and captured account/settings.
     func prepareReply(_ message:MailMessage,summary:EmailSummary,model:DashboardModel) {
-        guard !busy,!model.assistant.busy,!model.chatGPT.busy,!model.projectPlacement.busy,!model.writing,!model.proactive.busy,!model.briefings.busy,!model.memoryLearning.busy,!model.sourceLearning.busy,
+        guard !busy,!model.assistant.busy,!model.chatGPT.busy,!model.projectPlacement.busy,!model.writing,!model.proactive.busy,!model.briefings.busy,!model.memoryLearning.busy,!model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy,
               model.assistant.contextEnabled,model.chatGPT.inferenceVerified,!model.chatGPT.usagePaused,summary.registration == model.chatGPT.activeID,summary.needsReply == true,!message.replied,summary.replyDraft == nil,!model.assistant.excludedAccounts.contains(message.accountID),current(message,model:model)?.created == summary.created else { return }
         let registration=model.chatGPT.activeID,selectedModel=model.chatGPT.selectedModel,memoryRevision=model.assistant.memory.revision
         let sourceRevision=model.sourceRevision,memory=model.assistant.memory.context(registration,includeTopics:true,includeSources:false)
@@ -159,7 +159,7 @@ import SwiftData
     }
     func process(_ model: DashboardModel, resume: Bool = false, heartbeat: Bool = false) {
         if resume { paused = false; error = nil }
-        guard (!model.heartbeat.busy || heartbeat), enabled, !paused, !model.chatGPT.usagePaused, !busy, !model.chatGPT.busy,!model.projectPlacement.busy, !model.assistant.busy, !model.briefings.busy, !model.sourceLearning.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing, model.chatGPT.inferenceVerified else { return }
+        guard (!model.heartbeat.busy || heartbeat), enabled, !paused, !model.chatGPT.usagePaused, !busy, !model.chatGPT.busy,!model.projectPlacement.busy, !model.assistant.busy, !model.briefings.busy, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing, model.chatGPT.inferenceVerified else { return }
         let registration = model.chatGPT.activeID, selectedModel = modelID.isEmpty ? model.chatGPT.selectedModel : modelID, selectedEffort = effort
         let requestedModel = modelID
         busy = true
@@ -195,13 +195,13 @@ import SwiftData
                 let batch = Array(newMessages.prefix(rechecks.isEmpty ? 3 : 2)) + Array(rechecks.prefix(newMessages.isEmpty ? 3 : 1))
                 for message in batch {
                     try Task.checkCancellation()
-                    guard requestedModel == modelID, selectedEffort == effort, selectedModel == (modelID.isEmpty ? model.chatGPT.selectedModel : modelID), enabled, !paused, registration == model.chatGPT.activeID, !model.assistant.excludedAccounts.contains(message.accountID), !model.chatGPT.busy,!model.projectPlacement.busy, !model.assistant.busy, !model.briefings.busy, !model.sourceLearning.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing else { return }
+                    guard requestedModel == modelID, selectedEffort == effort, selectedModel == (modelID.isEmpty ? model.chatGPT.selectedModel : modelID), enabled, !paused, registration == model.chatGPT.activeID, !model.assistant.excludedAccounts.contains(message.accountID), !model.chatGPT.busy,!model.projectPlacement.busy, !model.assistant.busy, !model.briefings.busy, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing else { return }
                     phase = "Reading Mail body"
                     let body: String
                     do { body = try await model.mail.body(accountID:message.accountID,messageID:message.messageID,expectedInternetMessageID:message.internetMessageID,mailboxName:message.mailboxName) }
                     catch is DecodingError { throw ChatGPTError.message("Mail body retrieval returned an invalid structured response. No body was sent for this message; processing is paused.") }
                     try Task.checkCancellation()
-                    guard requestedModel == modelID, selectedEffort == effort, selectedModel == (modelID.isEmpty ? model.chatGPT.selectedModel : modelID), enabled, !paused, !model.assistant.excludedAccounts.contains(message.accountID), registration == model.chatGPT.activeID, !model.assistant.busy, !model.chatGPT.busy,!model.projectPlacement.busy, !model.briefings.busy, !model.sourceLearning.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing else { return }
+                    guard requestedModel == modelID, selectedEffort == effort, selectedModel == (modelID.isEmpty ? model.chatGPT.selectedModel : modelID), enabled, !paused, !model.assistant.excludedAccounts.contains(message.accountID), registration == model.chatGPT.activeID, !model.assistant.busy, !model.chatGPT.busy,!model.projectPlacement.busy, !model.briefings.busy, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing else { return }
                     let bodyHash = EmailSummary.fingerprintBody(body)
                     if var saved = current(message, model: model), saved.bodyFingerprint == bodyHash, saved.worthReading != nil, saved.needsReply != nil {
                         let previous = records

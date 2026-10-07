@@ -13,7 +13,17 @@ import SwiftData
     private var writable = true
     @ObservationIgnored var notebookProjection: ((LifeNotebook,String,UUID?,Bool)->LifeNotebook)?
     @ObservationIgnored var sourceIsPermitted:(PAMemory)->Bool = { _ in false }
-    var permittedRecords:[PAMemory] { records.filter{record in record.source == nil || (!record.sourceSuppressionKeys.contains{state.suppressed[record.registration,default:[]].contains($0)} && sourceIsPermitted(record))} }
+    @ObservationIgnored var sourcePermissionProjection:(()->Set<UUID>)?
+    var permittedRecords:[PAMemory] {
+        let projected=sourcePermissionProjection?()
+        return records.filter{record in record.source == nil || (!record.sourceSuppressionKeys.contains{state.suppressed[record.registration,default:[]].contains($0)} && (projected.map{$0.contains(record.id)} ?? sourceIsPermitted(record)))}
+    }
+    #if DEBUG
+    func loadReviewFixture(_ records:[PAMemory]) {
+        guard ProcessInfo.processInfo.arguments.contains("--preview-memory-review") else { return }
+        _=change{$0.records=records}
+    }
+    #endif
     func sourceAssessmentDate(_ key:String)->Date? { state.sourceAssessmentReceipts?[key] }
     init(container: ModelContainer?) {
         self.container = container
@@ -106,7 +116,7 @@ import SwiftData
     }
     /// A source may supersede only an issued, current provisional belief from that same conversation.
     /// Every quotation is checked, and the old/new version links are saved in one transaction.
-    @discardableResult func putSources(_ values:[PAMemory],evidenceTexts:[MemorySourceIdentity:String],expectedRevision:UUID,assessmentIDs:[String]=[])->Bool {
+    @discardableResult func putSources(_ values:[PAMemory],evidenceTexts:[MemorySourceIdentity:String],expectedRevision:UUID,assessmentIDs:[String]=[],replacementSources:[UUID:MemorySourceEvidence]=[:])->Bool {
         guard revision == expectedRevision,assessmentIDs.count <= 8,Set(assessmentIDs).count == assessmentIDs.count,assessmentIDs.allSatisfy({$0.range(of:"^source-assessment:[a-f0-9]{64}$",options:.regularExpression) != nil}) else { error="Source assessment identity or captured state changed.";return false }
         if !assessmentIDs.isEmpty && assessmentIDs.allSatisfy({state.sourceAssessmentReceipts?[$0] != nil}) { return true }
         guard values.count <= 4,Set(values.map(\.id)).count == values.count,
@@ -118,12 +128,19 @@ import SwiftData
                   (value.supportingSources ?? []).allSatisfy({evidence in guard let date=evidence.sourceDate,let primaryDate=source.sourceDate else { return false };return date <= primaryDate}),
                   value.sourceState == nil || value.kind == .commitment else { return false }
             if let previous=value.supersedes {
-                guard let old=records.first(where:{$0.id == previous}),MemoryRules.usable(old,registration:value.registration),!old.explicit,old.sourceTurnID == nil,old.source != nil,sourceIsPermitted(old),
+                guard let old=records.first(where:{$0.id == previous}),MemoryRules.usable(old,registration:value.registration),!old.explicit,old.sourceTurnID == nil,old.source != nil,
                       old.organisation?.manual != true,source.identity.kind == old.source?.identity.kind,source.identity.accountID == old.source?.identity.accountID,
-                      source.identity.containerID == old.source?.identity.containerID,source.identity.linkedIdentity == old.source?.identity.linkedIdentity,
-                      value.allSourceEvidence.contains(where:{$0.identity == old.source?.identity && $0.revision == old.source?.revision}),
-                      let date=source.sourceDate,let oldDate=old.source?.sourceDate,
-                      date > oldDate else { return false }
+                      source.identity.containerID == old.source?.identity.containerID,source.identity.linkedIdentity == old.source?.identity.linkedIdentity else { return false }
+                if source.identity.kind != .whatsapp {
+                    // Mutable native items retain their old quote in version history. A changed
+                    // due/start/received date is not required, and stale quotes are not dependencies.
+                    guard replacementSources[previous] == old.source,source.identity == old.source?.identity,
+                          source.revision != old.source?.revision,source.observed > old.source!.observed,
+                          value.allSourceEvidence.count == 1,sourceIsPermitted(value) else { return false }
+                } else {
+                    guard sourceIsPermitted(old),value.allSourceEvidence.contains(where:{$0.identity == old.source?.identity && $0.revision == old.source?.revision}),
+                          let date=source.sourceDate,let oldDate=old.source?.sourceDate,date > oldDate else { return false }
+                }
             }
             return !value.registration.isEmpty && value.sourceInvalidation == nil && value.sourceTurnID == nil && value.conversationID == nil && !value.explicit && value.certainty == .inferred && value.durability == .situational && value.kind != .preference && !value.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && value.text.count <= 500 && value.evidence == source.quote && MemoryConnection.valid(value.connections,human:sourceText) && value.organisation?.selfName == nil && value.organisation?.manual != true && (value.organisation.map({LifeMemoryOrganisation.valid($0,record:value)}) ?? true) && value.supersededBy == nil && !records.contains(where:{$0.id == value.id})
         }) else { error="Source memory failed its evidence or captured-state checks.";return false }

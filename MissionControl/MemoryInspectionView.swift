@@ -34,6 +34,9 @@ struct PAMemoryOverviewView:View {
                     VStack(alignment:.leading,spacing:8) {
                         Text(model.assistant.contextEnabled ? "Source context is enabled for PA requests." : "Source context is off; source read tools are unavailable.")
                         Text("Calendar/Reminders use their enabled source filters. Mail: " + model.mailCoverage)
+                        ForEach(NativeLearningRules.kinds,id:\.rawValue) { kind in
+                            Text(NativeSourceLearningService.title(kind) + " memory: " + model.nativeSourceLearning.status(kind,model:model))
+                        }
                         let access=model.whatsapp.access(for:registration)
                         Text("WhatsApp: \(access.enabled ? access.chats.count : 0) selected chats · PA reads \(access.enabled ? "on" : "off") · learning \(access.enabled && access.learnContext == true ? "on" : "off")").font(.caption)
                         Text("These are current controls and cached coverage. Receiving content does not mean it has been assessed or remembered. No sources are refreshed by this view.").font(.caption).foregroundStyle(.secondary)

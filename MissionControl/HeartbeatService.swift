@@ -56,7 +56,7 @@ import SwiftData
         let prior=state.accounts[registration] ?? PAHeartbeatAccount()
         guard manual || PAHeartbeatRules.due(prior,now:.now,minutes:intervalMinutes) else { return }
         // Let foreground work win; this local due check never runs inference.
-        guard !model.assistant.busy,!model.chatGPT.busy,!model.projectPlacement.busy,!model.briefings.busy,!model.proactive.busy,!model.emailSummaries.busy,!model.sourceLearning.busy,!model.memoryLearning.busy,!model.lifeOrganisation.busy,!model.writing else { return }
+        guard !model.assistant.busy,!model.chatGPT.busy,!model.projectPlacement.busy,!model.briefings.busy,!model.proactive.busy,!model.emailSummaries.busy,!model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy,!model.memoryLearning.busy,!model.lifeOrganisation.busy,!model.writing else { return }
         let controls=controlsRevision, scope=model.proactive.scope(model)
         busy=true;capturedRegistration=registration; status="Collecting sources for background review…"
         task=Task {
@@ -104,7 +104,7 @@ import SwiftData
                     account.phase=account.phase == "paused" ? "paused" : "idle"
                     state.accounts[registration]=account; try save();return
                 }
-                guard !model.assistant.busy,!model.projectPlacement.busy,!model.briefings.busy,!model.chatGPT.busy,!model.memoryLearning.busy,!model.sourceLearning.busy,!model.lifeOrganisation.busy,!model.proactive.busy,!model.emailSummaries.busy,!model.writing,!composerActive else { account.phase="idle";state.accounts[registration]=account;try save();status="Sources refreshed; pending AI assessment waits for foreground work.";return }
+                guard !model.assistant.busy,!model.projectPlacement.busy,!model.briefings.busy,!model.chatGPT.busy,!model.memoryLearning.busy,!model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy,!model.lifeOrganisation.busy,!model.proactive.busy,!model.emailSummaries.busy,!model.writing,!composerActive else { account.phase="idle";state.accounts[registration]=account;try save();status="Sources refreshed; pending AI assessment waits for foreground work.";return }
                 guard PAHeartbeatRules.callCount(account,day:BriefingRules.day(.now)) < dailyCallLimit else { throw HeartbeatBudgetExhausted() }
                 account.phase="assessing"; state.accounts[registration]=account; try save()
                 status="Assessing new permitted material…"

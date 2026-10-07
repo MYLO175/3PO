@@ -34,13 +34,18 @@ actor EventKitService {
         } else {
             color = nil
         }
-        return .init(id: calendar.calendarIdentifier, title: calendar.title, account: calendar.source.title, writable: calendar.allowsContentModifications, color: color)
+        return .init(id: calendar.calendarIdentifier, title: calendar.title, account: calendar.source.title, writable: calendar.allowsContentModifications, color: color, providerID:calendar.source.sourceIdentifier)
     }
     func calendar(from start: Date, to end: Date) async throws -> CalendarSnapshot {
         try await access(.event)
         let calendars = store.calendars(for: .event)
         let events = store.events(matching: store.predicateForEvents(withStart: start, end: end, calendars: calendars)).map { event in
-            AgendaEvent(id: DateRules.occurrenceID(event.eventIdentifier ?? event.calendarItemIdentifier, start: event.startDate), calendarID: event.calendar.calendarIdentifier, title: event.title ?? "Untitled event", start: event.startDate, end: event.endDate, allDay: event.isAllDay, location: event.location ?? "", sourceLabel: option(event.calendar).label)
+            let memoryID:String?
+            if event.hasRecurrenceRules || event.isDetached {
+                if let external=event.calendarItemExternalIdentifier,!external.isEmpty,let original=event.occurrenceDate { memoryID=DateRules.occurrenceID(external,start:original) }
+                else { memoryID=nil }
+            } else { memoryID=event.calendarItemIdentifier }
+            return AgendaEvent(id: DateRules.occurrenceID(event.eventIdentifier ?? event.calendarItemIdentifier, start: event.startDate), calendarID: event.calendar.calendarIdentifier, title: event.title ?? "Untitled event", start: event.startDate, end: event.endDate, allDay: event.isAllDay, location: event.location ?? "", sourceLabel: option(event.calendar).label, modified:event.lastModifiedDate,memoryItemID:memoryID)
         }.sorted { ($0.start, $0.title, $0.id) < ($1.start, $1.title, $1.id) }
         return .init(sources: calendars.map(option).sorted { $0.label < $1.label }, events: events)
     }
@@ -55,7 +60,7 @@ actor EventKitService {
             var calendar = components?.calendar ?? Calendar.current
             calendar.timeZone = components?.timeZone ?? .current
             let due = components.flatMap { calendar.date(from: $0) }
-            return TaskItem(id: item.calendarItemIdentifier, listID: item.calendar.calendarIdentifier, title: item.title ?? "Untitled reminder", due: due, hasTime: components?.hour != nil, sourceLabel: option(item.calendar).label, writable: item.calendar.allowsContentModifications, recurring: item.hasRecurrenceRules)
+            return TaskItem(id: item.calendarItemIdentifier, listID: item.calendar.calendarIdentifier, title: item.title ?? "Untitled reminder", due: due, hasTime: components?.hour != nil, sourceLabel: option(item.calendar).label, writable: item.calendar.allowsContentModifications, recurring: item.hasRecurrenceRules, modified:item.lastModifiedDate)
         }
         return .init(sources: calendars.map(option).sorted { $0.label < $1.label }, reminders: DateRules.ordered(reminders))
     }
