@@ -31,8 +31,12 @@ extension DashboardModel {
             }
         }
     }
-    func automaticMemory(_ use:AutomaticMemoryUse,query:String? = nil)->AutomaticMemoryCapture {
-        let selection=assistant.memory.selection(chatGPT.activeID,includeTopics:use == .brief,query:query,sourceFilter:{self.automaticMemorySourceAllowed($0,use:use)})
+    func automaticMemory(_ use:AutomaticMemoryUse,query:String? = nil,mailAccounts:Set<String>? = nil,whatsappReady:Bool = true)->AutomaticMemoryCapture {
+        let selection=assistant.memory.selection(chatGPT.activeID,includeTopics:use == .brief,query:query,sourceFilter:{record in
+            self.automaticMemorySourceAllowed(record,use:use) && record.allSourceEvidence.allSatisfy{source in
+                (source.identity.kind != .mail || mailAccounts?.contains(source.identity.accountID) ?? true) && (source.identity.kind != .whatsapp || whatsappReady)
+            }
+        })
         let selected=Set(selection.records.compactMap{$0["id"]})
         let chats=Set(assistant.memory.records.filter{selected.contains($0.id.uuidString)}.flatMap(\.allSourceEvidence).filter{$0.identity.kind == .whatsapp}.map{$0.identity.containerID})
         return .init(records:selection.records,dependencies:MemoryDependencyRules.capture(selection.records),eligibleCount:selection.eligibleCount,whatsappChats:chats)

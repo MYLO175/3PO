@@ -129,14 +129,24 @@ enum ProactiveRules {
         guard manual || (!progress.paused && progress.attempts < (heartbeat ? comparisonLimit : 4)) else { return false }
         return manual || progress.lastAttempt.map { now.timeIntervalSince($0) >= cooldown } ?? true
     }
+    static let evidenceInstructions = "For each Mail suggestion, choose its supplied evidenceID or followUpEvidenceID and return that exact ID as evidenceID; omit the evidence field. The app will attach the original exact quote. Never invent an ID or reference a different source. WhatsApp still requires an exact 8-500-character quote in evidence. An evidence reference is data attribution only, not proof of identity or authority to write."
     static func decode(_ text: String, candidates: [DiscoveryCandidate], registration: String, scope: String, now: Date, targets:[String:DiscoveryNativeTarget] = [:]) throws -> [PADiscovery] {
-        struct Suggestion: Decodable { var mailID: String; var kind: String; var message: String; var evidence: String; var title:String?;var targetID:String?;var newDate:String?;var hasTime:Bool?;var connection:String? }
+        struct Suggestion: Decodable { var mailID: String; var kind: String; var message: String; var evidence: String?;var evidenceID:String?;var title:String?;var targetID:String?;var newDate:String?;var hasTime:Bool?;var connection:String? }
         struct Output: Decodable { var suggestions: [Suggestion] }
         let output = try JSONDecoder().decode(Output.self,from:Data(text.utf8))
         guard output.suggestions.count <= 3, Set(output.suggestions.map(\.mailID)).count == output.suggestions.count else { throw SummaryFailure.invalid }
         return try output.suggestions.map { value in
-            guard let candidate = candidates.first(where:{ $0.alias == value.mailID }), ["calendar","reminder","update","project","change"].contains(value.kind), !value.message.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, value.message.count <= 700,
-                  !value.evidence.isEmpty, value.title.map({ !$0.isEmpty && $0.count <= 300 }) ?? true, candidate.sourceText.map({ (8...500).contains(value.evidence.count) && $0.contains(value.evidence) }) ?? (value.evidence == candidate.evidence || value.evidence == candidate.followUpEvidence) else { throw SummaryFailure.unsupportedEvidence }
+            guard let candidate = candidates.first(where:{ $0.alias == value.mailID }) else {throw SummaryFailure.unsupportedEvidence}
+            let evidence:String
+            if let reference=value.evidenceID {
+                guard candidate.sourceKind != "whatsapp",candidate.sourceText == nil else {throw SummaryFailure.unsupportedEvidence}
+                if reference == candidate.alias+":primary" {evidence=candidate.evidence}
+                else if reference == candidate.alias+":followup" {evidence=candidate.followUpEvidence}
+                else {throw SummaryFailure.unsupportedEvidence}
+                guard value.evidence == nil || value.evidence == evidence else {throw SummaryFailure.unsupportedEvidence}
+            } else {evidence=value.evidence ?? ""}
+            guard ["calendar","reminder","update","project","change"].contains(value.kind), !value.message.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, value.message.count <= 700,
+                  !evidence.isEmpty, value.title.map({ !$0.isEmpty && $0.count <= 300 }) ?? true, candidate.sourceText.map({ (8...500).contains(evidence.count) && $0.contains(evidence) }) ?? (evidence == candidate.evidence || evidence == candidate.followUpEvidence) else { throw SummaryFailure.unsupportedEvidence }
             var change:DiscoveryDateChange?
             if value.kind == "change" {
                 guard let alias=value.targetID,let target=targets[alias],target.writable,let date=value.newDate,let hasTime=value.hasTime,let connection=value.connection,!connection.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,connection.count <= 500 else { throw SummaryFailure.unsupportedEvidence }
@@ -144,7 +154,7 @@ enum ProactiveRules {
                 guard let parsed=proposal.date(),target.kind != "event" || target.hasTime == hasTime,(hasTime ? (target.start ?? target.due) != parsed : target.originalDate != date) else { throw SummaryFailure.unsupportedEvidence }
                 change=proposal
             } else if value.targetID != nil || value.newDate != nil || value.hasTime != nil || value.connection != nil { throw SummaryFailure.unsupportedEvidence }
-            return PADiscovery(id:UUID().uuidString,registration:registration,mailID:candidate.mailID,kind:value.kind,message:value.message,evidence:value.evidence,created:now,scope:scope,sourceKind:candidate.sourceKind,sourceChatID:candidate.sourceChatID,sourceMessageID:candidate.sourceMessageID,sourceIdentity:candidate.sourceIdentity,sourceRevision:candidate.sourceRevision,sourceLabel:candidate.sourceLabel,sourceTitle:value.title,sourceAssessmentRevision:candidate.sourceAssessmentRevision,proposedChange:change)
+            return PADiscovery(id:UUID().uuidString,registration:registration,mailID:candidate.mailID,kind:value.kind,message:value.message,evidence:evidence,created:now,scope:scope,sourceKind:candidate.sourceKind,sourceChatID:candidate.sourceChatID,sourceMessageID:candidate.sourceMessageID,sourceIdentity:candidate.sourceIdentity,sourceRevision:candidate.sourceRevision,sourceLabel:candidate.sourceLabel,sourceTitle:value.title,sourceAssessmentRevision:candidate.sourceAssessmentRevision,proposedChange:change)
         }
     }
     static func sourceKey(_ kind:String,_ id:String)->String { SHA256.hash(data:Data((kind+":"+id).utf8)).map{String(format:"%02x",$0)}.joined() }

@@ -32,6 +32,12 @@ struct MailIndexState: Codable {
     var retryAfter: [String:Date]? = nil
     var failures: [String:Int]? = nil
     var accountErrors: [String:String]? = nil
+    var discoveryChecked:Date? = nil
+    var discoveryError:String? = nil
+
+    mutating func discovered(error:String? = nil,now:Date = .now) {
+        discoveryChecked=now;discoveryError=error
+    }
 
     mutating func prepare(accounts: [MailAccount], now: Date = .now, calendar: Calendar = .current, lastCheck: Date? = nil) {
         let cutoff = now.addingTimeInterval(-30 * 86400)
@@ -146,4 +152,46 @@ struct MailIndexState: Codable {
 struct MailCheckpoint: Codable {
     var snapshot: MailSnapshot
     var index: MailIndexState
+}
+
+// A review uses only accounts whose bounded arrival check finished in this collection.
+// Older cached rows remain available to the dashboard, without becoming fresh review input.
+struct MailReviewWindow:Equatable {
+    var start:Date
+    var end:Date
+    var checked:Date
+}
+struct MailReviewScope:Equatable {
+    var windows:[String:MailReviewWindow] = [:]
+    var issues:[String:String] = [:]
+    var discoveryFailed=false
+    var accountIDs:Set<String> {Set(windows.keys)}
+    var pending:Bool {discoveryFailed || !issues.isEmpty}
+    static func capture(index:MailIndexState,snapshot:MailSnapshot,excluded:Set<String>,since:Date)->MailReviewScope {
+        var value=MailReviewScope()
+        let discovered=index.discoveryError == nil && (index.discoveryChecked ?? .distantPast) >= since.addingTimeInterval(-30)
+        value.discoveryFailed = !discovered
+        for account in snapshot.accounts where !excluded.contains(account.id) {
+            if !discovered {value.issues[account.id]="Account discovery unavailable";continue}
+            if let error=index.accountErrors?[account.id] {value.issues[account.id]=String(error.prefix(300));continue}
+            guard let monitor=index.monitors?.first(where:{$0.accountID == account.id}),monitor.complete,
+                  let checked=monitor.lastSuccess,checked >= since.addingTimeInterval(-30),monitor.end >= since.addingTimeInterval(-30) else {value.issues[account.id]="Arrival check unfinished";continue}
+            value.windows[account.id] = .init(start:monitor.start,end:monitor.end,checked:checked)
+        }
+        return value
+    }
+    func permits(_ accountID:String,index:MailIndexState,snapshot:MailSnapshot,excluded:Set<String>)->Bool {
+        guard let captured=windows[accountID],index.discoveryError == nil,!excluded.contains(accountID),
+              snapshot.accounts.contains(where:{$0.id == accountID}),index.accountErrors?[accountID] == nil,
+              let current=index.monitors?.first(where:{$0.accountID == accountID}),current.complete,
+              current.end >= captured.end,(current.lastSuccess ?? .distantPast) >= captured.checked else {return false}
+        return true
+    }
+    func available(index:MailIndexState,snapshot:MailSnapshot,excluded:Set<String>)->MailReviewScope {
+        var value=self
+        for id in windows.keys where !permits(id,index:index,snapshot:snapshot,excluded:excluded) {
+            value.windows[id]=nil;value.issues[id]=String((index.accountErrors?[id] ?? "Account changed or is unavailable").prefix(300))
+        }
+        return value
+    }
 }

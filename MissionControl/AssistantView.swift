@@ -355,6 +355,7 @@ struct AssistantSourceSettings: View {
                 Section("Background review") {
                     Toggle("Review changed context automatically",isOn:$model.heartbeat.enabled)
                     Picker("Review interval",selection:$model.heartbeat.intervalMinutes) { Text("15 minutes").tag(15);Text("30 minutes").tag(30);Text("1 hour").tag(60);Text("2 hours").tag(120) }
+                    Toggle("Include email assessment",isOn:$model.emailSummaries.enabled)
                     Toggle("Include selected WhatsApp chats",isOn:$model.heartbeat.whatsappEnabled)
                     Toggle("Notify when review items are ready",isOn:$model.heartbeat.notificationsEnabled)
                     let progress=model.heartbeat.state.accounts[model.chatGPT.activeID]
@@ -362,9 +363,11 @@ struct AssistantSourceSettings: View {
                     LabeledContent("Last completed review",value:progress?.assessed?.formatted(date:.abbreviated,time:.shortened) ?? "Not recorded")
                     if progress?.pending == true { Text("Changed or unfinished review work is waiting.").font(.caption).foregroundStyle(.secondary) }
                     Text(model.heartbeat.statusFor(model.chatGPT.activeID)).font(.caption).foregroundStyle(.secondary)
-                    Text("Sources collect without AI. At the chosen interval, 3PO compares changed or pending messages with your calendar, reminders and available memory. Useful observations and proposed changes go to Review inbox, with evidence, rather than normal chat. There is no daily limit on useful review items. Apple changes happen only when you review and save them. Reviews run while 3PO is open and the Mac is awake; pending work is retained across allowance limits.").font(.caption).foregroundStyle(.secondary)
+                    Text("Sources collect without AI. At each review, checked Mail accounts can continue while others wait; their cached data and pending work are kept. Email assessment can run while a Calendar/Reminders comparison is waiting. Proposals appear in Review inbox and require your approval. There is no daily cap on useful items. Reviews run while 3PO is open and your Mac is awake.").font(.caption).foregroundStyle(.secondary)
                     Button("Open Review inbox") {model.workspace.showReviewInbox();openWindow(id:"dashboard")}.disabled(model.workspace.readOnly)
                     Button("Review changed context now") { model.heartbeat.check(model,manual:true) }.disabled(model.heartbeat.busy || model.assistant.busy || model.chatGPT.busy)
+                    let mailReviewStatus=model.heartbeat.mailReviewStatus(model)
+                    if !mailReviewStatus.isEmpty {Text(mailReviewStatus).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)}
                 }
                 Section("Other background work") {
                     Text("Communication review uses the interval above. Morning briefs have their own schedule under Morning brief below. Conversation/source learning, memory organisation and optional memory review are controlled in Memory. Explicitly queued PA work uses Continue queue. These jobs share idle time but do not all use this interval or allowance.").font(.caption).foregroundStyle(.secondary)

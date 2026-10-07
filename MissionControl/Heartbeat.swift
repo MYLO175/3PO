@@ -8,6 +8,14 @@ struct PAHeartbeatAccount: Codable {
     var calls:Int? = nil
     var assessed:Date? = nil
     var pending:Bool? = nil
+    var mailLanes:[String:PAHeartbeatMailLane]? = nil
+}
+struct PAHeartbeatMailLane:Codable {
+    var checked:Date?
+    var assessed:Date?
+    var fingerprint:String?
+    var pending=true
+    var issue:String?
 }
 struct PAHeartbeatState: Codable {
     var accounts: [String:PAHeartbeatAccount] = [:]
@@ -30,6 +38,22 @@ enum PAHeartbeatRules {
         var value = account
         if value.phase == "assessing" { value.phase = "paused" }
         return value
+    }
+    static func collectingMail(_ account:PAHeartbeatAccount,enabled:Set<String>,ready:Set<String>,issues:[String:String],now:Date)->PAHeartbeatAccount {
+        var value=account,lanes=(account.mailLanes ?? [:]).filter{enabled.contains($0.key)}
+        for id in enabled {
+            var lane=lanes[id] ?? .init();lane.checked=now;lane.issue=issues[id]
+            if !ready.contains(id) {lane.pending=true}
+            lanes[id]=lane
+        }
+        value.mailLanes=lanes;return value
+    }
+    static func completedMail(_ account:PAHeartbeatAccount,fingerprints:[String:String],pending:Set<String>,now:Date)->PAHeartbeatAccount {
+        var value=account,lanes=account.mailLanes ?? [:]
+        for (id,fingerprint) in fingerprints {
+            var lane=lanes[id] ?? .init();lane.assessed=now;lane.fingerprint=fingerprint;lane.pending=pending.contains(id);lane.issue=nil;lanes[id]=lane
+        }
+        value.mailLanes=lanes;return value
     }
 }
 

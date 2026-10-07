@@ -22,6 +22,59 @@ import EventKit
         guard ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"),case .reviewReminder(let task,_) = target else {return nil}
         return .init(item:.init(kind:.reminder,itemID:task.id,occurrenceID:task.id,sourceID:task.listID,title:task.title,notes:"Original fictional notes stay intact.",due:task.due,hasTime:task.hasTime,writable:true,modified:task.modified),sources:[.init(id:task.listID,title:task.sourceLabel,account:"Fictional",writable:true)])
     }
+    static func runMailReview(_ model:DashboardModel)async throws->[String:Any] {
+        let record=try seed(model),now=Date.now,registration=model.chatGPT.activeID
+        let enabledPreference=UserDefaults.standard.object(forKey:"automaticEmailSummaries") as? Bool
+        model.emailSummaries.enableMailReviewFixture()
+        var checks:[String:Bool]=[:]
+        let failed=model.mailData.messages[0],failedSummary=model.emailSummaries.records[0]
+        let json:[String:Any]=["id":"healthy:2","accountID":"healthy","account":"Fictional healthy Mail","messageID":2,"internetMessageID":"healthy@example.invalid","sender":"Fixture","subject":"Healthy account deadline","received":now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
+        let healthy=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:json))
+        var summary=failedSummary;summary.id=healthy.id;summary.message=healthy;summary.fingerprint=EmailSummary.fingerprint(healthy);summary.worthReading=true;summary.needsReply=false
+        model.mailData = .init(messages:[healthy,failed],accounts:[.init(id:healthy.accountID,title:healthy.account),.init(id:failed.accountID,title:failed.account)],errors:[])
+        try model.emailSummaries.seedAdviceFixture([failedSummary,summary])
+        model.mailIndex.discovered(now:now);model.mailIndex.prepare(accounts:model.mailData.accounts,now:now)
+        _ = model.mailIndex.apply(.init(messages:[healthy],messageIDs:[healthy.messageID],nextOffset:1,complete:true,errors:[]),to:model.mailIndex.monitor(healthy.accountID)!.id,snapshot:model.mailData,now:now)
+        model.mailIndex.failed(failed.accountID,detail:"Fictional timeout",now:now)
+        let scope=MailReviewScope.capture(index:model.mailIndex,snapshot:model.mailData,excluded:[],since:now)
+        checks["healthy account remains independently eligible"]=scope.accountIDs == [healthy.accountID]
+        checks["failed account cache stays visible but is not fresh review evidence"] = model.mailData.messages.count == 2 && !model.emailSummaries.reviewPermitted(failed,model:model,scope:scope)
+        let candidates=model.proactive.emailReviewCandidates(model,heartbeat:true,mailReview:scope,whatsappReady:false,now:now)
+        checks["actual comparison selects only fresh healthy email"] = candidates.map(\.0.id) == [healthy.id]
+        checks["failed account is still pending and receives no assessed receipt"] = scope.issues[failed.accountID] != nil && model.proactive.state.accounts[registration]?.assessedSourceVersions?.isEmpty ?? true
+        let original=model.mailData
+        model.mailData = .init(messages:[failed],accounts:original.accounts,errors:[])
+        checks["evicted or vanished current header cannot be supplied from saved summary"] = model.proactive.emailReviewCandidates(model,heartbeat:true,mailReview:scope,whatsappReady:false,now:now).isEmpty
+        model.mailData=original
+        model.assistant.memory.sourcePermissionProjection=nil
+        model.assistant.memory.sourceIsPermitted={_ in true} // Fictional projection only, never persisted consent.
+        let human=PAMemory(registration:registration,text:"Fictional human preference",kind:.context,provenance:"Fixture")
+        func sourceMemory(_ message:MailMessage)->PAMemory {
+            let evidence=MemorySourceEvidence(identity:.init(kind:.mail,accountID:message.accountID,containerID:message.accountID,itemID:message.internetMessageID),revision:"fictional-v1",label:message.account,quote:"Fictional source memory",observed:now,sourceDate:now)
+            return PAMemory(registration:registration,text:"Fictional memory from "+message.accountID,kind:.context,explicit:false,provenance:"Fixture",source:evidence)
+        }
+        let healthyMemory=sourceMemory(healthy),failedMemory=sourceMemory(failed)
+        checks["disposable memory fixtures saved"]=model.assistant.memory.put(human) && model.assistant.memory.put(healthyMemory) && model.assistant.memory.put(failedMemory)
+        let baseline=Set(model.automaticMemory(.heartbeatSuggestions).dependencies.map(\.id))
+        let filtered=Set(model.automaticMemory(.heartbeatSuggestions,mailAccounts:scope.accountIDs,whatsappReady:false).dependencies.map(\.id))
+        checks["source memory fixture is eligible before account lens"]=baseline.contains(failedMemory.id.uuidString) && baseline.contains(healthyMemory.id.uuidString)
+        checks["actual automatic context keeps human and healthy memory, omits failed source memory"]=filtered.contains(human.id.uuidString) && filtered.contains(healthyMemory.id.uuidString) && !filtered.contains(failedMemory.id.uuidString)
+        model.mailIndex.failed(healthy.accountID,detail:"Fictional body failure",now:now)
+        checks["late body failure invalidates actual comparison candidates"] = model.proactive.emailReviewCandidates(model,heartbeat:true,mailReview:scope,whatsappReady:false,now:now).isEmpty
+        checks["source failure does not claim a proposal approval"] = model.proactive.state.records.first{$0.id == record.id}?.reviewState == nil
+        checks["normal email preference preserved"] = enabledPreference == UserDefaults.standard.object(forKey:"automaticEmailSummaries") as? Bool
+        return ["completed":Date.now.ISO8601Format(),"requests":0,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"storage":"Fictional Mail/native cache and memory, disposable SwiftData, actual input projection consumers; no source startup, Apple write, settings changes or inference. Not an end-to-end inference/scheduler fixture."]
+    }
+    static func runMailEvidence(_ model:DashboardModel)async throws->[String:Any] {
+        let quote="Please register for your Orion prototype review by 20 October 2026.",selected=model.chatGPT.selectedModel
+        let candidate=DiscoveryCandidate(alias:"mail_0",mailID:"fictional-evidence",evidence:quote,followUpEvidence:"")
+        let input:[String:Any]=["localDay":BriefingRules.day(.now),"timezone":TimeZone.current.identifier,"events":[],"reminders":[],"emails":[["id":"mail_0","evidenceID":"mail_0:primary","summary":"The fictional coordinator requests registration by 20 October.","reason":"Registration is required for your personal project review.","evidence":quote]],"whatsapp":[],"paMemory":"{}","recentGeneralChat":[],"deliveredSuggestions":[],"calendarCoverage":"Complete fictional upcoming fixture; no review/reminder is present.","reminderCoverage":"Complete fictional incomplete-reminder fixture.","emailCoverage":"One fictional healthy account supplied; another unavailable account omitted and pending. Never claim whole-inbox coverage."]
+        let data=try JSONSerialization.data(withJSONObject:input,options:[.sortedKeys])
+        let response=try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:data,as:UTF8.self)]],instructions:ProactiveRules.heartbeatInstructions+" "+MemoryDependencyRules.instructions+" "+CommitmentRules.instructions+" "+ProactiveRules.changeInstructions+" "+ProactiveRules.evidenceInstructions,model:selected,purpose:.diagnostic){_ in}
+        let records=try ProactiveRules.decode(response,candidates:[candidate],registration:model.chatGPT.activeID,scope:"fictional",now:.now)
+        let checks=["model returns supplied Mail evidence reference":response.contains("mail_0:primary"),"decoded proposal attaches exact original quote":records.count == 1 && records[0].evidence == quote,"model/account selection preserved":selected == model.chatGPT.selectedModel]
+        return ["completed":Date.now.ISO8601Format(),"requests":1,"model":selected,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"storage":"One fictional subscription prompt and actual strict evidence-reference decode; disposable SwiftData, no source startup, native write or personal retry. Not broad matching quality or live coverage acceptance."]
+    }
     // Runs the real inbox coordinator without inference, against one UUID-marked native fixture.
     static func runApproval(_ model:DashboardModel) async throws->[String:Any] {
         var record=try seed(model),checks:[String:Bool]=[:],cleanupError="",failure=""

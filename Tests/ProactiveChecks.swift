@@ -10,6 +10,14 @@ import Foundation
         rejected(good.replacingOccurrences(of:"Please register by 10 October.",with:"Invented deadline"))
         rejected(good.replacingOccurrences(of:"\"reminder\"",with:"\"send_email\""))
         rejected(#"{"suggestions":[{"mailID":"mail_0","kind":"calendar","message":"Hi","evidence":""}]}"#)
+        let referenced = #"{"suggestions":[{"mailID":"mail_0","kind":"reminder","message":"Review registration","evidenceID":"mail_0:primary"}]}"#
+        let referencedRecords=try ProactiveRules.decode(referenced,candidates:candidates,registration:"A",scope:"s",now:.now)
+        precondition(referencedRecords.first?.evidence == candidates[0].evidence,"Issued evidence reference attaches the exact original quote")
+        let followup=try ProactiveRules.decode(referenced.replacingOccurrences(of:"mail_0:primary",with:"mail_0:followup"),candidates:candidates,registration:"A",scope:"s",now:.now)
+        precondition(followup.first?.evidence == candidates[0].followUpEvidence)
+        rejected(referenced.replacingOccurrences(of:"mail_0:primary",with:"mail_1:primary"))
+        rejected(referenced.replacingOccurrences(of:"mail_0:primary",with:"invented"))
+        rejected(#"{"suggestions":[{"mailID":"mail_0","kind":"reminder","message":"Review registration","evidenceID":"mail_0:primary","evidence":"invented quote"}]}"#)
         precondition(ProactiveRules.unreported(records,prior:records,budget:3).isEmpty)
         var dismissed = records[0]; dismissed.dismissed = true
         precondition(ProactiveRules.unreported(records,prior:[dismissed],budget:3).isEmpty)
@@ -64,6 +72,8 @@ import Foundation
         var changed=wa;changed.sourceRevision="changed"
         precondition(ProactiveRules.unreported([changed],prior:[wa],budget:1).count == 1)
         do { _=try ProactiveRules.decode(response.replacingOccurrences(of:"please book the train for Friday.",with:"invented evidence"),candidates:[candidate],registration:"A",scope:"s",now:.now);fatalError("Invented WhatsApp evidence accepted") } catch {}
+        let waReference = #"{"suggestions":[{"mailID":"wa_0","kind":"reminder","message":"Review booking","evidenceID":"wa_0:primary"}]}"#
+        do { _=try ProactiveRules.decode(waReference,candidates:[candidate],registration:"A",scope:"s",now:.now);fatalError("Mail evidence reference accepted for WhatsApp") } catch {}
         let reply=try EmailReplyDraftRules.decode(#"{"draft":"Thanks for the invitation. [Confirm availability]"}"#);precondition(reply.contains("[Confirm availability]"))
         let hbNow=Date.now
         precondition(!ProactiveRules.heartbeatMailEligible(received:hbNow.addingTimeInterval(-49*3600),now:hbNow))

@@ -181,8 +181,10 @@ import EventKit
             Task {
                 let result:[String:Any]
                 let approvalOnly=ProcessInfo.processInfo.arguments.contains("--approval-only")
-                do {result=try await (approvalOnly ? ReviewInboxEvaluation.runApproval(self) : ReviewInboxEvaluation.run(self))} catch {result=["error":error.localizedDescription,"storage":"Fictional disposable source-free startup"]}
-                let path=approvalOnly ? "/tmp/missioncontrol-review-approval-evaluation.json" : "/tmp/missioncontrol-review-inbox-evaluation.json"
+                let mailOnly=ProcessInfo.processInfo.arguments.contains("--mail-review-only")
+                let evidenceOnly=ProcessInfo.processInfo.arguments.contains("--mail-evidence-only")
+                do {result=try await (evidenceOnly ? ReviewInboxEvaluation.runMailEvidence(self) : mailOnly ? ReviewInboxEvaluation.runMailReview(self) : approvalOnly ? ReviewInboxEvaluation.runApproval(self) : ReviewInboxEvaluation.run(self))} catch {result=["error":error.localizedDescription,"storage":"Fictional disposable source-free startup"]}
+                let path=evidenceOnly ? "/tmp/missioncontrol-mail-evidence-evaluation.json" : mailOnly ? "/tmp/missioncontrol-mail-review-evaluation.json" : approvalOnly ? "/tmp/missioncontrol-review-approval-evaluation.json" : "/tmp/missioncontrol-review-inbox-evaluation.json"
                 if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:path),options:.atomic)}
                 NSApp.terminate(nil)
             };return
@@ -468,6 +470,7 @@ import EventKit
             let discovery = try await mail.discoverAccounts()
             if !discovery.errors.isEmpty { throw MailServiceError.mail(discovery.errors.joined(separator: "; ")) }
             let accounts = discovery.accounts
+            mailIndex.discovered()
             let enabled = Set(accounts.map(\.id))
             mailData = MailSnapshot(messages: mailData.messages.filter { enabled.contains($0.accountID) && $0.received >= Date.now.addingTimeInterval(-30 * 86400) }, accounts: accounts, errors: [])
             mailIndex.prepare(accounts: accounts,lastCheck:mailHealth.lastSuccess)
@@ -490,8 +493,15 @@ import EventKit
             persistMailCheckpoint()
             persist("mailHealth", SourceHealth(lastSuccess:mailHealth.lastSuccess,error:mailHealth.error))
         } catch {
+            mailIndex.discovered(error:error.localizedDescription)
             mailHealth.error = error.localizedDescription + " Cached mail retained; monitoring retries on its next check."
+            persistMailCheckpoint()
         }
+    }
+    func recordMailReadFailure(_ accountID:String,detail:String) {
+        mailIndex.failed(accountID,detail:detail)
+        mailHealth.error=mailData.accounts.compactMap{account in mailIndex.accountErrors?[account.id].map{account.title+": "+$0}}.joined(separator:"; ")
+        persistMailCheckpoint()
     }
     private func readMailPage(_ window: MailWindowProgress, account: MailAccount) async {
         do {

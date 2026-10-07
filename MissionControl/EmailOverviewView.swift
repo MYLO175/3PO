@@ -70,7 +70,6 @@ struct EmailSummarySettings: View {
     @Bindable var summaries: EmailSummaryService
     var body: some View {
         Section("Incoming email assessment") {
-            Toggle("Assess incoming mail automatically", isOn: $summaries.enabled)
             Picker("Email summary model", selection: $summaries.modelID) {
                 Text("Use assistant model").tag("")
                 ForEach(model.chatGPT.models) { Text($0.name).tag($0.id) }
@@ -78,7 +77,7 @@ struct EmailSummarySettings: View {
             Picker("Email reasoning", selection: $summaries.effort) {
                 Text("Low").tag("low"); Text("Medium").tag("medium"); Text("High").tag("high")
             }.disabled(summaries.busy)
-            Text("When enabled, this sends headers and selected relevant plain-text bodies from enabled accounts through your ChatGPT plan. It does not read attachments or send email, and starts from new mail rather than analysing the historical inbox. Each background review assesses a bounded batch of incoming messages and saves its results. Read, connection, storage, or usage errors pause processing; use the explicit retry control to resume. Ignorable mail is hidden. Relevant follow-ups stay available until dismissed, and existing assessments are reused.").font(.caption)
+            Text("Include email assessment above controls this processing. It sends headers and selected relevant plain-text bodies from enabled accounts through your ChatGPT plan. It does not read attachments or send email, and starts from new mail rather than analysing the historical inbox. Each review saves a bounded batch. Unavailable Mail accounts keep pending work while checked accounts continue. AI connection, storage or usage failures pause processing and need explicit resume. Existing assessments are reused.").font(.caption)
             Text("Choose which mail accounts may provide assistant context in Settings → Assistant → Assistant source scope. Dashboard mailbox filters only change the source view; morning brief controls are in this section of Background settings.").font(.caption).foregroundStyle(.secondary)
         }
     }
