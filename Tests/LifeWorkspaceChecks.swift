@@ -29,6 +29,24 @@ import SwiftData
         precondition(LifeItemQuery(root: course.id, query: "Engineering", unfinished: true, dueBefore: "2026-10-12", maxMinutes: 60).matching(store.items("fictional-a")).map(\.id) == [task.id])
         precondition(LifeItemQuery(root: course.id, query: "", dueBefore: "2026-10-09").matching(store.items("fictional-a")).isEmpty)
         precondition(LifeItemQuery.path(saved, in: store.items("fictional-a")).map(\.id) == [root.id, course.id, task.id])
+        // Folder browsing never flattens descendants; PA branch search still can.
+        let visible=store.items("fictional-a")
+        precondition(LifeFolderContents.children(of:root.id,in:visible).map(\.id) == [course.id])
+        precondition(LifeFolderContents.children(of:course.id,in:visible).map(\.id) == [task.id])
+        precondition(LifeFolderContents.children(of:nil,in:visible).map(\.id) == [root.id])
+        let waiting=LifeItem(registration:"fictional-a",kind:.task,title:"Waiting",parentID:course.id,status:.waiting)
+        let done=LifeItem(registration:"fictional-a",kind:.milestone,title:"Done",parentID:course.id,status:.done)
+        let archived=LifeItem(registration:"fictional-a",kind:.task,title:"Archived",parentID:course.id,status:.archived)
+        let deleted=LifeItem(registration:"fictional-a",kind:.task,title:"Deleted",parentID:course.id,deletedAt:.now)
+        let stages=visible+[waiting,done,archived,deleted]
+        let progress=LifeFolderContents.progress(under:root.id,in:stages)
+        precondition(progress.counts == [1,1,1] && progress.percentages == [34,33,33])
+        precondition(LifeTaskProgress(items:[]).percentages == [0,0,0])
+        precondition(LifeFolderContents.children(of:course.id,in:stages,unfinished:true).map(\.id) == [task.id,waiting.id])
+        precondition(LifeFolderContents.children(of:root.id,in:stages,unfinished:true).map(\.id) == [course.id], "Filtering finished tasks cannot hide their parent folder")
+        precondition(waiting.status == .waiting && archived.status == .archived, "Presentation does not migrate legacy states")
+        let orphan=LifeItem(registration:"fictional-a",kind:.task,title:"Retained unfiled task",parentID:UUID())
+        precondition(LifeFolderContents.children(of:nil,in:[orphan]).map(\.id) == [orphan.id])
         var bad = saved; bad.due = "2026-02-30"; rejects { _ = try store.save(bad, expected: saved.revision) }
         bad.due = "2026-10-10T10:00:00Z"; rejects { _ = try store.save(bad, expected: saved.revision) }
         precondition(LifeWorkspaceRules.dateValid("2028-02-29") && !LifeWorkspaceRules.dateValid("2026-2-1"))
@@ -86,6 +104,17 @@ import SwiftData
         precondition(notesSaved.id == task.id && notesSaved.title == externalSaved.title && notesSaved.notes == "My saved plan")
         try store.undo("fictional-a")
         precondition(store.items("fictional-a").first{$0.id == task.id}?.notes == notesOriginal.notes)
+        let beforeStage=store.items("fictional-a").first{$0.id == task.id}!
+        let stageRevision=store.revision
+        rejects { try LifeTaskStageChange.apply(task.id,stage:.done,parent:root.id,registration:"fictional-a",permittedIDs:[task.id],expectedRevision:stageRevision,store:store) }
+        rejects { try LifeTaskStageChange.apply(task.id,stage:.done,parent:course.id,registration:"fictional-b",permittedIDs:[task.id],expectedRevision:stageRevision,store:store) }
+        rejects { try LifeTaskStageChange.apply(task.id,stage:.done,parent:course.id,registration:"fictional-a",permittedIDs:[],expectedRevision:stageRevision,store:store) }
+        try LifeTaskStageChange.apply(task.id,stage:.done,parent:course.id,registration:"fictional-a",permittedIDs:[task.id],expectedRevision:stageRevision,store:store)
+        let afterStage=store.items("fictional-a").first{$0.id == task.id}!
+        precondition(afterStage.status == .done && afterStage.parentID == beforeStage.parentID && afterStage.notes == beforeStage.notes)
+        rejects { try LifeTaskStageChange.apply(task.id,stage:.todo,parent:course.id,registration:"fictional-a",permittedIDs:[task.id],expectedRevision:stageRevision,store:store) }
+        try store.undo("fictional-a")
+        precondition(store.items("fictional-a").first{$0.id == task.id}?.status == beforeStage.status)
         // Corrupt/unsupported storage stays intact and cannot be replaced by an empty state.
         let broken = try ModelContainer(for: CachedDashboard.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let bytes = Data("{\"version\":99,\"items\":[],\"links\":[],\"receipts\":[]}".utf8)
@@ -94,6 +123,6 @@ import SwiftData
         rejects { _ = try unavailable.save(root, expected: nil) }
         let preserved = try broken.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first!.data
         precondition(preserved == bytes)
-        print("PASS: project persistence, identity, scope, dates, optimistic edits, hierarchy/dependency cycles, atomic batches, saved receipts, corrupt-store preservation, bookmark-independent navigation and stale notes/Undo")
+        print("PASS: project persistence, identity, scope, dates, hierarchy, receipts, corrupt-store preservation, bookmarks, stale notes/Undo, direct folder contents, legacy stages, exact progress and guarded board changes/Undo")
     }
 }

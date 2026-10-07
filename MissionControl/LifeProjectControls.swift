@@ -13,7 +13,8 @@ struct LifeProjectDrop:DropDelegate {
     var store:LifeWorkspaceStore
     var activeRegistration:()->String
     var report:(String)->Void
-    func validateDrop(info:DropInfo)->Bool { info.hasItemsConforming(to:[LifeProjectDrag.type.identifier]) && drag != nil && drag?.id != target && drag?.registration == activeRegistration() }
+    var enabled=true
+    func validateDrop(info:DropInfo)->Bool { enabled && info.hasItemsConforming(to:[LifeProjectDrag.type.identifier]) && drag != nil && drag?.id != target && drag?.registration == activeRegistration() }
     func dropEntered(info:DropInfo) { if validateDrop(info:info) { hover=key } }
     func dropExited(info:DropInfo) { if hover == key { hover=nil } }
     func dropUpdated(info:DropInfo)->DropProposal? { validateDrop(info:info) ? .init(operation:.move) : .init(operation:.forbidden) }
@@ -21,6 +22,27 @@ struct LifeProjectDrop:DropDelegate {
         guard let captured=drag,validateDrop(info:info) else { return false }
         defer { drag=nil;hover=nil }
         do { try store.move(captured.id,registration:captured.registration,parent:parent,before:before,expectedRevision:captured.revision);return true }
+        catch { report(error.localizedDescription);return false }
+    }
+}
+struct LifeProjectStageDrop:DropDelegate {
+    var stage:LifeTaskStage
+    var parent:UUID?
+    @Binding var drag:LifeProjectDrag?
+    @Binding var hover:String?
+    var store:LifeWorkspaceStore
+    var activeRegistration:()->String
+    var permittedIDs:Set<UUID>
+    var report:(String)->Void
+    private var key:String { "stage:"+stage.id }
+    func validateDrop(info:DropInfo)->Bool { info.hasItemsConforming(to:[LifeProjectDrag.type.identifier]) && drag?.registration == activeRegistration() && drag.map{permittedIDs.contains($0.id)} == true }
+    func dropEntered(info:DropInfo) { if validateDrop(info:info) { hover=key } }
+    func dropExited(info:DropInfo) { if hover == key { hover=nil } }
+    func dropUpdated(info:DropInfo)->DropProposal? { validateDrop(info:info) ? .init(operation:.move) : .init(operation:.forbidden) }
+    func performDrop(info:DropInfo)->Bool {
+        guard let captured=drag,validateDrop(info:info) else { return false }
+        defer { drag=nil;hover=nil }
+        do { try LifeTaskStageChange.apply(captured.id,stage:stage,parent:parent,registration:captured.registration,permittedIDs:permittedIDs,expectedRevision:captured.revision,store:store);return true }
         catch { report(error.localizedDescription);return false }
     }
 }
@@ -58,9 +80,9 @@ struct LifeMoveSheet:View {
     var body:some View {
         VStack(alignment:.leading,spacing:16) {
             Text("Move “\(item.title)”").font(.title2.weight(.semibold))
-            Picker("Into",selection:$parent) { Text("Me").tag(Optional<UUID>.none);ForEach(parents) { value in Text(LifeItemQuery.path(value,in:all).map(\.title).joined(separator:" / ")).tag(Optional(value.id)) } }
+            Picker("Into",selection:$parent) { Text("Projects home").tag(Optional<UUID>.none);ForEach(parents) { value in Text(LifeItemQuery.path(value,in:all).map(\.title).joined(separator:" / ")).tag(Optional(value.id)) } }
             Picker("Position",selection:$before) { Text("At the end").tag(Optional<UUID>.none);ForEach(all.filter{$0.parentID == parent && $0.id != item.id}) { value in Text("Before "+value.title).tag(Optional(value.id)) } }
-            Text("Contents and relationships move with this item. Your chosen filing takes priority over PA placement.").font(.caption).foregroundStyle(.secondary)
+            Text("Contents and relationships move with this item. The PA keeps the folder you choose.").font(.caption).foregroundStyle(.secondary)
             if let error { Text(error).font(.caption).foregroundStyle(.orange) }
             HStack { Button("Cancel",action:close).keyboardShortcut(.cancelAction);Spacer();Button("Move") { move() }.keyboardShortcut(.defaultAction) }
         }.padding(24).frame(width:500).onAppear { parent=item.parentID;revision=model.assistant.projects.revision }.onChange(of:parent) { before=nil }

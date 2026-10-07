@@ -51,3 +51,54 @@ struct LifeProjectNavigation:Equatable {
     }
     mutating func reconcile(items:[LifeItem]) { if isBrowsing,let currentID,!items.contains(where:{$0.id == currentID}) { home() } }
 }
+
+/// A local browsing projection. PA searches remain descendant-aware; folder pages do not.
+enum LifeFolderContents {
+    static func children(of parent:UUID?,in items:[LifeItem],unfinished:Bool=false)->[LifeItem] {
+        let live=items.filter{$0.deletedAt == nil},ids=Set(items.filter{$0.deletedAt == nil}.map(\.id))
+        return live.filter { item in
+            let inside=parent.map{item.parentID == $0} ?? (item.parentID.map{!ids.contains($0)} ?? true)
+            return inside && (!unfinished || !item.kind.isWork || (item.status != .done && item.status != .archived))
+        }
+    }
+    static func progress(under parent:UUID,in items:[LifeItem])->LifeTaskProgress {
+        let ids=LifeWorkspaceRules.descendants(parent,in:items)
+        return LifeTaskProgress(items:items.filter{ids.contains($0.id) && $0.deletedAt == nil})
+    }
+}
+
+/// Waiting remains a saved state, displayed in To do. Archived work stays out of progress.
+enum LifeTaskStage:String,CaseIterable,Identifiable {
+    case todo="To do",inProgress="In progress",done="Done"
+    var id:String { rawValue }
+    var status:LifeItemStatus { switch self { case .todo:.planned;case .inProgress:.active;case .done:.done } }
+    static func stage(for status:LifeItemStatus)->Self? {
+        switch status { case .planned,.waiting:.todo;case .active:.inProgress;case .done:.done;case .archived:nil }
+    }
+}
+struct LifeTaskProgress:Equatable {
+    var counts:[Int]
+    init(items:[LifeItem]) { counts=LifeTaskStage.allCases.map { stage in items.filter{$0.kind.isWork && $0.deletedAt == nil && LifeTaskStage.stage(for:$0.status) == stage}.count } }
+    var total:Int { counts.reduce(0,+) }
+    var percentages:[Int] {
+        guard total > 0 else { return [0,0,0] }
+        let values=counts.map{Double($0)*100/Double(total)}
+        var rounded=values.map{Int($0.rounded(.down))}
+        let remainder=100-rounded.reduce(0,+)
+        let order=values.indices.sorted { a,b in let left=values[a]-Double(rounded[a]),right=values[b]-Double(rounded[b]);return left == right ? a < b : left > right }
+        for index in order.prefix(remainder) { rounded[index]+=1 }
+        return rounded
+    }
+}
+
+/// Board moves only change a currently permitted task's local stage, at its captured folder revision.
+@MainActor enum LifeTaskStageChange {
+    static func apply(_ id:UUID,stage:LifeTaskStage,parent:UUID?,registration:String,permittedIDs:Set<UUID>,expectedRevision:UUID,store:LifeWorkspaceStore)throws {
+        guard store.revision == expectedRevision,permittedIDs.contains(id),let item=store.items(registration,includeTopics:true).first(where:{$0.id == id}),item.kind.isWork,item.parentID == parent,item.status != .archived else {
+            throw LifeWorkspaceFailure.message("This folder changed. Try moving the task again.")
+        }
+        guard item.status != stage.status else { return }
+        var value=item;value.status=stage.status
+        _ = try store.save(value,expected:item.revision)
+    }
+}

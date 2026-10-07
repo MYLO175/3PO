@@ -13,8 +13,12 @@ import AppKit
         let baseline = LifeItem(registration:registration, kind:.task, title:"Build the first working baseline", parentID:project.id, status:.active, due:"2026-10-12", estimateMinutes:120)
         let experiments = LifeItem(registration:registration, kind:.task, title:"Run the first experiments", parentID:project.id, status:.planned, due:"2026-10-14", estimateMinutes:90)
         let module = LifeItem(registration:registration, kind:.course, title:"Signals and systems", parentID:engineering.id, areas:[.studies])
+        let waiting=LifeItem(registration:registration,kind:.task,title:"Get the sensor specification",parentID:project.id,status:.waiting)
+        let archived=LifeItem(registration:registration,kind:.task,title:"Old prototype",parentID:project.id,status:.archived)
+        let unfiled=LifeItem(registration:registration,kind:.task,title:"Unfiled task stays accessible",areas:[.administration])
+        let personal=LifeItem(registration:registration,kind:.area,title:"Personal projects",areas:[.projects])
         do {
-            _ = try model.assistant.projects.create([university,engineering,project,research,paper,baseline,experiments,module], receipt:.init(id:"preview-only", registration:registration, result:"Fictional preview", itemID:university.id))
+            _ = try model.assistant.projects.create([university,engineering,project,research,paper,baseline,experiments,module,waiting,archived,unfiled,personal], receipt:.init(id:"preview-only", registration:registration, result:"Fictional preview", itemID:university.id))
         } catch { return nil }
         var memory=PAMemory(registration:registration,text:"Sensor Garden is my Engineering project at Example University.",kind:.context,provenance:"Fictional preview",evidence:"Sensor Garden is my Engineering project at Example University.",certainty:.stated,connections:[.init(subject:"Me",relation:"works on",object:"Sensor Garden",evidence:"Sensor Garden is my Engineering project at Example University.")])
         memory.organisation = .init(areas:[.studies],connections:[.init(connection:"0",subjectKind:.person,objectKind:.project,subjectIsSelf:true,objectIsSelf:false)])
@@ -25,6 +29,7 @@ import AppKit
         guard let (registration,university,engineering,project) = seed(model) else { return }
         let previews:[(String,CGFloat,CGFloat,String,String,UUID?)]=[
             ("home",620,500,"light","Overview",nil),
+            ("home-dark",620,500,"dark","Deadlines",nil),
             ("compact",240,500,"dark","Overview",engineering.id),
             ("list",520,570,"light","List",project.id),
             ("life-map",CGFloat(620),CGFloat(500),"light","LifeMap",engineering.id),
@@ -32,6 +37,8 @@ import AppKit
             ("detail",CGFloat(520),CGFloat(570),"dark","Overview",project.id),
             ("narrow",CGFloat(300),CGFloat(400),"dark","Overview",engineering.id),
             ("board",CGFloat(740),CGFloat(490),"light","Board",project.id),
+            ("leaf",CGFloat(740),CGFloat(430),"dark","Overview",model.assistant.projects.items(registration).first{$0.title == "Research"}?.id),
+            ("empty",CGFloat(520),CGFloat(380),"light","Overview",model.assistant.projects.items(registration).first{$0.title == "Signals and systems"}?.id),
             ("outline",CGFloat(500),CGFloat(600),"dark","Outline",university.id),
             ("deadlines",CGFloat(420),CGFloat(360),"light","Deadlines",project.id)
         ]
