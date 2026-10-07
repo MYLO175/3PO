@@ -362,6 +362,7 @@ struct AssistantSourceSettings: View {
                     let progress=model.heartbeat.state.accounts[model.chatGPT.activeID]
                     LabeledContent("Last source check",value:progress?.checked?.formatted(date:.abbreviated,time:.shortened) ?? "Not recorded")
                     LabeledContent("Last completed review",value:progress?.assessed?.formatted(date:.abbreviated,time:.shortened) ?? "Not recorded")
+                    LabeledContent("Automatic review",value:model.heartbeat.scheduleStatus(model))
                     if progress?.pending == true { Text("Changed or unfinished review work is waiting.").font(.caption).foregroundStyle(.secondary) }
                     Text(model.heartbeat.statusFor(model.chatGPT.activeID)).font(.caption).foregroundStyle(.secondary)
                     Text("Sources collect without AI. At each review, checked Mail accounts can continue while others wait; their cached data and pending work are kept. Email assessment can run while a Calendar/Reminders comparison is waiting. Proposals appear in Review inbox and require your approval. There is no daily cap on useful items. Reviews run while 3PO is open and your Mac is awake.").font(.caption).foregroundStyle(.secondary)
@@ -435,6 +436,7 @@ struct BackgroundActivityView:View {
                         VStack(alignment:.leading,spacing:8) {
                             Text(model.heartbeat.statusFor(registration)).textSelection(.enabled)
                             Text(model.heartbeat.budgetStatus(registration)).font(.caption).foregroundStyle(.secondary)
+                            Text(model.heartbeat.scheduleStatus(model)).font(.callout)
                             Text("This is app review usage, separate from your subscription allowance and other AI jobs.").font(.caption).foregroundStyle(.secondary)
                             let mailStatus=model.heartbeat.mailReviewStatus(model)
                             if !mailStatus.isEmpty {Text(mailStatus).font(.callout)}

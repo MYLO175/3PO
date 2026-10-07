@@ -10,6 +10,8 @@ struct PAHeartbeatAccount: Codable {
     var pending:Bool? = nil
     var mailLanes:[String:PAHeartbeatMailLane]? = nil
     var reviews:[PAReviewRun]? = nil
+    var retryAfter:Date? = nil
+    var retryReason:String? = nil
 }
 struct PAReviewRun:Codable,Identifiable {
     var id:String
@@ -37,8 +39,40 @@ struct PAHeartbeatState: Codable {
 }
 enum PAHeartbeatRules {
     static let defaultMinutes = 60
-    static func due(_ account: PAHeartbeatAccount, now: Date, minutes:Int = defaultMinutes) -> Bool {
-        account.checked.map { now.timeIntervalSince($0) >= Double(minutes)*60 } ?? true
+    static func nextReview(_ account:PAHeartbeatAccount,now:Date,minutes:Int = defaultMinutes,day:String? = nil,allowance:Int? = nil)->Date {
+        if account.phase != "paused",let retry=account.retryAfter {
+            if account.retryReason == "allowance",let day,account.budgetDay != day {return now}
+            if account.retryReason == "allowance",let day,let allowance,callCount(account,day:day) < allowance {return now}
+            return retry
+        }
+        return account.checked?.addingTimeInterval(Double(minutes)*60) ?? now
+    }
+    static func due(_ account: PAHeartbeatAccount, now: Date, minutes:Int = defaultMinutes,day:String? = nil,allowance:Int? = nil) -> Bool {
+        nextReview(account,now:now,minutes:minutes,day:day,allowance:allowance) <= now
+    }
+    enum WaitReason:String {case foreground,sources,allowance}
+    static func deferred(_ account:PAHeartbeatAccount,now:Date,reason:WaitReason,calendar:Calendar = .current)->PAHeartbeatAccount {
+        var value=account;value.pending=true
+        guard value.phase != "paused" else {value.retryAfter=nil;value.retryReason=nil;return value}
+        value.phase="idle";value.retryReason=reason.rawValue
+        value.retryAfter=reason == .allowance ? calendar.date(byAdding:.day,value:1,to:calendar.startOfDay(for:now)) : now.addingTimeInterval(reason == .foreground ? 60 : 300)
+        return value
+    }
+    static func clearWait(_ account:PAHeartbeatAccount)->PAHeartbeatAccount {
+        var value=account;value.retryAfter=nil;value.retryReason=nil;return value
+    }
+    static func quiet(_ account:PAHeartbeatAccount,fingerprint:String,ready:Set<String>,pending:Bool)->PAHeartbeatAccount {
+        var value=clearWait(account)
+        guard value.phase != "paused" else {value.pending=true;return value}
+        value.phase="idle";value.pending=pending;value.fingerprint=fingerprint
+        for id in ready where value.mailLanes?[id] != nil {value.mailLanes?[id]?.pending=false}
+        return value
+    }
+    static func interrupted(_ account:PAHeartbeatAccount,now:Date,foreground:Bool)->PAHeartbeatAccount {
+        if account.phase == "assessing" || account.phase == "paused" {
+            var value=clearWait(account);value.phase="paused";value.pending=true;return value
+        }
+        return deferred(account,now:now,reason:foreground ? .foreground : .sources)
     }
     static func needsAssessment(_ account: PAHeartbeatAccount, fingerprint: String, manual: Bool,pendingSources:Bool = false) -> Bool {
         manual || (account.phase != "paused" && account.phase != "assessing" && (account.pending == true || pendingSources || account.fingerprint != fingerprint))
@@ -49,10 +83,10 @@ enum PAHeartbeatRules {
         guard count < limit else { throw HeartbeatBudgetExhausted() }
         var value=account;value.budgetDay=day;value.calls=count+1;return value
     }
-    static func recovered(_ account: PAHeartbeatAccount) -> PAHeartbeatAccount {
-        var value = account
-        if value.phase == "assessing" { value.phase = "paused" }
-        return value
+    static func recovered(_ account: PAHeartbeatAccount,now:Date = .now) -> PAHeartbeatAccount {
+        if account.phase == "assessing" || account.phase == "paused" {return interrupted(account,now:now,foreground:false)}
+        if account.phase == "refreshing" {return deferred(account,now:now,reason:.sources)}
+        return account
     }
     static func collectingMail(_ account:PAHeartbeatAccount,enabled:Set<String>,ready:Set<String>,issues:[String:String],now:Date)->PAHeartbeatAccount {
         var value=account,lanes=(account.mailLanes ?? [:]).filter{enabled.contains($0.key)}
