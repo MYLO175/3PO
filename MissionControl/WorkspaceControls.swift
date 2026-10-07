@@ -2,7 +2,7 @@ import Foundation
 
 enum WorkspaceTool: String, CaseIterable {
     case date, assistant, refresh, addWidget, edit, undo, appearance
-    var title: String { switch self { case .date: return "Date"; case .assistant: return "Assistant"; case .refresh: return "Refresh"; case .addWidget: return "Add widget"; case .edit: return "Edit layout"; case .undo: return "Undo"; case .appearance: return "Appearance" } }
+    var title: String { switch self { case .date: return "Date"; case .assistant: return "Assistant"; case .refresh: return "Run heartbeat"; case .addWidget: return "Add widget"; case .edit: return "Edit layout"; case .undo: return "Undo"; case .appearance: return "Appearance" } }
 }
 enum ToolbarRules {
     static func visible(_ tool: WorkspaceTool, hidden: String) -> Bool { !Set(hidden.split(separator:",").map(String.init)).contains(tool.rawValue) }

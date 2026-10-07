@@ -369,7 +369,7 @@ struct AssistantSourceSettings: View {
                     Text("Each heartbeat refreshes enabled sources, reviews what matters, prepares suggestions or reply drafts, and updates Today’s brief. Questions and proposals go to Review inbox; you approve changes. A missed check runs once after reopening or waking. 3PO must be open and the Mac awake. Failed AI work waits for Resume.").font(.caption).foregroundStyle(.secondary)
                     Button("Open Review inbox") {model.workspace.showReviewInbox();openWindow(id:"dashboard")}.disabled(model.workspace.readOnly)
                     Button("Background activity") {showingActivity=true}
-                    Button("Run heartbeat now") { model.heartbeat.check(model,manual:true) }.disabled(model.heartbeat.busy || model.assistant.busy || model.chatGPT.busy)
+                    Button("Run heartbeat now") { model.heartbeat.check(model,manual:true) }.disabled(model.heartbeat.manualCheckBlockReason(model) != nil).help(model.heartbeat.manualCheckHelp(model))
                     let mailReviewStatus=model.heartbeat.mailReviewStatus(model)
                     if !mailReviewStatus.isEmpty {Text(mailReviewStatus).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)}
                 }

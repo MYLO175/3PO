@@ -55,9 +55,9 @@ struct PATasksView: View {
                 Spacer()
                 Button { showingActivity=true } label:{Image(systemName:"clock.arrow.circlepath")}
                     .buttonStyle(.borderless).help("Background activity and details").accessibilityLabel("Background activity")
-                Button { model.heartbeat.check(model,manual:true) } label:{Image(systemName:"arrow.clockwise")}
-                    .buttonStyle(.borderless).help("Check sources and review new material").accessibilityLabel("Check for suggestions")
-                    .disabled(reviewBusy || model.assistant.busy || model.chatGPT.busy || model.writing || ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"))
+                Button { model.heartbeat.check(model,manual:true) } label:{Image(systemName:"waveform.path.ecg")}
+                    .buttonStyle(.borderless).help(model.heartbeat.manualCheckHelp(model)).accessibilityLabel("Run heartbeat")
+                    .disabled(model.heartbeat.manualCheckBlockReason(model) != nil)
             }
             HStack(spacing:8) {
                 if reviewBusy {ProgressView().controlSize(.mini)}
@@ -67,7 +67,7 @@ struct PATasksView: View {
                 if reviewPaused {
                     Button("Resume") {model.heartbeat.check(model,manual:true)}.buttonStyle(.borderless).font(.caption)
                         .help("Resume background review, including enabled email processing")
-                        .disabled(reviewBusy || model.assistant.busy || model.chatGPT.busy || model.writing || ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"))
+                        .disabled(model.heartbeat.manualCheckBlockReason(model) != nil)
                 }
             }
             ScrollView {

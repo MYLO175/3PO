@@ -118,7 +118,8 @@ struct MenuContent: View {
     @Environment(\.openWindow) var openWindow
     var body: some View {
         Button("Open dashboard") { NSApp.activate(ignoringOtherApps: true); openWindow(id: "dashboard") }
-        Button("Refresh") { model.refresh() }
+        Button("Run heartbeat") { model.heartbeat.check(model,manual:true) }.disabled(model.heartbeat.manualCheckBlockReason(model) != nil).help(model.heartbeat.manualCheckHelp(model))
+        Button("Refresh sources only") { model.refresh() }.help("Update cached sources without AI")
         SettingsLink { Text("Settings…") }
         Divider()
         Button("Quit 3PO") { NSApp.terminate(nil) }.keyboardShortcut("q")

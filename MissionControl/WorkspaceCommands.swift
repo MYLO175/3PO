@@ -40,7 +40,9 @@ struct WorkspaceCommands: Commands {
             }.disabled(workspace == nil || model.workspace.readOnly)
             Toggle("Edit layout",isOn:editing).disabled(workspace == nil || model.workspace.readOnly)
             Divider()
-            Button("Refresh Apple sources") { model.refresh() }.keyboardShortcut("r",modifiers:.command)
+            Button("Run heartbeat") { model.heartbeat.check(model,manual:true) }.keyboardShortcut("r",modifiers:.command)
+                .disabled(workspace == nil || model.heartbeat.manualCheckBlockReason(model) != nil)
+            Button("Refresh sources only") { model.refresh() }.keyboardShortcut("r",modifiers:[.command,.option])
         }
         CommandGroup(replacing:.undoRedo) {
             Button(usesTextUndo ? "Undo" : model.undoLabel) {

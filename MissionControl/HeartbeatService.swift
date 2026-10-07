@@ -78,6 +78,19 @@ import SwiftData
     private func workBusy(_ model:DashboardModel)->Bool {
         model.assistant.busy || model.chatGPT.busy || model.projectPlacement.busy || model.briefings.busy || model.proactive.busy || model.emailSummaries.busy || model.sourceLearning.busy || model.nativeSourceLearning.busy || model.memoryMaintenance.busy || model.memoryLearning.busy || model.lifeOrganisation.busy || model.writing
     }
+    func manualCheckBlockReason(_ model:DashboardModel)->String? {
+        if busy {return "A heartbeat is already running. See Background activity for progress."}
+        if !readable {return "Saved review state is unavailable. See Background activity for details."}
+        if ProcessInfo.processInfo.arguments.contains("--sample") || ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {return "Heartbeat is unavailable in this preview."}
+        if model.chatGPT.activeID.isEmpty || !model.chatGPT.inferenceVerified {return "Connect your ChatGPT subscription in Settings to run a heartbeat."}
+        if !model.assistant.contextEnabled {return "Enable PA context in Settings to run a heartbeat."}
+        if model.chatGPT.usagePaused {return "AI usage is paused. Resume it in Settings before running a heartbeat."}
+        if workBusy(model) {return "Wait for the current PA work to finish before running a heartbeat."}
+        return nil
+    }
+    func manualCheckHelp(_ model:DashboardModel)->String {
+        manualCheckBlockReason(model) ?? "Run heartbeat: check enabled sources, review with AI and update your brief and Review inbox. Uses AI allowance."
+    }
     func mailReviewStatus(_ model:DashboardModel)->String {
         let lanes=state.accounts[model.chatGPT.activeID]?.mailLanes ?? [:]
         return model.mailData.accounts.filter{!model.assistant.excludedAccounts.contains($0.id)}.compactMap{account in

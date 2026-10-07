@@ -102,7 +102,8 @@ struct WorkspaceView: View {
             Button { showAssistant() } label: { Label("Assistant",systemImage:"bubble.left.and.bubble.right") }.help("Assistant (⌘J)")
         }.defaultCustomization(visible(.assistant) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
         ToolbarItem(id:"refresh") {
-            Button { model.refresh() } label: { Label("Refresh",systemImage:"arrow.clockwise") }.help("Refresh Apple sources (⌘R)")
+            Button { model.heartbeat.check(model,manual:true) } label: { Label("Run heartbeat",systemImage:"waveform.path.ecg") }
+                .disabled(model.heartbeat.manualCheckBlockReason(model) != nil).help(model.heartbeat.manualCheckHelp(model)+" (⌘R)")
         }.defaultCustomization(visible(.refresh) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
         }
         Group {
@@ -126,7 +127,8 @@ struct WorkspaceView: View {
                 Section("Actions") {
                     Toggle("Show sidebar",isOn:$sidebarVisible)
                     Button("Assistant") { showAssistant() }
-                    Button("Refresh") { model.refresh() }
+                    Button("Run heartbeat") { model.heartbeat.check(model,manual:true) }.disabled(model.heartbeat.manualCheckBlockReason(model) != nil).help(model.heartbeat.manualCheckHelp(model))
+                    Button("Refresh sources only") { model.refresh() }.help("Update cached sources without AI (⌥⌘R)")
                     Menu("Add widget") { widgetChoices }
                     Toggle("Edit layout",isOn:$editing)
                     Button(model.undoLabel) { model.undoLatest() }.disabled(model.latestUndo == nil || model.writing || model.assistant.busy)

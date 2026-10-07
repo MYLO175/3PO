@@ -27,7 +27,8 @@ struct DashboardView: View {
                 Spacer()
                 if ProcessInfo.processInfo.arguments.contains("--sample") { Text("Sample data").foregroundStyle(.secondary) }
                 Button { assistantExpanded.toggle() } label: { Label("Assistant", systemImage: "sparkles") }.keyboardShortcut("j",modifiers:.command).help("Show or hide Assistant (⌘J)")
-                Button { model.refresh() } label: { Label("Refresh", systemImage: "arrow.clockwise") }.keyboardShortcut("r",modifiers:.command).help("Refresh Apple sources (⌘R)")
+                Button { model.heartbeat.check(model,manual:true) } label: { Label("Run heartbeat", systemImage: "waveform.path.ecg") }.keyboardShortcut("r",modifiers:.command)
+                    .disabled(model.heartbeat.manualCheckBlockReason(model) != nil).help(model.heartbeat.manualCheckHelp(model)+" (⌘R)")
                 SettingsLink { Image(systemName: "gearshape") }.buttonStyle(.borderless).help("Settings")
             }.padding(24)
             Divider()
@@ -458,6 +459,7 @@ struct PAHelpSections:View {
         Group {
             Section("How 3PO works") {
                 Text("Heartbeat: refresh enabled sources → review what matters → update your brief and Review inbox → you approve changes.").font(.headline)
+                Text("The toolbar pulse button (⌘R) runs a heartbeat now. Refresh sources only (⌥⌘R) is in the Dashboard menu and uses no AI. Mail checks every five minutes while open; Calendar and Reminders react to native changes; connected WhatsApp receives messages continuously.").font(.callout)
                 Text("Calendar, Reminders, Mail and WhatsApp refresh do not start inference. Reviews use only enabled sources and show partial coverage when history or access is limited.").font(.callout)
                 Text("3PO does not send email or WhatsApp messages. Imported messages can inform a suggestion, but never authorise a Calendar or Reminders change.").font(.callout)
             }
