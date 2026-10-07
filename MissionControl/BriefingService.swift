@@ -176,7 +176,8 @@ import UserNotifications
     func cancel() { task?.cancel() }
     func check(_ model: DashboardModel, manual: Bool = false, live requestedUpdate: Bool = false, heartbeatID:String? = nil, mailReview:MailReviewScope? = nil, whatsappReady:Bool = true) {
         let heartbeat=heartbeatID != nil,heartbeatControls=model.heartbeat.controlsRevision
-        let now = Date.now, day = BriefingRules.day(now)
+        let now = Date.now, calendar = Calendar.current
+        let day = BriefingRules.day(now,calendar:calendar)
         let live=heartbeat || requestedUpdate || (manual && hasMorningToday(model))
         let completed=BriefingRules.completedDays(records:state.records,registration:model.chatGPT.activeID)
         if !heartbeat,enabled, let saved=today(model) { model.assistant.deliverMorning(saved) }
@@ -207,6 +208,7 @@ import UserNotifications
                         (registration == model.chatGPT.activeID,"account"),
                         (!heartbeat || (model.heartbeat.busy && heartbeatControls == model.heartbeat.controlsRevision && (manual || model.heartbeat.enabled) && !model.heartbeat.composerActive),"heartbeat ownership"),
                         (selectedModel == model.chatGPT.selectedModel,"AI model"),
+                        (calendar.timeZone == Calendar.current.timeZone,"local timezone"),
                         (preferences == model.assistant.preferences,"PA preferences"),
                         (weatherScope == model.weather.scope,"weather permissions"),
                         (whatsappAccess.briefEnabled == model.whatsapp.access(for:registration).briefEnabled && (!whatsappAccess.briefEnabled || whatsappScope == model.whatsapp.scope(for:model.chatGPT.activeID)),"WhatsApp connection or selection"),
@@ -221,7 +223,7 @@ import UserNotifications
                     let changed=checks.filter { !$0.0 }.map { $0.1 }
                     guard changed.isEmpty else { throw ActionFailure.message("Preparation stopped because \(changed.joined(separator:", ")) changed. No outdated brief was saved; prepare again.") }
                 }
-                var sources: [BriefingSource] = [], input: [String:Any] = ["now":DateRules.localTimestamp(now),"timezone":TimeZone.current.identifier]
+                var sources: [BriefingSource] = [], input: [String:Any] = BriefingRules.clockInput(now,calendar:calendar)
                 // EventKit notifications are invalidation hints, not proof the supplied records changed.
                 // Gather a coherent native snapshot before inference; compare fresh records after a hint.
                 @MainActor func readNative() async throws -> (input:[String:Any],sources:[BriefingSource],revision:Int) {
@@ -313,6 +315,8 @@ import UserNotifications
                 try Task.checkCancellation()
                 try await validateNative()
                 try validatePreparation()
+                // Source collection can take time. Supply the current local period immediately before inference.
+                input.merge(BriefingRules.clockInput(.now,calendar:calendar)) { _,new in new }
                 var stableInput = input; stableInput.removeValue(forKey:"now"); stableInput["localDay"] = day
                 try validateMessages()
                 let fingerprint = SHA256.hash(data:try JSONSerialization.data(withJSONObject:stableInput,options:[.sortedKeys])).map { String(format:"%02x",$0) }.joined()

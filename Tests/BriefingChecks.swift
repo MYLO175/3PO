@@ -37,6 +37,16 @@ import Foundation
         }
         var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "Europe/London")!
         func date(_ y: Int, _ m: Int, _ d: Int, _ h: Int, _ min: Int = 0) -> Date { c.date(from: DateComponents(year: y, month: m, day: d, hour: h, minute: min))! }
+        for (hour,minute,expected) in [(4,59,"evening"),(5,0,"morning"),(11,59,"morning"),(12,0,"afternoon"),(17,59,"afternoon"),(18,0,"evening"),(23,59,"evening")] {
+            precondition(BriefingRules.period(date(2026,10,7,hour,minute),calendar:c) == expected)
+        }
+        let noonClock=BriefingRules.clockInput(date(2026,10,7,12),calendar:c)
+        precondition(noonClock["now"] == "2026-10-07T12:00:00+01:00" && noonClock["greeting"] == "Good afternoon." && noonClock["dayPeriod"] == "afternoon" && noonClock["localDay"] == "2026-10-07")
+        var newYork=c;newYork.timeZone=TimeZone(identifier:"America/New_York")!
+        precondition(BriefingRules.greeting(date(2026,10,7,12),calendar:newYork) == "Good morning.","Greeting follows the supplied local timezone, not UTC or the machine's zone")
+        for localDay in [date(2026,3,29,12),date(2026,10,25,12)] {
+            precondition(BriefingRules.greeting(localDay,calendar:c) == "Good afternoon.","Noon remains afternoon across DST changes")
+        }
         for day in [date(2026,3,29,7),date(2026,10,25,7),date(2026,12,31,7)] {
             assert(!BriefingRules.due(now: day, completed: [], calendar: c))
             let scheduled = c.date(bySettingHour: 7, minute: 30, second: 0, of: day)!
@@ -67,6 +77,11 @@ import Foundation
         let legacyMessage = try BriefingRules.message(good); precondition(legacyMessage == nil)
         var blankRejected = false; do { _ = try BriefingRules.message(#"{"message":"  "}"#) } catch { blankRejected = true }; precondition(blankRejected)
         let morning = DailyBriefing(id:"morning",registration:"account",day:"2026-10-02",created:date(2026,10,2,7,30),items:items,sources:[],coverage:"partial",sourceScope:"scope",message:"Good morning")
+        var fallback=morning;fallback.message=nil;fallback.created=date(2026,10,2,14)
+        precondition(BriefingRules.prose(fallback,calendar:c).hasPrefix("Good afternoon."))
+        fallback.created=date(2026,10,2,20)
+        precondition(BriefingRules.prose(fallback,calendar:c).hasPrefix("Good evening."))
+        precondition(BriefingRules.prose(morning,calendar:c) == "Good morning","Stored message prose remains immutable; the clock does not rewrite history")
         var update = morning; update.id = "update"; update.morningID = morning.id; update.created = date(2026,10,2,12); update.message = "This afternoon"
         let noon = date(2026,10,2,12)
         assert(BriefingRules.current(morning:morning,update:update,now:noon,calendar:c).id == "update")
@@ -131,6 +146,6 @@ import Foundation
         let decodedState=try JSONDecoder().decode(BriefingState.self,from:JSONEncoder().encode(questionState))
         precondition(decodedState.reviewQuestions?.first?.dismissed == true && decodedState.updatedBriefs?["owner"]?.heartbeatID == "run-1")
         precondition(decodedState.records.isEmpty && decodedState.notificationClaims.isEmpty,"Heartbeat updates never claim a morning delivery or notification")
-        print("PASS: 7:30 threshold, DST dates, sleep catch-up, saved completion, notification claim round-trip, source identity validation")
+        print("PASS: local morning/afternoon/evening boundaries, timezone/DST clock, immutable saved prose, 7:30 threshold, sleep catch-up, notification claims and source identity validation")
     }
 }

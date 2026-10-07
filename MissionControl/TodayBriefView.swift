@@ -10,7 +10,7 @@ struct TodayBriefView: View {
                 Label("Today’s brief",systemImage:"sun.max").font(.title3.weight(.semibold))
                 Spacer()
                 if briefings.busy { ProgressView().controlSize(.small); Button("Stop") { briefings.cancel() } }
-                else { Button { briefings.updateToday(model) } label: { Image(systemName:"arrow.clockwise") }.help(!briefings.hasCurrentToday(model) ? "Prepare today’s brief" : "Update brief with fresh sources; keeps the morning message").accessibilityLabel(!briefings.hasCurrentToday(model) ? "Prepare today’s brief" : "Update today’s brief").disabled(model.heartbeat.busy) }
+                else { Button { briefings.updateToday(model) } label: { Image(systemName:"arrow.clockwise") }.help(!briefings.hasCurrentToday(model) ? "Prepare today’s brief" : "Update brief with fresh sources; keeps the original message").accessibilityLabel(!briefings.hasCurrentToday(model) ? "Prepare today’s brief" : "Update today’s brief").disabled(model.heartbeat.busy) }
             }.buttonStyle(.borderless)
             if model.heartbeat.busy && !briefings.busy {Text("The heartbeat will update your brief shortly…").font(.caption).foregroundStyle(.secondary)}
             if briefings.busy { Text(briefings.phase.isEmpty ? "Preparing today’s brief…" : briefings.phase).font(.caption).foregroundStyle(.secondary) }
@@ -23,7 +23,7 @@ struct TodayBriefView: View {
                         }
                         Text((try? AttributedString(markdown:BriefingRules.prose(record),options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(BriefingRules.prose(record))).font(.callout).lineSpacing(5).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)
                         if record.morningID != nil, let morning = briefings.savedMorning(model) {
-                            DisclosureGroup("Original morning message") {
+                            DisclosureGroup("Original brief") {
                                 Text((try? AttributedString(markdown:BriefingRules.prose(morning),options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(BriefingRules.prose(morning))).font(.callout).lineSpacing(5).textSelection(.enabled).padding(.top,8)
                             }.font(.caption)
                         }
