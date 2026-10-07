@@ -36,6 +36,10 @@ import EventKit
     var previewLoading = false
     var previewError: String?
     var writeError: String?
+    private(set) var approvingDiscoveryID:String?
+    private(set) var reviewApprovalError:String?
+    private(set) var reviewApprovalErrorID:String?
+    private(set) var reviewApprovalErrorAccount:String?
     var writing = false
     var undoToken: String? { didSet { completionUndoDate = undoToken == nil ? nil : .now } }
     private var completionUndoDate: Date?
@@ -176,8 +180,10 @@ import EventKit
         if ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") {
             Task {
                 let result:[String:Any]
-                do {result=try await ReviewInboxEvaluation.run(self)} catch {result=["error":error.localizedDescription,"storage":"Fictional disposable source-free startup"]}
-                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-review-inbox-evaluation.json"),options:.atomic)}
+                let approvalOnly=ProcessInfo.processInfo.arguments.contains("--approval-only")
+                do {result=try await (approvalOnly ? ReviewInboxEvaluation.runApproval(self) : ReviewInboxEvaluation.run(self))} catch {result=["error":error.localizedDescription,"storage":"Fictional disposable source-free startup"]}
+                let path=approvalOnly ? "/tmp/missioncontrol-review-approval-evaluation.json" : "/tmp/missioncontrol-review-inbox-evaluation.json"
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:path),options:.atomic)}
                 NSApp.terminate(nil)
             };return
         }
@@ -521,10 +527,9 @@ import EventKit
     }
     func reviewDiscovery(_ record:PADiscovery,as kind:NativeItemKind? = nil) {
         guard proactive.visible(record,model:self),record.registration == chatGPT.activeID,let id=UUID(uuidString:record.id) else { return }
-        if let change=record.proposedChange,let date=change.date() {
-            let review=NativeDateReview(discoveryID:record.id,registration:record.registration,date:date,hasTime:change.hasTime,expectedModified:change.target.modified,evidence:record.message+"\n\nWhy this item: "+change.connection+"\n\nSource: "+record.evidence)
-            if change.target.kind == "event",let item=(paOrientation?.calendar ?? calendarData).events.first(where:{$0.id == change.target.itemID}) { editTarget = .reviewEvent(item,review) }
-            else if change.target.kind == "reminder",let item=reminderData.reminders.first(where:{$0.id == change.target.itemID}) { editTarget = .reviewReminder(item,review) }
+        if record.proposedChange != nil {
+            guard !writing,proactive.canReview(record.id,model:self),let current=proactive.state.records.first(where:{$0.id == record.id && $0.registration == record.registration}) else {return}
+            editTarget=dateReviewTarget(current)
             return
         }
         let label:String,title:String
@@ -535,6 +540,40 @@ import EventKit
         }
         let selectedKind=kind ?? (record.kind == "calendar" ? .event : .reminder)
         editTarget = .create(NativeCreationRequest(id:id,kind:selectedKind,registration:record.registration,title:String(title.prefix(500)),notes:"Source: " + label + "\n" + record.evidence,discoveryID:record.id,evidence:record.message + "\n\n" + label + ": " + record.evidence,requiresDateSelection:selectedKind == .event))
+    }
+    private func dateReviewTarget(_ record:PADiscovery)->NativeEditTarget? {
+        guard let change=record.proposedChange,let date=change.date() else {return nil}
+        let review=NativeDateReview(discoveryID:record.id,registration:record.registration,date:date,hasTime:change.hasTime,expectedModified:change.target.modified,evidence:record.message+"\n\nWhy this item: "+change.connection+"\n\nSource: "+record.evidence)
+        if change.target.kind == "event",let item=(paOrientation?.calendar ?? calendarData).events.first(where:{$0.id == change.target.itemID}) {return .reviewEvent(item,review)}
+        if change.target.kind == "reminder",let item=reminderData.reminders.first(where:{$0.id == change.target.itemID}) {return .reviewReminder(item,review)}
+        return nil
+    }
+    func approveDiscovery(_ record:PADiscovery) async {
+        guard !sample,!writing,!assistant.busy,approvingDiscoveryID == nil,
+              record.registration == chatGPT.activeID,proactive.canReview(record.id,model:self),
+              let current=proactive.state.records.first(where:{$0.id == record.id && $0.registration == record.registration}),
+              let target=dateReviewTarget(current) else {return}
+        let review:NativeDateReview
+        switch target {case .reviewEvent(_,let value),.reviewReminder(_,let value):review=value;default:return}
+        approvingDiscoveryID=record.id;reviewApprovalError=nil;reviewApprovalErrorID=nil;reviewApprovalErrorAccount=nil;writing=true
+        defer {writing=false;approvingDiscoveryID=nil}
+        do {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {throw ActionFailure.message("Fictional preview is read-only; no Apple write.")}
+            #endif
+            let session=try await eventKit.editSession(target)
+            try Task.checkCancellation()
+            guard review.registration == chatGPT.activeID,proactive.canReview(review.discoveryID,model:self) else {throw ActionFailure.message("The proposal or its source changed. Check for a fresh proposal before approving it.")}
+            let edited=try review.applying(to:session.item)
+            // A repeating item needs an explicit occurrence/series choice in the native form.
+            if session.item.recurring {editTarget=target;return}
+            writing=false
+            try await saveNativeEdit(baseline:session.item,edited:edited,review:review)
+        } catch {
+            if review.registration == chatGPT.activeID {
+                reviewApprovalError=error.localizedDescription;reviewApprovalErrorID=record.id;reviewApprovalErrorAccount=record.registration
+            }
+        }
     }
     func createNativeItem(_ request: NativeCreationRequest, baseline: NativeEditDetails, edited: NativeEditDetails, dateSelected: Bool) async throws {
         guard !sample, !writing, !assistant.busy, request.registration == chatGPT.activeID else { throw ActionFailure.message("Another change or account switch is in progress; reopen the form when ready.") }

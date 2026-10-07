@@ -1,6 +1,7 @@
 #if DEBUG
 import Foundation
 import SwiftUI
+import EventKit
 
 @MainActor enum ReviewInboxEvaluation {
     static func seed(_ model:DashboardModel)throws->PADiscovery {
@@ -20,6 +21,52 @@ import SwiftUI
     static func previewSession(_ target:NativeEditTarget)->NativeEditSession? {
         guard ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"),case .reviewReminder(let task,_) = target else {return nil}
         return .init(item:.init(kind:.reminder,itemID:task.id,occurrenceID:task.id,sourceID:task.listID,title:task.title,notes:"Original fictional notes stay intact.",due:task.due,hasTime:task.hasTime,writable:true,modified:task.modified),sources:[.init(id:task.listID,title:task.sourceLabel,account:"Fictional",writable:true)])
+    }
+    // Runs the real inbox coordinator without inference, against one UUID-marked native fixture.
+    static func runApproval(_ model:DashboardModel) async throws->[String:Any] {
+        var record=try seed(model),checks:[String:Bool]=[:],cleanupError="",failure=""
+        let fixture=try await model.eventKit.makeApprovalFixture(excluded:model.assistant.excludedLists)
+        func stage(_ item:NativeEditDetails)throws {
+            let task=TaskItem(id:item.itemID,listID:item.sourceID,title:item.title,due:item.due,hasTime:item.hasTime,sourceLabel:"Disposable validation",writable:item.writable,recurring:item.recurring,modified:item.modified)
+            model.reminderData = .init(sources:[.init(id:task.listID,title:task.sourceLabel,account:"Fixture",writable:true)],reminders:[task])
+            record.proposedChange?.target = .reminder(task);record.reviewState=nil;record.dismissed=false
+            try model.proactive.seedAdviceFixture([record],model:model)
+        }
+        do {
+            try stage(fixture.item)
+            checks["proposal alone leaves native item untouched"] = try await model.eventKit.readApprovalFixture(fixture) == fixture.item
+            model.proactive.dismiss(record)
+            checks["Dismiss preserves complete native item and does not claim a save"] = try await model.eventKit.readApprovalFixture(fixture) == fixture.item && model.proactive.state.records[0].dismissed && model.proactive.state.records[0].reviewState == nil
+            model.proactive.undo(model)
+            // Saved assessment headers deliberately survive mail-page eviction; withdraw the account too.
+            let mail=model.mailData;model.mailData = .init(messages:[],accounts:[],errors:[])
+            await model.approveDiscovery(record)
+            checks["withdrawn source refuses approval without native mutation"] = try await model.eventKit.readApprovalFixture(fixture) == fixture.item
+            model.mailData=mail
+            try await model.eventKit.changeApprovalFixture(fixture)
+            let changed=try await model.eventKit.readApprovalFixture(fixture)
+            await model.approveDiscovery(record)
+            checks["outside native edit refuses old approval and remains intact"] = try await model.eventKit.readApprovalFixture(fixture) == changed && model.proactive.state.records[0].reviewState == nil && model.reviewApprovalError != nil
+            try stage(changed)
+            await model.approveDiscovery(record)
+            let saved=try await model.eventKit.readApprovalFixture(fixture)
+            checks["Approve applies exactly the proposed reminder date"] = DateRules.localDate(saved.due ?? .distantPast) == record.proposedChange?.newDate && !saved.hasTime
+            var expected=changed;expected.due=record.proposedChange?.date();expected.hasTime=false;expected.modified=saved.modified
+            checks["Approve preserves every other native field"] = saved == expected
+            checks["verified approval persisted and removed from active inbox"] = model.proactive.state.records[0].reviewState == "approved" && !model.proactive.visible(model.proactive.state.records[0],model:model)
+            checks["simple approval needs no second form"] = model.editTarget == nil
+            await model.approveDiscovery(record)
+            checks["second approval does not repeat the native save"] = try await model.eventKit.readApprovalFixture(fixture) == saved
+            _ = try await model.undoAssistantAppleChange()
+            let restored=try await model.eventKit.readApprovalFixture(fixture)
+            var expectedRestore=changed;expectedRestore.modified=restored.modified
+            checks["supported Undo restores original native fields"] = restored == expectedRestore
+            checks["approval never creates normal chat messages"] = model.assistant.feed?.turns.isEmpty ?? true
+            checks["write ownership released after approval"] = !model.writing && model.approvingDiscoveryID == nil
+        } catch {failure=error.localizedDescription}
+        do {try await model.eventKit.removeApprovalFixture(fixture);checks["marked fixture removed and absence verified"]=true}
+        catch {cleanupError=error.localizedDescription;checks["marked fixture removed and absence verified"]=false}
+        return ["completed":Date.now.ISO8601Format(),"requests":0,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"error":failure,"cleanupError":cleanupError,"storage":"Disposable SwiftData, fictional Mail evidence and one exact UUID-marked native Reminder; no source startup, inference or settings changes."]
     }
     static func run(_ model:DashboardModel)async throws->[String:Any] {
         let record=try seed(model),account=model.chatGPT.activeID,selected=model.chatGPT.selectedModel
@@ -59,6 +106,39 @@ import SwiftUI
         do {let native=try await model.eventKit.validateReviewClaim();for (key,value) in native {checks[key]=value}}
         catch {checks["native approval and cleanup validation completed"]=false;nativeError=error.localizedDescription}
         return ["completed":Date.now.ISO8601Format(),"requests":1,"model":selected,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"nativeError":nativeError,"outputs":records.map{["kind":$0.kind,"message":$0.message,"source":$0.mailID,"newDate":$0.proposedChange?.newDate ?? "none"]},"storage":"Fictional messages/native snapshots and disposable SwiftData before source startup. Native validation attempts only one UUID-marked disposable Reminder and reports verified cleanup or an error; no personal settings changes. One narrow quality scenario, not sustained live scheduling."]
+    }
+}
+struct ReviewApprovalFixture {
+    var item:NativeEditDetails
+    var marker:String
+}
+extension EventKitService {
+    func makeApprovalFixture(excluded:Set<String>) throws->ReviewApprovalFixture {
+        guard EKEventStore.authorizationStatus(for:.reminder) == .fullAccess,EKEventStore.authorizationStatus(for:.event) == .fullAccess else {throw IntegrationError.denied("Existing Calendar and Reminders permissions required; no new prompt.")}
+        store.reset()
+        guard let list=store.calendars(for:.reminder).first(where:{$0.allowsContentModifications && !excluded.contains($0.calendarIdentifier)}) else {throw IntegrationError.readOnly}
+        let marker="Mission Control approval validation "+UUID().uuidString
+        let item=EKReminder(eventStore:store);item.calendar=list;item.title=marker;item.notes=marker
+        item.dueDateComponents=Calendar.current.dateComponents([.year,.month,.day],from:Calendar.current.startOfDay(for:.now))
+        try store.save(item,commit:true)
+        let id=item.calendarItemIdentifier;store.reset()
+        guard let persisted=store.calendarItem(withIdentifier:id) as? EKReminder else {throw IntegrationError.verification}
+        return .init(item:editorDetails(persisted),marker:marker)
+    }
+    func readApprovalFixture(_ fixture:ReviewApprovalFixture)throws->NativeEditDetails {
+        store.reset();guard let item=store.calendarItem(withIdentifier:fixture.item.itemID) as? EKReminder,item.title == fixture.marker,item.notes?.hasPrefix(fixture.marker) == true else {throw IntegrationError.verification}
+        return editorDetails(item)
+    }
+    func changeApprovalFixture(_ fixture:ReviewApprovalFixture)throws {
+        _ = try readApprovalFixture(fixture)
+        guard let item=store.calendarItem(withIdentifier:fixture.item.itemID) as? EKReminder else {throw IntegrationError.missing}
+        item.notes=fixture.marker+" external edit";try store.save(item,commit:true)
+    }
+    func removeApprovalFixture(_ fixture:ReviewApprovalFixture)throws {
+        _ = try readApprovalFixture(fixture)
+        guard let item=store.calendarItem(withIdentifier:fixture.item.itemID) as? EKReminder else {throw IntegrationError.missing}
+        try store.remove(item,commit:true);store.reset()
+        guard store.calendarItem(withIdentifier:fixture.item.itemID) == nil else {throw IntegrationError.verification}
     }
 }
 struct ReviewInboxPreview:View {

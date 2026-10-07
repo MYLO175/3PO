@@ -18,6 +18,17 @@ struct NativeDateReview {
     var hasTime:Bool
     var expectedModified:Date?
     var evidence:String
+    func applying(to item:NativeEditDetails) throws -> NativeEditDetails {
+        guard item.modified == expectedModified else { throw ActionFailure.message("The Apple item changed. Check for a fresh proposal before approving it.") }
+        guard date.timeIntervalSinceReferenceDate.isFinite else { throw ActionFailure.message("The proposed date is invalid.") }
+        var edited=item
+        if item.kind == .event {
+            guard hasTime == !item.allDay else { throw ActionFailure.message("The proposal changes the event's time format; review it again.") }
+            edited=NativeEditRules.movingStart(item,to:date)
+        } else { edited.due=date;edited.hasTime=hasTime }
+        try NativeEditRules.validate(edited,baseline:item)
+        return edited
+    }
 }
 struct NativeEditDetails: Equatable {
     var kind: NativeItemKind

@@ -39,7 +39,7 @@ struct PATasksView: View {
                     }
                 }
             }
-            Text("Proposed changes, useful updates and prepared work. Review the evidence before saving a change.").font(.caption).foregroundStyle(.secondary)
+            Text("3PO suggests; you decide. Approve applies the displayed change. Dismiss leaves the original unchanged.").font(.caption).foregroundStyle(.secondary)
             ScrollView {
                 LazyVStack(alignment:.leading,spacing:12) {
                     if !discoveries.isEmpty { Text("From your background review").font(.headline) }
@@ -57,8 +57,12 @@ struct PATasksView: View {
                             Button("Source evidence") { sourceDiscovery=item }.buttonStyle(.borderless).font(.caption)
                             HStack { if item.kind == "project" { if model.assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) == nil { Button("Review project…") { reviewingProject=item } } else { Label("Created",systemImage:"checkmark.circle") } } else if item.kind != "update" {
                                 if item.reviewState == "pending" { Text("Save needs checking in Apple; it will not be repeated.").font(.caption).foregroundStyle(.orange) }
-                                else { Button(item.proposedChange == nil ? "Review suggestion" : "Review change…") { model.reviewDiscovery(item) }.disabled(!model.proactive.canReview(item.id,model:model)) }
-                            }; Spacer(); Button("Dismiss") { model.proactive.dismiss(item) } }.controlSize(.small)
+                                else if item.proposedChange != nil {
+                                    Button(model.approvingDiscoveryID == item.id ? "Approving…" : "Approve") { Task {await model.approveDiscovery(item)} }.disabled(!model.proactive.canReview(item.id,model:model) || model.writing || model.assistant.busy)
+                                    Button("View/edit") {model.reviewDiscovery(item)}.disabled(!model.proactive.canReview(item.id,model:model) || model.writing)
+                                } else { Button("Review suggestion") { model.reviewDiscovery(item) }.disabled(!model.proactive.canReview(item.id,model:model) || model.writing) }
+                            }; Spacer(); Button("Dismiss") { model.proactive.dismiss(item) }.disabled(model.writing) }.controlSize(.small)
+                            if model.reviewApprovalErrorAccount == item.registration,model.reviewApprovalErrorID == item.id,let error=model.reviewApprovalError {Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)}
                         }.taskCard()
                     }
                     if !emails.isEmpty { Text("Email work").font(.headline) }

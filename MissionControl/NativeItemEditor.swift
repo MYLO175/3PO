@@ -107,7 +107,7 @@ struct NativeItemEditor: View {
                 }
                 Spacer()
                 if let baseline, baseline.canEdit {
-                    Button(creation == nil ? (baseline.recurring && isEvent ? (changeScope == .futureEvents ? "Save future events" : "Save this event") : "Save changes") : (isEvent ? "Create event" : "Create reminder")) { Task { await save() } }.keyboardShortcut(.defaultAction).disabled(saving || model.writing || model.assistant.busy || (creation == nil && edited == baseline) || !canCreate || (creation.map { !NativeCreationRules.allowed(model.nativeCreations.state,key:$0.key) } ?? false))
+                    Button(creation == nil ? (baseline.recurring && isEvent ? (changeScope == .futureEvents ? (review == nil ? "Save future events" : "Approve future events") : (review == nil ? "Save this event" : "Approve this event")) : (review == nil ? "Save changes" : "Approve changes")) : (isEvent ? "Create event" : "Create reminder")) { Task { await save() } }.keyboardShortcut(.defaultAction).disabled(saving || model.writing || model.assistant.busy || (creation == nil && edited == baseline) || !canCreate || (creation.map { !NativeCreationRules.allowed(model.nativeCreations.state,key:$0.key) } ?? false))
                 }
             }
         }.padding(24).frame(width:520,height:620).interactiveDismissDisabled(saving).task { await load() }
@@ -137,8 +137,7 @@ struct NativeItemEditor: View {
             if let proposedMove { edited = try NativeEditRules.moved(session.item,proposal:proposedMove) }
             if let review {
                 guard review.registration == model.chatGPT.activeID,model.proactive.canReview(review.discoveryID,model:model),session.item.modified == review.expectedModified else { throw ActionFailure.message("The proposal, source or Apple item changed. Return to Review inbox for current work.") }
-                if isEvent { edited=NativeEditRules.movingStart(session.item,to:review.date) }
-                else { edited?.due=review.date;edited?.hasTime=review.hasTime }
+                edited=try review.applying(to:session.item)
             }
         } catch is CancellationError {} catch {if review != nil {baseline=nil;edited=nil};self.error = error.localizedDescription }
     }

@@ -73,7 +73,7 @@ import SwiftData
         if !enabled { return "Proactive suggestions paused." }
         if state.accounts[model.chatGPT.activeID]?.paused == true { return "Suggestions paused after an interrupted or failed check. Check once when ready." }
         let p = state.accounts[model.chatGPT.activeID]
-        return "Review inbox · \(p?.day == BriefingRules.day(.now) ? p?.delivered ?? 0 : 0) prepared today. No daily output cap; Apple changes need your review and Save."
+        return "Review inbox · \(p?.day == BriefingRules.day(.now) ? p?.delivered ?? 0 : 0) prepared today. No daily output cap; Apple changes wait for your approval."
     }
     func dismiss(_ record: PADiscovery) {
         let previous = state
