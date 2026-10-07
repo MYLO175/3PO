@@ -262,7 +262,7 @@ private struct WorkspaceTile: View {
         case .mail: DashboardView(model:model,widgetConfiguration:configuration).inboxPanel
         case .conversation: AssistantPanel(model:model,assistant:model.assistant,readingMode:$readingMode,supportsReadingMode:false,widgetID:widget.id,configuration:configuration)
         case .overview:
-            TodayBriefView(model:model,briefings:model.briefings).padding(16)
+            TodayBriefView(model:model,briefings:model.briefings,configuration:configuration).padding(16)
         case .emailSummary: EmailOverviewView(model:model,summaries:model.emailSummaries,configuration:configuration).padding(16)
         case .memoryGraph: PALifeMapWidget(model:model,configuration:configuration).padding(16)
         case .tasks: PATasksView(model:model).padding(16)

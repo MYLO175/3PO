@@ -77,6 +77,7 @@ struct WidgetConfiguration: Codable, Equatable {
     var paTopicSelections: [String:String]? = nil
     var lifeFocusSelections:[String:[String]]? = nil
     var colourProfiles: [String:[String:String]]? = nil
+    var briefShowsWeather:Bool? = nil
     var clockShowsTime: Bool? = nil
     var clockShowsSeconds: Bool? = nil
     var clockStyle:String? = nil

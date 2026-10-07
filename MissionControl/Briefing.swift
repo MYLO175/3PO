@@ -41,7 +41,36 @@ struct BriefingState: Codable {
     var overviewFingerprints: [String:String]? = nil
     var updatedBriefs: [String:DailyBriefing]? = nil
     var reviewQuestions:[BriefingQuestion]? = nil
+    var writingPrompts:[String:String]? = nil
+    var writingPromptRevisions:[String:UUID]? = nil
+    func writingPrompt(_ registration:String)->BriefWritingPrompt {
+        .init(registration:registration,text:writingPrompts?[registration] ?? BriefingRules.defaultWritingPrompt,revision:writingPromptRevisions?[registration])
+    }
+    mutating func setWritingPrompt(_ text:String,expected:BriefWritingPrompt) throws {
+        guard !expected.registration.isEmpty,writingPrompt(expected.registration) == expected else { throw BriefWritingPromptFailure.changed }
+        let trimmed=text.trimmingCharacters(in:.whitespacesAndNewlines)
+        guard !trimmed.isEmpty,trimmed.count <= BriefingRules.writingPromptLimit else { throw BriefWritingPromptFailure.length }
+        guard trimmed != expected.text else { return }
+        if writingPrompts == nil { writingPrompts=[:] }
+        writingPrompts?[expected.registration]=trimmed == BriefingRules.defaultWritingPrompt ? nil : trimmed
+        if writingPromptRevisions == nil { writingPromptRevisions=[:] }
+        writingPromptRevisions?[expected.registration]=UUID()
+    }
     mutating func claimNotification(day: String) -> Bool { notificationClaims.insert(day).inserted }
+}
+struct BriefWritingPrompt: Equatable {
+    var registration:String
+    var text:String
+    var revision:UUID?
+}
+enum BriefWritingPromptFailure: LocalizedError {
+    case changed,length
+    var errorDescription:String? {
+        switch self {
+        case .changed: return "The account or saved prompt changed. Reopen the prompt editor to use the current version."
+        case .length: return "Use a nonempty prompt of up to 8,000 characters."
+        }
+    }
 }
 struct BriefingRequestAvailability {
     var contextEnabled=true
@@ -118,6 +147,9 @@ enum BriefingRules {
         return update
     }
     static let formattingInstructions = "Use inline Markdown for readable emphasis: **bold** for short headings, key commitments, actions or important times; *italics* sparingly for useful asides or distinctions. Use emphasis when it helps scanning, not on every sentence. Keep paragraphs and line breaks; avoid Markdown heading markers, tables and code fences in ordinary prose."
+    // Editable writing preferences are separate from the fixed clock, evidence and response contract.
+    static let writingPromptLimit=8000
+    static var defaultWritingPrompt:String { attentionInstructions + "\n\n" + formattingInstructions }
     static let referenceInstructions = "allowedSourceIDs is the complete citation list. Every sourceIDs entry must copy one of those aliases exactly, once per item. Supplied records use id for that citation alias. memoryID and original identities are bookkeeping, never citation IDs. Do not invent IDs for coverage, earlierBrief, reviewInbox or reviewQuestions; general suggestions can use an empty sourceIDs array. Cite workspace_N only for the supplied human workspace record, never as proof of an Apple change or completed communication."
     static func memoryInput(_ records:[[String:String]])->[[String:String]] {
         records.enumerated().map { index,record in

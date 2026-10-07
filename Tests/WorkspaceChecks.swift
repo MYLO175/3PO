@@ -17,6 +17,10 @@ struct WorkspaceChecks {
         assert(defaults.sourceExclusions.isEmpty)
         assert(defaults.calendarMode == "agenda" && defaults.reminderGrouping == "lists")
         assert(defaults.conversationID == nil)
+        assert(defaults.briefShowsWeather == nil,"Old widgets show the weather card by default")
+        var hiddenWeather=defaults;hiddenWeather.briefShowsWeather=false
+        let hiddenWeatherRoundTrip=try JSONDecoder().decode(WidgetConfiguration.self,from:JSONEncoder().encode(hiddenWeather))
+        assert(hiddenWeatherRoundTrip == hiddenWeather && hiddenWeatherRoundTrip.briefShowsWeather == false,"Widget-local weather visibility persists without changing source exclusions")
 
         let weather=WidgetPlacement(kind:.weather,rect:GridRect(x:0,y:0,w:3,h:3))
         let weatherRoundTrip=try JSONDecoder().decode(WidgetPlacement.self,from:JSONEncoder().encode(weather))

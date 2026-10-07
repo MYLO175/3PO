@@ -103,6 +103,22 @@ import Foundation
         assert(roundTrip.notificationClaims == restored.notificationClaims)
         let legacy = try JSONDecoder().decode(BriefingState.self,from:Data(#"{"records":[],"notificationClaims":[],"paused":false}"#.utf8))
         assert(legacy.updatedBriefs == nil)
+        precondition(legacy.writingPrompt("account").text == BriefingRules.defaultWritingPrompt && legacy.writingPrompt("account").revision == nil)
+        var promptState=restored
+        let originalPrompt=promptState.writingPrompt("account")
+        try promptState.setWritingPrompt("  Focus on engineering. Use three short bullet points.  ",expected:originalPrompt)
+        let customPrompt=promptState.writingPrompt("account")
+        precondition(customPrompt.text == "Focus on engineering. Use three short bullet points." && customPrompt.revision != originalPrompt.revision)
+        precondition(promptState.writingPrompt("other").text == BriefingRules.defaultWritingPrompt,"Writing preferences cannot leak into another account")
+        let promptRoundTrip=try JSONDecoder().decode(BriefingState.self,from:JSONEncoder().encode(promptState))
+        precondition(promptRoundTrip.writingPrompt("account") == customPrompt && promptRoundTrip.records.map(\.id) == restored.records.map(\.id) && promptRoundTrip.updatedBriefs?["account"]?.id == update.id && promptRoundTrip.notificationClaims == restored.notificationClaims,"Prompt persistence must leave saved briefs and delivery claims intact")
+        for invalid in [" ",String(repeating:"x",count:BriefingRules.writingPromptLimit+1)] {
+            do {try promptState.setWritingPrompt(invalid,expected:customPrompt);preconditionFailure("Invalid prompt accepted")} catch BriefWritingPromptFailure.length {}
+            precondition(promptState.writingPrompt("account") == customPrompt)
+        }
+        try promptState.setWritingPrompt(BriefingRules.defaultWritingPrompt,expected:customPrompt)
+        precondition(promptState.writingPrompts?["account"] == nil && promptState.writingPrompt("account").text == originalPrompt.text && promptState.writingPrompt("account") != originalPrompt,"Restoring defaults cannot make an old in-flight capture valid again")
+        do {try promptState.setWritingPrompt("Stale editor",expected:originalPrompt);preconditionFailure("Stale prompt capture accepted")} catch BriefWritingPromptFailure.changed {}
         var laterMorning=morning;laterMorning.id="legacy-second";laterMorning.created=noon;laterMorning.sourceScope="new-sources"
         var otherMorning=morning;otherMorning.registration="other-account"
         var invalidMorning=morning;invalidMorning.id="invalid";invalidMorning.created=date(2026,10,2,6);invalidMorning.invalidated=true
@@ -146,6 +162,6 @@ import Foundation
         let decodedState=try JSONDecoder().decode(BriefingState.self,from:JSONEncoder().encode(questionState))
         precondition(decodedState.reviewQuestions?.first?.dismissed == true && decodedState.updatedBriefs?["owner"]?.heartbeatID == "run-1")
         precondition(decodedState.records.isEmpty && decodedState.notificationClaims.isEmpty,"Heartbeat updates never claim a morning delivery or notification")
-        print("PASS: local morning/afternoon/evening boundaries, timezone/DST clock, immutable saved prose, 7:30 threshold, sleep catch-up, notification claims and source identity validation")
+        print("PASS: account-scoped prompt/default persistence and stale captures; local dayparts/timezone/DST, immutable prose, catch-up, delivery claims and source validation")
     }
 }

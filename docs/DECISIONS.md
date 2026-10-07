@@ -272,3 +272,8 @@ The user requested drag-to-save and click-to-edit, superseding the earlier revie
 Live disposable checks exposed EventKit detaching a moved recurring occurrence and rejecting Undo when the original series rule was reapplied. Supported occurrence Undo now preserves the saved provider recurrence metadata while restoring the original time and fields. Native checks prove later instances retain their times and Undo does not duplicate them. Pointer smoothness is not yet claimed: Computer Use coordinate drags fail with noWindowsAvailable, while accessibility-driven editor and native save checks work.
 
 Time-only native edits also preserve the existing optional timezone representation, including floating events, rather than assigning an explicit timezone merely because the dates changed. Explicit timezone/all-day editor changes retain their existing conversion behaviour.
+
+
+## 7 October — Brief presentation and writing preferences
+
+Keep one brief-only refresh in the header and the dated saved timestamp beside it. Weather-card visibility is widget-local presentation, independent of forecast collection/permissions and AI weather context. Writing instructions belong to the account because initial daily preparation, heartbeat updates and all brief widgets share its cache. Use default restores the existing attention/formatting instructions rather than rewriting history. Save affects the next preparation; editing never requests inference. Prompt revisions persist through restoration so an away-and-back change still rejects an older in-flight capture. Keep clock/evidence/date/source/output/approval constraints outside these writing preferences.
