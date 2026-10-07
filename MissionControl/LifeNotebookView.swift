@@ -73,7 +73,8 @@ struct LifeNotebookMapView:View {
                             Image(systemName:note.area.symbol).font(.system(size:layout.dense ? 16 : 18)).foregroundStyle(note.area.colour).frame(width:24)
                             VStack(alignment:.leading,spacing:4) {
                                 Text(note.area.title).font(.system(size:layout.dense ? 13 : 14,weight:.semibold)).lineLimit(2).minimumScaleFactor(0.85)
-                                Text("\(notebook.anchors.filter{$0.areas.contains(note.area)}.count) items · \(note.records.count) facts").font(.system(size:layout.dense ? 11 : 12)).foregroundStyle(.secondary)
+                                let count=notebook.anchors.filter{$0.areas.contains(note.area)}.count
+                                Text("\(count) \(count == 1 ? "item" : "items") · \(note.records.count) facts").font(.system(size:layout.dense ? 11 : 12)).foregroundStyle(.secondary)
                             }
                             Spacer(minLength:0)
                         }.padding(.horizontal,12).frame(width:rect.width,height:rect.height)
@@ -82,7 +83,7 @@ struct LifeNotebookMapView:View {
                             .overlay(RoundedRectangle(cornerRadius:16).fill(note.area.colour.opacity(active ? 0.12 : 0.04)))
                             .overlay(RoundedRectangle(cornerRadius:16).stroke(note.area.colour.opacity(active ? 0.7 : related(note) ? 0.5 : 0.2),lineWidth:active ? 2 : 1))
                     }.buttonStyle(.plain).position(x:rect.midX,y:rect.midY)
-                        .accessibilityLabel("\(note.area.title), \(note.records.count) available facts" + (related(note) ? ", shares facts with the selected area" : ""))
+                        .accessibilityLabel("\(note.area.title), \(notebook.anchors.filter{$0.areas.contains(note.area)}.count) saved workspace items, \(note.records.count) available facts" + (related(note) ? ", shares facts with the selected area" : ""))
                         .accessibilityAddTraits(active ? .isSelected : [])
                 }
             }.foregroundStyle(palette[.text])
@@ -106,11 +107,13 @@ struct LifeNotebookAreaView:View {
     var note:LifeAreaNote
     var inspect:(PAMemory)->Void
     var showsHeading=true
+    var showsSectionLabels=false
     private var entities:[LifeEntity] { let ids=Set(note.records.map(\.id));return notebook.entities.filter{$0.id != LifeNotebook.selfID && $0.areas.contains(note.area) && !$0.memoryIDs.isDisjoint(with:ids)} }
     var body:some View {
         VStack(alignment:.leading,spacing:12) {
             if showsHeading { Label(note.area.title,systemImage:note.area.symbol).font(.headline).foregroundStyle(note.area.colour) }
             if !entities.isEmpty {
+                if showsSectionLabels { Text("Remembered concepts").font(.headline) }
                 LazyVGrid(columns:[GridItem(.adaptive(minimum:140),alignment:.leading)],alignment:.leading,spacing:8) {
                     ForEach(Array(entities.prefix(24))) { entity in
                         Button { if let record=note.records.first(where:{entity.memoryIDs.contains($0.id)}) { inspect(record) } } label: {
@@ -123,6 +126,7 @@ struct LifeNotebookAreaView:View {
                 }
                 if entities.count > 24 { Text("Showing 24 of \(entities.count) entities; search to narrow the view.").font(.caption).foregroundStyle(.secondary) }
             }
+            if showsSectionLabels && !note.records.isEmpty { Text("Remembered facts").font(.headline).padding(.top,4) }
             ForEach(Array(note.records.prefix(30))) { record in
                 Button { inspect(record) } label: {
                     VStack(alignment:.leading,spacing:6) {

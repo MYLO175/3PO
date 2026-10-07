@@ -100,6 +100,9 @@ struct PAMemory: Codable, Identifiable, Equatable {
     var sourceInvalidation:MemorySourceInvalidation? = nil
     var supportingSources:[MemorySourceEvidence]? = nil
     var sourceState:MemorySourceState? = nil
+    /// Human-reviewed identity only. Never assigned by a source-learning model.
+    var commitmentGroup:UUID? = nil
+    var commitmentGroupRevision:UUID? = nil
     var allSourceEvidence:[MemorySourceEvidence] { source.map{[$0] + (supportingSources ?? [])} ?? [] }
     static func suppressionKey(_ source:MemorySourceEvidence)->String? {
         let fields=[source.identity.kind.rawValue,source.identity.accountID,source.identity.containerID,source.identity.itemID,source.identity.linkedIdentity ?? "",source.revision]
@@ -163,6 +166,10 @@ enum MemoryRetrieval {
         }
         if let structure=memory.organisation,LifeMemoryOrganisation.valid(structure,record:memory) { value["areas"]=structure.areas.map(\.rawValue).joined(separator:","); value["organisation"]=String(data:(try? encoder.encode(structure)) ?? Data(),encoding:.utf8) }
         if let previous=memory.supersedes { value["correctsEarlierMemory"]=previous.uuidString }
+        if memory.kind == .commitment,let group=memory.commitmentGroup {
+            value["humanLinkedPlanID"]=group.uuidString
+            if let revision=memory.commitmentGroupRevision { value["humanLinkedPlanRevision"]=revision.uuidString }
+        }
         value["durability"]=memory.durability?.rawValue ?? "legacy"
         if let connections=memory.connections, let data=try? encoder.encode(connections) { value["connections"]=String(data:data,encoding:.utf8) }
         return value
@@ -176,6 +183,8 @@ enum MemoryRetrieval {
         let seedEntities=Array(notebook.entities.filter { $0.id != LifeNotebook.selfID && !$0.memoryIDs.isDisjoint(with:eligibleIDs) && !tokens($0.label).isDisjoint(with:terms) }.prefix(20))
         let seeds=Set(seedEntities.map(\.id))
         let workspaceConnected=Set(seedEntities.filter{$0.id.hasPrefix("life:")}.flatMap(\.memoryIDs)).intersection(eligibleIDs)
+        let matchedPlans=Set(eligible.filter{!tokens($0.text).isDisjoint(with:terms)}.compactMap(\.commitmentGroup))
+        let planConnected=Set(eligible.filter{$0.commitmentGroup.map{matchedPlans.contains($0)} == true}.map(\.id))
         var neighbours=seeds,connected=Set(seedEntities.flatMap(\.memoryIDs)).intersection(eligibleIDs)
         // Two bounded hops. The universal self node is never a bridge to the whole life.
         for _ in 0..<2 {
@@ -190,7 +199,7 @@ enum MemoryRetrieval {
         func relevance(_ memory:PAMemory)->Int {
             let text=memory.text+" "+(memory.connections ?? []).map{$0.subject+" "+$0.relation+" "+$0.object}.joined(separator:" ")
             let direct=tokens(text).intersection(terms).reduce(0) { $0+min($1.count,12)*5 }
-            let nearby=connected.contains(memory.id) ? 30 : 0
+            let nearby=(connected.contains(memory.id) || planConnected.contains(memory.id)) ? 30 : 0
             let focused=memory.organisation?.areas.contains(where:focus.contains) == true ? 15 : 0
             return direct+nearby+focused
         }
@@ -219,9 +228,62 @@ enum MemoryRetrieval {
             if !tokens(text).isDisjoint(with:terms) { why.append("Words match your question") }
             if connected.contains(memory.id) { why.append("Related recorded connection, within two hops") }
             if workspaceConnected.contains(memory.id) { why.append("Linked to a matching saved project or life item") }
+            if planConnected.contains(memory.id) { why.append("Same plan as another relevant report, connected by you") }
             if memory.organisation?.areas.contains(where:focus.contains) == true { why.append("Matches your Focus") }
             reasons[memory.id]=why.isEmpty ? ["Other available context, ranked by confirmation, kind, scope and review date"] : why
         }
         return MemorySelection(records:result,eligibleCount:eligible.count,reasons:reasons)
+    }
+}
+
+enum CommitmentRules {
+    static func groupKey(_ record:PAMemory)->String? {
+        record.commitmentGroup.map{record.registration+":"+(record.conversationID?.uuidString ?? "shared")+":"+$0.uuidString}
+    }
+    /// Local group revisions invalidate old advice when another connected report changes.
+    /// Review/classification bookkeeping cannot create a change in the group's claims.
+    static func memberships(_ records:[PAMemory])->[String:Data] {
+        let current=records.filter{$0.kind == .commitment && $0.supersededBy == nil && $0.commitmentGroup != nil}
+        return Dictionary(grouping:current,by:{groupKey($0)!}).mapValues { members in
+            let rows=members.sorted{$0.id.uuidString < $1.id.uuidString}.map { record in
+                var value=MemoryRetrieval.record(record)
+                for key in ["humanLinkedPlanRevision","reviewed","areas","organisation"] { value.removeValue(forKey:key) }
+                value["resolved"]=record.resolved?.ISO8601Format() ?? ""
+                value["retired"]=record.retiredAt?.ISO8601Format() ?? ""
+                value["sourceInvalidation"]=record.sourceInvalidation?.rawValue ?? ""
+                return value
+            }
+            return (try? JSONSerialization.data(withJSONObject:rows,options:[.sortedKeys])) ?? Data()
+        }
+    }
+    static func linkable(_ a:PAMemory,_ b:PAMemory,now:Date = .now)->Bool {
+        a.id != b.id && a.kind == .commitment && b.kind == .commitment && a.registration == b.registration && a.conversationID == b.conversationID &&
+        MemoryRules.usable(a,registration:a.registration,now:now) && MemoryRules.usable(b,registration:a.registration,now:now) &&
+        (a.commitmentGroup == nil || b.commitmentGroup == nil || a.commitmentGroup == b.commitmentGroup)
+    }
+    static func reports(_ record:PAMemory,from permitted:[PAMemory],now:Date = .now)->[PAMemory] {
+        permitted.filter { candidate in
+            candidate.kind == .commitment && candidate.registration == record.registration && candidate.conversationID == record.conversationID && MemoryRules.usable(candidate,registration:record.registration,now:now) &&
+            (candidate.id == record.id || (record.commitmentGroup != nil && candidate.commitmentGroup == record.commitmentGroup))
+        }.sorted { a,b in
+            let left=a.source?.sourceDate ?? a.sourceDate ?? a.created,right=b.source?.sourceDate ?? b.sourceDate ?? b.created
+            return left == right ? a.id.uuidString < b.id.uuidString : left < right
+        }
+    }
+    static let instructions="Plan groups exist only where a human explicitly connected exact remembered reports. Matching names, titles, dates, participants or project links never establish that two reports concern the same commitment. A shared group does not mean a report supersedes another. Compare attributed reports and dates; mixed or unknown states need uncertainty, not an assumed latest winner. Proposed is not accepted. Source-reported cancellation/completion never changes Apple task state. Missing reports, source revocation and past deadlines prove no completion. Only the supplied fact IDs are available; a plan's other reports may be omitted by retrieval or access. Do not invent links."
+    /// References to the same selected facts; adds no source reads, extra facts or historical prose.
+    static func context(_ records:[[String:String]],maxBytes:Int=4000)->[String:Any] {
+        let commitments=records.filter{$0["kind"] == "commitment" && $0["id"] != nil}
+        let groups=Dictionary(grouping:commitments) { record in (record["scope"] ?? "shared")+":"+(record["humanLinkedPlanID"] ?? record["id"]!) }
+        var rows:[[String:Any]]=[]
+        func value(_ rows:[[String:Any]])->[String:Any] { ["plans":rows,"selectedCommitmentFacts":commitments.count,"coverage":"At most 12 groups of the same selected facts. Partial current reports; old versions and inaccessible reports are excluded. Independent reports stay separate unless you connected them. Human memory without a source report has unknown source state. No proof of Apple task status."] }
+        for key in groups.keys.sorted().prefix(12) {
+            let reports=groups[key]!.sorted{($0["messageDate"] ?? "",$0["id"]!) < ($1["messageDate"] ?? "",$1["id"]!)}
+            let states=Set(reports.map{String(($0["sourceReportedState"] ?? "unknown").split(separator:";").first ?? "unknown")})
+            let row:[String:Any]=["planKey":key,"humanConnected":reports.first?["humanLinkedPlanID"] != nil,"reportIDs":reports.map{$0["id"]!},"reportedStates":states.sorted(),"uncertain":states.count != 1 || states.contains("unknown")]
+            guard (try? JSONSerialization.data(withJSONObject:value(rows+[row]),options:[.sortedKeys]).count).map({$0 <= maxBytes}) == true else { break }
+            rows.append(row)
+        }
+        return value(rows)
     }
 }

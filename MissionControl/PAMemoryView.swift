@@ -22,6 +22,7 @@ struct PAMemoryView: View {
     @State private var provisional = false
     @State private var forgotten: [PAMemory]?
     @State private var organising:PAMemory?
+    @State private var planReports:PAMemory?
     @State private var selectedArea:LifeArea?
     @State private var showHistory=false
     @State private var editError:String?
@@ -57,6 +58,7 @@ struct PAMemoryView: View {
                             Text((memory.enabled ? "" : "Memory use paused · ")+availability.title+" · "+availability.explanation).font(.caption).foregroundStyle(.secondary)
                             ForEach(Array((item.connections ?? []).enumerated()),id:\.offset) { _, edge in Text(edge.subject + " → " + edge.relation + " → " + edge.object).font(.caption).foregroundStyle(.secondary) }
                             PAMemoryEvidenceView(record:item,sourcePermitted:permittedIDs.contains(item.id))
+                            if item.kind == .commitment && item.supersededBy == nil { Button("Remembered plan reports…") { planReports=item }.controlSize(.small).disabled(!memory.enabled || !permittedIDs.contains(item.id) || !MemoryRules.usable(item,registration:registration)) }
                             if item.supersedes != nil || item.supersededBy != nil {
                                 Button("View version history") { search="";showHistory=true;lineage=Set(memory.lineage(item.id).map(\.id)) }.controlSize(.small)
                             }
@@ -98,7 +100,10 @@ struct PAMemoryView: View {
                 } else if memory.put(item) { clear() }
             }.disabled(text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || registration.isEmpty) }
             }
-        }.sheet(item:$organising) { item in LifeOrganisationEditor(memory:memory,record:item) }.onAppear { scope = conversationID }.onChange(of:memory.learningEnabled) { _, enabled in if !enabled { learning?.cancel();organisation?.cancel();model?.sourceLearning.cancel();model?.nativeSourceLearning.cancel();model?.memoryMaintenance.cancel() } }.onChange(of:memory.enabled) { _, enabled in if !enabled { learning?.cancel();organisation?.cancel();model?.sourceLearning.cancel();model?.nativeSourceLearning.cancel();model?.memoryMaintenance.cancel() } }.padding(24).frame(width:720,height:720)
+        }.sheet(item:$organising) { item in LifeOrganisationEditor(memory:memory,record:item) }
+        .sheet(item:$planReports) { item in CommitmentReportsView(memory:memory,recordID:item.id,registration:registration) }
+        .onChange(of:registration) { planReports=nil;organising=nil;clear() }
+        .onAppear { scope = conversationID }.onChange(of:memory.learningEnabled) { _, enabled in if !enabled { learning?.cancel();organisation?.cancel();model?.sourceLearning.cancel();model?.nativeSourceLearning.cancel();model?.memoryMaintenance.cancel() } }.onChange(of:memory.enabled) { _, enabled in if !enabled { learning?.cancel();organisation?.cancel();model?.sourceLearning.cancel();model?.nativeSourceLearning.cancel();model?.memoryMaintenance.cancel() } }.padding(24).frame(width:720,height:720)
     }
     private var controls:some View { VStack(alignment:.leading,spacing:14) {
             Toggle("Use saved memory in chats and briefs",isOn:$memory.enabled)

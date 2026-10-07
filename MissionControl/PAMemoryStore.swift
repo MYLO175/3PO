@@ -39,6 +39,9 @@ import SwiftData
     @discardableResult func put(_ memory: PAMemory) -> Bool {
         guard !memory.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, !memory.registration.isEmpty else { return false }
         var value = memory; value.text = String(value.text.prefix(2000)); value.reviewed = .now
+        let old=records.first{$0.id == value.id}
+        value.commitmentGroup=value.kind == .commitment && old?.kind == .commitment && old?.registration == value.registration && old?.conversationID == value.conversationID ? old?.commitmentGroup : nil
+        value.commitmentGroupRevision=value.commitmentGroup != nil ? old?.commitmentGroupRevision : nil
         return change { state in if let i = state.records.firstIndex(where:{ $0.id == value.id }) { state.records[i] = value } else { state.records.append(value) } }
     }
     @discardableResult func forget(_ id: UUID) -> Bool {
@@ -122,7 +125,7 @@ import SwiftData
         guard values.count <= 4,Set(values.map(\.id)).count == values.count,
               Set(values.compactMap(\.supersedes)).count == values.compactMap(\.supersedes).count,
               values.allSatisfy({ value in
-            guard let source=value.source,let sourceText=evidenceTexts[source.identity],value.allSourceEvidence.count <= 3,
+            guard let source=value.source,let sourceText=evidenceTexts[source.identity],value.commitmentGroup == nil,value.commitmentGroupRevision == nil,value.allSourceEvidence.count <= 3,
                   Set(value.allSourceEvidence.map(\.identity)).count == value.allSourceEvidence.count,
                   value.allSourceEvidence.allSatisfy({evidence in evidence.identity.kind == source.identity.kind && evidence.identity.accountID == source.identity.accountID && evidence.identity.containerID == source.identity.containerID && evidence.identity.linkedIdentity == source.identity.linkedIdentity && evidenceTexts[evidence.identity].map{evidence.valid(in:$0)} == true}),
                   (value.supportingSources ?? []).allSatisfy({evidence in guard let date=evidence.sourceDate,let primaryDate=source.sourceDate else { return false };return date <= primaryDate}),
@@ -147,7 +150,13 @@ import SwiftData
         let fresh=values.filter { value in !value.sourceSuppressionKeys.contains{state.suppressed[value.registration,default:[]].contains($0)} && !records.contains(where:{$0.registration == value.registration && MemoryLearningRules.normalised($0.text) == MemoryLearningRules.normalised(value.text) && ($0.explicit || ($0.source?.identity == value.source?.identity && $0.source?.revision == value.source?.revision))}) }
         guard !fresh.isEmpty || !assessmentIDs.isEmpty else { return true }
         return change { state in
-            for value in fresh { if let previous=value.supersedes,let index=state.records.firstIndex(where:{$0.id == previous}) { state.records[index].supersededBy=value.id };state.records.append(value) }
+            for var value in fresh {
+                if let previous=value.supersedes,let index=state.records.firstIndex(where:{$0.id == previous}) {
+                    if value.kind == .commitment { value.commitmentGroup=state.records[index].commitmentGroup }
+                    state.records[index].supersededBy=value.id
+                }
+                state.records.append(value)
+            }
             if !assessmentIDs.isEmpty {
                 let now=Date.now
                 var receipts=(state.sourceAssessmentReceipts ?? [:]).filter{$0.value >= now.addingTimeInterval(-7*86400)}
@@ -171,6 +180,19 @@ import SwiftData
     @discardableResult func accept(_ id: UUID) -> Bool { change { state in if let i = state.records.firstIndex(where:{ $0.id == id }) { state.records[i].explicit = true; state.records[i].reviewed = .now } } }
     @discardableResult func resolve(_ id: UUID) -> Bool { change { state in if let i = state.records.firstIndex(where:{ $0.id == id }) { state.records[i].resolved = .now } } }
     @discardableResult func reopen(_ id: UUID) -> Bool { change { state in if let i = state.records.firstIndex(where:{ $0.id == id }) { state.records[i].resolved = nil; state.records[i].reviewed = .now } } }
+    /// A local human review connects identities, not facts, truth states or native tasks.
+    @discardableResult func connectCommitments(_ first:UUID,_ second:UUID,registration:String,expectedRevision:UUID)->Bool {
+        let available=enabled ? permittedRecords : []
+        guard revision == expectedRevision,let a=available.first(where:{$0.id == first && $0.registration == registration}),let b=available.first(where:{$0.id == second && $0.registration == registration}),CommitmentRules.linkable(a,b) else { error="These reports changed, are unavailable, or already belong to different plans. Reopen them before connecting.";return false }
+        let group=a.commitmentGroup ?? b.commitmentGroup ?? UUID()
+        let current=records.filter{$0.registration == registration && $0.conversationID == a.conversationID && $0.supersededBy == nil && $0.commitmentGroup == group}
+        guard Set(current.map(\.id)).union([first,second]).count <= 12 else { error="This plan already has 12 reports. Keep separate plans rather than combine more.";return false }
+        return change { state in for index in state.records.indices where state.records[index].id == first || state.records[index].id == second { state.records[index].commitmentGroup=group } }
+    }
+    @discardableResult func disconnectCommitment(_ id:UUID,registration:String,expectedRevision:UUID)->Bool {
+        guard revision == expectedRevision,let record=records.first(where:{$0.id == id && $0.registration == registration}),record.kind == .commitment,record.supersededBy == nil else { error="This report changed. Reopen it before disconnecting.";return false }
+        return change { state in if let index=state.records.firstIndex(where:{$0.id == id}) { state.records[index].commitmentGroup=nil;state.records[index].commitmentGroupRevision=nil } }
+    }
     /// A human chooses what to set aside. This never deletes evidence or edits a workspace item.
     @discardableResult func retire(_ id:UUID,retired:Bool,expectedRevision:UUID)->Bool {
         guard revision == expectedRevision,let record=records.first(where:{$0.id == id}),record.source == nil,record.kind != .commitment,record.supersededBy == nil else { error="Memory changed, or this record uses commitment/source history instead. Nothing was retired.";return false }
@@ -184,6 +206,8 @@ import SwiftData
         guard let old=records.first(where:{$0.id == id}),old.supersededBy == nil,old.registration == replacement.registration,
               replacement.id != id,!records.contains(where:{$0.id == replacement.id}),!replacement.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { error="This is no longer the current memory, or its replacement is invalid.";return false }
         var next=replacement;next.text=String(next.text.prefix(2000));next.supersedes=id;next.supersededBy=nil;next.created = .now;next.reviewed = .now
+        next.commitmentGroup=next.kind == .commitment && next.conversationID == old.conversationID ? old.commitmentGroup : nil
+        next.commitmentGroupRevision=next.commitmentGroup != nil ? old.commitmentGroupRevision : nil
         return change { state in if let index=state.records.firstIndex(where:{$0.id == id}) { state.records[index].supersededBy=next.id;state.records.append(next) } }
     }
     /// Restoration is itself a new correction, avoiding cycles or loss of intervening evidence.
@@ -243,7 +267,12 @@ import SwiftData
     }
     private func change(_ mutation: (inout MemoryEnvelope) -> Void) -> Bool {
         guard writable, let container else { error = "Memory storage is unavailable; nothing was changed."; return false }
-        let old = state; mutation(&state)
+        let old = state,previousGroups=CommitmentRules.memberships(state.records); mutation(&state)
+        let groups=CommitmentRules.memberships(state.records)
+        for key in groups.keys where groups[key] != previousGroups[key] {
+            let version=UUID()
+            for index in state.records.indices where state.records[index].supersededBy == nil && CommitmentRules.groupKey(state.records[index]) == key { state.records[index].commitmentGroupRevision=version }
+        }
         do {
             let context = container.mainContext, data = try JSONEncoder().encode(state)
             if let record = try context.fetch(FetchDescriptor<CachedDashboard>()).first(where:{ $0.key == "paMemory" }) { record.data = data; record.updated = .now }

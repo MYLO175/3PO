@@ -2,13 +2,13 @@ import SwiftUI
 struct PALifeMapWidget: View {
     @Bindable var model:DashboardModel
     var configuration:Binding<WidgetConfiguration>
-    @State private var selectedProject:LifeItem?
     @State private var selected:PAMemory?
     @State private var selectedArea:LifeArea?
     @State private var presentation="Map"
     @State private var areaDetails:LifeArea?
     @State private var areaMemory:PAMemory?
     @State private var detailOrganising:PAMemory?
+    @State private var detailPlanReports:PAMemory?
     @State private var detailShowMemory=false
     @State private var showContext=false
     private var topic:UUID? { nil }
@@ -59,19 +59,12 @@ struct PALifeMapWidget: View {
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
         .sheet(isPresented:$showContext) { PAMemoryView(memory:model.assistant.memory,registration:model.chatGPT.activeID,learning:model.memoryLearning,assistant:model.assistant,checkContext:{model.memoryLearning.check(model,manual:true)},organisation:model.lifeOrganisation,organiseContext:{model.lifeOrganisation.check(model,manual:true)},model:model,focusAreas:focusAreas) }
         .sheet(item:$areaDetails) { area in
-            VStack(alignment:.leading,spacing:14) {
-                HStack { Label(area.title,systemImage:area.symbol).font(.title3.weight(.semibold));Spacer();Button("Done") { areaDetails=nil } }
-                ScrollView { VStack(alignment:.leading,spacing:12) { if let note=notes.first(where:{$0.area == area}) {
-                    let ids=notebook.anchors.filter{$0.areas.contains(area)}
-                    if !ids.isEmpty { Text("Your workspace").font(.headline);ForEach(Array(ids.prefix(60)),id:\.id) { node in Button { if let id=UUID(uuidString:String(node.id.dropFirst(5))) { selectedProject=model.assistant.projects.items(model.chatGPT.activeID,includeTopics:true).first{$0.id == id} } } label:{Label(node.path.joined(separator:" / "),systemImage:LifeItemKind(rawValue:node.kind)?.symbol ?? "folder").frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).padding(.vertical,4) };Divider() }
-                    LifeNotebookAreaView(notebook:notebook,note:note,showsHeading:false) { areaMemory=$0 } } } }
-            }.padding(24).frame(width:520,height:580)
+            LifeMapAreaDetails(model:model,registration:model.chatGPT.activeID,area:area) { areaMemory=$0 }
                 .sheet(item:$areaMemory) { memory in memoryDetails(memory,fromArea:true) }
-                .sheet(item:$selectedProject) { item in LifeMapProjectDetails(model:model,item:item) }
         }
         .sheet(item:$selected) { memory in memoryDetails(memory)
         }
-        .onChange(of:model.chatGPT.activeID) { selectedProject=nil;selected=nil;areaDetails=nil;areaMemory=nil;detailOrganising=nil;detailShowMemory=false;showContext=false;selectedArea=nil }
+        .onChange(of:model.chatGPT.activeID) { selected=nil;areaDetails=nil;areaMemory=nil;detailOrganising=nil;detailPlanReports=nil;detailShowMemory=false;showContext=false;selectedArea=nil }
     }
     private func memoryDetails(_ memory:PAMemory,fromArea:Bool=false)->some View {
             VStack(alignment:.leading,spacing:14) {
@@ -80,24 +73,67 @@ struct PALifeMapWidget: View {
                 PAMemoryEvidenceView(record:memory,sourcePermitted:model.assistant.memory.permittedRecords.contains{$0.id == memory.id})
                 ForEach(Array((memory.connections ?? []).enumerated()),id:\.offset) { _,edge in Text(edge.subject+" → "+edge.relation+" → "+edge.object).font(.callout) }
                 Text(memory.provenance).font(.caption).foregroundStyle(.secondary)
+                if memory.kind == .commitment { Button("Remembered plan reports…") { detailPlanReports=memory } }
                 HStack { Button("Close") { if fromArea { areaMemory=nil } else { selected=nil } };Button("Organise") { detailOrganising=memory };Spacer();Button("Manage memories") { detailShowMemory=true } }
             }.padding(24).frame(width:480)
                 .sheet(item:$detailOrganising) { memory in LifeOrganisationEditor(memory:model.assistant.memory,record:memory) }
+                .sheet(item:$detailPlanReports) { memory in CommitmentReportsView(memory:model.assistant.memory,recordID:memory.id,registration:memory.registration) }
                 .sheet(isPresented:$detailShowMemory) { PAMemoryView(memory:model.assistant.memory,registration:model.chatGPT.activeID,conversationID:topic,topicTitle:model.assistant.conversation(topic)?.title,learning:model.memoryLearning,assistant:model.assistant,checkContext:{model.memoryLearning.check(model,manual:true)},organisation:model.lifeOrganisation,organiseContext:{model.lifeOrganisation.check(model,manual:true,topic:topic)},model:model,focusAreas:focusAreas) }
 
     }
 }
 
-private struct LifeMapProjectDetails:View {
+struct LifeMapAreaDetails:View {
     @Bindable var model:DashboardModel
-    var item:LifeItem
+    var registration:String
+    var area:LifeArea
+    var inspect:(PAMemory)->Void
+    @State private var openedID:UUID?
     @State private var configuration=WidgetConfiguration()
     @Environment(\.dismiss) private var dismiss
+    private var notebook:LifeNotebook { model.assistant.memory.notebook(registration,includeTopics:true) }
+    private var allItems:[LifeItem] { model.assistant.projects.items(registration,includeTopics:true) }
+    private var items:[LifeItem] { LifeAreaWorkspace.items(area,notebook:notebook,items:allItems) }
+    private var opened:LifeItem? { allItems.first{$0.id == openedID} }
     var body:some View {
         VStack(alignment:.leading,spacing:12) {
-            HStack { Text("Life map").font(.headline);Spacer();Button("Done") { dismiss() } }
-            LifeProjectWidget(model:model,configuration:$configuration,showsHeader:false,topicScope:item.conversationID)
-        }.padding(24).frame(width:540,height:620)
-        .onAppear { configuration.projectRoots=[item.registration:item.id.uuidString] }
+            HStack { Label(area.title,systemImage:area.symbol).font(.title3.weight(.semibold));Spacer();Button("Done") { dismiss() } }
+            if openedID != nil {
+                Button { openedID=nil } label: { Label("Back to " + area.title,systemImage:"chevron.left") }.buttonStyle(.plain).font(.callout)
+                if let opened {
+                    LifeProjectWidget(model:model,configuration:$configuration,showsHeader:false,topicScope:opened.conversationID).id(opened.id)
+                } else { ContentUnavailableView("Item unavailable",systemImage:"folder",description:Text("This item may have been moved or deleted. Return to the area to see its current items.")) }
+            } else {
+                ScrollView {
+                    VStack(alignment:.leading,spacing:12) {
+                        Text("Saved workspace items · \(items.count)").font(.headline)
+                        Text("Your folders, projects, notes and work items. Open one to see its contents.").font(.caption).foregroundStyle(.secondary)
+                        if items.isEmpty { Text("No saved workspace items in this area yet.").font(.callout).foregroundStyle(.secondary) }
+                        ForEach(items) { item in
+                            Button {
+                                configuration.projectRoots=[registration:item.id.uuidString];openedID=item.id
+                            } label: {
+                                HStack(alignment:.top,spacing:10) {
+                                    Image(systemName:item.kind.symbol).foregroundStyle(area.colour).frame(width:20)
+                                    VStack(alignment:.leading,spacing:4) {
+                                        Text(item.title).font(.callout.weight(.semibold)).frame(maxWidth:.infinity,alignment:.leading)
+                                        let count=allItems.filter{$0.parentID == item.id}.count
+                                        Text(item.kind.title + (count > 0 ? " · \(count) inside" : "")).font(.caption).foregroundStyle(.secondary)
+                                        let parents=LifeItemQuery.path(item,in:allItems).dropLast().map(\.title)
+                                        if !parents.isEmpty { Text(parents.joined(separator:" / ")).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                                    }
+                                    Image(systemName:"chevron.right").font(.caption).foregroundStyle(.secondary)
+                                }.padding(10).background(area.colour.opacity(0.05),in:RoundedRectangle(cornerRadius:9))
+                            }.buttonStyle(.plain).accessibilityLabel("Open \(item.kind.title): \(item.title)")
+                        }
+                        Divider().padding(.vertical,4)
+                        if let note=notebook.notes.first(where:{$0.area == area}) {
+                            LifeNotebookAreaView(notebook:notebook,note:note,inspect:inspect,showsHeading:false,showsSectionLabels:true)
+                        }
+                    }.frame(maxWidth:.infinity,alignment:.leading)
+                }
+            }
+        }.padding(24).frame(width:560,height:640)
+        .onChange(of:model.chatGPT.activeID) { dismiss() }
     }
 }

@@ -1,5 +1,13 @@
 import Foundation
 
+/// Resolve the same canonical IDs counted by the map, preserving workspace order and ownership.
+enum LifeAreaWorkspace {
+    static func items(_ area:LifeArea,notebook:LifeNotebook,items:[LifeItem])->[LifeItem] {
+        let ids=Set(notebook.anchors.filter{$0.areas.contains(area)}.map(\.id))
+        return items.filter{$0.deletedAt == nil && ids.contains("life:"+$0.id.uuidString)}
+    }
+}
+
 struct LifeItemQuery {
     var root: UUID? = nil
     var query = ""

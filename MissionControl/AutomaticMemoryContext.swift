@@ -6,7 +6,7 @@ struct AutomaticMemoryCapture:Equatable {
     var eligibleCount:Int
     var whatsappChats:Set<String> = []
     var context:String {
-        let value:[String:Any]=["savedMemory":records,"eligibleMemoryCount":eligibleCount,"selectedMemoryCount":records.count,"coverage":"At most 40 usable saved facts and 20KB, with exact evidence and certainty. Partial local retrieval, not a complete life history. Source memories additionally follow this feature's source permissions; learning permission alone never enables WhatsApp briefing or automatic suggestions."]
+        let value:[String:Any]=["savedMemory":records,"commitmentReports":CommitmentRules.context(records),"eligibleMemoryCount":eligibleCount,"selectedMemoryCount":records.count,"coverage":"At most 40 usable saved facts and 20KB, with exact evidence and certainty. Partial local retrieval, not a complete life history. Source memories additionally follow this feature's source permissions; learning permission alone never enables WhatsApp briefing or automatic suggestions."]
         return (try? String(data:JSONSerialization.data(withJSONObject:value,options:[.sortedKeys]),encoding:.utf8)) ?? "{}"
     }
 }

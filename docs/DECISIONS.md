@@ -156,3 +156,12 @@ Enable permitted source facts in briefs/Tasks only together with persisted exact
 Mail headers must match the current assessment, with exact assessment/body/reply receipts for new advice. For WhatsApp, an unchanged original request is insufficient when a later reply may cancel it: compare the selected cache during inference and retain per-supporting-chat receipts. Cache loss means unavailable, not completion. This conservative rule can invalidate advice on an unrelated reply in the same chat; semantic episode identity is a measured next unit.
 
 Keep original morning records/claims and visible transcript history. Show dated saved advice with a freshness explanation, omit unusable prose from new inference and require current support at native/project review. Do not automatically replay unchanged historical suggestions. No new source access, opt-in, sending, write authority or AI-on-Refresh is introduced.
+
+
+## 7 October — Explicit plan identities and actual Life map items
+
+A source ID identifies one provider item/message, not a real-world commitment. Shared titles, names and dates are insufficient for cross-source identity. Add optional human-reviewed commitment group/revision metadata on existing facts, without merging facts, copying another knowledge store or weakening exact source versioning. The local review requires exact current permitted IDs, same account/scope and a captured revision; two existing groups cannot implicitly merge. Validated supersessions and same-scope human commitment corrections inherit identity; source models cannot assign it.
+
+PA/brief/suggestion context derives a small plan index from the same selected facts. Mixed states remain uncertain; independent claims stay separate. Central current-group signatures exclude review/classification bookkeeping but include membership, evidence, version, resolution and invalidation so a connected report's change invalidates advice based on other members. There is no automatic latest-wins rule or native/project completion. Rich canonical temporal episodes and natural-language connection tools are deferred.
+
+Life map counts and drilldown resolve the same durable workspace IDs. Area sheets distinguish saved entries from remembered concepts/facts and navigate into the existing project browser within the sheet. This avoids a second fragile item sheet and keeps Back, original saved widget roots and source ownership intact.
