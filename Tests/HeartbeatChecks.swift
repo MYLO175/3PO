@@ -8,7 +8,7 @@ import Foundation
         precondition(!PAHeartbeatRules.due(account,now:now.addingTimeInterval(1799),minutes:30))
         precondition(PAHeartbeatRules.due(account,now:now.addingTimeInterval(1800),minutes:30))
         account.fingerprint="same"
-        precondition(!PAHeartbeatRules.needsAssessment(account,fingerprint:"same",manual:false))
+        precondition(PAHeartbeatRules.needsAssessment(account,fingerprint:"same",manual:false),"A due heartbeat reviews unchanged context too")
         precondition(PAHeartbeatRules.needsAssessment(account,fingerprint:"same",manual:false,pendingSources:true))
         precondition(PAHeartbeatRules.needsAssessment(account,fingerprint:"new",manual:false))
         account.phase="assessing"
@@ -89,6 +89,12 @@ import Foundation
         precondition(quietComplete.pending == false && quietComplete.mailLanes?["failed"]?.pending == false,"A quiet complete check clears stale waiting flags")
         precondition(quietComplete.assessed == quietPartial.assessed && quietComplete.mailLanes?["healthy"]?.assessed == quietPartial.mailLanes?["healthy"]?.assessed && quietComplete.calls == quietPartial.calls,"Quiet checks never invent an AI review or reset the allowance")
         precondition(PAHeartbeatRules.quiet(interruptedInference,fingerprint:"new",ready:[],pending:false).phase == "paused")
-        print("PASS heartbeat: configurable due boundaries, changed/pending assessment, persisted daily request allowance, day rollover, captured account isolation and interrupted inference requiring explicit resume")
+        let slept=try JSONDecoder().decode(PAHeartbeatAccount.self,from:JSONEncoder().encode(PAHeartbeatAccount(checked:now,assessed:now)))
+        let wake=now.addingTimeInterval(8*3600)
+        precondition(PAHeartbeatRules.due(slept,now:wake))
+        var caughtUp=slept;caughtUp.checked=wake;caughtUp.assessed=wake
+        precondition(!PAHeartbeatRules.due(caughtUp,now:wake.addingTimeInterval(1)),"A missed eight-hour span runs once, not eight times")
+        precondition(PAHeartbeatRules.needsAssessment(caughtUp,fingerprint:"same",manual:false))
+        print("PASS heartbeat: configurable due boundaries, periodic assessment including unchanged context and single catch-up, persisted daily request allowance, day rollover, captured account isolation and interrupted inference requiring explicit resume")
     }
 }

@@ -89,11 +89,16 @@ import SwiftData
         state.questions?.first { $0.deliveryID == delivery && $0.registration == registration }
     }
     func visible(_ record: PALearningQuestion, assistant: AssistantService) -> Bool {
-        record.registration == assistant.connection.activeID && !record.dismissed && assistant.memory.enabled && assistant.contextEnabled && (record.conversationID == nil || assistant.topics.contains { $0.id == record.conversationID }) && !assistant.memory.suppressed(record.registration).contains(record.turnID)
+        record.registration == assistant.connection.activeID && !record.dismissed && record.answered != true && assistant.memory.enabled && assistant.contextEnabled && (record.conversationID == nil || assistant.topics.contains { $0.id == record.conversationID }) && !assistant.memory.suppressed(record.registration).contains(record.turnID)
     }
     func recoverDelivery(_ model: DashboardModel) {
         guard readable, !model.assistant.busy else { return }
-        for record in state.questions ?? [] where visible(record,assistant:model.assistant) { model.assistant.deliverLearningQuestion(record) }
+        // New background questions are read from Review inbox; preserve older chat deliveries.
+    }
+    func answer(_ record:PALearningQuestion) {
+        guard let index=state.questions?.firstIndex(where:{$0.id == record.id && $0.registration == record.registration}) else {return}
+        let before=state;state.questions?[index].answered=true
+        do {try save()} catch {state=before;self.error="Your answer was sent, but the question could not be marked answered."}
     }
     func dismiss(_ record: PALearningQuestion) {
         guard let index = state.questions?.firstIndex(where:{ $0.id == record.id }) else { return }

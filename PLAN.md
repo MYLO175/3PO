@@ -287,3 +287,8 @@ This increment reuses the existing Tasks widget as Review inbox and stages infer
 
 
 7 October folder-first correction: user requested removal of home task rows, search, excess explanation and unclear placement/bookmark wording. Projects is a direct-child folder space with clickable full paths, quiet notes, a three-stage task board and segmented known-work progress; retain Waiting/archived raw states, exact human records, PA tools and native authority. Home keeps root work reachable through Unfiled tasks without authoring a new folder. Advanced Tree remains explicit. Filing/source evidence belongs in folder options, and only an explicit Suggest a folder resumes a paused placement request. Opening-bookmark controls are clearly named and independent of browsing. Read STATUS for validation/install boundaries.
+
+
+### 7 October — Regular PA heartbeat correction
+
+User requests a current AI review each configured interval: refresh enabled sources → selective email/proposal/draft work → current Today brief → Review inbox questions. Latest widget updates use the heartbeat allowance and preserve immutable morning delivery. Catch up once after launch/wake, without overlapping or replaying uncertain failed AI jobs; foreground work wins. Ordinary Refresh remains no-AI. New source-grounded questions/drafts never authorise Calendar/Reminders writes. Local preflight diagnostics are separate from unresolved chat failures. Implementation/check/install boundaries are recorded in STATUS.

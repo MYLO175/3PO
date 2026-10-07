@@ -15,6 +15,8 @@ struct AssistantTurn: Codable, Identifiable {
     var memoryNotes: [String]? = nil
     /// Local failure reasons, without raw tool arguments, source bodies or credentials.
     var toolErrors: [String]? = nil
+    /// New turns separate unresolved failures from the retained diagnostic history.
+    var unresolvedToolErrors: [String]? = nil
     var sourceMemoryIDs:[UUID]? = nil
     var focusAreas:[LifeArea]? = nil
     var images:[ChatImageAttachment]? = nil
@@ -37,6 +39,7 @@ struct PAContextCapture: Codable, Equatable, Identifiable {
     var profileSetup: Bool
     var consultedMemoryIDs: [UUID] = []
     var attemptedTools: [String] = []
+    var preparationNotes:[String]? = nil
     static func notebookIDs(_ context:String)->(memories:[UUID],workspace:[String]) {
         let object=(try? JSONSerialization.jsonObject(with:Data(context.utf8))) as? [String:Any] ?? [:]
         let areas=object["areas"] as? [[String:Any]] ?? []

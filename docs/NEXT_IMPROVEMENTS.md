@@ -113,3 +113,8 @@ Structure is now Projects. The latest folder-first correction adds direct-child 
 ### Folder-first workspace follow-up
 
 The latest user direction prioritises a calm folder hierarchy, direct contents, clickable paths, quiet notes, three task stages and segmented known-work progress. These supersede the initial home task rollup and permanent search bar. Next design candidates are optional folder icons/colours, saved folder-specific views and deliberate reminder/task associations; attachments and database-style fields are separate choices. Measure larger real hierarchies and drag/resize usability before adding more controls. Preserve shared PA access, current human write intent and native source authority. Current implementation and live acceptance are recorded in STATUS.
+
+
+## After the regular-heartbeat increment
+
+The coordinated refresh/review/latest-brief cycle, Review inbox questions, optional learning-question routing and local WhatsApp reply drafts are implemented. Remaining acceptance is sustained real sleep/wake/traffic, allowance/day transitions, reply/clarification usefulness and broader chronology/supersession. Focused fictional checks and short live acceptance do not establish those long-term cases. Further work should improve measured proposal quality and memory/commitment links before adding another autonomous lane.

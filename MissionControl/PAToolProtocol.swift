@@ -118,10 +118,10 @@ enum PAToolProtocol {
         guard let quote, !quote.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, human.contains(quote) else { throw ActionFailure.message("The tool did not cite your current message. No change was attempted.") }
     }
     /// Local prerequisites must be satisfied before spending an AI intent-check request.
-    static func nativeReadPreflight(_ name:String,operation:String,hasSources:Bool,hasDetails:Bool)throws {
+    static func nativeReadPreflight(_ name:String,operation:String,hasSources:Bool,hasDetails:Bool,target:String? = nil)throws {
         guard ["change_calendar","change_reminder"].contains(name) else {return}
-        if operation == "create",!hasSources {throw ActionFailure.message("Read the appropriate Calendar or Reminders source first to discover enabled destinations; no creation was attempted.")}
-        if ["edit","delete"].contains(operation),!hasDetails {throw ActionFailure.message("Read the exact item's current details before editing or deleting it.")}
+        if operation == "create",!hasSources {throw PAReadPrerequisite(readTool:name == "change_calendar" ? "read_calendar" : "read_reminders",reason:PAReadPrerequisite.destinations)}
+        if ["edit","delete"].contains(operation),!hasDetails {throw PAReadPrerequisite(readTool:"read_item_details",reason:PAReadPrerequisite.details,target:target)}
     }
     static func exclusiveAllDayEnd(_ end: Date, calendar: Calendar = .current) -> Date {
         let midnight = calendar.startOfDay(for:end)
@@ -175,5 +175,26 @@ struct PAForegroundRun {
                 rounds.removeFirst();compactedRounds+=1
             }
         }
+    }
+}
+
+/// Local preparation can recover within a turn. It is never a provider save failure.
+struct PAReadPrerequisite: LocalizedError {
+    var readTool:String
+    var reason:String
+    var target:String? = nil
+    func resolved(by name:String,id:String?)->Bool {readTool == name && (target == nil || target == id)}
+    var errorDescription:String? { reason }
+    static let destinations="Read the appropriate Calendar or Reminders source first to discover enabled destinations; no creation was attempted."
+    static let details="Read the exact item's current details before editing or deleting it."
+    static func visibleFailures(unresolved:[String]?,history:[String]?)->[String] {unresolved ?? (history ?? []).filter{!legacyPreparation($0)}}
+    static func legacyPreparation(_ note:String)->Bool {
+        if note == destinations || note == details {return true}
+        let prefix="3PO stopped this request before executing the operation: "
+        guard note.hasPrefix(prefix) else {return false}
+        let reason=String(note.dropFirst(prefix.count))
+        // Known older source-free check decisions, not provider/save failures.
+        return reason == "The request is to create a new reminder, but the proposed operation is change_reminder and has no target." ||
+            (reason.hasPrefix("What date and time should ") && reason.hasSuffix(" be added for?"))
     }
 }

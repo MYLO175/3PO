@@ -128,6 +128,7 @@ struct WorkspaceChecks {
         assert(UndoOrder.latest(layout:earlier,completion:nil,edit:nil,memoryReview:later) == "memoryReview")
         assert(UndoOrder.latest(layout:earlier,completion:nil,edit:nil,project:later) == "project")
         assert(UndoOrder.latest(layout:later,completion:nil,edit:nil,project:earlier) == "layout")
+        assert(UndoOrder.latest(layout:earlier,completion:nil,edit:nil,question:earlier,reviewQuestion:later) == "reviewQuestion")
         let hidden = ToolbarRules.setting(.date,visible:false,hidden:"future-control")
         assert(!ToolbarRules.visible(.date,hidden:hidden) && ToolbarRules.visible(.refresh,hidden:hidden))
         assert(ToolbarRules.setting(.date,visible:true,hidden:hidden) == "future-control")

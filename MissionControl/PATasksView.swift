@@ -9,6 +9,12 @@ struct PATasksView: View {
     @State private var draftSaved=false
     @State private var sourceDiscovery:PADiscovery?
     @State private var showingActivity=false
+    @State private var answering:BriefingQuestion?
+    @State private var answer=""
+    @State private var answerError:String?
+    @State private var answeringLearning:PALearningQuestion?
+    private var learningQuestions:[PALearningQuestion] {(model.memoryLearning.state.questions ?? []).filter{model.memoryLearning.visible($0,assistant:model.assistant)}}
+    private var questions:[BriefingQuestion] {model.briefings.pendingQuestions(model)}
     private var emails:[(MailMessage,EmailSummary)] {
         model.emailSummaries.highlights(model).filter { EmailHighlightRules.needsAction($0.1,replied:$0.0.replied) && model.emailSummaries.handling($0.1,message:$0.0,model:model) == nil }.map { message,summary in
             var value=summary
@@ -51,7 +57,7 @@ struct PATasksView: View {
                     .buttonStyle(.borderless).help("Background activity and details").accessibilityLabel("Background activity")
                 Button { model.heartbeat.check(model,manual:true) } label:{Image(systemName:"arrow.clockwise")}
                     .buttonStyle(.borderless).help("Check sources and review new material").accessibilityLabel("Check for suggestions")
-                    .disabled(reviewBusy || model.assistant.busy || model.chatGPT.busy || model.writing)
+                    .disabled(reviewBusy || model.assistant.busy || model.chatGPT.busy || model.writing || ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"))
             }
             HStack(spacing:8) {
                 if reviewBusy {ProgressView().controlSize(.mini)}
@@ -61,11 +67,28 @@ struct PATasksView: View {
                 if reviewPaused {
                     Button("Resume") {model.heartbeat.check(model,manual:true)}.buttonStyle(.borderless).font(.caption)
                         .help("Resume background review, including enabled email processing")
-                        .disabled(reviewBusy || model.assistant.busy || model.chatGPT.busy || model.writing)
+                        .disabled(reviewBusy || model.assistant.busy || model.chatGPT.busy || model.writing || ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"))
                 }
             }
             ScrollView {
                 LazyVStack(alignment:.leading,spacing:12) {
+                    if !questions.isEmpty || !learningQuestions.isEmpty {Text("Questions for you").font(.headline)}
+                    ForEach(questions) {item in
+                        VStack(alignment:.leading,spacing:8) {
+                            Label("Your answer would help",systemImage:"questionmark.bubble").font(.caption).foregroundStyle(.secondary)
+                            Text(item.question).font(.callout).textSelection(.enabled)
+                            DisclosureGroup("Context") {ForEach(item.sourceIDs,id:\.self) {id in if let source=item.snapshot.sources.first(where:{$0.id == id}) {Text(source.label).font(.caption)}}}
+                            HStack {Button("Answer") {answering=item;answer="";answerError=nil};Spacer();Button("Dismiss") {_ = model.briefings.resolveQuestion(item,model:model,answered:false)}}.controlSize(.small)
+                        }.taskCard()
+                    }
+                    ForEach(learningQuestions) {item in
+                        VStack(alignment:.leading,spacing:8) {
+                            Label("Getting to know you",systemImage:"questionmark.bubble").font(.caption).foregroundStyle(.secondary)
+                            Text(item.text).font(.callout)
+                            DisclosureGroup("Why I’m asking") {Text(item.evidence).font(.caption).textSelection(.enabled)}
+                            HStack {Button("Answer") {answeringLearning=item;answer="";answerError=nil};Spacer();Button("Dismiss") {model.memoryLearning.dismiss(item)}}.controlSize(.small)
+                        }.taskCard()
+                    }
                     if !discoveries.isEmpty { Text("From your background review").font(.headline) }
                     ForEach(discoveries) { item in
                         VStack(alignment:.leading,spacing:8) {
@@ -75,11 +98,16 @@ struct PATasksView: View {
                                 Text(dateLabel(change.target.start ?? change.target.due,hasTime:change.target.hasTime,fallback:"No date") + " → " + dateLabel(change.date(),hasTime:change.hasTime,fallback:change.newDate)).font(.callout).textSelection(.enabled)
                                 Text("Inferred connection · " + change.connection).font(.caption).foregroundStyle(.secondary)
                             }
-                            Label(item.sourceKind == "whatsapp" ? "WhatsApp · " + (item.sourceLabel ?? "Selected chat") : item.kind == "update" ? "Update" : item.kind == "change" ? "Date change" : "Missing plan",systemImage:item.kind == "calendar" ? "calendar.badge.plus" : "checklist").font(.caption).foregroundStyle(.secondary)
+                            Label(item.sourceKind == "whatsapp" ? "WhatsApp · " + (item.sourceLabel ?? "Selected chat") : item.kind == "reply" ? "Reply draft" : item.kind == "update" ? "Update" : item.kind == "change" ? "Date change" : "Missing plan",systemImage:item.kind == "calendar" ? "calendar.badge.plus" : "checklist").font(.caption).foregroundStyle(.secondary)
                             if let title=discoveryTitle(item) { Text(title).font(.callout.weight(.semibold)) }
                             Text(item.message).textSelection(.enabled)
+                            if let reply=item.replyDraft {
+                                Text(reply).font(.callout).textSelection(.enabled).padding(10).frame(maxWidth:.infinity,alignment:.leading).background(Color.primary.opacity(0.04),in:RoundedRectangle(cornerRadius:8))
+                                Text("Check the details before using this draft.").font(.caption2).foregroundStyle(.secondary)
+                                Button("Copy draft") {NSPasteboard.general.clearContents();NSPasteboard.general.setString(reply,forType:.string)}.controlSize(.small)
+                            }
                             Button("Source evidence") { sourceDiscovery=item }.buttonStyle(.borderless).font(.caption)
-                            HStack { if item.kind == "project" { if model.assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) == nil { Button("Review project…") { reviewingProject=item } } else { Label("Created",systemImage:"checkmark.circle") } } else if item.kind != "update" {
+                            HStack { if item.kind == "project" { if model.assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) == nil { Button("Review project…") { reviewingProject=item } } else { Label("Created",systemImage:"checkmark.circle") } } else if !["update","reply"].contains(item.kind) {
                                 if item.reviewState == "pending" { Text("Save needs checking in Apple; it will not be repeated.").font(.caption).foregroundStyle(.orange) }
                                 else if item.proposedChange != nil {
                                     Button(model.approvingDiscoveryID == item.id ? "Approving…" : "Approve") { Task {await model.approveDiscovery(item)} }.disabled(!model.proactive.canReview(item.id,model:model) || model.writing || model.assistant.busy)
@@ -139,12 +167,39 @@ struct PATasksView: View {
                             if item.state != .running { HStack { if item.state == .waiting { Button("Continue queue") { model.assistant.resumeQueue(model:model) }.disabled(model.assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }; Button("Remove") { model.assistant.discardQueued(item.id) } }.controlSize(.small) }
                         }.taskCard()
                     }
-                    if emails.isEmpty && discoveries.isEmpty && pending.isEmpty && handled.isEmpty {
+                    if emails.isEmpty && discoveries.isEmpty && pending.isEmpty && handled.isEmpty && questions.isEmpty && learningQuestions.isEmpty {
                         ContentUnavailableView("Nothing waiting for review",systemImage:"checkmark.circle",description:Text("Proposed changes, useful updates and prepared work appear here when enabled sources reveal something useful."))
                     }
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+        .sheet(item:$answering) {question in
+            VStack(alignment:.leading,spacing:16) {
+                Text(question.question).font(.headline)
+                TextEditor(text:$answer).frame(minHeight:100).font(.body)
+                if let answerError {Text(answerError).font(.caption).foregroundStyle(.orange)}
+                HStack {Button("Cancel") {answering=nil};Spacer();Button("Send answer") {
+                    guard questions.contains(where:{$0.id == question.id}) else {answerError="This question’s supporting context changed. Run a fresh heartbeat.";return}
+                    let text="About your question “"+question.question+"”: "+answer.trimmingCharacters(in:.whitespacesAndNewlines)
+                    if model.assistant.send(model:model,topicID:nil,prompt:text,focusAreas:[]) {
+                        _ = model.briefings.resolveQuestion(question,model:model,answered:true);answering=nil
+                    } else {answerError="Your PA is busy. Your answer is kept here; send it when ready."}
+                }.disabled(answer.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || model.assistant.busy || model.chatGPT.busy || model.writing || model.heartbeat.busy || ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"))}
+                Text("Your answer continues the PA conversation.").font(.caption).foregroundStyle(.secondary)
+            }.padding(24).frame(width:520)
+        }
+        .sheet(item:$answeringLearning) {question in
+            VStack(alignment:.leading,spacing:16) {
+                Text(question.text).font(.headline)
+                TextEditor(text:$answer).frame(minHeight:100)
+                if let answerError {Text(answerError).font(.caption).foregroundStyle(.orange)}
+                HStack {Button("Cancel") {answeringLearning=nil};Spacer();Button("Send answer") {
+                    guard learningQuestions.contains(where:{$0.id == question.id}) else {answerError="This question is no longer available.";return}
+                    if model.assistant.send(model:model,topicID:question.conversationID,prompt:"About your question “"+question.text+"”: "+answer.trimmingCharacters(in:.whitespacesAndNewlines),focusAreas:question.conversationID == nil ? [] : nil) {model.memoryLearning.answer(question);answeringLearning=nil}
+                    else {answerError="Your PA is busy. Your answer is kept here."}
+                }.disabled(answer.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || model.assistant.busy || model.chatGPT.busy || model.writing || model.heartbeat.busy || ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"))}
+            }.padding(24).frame(width:520)
+        }
         .sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record,model:model) }
         .sheet(isPresented:$showingActivity) {BackgroundActivityView(model:model)}
         .sheet(item:$reviewingProject) { record in LifeItemEditor(model:model,item:.init(registration:record.registration,kind:.project,title:String((record.sourceTitle ?? "New project").prefix(160)),notes:record.evidence),close:{reviewingProject=nil},reviewedSuggestion:record) }
@@ -156,7 +211,7 @@ struct PATasksView: View {
                 Text("Check details and placeholders before using this draft.").font(.caption).foregroundStyle(.secondary)
                 HStack { Button("Close") { editing=nil }; Spacer(); Button(draftSaved ? "Saved" : "Save draft") { draftSaved=model.emailSummaries.saveReplyDraft(draft,summary:summary,model:model) }; Button(copied ? "Copied" : "Copy draft") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(draft,forType:.string); copied=true } }
             }.padding(24).frame(width:560)
-        }.onChange(of:model.chatGPT.activeID) { editing=nil; draft="";sourceDiscovery=nil;reviewingProject=nil }
+        }.onChange(of:model.chatGPT.activeID) { editing=nil; draft="";sourceDiscovery=nil;reviewingProject=nil;answering=nil;answeringLearning=nil;answer="" }
         .onChange(of:discoveries.map(\.id)) { if let sourceDiscovery,!discoveries.contains(where:{$0.id == sourceDiscovery.id}) { self.sourceDiscovery=nil } }.onChange(of:model.assistant.excludedAccounts) { if let account=editing?.message?.accountID,model.assistant.excludedAccounts.contains(account) { editing=nil; draft="" } }
     }
 }

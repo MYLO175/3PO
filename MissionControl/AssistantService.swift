@@ -427,6 +427,8 @@ import Observation
                     allConversations[c].turns[t].contextCapture?.consultedMemoryIDs = session.consultedMemory.sorted{$0.uuidString < $1.uuidString}
                 }
             }
+            var preparations:[String:[PAReadPrerequisite]]=[:]
+            if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {allConversations[c].turns[t].unresolvedToolErrors=[]}
             var input: [[String:Any]] = []
             var run=PAForegroundRun(),firstRound=true,outcome = ""
             do {
@@ -466,6 +468,17 @@ import Observation
                         let output: String
                         do {
                             output = try await session.execute(call,valid:valid);successes+=1
+                            if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {
+                                let readID=(try? PAToolProtocol.arguments(call))?["id"] as? String
+                                let prepared = call.name == "read_calendar" ? !session.calendar.sources.isEmpty : call.name == "read_reminders" ? !session.reminders.sources.isEmpty : call.name == "read_item_details" ? readID.flatMap{session.itemDetails[$0]} != nil : false
+                                var resolved=Set<String>()
+                                for (note,requirements) in preparations {
+                                    let remaining=requirements.filter{!prepared || !$0.resolved(by:call.name,id:readID)}
+                                    if remaining.isEmpty {resolved.insert(note)} else {preparations[note]=remaining}
+                                }
+                                allConversations[c].turns[t].unresolvedToolErrors?.removeAll{resolved.contains($0)}
+                                preparations=preparations.filter{!resolved.contains($0.key)}
+                            }
                             if let (question,options)=session.clarification {
                                 setResponse(([session.receipts.joined(separator:"\n"),question].filter{!$0.isEmpty}).joined(separator:"\n\n"),completed:true)
                                 if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) { allConversations[c].turns[t].choices=options }
@@ -482,7 +495,21 @@ import Observation
                             let note=(error as? PAIntentFailure)?.note ?? String(error.localizedDescription.prefix(700))
                             if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {
                                 var errors=allConversations[c].turns[t].toolErrors ?? [];errors.append(note)
-                                allConversations[c].turns[t].toolErrors=Array(errors.suffix(PAToolProtocol.maxStoredToolErrors));save()
+                                allConversations[c].turns[t].toolErrors=Array(errors.suffix(PAToolProtocol.maxStoredToolErrors))
+                                let routineDecision=(error as? PAIntentFailure)?.kind == .refused
+                                var unresolved=allConversations[c].turns[t].unresolvedToolErrors ?? []
+                                if !routineDecision {unresolved.append(note)}
+                                if routineDecision {
+                                    var notes=allConversations[c].turns[t].contextCapture?.preparationNotes ?? [];notes.append(note)
+                                    allConversations[c].turns[t].contextCapture?.preparationNotes=Array(notes.suffix(6))
+                                }
+                                allConversations[c].turns[t].unresolvedToolErrors=Array(unresolved.suffix(PAToolProtocol.maxStoredToolErrors))
+                                if let preparation=error as? PAReadPrerequisite {
+                                    preparations[note,default:[]].append(preparation)
+                                    var notes=allConversations[c].turns[t].contextCapture?.preparationNotes ?? [];notes.append(note)
+                                    allConversations[c].turns[t].contextCapture?.preparationNotes=Array(notes.suffix(6))
+                                }
+                                save()
                             }
                             if let failure=error as? PAIntentFailure,failure.kind == .unavailable {
                                 guard valid() else {throw ActionFailure.message("Configuration changed during the AI check; remaining task stopped.")}

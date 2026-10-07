@@ -187,9 +187,11 @@ import EventKit
                 let evidenceOnly=ProcessInfo.processInfo.arguments.contains("--mail-evidence-only")
                 let emailWork=ProcessInfo.processInfo.arguments.contains("--email-work-only")
                 let schedulerOnly=ProcessInfo.processInfo.arguments.contains("--scheduler-only")
+                let intentPreparation=ProcessInfo.processInfo.arguments.contains("--intent-preparation-only")
+                let heartbeatContract=ProcessInfo.processInfo.arguments.contains("--heartbeat-contract-only")
                 let proposalTimeline=ProcessInfo.processInfo.arguments.contains("--proposal-timeline-only")
-                do {result=try await (proposalTimeline ? ReviewInboxEvaluation.runProposalTimeline(self) : schedulerOnly ? HeartbeatService.evaluateScheduling() : emailWork ? ReviewInboxEvaluation.runEmailWork(self) : evidenceOnly ? ReviewInboxEvaluation.runMailEvidence(self) : mailOnly ? ReviewInboxEvaluation.runMailReview(self) : approvalOnly ? ReviewInboxEvaluation.runApproval(self) : ReviewInboxEvaluation.run(self))} catch {result=["error":error.localizedDescription,"storage":"Fictional disposable source-free startup"]}
-                let path=proposalTimeline ? "/tmp/missioncontrol-proposal-timeline-evaluation.json" : schedulerOnly ? "/tmp/missioncontrol-review-scheduler-evaluation.json" : emailWork ? "/tmp/missioncontrol-email-work-evaluation.json" : evidenceOnly ? "/tmp/missioncontrol-mail-evidence-evaluation.json" : mailOnly ? "/tmp/missioncontrol-mail-review-evaluation.json" : approvalOnly ? "/tmp/missioncontrol-review-approval-evaluation.json" : "/tmp/missioncontrol-review-inbox-evaluation.json"
+                do {result=try await (intentPreparation ? ReviewInboxEvaluation.runIntentPreparation(self) : heartbeatContract ? ReviewInboxEvaluation.runHeartbeatContract(self) : proposalTimeline ? ReviewInboxEvaluation.runProposalTimeline(self) : schedulerOnly ? HeartbeatService.evaluateScheduling(self) : emailWork ? ReviewInboxEvaluation.runEmailWork(self) : evidenceOnly ? ReviewInboxEvaluation.runMailEvidence(self) : mailOnly ? ReviewInboxEvaluation.runMailReview(self) : approvalOnly ? ReviewInboxEvaluation.runApproval(self) : ReviewInboxEvaluation.run(self))} catch {result=["error":error.localizedDescription,"storage":"Fictional disposable source-free startup"]}
+                let path=intentPreparation ? "/tmp/missioncontrol-intent-preparation-evaluation.json" : heartbeatContract ? "/tmp/missioncontrol-heartbeat-contract-evaluation.json" : proposalTimeline ? "/tmp/missioncontrol-proposal-timeline-evaluation.json" : schedulerOnly ? "/tmp/missioncontrol-review-scheduler-evaluation.json" : emailWork ? "/tmp/missioncontrol-email-work-evaluation.json" : evidenceOnly ? "/tmp/missioncontrol-mail-evidence-evaluation.json" : mailOnly ? "/tmp/missioncontrol-mail-review-evaluation.json" : approvalOnly ? "/tmp/missioncontrol-review-approval-evaluation.json" : "/tmp/missioncontrol-review-inbox-evaluation.json"
                 if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:path),options:.atomic)}
                 NSApp.terminate(nil)
             };return
@@ -661,7 +663,7 @@ import EventKit
     func recordAssistantEditUndo(_ receipt: NativeEditUndo) { editUndo = receipt; widgetCalendars.invalidate() }
     func showFeedback(_ text: String) { nativeWriteNotice = text; feedbackDate = .now }
     var latestUndo: String? {
-        UndoOrder.latest(layout:workspace.canUndo ? workspace.undoDate : nil,completion:undoToken == nil ? nil : completionUndoDate,edit:editUndo?.created,email:emailSummaries.undoDate(chatGPT.activeID),discovery:proactive.undoDate(chatGPT.activeID),question:memoryLearning.undoDate(chatGPT.activeID),project:assistant.projects.undoDate(chatGPT.activeID),memoryReview:memoryMaintenance.undoDate(chatGPT.activeID))
+        UndoOrder.latest(layout:workspace.canUndo ? workspace.undoDate : nil,completion:undoToken == nil ? nil : completionUndoDate,edit:editUndo?.created,email:emailSummaries.undoDate(chatGPT.activeID),discovery:proactive.undoDate(chatGPT.activeID),question:memoryLearning.undoDate(chatGPT.activeID),project:assistant.projects.undoDate(chatGPT.activeID),memoryReview:memoryMaintenance.undoDate(chatGPT.activeID),reviewQuestion:briefings.undoQuestionDate(chatGPT.activeID))
     }
     var latestUndoDate: Date? {
         switch latestUndo {
@@ -671,6 +673,7 @@ import EventKit
         case "email": return emailSummaries.undoDate(chatGPT.activeID)
         case "discovery": return proactive.undoDate(chatGPT.activeID)
         case "question": return memoryLearning.undoDate(chatGPT.activeID)
+        case "reviewQuestion": return briefings.undoQuestionDate(chatGPT.activeID)
         case "memoryReview": return memoryMaintenance.undoDate(chatGPT.activeID)
         case "project": return assistant.projects.undoDate(chatGPT.activeID)
         default: return nil
@@ -683,7 +686,7 @@ import EventKit
         case "layout": return "Undo dashboard change"
         case "email": return "Undo email dismissal"
         case "discovery": return "Undo suggestion dismissal"
-        case "question": return "Undo question dismissal"
+        case "question","reviewQuestion": return "Undo question dismissal"
         case "memoryReview": return "Undo memory review dismissal"
         case "project": return "Undo project edit"
         default: return "Undo"
@@ -713,6 +716,7 @@ import EventKit
         if latestUndo == "email" { emailSummaries.undoDismiss(self); return }
         if latestUndo == "discovery" { proactive.undo(self); return }
         if latestUndo == "question" { memoryLearning.undoQuestion(chatGPT.activeID); return }
+        if latestUndo == "reviewQuestion" { briefings.undoQuestion(chatGPT.activeID);return }
         if latestUndo == "layout" { workspace.undo(); if workspace.error == nil { showFeedback("Dashboard change undone") }; return }
         if latestUndo == "completion" { undo(); return }
         guard latestUndo == "edit", let ticket = editUndo else { return }

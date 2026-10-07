@@ -203,3 +203,15 @@ struct LifeWorkspaceEditUndo {
         } catch { container.mainContext.rollback(); self.error = "Projects could not be saved. Your editing draft is kept."; throw LifeWorkspaceFailure.message(self.error!) }
     }
 }
+
+/// Board moves only change a currently permitted task's local stage, at its captured folder revision.
+@MainActor enum LifeTaskStageChange {
+    static func apply(_ id:UUID,stage:LifeTaskStage,parent:UUID?,registration:String,permittedIDs:Set<UUID>,expectedRevision:UUID,store:LifeWorkspaceStore)throws {
+        guard store.revision == expectedRevision,permittedIDs.contains(id),let item=store.items(registration,includeTopics:true).first(where:{$0.id == id}),item.kind.isWork,item.parentID == parent,item.status != .archived else {
+            throw LifeWorkspaceFailure.message("This folder changed. Try moving the task again.")
+        }
+        guard item.status != stage.status else { return }
+        var value=item;value.status=stage.status
+        _ = try store.save(value,expected:item.revision)
+    }
+}

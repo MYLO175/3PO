@@ -26,6 +26,8 @@ struct PAReviewRun:Codable,Identifiable {
     var preparedItems:Int = 0
     var drafts:Int = 0
     var handled:Int = 0
+    var briefUpdated:Bool? = nil
+    var questions:Int? = nil
 }
 struct PAHeartbeatMailLane:Codable {
     var checked:Date?
@@ -75,7 +77,7 @@ enum PAHeartbeatRules {
         return deferred(account,now:now,reason:foreground ? .foreground : .sources)
     }
     static func needsAssessment(_ account: PAHeartbeatAccount, fingerprint: String, manual: Bool,pendingSources:Bool = false) -> Bool {
-        manual || (account.phase != "paused" && account.phase != "assessing" && (account.pending == true || pendingSources || account.fingerprint != fingerprint))
+        manual || (account.phase != "paused" && account.phase != "assessing")
     }
     static func callCount(_ account:PAHeartbeatAccount,day:String)->Int { account.budgetDay == day ? account.calls ?? 0 : 0 }
     static func claim(_ account:PAHeartbeatAccount,day:String,limit:Int) throws -> PAHeartbeatAccount {

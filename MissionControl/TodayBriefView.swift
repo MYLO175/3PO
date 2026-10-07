@@ -10,8 +10,9 @@ struct TodayBriefView: View {
                 Label("Today’s brief",systemImage:"sun.max").font(.title3.weight(.semibold))
                 Spacer()
                 if briefings.busy { ProgressView().controlSize(.small); Button("Stop") { briefings.cancel() } }
-                else { Button { briefings.updateToday(model) } label: { Image(systemName:"arrow.clockwise") }.help(!briefings.hasMorningToday(model) ? "Prepare today’s brief" : "Update brief with fresh sources; keeps the morning message").accessibilityLabel(!briefings.hasMorningToday(model) ? "Prepare today’s brief" : "Update today’s brief") }
+                else { Button { briefings.updateToday(model) } label: { Image(systemName:"arrow.clockwise") }.help(!briefings.hasCurrentToday(model) ? "Prepare today’s brief" : "Update brief with fresh sources; keeps the morning message").accessibilityLabel(!briefings.hasCurrentToday(model) ? "Prepare today’s brief" : "Update today’s brief").disabled(model.heartbeat.busy) }
             }.buttonStyle(.borderless)
+            if model.heartbeat.busy && !briefings.busy {Text("The heartbeat will update your brief shortly…").font(.caption).foregroundStyle(.secondary)}
             if briefings.busy { Text(briefings.phase.isEmpty ? "Preparing today’s brief…" : briefings.phase).font(.caption).foregroundStyle(.secondary) }
             if let record = briefings.savedToday(model) ?? briefings.current(model) {
                 ScrollView {
@@ -46,12 +47,12 @@ struct TodayBriefView: View {
                         }.font(.caption)
                     }.frame(maxWidth:.infinity,alignment:.leading)
                 }
-                Text("\(record.morningID == nil ? "Prepared" : "Updated") \(record.created.formatted(date:.omitted,time:.shortened)) · Update to reflect changes").font(.caption2).foregroundStyle(.secondary)
+                Text("\(record.morningID == nil && record.heartbeatID == nil && record.widgetOnly != true ? "Prepared" : "Updated") \(record.created.formatted(date:.omitted,time:.shortened)) · Refreshes with each heartbeat").font(.caption2).foregroundStyle(.secondary)
             } else {
                 WeatherBriefCard(weather:model.weather)
-                ContentUnavailableView("A clear start to your day",systemImage:"sun.horizon",description:Text(!model.assistant.contextEnabled ? "Enable assistant source context in Settings." : briefings.busy ? "Your PA is preparing today’s message…" : briefings.hasMorningToday(model) ? "Your morning message is saved with earlier source choices. Update the brief to use your current sources." : !briefings.enabled ? "Prepare a brief whenever you like. Automatic 7:30 preparation is optional in Settings." : model.chatGPT.usagePaused ? "Subscription access is paused. Your Apple sources remain available." : "Your PA brings together today’s calendar, reminders and relevant recent mail. Prepared at 7:30, with catch-up after launch or wake."))
+                ContentUnavailableView("A clear start to your day",systemImage:"sun.horizon",description:Text(!model.assistant.contextEnabled ? "Enable assistant source context in Settings." : briefings.busy ? "Your PA is preparing today’s message…" : briefings.hasCurrentToday(model) ? "Your morning message is saved with earlier source choices. Update the brief to use your current sources." : !briefings.enabled ? "Prepare a brief whenever you like. Automatic 7:30 preparation is optional in Settings." : model.chatGPT.usagePaused ? "Subscription access is paused. Your Apple sources remain available." : "Your PA brings together today’s calendar, reminders and relevant recent mail. Prepared at 7:30, with catch-up after launch or wake."))
             }
-            if briefings.current(model) == nil && !briefings.busy { Button(briefings.hasMorningToday(model) ? "Update brief" : "Prepare brief") { briefings.updateToday(model) }.buttonStyle(.bordered).controlSize(.small) }
+            if briefings.current(model) == nil && !briefings.busy { Button(briefings.hasCurrentToday(model) ? "Update brief" : "Prepare brief") { briefings.updateToday(model) }.buttonStyle(.bordered).controlSize(.small).disabled(model.heartbeat.busy) }
             if let error = briefings.error { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
             if model.chatGPT.usagePaused { Button("Check subscription access") { model.chatGPT.testConnection() }.controlSize(.small).disabled(model.chatGPT.busy || model.assistant.busy) }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)

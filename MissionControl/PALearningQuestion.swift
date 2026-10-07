@@ -18,6 +18,7 @@ struct PALearningQuestion: Codable, Identifiable, Equatable {
     var evidence: String
     var created: Date
     var dismissed = false
+    var answered:Bool? = nil
     var deliveryID: String { "learn-question:" + id }
 }
 enum LearningQuestionRules {

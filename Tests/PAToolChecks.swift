@@ -31,6 +31,18 @@ import Foundation
         }
         try PAToolProtocol.nativeReadPreflight("change_reminder",operation:"complete",hasSources:true,hasDetails:false)
         try PAToolProtocol.nativeReadPreflight("read_reminders",operation:"",hasSources:false,hasDetails:false)
+        let preparation=PAReadPrerequisite(readTool:"read_item_details",reason:PAReadPrerequisite.details,target:"exact-A")
+        precondition(!preparation.resolved(by:"read_item_details",id:"exact-B"))
+        precondition(!preparation.resolved(by:"read_calendar",id:"exact-A"))
+        precondition(preparation.resolved(by:"read_item_details",id:"exact-A"))
+        precondition(PAReadPrerequisite.legacyPreparation(PAReadPrerequisite.destinations))
+        precondition(!PAReadPrerequisite.legacyPreparation("Calendar save failed"))
+        precondition(PAReadPrerequisite.legacyPreparation("3PO stopped this request before executing the operation: The request is to create a new reminder, but the proposed operation is change_reminder and has no target."))
+        precondition(PAReadPrerequisite.legacyPreparation("3PO stopped this request before executing the operation: What date and time should the fictional review be added for?"))
+        precondition(!PAReadPrerequisite.legacyPreparation("3PO stopped this request before executing the operation: (server_is_overloaded)"))
+        precondition(PAReadPrerequisite.visibleFailures(unresolved:[],history:[PAReadPrerequisite.destinations]).isEmpty,"Recovered new preparation does not show a failure")
+        precondition(PAReadPrerequisite.visibleFailures(unresolved:[PAReadPrerequisite.details],history:[]).count == 1,"Unresolved new preparation stays visible")
+        precondition(PAReadPrerequisite.visibleFailures(unresolved:nil,history:[PAReadPrerequisite.destinations,"Calendar save failed"]) == ["Calendar save failed"],"Legacy local preparation does not hide a genuine partial save failure")
         let fields: [String:Any] = ["operation":"edit","target":"issued-id","destination":NSNull(),"title":"sort out card","notes":NSNull(),"due":"undated","hasTime":false,"scope":NSNull(),"options":NSNull(),"authorization":human]
         let encoded = String(data:try JSONSerialization.data(withJSONObject:fields),encoding:.utf8)!
         let call = PAFunctionCall(id:"call1",name:"change_reminder",namespace:"pa",arguments:encoded)

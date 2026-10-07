@@ -457,7 +457,7 @@ struct PAHelpSections:View {
     var body:some View {
         Group {
             Section("How 3PO works") {
-                Text("Sources collect without AI → review changed or pending context → prepare useful items in Review inbox → you review and save changes.").font(.headline)
+                Text("Heartbeat: refresh enabled sources → review what matters → update your brief and Review inbox → you approve changes.").font(.headline)
                 Text("Calendar, Reminders, Mail and WhatsApp refresh do not start inference. Reviews use only enabled sources and show partial coverage when history or access is limited.").font(.callout)
                 Text("3PO does not send email or WhatsApp messages. Imported messages can inform a suggestion, but never authorise a Calendar or Reminders change.").font(.callout)
             }

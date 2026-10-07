@@ -189,7 +189,7 @@ struct AssistantPanel: View {
                                     DisclosureGroup("Memory tool notes") { ForEach(Array(notes.enumerated()),id:\.offset) { _,note in Text(note).font(.caption).foregroundStyle(.orange).textSelection(.enabled) } }
                                         .font(.caption)
                                 }
-                                if let errors=turn.toolErrors,!errors.isEmpty {
+                                if case let errors = PAReadPrerequisite.visibleFailures(unresolved:turn.unresolvedToolErrors,history:turn.toolErrors),!errors.isEmpty {
                                     DisclosureGroup("What went wrong") { ForEach(Array(errors.enumerated()),id:\.offset) { _,reason in Text(reason).font(.caption).textSelection(.enabled) } }.font(.caption)
                                 }
                                 if replyingHere && !turn.content.isEmpty {
@@ -209,7 +209,7 @@ struct AssistantPanel: View {
                                 }
                                 if turn.role == "assistant" && !turn.completed && assistant.requestTurnID != turn.id && !turn.content.isEmpty { Text("Partial response").font(.caption).foregroundStyle(.orange) }
                                 if let date = turn.created { Text(date.formatted(date:.omitted,time:.shortened)).font(.caption2).foregroundStyle(.secondary) }
-                                if let capture=turn.contextCapture { Button("Context details") { inspectingContext=capture }.font(.caption).buttonStyle(.plain).foregroundStyle(.secondary) }
+                                if let capture=turn.contextCapture { Button("Context details") { var value=capture;if value.preparationNotes == nil {value.preparationNotes=(turn.toolErrors ?? []).filter(PAReadPrerequisite.legacyPreparation)};inspectingContext=value }.font(.caption).buttonStyle(.plain).foregroundStyle(.secondary) }
                             }.font(.callout).padding(12).frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children:.contain).accessibilityLabel(turn.role == "user" ? "Your message" : "PA message").background(palette[turn.role == "user" ? .userBubble : .assistantBubble],in:RoundedRectangle(cornerRadius:10))
                             if turn.role != "user" { Spacer(minLength:20) }
                             }.id(turn.id)
@@ -354,9 +354,9 @@ struct AssistantSourceSettings: View {
                     }
                 }
             case .background:
-                Section("Background review") {
-                    Toggle("Review changed context automatically",isOn:$model.heartbeat.enabled)
-                    Picker("Review interval",selection:$model.heartbeat.intervalMinutes) { Text("15 minutes").tag(15);Text("30 minutes").tag(30);Text("1 hour").tag(60);Text("2 hours").tag(120) }
+                Section("PA heartbeat") {
+                    Toggle("Check on things automatically",isOn:$model.heartbeat.enabled)
+                    Picker("Check every",selection:$model.heartbeat.intervalMinutes) { Text("15 minutes").tag(15);Text("30 minutes").tag(30);Text("1 hour").tag(60);Text("2 hours").tag(120) }
                     Toggle("Include email assessment",isOn:$model.emailSummaries.enabled)
                     Toggle("Include selected WhatsApp chats",isOn:$model.heartbeat.whatsappEnabled)
                     Toggle("Notify when review items are ready",isOn:$model.heartbeat.notificationsEnabled)
@@ -366,15 +366,15 @@ struct AssistantSourceSettings: View {
                     LabeledContent("Automatic review",value:model.heartbeat.scheduleStatus(model))
                     if progress?.pending == true { Text("Changed or unfinished review work is waiting.").font(.caption).foregroundStyle(.secondary) }
                     Text(model.heartbeat.statusFor(model.chatGPT.activeID)).font(.caption).foregroundStyle(.secondary)
-                    Text("Sources collect without AI. At each review, checked Mail accounts can continue while others wait; their cached data and pending work are kept. Email assessment can run while a Calendar/Reminders comparison is waiting. Proposals appear in Review inbox and require your approval. There is no daily cap on useful items. Reviews run while 3PO is open and your Mac is awake.").font(.caption).foregroundStyle(.secondary)
+                    Text("Each heartbeat refreshes enabled sources, reviews what matters, prepares suggestions or reply drafts, and updates Today’s brief. Questions and proposals go to Review inbox; you approve changes. A missed check runs once after reopening or waking. 3PO must be open and the Mac awake. Failed AI work waits for Resume.").font(.caption).foregroundStyle(.secondary)
                     Button("Open Review inbox") {model.workspace.showReviewInbox();openWindow(id:"dashboard")}.disabled(model.workspace.readOnly)
                     Button("Background activity") {showingActivity=true}
-                    Button("Review changed context now") { model.heartbeat.check(model,manual:true) }.disabled(model.heartbeat.busy || model.assistant.busy || model.chatGPT.busy)
+                    Button("Run heartbeat now") { model.heartbeat.check(model,manual:true) }.disabled(model.heartbeat.busy || model.assistant.busy || model.chatGPT.busy)
                     let mailReviewStatus=model.heartbeat.mailReviewStatus(model)
                     if !mailReviewStatus.isEmpty {Text(mailReviewStatus).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)}
                 }
                 Section("Other background work") {
-                    Text("Communication review uses the interval above. Morning briefs have their own schedule under Morning brief below. Conversation/source learning, memory organisation and optional memory review are controlled in Memory. Explicitly queued PA work uses Continue queue. These jobs share idle time but do not all use this interval or allowance.").font(.caption).foregroundStyle(.secondary)
+                    Text("The heartbeat uses the interval above and updates the brief. The optional morning message is delivered once at 7:30. Memory learning/organisation are controlled in Memory. Your queued requests use Continue queue.").font(.caption).foregroundStyle(.secondary)
                 }
                 DisclosureGroup("Advanced review limits") {
                     Picker("AI calls for email and communication review",selection:$model.heartbeat.dailyCallLimit) { ForEach([8,16,32,64,96],id:\.self) { Text(String($0)).tag($0) } }
@@ -466,11 +466,15 @@ struct BackgroundActivityView:View {
                         VStack(alignment:.leading,spacing:12) {
                             if runs.isEmpty {Text("New review activity will be recorded here. Earlier reviews have no detailed history.").foregroundStyle(.secondary)}
                             ForEach(runs) {run in
+                                let running=model.heartbeat.reviewInProgress(run,registration:registration)
                                 VStack(alignment:.leading,spacing:5) {
-                                    HStack {Text(run.started.formatted(date:.abbreviated,time:.shortened)).font(.callout.weight(.semibold));Spacer();Text(run.finished == nil ? (model.heartbeat.reviewInProgress(run,registration:registration) ? "Running" : "Interrupted") : run.phase == "paused" ? "Paused" : run.phase == "waiting" ? "Work waiting" : "Checked").font(.caption)}
-                                    Text(run.detail).font(.callout).textSelection(.enabled)
-                                    Text("\(run.calls) AI calls · \(run.checkedAccounts) checked Mail accounts · \(run.waitingAccounts) waiting").font(.caption).foregroundStyle(.secondary)
-                                    Text("\(run.preparedItems) new proposals · \(run.drafts) new drafts · \(run.handled) new planned/addressed connections").font(.caption).foregroundStyle(.secondary)
+                                    HStack {Text(run.started.formatted(date:.abbreviated,time:.shortened)).font(.callout.weight(.semibold));Spacer();Text(run.finished == nil ? (running ? "Running" : "Interrupted") : run.phase == "paused" ? "Paused" : run.phase == "waiting" ? "Work waiting" : "Checked").font(.caption)}
+                                    Text(running ? model.heartbeat.statusFor(registration) : run.detail).font(.callout).textSelection(.enabled)
+                                    if run.finished != nil {
+                                        Text("\(run.calls) AI calls · \(run.checkedAccounts) checked Mail accounts · \(run.waitingAccounts) waiting").font(.caption).foregroundStyle(.secondary)
+                                        Text("\(run.preparedItems) new proposals · \(run.drafts) new drafts · \(run.handled) new planned/addressed connections").font(.caption).foregroundStyle(.secondary)
+                                        if let updated=run.briefUpdated {Text((updated ? "Brief updated" : "Brief not updated")+" · \(run.questions ?? 0) new questions").font(.caption).foregroundStyle(.secondary)}
+                                    }
                                 }
                                 Divider()
                             }
@@ -490,7 +494,7 @@ struct BackgroundActivityView:View {
                             }
                         }.frame(maxWidth:.infinity,alignment:.leading).padding(5)
                     }
-                    Text("Opening this page makes no AI request. Sources collect without AI; communication review, morning brief, memory work and explicitly queued work have separate controls. The app must be open and the Mac awake.").font(.caption).foregroundStyle(.secondary)
+                    Text("Opening this page makes no AI request. The heartbeat reviews sources and updates the brief. Optional morning delivery, memory learning and your queued requests have separate controls. 3PO must be open and the Mac awake.").font(.caption).foregroundStyle(.secondary)
                 }
             }
         }.padding(24).frame(width:650,height:650)

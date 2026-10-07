@@ -80,6 +80,14 @@ import Foundation
         precondition(ProactiveRules.heartbeatMailEligible(received:hbNow.addingTimeInterval(-48*3600),now:hbNow))
         precondition(!ProactiveRules.heartbeatMailEligible(received:hbNow.addingTimeInterval(-48*3600-1),now:hbNow))
         precondition(ProactiveRules.heartbeatMailEligible(received:hbNow.addingTimeInterval(-7200),now:hbNow))
+        let replyCandidate=DiscoveryCandidate(alias:"wa_reply",mailID:"reply-source",evidence:"",followUpEvidence:"",sourceKind:"whatsapp",sourceChatID:"selected",sourceMessageID:"reply-source",sourceIdentity:"link",sourceRevision:"v1",sourceText:"Could you confirm whether you can join our project meeting?")
+        let replyPayload = #"{"suggestions":[{"mailID":"wa_reply","kind":"reply","message":"A project reply would help.","evidence":"Could you confirm whether you can join our project meeting?","draft":"Thanks. [Confirm whether you can attend]."}]}"#
+        let localReplies=try ProactiveRules.decode(replyPayload,candidates:[replyCandidate],registration:"account",scope:"scope",now:.now)
+        precondition(localReplies[0].replyDraft?.contains("[Confirm") == true && localReplies[0].proposedChange == nil)
+        precondition(ProactiveRules.unreported(localReplies,prior:localReplies).isEmpty)
+        let savedReply=try JSONDecoder().decode(PADiscovery.self,from:JSONEncoder().encode(localReplies[0]))
+        precondition(savedReply == localReplies[0])
+        do {_ = try ProactiveRules.decode(replyPayload.replacingOccurrences(of:"Could you confirm whether you can join our project meeting?",with:"invented quote"),candidates:[replyCandidate],registration:"account",scope:"scope",now:.now);preconditionFailure("Ungrounded reply accepted")} catch {}
         print("PASS proactive rules: grounded aliases/quotes, prohibited kinds, account dedup/dismissal, daily budget, pause/cooldown/persistence and conservative current-thread latest-suggestion review references.")
     }
 }

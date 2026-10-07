@@ -52,6 +52,13 @@ import Foundation
         assert(!restored.claimNotification(day: "2026-10-02")); assert(restored.claimNotification(day: "2026-10-03"))
         let good = #"{"items":[{"text":"A meeting is scheduled.","sourceIDs":["known-event"]}]}"#
         let items = try BriefingRules.decode(good, allowedSources: ["known-event"]); assert(items.count == 1)
+        let memoryInput=BriefingRules.memoryInput([["id":"fictional-memory-identity","text":"Fictional context"]])
+        precondition(memoryInput[0]["id"] == "memory_0" && memoryInput[0]["memoryID"] == "fictional-memory-identity" && memoryInput[0]["text"] == "Fictional context","Memory records must use the same citation field as other sources without losing original identity")
+        for (json,kind) in [(good.replacingOccurrences(of:"known-event",with:"invented-id"),"unknown"),(#"{"items":[{"text":"Event","sourceIDs":["known-event","known-event"]}]}"#,"duplicate")] {
+            do {_ = try BriefingRules.decode(json,allowedSources:["known-event"]);preconditionFailure("Invalid citations must stay rejected")}
+            catch BriefingFailure.unknownSources {precondition(kind == "unknown")}
+            catch BriefingFailure.duplicateSources {precondition(kind == "duplicate")}
+        }
         for invalid in [good.replacingOccurrences(of: "known-event", with: "invented-id"), #"{"items":[]}"#, #"{"items":[{"text":" ","sourceIDs":[]}]}"#, #"{"items":[{"text":"Event","sourceIDs":["known-event","known-event"]}]}"#] {
             var rejected = false; do { _ = try BriefingRules.decode(invalid, allowedSources: ["known-event"]) } catch { rejected = true }; assert(rejected)
         }
@@ -99,6 +106,31 @@ import Foundation
         let preserved=try JSONDecoder().decode(BriefingState.self,from:JSONEncoder().encode(newState))
         assert(preserved.records.map(\.id)==allRecords.map(\.id) && preserved.notificationClaims==restored.notificationClaims)
         assert(preserved.updatedBriefs?["account"]?.morningID==morning.id)
+        var heartbeat=DailyBriefing(id:"heartbeat",registration:"owner",day:"2026-10-07",created:Date.now,items:[],sources:[originalSource],coverage:"Fictional",message:"Current brief",heartbeatID:"run-1")
+        precondition(BriefingRules.latest(morning:nil,update:heartbeat,registration:"owner",day:heartbeat.day)?.id == heartbeat.id)
+        precondition(BriefingRules.latest(morning:nil,update:heartbeat,registration:"another",day:heartbeat.day) == nil)
+        precondition(BriefingRules.latest(morning:nil,update:heartbeat,registration:"owner",day:"2026-10-08") == nil)
+        var cycleMorning=heartbeat;cycleMorning.id="later-morning";cycleMorning.created=heartbeat.created.addingTimeInterval(60);cycleMorning.heartbeatID=nil
+        precondition(BriefingRules.latest(morning:cycleMorning,update:heartbeat,registration:"owner",day:heartbeat.day)?.id == cycleMorning.id)
+        heartbeat.created=cycleMorning.created.addingTimeInterval(60);heartbeat.morningID=cycleMorning.id
+        precondition(BriefingRules.latest(morning:cycleMorning,update:heartbeat,registration:"owner",day:heartbeat.day)?.id == heartbeat.id)
+        let questionResponse = #"{"question":{"question":"Does the meeting still need preparation?","sourceIDs":["calendar_0"]}}"#
+        let question=try BriefingRules.reviewQuestion(questionResponse,snapshot:heartbeat)!
+        precondition(BriefingRules.unreportedQuestion(question,prior:[]))
+        var dismissed=question;dismissed.dismissed=true;dismissed.question="Rephrased same uncertainty"
+        precondition(!BriefingRules.unreportedQuestion(question,prior:[dismissed]),"Rephrasing a dismissed question cannot raise the same source again")
+        var otherOwner=question;otherOwner.snapshot.registration="other"
+        precondition(BriefingRules.unreportedQuestion(question,prior:[otherOwner]))
+        let noQuestion=try BriefingRules.reviewQuestion(#"{"question":null}"#,snapshot:heartbeat);precondition(noQuestion == nil)
+        for invalid in [questionResponse.replacingOccurrences(of:"calendar_0",with:"invented"),#"{"question":{"question":"Why?","sourceIDs":[]}}"#] {
+            do {_ = try BriefingRules.reviewQuestion(invalid,snapshot:heartbeat);preconditionFailure("Invalid source question accepted")} catch {}
+        }
+        var manualOnly=heartbeat;manualOnly.morningID=nil;manualOnly.heartbeatID=nil;manualOnly.widgetOnly=true
+        precondition(BriefingRules.latest(morning:nil,update:manualOnly,registration:"owner",day:manualOnly.day)?.id == manualOnly.id,"Manual refresh of a standalone heartbeat brief stays widget-only")
+        var questionState=BriefingState();questionState.reviewQuestions=[dismissed];questionState.updatedBriefs=["owner":heartbeat]
+        let decodedState=try JSONDecoder().decode(BriefingState.self,from:JSONEncoder().encode(questionState))
+        precondition(decodedState.reviewQuestions?.first?.dismissed == true && decodedState.updatedBriefs?["owner"]?.heartbeatID == "run-1")
+        precondition(decodedState.records.isEmpty && decodedState.notificationClaims.isEmpty,"Heartbeat updates never claim a morning delivery or notification")
         print("PASS: 7:30 threshold, DST dates, sleep catch-up, saved completion, notification claim round-trip, source identity validation")
     }
 }

@@ -84,7 +84,7 @@ import Foundation
             }
             target = try json(resolved)
         }
-        try PAToolProtocol.nativeReadPreflight(call.name,operation:text("operation") ?? "",hasSources:!(call.name == "change_calendar" ? calendar.sources : reminders.sources).isEmpty,hasDetails:text("target").flatMap{itemDetails[$0]} != nil)
+        try PAToolProtocol.nativeReadPreflight(call.name,operation:text("operation") ?? "",hasSources:!(call.name == "change_calendar" ? calendar.sources : reminders.sources).isEmpty,hasDetails:text("target").flatMap{itemDetails[$0]} != nil,target:text("target"))
         let organisationAccepted: Bool
         do { organisationAccepted=try await PAToolAuthorization.check(call:call,args:args,human:human,history:history,target:target,model:model) }
         catch is CancellationError { throw CancellationError() }
