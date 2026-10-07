@@ -11,6 +11,11 @@ import Foundation
         wrong = draft; wrong.end = wrong.start; rejects(wrong,base)
         wrong = draft; wrong.title = " \n"; rejects(wrong,base)
         var readOnly = base; readOnly.writable = false; rejects(draft,readOnly)
+        var repeatedOriginal=base; repeatedOriginal.recurring=true; repeatedOriginal.recurrenceRules=[.init(frequency:"daily",count:3)]
+        var detached=base; detached.start=detached.start.addingTimeInterval(3600); detached.end=detached.end.addingTimeInterval(3600); detached.occurrenceID="detached"; detached.modified=Date.now
+        let restoredOccurrence=try NativeEditRules.restoring(.init(original:repeatedOriginal,saved:detached))
+        precondition(restoredOccurrence.start == base.start && restoredOccurrence.end == base.end && restoredOccurrence.recurrenceRules.isEmpty && !restoredOccurrence.recurring)
+        try NativeEditRules.validateScope(.occurrence,baseline:detached,edited:restoredOccurrence)
         var recurring = base; recurring.recurring = true; var move = recurring; move.sourceID = "different"; try NativeEditRules.validate(move,baseline:recurring)
         let proposal = NativeEventMoveProposal(occurrenceID:base.occurrenceID,sourceID:base.sourceID,originalStart:base.start,originalEnd:base.end,start:date(26,23))
         let moved = try NativeEditRules.moved(base,proposal:proposal)

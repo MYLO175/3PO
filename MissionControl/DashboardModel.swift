@@ -160,6 +160,9 @@ import EventKit
         excludedAccounts = savedAccounts
         do {
             #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") {
+                container=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true));return
+            }
             if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") || ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") || ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") || ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") || ProcessInfo.processInfo.arguments.contains("--validate-advice-context") || ProcessInfo.processInfo.arguments.contains("--validate-native-memory") || ProcessInfo.processInfo.arguments.contains("--preview-memory-review") || ProcessInfo.processInfo.arguments.contains("--inspect-luna-access") || ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") || ProcessInfo.processInfo.arguments.contains("--validate-memory-inspection") {
                 container=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true));return
             }
@@ -178,6 +181,7 @@ import EventKit
     func start() {
         guard !started else { return }; started = true
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") { return }
         if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") || ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") || ProcessInfo.processInfo.arguments.contains("--preview-memory-review") || ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") {return}
         if ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") {
             Task {
@@ -418,6 +422,9 @@ import EventKit
         Task { await refreshCalendar() }
     }
     func refreshCalendar() async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") { return }
+        #endif
         guard !sample else { return }
         if calendarHealth.loading { pendingCalendarRefresh = true; return }
         calendarHealth.loading = true
@@ -432,6 +439,9 @@ import EventKit
         if pendingCalendarRefresh { pendingCalendarRefresh = false; await refreshCalendar() }
     }
     func refreshPAOrientation() async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") { return }
+        #endif
         guard !sample, assistant.contextEnabled, !paOrientationHealth.loading else { return }
         lastOrientationCheck = .now; paOrientationHealth.loading = true
         let start = Calendar.current.startOfDay(for:.now), end = Calendar.current.date(byAdding:.day,value:90,to:start)!, revision = sourceRevision
@@ -445,6 +455,9 @@ import EventKit
         } catch { paOrientationHealth.error = error.localizedDescription; paOrientationHealth.loading = false }
     }
     func refreshReminders() async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") { return }
+        #endif
         guard !sample else { return }
         if reminderHealth.loading { pendingReminderRefresh = true; return }
         reminderHealth.loading = true
@@ -625,7 +638,16 @@ import EventKit
             writeError = text; throw ActionFailure.message(text)
         }
     }
-    func saveNativeEdit(baseline: NativeEditDetails, edited: NativeEditDetails, scope: NativeChangeScope = .occurrence,review:NativeDateReview? = nil) async throws {
+    func moveCalendarEvent(_ event: AgendaEvent, to start: Date, valid: NativeWriteValidity? = nil) async throws {
+        guard !writing, !assistant.busy, valid?() ?? true else { throw ActionFailure.message("Calendar controls changed or another operation is running; the event was not moved.") }
+        let session = try await eventKit.editSession(.event(event))
+        guard valid?() ?? true, session.item.modified == event.modified else { throw IntegrationError.missing }
+        let proposal = NativeEventMoveProposal(occurrenceID:event.id,sourceID:event.calendarID,originalStart:event.start,originalEnd:event.end,start:start)
+        let edited = try NativeEditRules.moved(session.item,proposal:proposal)
+        // A pointer drag selects one visible occurrence, never the whole series.
+        try await saveNativeEdit(baseline:session.item,edited:edited,scope:.occurrence,validity:valid)
+    }
+    func saveNativeEdit(baseline: NativeEditDetails, edited: NativeEditDetails, scope: NativeChangeScope = .occurrence,review:NativeDateReview? = nil,validity:NativeWriteValidity? = nil) async throws {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {throw ActionFailure.message("Fictional preview is read-only; no Apple write.")}
         #endif
@@ -635,7 +657,7 @@ import EventKit
         var claimedReview=false
         do {
             let valid:NativeWriteValidity = { [self] in
-                review.map{$0.registration == chatGPT.activeID && $0.expectedModified == baseline.modified && proactive.reviewEvidenceAvailable($0.discoveryID,model:self)} ?? true
+                (validity?() ?? true) && (review.map{$0.registration == chatGPT.activeID && $0.expectedModified == baseline.modified && proactive.reviewEvidenceAvailable($0.discoveryID,model:self)} ?? true)
             }
             let claim:NativeWriteClaim = { [self] in if let review {
                 guard review.registration == chatGPT.activeID else {throw ActionFailure.message("Review account changed; reopen the inbox.")}

@@ -53,6 +53,12 @@ enum CalendarTimelineFocus {
 }
 
 enum CalendarTimelineMove {
+    static func destination(start: Date, day: Date, dx: Double, dy: Double, columnWidth: Double, visibleDays: Int, range: DateInterval, calendar: Calendar = .current) -> Date? {
+        guard let target = translated(start:max(start,calendar.startOfDay(for:day)),day:day,dx:dx,dy:dy,columnWidth:columnWidth,visibleDays:visibleDays,range:range,calendar:calendar), let displayed = self.start(on:target.day,y:target.y,calendar:calendar) else { return nil }
+        // Overnight cards may be clipped at midnight. Move the real start by
+        // the displayed segment's delta instead of shortening the event.
+        return displayed.addingTimeInterval(min(0,start.timeIntervalSince(calendar.startOfDay(for:day))))
+    }
     static func translated(start: Date, day: Date, dx: Double, dy: Double, columnWidth: Double, visibleDays: Int, range: DateInterval, calendar: Calendar = .current) -> (day: Date,y: Double)? {
         guard dx.isFinite, dy.isFinite, columnWidth > 0, visibleDays > 0, range.contains(day), let interval = calendar.dateInterval(of:.day,for:day) else { return nil }
         let columns = visibleDays == 1 ? 0 : Int(max(-Double(visibleDays),min(Double(visibleDays),(dx/(columnWidth+8)).rounded())))

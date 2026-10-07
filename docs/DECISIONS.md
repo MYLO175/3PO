@@ -263,3 +263,12 @@ Life map inspection reuses existing recall availability and memory lineage, rath
 ## 7 October — The primary toolbar action is a heartbeat
 
 The user expects the main refresh-like action to ask the PA to check everything and update its advice. Rename it Run heartbeat, use a pulse symbol, and route it plus Command-R through the existing explicit manual heartbeat. Keep the native toolbar ID/visibility key unchanged. Source-only refresh remains a separate, clearly named action with Option-Command-R; its collection path still makes no inference calls. Retain source-first fresh reads and bounded review receipts rather than introducing another freshness shortcut or AI coordinator. Disable the heartbeat action with an explanatory tooltip when its existing ownership/connection requirements are unavailable. Neither action grants source access or approval for native changes.
+
+
+## 7 October: Direct Calendar time dragging
+
+The user requested drag-to-save and click-to-edit, superseding the earlier review sheet on drop. The gesture measures translation against the stationary timeline, draws the dragged card above overlapping events/day columns and shows its proposed time. Release applies a duration-preserving occurrence edit through the same exact native read/revision/save/readback/Undo path as the editor. Captured widget/account/source/view controls remain valid through the asynchronous save. This changes the direct human interaction only; background proposals still require approval.
+
+Live disposable checks exposed EventKit detaching a moved recurring occurrence and rejecting Undo when the original series rule was reapplied. Supported occurrence Undo now preserves the saved provider recurrence metadata while restoring the original time and fields. Native checks prove later instances retain their times and Undo does not duplicate them. Pointer smoothness is not yet claimed: Computer Use coordinate drags fail with noWindowsAvailable, while accessibility-driven editor and native save checks work.
+
+Time-only native edits also preserve the existing optional timezone representation, including floating events, rather than assigning an explicit timezone merely because the dates changed. Explicit timezone/all-day editor changes retain their existing conversion behaviour.

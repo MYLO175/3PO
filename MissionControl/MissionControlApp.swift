@@ -47,7 +47,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     var body: some Scene {
         Window("3PO", id: ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") ? "reviewInboxPreview" : ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") ? "reviewInboxValidation" : ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") ? "lifePlansPreview" : ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") ? "commitmentValidation" : ProcessInfo.processInfo.arguments.contains("--validate-advice-context") ? "adviceValidation" : ProcessInfo.processInfo.arguments.contains("--preview-memory-review") ? "memoryReviewPreview" : "dashboard") {
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {
+            if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") {
+                CalendarDragPreview(model:model)
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {
                 ReviewInboxPreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") {
                 LifeAndPlanPreview(model:model)

@@ -74,6 +74,12 @@ enum NativeEditRules {
         var restored = undo.original
         restored.itemID = undo.saved.itemID; restored.occurrenceID = undo.saved.occurrenceID
         restored.modified = undo.saved.modified
+        // EventKit detaches a single moved occurrence from its series. The
+        // supported receipt never changed repeat rules; restoring the old
+        // series rule here would create repetition or be refused by Apple.
+        if restored.kind == .event, restored.recurring, restored.recurrenceRules != undo.saved.recurrenceRules {
+            restored.recurring=undo.saved.recurring; restored.recurrenceRules=undo.saved.recurrenceRules
+        }
         try validate(restored,baseline:undo.saved); return restored
     }
     static func movingStart(_ item: NativeEditDetails, to start: Date, calendar: Calendar = .current) -> NativeEditDetails {

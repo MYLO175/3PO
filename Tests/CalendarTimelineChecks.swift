@@ -45,6 +45,10 @@ import Foundation
         assert(CalendarTimelineMove.translated(start:afternoon,day:range.start,dx:.nan,dy:0,columnWidth:125,visibleDays:7,range:range,calendar:calendar) == nil)
         let dstDrag = CalendarTimelineMove.translated(start:second,day:fall.start,dx:0,dy:0,columnWidth:900,visibleDays:1,range:fall,calendar:calendar)!
         assert(CalendarTimelineMove.start(on:dstDrag.day,y:dstDrag.y,calendar:calendar) == second)
-        print("PASS: connected overlap lanes, deterministic ordering, overnight clipping and 23/25-hour DST days, viewport columns, work-day focus and distinct repeated-hour anchors")
+        assert(CalendarTimelineMove.destination(start:start,day:range.start,dx:0,dy:65,columnWidth:900,visibleDays:1,range:range,calendar:calendar) == start.addingTimeInterval(4500))
+        assert(CalendarTimelineMove.destination(start:range.start.addingTimeInterval(-3600),day:range.start,dx:0,dy:52,columnWidth:900,visibleDays:1,range:range,calendar:calendar) == range.start)
+        assert(CalendarTimelineMove.destination(start:start,day:range.start,dx:-500,dy:0,columnWidth:125,visibleDays:7,range:range,calendar:calendar) == nil)
+        assert(CalendarTimelineMove.destination(start:second,day:fall.start,dx:0,dy:0,columnWidth:900,visibleDays:1,range:fall,calendar:calendar) == second)
+        print("PASS: overlap lanes, clipped overnight moves, quarter-hour direct drops, week boundaries, viewport focus and distinct repeated DST hours")
     }
 }

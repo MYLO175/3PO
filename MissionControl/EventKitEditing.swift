@@ -97,7 +97,9 @@ extension EventKitService {
             if let event = native as? EKEvent {
                 event.location = edited.location.isEmpty ? nil : edited.location
                 if edited.start != baseline.start || edited.end != baseline.end || edited.allDay != baseline.allDay || edited.timeZoneID != baseline.timeZoneID {
-                    event.timeZone = TimeZone(identifier:edited.timeZoneID) ?? .current
+                    if edited.timeZoneID != baseline.timeZoneID || edited.allDay != baseline.allDay {
+                        event.timeZone = TimeZone(identifier:edited.timeZoneID) ?? .current
+                    }
                     event.isAllDay = edited.allDay
                     // EventKit normalises dates when changing all-day/time-zone state.
                     // Set the requested boundaries after that conversion.
@@ -393,3 +395,57 @@ extension EventKitService {
         return baseline.kind == .event ? (scope == .futureEvents ? "Deleted this and all future events: " : "Deleted event: ") + baseline.title : (baseline.recurring ? "Deleted repeating reminder: " : "Deleted reminder: ") + baseline.title
     }
 }
+
+#if DEBUG
+struct CalendarDragFixture {
+    var calendarID: String
+    var marker: String
+    var date: Date
+}
+extension EventKitService {
+    func makeCalendarDragFixture() async throws -> CalendarDragFixture {
+        try await access(.event); store.reset()
+        guard let source=store.defaultCalendarForNewEvents?.source else { throw IntegrationError.readOnly }
+        let marker="3PO drag validation " + UUID().uuidString
+        let calendar=EKCalendar(for:.event,eventStore:store); calendar.title=marker; calendar.source=source
+        try store.saveCalendar(calendar,commit:true)
+        let day=Calendar.current.date(byAdding:.day,value:1,to:Calendar.current.startOfDay(for:.now))!
+        let fixture=CalendarDragFixture(calendarID:calendar.calendarIdentifier,marker:marker,date:day)
+        do {
+            for (title,hour,recurring) in [("Drag check",9,false),("Repeating drag check",11,true),("Overlap check",9,false)] {
+                let event=EKEvent(eventStore:store); event.calendar=calendar; event.title=title; event.notes=marker
+                event.startDate=Calendar.current.date(bySettingHour:hour,minute:title == "Overlap check" ? 30 : 0,second:0,of:day)!
+                event.endDate=event.startDate.addingTimeInterval(3600); event.location="Disposable test room"
+                if title != "Drag check" { event.timeZone = .current }; event.addAlarm(EKAlarm(relativeOffset:-600))
+                if recurring { event.addRecurrenceRule(EKRecurrenceRule(recurrenceWith:.daily,interval:1,end:EKRecurrenceEnd(occurrenceCount:3))) }
+                try store.save(event,span:.thisEvent,commit:true)
+            }
+            return fixture
+        } catch { try? removeCalendarDragFixture(fixture); throw error }
+    }
+    func calendarDragSnapshot(_ fixture: CalendarDragFixture,range: DateInterval) throws -> CalendarSnapshot {
+        store.reset()
+        guard let calendar=store.calendar(withIdentifier:fixture.calendarID),calendar.title == fixture.marker else { throw IntegrationError.missing }
+        let events=store.events(matching:store.predicateForEvents(withStart:range.start,end:range.end,calendars:[calendar])).filter { $0.notes == fixture.marker }.map { event in
+            AgendaEvent(id:DateRules.occurrenceID(event.eventIdentifier ?? event.calendarItemIdentifier,start:event.startDate),calendarID:calendar.calendarIdentifier,title:event.title,start:event.startDate,end:event.endDate,allDay:event.isAllDay,location:event.location ?? "",sourceLabel:"Disposable check",modified:event.lastModifiedDate,memoryItemID:event.calendarItemIdentifier)
+        }
+        return CalendarSnapshot(sources:[option(calendar)],events:events)
+    }
+    func removeCalendarDragFixture(_ fixture: CalendarDragFixture) throws {
+        store.reset()
+        guard let calendar=store.calendar(withIdentifier:fixture.calendarID),calendar.title == fixture.marker else { throw IntegrationError.missing }
+        let range=DateInterval(start:fixture.date.addingTimeInterval(-86400),end:fixture.date.addingTimeInterval(5*86400))
+        guard store.events(matching:store.predicateForEvents(withStart:range.start,end:range.end,calendars:[calendar])).allSatisfy({$0.notes == fixture.marker}) else { throw IntegrationError.verification }
+        try store.removeCalendar(calendar,commit:true); store.reset()
+        guard store.calendar(withIdentifier:fixture.calendarID) == nil else { throw IntegrationError.verification }
+        try Data("PASS: disposable Calendar and its marked occurrences removed; absence verified.".utf8).write(to:URL(fileURLWithPath:"/tmp/missioncontrol-calendar-drag-cleanup.txt"),options:.atomic)
+    }
+    func calendarDragTimeZone(_ fixture: CalendarDragFixture,event: AgendaEvent) throws -> String? {
+        store.reset()
+        guard event.calendarID == fixture.calendarID else { throw IntegrationError.missing }
+        let native=try editorEvent(event.id,sourceID:event.calendarID,start:event.start,end:event.end)
+        guard native.notes == fixture.marker else { throw IntegrationError.missing }
+        return native.timeZone?.identifier
+    }
+}
+#endif

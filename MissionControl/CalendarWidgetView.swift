@@ -5,6 +5,9 @@ struct CalendarWidgetView: View {
     @Bindable var model: DashboardModel
     @Binding var configuration: WidgetConfiguration
     var widgetID: UUID? = nil
+    #if DEBUG
+    var previewFixture: CalendarDragFixture? = nil
+    #endif
     @State private var snapshot = CalendarSnapshot(sources:[],events:[])
     @State private var loading = false
     @State private var error: String?
@@ -12,7 +15,11 @@ struct CalendarWidgetView: View {
     @State private var showDatePicker = false
     @State private var selectedEvent: CalendarEventSelection?
     @State private var focusRequest = 0
-    @State private var dragToken = UUID().uuidString
+    @State private var timelineSpace = UUID().uuidString
+    @State private var dragCapture: CalendarEventDragCapture?
+    @State private var pendingMove: AgendaEvent?
+    @State private var moveError: String?
+    @State private var mounted = false
     private var calendar: Calendar { .current }
     private var mode: String { configuration.calendarMode }
     private var range: DateInterval {
@@ -25,7 +32,11 @@ struct CalendarWidgetView: View {
         let start = calendar.startOfDay(for:configuration.date)
         return DateInterval(start:start,end:calendar.date(byAdding:.day,value:mode == "day" ? 1 : 7,to:start)!)
     }
-    private var events: [AgendaEvent] { snapshot.events.filter { !configuration.sourceExclusions.contains($0.calendarID) } }
+    private var events: [AgendaEvent] {
+        snapshot.events.filter { !configuration.sourceExclusions.contains($0.calendarID) }.map { event in
+            pendingMove?.id == event.id ? pendingMove! : event
+        }
+    }
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
             HStack(spacing:8) {
@@ -52,16 +63,23 @@ struct CalendarWidgetView: View {
                 Button { navigate(1) } label: { Image(systemName:"chevron.right") }.help("Next calendar period").accessibilityLabel("Next calendar period")
             }.buttonStyle(.borderless).controlSize(.small)
             if let error { Text((updated == nil ? "" : "Stale · ") + error).font(.caption).foregroundStyle(.orange).lineLimit(2) }
-            if mode == "day" || mode == "week" { Text("Drag a timed event to another slot to review its time.").font(.caption2).foregroundStyle(.secondary) }
             if mode == "month" { monthView }
             else if mode == "day" || mode == "week" { timelineView }
             else { agendaView }
         }.padding(16).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
-            .onAppear(perform:returnToToday)
-            .onChange(of:widgetID) { returnToToday() }
+            .onAppear { mounted=true; returnToToday() }
+            .onDisappear { mounted=false; dragCapture=nil }
+            .onChange(of:widgetID) { dragCapture=nil; returnToToday() }
+            .onChange(of:model.chatGPT.activeID) { dragCapture=nil }
+            .onChange(of:model.sourceRevision) { dragCapture=nil }
+            .onChange(of:configuration.calendarMode) { dragCapture=nil }
+            .onChange(of:configuration.sourceExclusions) { dragCapture=nil }
             .task(id:"\(range.start.timeIntervalSince1970):\(range.end.timeIntervalSince1970):\(model.widgetCalendars.revision)") { await load() }
-            .onChange(of:configuration.date) { showDatePicker = false }
-            .sheet(item:$selectedEvent) { NativeItemEditor(model:model,target:.event($0.event),proposedMove:$0.move) }
+            .onChange(of:configuration.date) { showDatePicker = false; dragCapture=nil }
+            .sheet(item:$selectedEvent) { NativeItemEditor(model:model,target:.event($0.event)) }
+            .alert("Calendar move",isPresented:Binding(get:{ moveError != nil },set:{ if !$0 { moveError=nil } })) {
+                Button("OK",role:.cancel) { moveError=nil }
+            } message: { Text(moveError ?? "") }
     }
     private func returnToToday() {
         configuration.date = .now
@@ -70,7 +88,13 @@ struct CalendarWidgetView: View {
     private func load() async {
         loading = true; defer { loading = false }
         do {
-            let value = ProcessInfo.processInfo.arguments.contains("--sample") ? model.calendarData : try await model.widgetCalendars.load(range)
+            let value: CalendarSnapshot
+            #if DEBUG
+            if let previewFixture { value = try await model.eventKit.calendarDragSnapshot(previewFixture,range:range) }
+            else { value = ProcessInfo.processInfo.arguments.contains("--sample") ? model.calendarData : try await model.widgetCalendars.load(range) }
+            #else
+            value = ProcessInfo.processInfo.arguments.contains("--sample") ? model.calendarData : try await model.widgetCalendars.load(range)
+            #endif
             try Task.checkCancellation(); snapshot = value; error = nil; updated = .now
         } catch is CancellationError {} catch { self.error = error.localizedDescription }
     }
@@ -79,17 +103,29 @@ struct CalendarWidgetView: View {
     }
     private func color(_ event: AgendaEvent) -> Color { DashboardView(model:model).sourceColor(event.calendarID,explicit:snapshot.sources.first { $0.id == event.calendarID }?.color) }
     private func dayEvents(_ date: Date) -> [AgendaEvent] { events.filter { DateRules.overlaps($0,day:date) } }
-    private func select(_ event: AgendaEvent) { selectedEvent = CalendarEventSelection(event:event) }
-    private func dragValue(_ event: AgendaEvent) -> String? {
-        guard !model.writing, !event.allDay, !ProcessInfo.processInfo.arguments.contains("--sample"), snapshot.sources.contains(where:{ $0.id == event.calendarID && $0.writable }) else { return nil }
-        return dragToken + ":" + event.id
+    private func select(_ event: AgendaEvent) { guard pendingMove == nil else { return }; selectedEvent = CalendarEventSelection(event:event) }
+    private func canDrag(_ event: AgendaEvent) -> Bool {
+        !model.writing && !model.assistant.busy && pendingMove == nil && !event.allDay && !ProcessInfo.processInfo.arguments.contains("--sample") && snapshot.sources.contains(where:{ $0.id == event.calendarID && $0.writable })
     }
-    private func drop(_ values: [String], point: CGPoint, day: Date) -> Bool {
-        guard values.count == 1, let value = values.first, value.hasPrefix(dragToken+":"), !model.writing else { return false }
-        let id = String(value.dropFirst(dragToken.count+1))
-        guard let event = events.first(where:{ $0.id == id }), dragValue(event) != nil, let start = CalendarTimelineMove.start(on:day,y:point.y), start != event.start else { return false }
-        let proposal = NativeEventMoveProposal(occurrenceID:event.id,sourceID:event.calendarID,originalStart:event.start,originalEnd:event.end,start:start)
-        selectedEvent = CalendarEventSelection(event:event,move:proposal); return true
+    private func beginDrag(_ event: AgendaEvent) {
+        guard dragCapture == nil, canDrag(event) else { return }
+        dragCapture = CalendarEventDragCapture(event:event,account:model.chatGPT.activeID,sourceRevision:model.sourceRevision,widgetID:widgetID,date:configuration.date,mode:mode,exclusions:configuration.sourceExclusions)
+    }
+    private func dragStillValid(_ capture: CalendarEventDragCapture) -> Bool {
+        mounted && capture.account == model.chatGPT.activeID && capture.sourceRevision == model.sourceRevision && capture.widgetID == widgetID && capture.date == configuration.date && capture.mode == mode && capture.exclusions == configuration.sourceExclusions
+    }
+    private func move(_ event: AgendaEvent, to start: Date?) {
+        let capture = dragCapture; dragCapture=nil
+        guard let capture, capture.event.id == event.id, dragStillValid(capture), canDrag(event), let start, start != event.start else { return }
+        var preview=event; preview.start=start; preview.end=start.addingTimeInterval(event.end.timeIntervalSince(event.start))
+        pendingMove=preview
+        Task { @MainActor in
+            defer { pendingMove=nil }
+            do {
+                try await model.moveCalendarEvent(capture.event,to:start,valid:{ dragStillValid(capture) })
+                await load()
+            } catch { await load(); moveError=error.localizedDescription }
+        }
     }
     private func eventButton(_ event: AgendaEvent) -> some View {
         Button { select(event) } label: {
@@ -157,12 +193,12 @@ struct CalendarWidgetView: View {
                             HStack(alignment:.top,spacing:8) {
                                 ForEach(0..<days,id:\.self) { offset in
                                     let day = calendar.date(byAdding:.day,value:offset,to:range.start)!
-                                    CalendarDayTimeline(events:dayEvents(day).filter { !$0.allDay },day:day,color:color,select:select,dragValue:dragValue,reviewMove:{ event,start,dx,dy in
-                                        guard let value = dragValue(event), let target = CalendarTimelineMove.translated(start:start,day:day,dx:dx,dy:dy,columnWidth:width,visibleDays:days,range:range) else { return }
-                                        _ = drop([value],point:CGPoint(x:0,y:target.y),day:target.day)
-                                    }).frame(width:width)
+                                    CalendarDayTimeline(events:dayEvents(day).filter { !$0.allDay },day:day,color:color,select:select,canDrag:canDrag,coordinateSpace:timelineSpace,activeDragID:dragCapture?.event.id,beginDrag:beginDrag,previewStart:{ start,dx,dy in
+                                        CalendarTimelineMove.destination(start:start,day:day,dx:dx,dy:dy,columnWidth:width,visibleDays:days,range:range)
+                                    },move:move).frame(width:width)
+                                        .zIndex(dayEvents(day).contains(where:{ $0.id == dragCapture?.event.id }) ? 1 : 0)
                                 }
-                            }.padding(.bottom,10)
+                            }.coordinateSpace(name:timelineSpace).padding(.bottom,10)
                         } header: {
                             HStack(alignment:.top,spacing:8) {
                                 ForEach(0..<days,id:\.self) { offset in
@@ -196,12 +232,19 @@ struct CalendarWidgetView: View {
 private struct CalendarEventSelection: Identifiable {
     let id = UUID()
     var event: AgendaEvent
-    var move: NativeEventMoveProposal? = nil
+}
+private struct CalendarEventDragCapture {
+    var event: AgendaEvent; var account: String?; var sourceRevision: Int; var widgetID: UUID?
+    var date: Date; var mode: String; var exclusions: Set<String>
 }
 private struct CalendarDayTimeline: View {
     var events: [AgendaEvent]; var day: Date; var color: (AgendaEvent)->Color; var select: (AgendaEvent)->Void
-    var dragValue: (AgendaEvent)->String?
-    var reviewMove: (AgendaEvent,Date,Double,Double)->Void
+    var canDrag: (AgendaEvent)->Bool
+    var coordinateSpace: String
+    var activeDragID: String?
+    var beginDrag: (AgendaEvent)->Void
+    var previewStart: (Date,Double,Double)->Date?
+    var move: (AgendaEvent,Date?)->Void
     private var interval: DateInterval { Calendar.current.dateInterval(of:.day,for:day)! }
     private let hourHeight = CalendarTimelineFocus.hourHeight
     var body: some View {
@@ -225,9 +268,10 @@ private struct CalendarDayTimeline: View {
                 ZStack(alignment:.topLeading) {
                     ForEach(CalendarTimelineLayout.segments(events,interval:interval)) { segment in
                         let height = max(CalendarTimelineFocus.minimumEventHeight,segment.end.timeIntervalSince(segment.start)/3600*hourHeight)
-                        CalendarTimedEventCard(event:segment.event,color:color(segment.event),height:height,movable:dragValue(segment.event) != nil,select:{ select(segment.event) },review:{ dx,dy in reviewMove(segment.event,segment.start,dx,dy) })
+                        CalendarTimedEventCard(event:segment.event,color:color(segment.event),height:height,movable:canDrag(segment.event),coordinateSpace:coordinateSpace,select:{ select(segment.event) },beginDrag:{ beginDrag(segment.event) },previewStart:{ dx,dy in previewStart(segment.event.start,dx,dy) },move:{ dx,dy in move(segment.event,previewStart(segment.event.start,dx,dy)) })
                             .frame(width:max(1,(geo.size.width-40)/CGFloat(segment.lanes)-3),height:height)
                             .offset(x:40+CGFloat(segment.lane)*(geo.size.width-40)/CGFloat(segment.lanes),y:segment.start.timeIntervalSince(interval.start)/3600*hourHeight)
+                            .zIndex(segment.id == activeDragID ? 1 : 0)
                     }
                 }
             }
@@ -241,38 +285,131 @@ private struct CalendarDayTimeline: View {
     }
 }
 
-// In-app dragging keeps the event's grab offset stable and never writes directly.
+// Measure against the stationary timeline, never the moving card's local bounds.
 private struct CalendarTimedEventCard: View {
     var event: AgendaEvent
     var color: Color
     var height: Double
     var movable: Bool
+    var coordinateSpace: String
     var select: ()->Void
-    var review: (Double,Double)->Void
+    var beginDrag: ()->Void
+    var previewStart: (Double,Double)->Date?
+    var move: (Double,Double)->Void
     @GestureState private var translation = CGSize.zero
     private var moving: Bool { translation != .zero }
     private var title: String { event.title + " · " + event.start.formatted(date:.omitted,time:.shortened) }
     private var drag: some Gesture {
-        DragGesture(minimumDistance:6)
-            .updating($translation) { value,state,_ in state = value.translation }
-            .onEnded { value in review(Double(value.translation.width),Double(value.translation.height)) }
+        DragGesture(minimumDistance:6,coordinateSpace:.named(coordinateSpace))
+            .updating($translation) { value,state,transaction in transaction.disablesAnimations=true; state = value.translation }
+            .onChanged { _ in beginDrag() }
+            .onEnded { value in move(Double(value.translation.width),Double(value.translation.height)) }
     }
     private var card: some View {
         VStack(alignment:.leading,spacing:2) {
             Text(event.title).font(.caption2.weight(.medium)).lineLimit(height > 48 ? 3 : 1)
-            if height > 38 { Text(event.start.formatted(date:.omitted,time:.shortened)).font(.system(size:10)).foregroundStyle(.secondary) }
+            if height > 38 { Text((moving ? previewStart(Double(translation.width),Double(translation.height)) ?? event.start : event.start).formatted(date:.omitted,time:.shortened)).font(.system(size:10)).foregroundStyle(.secondary) }
             Spacer(minLength:0)
         }.padding(.horizontal,5).padding(.vertical,height > 38 ? 5 : 2).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
             .background(color.opacity(moving ? 0.3 : 0.17),in:RoundedRectangle(cornerRadius:5))
             .overlay(alignment:.leading) { RoundedRectangle(cornerRadius:2).fill(color).frame(width:3) }.clipped()
             .overlay { if moving { RoundedRectangle(cornerRadius:5).stroke(color,lineWidth:1.5) } }
-            .contentShape(Rectangle()).onTapGesture(perform:select)
+            .contentShape(Rectangle())
     }
     var body: some View {
         Group {
-            if movable { card.gesture(drag) } else { card }
+            if movable { card.gesture(drag.exclusively(before:TapGesture().onEnded { _ in select() })) } else { card.onTapGesture(perform:select) }
         }.offset(x:translation.width,y:translation.height).zIndex(moving ? 1 : 0)
-            .help(title).accessibilityElement(children:.ignore).accessibilityLabel(title)
+            .transaction { $0.animation=nil }
+            .help(title + (movable ? " · Drag to move this occurrence; click to edit." : " · Click to edit.")).accessibilityElement(children:.ignore).accessibilityLabel(title)
             .accessibilityAddTraits(.isButton).accessibilityAction(.default) { select() }
     }
 }
+
+#if DEBUG
+// An isolated live check: only UUID-marked events in its own disposable calendar.
+struct CalendarDragPreview: View {
+    @Bindable var model: DashboardModel
+    @State private var fixture: CalendarDragFixture?
+    @State private var configuration = WidgetConfiguration(calendarMode:"day")
+    @State private var error: String?
+    var body: some View {
+        VStack(spacing:8) {
+            HStack {
+                Text("Disposable Calendar drag check").font(.headline)
+                Spacer()
+                Button("Undo move") { model.undoLatest() }.disabled(model.latestUndo != "edit" || model.writing)
+                Button("Verify native times") { Task { await verify() } }
+                Button("Run save-path checks") { Task {
+                    do { guard let fixture else { return }; error=try await CalendarDragValidation.run(model,fixture:fixture) }
+                    catch { self.error=error.localizedDescription }
+                } }.disabled(model.writing)
+                Button("Remove fixtures and close") { Task {
+                    do { if let fixture { try await model.eventKit.removeCalendarDragFixture(fixture) }; NSApp.terminate(nil) }
+                    catch { self.error=error.localizedDescription }
+                } }.disabled(model.writing)
+            }.padding(.horizontal,16)
+            if let error { Text(error).foregroundStyle(.orange) }
+            if let fixture { CalendarWidgetView(model:model,configuration:$configuration,previewFixture:fixture) }
+            else { ProgressView().task {
+                do { fixture=try await model.eventKit.makeCalendarDragFixture(); configuration.date=fixture!.date }
+                catch { self.error=error.localizedDescription }
+            } }
+        }.padding(.vertical,12)
+    }
+    private func verify() async {
+        do {
+            guard let fixture else { return }
+            let range=DateInterval(start:fixture.date,end:fixture.date.addingTimeInterval(4*86400))
+            let value=try await model.eventKit.calendarDragSnapshot(fixture,range:range)
+            let data=try JSONEncoder().encode(value)
+            try data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-calendar-drag-fixtures.json"),options:.atomic)
+            error="Verified \(value.events.count) disposable occurrences; native times saved in the local diagnostic."
+        } catch { self.error=error.localizedDescription }
+    }
+}
+@MainActor private enum CalendarDragValidation {
+    static func run(_ model: DashboardModel, fixture: CalendarDragFixture) async throws -> String {
+        let range=DateInterval(start:fixture.date,end:fixture.date.addingTimeInterval(4*86400))
+        func snapshot() async throws -> CalendarSnapshot { try await model.eventKit.calendarDragSnapshot(fixture,range:range) }
+        func at(_ date: Date) async throws -> AgendaEvent {
+            let matches=try await snapshot().events.filter{$0.start == date}
+            guard matches.count == 1 else { throw IntegrationError.verification }; return matches[0]
+        }
+        var checks:[String:Bool]=[:]
+        func check(_ condition: Bool,_ name: String) throws { checks[name]=condition; guard condition else { throw ActionFailure.message("Failed disposable check: " + name) } }
+        let start=fixture.date.addingTimeInterval(9*3600), target=start.addingTimeInterval(5.25*3600)
+        let original=try await at(start), details=try await model.eventKit.editSession(.event(original)).item
+        let nativeZone=try await model.eventKit.calendarDragTimeZone(fixture,event:original)
+        var stale=original; stale.modified = .distantPast
+        var staleRefused=false
+        do { try await model.moveCalendarEvent(stale,to:target) } catch { staleRefused=true }
+        try check(staleRefused,"stale displayed native revision refused")
+        try check(try await at(start).id == original.id,"stale revision refusal left native event unchanged")
+        var validations=0,refused=false
+        do {try await model.moveCalendarEvent(original,to:target,valid:{ validations += 1; return validations < 3 })} catch {refused=true}
+        try check(refused && validations == 3,"controls changed immediately before save refused")
+        try check(try await at(start).id == original.id,"refused move left native time unchanged")
+        try await model.moveCalendarEvent(original,to:target)
+        let moved=try await at(target), saved=try await model.eventKit.editSession(.event(moved)).item
+        try check(saved.start == target && saved.end.timeIntervalSince(saved.start) == details.end.timeIntervalSince(details.start),"direct move saved start and preserved duration")
+        try check(saved.title == details.title && saved.notes == details.notes && saved.location == details.location && saved.timeZoneID == details.timeZoneID && saved.alarms == details.alarms && saved.availability == details.availability,"notes location timezone alerts and availability preserved")
+        try check(try await model.eventKit.calendarDragTimeZone(fixture,event:moved) == nativeZone,"native floating or explicit timezone representation preserved")
+        _=try await model.undoAssistantAppleChange()
+        try check(try await at(start).end == original.end,"direct move Undo restored original native time")
+        let repeatedStart=fixture.date.addingTimeInterval(11*3600), repeatedTarget=repeatedStart.addingTimeInterval(2.25*3600)
+        let repeated=try await at(repeatedStart)
+        try await model.moveCalendarEvent(repeated,to:repeatedTarget)
+        try check(try await at(repeatedTarget).end.timeIntervalSince(repeatedTarget) == 3600,"repeating occurrence moved directly")
+        let later=try await snapshot().events.filter{$0.start >= fixture.date.addingTimeInterval(86400)}
+        try check(later.count == 2 && later.allSatisfy{Calendar.current.component(.hour,from:$0.start) == 11},"later occurrences retained original time")
+        _=try await model.undoAssistantAppleChange()
+        try check(try await at(repeatedStart).end.timeIntervalSince(repeatedStart) == 3600,"repeating occurrence Undo restored selected time")
+        let final=try await snapshot()
+        try check(final.events.count == 5,"Undo did not duplicate repeating occurrences")
+        let report:[String:Any]=["completed":Date.now.ISO8601Format(),"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"scope":"Isolated UUID-marked native Calendar fixtures; production direct move and Undo, no AI or personal source reads."]
+        try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:"/tmp/missioncontrol-calendar-drag-evaluation.json"),options:.atomic)
+        return "PASS \(checks.count)/\(checks.count) native Calendar move checks."
+    }
+}
+#endif

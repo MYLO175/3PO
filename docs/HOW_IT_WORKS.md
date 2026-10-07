@@ -368,3 +368,10 @@ Life map fact details now show whether a belief is available to PA, an earlier v
 Each Projects widget remembers the view separately for each account's folder, falling back to its existing view preference until you choose one. Edit details offers optional folder/project icons; existing item identities and defaults are retained. While dragging a task, holding near the project viewport's top/bottom scrolls the board; moving outside the viewport stops scrolling. Status changes only on release into a measured stage and still require the captured account, parent, permitted task and store revision. Navigation, outside edits and release stop the scrolling. Project Undo remains available.
 
 A paused AI review now stays out of automatic heartbeat scheduling, rather than starting repeated collection-only review runs. Independent no-AI source collection continues. Run heartbeat now still explicitly resumes assessment. Successful review completion has a final account/day/control/task ownership check before its cache save.
+
+
+## Moving Calendar events
+
+In Day or Week, drag a timed writable event to change its time. Release saves directly in Apple Calendar, snapped to fifteen-minute slots. Its duration, calendar, notes, location and alerts stay intact. Click an event to open its details and edit other fields. All-day and read-only events open details without dragging.
+
+Dragging a repeating event moves only that occurrence. Undo restores the selected event's time; Apple's detached-occurrence representation is retained so Undo cannot create another series. Stale events and changed dashboard/account/source controls refuse the save. The preview remains at the proposed time while the native save is checked. A failure shows a short error and reloads the native state; the app never automatically repeats a write. These direct human edits make no AI request. Background suggestions continue to require approval.
