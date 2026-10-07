@@ -31,6 +31,7 @@ struct WorkspaceCommands: Commands {
     var body: some Commands {
         CommandMenu("Dashboard") {
             Button("Open dashboard") { NSApp.activate(ignoringOtherApps:true); openWindow(id:"dashboard") }
+            Button("Open Review inbox") {model.workspace.showReviewInbox();NSApp.activate(ignoringOtherApps:true);openWindow(id:"dashboard")}.disabled(model.workspace.readOnly)
             Button("New dashboard…") { workspace?.newDashboard() }.keyboardShortcut("n",modifiers:.command).disabled(workspace == nil)
             Menu("Add widget") {
                 ForEach(WidgetKind.allCases,id:\.self) { kind in

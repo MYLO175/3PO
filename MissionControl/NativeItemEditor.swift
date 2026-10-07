@@ -17,7 +17,8 @@ struct NativeItemEditor: View {
     @State private var deleteRequestID = UUID()
     private var creation: NativeCreationRequest? { if case .create(let request) = target { return request }; return nil }
     private var canCreate: Bool { creation.map { !($0.requiresDateSelection) || dateSelected } ?? true }
-    private var isEvent: Bool { switch target { case .event: return true; case .reminder: return false; case .create(let request): return request.kind == .event } }
+    private var review:NativeDateReview? { switch target {case .reviewEvent(_,let value),.reviewReminder(_,let value):return value;default:return nil} }
+    private var isEvent: Bool { switch target { case .event,.reviewEvent: return true; case .reminder,.reviewReminder: return false; case .create(let request): return request.kind == .event } }
     private func field<Value>(_ path: WritableKeyPath<NativeEditDetails,Value>, fallback: Value) -> Binding<Value> {
         Binding(get:{ edited?[keyPath:path] ?? fallback },set:{ edited?[keyPath:path] = $0 })
     }
@@ -47,6 +48,7 @@ struct NativeItemEditor: View {
                 if proposedMove != nil { Text("Review the proposed time below. The event keeps its duration and is only moved when you save.").font(.callout).foregroundStyle(.secondary) }
                 ScrollView {
                     VStack(alignment:.leading,spacing:16) {
+                        if let evidence=review?.evidence {Text(evidence).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true).textSelection(.enabled)}
                         TextField("Title",text:field(\.title,fallback:"")).textFieldStyle(.roundedBorder)
                         Picker(isEvent ? "Calendar" : "List",selection:field(\.sourceID,fallback:baseline.sourceID)) {
                             ForEach(sources.filter { $0.writable || $0.id == baseline.sourceID }) { Text($0.label + ($0.writable ? "" : " · Read-only")).tag($0.id) }
@@ -100,7 +102,7 @@ struct NativeItemEditor: View {
             HStack {
                 Button(saving ? "Saving…" : "Cancel") { dismiss() }.disabled(saving).keyboardShortcut(.cancelAction)
                 if error != nil && !saving { Button(creation == nil ? "Reload current item" : "Reset form") { Task { await load() } } }
-                if creation == nil, let baseline, baseline.writable {
+                if creation == nil && review == nil, let baseline, baseline.writable {
                     Button("Delete…",role:.destructive) { showingDelete=true }.disabled(saving || model.writing || model.assistant.busy)
                 }
                 Spacer()
@@ -124,10 +126,21 @@ struct NativeItemEditor: View {
         loading = true; error = nil; dateSelected = false; defer { loading = false }
         guard !ProcessInfo.processInfo.arguments.contains("--sample") else { error = "Sample items are read-only; open the normal app to edit Apple items."; return }
         do {
-            let session = try await model.eventKit.editSession(target)
+            let session:NativeEditSession
+            #if DEBUG
+            if let preview=ReviewInboxEvaluation.previewSession(target) {session=preview}
+            else {session=try await model.eventKit.editSession(target)}
+            #else
+            session=try await model.eventKit.editSession(target)
+            #endif
             try Task.checkCancellation(); baseline = session.item; edited = session.item; changeScope = session.item.kind == .reminder && session.item.recurring ? .reminderSeries : .occurrence; sources = session.sources
             if let proposedMove { edited = try NativeEditRules.moved(session.item,proposal:proposedMove) }
-        } catch is CancellationError {} catch { self.error = error.localizedDescription }
+            if let review {
+                guard review.registration == model.chatGPT.activeID,model.proactive.canReview(review.discoveryID,model:model),session.item.modified == review.expectedModified else { throw ActionFailure.message("The proposal, source or Apple item changed. Return to Review inbox for current work.") }
+                if isEvent { edited=NativeEditRules.movingStart(session.item,to:review.date) }
+                else { edited?.due=review.date;edited?.hasTime=review.hasTime }
+            }
+        } catch is CancellationError {} catch {if review != nil {baseline=nil;edited=nil};self.error = error.localizedDescription }
     }
     private func delete(_ scope: NativeChangeScope) async {
         guard let baseline else { return }
@@ -140,7 +153,7 @@ struct NativeItemEditor: View {
         saving = true; error = nil; defer { saving = false }
         do {
             if let request = creation { try await model.createNativeItem(request,baseline:baseline,edited:edited,dateSelected:dateSelected) }
-            else { try await model.saveNativeEdit(baseline:baseline,edited:edited,scope:changeScope) }
+            else { try await model.saveNativeEdit(baseline:baseline,edited:edited,scope:changeScope,review:review) }
             dismiss()
         }
         catch { self.error = error.localizedDescription }

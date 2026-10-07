@@ -446,7 +446,7 @@ struct PAHelpSections:View {
     var body:some View {
         Group {
             Section("How 3PO works") {
-                Text("Sources collect without AI → periodic review of changed or pending context → a useful message or work you explicitly authorise.").font(.headline)
+                Text("Sources collect without AI → review changed or pending context → prepare useful items in Review inbox → you review and save changes.").font(.headline)
                 Text("Calendar, Reminders, Mail and WhatsApp refresh do not start inference. Reviews use only enabled sources and show partial coverage when history or access is limited.").font(.callout)
                 Text("3PO does not send email or WhatsApp messages. Imported messages can inform a suggestion, but never authorise a Calendar or Reminders change.").font(.callout)
             }
@@ -468,9 +468,11 @@ struct PAHelpSections:View {
                 Text("New briefs and Tasks suggestions can use permitted source memories. Sources and coverage → Memory supplied shows the facts they received, with evidence. Changed facts, withdrawn access, revised email assessments or later WhatsApp replies can set advice aside. Your original morning message remains a dated record; Update prepares fresh advice without sending another morning message.").font(.callout)
             }
             Section("Background review and usage") {
-                Text(model.heartbeat.status).font(.callout).foregroundStyle(.secondary)
+                Text(model.heartbeat.statusFor(model.chatGPT.activeID)).font(.callout).foregroundStyle(.secondary)
                 Text(model.emailSummaries.enabled ? "Incoming email assessment is on. It starts from new mail and coverage can be partial." : "Incoming email assessment is off.").font(.callout).foregroundStyle(.secondary)
                 Text("Mail collection can continue without AI. A review can use multiple model calls; the advanced daily call cap applies to email and proactive communication review only. It is separate from your ChatGPT account's subscription availability.").font(.callout)
+                Text("Useful observations, missing plans and proposed date changes appear in Review inbox, without adding background messages to normal chat. A distinctive message can suggest changing an existing event or reminder even without a manual plan connection. The card shows the exact quote, proposed date and inferred connection; Review change opens the existing item, and Save is your approval. Ambiguous targets stay informational. There is no daily cap on useful inbox items.").font(.callout)
+                Text("Open it from Dashboard → Open Review inbox or add the Review inbox widget. Settings → Background controls communication review and, separately, the Morning brief schedule. Settings → Memory controls selective learning, organisation and optional weekly memory review. Delegated work resumes through Continue queue. These jobs have different schedules and allowances; not everything uses the communication review interval.").font(.callout)
                 Text("3PO works while the app is running and the Mac is awake. After an interrupted or failed inference, check the relevant status and choose its explicit retry or resume action. 3PO does not silently replay uncertain writes.").font(.callout)
                 Link("Manage ChatGPT usage",destination:URL(string:"https://chatgpt.com/settings/usage")!)
             }

@@ -1,12 +1,23 @@
 import Foundation
 
 typealias NativeWriteValidity = @MainActor @Sendable () -> Bool
+typealias NativeWriteClaim = @MainActor @Sendable () async throws -> Void
+struct NativePreSaveFailure:LocalizedError { var message:String;var errorDescription:String? {message} }
 
 enum NativeItemKind: String, Codable { case event, reminder }
 enum NativeEditTarget: Identifiable {
     case event(AgendaEvent), reminder(TaskItem)
     case create(NativeCreationRequest)
-    var id: String { switch self { case .event(let value): return "event:" + value.id; case .reminder(let value): return "reminder:" + value.id; case .create(let request): return "create:" + request.id.uuidString } }
+    case reviewEvent(AgendaEvent,NativeDateReview), reviewReminder(TaskItem,NativeDateReview)
+    var id: String { switch self { case .event(let value): return "event:" + value.id; case .reminder(let value): return "reminder:" + value.id; case .create(let request): return "create:" + request.id.uuidString;case .reviewEvent(_,let review),.reviewReminder(_,let review): return "review:"+review.discoveryID } }
+}
+struct NativeDateReview {
+    var discoveryID:String
+    var registration:String
+    var date:Date
+    var hasTime:Bool
+    var expectedModified:Date?
+    var evidence:String
 }
 struct NativeEditDetails: Equatable {
     var kind: NativeItemKind

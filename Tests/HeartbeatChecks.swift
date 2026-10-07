@@ -9,11 +9,14 @@ import Foundation
         precondition(PAHeartbeatRules.due(account,now:now.addingTimeInterval(1800),minutes:30))
         account.fingerprint="same"
         precondition(!PAHeartbeatRules.needsAssessment(account,fingerprint:"same",manual:false))
+        precondition(PAHeartbeatRules.needsAssessment(account,fingerprint:"same",manual:false,pendingSources:true))
         precondition(PAHeartbeatRules.needsAssessment(account,fingerprint:"new",manual:false))
         account.phase="assessing"
         let recovered=PAHeartbeatRules.recovered(account)
         precondition(recovered.phase == "paused" && recovered.checked == account.checked && recovered.fingerprint == "same")
         precondition(!PAHeartbeatRules.needsAssessment(recovered,fingerprint:"new",manual:false))
+        precondition(!PAHeartbeatRules.needsAssessment(recovered,fingerprint:"same",manual:false,pendingSources:true))
+        precondition(PAHeartbeatRules.needsAssessment(recovered,fingerprint:"same",manual:true,pendingSources:true))
         precondition(PAHeartbeatRules.needsAssessment(recovered,fingerprint:"new",manual:true))
         var state=PAHeartbeatState(accounts:["a":recovered,"b":PAHeartbeatAccount()])
         state=try JSONDecoder().decode(PAHeartbeatState.self,from:JSONEncoder().encode(state))

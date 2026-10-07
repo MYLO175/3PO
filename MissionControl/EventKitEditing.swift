@@ -36,12 +36,12 @@ extension EventKitService {
     func editSession(_ target: NativeEditTarget) async throws -> NativeEditSession {
         switch target {
         case .create(let request): return try await creationSession(request)
-        case .event(let expected):
+        case .event(let expected),.reviewEvent(let expected,_):
             try await access(.event); store.reset()
             let event = try editorEvent(expected.id,sourceID:expected.calendarID,start:expected.start,end:expected.end)
             guard (event.title ?? "Untitled event") == expected.title, event.startDate == expected.start, event.endDate == expected.end, event.isAllDay == expected.allDay, (event.location ?? "") == expected.location else { throw IntegrationError.missing }
             return NativeEditSession(item:editorDetails(event),sources:store.calendars(for:.event).map(option))
-        case .reminder(let expected):
+        case .reminder(let expected),.reviewReminder(let expected,_):
             try await access(.reminder); store.reset()
             guard let reminder = store.calendarItem(withIdentifier:expected.id) as? EKReminder, !reminder.isCompleted else { throw IntegrationError.missing }
             let details = editorDetails(reminder)
@@ -49,7 +49,7 @@ extension EventKitService {
             return NativeEditSession(item:details,sources:store.calendars(for:.reminder).map(option))
         }
     }
-    @discardableResult func saveEdit(baseline: NativeEditDetails, edited: NativeEditDetails, scope: NativeChangeScope = .occurrence, valid: NativeWriteValidity? = nil) async throws -> NativeEditDetails {
+    @discardableResult func saveEdit(baseline: NativeEditDetails, edited: NativeEditDetails, scope: NativeChangeScope = .occurrence, valid: NativeWriteValidity? = nil, claim:NativeWriteClaim? = nil) async throws -> NativeEditDetails {
         #if DEBUG
         nativeCheckMismatch=nil
         #endif
@@ -59,9 +59,10 @@ extension EventKitService {
         if let valid {guard await valid() else {throw ActionFailure.message("Account or assistant controls changed before saving; no native change attempted.")}}
         try Task.checkCancellation()
         store.reset()
+        var saveAttempted=false
         do {
             let verified: NativeEditDetails
-            let native: EKCalendarItem
+            var native: EKCalendarItem
             if baseline.kind == .event { native = try editorEvent(baseline.occurrenceID,sourceID:baseline.sourceID,start:baseline.start,end:baseline.end) }
             else {
                 guard let reminder = store.calendarItem(withIdentifier:baseline.itemID) as? EKReminder, !reminder.isCompleted else {
@@ -79,8 +80,19 @@ extension EventKitService {
                 #endif
                 throw IntegrationError.missing
             }
-            guard let destination = store.calendar(withIdentifier:edited.sourceID), destination.allowsContentModifications,
+            guard var destination = store.calendar(withIdentifier:edited.sourceID), destination.allowsContentModifications,
                   destination.allowedEntityTypes.contains(baseline.kind == .event ? .event : .reminder) else { throw IntegrationError.readOnly }
+            if let claim {
+                try await claim()
+                try Task.checkCancellation()
+                // The claim hops to MainActor. Re-fetch after that suspension, before mutation.
+                store.reset()
+                if baseline.kind == .event { native=try editorEvent(baseline.occurrenceID,sourceID:baseline.sourceID,start:baseline.start,end:baseline.end) }
+                else { guard let current=store.calendarItem(withIdentifier:baseline.itemID) as? EKReminder,!current.isCompleted else {throw IntegrationError.missing};native=current }
+                guard editorDetails(native) == baseline else {throw IntegrationError.missing}
+                guard let currentDestination=store.calendar(withIdentifier:edited.sourceID),currentDestination.allowsContentModifications,currentDestination.allowedEntityTypes.contains(baseline.kind == .event ? .event : .reminder) else {throw IntegrationError.readOnly}
+                destination=currentDestination
+            }
             native.title = edited.title; native.notes = edited.notes.isEmpty ? nil : edited.notes; native.calendar = destination
             if let event = native as? EKEvent {
                 event.location = edited.location.isEmpty ? nil : edited.location
@@ -92,6 +104,7 @@ extension EventKitService {
                     event.startDate = edited.start; event.endDate = edited.allDay ? edited.end.addingTimeInterval(-1) : edited.end
                 }
                 try applyExtendedFields(edited,baseline:baseline,to:event)
+                saveAttempted=true
                 try store.save(event,span:scope == .futureEvents ? .futureEvents : .thisEvent,commit:true)
                 let matches = store.events(matching:store.predicateForEvents(withStart:edited.start.addingTimeInterval(-1),end:edited.end.addingTimeInterval(1),calendars:[destination])).filter { $0.calendarItemIdentifier == event.calendarItemIdentifier && $0.startDate == edited.start }
                 guard matches.count == 1, let saved = matches.first else {
@@ -116,6 +129,7 @@ extension EventKitService {
                     reminder.dueDateComponents = edited.due.map { calendar.dateComponents(edited.hasTime ? [.year,.month,.day,.hour,.minute,.second,.timeZone] : [.year,.month,.day],from:$0) }
                 }
                 try applyExtendedFields(edited,baseline:baseline,to:reminder)
+                saveAttempted=true
                 try store.save(reminder,commit:true)
                 guard let saved = store.calendarItem(withIdentifier:reminder.calendarItemIdentifier) as? EKReminder, !saved.isCompleted else { throw IntegrationError.verification }
                 let details = editorDetails(saved)
@@ -127,13 +141,46 @@ extension EventKitService {
             }
             else { throw IntegrationError.missing }
             return verified
-        } catch { store.reset(); throw error }
+        } catch { store.reset();if claim != nil && !saveAttempted {throw NativePreSaveFailure(message:error.localizedDescription)};throw error }
     }
     func undoEdit(_ undo: NativeEditUndo) async throws {
         // saveEdit compares the complete saved revision before restoring exact fields.
         try await saveEdit(baseline:undo.saved,edited:NativeEditRules.restoring(undo))
     }
     #if DEBUG
+    func mutateReviewFixture(_ id:String,marker:String) throws {
+        store.reset();guard let item=store.calendarItem(withIdentifier:id) as? EKReminder,item.notes == marker,item.title == marker else {throw IntegrationError.verification}
+        item.notes=marker+" external edit";try store.save(item,commit:true)
+    }
+    func validateReviewClaim() async throws->[String:Bool] {
+        guard EKEventStore.authorizationStatus(for:.reminder) == .fullAccess else {throw IntegrationError.denied("Existing Reminders permission required for disposable check")}
+        store.reset();guard let list=store.defaultCalendarForNewReminders(),list.allowsContentModifications else {throw IntegrationError.readOnly}
+        let marker="Mission Control review validation "+UUID().uuidString
+        let fixture=EKReminder(eventStore:store);fixture.calendar=list;fixture.title=marker;fixture.notes=marker
+        try store.save(fixture,commit:true);let id=fixture.calendarItemIdentifier
+        func cleanup() throws {
+            store.reset();guard let item=store.calendarItem(withIdentifier:id) as? EKReminder,item.title == marker,item.notes == marker || item.notes == marker+" external edit" else {throw IntegrationError.verification}
+            try store.remove(item,commit:true);store.reset();guard store.calendarItem(withIdentifier:id) == nil else {throw IntegrationError.verification}
+        }
+        do {
+            store.reset();guard let original=store.calendarItem(withIdentifier:id) else {throw IntegrationError.missing}
+            let baseline=editorDetails(original);var edited=baseline;edited.due=Calendar.current.startOfDay(for:.now.addingTimeInterval(86400));edited.hasTime=false
+            var checks:[String:Bool]=[:]
+            do {_=try await saveEdit(baseline:baseline,edited:edited,valid:{false},claim:{});checks["source revocation blocks native save"]=false} catch {checks["source revocation blocks native save"]=true}
+            do {_=try await saveEdit(baseline:baseline,edited:edited,claim:{throw ActionFailure.message("Fictional source changed before claim")});checks["claim refusal is a known pre-save failure"]=false} catch is NativePreSaveFailure {checks["claim refusal is a known pre-save failure"]=true}
+            let mutate:NativeWriteClaim = {try await self.mutateReviewFixture(id,marker:marker)}
+            do {_=try await saveEdit(baseline:baseline,edited:edited,claim:mutate);checks["target change during actor hop rejects stale save"]=false} catch is NativePreSaveFailure {checks["target change during actor hop rejects stale save"]=true}
+            store.reset();guard let current=store.calendarItem(withIdentifier:id) else {throw IntegrationError.missing}
+            let changed=editorDetails(current)
+            checks["outside fixture edit preserved and date untouched"]=changed.notes == marker+" external edit" && changed.due == baseline.due
+            var fresh=changed;fresh.due=edited.due;fresh.hasTime=false
+            let saved=try await saveEdit(baseline:changed,edited:fresh,claim:{})
+            checks["approved fresh save verified"]=saved.due.map{DateRules.localDate($0)} == fresh.due.map{DateRules.localDate($0)} && saved.notes == changed.notes
+            try await undoEdit(.init(original:changed,saved:saved))
+            try cleanup();checks["disposable fixture removed and absence verified"]=true
+            return checks
+        } catch {try? cleanup();throw error}
+    }
     func validateNativeEditors() async throws -> String {
         try await access(.event); try await access(.reminder)
         guard let list = store.defaultCalendarForNewReminders(), list.allowsContentModifications,

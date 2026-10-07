@@ -25,7 +25,7 @@ import SwiftData
     private let container: ModelContainer?
     #if DEBUG
     func seedAdviceFixture(_ values:[EmailSummary]) throws {
-        guard ProcessInfo.processInfo.arguments.contains("--validate-advice-context") else { throw SummaryFailure.invalid }
+        guard ["--validate-advice-context","--validate-review-inbox","--preview-review-inbox"].contains(where:ProcessInfo.processInfo.arguments.contains) else { throw SummaryFailure.invalid }
         records=values;try save()
     }
     #endif

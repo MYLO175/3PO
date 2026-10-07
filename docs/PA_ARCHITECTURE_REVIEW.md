@@ -181,3 +181,8 @@ These deterministic coverage and storage checks establish progress accounting an
 Each increment needs focused deterministic checks, actual model quality evidence where relevant, a native build for runtime changes and separately recorded installation/live acceptance. Preserve all current IDs, personal data, layouts, transcripts, receipts and correction history. New stores/indexes need versioning and recoverable migration; old source history is not automatically reprocessed.
 
 The first concrete development unit should be coverage plus a fictional cross-source commitment timeline. It will show whether the current PA notices, remembers and updates an important situation before increasing automatic processing. A realistic example is a report deadline stated in email, changed in a later conversation, linked to an existing calendar item and finally completed by the user. Success means one coherent current commitment, evidence for each change, one useful correction proposal, and no duplicated or unauthorised native action.
+
+
+## 7 October delivery update
+
+The earlier delivered-message setting is superseded: useful communication outputs have no daily count cap and persist in Review inbox without new normal-chat delivery. Review frequency and the advanced request allowance remain distinct. Inferred exact-source/native date-change proposals can be reviewed and approved without a manual memory identity connection. Persistent quiet-result/source-version progress replaces morning-brief mentions as comparison suppression. Source-dependent advice and human-reviewed plan groups are implemented, with their exact validation limits in STATUS; global job coordination, complete semantic episodes and sustained real-source scheduling remain upcoming.

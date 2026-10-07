@@ -17,8 +17,8 @@ enum PAHeartbeatRules {
     static func due(_ account: PAHeartbeatAccount, now: Date, minutes:Int = defaultMinutes) -> Bool {
         account.checked.map { now.timeIntervalSince($0) >= Double(minutes)*60 } ?? true
     }
-    static func needsAssessment(_ account: PAHeartbeatAccount, fingerprint: String, manual: Bool) -> Bool {
-        manual || (account.phase != "paused" && account.phase != "assessing" && (account.pending == true || account.fingerprint != fingerprint))
+    static func needsAssessment(_ account: PAHeartbeatAccount, fingerprint: String, manual: Bool,pendingSources:Bool = false) -> Bool {
+        manual || (account.phase != "paused" && account.phase != "assessing" && (account.pending == true || pendingSources || account.fingerprint != fingerprint))
     }
     static func callCount(_ account:PAHeartbeatAccount,day:String)->Int { account.budgetDay == day ? account.calls ?? 0 : 0 }
     static func claim(_ account:PAHeartbeatAccount,day:String,limit:Int) throws -> PAHeartbeatAccount {

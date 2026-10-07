@@ -105,6 +105,14 @@ import SwiftData
         }
     }
 
+    func showReviewInbox() {
+        if let page=state.pages.first(where:{$0.widgets.contains{$0.kind == .tasks}}) {select(page.id)}
+        else {
+            let page=DashboardPage(title:"Review inbox",widgets:[WidgetPlacement(kind:.tasks,rect:GridRect(x:0,y:0,w:12,h:8))],canvasRows:8)
+            change {$0.pages.append(page);$0.selectedPageID=page.id}
+        }
+    }
+
     func undo() { guard let old = previous, readable else { return }; let current = state; state = old; do { try save(); previous = nil; undoDate = nil; error = nil } catch { state = current; self.error = "Layout Undo could not be saved." } }
 }
 enum WorkspaceFailure: LocalizedError {

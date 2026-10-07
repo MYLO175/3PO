@@ -22,7 +22,7 @@ enum WidgetKind: String, Codable, CaseIterable {
         case .overview: return "Today’s brief"
         case .emailSummary: return "Email summary"
         case .memoryGraph: return "Life map"
-        case .tasks: return "Tasks for you"
+        case .tasks: return "Review inbox"
         case .clock: return "Date & clock"
         case .weather: return "Weather"
         case .projects: return "Projects"

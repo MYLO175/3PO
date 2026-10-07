@@ -165,3 +165,12 @@ A source ID identifies one provider item/message, not a real-world commitment. S
 PA/brief/suggestion context derives a small plan index from the same selected facts. Mixed states remain uncertain; independent claims stay separate. Central current-group signatures exclude review/classification bookkeeping but include membership, evidence, version, resolution and invalidation so a connected report's change invalidates advice based on other members. There is no automatic latest-wins rule or native/project completion. Rich canonical temporal episodes and natural-language connection tools are deferred.
 
 Life map counts and drilldown resolve the same durable workspace IDs. Area sheets distinguish saved entries from remembered concepts/facts and navigate into the existing project browser within the sheet. This avoids a second fragile item sheet and keeps Back, original saved widget roots and source ownership intact.
+
+
+## 7 October — Background output belongs in Review inbox
+
+Use the existing Tasks widget/store rather than another output database or normal chat delivery. Keep saved widget IDs/layouts and historical chat. Useful outputs have no daily count cap; inference still has explicit request/source/payload bounds, pending progress and pause rules. A review interval controls communication comparisons, not every background job.
+
+Permit an inferred native date-change proposal without a prior confirmed memory connection when distinctive evidence supports the match. Keep inference and authority separate: exact quote, exact issued native snapshot, proposed date/timezone and explanation; the human opens/reviews/saves the existing native item. A pending claim precedes Apple mutation and an additional fresh revision check follows the actor hop. Known pre-save failures can clear the claim; uncertain saves cannot replay. No automatic memory-group merge, project authoring, cancellation/deletion/completion or Apple changes.
+
+Persist assessed source-version receipts even for quiet comparisons. At the three-result response bound, leave other sources pending instead of silently declaring the whole input handled. Receipts depend on current native/memory/source/model/timezone context, enabling reconsideration of recent changed context without a history sweep. This improves bounded coverage; it does not prove sustained scheduler reliability or introduce a global job coordinator.

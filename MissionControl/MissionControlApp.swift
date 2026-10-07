@@ -34,7 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         _model=State(initialValue:dashboard)
         #if DEBUG
         // This local diagnostic must not depend on a visible window mounting while the Mac is locked.
-        if ProcessInfo.processInfo.arguments.contains("--validate-advice-context") || ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") {
+        if ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") || ProcessInfo.processInfo.arguments.contains("--validate-advice-context") || ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") {
             DispatchQueue.main.async { dashboard.start() }
         }
         #endif
@@ -45,9 +45,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         switch appearance { case "light": return .light; case "dark": return .dark; default: return nil }
     }
     var body: some Scene {
-        Window("3PO", id: ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") ? "lifePlansPreview" : ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") ? "commitmentValidation" : ProcessInfo.processInfo.arguments.contains("--validate-advice-context") ? "adviceValidation" : ProcessInfo.processInfo.arguments.contains("--preview-memory-review") ? "memoryReviewPreview" : "dashboard") {
+        Window("3PO", id: ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") ? "reviewInboxPreview" : ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") ? "reviewInboxValidation" : ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") ? "lifePlansPreview" : ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") ? "commitmentValidation" : ProcessInfo.processInfo.arguments.contains("--validate-advice-context") ? "adviceValidation" : ProcessInfo.processInfo.arguments.contains("--preview-memory-review") ? "memoryReviewPreview" : "dashboard") {
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") {
+            if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {
+                ReviewInboxPreview(model:model)
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") {
                 LifeAndPlanPreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-settings") {
                 SettingsView(model:model).preferredColorScheme(selectedColorScheme)
@@ -61,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 LifeProjectInteractivePreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-source-timeline") {
                 SourceTimelinePreview(model:model)
-            } else if ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") || ProcessInfo.processInfo.arguments.contains("--validate-advice-context") || ProcessInfo.processInfo.arguments.contains("--validate-native-memory") || ProcessInfo.processInfo.arguments.contains("--inspect-luna-access") || ProcessInfo.processInfo.arguments.contains("--validate-memory-inspection") || ProcessInfo.processInfo.arguments.contains("--validate-source-timeline") || ProcessInfo.processInfo.arguments.contains("--validate-native-capabilities") || ProcessInfo.processInfo.arguments.contains("--validate-native-editors") {
+            } else if ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") || ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") || ProcessInfo.processInfo.arguments.contains("--validate-advice-context") || ProcessInfo.processInfo.arguments.contains("--validate-native-memory") || ProcessInfo.processInfo.arguments.contains("--inspect-luna-access") || ProcessInfo.processInfo.arguments.contains("--validate-memory-inspection") || ProcessInfo.processInfo.arguments.contains("--validate-source-timeline") || ProcessInfo.processInfo.arguments.contains("--validate-native-capabilities") || ProcessInfo.processInfo.arguments.contains("--validate-native-editors") {
                 Text("Running disposable validation…").padding().task {model.start()}
             } else { WorkspaceView(model:model).preferredColorScheme(selectedColorScheme) }
             #else

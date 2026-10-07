@@ -19,9 +19,6 @@ import SwiftData
     var dailyCallLimit=UserDefaults.standard.object(forKey:"paHeartbeatCallLimit") as? Int ?? 64 {
         didSet { dailyCallLimit=min(96,max(8,dailyCallLimit));UserDefaults.standard.set(dailyCallLimit,forKey:"paHeartbeatCallLimit");controlsRevision=UUID();cancel() }
     }
-    var dailyUpdateLimit=UserDefaults.standard.object(forKey:"paHeartbeatUpdateLimit") as? Int ?? 3 {
-        didSet { dailyUpdateLimit=min(10,max(1,dailyUpdateLimit));UserDefaults.standard.set(dailyUpdateLimit,forKey:"paHeartbeatUpdateLimit");controlsRevision=UUID();cancel() }
-    }
     func budgetStatus(_ registration:String)->String { "\(PAHeartbeatRules.callCount(state.accounts[registration] ?? .init(),day:BriefingRules.day(.now))) of \(dailyCallLimit) communication-review AI calls today" }
     func claimCall(_ registration:String) throws {
         guard busy,registration == capturedRegistration,state.accounts[registration]?.phase == "assessing" else { throw ActionFailure.message("Background-review ownership changed before inference.") }
@@ -34,6 +31,11 @@ import SwiftData
     private(set) var busy = false
     private(set) var status = "Sources collect without AI. Background reviews run when due while 3PO is running and the Mac is awake."
     private(set) var state = PAHeartbeatState()
+    private var statusRegistration:String?
+    func statusFor(_ registration:String)->String {
+        if readable,!busy,state.accounts[registration]?.phase == "paused",statusRegistration != registration {return "Background review is paused after an interrupted or failed assessment. Sources can still collect. Choose Review changed context now to resume."}
+        return status
+    }
     private let container: ModelContainer?
     private var task: Task<Void,Never>?
     private var readable = true
@@ -58,7 +60,7 @@ import SwiftData
         // Let foreground work win; this local due check never runs inference.
         guard !model.assistant.busy,!model.chatGPT.busy,!model.projectPlacement.busy,!model.briefings.busy,!model.proactive.busy,!model.emailSummaries.busy,!model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy,!model.memoryLearning.busy,!model.lifeOrganisation.busy,!model.writing else { return }
         let controls=controlsRevision, scope=model.proactive.scope(model)
-        busy=true;capturedRegistration=registration; status="Collecting sources for background review…"
+        busy=true;capturedRegistration=registration;statusRegistration=registration;status="Collecting sources for background review…"
         task=Task {
             defer { busy=false;capturedRegistration=nil }
             var account=prior
@@ -93,11 +95,17 @@ import SwiftData
                 account.checked = .now
                 if model.mailHealth.error != nil || !pendingMail.isEmpty || model.calendarHealth.error != nil || model.reminderHealth.error != nil {
                     state.accounts[registration]=account; try save()
-                    status="Sources partly refreshed; cached data retained. AI review waits for a complete permitted-source check."
+                    var issues:[String]=[]
+                    if let error=model.mailHealth.error {issues.append("Mail: "+String(error.prefix(300)))}
+                    else if !pendingMail.isEmpty {issues.append("Mail: \(pendingMail.count) account checks unfinished")}
+                    if model.calendarHealth.error != nil {issues.append("Calendar read is incomplete")}
+                    if model.reminderHealth.error != nil {issues.append("Reminders read is incomplete")}
+                    status="Review deferred while sources finish. "+issues.joined(separator:" · ")+" Cached data and pending work are retained. Open Sources for details; review still needs a complete permitted-source check."
                     return
                 }
                 let fingerprint=sourceFingerprint(model)
-                let assess=PAHeartbeatRules.needsAssessment(account,fingerprint:fingerprint,manual:manual) || (account.phase != "paused" && account.phase != "assessing" && model.emailSummaries.hasPendingIncoming(model))
+                let pendingSources=model.emailSummaries.hasPendingIncoming(model) || (model.proactive.enabled && model.proactive.hasPendingSources(model))
+                let assess=PAHeartbeatRules.needsAssessment(account,fingerprint:fingerprint,manual:manual,pendingSources:pendingSources)
                 guard assess,model.assistant.contextEnabled,model.chatGPT.inferenceVerified,!model.chatGPT.usagePaused,!composerActive else {
                     if !assess { status=account.phase == "paused" ? "Background review paused; Review changed context now resumes it." : "Background review checked; no new source material." }
                     else { status="Sources refreshed; AI assessment waits for enabled context, allowance and an idle composer." }
@@ -126,10 +134,10 @@ import SwiftData
                 guard registration == model.chatGPT.activeID,controls == controlsRevision else { throw ActionFailure.message("Background-review ownership changed; completed source work retained.") }
                 if let error=model.proactive.error { throw ActionFailure.message(error) }
                 if model.proactive.enabled,model.proactive.state.accounts[registration]?.paused == true { throw ActionFailure.message("Proactive assessment is paused. Review changed context now to resume explicitly.") }
-                account=state.accounts[registration] ?? account;account.phase="idle";account.assessed = .now;let p=model.proactive.state.accounts[registration];account.pending=model.proactive.enabled && p?.day == BriefingRules.day(.now) && ((p?.delivered ?? 0) >= dailyUpdateLimit || (p?.attempts ?? 0) >= 96); if !wantsWhatsApp || whatsappReady { account.fingerprint=fingerprint }; state.accounts[registration]=account;try save()
-                status="Background review checked at " + Date.now.formatted(date:.omitted,time:.shortened) + (wantsWhatsApp && !whatsappReady ? ". WhatsApp unavailable; no WhatsApp material assessed." : ". Only worthwhile updates are delivered.")
-                if !model.proactive.enabled { status += " Proactive updates are disabled." }
-                else if let p=model.proactive.state.accounts[registration],p.day == BriefingRules.day(.now),p.delivered >= dailyUpdateLimit || p.attempts >= 96 { status += " Daily comparison/update limit reached; source checks continue." }
+                account=state.accounts[registration] ?? account;account.phase="idle";account.assessed = .now;let p=model.proactive.state.accounts[registration];account.pending=model.proactive.enabled && (model.proactive.hasPendingSources(model) || (p?.day == BriefingRules.day(.now) && (p?.attempts ?? 0) >= 96)); if !wantsWhatsApp || whatsappReady { account.fingerprint=fingerprint }; state.accounts[registration]=account;try save()
+                status="Background review checked at " + Date.now.formatted(date:.omitted,time:.shortened) + (wantsWhatsApp && !whatsappReady ? ". WhatsApp unavailable; no WhatsApp material assessed." : ". Useful proposals are saved in Review inbox.")
+                if !model.proactive.enabled { status += " Review proposals are disabled." }
+                else if let p=model.proactive.state.accounts[registration],p.day == BriefingRules.day(.now),p.attempts >= 96 { status += " Daily comparison allowance reached; source checks continue." }
             } catch is HeartbeatBudgetExhausted {
                 account=state.accounts[registration] ?? account;account.phase="idle";account.pending=true;account.checked = .now;state.accounts[registration]=account;try? save();status=HeartbeatBudgetExhausted().localizedDescription
             } catch {

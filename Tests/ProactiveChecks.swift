@@ -18,7 +18,7 @@ import Foundation
         precondition(ProactiveRules.unreported(records,prior:[],budget:0).isEmpty)
         var progress = ProactiveProgress(); precondition(ProactiveRules.allowed(progress,now:.now))
         progress.paused = true; precondition(!ProactiveRules.allowed(progress,now:.now)); precondition(ProactiveRules.allowed(progress,now:.now,manual:true))
-        progress.delivered = 3; precondition(!ProactiveRules.allowed(progress,now:.now,manual:true))
+        progress.delivered = 300; precondition(ProactiveRules.allowed(progress,now:.now,manual:true))
         progress.delivered = 0; progress.paused = false; progress.attempts = 4; precondition(!ProactiveRules.allowed(progress,now:.now))
         progress.attempts = 0; progress.lastAttempt = .now; precondition(!ProactiveRules.allowed(progress,now:.now))
         var heartbeat=ProactiveProgress();heartbeat.attempts=4
@@ -65,11 +65,11 @@ import Foundation
         precondition(ProactiveRules.unreported([changed],prior:[wa],budget:1).count == 1)
         do { _=try ProactiveRules.decode(response.replacingOccurrences(of:"please book the train for Friday.",with:"invented evidence"),candidates:[candidate],registration:"A",scope:"s",now:.now);fatalError("Invented WhatsApp evidence accepted") } catch {}
         let reply=try EmailReplyDraftRules.decode(#"{"draft":"Thanks for the invitation. [Confirm availability]"}"#);precondition(reply.contains("[Confirm availability]"))
-        let hbNow=Date.now,briefDate=Date.now.addingTimeInterval(-3600)
-        precondition(!ProactiveRules.heartbeatMailEligible(id:"old",received:hbNow.addingTimeInterval(-49*3600),assessed:hbNow,now:hbNow,coveredIDs:[],briefCreated:nil))
-        precondition(ProactiveRules.heartbeatMailEligible(id:"new",received:hbNow.addingTimeInterval(-7200),assessed:hbNow,now:hbNow,coveredIDs:[],briefCreated:briefDate))
-        precondition(!ProactiveRules.heartbeatMailEligible(id:"covered",received:hbNow.addingTimeInterval(-7200),assessed:briefDate,now:hbNow,coveredIDs:["covered"],briefCreated:briefDate))
-        precondition(ProactiveRules.heartbeatMailEligible(id:"covered",received:hbNow.addingTimeInterval(-7200),assessed:hbNow,now:hbNow,coveredIDs:["covered"],briefCreated:briefDate))
+        let hbNow=Date.now
+        precondition(!ProactiveRules.heartbeatMailEligible(received:hbNow.addingTimeInterval(-49*3600),now:hbNow))
+        precondition(ProactiveRules.heartbeatMailEligible(received:hbNow.addingTimeInterval(-48*3600),now:hbNow))
+        precondition(!ProactiveRules.heartbeatMailEligible(received:hbNow.addingTimeInterval(-48*3600-1),now:hbNow))
+        precondition(ProactiveRules.heartbeatMailEligible(received:hbNow.addingTimeInterval(-7200),now:hbNow))
         print("PASS proactive rules: grounded aliases/quotes, prohibited kinds, account dedup/dismissal, daily budget, pause/cooldown/persistence and conservative current-thread latest-suggestion review references.")
     }
 }

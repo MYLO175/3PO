@@ -320,6 +320,7 @@ struct AssistantSourceSettings: View {
     enum Page { case assistant, background, memory }
     @Bindable var model: DashboardModel
     @Bindable var assistant: AssistantService
+    @Environment(\.openWindow) private var openWindow
     var page: Page = .assistant
     var body: some View {
         Group {
@@ -342,8 +343,8 @@ struct AssistantSourceSettings: View {
                         Text(orientation.coverage(enabledCount:orientation.calendar.events.filter { !assistant.excludedCalendars.contains($0.calendarID) }.count)).font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                Section("Proactive suggestions") {
-                    Toggle("Prepare quiet suggestions",isOn:$model.proactive.enabled)
+                Section("Review inbox") {
+                    Toggle("Prepare review items",isOn:$model.proactive.enabled)
                     Text(model.proactive.status(model)).font(.caption).foregroundStyle(.secondary)
                     HStack {
                         Button("Check suggestions once") { model.proactive.check(model,manual:true) }.disabled(model.chatGPT.busy || model.proactive.busy || model.chatGPT.usagePaused)
@@ -354,16 +355,19 @@ struct AssistantSourceSettings: View {
                 Section("Background review") {
                     Toggle("Review changed context automatically",isOn:$model.heartbeat.enabled)
                     Picker("Review interval",selection:$model.heartbeat.intervalMinutes) { Text("15 minutes").tag(15);Text("30 minutes").tag(30);Text("1 hour").tag(60);Text("2 hours").tag(120) }
-                    Picker("Maximum useful messages per day",selection:$model.heartbeat.dailyUpdateLimit) { ForEach([1,3,6,10],id:\.self) { Text(String($0)).tag($0) } }
                     Toggle("Include selected WhatsApp chats",isOn:$model.heartbeat.whatsappEnabled)
-                    Toggle("Notify about useful updates",isOn:$model.heartbeat.notificationsEnabled)
+                    Toggle("Notify when review items are ready",isOn:$model.heartbeat.notificationsEnabled)
                     let progress=model.heartbeat.state.accounts[model.chatGPT.activeID]
                     LabeledContent("Last source check",value:progress?.checked?.formatted(date:.abbreviated,time:.shortened) ?? "Not recorded")
                     LabeledContent("Last completed review",value:progress?.assessed?.formatted(date:.abbreviated,time:.shortened) ?? "Not recorded")
                     if progress?.pending == true { Text("Changed or unfinished review work is waiting.").font(.caption).foregroundStyle(.secondary) }
-                    Text(model.heartbeat.status).font(.caption).foregroundStyle(.secondary)
-                    Text("Sources collect without AI. At each review, 3PO assesses changed or pending context and may prepare a useful message or work that you explicitly authorise. Collection continues when the AI review allowance is reached. WhatsApp uses selected received text, not full history. Reviews run while 3PO is open and catch up on wake.").font(.caption).foregroundStyle(.secondary)
+                    Text(model.heartbeat.statusFor(model.chatGPT.activeID)).font(.caption).foregroundStyle(.secondary)
+                    Text("Sources collect without AI. At the chosen interval, 3PO compares changed or pending messages with your calendar, reminders and available memory. Useful observations and proposed changes go to Review inbox, with evidence, rather than normal chat. There is no daily limit on useful review items. Apple changes happen only when you review and save them. Reviews run while 3PO is open and the Mac is awake; pending work is retained across allowance limits.").font(.caption).foregroundStyle(.secondary)
+                    Button("Open Review inbox") {model.workspace.showReviewInbox();openWindow(id:"dashboard")}.disabled(model.workspace.readOnly)
                     Button("Review changed context now") { model.heartbeat.check(model,manual:true) }.disabled(model.heartbeat.busy || model.assistant.busy || model.chatGPT.busy)
+                }
+                Section("Other background work") {
+                    Text("Communication review uses the interval above. Morning briefs have their own schedule under Morning brief below. Conversation/source learning, memory organisation and optional memory review are controlled in Memory. Explicitly queued PA work uses Continue queue. These jobs share idle time but do not all use this interval or allowance.").font(.caption).foregroundStyle(.secondary)
                 }
                 DisclosureGroup("Advanced review limits") {
                     Picker("AI calls for email and communication review",selection:$model.heartbeat.dailyCallLimit) { ForEach([8,16,32,64,96],id:\.self) { Text(String($0)).tag($0) } }

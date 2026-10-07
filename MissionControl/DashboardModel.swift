@@ -154,7 +154,7 @@ import EventKit
         excludedAccounts = savedAccounts
         do {
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") || ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") || ProcessInfo.processInfo.arguments.contains("--validate-advice-context") || ProcessInfo.processInfo.arguments.contains("--validate-native-memory") || ProcessInfo.processInfo.arguments.contains("--preview-memory-review") || ProcessInfo.processInfo.arguments.contains("--inspect-luna-access") || ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") || ProcessInfo.processInfo.arguments.contains("--validate-memory-inspection") {
+            if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") || ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") || ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") || ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") || ProcessInfo.processInfo.arguments.contains("--validate-advice-context") || ProcessInfo.processInfo.arguments.contains("--validate-native-memory") || ProcessInfo.processInfo.arguments.contains("--preview-memory-review") || ProcessInfo.processInfo.arguments.contains("--inspect-luna-access") || ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") || ProcessInfo.processInfo.arguments.contains("--validate-memory-inspection") {
                 container=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true));return
             }
             if ProcessInfo.processInfo.arguments.contains("--validate-source-timeline") || ProcessInfo.processInfo.arguments.contains("--preview-source-timeline") || ProcessInfo.processInfo.arguments.contains("--preview-settings") || ProcessInfo.processInfo.arguments.contains("--validate-images") || ProcessInfo.processInfo.arguments.contains("--preview-images") || ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-projects") || ProcessInfo.processInfo.arguments.contains("--preview-projects") || ProcessInfo.processInfo.arguments.contains("--validate-placement") || ProcessInfo.processInfo.arguments.contains("--validate-ownership") || ProcessInfo.processInfo.arguments.contains("--validate-mail-monitoring") || ProcessInfo.processInfo.arguments.contains("--validate-mail-dates") {
@@ -172,7 +172,15 @@ import EventKit
     func start() {
         guard !started else { return }; started = true
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") || ProcessInfo.processInfo.arguments.contains("--preview-memory-review") || ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") {return}
+        if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") || ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") || ProcessInfo.processInfo.arguments.contains("--preview-memory-review") || ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") {return}
+        if ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") {
+            Task {
+                let result:[String:Any]
+                do {result=try await ReviewInboxEvaluation.run(self)} catch {result=["error":error.localizedDescription,"storage":"Fictional disposable source-free startup"]}
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-review-inbox-evaluation.json"),options:.atomic)}
+                NSApp.terminate(nil)
+            };return
+        }
         if ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") {
             Task {
                 let result:[String:Any]
@@ -513,6 +521,12 @@ import EventKit
     }
     func reviewDiscovery(_ record:PADiscovery,as kind:NativeItemKind? = nil) {
         guard proactive.visible(record,model:self),record.registration == chatGPT.activeID,let id=UUID(uuidString:record.id) else { return }
+        if let change=record.proposedChange,let date=change.date() {
+            let review=NativeDateReview(discoveryID:record.id,registration:record.registration,date:date,hasTime:change.hasTime,expectedModified:change.target.modified,evidence:record.message+"\n\nWhy this item: "+change.connection+"\n\nSource: "+record.evidence)
+            if change.target.kind == "event",let item=(paOrientation?.calendar ?? calendarData).events.first(where:{$0.id == change.target.itemID}) { editTarget = .reviewEvent(item,review) }
+            else if change.target.kind == "reminder",let item=reminderData.reminders.first(where:{$0.id == change.target.itemID}) { editTarget = .reviewReminder(item,review) }
+            return
+        }
         let label:String,title:String
         if record.sourceKind == "whatsapp" { label="WhatsApp · " + (record.sourceLabel ?? "Selected chat");title=record.sourceTitle ?? "Follow up: " + (record.sourceLabel ?? "WhatsApp") }
         else {
@@ -542,17 +556,33 @@ import EventKit
             writeError = text; throw ActionFailure.message(text)
         }
     }
-    func saveNativeEdit(baseline: NativeEditDetails, edited: NativeEditDetails, scope: NativeChangeScope = .occurrence) async throws {
+    func saveNativeEdit(baseline: NativeEditDetails, edited: NativeEditDetails, scope: NativeChangeScope = .occurrence,review:NativeDateReview? = nil) async throws {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {throw ActionFailure.message("Fictional preview is read-only; no Apple write.")}
+        #endif
         guard !sample, !writing, !assistant.busy else { throw ActionFailure.message("Another change is in progress; wait before saving.") }
         writing = true; writeError = nil
         defer { writing = false }
+        var claimedReview=false
         do {
-            let saved = try await eventKit.saveEdit(baseline:baseline,edited:edited,scope:scope)
+            let valid:NativeWriteValidity = { [self] in
+                review.map{$0.registration == chatGPT.activeID && $0.expectedModified == baseline.modified && proactive.reviewEvidenceAvailable($0.discoveryID,model:self)} ?? true
+            }
+            let claim:NativeWriteClaim = { [self] in if let review {
+                guard review.registration == chatGPT.activeID else {throw ActionFailure.message("Review account changed; reopen the inbox.")}
+                try proactive.beginReview(review.discoveryID,model:self);claimedReview=true
+            } }
+            let saved = try await eventKit.saveEdit(baseline:baseline,edited:edited,scope:scope,valid:valid,claim:review == nil ? nil : claim)
             editUndo = NativeEditRules.supportsUndo(baseline:baseline,edited:edited,scope:scope) ? NativeEditUndo(original:baseline,saved:saved) : nil
-            showFeedback("Updated: " + saved.title)
             widgetCalendars.invalidate()
+            do {if let review {try proactive.finishReview(review.discoveryID,registration:review.registration)}}
+            catch {await refreshCalendar();await refreshReminders();throw error}
+            showFeedback("Updated: " + saved.title)
             await refreshCalendar(); await refreshReminders()
-        } catch { writeError = error.localizedDescription; throw error }
+        } catch {
+            if error is NativePreSaveFailure,claimedReview,let review {try? proactive.abortReview(review.discoveryID,registration:review.registration)}
+            writeError = error.localizedDescription;throw error
+        }
     }
     func deleteNativeItem(baseline: NativeEditDetails, scope: NativeChangeScope, requestID: UUID) async throws {
         guard !sample, !writing, !assistant.busy else { throw ActionFailure.message("Another change is in progress.") }
