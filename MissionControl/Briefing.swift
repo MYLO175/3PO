@@ -13,6 +13,7 @@ struct BriefingSource: Codable, Identifiable {
     var originalID: String? = nil
     var chatID: String? = nil
     var linkedIdentity: String? = nil
+    var contentRevision:String? = nil
 }
 struct DailyBriefing: Codable, Identifiable {
     var id: String
@@ -26,6 +27,8 @@ struct DailyBriefing: Codable, Identifiable {
     var sourceScope: String? = nil
     var message: String? = nil
     var morningID: String? = nil
+    var memoryDependencies:[MemoryDependency]? = nil
+    var whatsappDependencies:[WhatsAppWindowDependency]? = nil
 }
 struct BriefingState: Codable {
     var records: [DailyBriefing] = []

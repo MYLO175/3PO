@@ -46,6 +46,15 @@ struct EmailSummary: Codable, Identifiable {
         let fields = [message.id, message.internetMessageID, message.sender, message.subject, message.received.ISO8601Format()]
         return SHA256.hash(data: Data(fields.joined(separator: "\n").utf8)).map { String(format: "%02x", $0) }.joined()
     }
+    /// Exact supplied assessment/body and reply state. Read/unread and draft edits are not new evidence.
+    func adviceRevision(replied:Bool)->String {
+        let fields=[fingerprint,bodyFingerprint ?? "",summary,reason,evidence,String(attention),String(worthReading == true),String(needsReply == true),followUpDate ?? "",followUpEvidence ?? "",String(replied)]
+        let data=(try? JSONEncoder().encode(fields)) ?? Data()
+        return SHA256.hash(data:data).map{String(format:"%02x",$0)}.joined()
+    }
+    func adviceMatches(_ message:MailMessage,revision:String)->Bool {
+        fingerprint == Self.fingerprint(message) && adviceRevision(replied:message.replied) == revision
+    }
     static func decode(_ response: String, message: MailMessage, body: String, registration: String) throws -> EmailSummary {
         struct Output: Decodable { let summary: String; let attention: Bool; let reason: String; let evidence: String; let followUpDate: String?; let followUpEvidence: String?; let worthReading: Bool?; let needsReply: Bool?; let replyDraft: String? }
         let output = try JSONDecoder().decode(Output.self, from: Data(response.utf8))

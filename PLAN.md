@@ -249,3 +249,10 @@ Delivered this increment: optional reversible human-context retirement; canonica
 ### 7 October — native learning and proposed maintenance checkpoint
 
 Independent default-off Calendar/Reminders/Mail memory learning now consumes bounded fresh cached evidence; no second historical index or AI on source refresh. Account-owned baseline/pending/assessed cursors, exact native version history, source permission projection and shared budget preserve the existing notebook. Optional weekly/manual human-memory review proposes duplicates/conflicts/old provisional retirement; explicit review/correction/retire and dismissal Undo are implemented. It does not execute semantic merges or cross-source adjudication. See docs/MEMORY_AND_CONTEXT.md and STATUS for actual coverage/tests/install/UI limits. Next: sustained native scheduling/quality, aliases/consolidation and shared source-dependent Tasks/brief commitment lifecycle.
+
+
+### 7 October — Source memory supports inspectable advice
+
+New briefs/Tasks suggestions now use currently permitted source facts alongside human facts and save exact supplied-belief receipts. Feature-specific WhatsApp controls remain independent of learning. Mail assessment/body/reply changes and supporting chat-cache changes reject old advice; no AI or source reads from validity checks/Refresh. Every supplied fact is conservatively a dependency, while classification bookkeeping/unrelated facts do not churn saved output.
+
+Show matching facts/quotes through Memory supplied in brief/Tasks evidence. Keep dated morning output and delivery/notification claims, require current support in new inference/recovery/native/project review, and set stale Tasks suggestions aside with an explanation. Legacy records remain readable without invented receipts; unchanged historical sources do not replay merely because memory changed. Cross-source commitment identities, semantic aliases/actual consolidation and sustained personal usefulness remain next. Read STATUS for actual checks/install/visual boundaries.

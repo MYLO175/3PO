@@ -231,9 +231,9 @@ import SwiftData
         let base=LifeNotebook.build(enabled ? permittedRecords : [],registration:registration,topic:topic,includeTopics:includeTopics)
         return notebookProjection?(base,registration,topic,includeTopics) ?? base
     }
-    func selection(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, focus:[LifeArea] = [],includeSources:Bool = true) -> MemorySelection {
+    func selection(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, focus:[LifeArea] = [],includeSources:Bool = true,sourceFilter:((PAMemory)->Bool)? = nil) -> MemorySelection {
         guard enabled else { return MemorySelection(records:[],eligibleCount:0) }
-        let candidates=includeSources ? permittedRecords : records.filter{$0.source == nil}
+        let candidates=(includeSources ? permittedRecords : records.filter{$0.source == nil}).filter{$0.source == nil || (sourceFilter?($0) ?? true)}
         let base=LifeNotebook.build(candidates,registration:registration,topic:conversationID,includeTopics:includeTopics)
         let projected=notebookProjection?(base,registration,conversationID,includeTopics) ?? base
         return MemoryRetrieval.select(candidates,registration:registration,conversationID:conversationID,includeTopics:includeTopics,query:query,focus:focus,notebook:projected)

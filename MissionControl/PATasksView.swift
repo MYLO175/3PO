@@ -22,6 +22,9 @@ struct PATasksView: View {
             HStack { Label("Tasks for you",systemImage:"tray.full").font(.title3.weight(.semibold));Spacer();Button { model.proactive.check(model,manual:true) } label:{Image(systemName:"arrow.clockwise")}.buttonStyle(.borderless).help("Check for useful suggestions").disabled(model.proactive.busy || model.assistant.busy || model.chatGPT.busy || model.writing) }
             if model.proactive.busy || model.emailSummaries.busy { Text(model.proactive.busy ? "Looking for useful suggestions…" : "Preparing email work…").font(.caption).foregroundStyle(.secondary) }
             if let error=model.proactive.error { Text(error).font(.caption).foregroundStyle(.orange).lineLimit(3) }
+            if model.proactive.state.records.contains(where:{$0.registration == model.chatGPT.activeID && !$0.dismissed && $0.memoryDependencies != nil && !model.proactive.visible($0,model:model)}) {
+                Text("Earlier suggestions have been set aside because their supporting context changed or is unavailable. Check for fresh suggestions when ready.").font(.caption).foregroundStyle(.secondary)
+            }
             if let error=model.emailSummaries.error {
                 VStack(alignment:.leading,spacing:6) {
                     Text(error).font(.caption).foregroundStyle(.orange).lineLimit(4)
@@ -71,7 +74,7 @@ struct PATasksView: View {
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
-        .sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record) }
+        .sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record,model:model) }
         .sheet(item:$reviewingProject) { record in LifeItemEditor(model:model,item:.init(registration:record.registration,kind:.project,title:String((record.sourceTitle ?? "New project").prefix(160)),notes:record.evidence),close:{reviewingProject=nil},reviewedSuggestion:record) }
         .sheet(item:$editing) { summary in
             VStack(alignment:.leading,spacing:14) {

@@ -116,3 +116,10 @@ Phase5 now has bounded duplicate/conflict/retirement proposals for human review;
 ### 7 October — native-source adapters and reviewable maintenance
 
 See [Memory and context](MEMORY_AND_CONTEXT.md) for current bounds/identities/permissions. New native source lanes use only fresh already-collected data and exact retained Mail quotes, share the persisted learning budget and preserve pause/recovery. Source refresh never initiates learning. Optional weekly review uses eight human-fact seeds plus bounded lexical neighbours (24 facts/30 KB) and at most six proposals; it cannot modify facts/projects. Confirmed/stable facts, commitments and pinned metadata cannot become retirement candidates. Fact-revision changes invalidate a proposal. Native occurrence stability, partial coverage, absent/returning versions, old Mail body edits, quota survival and actual subscription extraction need distinct acceptance, not a compile-only intelligence claim.
+
+
+### 7 October — Source-dependent advice projections
+
+Phase6/7 now supplies permitted source memory to new automatic briefs and proactive suggestions, with persistent exact selected-belief dependencies, purpose consent, Mail assessment/body/reply versions and supporting WhatsApp chat-cache receipts. Phase8 adds actual supplied-memory evidence panels to these outputs. Dated morning history remains immutable; current/history/recovery/review projections reject unavailable support. Organisation alone and unrelated facts do not invalidate saved outputs.
+
+Acceptance covers revocation/version changes, correction/Forget/cancellation, unrelated fact/metadata stability, feature-specific WhatsApp consent, changed Mail headers with old assessments, new same-chat cancellation, legacy decode and preserved morning/update/notification identities. These checks do not establish shared cross-source episode identity, semantic aliases, real scheduler-race acceptance or broad inference quality. Continue with the cross-email/WhatsApp timeline and measure conservative chat-level invalidation before semantic expansion.

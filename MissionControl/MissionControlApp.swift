@@ -28,14 +28,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 }
 @main struct MissionControlApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
-    @State private var model = DashboardModel()
+    @State private var model:DashboardModel
+    init() {
+        let dashboard=DashboardModel()
+        _model=State(initialValue:dashboard)
+        #if DEBUG
+        // This local diagnostic must not depend on a visible window mounting while the Mac is locked.
+        if ProcessInfo.processInfo.arguments.contains("--validate-advice-context") {
+            DispatchQueue.main.async { dashboard.start() }
+        }
+        #endif
+    }
     @AppStorage("workspaceAppearance") private var appearance = "system"
     private var selectedColorScheme: ColorScheme? {
         if ProcessInfo.processInfo.arguments.contains("--dark-window") { return .dark }
         switch appearance { case "light": return .light; case "dark": return .dark; default: return nil }
     }
     var body: some Scene {
-        Window("3PO", id: ProcessInfo.processInfo.arguments.contains("--preview-memory-review") ? "memoryReviewPreview" : "dashboard") {
+        Window("3PO", id: ProcessInfo.processInfo.arguments.contains("--validate-advice-context") ? "adviceValidation" : ProcessInfo.processInfo.arguments.contains("--preview-memory-review") ? "memoryReviewPreview" : "dashboard") {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--preview-settings") {
                 SettingsView(model:model).preferredColorScheme(selectedColorScheme)
@@ -49,7 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 LifeProjectInteractivePreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-source-timeline") {
                 SourceTimelinePreview(model:model)
-            } else if ProcessInfo.processInfo.arguments.contains("--validate-native-memory") || ProcessInfo.processInfo.arguments.contains("--inspect-luna-access") || ProcessInfo.processInfo.arguments.contains("--validate-memory-inspection") || ProcessInfo.processInfo.arguments.contains("--validate-source-timeline") || ProcessInfo.processInfo.arguments.contains("--validate-native-capabilities") || ProcessInfo.processInfo.arguments.contains("--validate-native-editors") {
+            } else if ProcessInfo.processInfo.arguments.contains("--validate-advice-context") || ProcessInfo.processInfo.arguments.contains("--validate-native-memory") || ProcessInfo.processInfo.arguments.contains("--inspect-luna-access") || ProcessInfo.processInfo.arguments.contains("--validate-memory-inspection") || ProcessInfo.processInfo.arguments.contains("--validate-source-timeline") || ProcessInfo.processInfo.arguments.contains("--validate-native-capabilities") || ProcessInfo.processInfo.arguments.contains("--validate-native-editors") {
                 Text("Running disposable validation…").padding().task {model.start()}
             } else { WorkspaceView(model:model).preferredColorScheme(selectedColorScheme) }
             #else
