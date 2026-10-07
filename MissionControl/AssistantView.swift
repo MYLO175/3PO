@@ -428,15 +428,16 @@ struct BackgroundActivityView:View {
     private var runs:[PAReviewRun] {Array((model.heartbeat.state.accounts[registration]?.reviews ?? []).reversed())}
     var body:some View {
         VStack(alignment:.leading,spacing:14) {
-            HStack {Text("Background activity").font(.title2.weight(.semibold));Spacer();Button("Done") {dismiss()}}
+            HStack {Text("Background activity").font(.title2.weight(.semibold));Spacer();Button("Done") {dismiss()}.keyboardShortcut(.cancelAction)}
             ScrollView {
                 VStack(alignment:.leading,spacing:16) {
-                    GroupBox("Communication review") {
+                    activitySection("Communication review") {
                         VStack(alignment:.leading,spacing:8) {
                             Text(model.heartbeat.statusFor(registration)).textSelection(.enabled)
                             Text(model.heartbeat.budgetStatus(registration)).font(.caption).foregroundStyle(.secondary)
                             Text("This is app review usage, separate from your subscription allowance and other AI jobs.").font(.caption).foregroundStyle(.secondary)
-                            Text(model.heartbeat.mailReviewStatus(model)).font(.callout)
+                            let mailStatus=model.heartbeat.mailReviewStatus(model)
+                            if !mailStatus.isEmpty {Text(mailStatus).font(.callout)}
                             Text(model.emailSummaries.coverage(model)).font(.caption).foregroundStyle(.secondary)
                             Text("Calendar: "+model.paOrientationHealth.detail).font(.caption)
                             Text("Reminders: "+model.reminderHealth.detail).font(.caption)
@@ -446,22 +447,22 @@ struct BackgroundActivityView:View {
                             Text("\(pending) replies awaiting preparation · \(model.emailSummaries.rejectedCount(model)) emails with rejected assessments").font(.caption)
                         }.frame(maxWidth:.infinity,alignment:.leading).padding(5)
                     }
-                    GroupBox("Recent reviews") {
+                    activitySection("Recent reviews") {
                         VStack(alignment:.leading,spacing:12) {
                             if runs.isEmpty {Text("New review activity will be recorded here. Earlier reviews have no detailed history.").foregroundStyle(.secondary)}
                             ForEach(runs) {run in
                                 VStack(alignment:.leading,spacing:5) {
-                                    HStack {Text(run.started.formatted(date:.abbreviated,time:.shortened)).font(.callout.weight(.semibold));Spacer();Text(run.finished == nil ? "Interrupted or still running" : run.phase == "paused" ? "Paused" : run.phase == "waiting" ? "Work waiting" : "Checked").font(.caption)}
+                                    HStack {Text(run.started.formatted(date:.abbreviated,time:.shortened)).font(.callout.weight(.semibold));Spacer();Text(run.finished == nil ? (model.heartbeat.reviewInProgress(run,registration:registration) ? "Running" : "Interrupted") : run.phase == "paused" ? "Paused" : run.phase == "waiting" ? "Work waiting" : "Checked").font(.caption)}
                                     Text(run.detail).font(.callout).textSelection(.enabled)
                                     Text("\(run.calls) AI calls · \(run.checkedAccounts) checked Mail accounts · \(run.waitingAccounts) waiting").font(.caption).foregroundStyle(.secondary)
                                     Text("\(run.preparedItems) new proposals · \(run.drafts) new drafts · \(run.handled) new planned/addressed connections").font(.caption).foregroundStyle(.secondary)
                                 }
                                 Divider()
                             }
-                            Text("Last20communication reviews for this account. Counts describe saved work, not complete inbox coverage. Source bodies and AI reasoning are not copied into this history.").font(.caption).foregroundStyle(.secondary)
+                            Text("Last 20 communication reviews for this account. Counts describe saved work, not complete inbox coverage. Source bodies and AI reasoning are not copied into this history.").font(.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth:.infinity,alignment:.leading).padding(5)
                     }
-                    GroupBox("Learning from dismissals") {
+                    activitySection("Learning from dismissals") {
                         VStack(alignment:.leading,spacing:8) {
                             Text("Dismissal says a review item was unhelpful, not that its task is complete. Repeated similar dismissals guide future assessments; new requests and changed deadlines can still be raised. Undo removes that signal.").font(.caption).foregroundStyle(.secondary)
                             let feedback=model.emailSummaries.dismissalContext(model)
@@ -478,5 +479,13 @@ struct BackgroundActivityView:View {
                 }
             }
         }.padding(24).frame(width:650,height:650)
+    }
+    private func activitySection<Content:View>(_ title:String,@ViewBuilder content:()->Content)->some View {
+        VStack(alignment:.leading,spacing:10) {
+            Text(title).font(.headline).accessibilityAddTraits(.isHeader)
+            content()
+        }.frame(maxWidth:.infinity,alignment:.leading).padding(14)
+            .background(Color.primary.opacity(0.04),in:RoundedRectangle(cornerRadius:10))
+            .accessibilityElement(children:.contain)
     }
 }

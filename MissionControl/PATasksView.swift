@@ -19,8 +19,11 @@ struct PATasksView: View {
     private var handled:[(MailMessage,EmailSummary,EmailHandling)] {
         model.emailSummaries.highlights(model).compactMap {message,summary in model.emailSummaries.handling(summary,message:message,model:model).map{(message,summary,$0)} }
     }
-    private var discoveries:[PADiscovery] { model.proactive.state.records.filter { model.proactive.visible($0,model:model) } }
+    private var discoveries:[PADiscovery] { model.proactive.state.records.filter { model.proactive.visible($0,model:model) }.map(ProactiveRules.reviewProjection) }
     private var pending:[PAQueuedRequest] { PAQueueRules.handoffs(model.assistant.queue.items,registration:model.chatGPT.activeID) }
+    private func discoveryTitle(_ item:PADiscovery)->String? {
+        item.sourceTitle ?? (item.needsDateClarification && item.sourceKind != "whatsapp" ? model.emailSummaries.highlights(model).first{$0.0.id == item.mailID}?.0.subject : nil)
+    }
     private func dateLabel(_ date:Date?,hasTime:Bool,fallback:String)->String {date?.formatted(date:.abbreviated,time:hasTime ? .shortened : .omitted) ?? fallback}
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
@@ -57,7 +60,7 @@ struct PATasksView: View {
                                 Text("Inferred connection · " + change.connection).font(.caption).foregroundStyle(.secondary)
                             }
                             Label(item.sourceKind == "whatsapp" ? "WhatsApp · " + (item.sourceLabel ?? "Selected chat") : item.kind == "update" ? "Update" : item.kind == "change" ? "Date change" : "Missing plan",systemImage:item.kind == "calendar" ? "calendar.badge.plus" : "checklist").font(.caption).foregroundStyle(.secondary)
-                            if let title=item.sourceTitle { Text(title).font(.callout.weight(.semibold)) }
+                            if let title=discoveryTitle(item) { Text(title).font(.callout.weight(.semibold)) }
                             Text(item.message).textSelection(.enabled)
                             Button("Source evidence") { sourceDiscovery=item }.buttonStyle(.borderless).font(.caption)
                             HStack { if item.kind == "project" { if model.assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) == nil { Button("Review project…") { reviewingProject=item } } else { Label("Created",systemImage:"checkmark.circle") } } else if item.kind != "update" {

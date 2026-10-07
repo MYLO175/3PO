@@ -546,7 +546,7 @@ import EventKit
         editTarget = .create(NativeCreationRequest(kind:kind,registration:chatGPT.activeID,preferredDate:date))
     }
     func reviewDiscovery(_ record:PADiscovery,as kind:NativeItemKind? = nil) {
-        guard proactive.visible(record,model:self),record.registration == chatGPT.activeID,let id=UUID(uuidString:record.id) else { return }
+        guard proactive.visible(record,model:self),!record.needsDateClarification,record.registration == chatGPT.activeID,let id=UUID(uuidString:record.id) else { return }
         if record.proposedChange != nil {
             guard !writing,proactive.canReview(record.id,model:self),let current=proactive.state.records.first(where:{$0.id == record.id && $0.registration == record.registration}) else {return}
             editTarget=dateReviewTarget(current)
@@ -599,7 +599,7 @@ import EventKit
         guard !sample, !writing, !assistant.busy, request.registration == chatGPT.activeID else { throw ActionFailure.message("Another change or account switch is in progress; reopen the form when ready.") }
         if request.requiresDateSelection && !dateSelected { throw ActionFailure.message("Choose the event's date and time before creating it.") }
         if let discovery = request.discoveryID {
-            guard let record = proactive.state.records.first(where:{ $0.id == discovery && $0.registration == request.registration }), proactive.visible(record,model:self) else { throw ActionFailure.message("This suggestion or its enabled source changed; reopen it before creating anything.") }
+            guard let record = proactive.state.records.first(where:{ $0.id == discovery && $0.registration == request.registration }), proactive.visible(record,model:self),!record.needsDateClarification else { throw ActionFailure.message("This suggestion or its enabled source changed, or its date needs clarification; reopen it before creating anything.") }
         }
         try NativeCreationRules.validate(request:request,baseline:baseline,edited:edited)
         try nativeCreations.begin(request)

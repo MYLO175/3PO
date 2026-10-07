@@ -32,6 +32,9 @@ import SwiftData
     private(set) var status = "Sources collect without AI. Background reviews run when due while 3PO is running and the Mac is awake."
     private(set) var state = PAHeartbeatState()
     private var statusRegistration:String?
+    func reviewInProgress(_ run:PAReviewRun,registration:String)->Bool {
+        busy && capturedRegistration == registration && state.accounts[registration]?.reviews?.last?.id == run.id
+    }
     private func recordReview(_ registration:String,run:PAReviewRun) throws {
         let previous=state
         var account=state.accounts[registration] ?? .init(),runs=account.reviews ?? []
@@ -40,7 +43,11 @@ import SwiftData
         do {try save()} catch {state=previous;throw error}
     }
     func statusFor(_ registration:String)->String {
-        if readable,!busy,state.accounts[registration]?.phase == "paused",statusRegistration != registration {return "Background review is paused after an interrupted or failed assessment. Sources can still collect. Choose Review changed context now to resume."}
+        if readable,!busy,state.accounts[registration]?.phase == "paused" {
+            let guidance="Background review is paused after an interrupted or failed assessment. Sources can still collect. Choose Review changed context now to resume."
+            if statusRegistration == registration,!status.contains("Choose Review changed context now"),!status.isEmpty {return status+" "+guidance}
+            return guidance
+        }
         if readable,!busy,statusRegistration != registration,state.accounts[registration]?.mailLanes?.values.contains(where:{$0.issue != nil}) == true {return "The last review used available sources. Unavailable Mail accounts remain pending; source checks continue independently."}
         return status
     }

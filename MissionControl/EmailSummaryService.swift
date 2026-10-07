@@ -78,7 +78,7 @@ import SwiftData
     func memories(_ model: DashboardModel) -> [(MailMessage,EmailSummary)] {
         records.filter { $0.registration == model.chatGPT.activeID && $0.dismissed != true && ($0.attention || $0.followUpDate != nil) }.compactMap { summary in
             guard let message = model.mailData.messages.first(where: { $0.id == summary.id }) ?? summary.message, model.mailData.accounts.contains(where: { $0.id == message.accountID }), !model.assistant.excludedAccounts.contains(message.accountID) else { return nil }
-            return (message,summary)
+            return (message,summary.groundedForReview(replied:message.replied))
         }.sorted { ($0.1.followUpDate ?? "9999") < ($1.1.followUpDate ?? "9999") }
     }
     func highlights(_ model: DashboardModel) -> [(MailMessage,EmailSummary)] {
@@ -87,7 +87,7 @@ import SwiftData
                   model.mailData.accounts.contains(where:{ $0.id == message.accountID }), !model.assistant.excludedAccounts.contains(message.accountID) else { return nil }
             return (message,summary)
         }.map { message,summary in
-            var projected=summary
+            var projected=summary.groundedForReview(replied:message.replied)
             if !EmailReplyDraftRules.canReply(summary,message:message) {projected.replyDraft=nil;if EmailReplyDraftRules.noReplySender(message.sender) || summary.replyChannel == "external" || summary.replyChannel == "none" {projected.needsReply=false}}
             return (message,projected)
         }.sorted { a,b in
@@ -99,7 +99,7 @@ import SwiftData
         EmailReviewRules.feedback(records.filter { $0.registration == model.chatGPT.activeID && $0.message.map {message in !model.assistant.excludedAccounts.contains(message.accountID) && model.mailData.accounts.contains{$0.id == message.accountID}} == true })
     }
     func handling(_ summary:EmailSummary,message:MailMessage,model:DashboardModel)->EmailHandling? {
-        guard summary.registration == model.chatGPT.activeID,!model.assistant.excludedAccounts.contains(message.accountID),model.mailData.accounts.contains(where:{$0.id == message.accountID}),summary.keepInReview != true,let handling=summary.handling,handling.assessmentRevision == summary.adviceRevision(replied:message.replied),summary.fingerprint == EmailSummary.fingerprint(message),!EmailReplyDraftRules.canReply(summary,message:message),model.assistant.contextEnabled,
+        guard summary.dateClarificationQuote == nil,summary.registration == model.chatGPT.activeID,!model.assistant.excludedAccounts.contains(message.accountID),model.mailData.accounts.contains(where:{$0.id == message.accountID}),summary.keepInReview != true,let handling=summary.handling,handling.assessmentRevision == summary.adviceRevision(replied:message.replied),summary.fingerprint == EmailSummary.fingerprint(message),!EmailReplyDraftRules.canReply(summary,message:message),model.assistant.contextEnabled,
               model.paOrientationHealth.error == nil,model.reminderHealth.error == nil,
               model.memoryDependenciesAvailable(handling.memoryDependencies,use:handling.memoryUse ?? .suggestions),model.whatsappDependenciesAvailable(handling.whatsappDependencies,use:handling.memoryUse ?? .suggestions),
               model.paOrientationHealth.lastSuccess.map{Date.now.timeIntervalSince($0) < 600} == true,model.reminderHealth.lastSuccess.map{Date.now.timeIntervalSince($0) < 600} == true,

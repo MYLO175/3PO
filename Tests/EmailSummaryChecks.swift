@@ -63,6 +63,23 @@ import Foundation
         assert(future.followUpDate == "2026-10-16" && future.message?.id == message.id)
         let savedFuture = try JSONDecoder().decode(EmailSummary.self,from:JSONEncoder().encode(future))
         assert(savedFuture.followUpEvidence == "16 October 2026")
+        let weekQuote="The form is due at 4pm on Wednesday of week one."
+        let weekJSON=#"{"summary":"The form is due today.","attention":true,"reason":"Submit by 16:00 today.","evidence":"The form is due at 4pm on Wednesday of week one.","followUpDate":"2026-10-02","followUpEvidence":"The form is due at 4pm on Wednesday of week one.","worthReading":true,"needsReply":false}"#
+        let week=try EmailSummary.decode(weekJSON,message:message,body:weekQuote,registration:"a")
+        assert(week.followUpDate == nil && week.summary.contains("Date needs clarification") && !week.reason.contains("today"))
+        assert(week.followUpEvidence == weekQuote && week.evidence == weekQuote)
+        assert(SourceDateGrounding.needsWeekAnchor("Briefing on 2 October 2026. "+weekQuote),"A separate event date is not a week anchor")
+        assert(!SourceDateGrounding.needsWeekAnchor("Wednesday of week one (14 October 2026)."))
+        assert(!SourceDateGrounding.needsWeekAnchor("Submit tomorrow at 16:00."))
+        assert(SourceDateGrounding.needsWeekAnchor("Submit in week 2."))
+        var oldWeek=week;oldWeek.summary="Due today";oldWeek.reason="16:00 today";oldWeek.followUpDate="2026-10-02"
+        let oldRevision=oldWeek.adviceRevision(replied:false),groundedWeek=oldWeek.groundedForReview(replied:false)
+        assert(groundedWeek.followUpDate == nil && groundedWeek.adviceRevision(replied:false) == oldRevision)
+        assert(oldWeek.followUpDate == "2026-10-02" && groundedWeek.evidence == oldWeek.evidence)
+        let groundedData=try JSONEncoder().encode(groundedWeek)
+        assert(!String(decoding:groundedData,as:UTF8.self).contains("groundingRevision"),"Presentation metadata is not persisted")
+        let normalRelative=try EmailSummary.decode(weekJSON.replacingOccurrences(of:weekQuote,with:"Submit tomorrow at 16:00.").replacingOccurrences(of:"2026-10-02",with:"2026-10-03"),message:message,body:"Submit tomorrow at 16:00.",registration:"a")
+        assert(normalRelative.followUpDate == "2026-10-03","The narrow week guard must not replace ordinary relative-date handling")
         var oldFuture = savedFuture; oldFuture.messageReceived = Date.now.addingTimeInterval(-40*86400)
         assert(oldFuture.retain(after:Date.now.addingTimeInterval(-30*86400)))
         oldFuture.dismissed = true

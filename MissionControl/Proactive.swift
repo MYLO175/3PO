@@ -27,6 +27,7 @@ struct PADiscovery: Codable, Identifiable, Equatable {
     var reviewState: String? = nil // pending save / approved, independent of source truth
     var reviewedAt: Date? = nil
     var deliveryID: String { "discovery:" + id }
+    var needsDateClarification:Bool { SourceDateGrounding.needsWeekAnchor(evidence) && kind != "project" }
 }
 /// An issued native snapshot, never a model-selected title lookup or a write instruction.
 struct DiscoveryNativeTarget:Codable,Equatable {
@@ -167,8 +168,14 @@ enum ProactiveRules {
                 guard let parsed=proposal.date(),target.kind != "event" || target.hasTime == hasTime,(hasTime ? (target.start ?? target.due) != parsed : target.originalDate != date) else { throw ReviewValidationFailure.date }
                 change=proposal
             } else if value.targetID != nil || value.newDate != nil || value.hasTime != nil || value.connection != nil { throw ReviewValidationFailure.format }
-            return PADiscovery(id:UUID().uuidString,registration:registration,mailID:candidate.mailID,kind:value.kind,message:value.message,evidence:evidence,created:now,scope:scope,sourceKind:candidate.sourceKind,sourceChatID:candidate.sourceChatID,sourceMessageID:candidate.sourceMessageID,sourceIdentity:candidate.sourceIdentity,sourceRevision:candidate.sourceRevision,sourceLabel:candidate.sourceLabel,sourceTitle:value.title,sourceAssessmentRevision:candidate.sourceAssessmentRevision,proposedChange:change)
+            return reviewProjection(PADiscovery(id:UUID().uuidString,registration:registration,mailID:candidate.mailID,kind:value.kind,message:value.message,evidence:evidence,created:now,scope:scope,sourceKind:candidate.sourceKind,sourceChatID:candidate.sourceChatID,sourceMessageID:candidate.sourceMessageID,sourceIdentity:candidate.sourceIdentity,sourceRevision:candidate.sourceRevision,sourceLabel:candidate.sourceLabel,sourceTitle:value.title,sourceAssessmentRevision:candidate.sourceAssessmentRevision,proposedChange:change))
         }
+    }
+    static func reviewProjection(_ record:PADiscovery)->PADiscovery {
+        guard record.reviewState == nil,record.needsDateClarification else {return record}
+        var result=record;result.kind="update";result.proposedChange=nil
+        result.message=SourceDateGrounding.clarification(record.evidence)
+        return result
     }
     static func sourceKey(_ kind:String,_ id:String)->String { SHA256.hash(data:Data((kind+":"+id).utf8)).map{String(format:"%02x",$0)}.joined() }
     static func assessed(_ progress:ProactiveProgress,kind:String,id:String,revision:String,context:String)->Bool { progress.sourceContextRevision == context && progress.assessedSourceVersions?[sourceKey(kind,id)] == revision }

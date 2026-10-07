@@ -49,6 +49,19 @@ import Foundation
         let legacyRoundtrip=try JSONDecoder().decode(PADiscovery.self,from:JSONEncoder().encode(legacy));precondition(legacyRoundtrip.proposedChange == nil)
         let timed=DiscoveryDateChange(target:target,newDate:"2026-10-20T17:00:00+01:00",hasTime:true,connection:"Exact quoted time",timeZoneID:TimeZone.current.identifier)
         precondition(timed.date() == ISO8601DateFormatter().date(from:"2026-10-20T16:00:00Z"))
+        let weekQuote="The form deadline has moved to Wednesday of week one."
+        var weekCandidate=candidate;weekCandidate.sourceText=weekQuote
+        let weekJSON=json.replacingOccurrences(of:quote,with:weekQuote)
+        let grounded=try ProactiveRules.decode(weekJSON,candidates:[weekCandidate],registration:"account",scope:"scope",now:now,targets:["reminder_0":target])[0]
+        precondition(grounded.kind == "update" && grounded.proposedChange == nil && grounded.message.contains("Date needs clarification"))
+        precondition(grounded.evidence == weekQuote && grounded.sourceRevision == candidate.sourceRevision)
+        var oldWeek=record;oldWeek.evidence=weekQuote
+        let projected=ProactiveRules.reviewProjection(oldWeek)
+        precondition(projected.id == oldWeek.id && projected.kind == "update" && projected.proposedChange == nil && oldWeek.proposedChange != nil)
+        precondition(projected.sourceAssessmentRevision == oldWeek.sourceAssessmentRevision && projected.evidence == oldWeek.evidence)
+        oldWeek.reviewState="pending";precondition(ProactiveRules.reviewProjection(oldWeek) == oldWeek,"An uncertain save receipt must remain inspectable")
+        oldWeek.reviewState="approved";precondition(ProactiveRules.reviewProjection(oldWeek) == oldWeek,"An approved receipt must never be rewritten")
+        precondition(ProactiveRules.reviewProjection(record) == record,"An explicitly dated source remains reviewable")
         print("PASS review inbox: exact issued target/evidence, date semantics, stale native/scope/timezone rejection, distinct proposed vs confirmed links, duplicate suppression, no daily output cap, persisted quiet/limited-batch progress and legacy decode. No native writes or AI.")
     }
 }

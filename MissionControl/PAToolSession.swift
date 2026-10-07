@@ -204,7 +204,7 @@ import Foundation
             await model.weather.prepareForBrief(); return try json(model.weather.context())
         case "read_attention":
             let summaries = model.emailSummaries.highlights(model)
-            let discoveries = model.proactive.state.records.filter { model.proactive.visible($0,model:model) }
+            let discoveries = model.proactive.state.records.filter { model.proactive.visible($0,model:model) }.map(ProactiveRules.reviewProjection)
             issuedSuggestions.formUnion(summaries.map { "email:" + $0.1.id }); issuedSuggestions.formUnion(discoveries.map { "discovery:" + $0.id })
             let brief = model.briefings.current(model)
             return try json(["brief":brief?.message ?? "No saved brief for today", "briefCoverage":brief?.coverage ?? "Unavailable", "emailCoverage":model.emailSummaries.coverage(model),"emails":summaries.prefix(40).map { ["id":$0.1.id,"subject":$0.0.subject,"account":$0.0.account,"summary":$0.1.summary,"category":EmailHighlightRules.category($0.1,replied:$0.0.replied),"evidence":$0.1.evidence] },"suggestions":discoveries.prefix(10).map { ["id":$0.id,"kind":$0.kind,"message":$0.message,"evidence":$0.evidence] }])
