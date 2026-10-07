@@ -40,7 +40,7 @@ struct WorkspaceView: View {
                             HStack {
                                 Text("Focused view").font(.caption).foregroundStyle(.secondary)
                                 Picker("Widget",selection:Binding(get:{ store.selected.widgets.first(where:{ $0.id == focusedWidgetID })?.id ?? store.selected.widgets.first!.id },set:{ focusedWidgetID = $0 })) {
-                                    ForEach(Array(store.selected.widgets.enumerated()),id:\.element.id) { index,widget in Text("\(widget.kind?.title ?? "Widget") \(index+1)").tag(widget.id) }
+                                    ForEach(store.selected.widgets) { widget in Text(focusedWidgetLabel(widget)).tag(widget.id) }
                                 }.labelsHidden()
                                 Spacer()
                             }
@@ -142,6 +142,12 @@ struct WorkspaceView: View {
     private func customiseToolbar() { NSApp.keyWindow?.runToolbarCustomizationPalette(nil) }
     private func showAssistant() { model.openAssistantComposer() }
     private func visible(_ tool: WorkspaceTool) -> Bool { ToolbarRules.visible(tool,hidden:toolbarHidden) }
+    private func focusedWidgetLabel(_ widget:WidgetPlacement)->String {
+        let title=widget.kind?.title ?? "Widget"
+        let matching=store.selected.widgets.filter{$0.kindRaw == widget.kindRaw}
+        guard matching.count > 1,let index=matching.firstIndex(where:{$0.id == widget.id}) else {return title}
+        return "\(title) \(index+1)"
+    }
     private var widgetChoices: some View { ForEach(WidgetKind.allCases,id:\.self) { kind in Button { addWidget(kind) } label: { Label(kind.title,systemImage:kind.icon) } } }
     private var addMenu: some View {
         Menu { widgetChoices } label: { Label("Add widget",systemImage:"plus") }
