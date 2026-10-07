@@ -54,6 +54,9 @@ import Foundation
         precondition(narrowed.mailLanes?.count == 1 && narrowed.calls == lanes.calls)
         let legacy=try JSONDecoder().decode(PAHeartbeatAccount.self,from:Data(#"{"phase":"idle"}"#.utf8))
         precondition(legacy.mailLanes == nil)
+        let run=PAReviewRun(id:"run",started:now,finished:now,manual:true,phase:"paused",detail:"Rejected target",calls:2,checkedAccounts:1,waitingAccounts:1,preparedItems:0,drafts:1,handled:0)
+        let activity=try JSONDecoder().decode(PAHeartbeatAccount.self,from:JSONEncoder().encode(PAHeartbeatAccount(phase:"paused",reviews:[run])))
+        precondition(activity.reviews?.first?.calls == 2 && activity.reviews?.first?.detail == "Rejected target" && legacy.reviews == nil)
         print("PASS heartbeat: configurable due boundaries, changed/pending assessment, persisted daily request allowance, day rollover, captured account isolation and interrupted inference requiring explicit resume")
     }
 }

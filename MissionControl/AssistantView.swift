@@ -322,6 +322,7 @@ struct AssistantSourceSettings: View {
     @Bindable var assistant: AssistantService
     @Environment(\.openWindow) private var openWindow
     var page: Page = .assistant
+    @State private var showingActivity=false
     var body: some View {
         Group {
             switch page {
@@ -365,6 +366,7 @@ struct AssistantSourceSettings: View {
                     Text(model.heartbeat.statusFor(model.chatGPT.activeID)).font(.caption).foregroundStyle(.secondary)
                     Text("Sources collect without AI. At each review, checked Mail accounts can continue while others wait; their cached data and pending work are kept. Email assessment can run while a Calendar/Reminders comparison is waiting. Proposals appear in Review inbox and require your approval. There is no daily cap on useful items. Reviews run while 3PO is open and your Mac is awake.").font(.caption).foregroundStyle(.secondary)
                     Button("Open Review inbox") {model.workspace.showReviewInbox();openWindow(id:"dashboard")}.disabled(model.workspace.readOnly)
+                    Button("Background activity") {showingActivity=true}
                     Button("Review changed context now") { model.heartbeat.check(model,manual:true) }.disabled(model.heartbeat.busy || model.assistant.busy || model.chatGPT.busy)
                     let mailReviewStatus=model.heartbeat.mailReviewStatus(model)
                     if !mailReviewStatus.isEmpty {Text(mailReviewStatus).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)}
@@ -408,7 +410,7 @@ struct AssistantSourceSettings: View {
                     if let error=model.nativeSourceLearning.error { Text(error).font(.caption).foregroundStyle(.orange) }
                 }
             }
-        }
+        }.sheet(isPresented:$showingActivity) {BackgroundActivityView(model:model)}
     }
     private func sourceMenu(_ title: String, sources: [SourceOption], excluded: Binding<Set<String>>) -> some View {
         Menu(title) {
@@ -416,5 +418,65 @@ struct AssistantSourceSettings: View {
                 Toggle(source.label, isOn: Binding(get: { !excluded.wrappedValue.contains(source.id) }, set: { enabled in if enabled { excluded.wrappedValue.remove(source.id) } else { excluded.wrappedValue.insert(source.id) } }))
             }
         }
+    }
+}
+
+struct BackgroundActivityView:View {
+    @Bindable var model:DashboardModel
+    @Environment(\.dismiss) private var dismiss
+    private var registration:String {model.chatGPT.activeID}
+    private var runs:[PAReviewRun] {Array((model.heartbeat.state.accounts[registration]?.reviews ?? []).reversed())}
+    var body:some View {
+        VStack(alignment:.leading,spacing:14) {
+            HStack {Text("Background activity").font(.title2.weight(.semibold));Spacer();Button("Done") {dismiss()}}
+            ScrollView {
+                VStack(alignment:.leading,spacing:16) {
+                    GroupBox("Communication review") {
+                        VStack(alignment:.leading,spacing:8) {
+                            Text(model.heartbeat.statusFor(registration)).textSelection(.enabled)
+                            Text(model.heartbeat.budgetStatus(registration)).font(.caption).foregroundStyle(.secondary)
+                            Text("This is app review usage, separate from your subscription allowance and other AI jobs.").font(.caption).foregroundStyle(.secondary)
+                            Text(model.heartbeat.mailReviewStatus(model)).font(.callout)
+                            Text(model.emailSummaries.coverage(model)).font(.caption).foregroundStyle(.secondary)
+                            Text("Calendar: "+model.paOrientationHealth.detail).font(.caption)
+                            Text("Reminders: "+model.reminderHealth.detail).font(.caption)
+                            Text("Recent reminder completions: "+model.completedReminderHealth.detail).font(.caption)
+                            Text("Completion evidence covers up to 80 permitted reminders ticked off in the last 30 days. A missing item does not mean it was completed.").font(.caption).foregroundStyle(.secondary)
+                            let pending=model.emailSummaries.highlights(model).filter{EmailReplyDraftRules.needsBackgroundDraft($0.1,message:$0.0)}.count
+                            Text("\(pending) replies awaiting preparation · \(model.emailSummaries.rejectedCount(model)) emails with rejected assessments").font(.caption)
+                        }.frame(maxWidth:.infinity,alignment:.leading).padding(5)
+                    }
+                    GroupBox("Recent reviews") {
+                        VStack(alignment:.leading,spacing:12) {
+                            if runs.isEmpty {Text("New review activity will be recorded here. Earlier reviews have no detailed history.").foregroundStyle(.secondary)}
+                            ForEach(runs) {run in
+                                VStack(alignment:.leading,spacing:5) {
+                                    HStack {Text(run.started.formatted(date:.abbreviated,time:.shortened)).font(.callout.weight(.semibold));Spacer();Text(run.finished == nil ? "Interrupted or still running" : run.phase == "paused" ? "Paused" : run.phase == "waiting" ? "Work waiting" : "Checked").font(.caption)}
+                                    Text(run.detail).font(.callout).textSelection(.enabled)
+                                    Text("\(run.calls) AI calls · \(run.checkedAccounts) checked Mail accounts · \(run.waitingAccounts) waiting").font(.caption).foregroundStyle(.secondary)
+                                    Text("\(run.preparedItems) new proposals · \(run.drafts) new drafts · \(run.handled) new planned/addressed connections").font(.caption).foregroundStyle(.secondary)
+                                }
+                                Divider()
+                            }
+                            Text("Last20communication reviews for this account. Counts describe saved work, not complete inbox coverage. Source bodies and AI reasoning are not copied into this history.").font(.caption).foregroundStyle(.secondary)
+                        }.frame(maxWidth:.infinity,alignment:.leading).padding(5)
+                    }
+                    GroupBox("Learning from dismissals") {
+                        VStack(alignment:.leading,spacing:8) {
+                            Text("Dismissal says a review item was unhelpful, not that its task is complete. Repeated similar dismissals guide future assessments; new requests and changed deadlines can still be raised. Undo removes that signal.").font(.caption).foregroundStyle(.secondary)
+                            let feedback=model.emailSummaries.dismissalContext(model)
+                            if feedback.isEmpty {Text("No recent email dismissal examples.").foregroundStyle(.secondary)}
+                            ForEach(Array(feedback.enumerated()),id:\.offset) {_,row in
+                                VStack(alignment:.leading,spacing:3) {
+                                    Text(row["subject"] ?? "Email").font(.callout)
+                                    Text((row["sender"] ?? "")+" · "+(row["similarSenderDismissals"] ?? "1")+" recent dismissals from this sender").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }.frame(maxWidth:.infinity,alignment:.leading).padding(5)
+                    }
+                    Text("Opening this page makes no AI request. Sources collect without AI; communication review, morning brief, memory work and explicitly queued work have separate controls. The app must be open and the Mac awake.").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }.padding(24).frame(width:650,height:650)
     }
 }

@@ -12,6 +12,8 @@ import EventKit
     private(set) var reminderCollectionRevision = -1
     private var lastOrientationCheck = Date.distantPast
     var reminderData = ReminderSnapshot(sources: [], reminders: [])
+    var completedReminders:[CompletedReminder] = []
+    var completedReminderHealth=SourceHealth()
     var mailData = MailSnapshot(messages: [], accounts: [], errors: [])
     var calendarHealth = SourceHealth()
     var reminderHealth = SourceHealth()
@@ -183,8 +185,9 @@ import EventKit
                 let approvalOnly=ProcessInfo.processInfo.arguments.contains("--approval-only")
                 let mailOnly=ProcessInfo.processInfo.arguments.contains("--mail-review-only")
                 let evidenceOnly=ProcessInfo.processInfo.arguments.contains("--mail-evidence-only")
-                do {result=try await (evidenceOnly ? ReviewInboxEvaluation.runMailEvidence(self) : mailOnly ? ReviewInboxEvaluation.runMailReview(self) : approvalOnly ? ReviewInboxEvaluation.runApproval(self) : ReviewInboxEvaluation.run(self))} catch {result=["error":error.localizedDescription,"storage":"Fictional disposable source-free startup"]}
-                let path=evidenceOnly ? "/tmp/missioncontrol-mail-evidence-evaluation.json" : mailOnly ? "/tmp/missioncontrol-mail-review-evaluation.json" : approvalOnly ? "/tmp/missioncontrol-review-approval-evaluation.json" : "/tmp/missioncontrol-review-inbox-evaluation.json"
+                let emailWork=ProcessInfo.processInfo.arguments.contains("--email-work-only")
+                do {result=try await (emailWork ? ReviewInboxEvaluation.runEmailWork(self) : evidenceOnly ? ReviewInboxEvaluation.runMailEvidence(self) : mailOnly ? ReviewInboxEvaluation.runMailReview(self) : approvalOnly ? ReviewInboxEvaluation.runApproval(self) : ReviewInboxEvaluation.run(self))} catch {result=["error":error.localizedDescription,"storage":"Fictional disposable source-free startup"]}
+                let path=emailWork ? "/tmp/missioncontrol-email-work-evaluation.json" : evidenceOnly ? "/tmp/missioncontrol-mail-evidence-evaluation.json" : mailOnly ? "/tmp/missioncontrol-mail-review-evaluation.json" : approvalOnly ? "/tmp/missioncontrol-review-approval-evaluation.json" : "/tmp/missioncontrol-review-inbox-evaluation.json"
                 if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:path),options:.atomic)}
                 NSApp.terminate(nil)
             };return
@@ -447,6 +450,13 @@ import EventKit
             reminderHealth = .init(lastSuccess: .now)
             reminderCollectionRevision = collectionRevision == sourceRevision ? collectionRevision : -1
             persist("reminders", snapshot); persist("reminderHealth", reminderHealth)
+            if assistant.contextEnabled {
+                do {
+                    let completed=try await eventKit.completedReminders(excluded:assistant.excludedLists)
+                    if collectionRevision == sourceRevision {completedReminders=completed;completedReminderHealth = .init(lastSuccess:.now)}
+                    else {completedReminderHealth = .init(error:"Source choices changed; completion evidence pending.")}
+                } catch {completedReminderHealth.error=error.localizedDescription}
+            } else {completedReminders=[];completedReminderHealth = .init()}
         } catch { reminderHealth.error = error.localizedDescription; reminderHealth.loading = false }
         if pendingReminderRefresh { pendingReminderRefresh = false; await refreshReminders() }
     }

@@ -10,6 +10,21 @@ import Foundation
         let withDraft=good.dropLast() + ",\"needsReply\":true,\"replyDraft\":\"Thanks for asking. [Confirm availability]\"}"
         let ready=try EmailSummary.decode(String(withDraft),message:message,body:body,registration:"registration-a")
         assert(ready.replyDraft?.contains("[Confirm availability]") == true)
+        let noReply=try JSONDecoder().decode(MailMessage.self,from:Data(raw.replacingOccurrences(of:"\"sender\":\"Example\"",with:"\"sender\":\"Club <no-reply@example.invalid>\"").utf8))
+        let external=try EmailSummary.decode(String(withDraft),message:noReply,body:body,registration:"registration-a")
+        assert(external.needsReply == false && external.replyDraft == nil,"No-reply notifications must not produce an email reply")
+        assert(!EmailReplyDraftRules.canReply(ready,message:noReply))
+        assert(!EmailReplyDraftRules.noReplySender("Normal Person <normal@example.invalid>"))
+        assert(EmailReplyDraftRules.noReplySender("Service <do_not_reply@example.invalid>"))
+        let portal=String(withDraft).dropLast()+",\"replyChannel\":\"external\"}"
+        let portalSummary=try EmailSummary.decode(String(portal),message:message,body:body,registration:"a")
+        assert(portalSummary.replyDraft == nil && portalSummary.needsReply == false)
+        var missingDraft=ready;missingDraft.replyDraft=nil;missingDraft.bodyFingerprint="body-a"
+        assert(EmailReplyDraftRules.needsBackgroundDraft(missingDraft,message:message))
+        missingDraft.replyDraftCheckedBody="body-a";assert(!EmailReplyDraftRules.needsBackgroundDraft(missingDraft,message:message),"An uncertain draft is not regenerated at every interval")
+        missingDraft.bodyFingerprint="body-b";assert(EmailReplyDraftRules.needsBackgroundDraft(missingDraft,message:message))
+        missingDraft.replyDraft="";missingDraft.replyDraftEdited=true
+        assert(!EmailReplyDraftRules.needsBackgroundDraft(missingDraft,message:message),"Even a deliberately cleared human draft stays human-owned after source changes")
         let replied=try JSONDecoder().decode(MailMessage.self,from:Data(raw.replacingOccurrences(of:"\"replied\":false",with:"\"replied\":true").utf8))
         let alreadyReplied=try EmailSummary.decode(String(withDraft),message:replied,body:body,registration:"registration-a"); assert(alreadyReplied.replyDraft == nil)
         let saved = try JSONDecoder().decode(EmailSummary.self, from: JSONEncoder().encode(summary))
@@ -23,6 +38,7 @@ import Foundation
         assert(EmailSummary.verbatimEvidence("Please attend tomorrow.",body:sourceWithWhitespace,subject:"") == nil)
         let legacy = try JSONDecoder().decode(EmailSummary.self, from: Data(#"{"id":"x","registration":"r","fingerprint":"f","summary":"Saved","attention":false,"reason":"","evidence":"","created":0}"#.utf8))
         assert(legacy.bodyFingerprint == nil && legacy.bodyCheckedAt == nil)
+        assert(legacy.handling == nil && legacy.replyChannel == nil && legacy.dismissedAt == nil)
         for invalid in [#"{"summary":"Urgent","attention":true,"reason":"Deadline tomorrow","evidence":"Deadline tomorrow"}"#, #"{"summary":"Urgent","attention":true,"reason":"Act now","evidence":""}"#, good.replacingOccurrences(of: "Reply requested; no explicit deadline.", with: " "), good.replacingOccurrences(of: "An attendance confirmation is requested.", with: " "), "not JSON"] {
             var rejected = false
             do { _ = try EmailSummary.decode(invalid, message: message, body: body, registration: "a") } catch { rejected = true }
@@ -67,6 +83,42 @@ import Foundation
         assert(EmailHighlightRules.category(summary,replied:false) == "Saved suggestion")
         let unsupportedReply = #"{"summary":"Reply","attention":false,"reason":"","evidence":"Please confirm whether you can attend on Monday.","needsReply":true}"#
         var badReply = false; do { _ = try EmailSummary.decode(unsupportedReply,message:message,body:body,registration:"a") } catch { badReply = true }; precondition(badReply)
+        let now=Date.now
+        var dismissA=ready;dismissA.dismissed=true;dismissA.dismissedAt=now
+        var oldDismissal=dismissA;oldDismissal.messageReceived=now.addingTimeInterval(-100*86400);oldDismissal.dismissedAt=now.addingTimeInterval(-70*86400)
+        assert(oldDismissal.retain(after:now.addingTimeInterval(-30*86400)),"Keep actual recent dismissal examples beyond the normal source cache window")
+        oldDismissal.dismissedAt=now.addingTimeInterval(-91*86400)
+        assert(!oldDismissal.retain(after:now.addingTimeInterval(-30*86400)))
+        let afterWeek=message.received.addingTimeInterval(7*86400)
+        assert(EmailReviewRules.eligibleForComparison(ready,message:message,heartbeat:true,now:afterWeek),"Older outstanding work is reconsidered when native context changes")
+        var oldInformation=ready;oldInformation.attention=false;oldInformation.needsReply=false
+        assert(!EmailReviewRules.eligibleForComparison(oldInformation,message:message,heartbeat:true,now:afterWeek),"Do not turn old informational Mail into a historical comparison backlog")
+        var dismissB=dismissA;dismissB.id="another"
+        let feedback=EmailReviewRules.feedback([dismissA,dismissB],now:now)
+        assert(feedback.count == 2 && feedback[0]["similarSenderDismissals"] == "2" && feedback[0]["subject"] == message.subject)
+        dismissB.dismissed=false;assert(EmailReviewRules.feedback([dismissA,dismissB],now:now)[0]["similarSenderDismissals"] == "1","Undo weakens preference rather than leaving a permanent blacklist")
+        var differentAccount=dismissA;differentAccount.message=try JSONDecoder().decode(MailMessage.self,from:Data(raw.replacingOccurrences(of:"\"accountID\":\"account\"",with:"\"accountID\":\"other\"").utf8))
+        assert(EmailReviewRules.feedback([dismissA,differentAccount],now:now).allSatisfy{$0["similarSenderDismissals"] == "1"})
+        let task=TaskItem(id:"exact",listID:"list",title:"Submit Orion report",due:now,hasTime:false,sourceLabel:"Test",writable:true,recurring:false,modified:now)
+        let planned=EmailNativeEvidence.reminder(task)
+        let addressed=EmailNativeEvidence.reminder(task,completedAt:now)
+        assert(planned.matches(events:[],reminders:[task],completed:[],excludedCalendars:[],excludedLists:[]))
+        assert(!addressed.matches(events:[],reminders:[task],completed:[],excludedCalendars:[],excludedLists:[]),"Disappearance/incomplete state cannot prove completion")
+        assert(addressed.matches(events:[],reminders:[],completed:[.init(item:task,completedAt:now)],excludedCalendars:[],excludedLists:[]))
+        assert(!addressed.matches(events:[],reminders:[],completed:[.init(item:task,completedAt:now)],excludedCalendars:[],excludedLists:["list"]))
+        var other=task;other.id="same-title-other-id"
+        assert(!planned.matches(events:[],reminders:[other],completed:[],excludedCalendars:[],excludedLists:[]))
+        var actionable=ready;actionable.needsReply=false
+        let handled=try EmailReviewRules.decodeHandled(#"{"suggestions":[],"handled":[{"mailID":"mail_0","targetID":"done_0","reason":"Exact distinctive report submission was ticked off."}]}"#,summaries:["mail_0":actionable],targets:["done_0":addressed],now:now)
+        assert(handled.count == 1 && handled[0].1.native.itemID == task.id && handled[0].1.label.contains("Addressed"))
+        func refuseHandling(_ value:EmailSummary,_ target:String) {
+            let json="{\"handled\":[{\"mailID\":\"mail_0\",\"targetID\":\"\(target)\",\"reason\":\"Match\"}]}"
+            do {_ = try EmailReviewRules.decodeHandled(json,summaries:["mail_0":value],targets:["done_0":addressed],now:now);fatalError("Invalid handling accepted")} catch {}
+        }
+        refuseHandling(ready,"done_0");refuseHandling(actionable,"invented")
+        actionable.keepInReview=true;refuseHandling(actionable,"done_0")
+        let savedHandling=try JSONDecoder().decode(EmailHandling.self,from:JSONEncoder().encode(handled[0].1))
+        assert(savedHandling == handled[0].1)
         print("PASS: exact source evidence, attention evidence requirement, invalid-output rejection, cache round-trip and changed-header fingerprint")
     }
 }

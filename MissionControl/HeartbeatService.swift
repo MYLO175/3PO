@@ -32,6 +32,13 @@ import SwiftData
     private(set) var status = "Sources collect without AI. Background reviews run when due while 3PO is running and the Mac is awake."
     private(set) var state = PAHeartbeatState()
     private var statusRegistration:String?
+    private func recordReview(_ registration:String,run:PAReviewRun) throws {
+        let previous=state
+        var account=state.accounts[registration] ?? .init(),runs=account.reviews ?? []
+        if let i=runs.firstIndex(where:{$0.id == run.id}) {runs[i]=run} else {runs.append(run)}
+        account.reviews=Array(runs.suffix(20));state.accounts[registration]=account
+        do {try save()} catch {state=previous;throw error}
+    }
     func statusFor(_ registration:String)->String {
         if readable,!busy,state.accounts[registration]?.phase == "paused",statusRegistration != registration {return "Background review is paused after an interrupted or failed assessment. Sources can still collect. Choose Review changed context now to resume."}
         if readable,!busy,statusRegistration != registration,state.accounts[registration]?.mailLanes?.values.contains(where:{$0.issue != nil}) == true {return "The last review used available sources. Unavailable Mail accounts remain pending; source checks continue independently."}
@@ -72,11 +79,24 @@ import SwiftData
         let controls=controlsRevision, scope=model.proactive.scope(model),day=BriefingRules.day(.now)
         busy=true;capturedRegistration=registration;statusRegistration=registration;status="Collecting sources for background review…"
         task=Task {
-            defer { busy=false;capturedRegistration=nil }
+            let began=Date.now,runID=UUID().uuidString,callsBefore=PAHeartbeatRules.callCount(prior,day:day)
+            let itemsBefore=model.proactive.state.records.filter{$0.registration == registration}.count
+            let draftsBefore=model.emailSummaries.records.filter{$0.registration == registration && $0.replyDraft != nil}.count
+            let handledBefore=model.emailSummaries.records.filter{$0.registration == registration && $0.handling != nil}.count
+            defer {
+                let latest=state.accounts[registration] ?? .init()
+                let ready=latest.mailLanes?.values.filter{$0.issue == nil && ($0.checked ?? .distantPast) >= began}.count ?? 0,waiting=latest.mailLanes?.values.filter{$0.issue != nil && ($0.checked ?? .distantPast) >= began}.count ?? 0
+                let phase=latest.phase == "paused" ? "paused" : latest.pending == true ? "waiting" : latest.phase
+                let run=PAReviewRun(id:runID,started:began,finished:.now,manual:manual,phase:phase,detail:String(status.prefix(600)),calls:max(0,PAHeartbeatRules.callCount(latest,day:day)-callsBefore),checkedAccounts:ready,waitingAccounts:waiting,preparedItems:max(0,model.proactive.state.records.filter{$0.registration == registration}.count-itemsBefore),drafts:max(0,model.emailSummaries.records.filter{$0.registration == registration && $0.replyDraft != nil}.count-draftsBefore),handled:max(0,model.emailSummaries.records.filter{$0.registration == registration && $0.handling != nil}.count-handledBefore))
+                do {try recordReview(registration,run:run)} catch {status="Review finished, but its activity record could not be saved. Existing records are retained."}
+                busy=false;capturedRegistration=nil
+            }
             var account=prior
             do {
                 account.phase=prior.phase == "paused" ? "paused" : "refreshing"
                 state.accounts[registration]=account; try save()
+                try recordReview(registration,run:.init(id:runID,started:began,manual:manual,phase:account.phase,detail:"Collecting permitted sources; no AI request yet."))
+                account=state.accounts[registration] ?? account
                 let collectionStart=Date.now,deadline=Date.now.addingTimeInterval(180)
                 while model.mailHealth.loading || model.calendarHealth.loading || model.reminderHealth.loading {
                     try Task.checkCancellation()
@@ -194,7 +214,7 @@ import SwiftData
         let events=calendar.events.filter{!a.excludedCalendars.contains($0.calendarID)}.map{$0.id+":"+$0.title+":"+$0.start.ISO8601Format()+":"+$0.end.ISO8601Format()}.sorted()
         let tasks=model.reminderData.reminders.filter{!a.excludedLists.contains($0.listID)}.map{$0.id+":"+$0.title+":"+($0.due?.ISO8601Format() ?? "")}.sorted()
         let life=a.projects.items(registration).map{$0.id.uuidString+":"+$0.revision.uuidString}.sorted()
-        let value=[model.proactive.scope(model),String(whatsappEnabled),String(model.emailSummaries.enabled),String(model.proactive.enabled),model.chatGPT.selectedModel]+mail+wa+events+tasks+life
+        let value=[model.proactive.scope(model),String(whatsappEnabled),String(model.emailSummaries.enabled),String(model.proactive.enabled),model.chatGPT.selectedModel,EmailNativeEvidence.hash(model.completedReminders),EmailNativeEvidence.hash(model.emailSummaries.dismissalContext(model))]+mail+wa+events+tasks+life
         return SHA256.hash(data:Data(value.joined(separator:"\n").utf8)).map{String(format:"%02x",$0)}.joined()
     }
     private func save() throws {

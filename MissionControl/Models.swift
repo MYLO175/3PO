@@ -42,6 +42,10 @@ struct TaskItem: Identifiable, Codable {
 }
 struct CalendarSnapshot: Codable { var sources: [SourceOption]; var events: [AgendaEvent] }
 struct ReminderSnapshot: Codable { var sources: [SourceOption]; var reminders: [TaskItem] }
+struct CompletedReminder:Codable {
+    var item:TaskItem
+    var completedAt:Date
+}
 struct SourceHealth: Codable {
     var lastSuccess: Date?
     var error: String?

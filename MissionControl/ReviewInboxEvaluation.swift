@@ -18,6 +18,25 @@ import EventKit
         try model.proactive.seedAdviceFixture([record],model:model)
         return model.proactive.state.records[0]
     }
+    static func seedEmailWorkPreview(_ model:DashboardModel)throws {
+        let registration=model.chatGPT.activeID,now=Date.now
+        let event=AgendaEvent(id:"fictional-review",calendarID:"fixture-calendar",title:"Orion project review",start:now.addingTimeInterval(86400),end:now.addingTimeInterval(90000),allDay:false,location:"",sourceLabel:"Fixture",modified:now)
+        let task=TaskItem(id:"fictional-submission",listID:"fixture-list",title:"Submit Orion report",due:now,hasTime:false,sourceLabel:"Fixture",writable:true,recurring:false,modified:now)
+        var messages:[MailMessage]=[],summaries:[EmailSummary]=[]
+        for (index,title) in ["Orion review attendance","Orion review invitation","Orion report submission"].enumerated() {
+            let raw:[String:Any]=["id":"preview-\(index)","accountID":"fictional-mail","account":"Fictional Mail","messageID":index+1,"internetMessageID":"preview-\(index)@example.invalid","sender":"Coordinator <fixture@example.invalid>","subject":title,"received":now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
+            let message=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:raw));messages.append(message)
+            var summary=EmailSummary(id:message.id,registration:registration,fingerprint:EmailSummary.fingerprint(message),summary:title,attention:true,reason:index == 0 ? "A reply confirming your attendance is requested." : "The related action already has native evidence.",evidence:"Please confirm the Orion project review.",bodyFingerprint:"fictional-body",message:message,worthReading:true,needsReply:index == 0)
+            if index == 0 {summary.replyDraft="Thanks for arranging the Orion review. [Confirm whether you can attend].\n\nBest,\n[Your name]";summary.replyDraftCheckedBody="fictional-body"}
+            else {summary.handling = .init(assessmentRevision:summary.adviceRevision(replied:false),native:index == 1 ? .event(event) : .reminder(task,completedAt:now),reason:index == 1 ? "The distinctive review is already on your calendar." : "The exact report reminder was ticked off.",created:now)}
+            summaries.append(summary)
+        }
+        model.mailData = .init(messages:messages,accounts:[.init(id:"fictional-mail",title:"Fictional Mail")],errors:[])
+        model.paOrientation = .init(start:now,end:event.end,refreshed:now,calendar:.init(sources:[.init(id:event.calendarID,title:"Fixture",account:"Fixture",writable:true)],events:[event]))
+        model.paOrientationHealth = .init(lastSuccess:now);model.reminderHealth = .init(lastSuccess:now)
+        model.completedReminders=[.init(item:task,completedAt:now)];model.completedReminderHealth = .init(lastSuccess:now)
+        try model.emailSummaries.seedAdviceFixture(summaries)
+    }
     static func previewSession(_ target:NativeEditTarget)->NativeEditSession? {
         guard ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"),case .reviewReminder(let task,_) = target else {return nil}
         return .init(item:.init(kind:.reminder,itemID:task.id,occurrenceID:task.id,sourceID:task.listID,title:task.title,notes:"Original fictional notes stay intact.",due:task.due,hasTime:task.hasTime,writable:true,modified:task.modified),sources:[.init(id:task.listID,title:task.sourceLabel,account:"Fictional",writable:true)])
@@ -64,6 +83,75 @@ import EventKit
         checks["source failure does not claim a proposal approval"] = model.proactive.state.records.first{$0.id == record.id}?.reviewState == nil
         checks["normal email preference preserved"] = enabledPreference == UserDefaults.standard.object(forKey:"automaticEmailSummaries") as? Bool
         return ["completed":Date.now.ISO8601Format(),"requests":0,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"storage":"Fictional Mail/native cache and memory, disposable SwiftData, actual input projection consumers; no source startup, Apple write, settings changes or inference. Not an end-to-end inference/scheduler fixture."]
+    }
+    static func runEmailWork(_ model:DashboardModel)async throws->[String:Any] {
+        let now=Date.now,registration=model.chatGPT.activeID,selected=model.chatGPT.selectedModel
+        var checks:[String:Bool]=[:]
+        let preference=UserDefaults.standard.object(forKey:"automaticEmailSummaries") as? Bool
+        model.emailSummaries.enableMailReviewFixture()
+        func message(_ id:String,_ sender:String,_ subject:String)throws->MailMessage {
+            let json:[String:Any]=["id":id,"accountID":"fictional-mail","account":"Fictional Mail","messageID":1,"internetMessageID":id+"@example.invalid","sender":sender,"subject":subject,"received":now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
+            return try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:json))
+        }
+        let notice=try message("notice","Club <no-reply@example.invalid>","Lakeside Club — match availability")
+        let reply=try message("reply","Coordinator <coordinator@example.invalid>","Orion project review attendance")
+        let noticeBody="Please confirm availability in Spond for the Lakeside Club match on 20 October 2026. This address does not accept replies."
+        let replyBody="Please reply to this email to confirm whether you can attend the Orion project review on 20 October 2026."
+        let feedback:[[String:String]]=[["sender":notice.sender,"subject":"Lakeside Club — match availability","summary":"Routine Spond attendance notice","similarSenderDismissals":"3"]]
+        let input:[String:Any]=["timezone":TimeZone.current.identifier,"sharedMemory":"{}","reviewFeedback":feedback,"emails":[["id":"notice","subject":notice.subject,"sender":notice.sender,"received":now.ISO8601Format(),"body":noticeBody,"bodyTruncated":false,"replied":false],["id":"reply","subject":reply.subject,"sender":reply.sender,"received":now.ISO8601Format(),"body":replyBody,"bodyTruncated":false,"replied":false]]]
+        let first=try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:try JSONSerialization.data(withJSONObject:input,options:.sortedKeys),as:UTF8.self)]],instructions:EmailSummary.assessmentInstructions+" For this fictional diagnostic apply that assessment independently to each supplied email. Return ONLY {assessments:[{id:exact email ID,assessment:the normal assessment object}]}. No personal availability is known.",model:selected,purpose:.diagnostic){_ in}
+        guard let result=try JSONSerialization.jsonObject(with:Data(first.utf8)) as? [String:Any],let rows=result["assessments"] as? [[String:Any]],rows.count == 2 else {throw SummaryFailure.invalid}
+        var decoded:[String:EmailSummary]=[:]
+        for row in rows {
+            guard let id=row["id"] as? String,let value=row["assessment"],id == "notice" || id == "reply",decoded[id] == nil else {throw SummaryFailure.invalid}
+            let output=String(decoding:try JSONSerialization.data(withJSONObject:value,options:.sortedKeys),as:UTF8.self)
+            decoded[id]=try EmailSummary.decode(output,message:id == "notice" ? notice : reply,body:id == "notice" ? noticeBody : replyBody,registration:registration)
+        }
+        checks["model distinguishes portal action from email reply"]=decoded["notice"]?.needsReply == false && decoded["notice"]?.replyDraft == nil
+        checks["genuine reply is prepared in initial assessment"]=decoded["reply"]?.needsReply == true && decoded["reply"]?.replyDraft?.isEmpty == false
+        checks["unknown attendance remains a placeholder"]=decoded["reply"]?.replyDraft?.contains("[") == true
+        let calendar=AgendaEvent(id:"review-exact",calendarID:"fixture-calendar",title:"Orion project review",start:Calendar.current.date(from:DateComponents(year:2026,month:10,day:20,hour:14))!,end:Calendar.current.date(from:DateComponents(year:2026,month:10,day:20,hour:15))!,allDay:false,location:"",sourceLabel:"Fixture",modified:now)
+        let done=TaskItem(id:"report-exact",listID:"fixture-list",title:"Submit Orion prototype report",due:now,hasTime:false,sourceLabel:"Fixture",writable:true,recurring:false,modified:now)
+        let sources=[("mail_0","Attend the Orion project review on 20 October 2026.","Attendance is the only requested action."),("mail_1","Please submit the Orion prototype report by 20 October 2026.","The report submission is the only action."),("mail_2","Attend the Orion project review and submit its separate safety form by 20 October 2026.","Attendance is planned; the separate safety form remains due."),("mail_3","Routine Lakeside Club match availability in Spond.","Another routine notice like the three dismissed examples."),("mail_4","Please submit your new Lakeside Club membership consent form by 21 October 2026 or your membership will lapse.","New concrete personal deadline, unlike routine match notices.")]
+        var messages:[MailMessage]=[],summaries:[String:EmailSummary]=[:]
+        for (id,quote,reason) in sources {
+            let mail=try message(id,id == "mail_3" || id == "mail_4" ? notice.sender : "Tutor <tutor@example.invalid>",reason)
+            messages.append(mail)
+            summaries[id]=EmailSummary(id:mail.id,registration:registration,fingerprint:EmailSummary.fingerprint(mail),summary:reason,attention:true,reason:reason,evidence:quote,bodyFingerprint:"fixture-"+id,message:mail,worthReading:true,needsReply:false)
+        }
+        let completed=CompletedReminder(item:done,completedAt:now)
+        let comparison:[String:Any]=["localDay":BriefingRules.day(now),"timezone":TimeZone.current.identifier,"events":[["id":"event_0","title":calendar.title,"start":DateRules.localTimestamp(calendar.start),"end":DateRules.localTimestamp(calendar.end),"allDay":false,"writable":true]],"reminders":[],"completedReminders":[["id":"completed_0","title":done.title,"completed":now.ISO8601Format()]],"emails":sources.map{["id":$0.0,"summary":$0.2,"reason":$0.2,"evidence":$0.1,"evidenceID":$0.0+":primary","needsReply":false] as [String:Any]},"reviewFeedback":feedback,"whatsapp":[],"paMemory":"{}","recentGeneralChat":[],"deliveredSuggestions":[],"calendarCoverage":"Complete fictional upcoming fixture.","reminderCoverage":"Complete fictional fixture.","completionCoverage":"One freshly completed fictional task."]
+        let second=try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:try JSONSerialization.data(withJSONObject:comparison,options:.sortedKeys),as:UTF8.self)]],instructions:ProactiveRules.heartbeatInstructions+" "+ProactiveRules.changeInstructions+" "+ProactiveRules.evidenceInstructions+" "+EmailReviewRules.instructions+" "+EmailReviewRules.feedbackInstructions,model:selected,purpose:.diagnostic){_ in}
+        let candidates=sources.map{DiscoveryCandidate(alias:$0.0,mailID:$0.0,evidence:$0.1,followUpEvidence:"")}
+        let proposals=try ProactiveRules.decode(second,candidates:candidates,registration:registration,scope:"fictional",now:now)
+        let native:[String:EmailNativeEvidence]=["event_0":.event(calendar),"completed_0":.reminder(done,completedAt:now)]
+        let handled=try EmailReviewRules.decodeHandled(second,summaries:summaries,targets:native,now:now)
+        let handledIDs=Set(handled.map(\.0)),proposalIDs=Set(proposals.map(\.mailID))
+        checks["existing calendar attendance is recognised as planned"]=handledIDs.contains("mail_0")
+        checks["completed reminder recognises addressed submission"]=handledIDs.contains("mail_1")
+        checks["attendance does not hide separate outstanding form"] = !handledIDs.contains("mail_2") && proposalIDs.contains("mail_2")
+        checks["repeated routine dismissal reduces duplicate review"] = !proposalIDs.contains("mail_3")
+        checks["new deadline from same sender still surfaces"]=proposalIDs.contains("mail_4")
+        checks["no duplicate proposals for handled actions"]=handledIDs.isDisjoint(with:proposalIDs)
+        model.mailData = .init(messages:messages,accounts:[.init(id:"fictional-mail",title:"Fictional Mail")],errors:[])
+        model.paOrientation = .init(start:now,end:calendar.end,refreshed:now,calendar:.init(sources:[.init(id:calendar.calendarID,title:"Fixture",account:"Fixture",writable:true)],events:[calendar]))
+        model.paOrientationHealth = .init(lastSuccess:now);model.reminderHealth = .init(lastSuccess:now)
+        model.completedReminders=[completed];model.completedReminderHealth = .init(lastSuccess:now)
+        try model.emailSummaries.seedAdviceFixture(Array(summaries.values));try model.emailSummaries.saveHandling(handled,model:model)
+        if let summary=model.emailSummaries.records.first(where:{$0.id == "mail_1"}),let mail=messages.first(where:{$0.id == summary.id}) {
+            checks["actual attention consumer uses fresh completed evidence"]=model.emailSummaries.handling(summary,message:mail,model:model)?.native.itemID == done.id
+            model.completedReminders=[]
+            checks["missing or undone completion restores need for review"]=model.emailSummaries.handling(summary,message:mail,model:model) == nil
+            model.completedReminders=[completed]
+            model.emailSummaries.keepForReview(summary.id,model:model)
+            checks["human can keep inferred handled email in review"]=model.emailSummaries.records.first(where:{$0.id == summary.id}).map{model.emailSummaries.handling($0,message:mail,model:model) == nil} == true
+            model.emailSummaries.keepForReview(summary.id,model:model,keep:false)
+            checks["human override is reversible"]=model.emailSummaries.records.first(where:{$0.id == summary.id}).map{model.emailSummaries.handling($0,message:mail,model:model) != nil} == true
+            var wrongAccount=summary;wrongAccount.registration="another-account"
+            checks["association never crosses account"]=model.emailSummaries.handling(wrongAccount,message:mail,model:model) == nil
+        }
+        checks["model account and preference unchanged"]=selected == model.chatGPT.selectedModel && registration == model.chatGPT.activeID && preference == UserDefaults.standard.object(forKey:"automaticEmailSummaries") as? Bool
+        return ["completed":Date.now.ISO8601Format(),"requests":2,"model":selected,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"storage":"Two fictional subscription prompts; actual assessment/proposal/handling decoders and attention consumer; disposable SwiftData. No source startup, native write or personal review retry. Not a population quality rate or sustained scheduler acceptance."]
     }
     static func runMailEvidence(_ model:DashboardModel)async throws->[String:Any] {
         let quote="Please register for your Orion prototype review by 20 October 2026.",selected=model.chatGPT.selectedModel
@@ -199,9 +287,9 @@ struct ReviewInboxPreview:View {
     @State private var ready=false
     var body:some View {
         VStack {Text("Fictional review inbox · disposable storage · no Apple writes").font(.caption);if ready {PATasksView(model:model);if model.proactive.canUndo {Button("Undo dismissed fixture") {model.proactive.undo(model)}}} }
-            .padding(16).frame(width:600,height:660)
+            .padding(16).frame(width:ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 840 : 600,height:ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 780 : 660)
             .sheet(item:Binding(get:{model.editTarget},set:{model.editTarget=$0})){NativeItemEditor(model:model,target:$0)}
-            .task {guard !ready else {return};_ = try? ReviewInboxEvaluation.seed(model);ready=true}
+            .task {guard !ready else {return};if ProcessInfo.processInfo.arguments.contains("--email-work-preview") {try? ReviewInboxEvaluation.seedEmailWorkPreview(model)} else {_ = try? ReviewInboxEvaluation.seed(model)};ready=true}
     }
 }
 #endif

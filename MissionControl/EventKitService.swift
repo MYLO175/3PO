@@ -64,6 +64,22 @@ actor EventKitService {
         }
         return .init(sources: calendars.map(option).sorted { $0.label < $1.label }, reminders: DateRules.ordered(reminders))
     }
+    /// Recent completion evidence under existing access; never request background permission.
+    func completedReminders(excluded:Set<String>,now:Date = .now) async throws->[CompletedReminder] {
+        guard EKEventStore.authorizationStatus(for:.reminder) == .fullAccess else {throw IntegrationError.denied("Reminders")}
+        let calendars=store.calendars(for:.reminder).filter{!excluded.contains($0.calendarIdentifier)}
+        guard !calendars.isEmpty else {return []}
+        let predicate=store.predicateForCompletedReminders(withCompletionDateStarting:now.addingTimeInterval(-30*86400),ending:now,calendars:calendars)
+        let items:[EKReminder]?=await withCheckedContinuation { continuation in store.fetchReminders(matching:predicate){continuation.resume(returning:$0)} }
+        guard let items else {throw IntegrationError.missing}
+        return Array(items.filter{$0.isCompleted && $0.completionDate != nil}.sorted{($0.completionDate ?? .distantPast) > ($1.completionDate ?? .distantPast)}.prefix(80)).compactMap { item in
+            guard let completed=item.completionDate else {return nil}
+            let components=item.dueDateComponents
+            var calendar=components?.calendar ?? Calendar.current;calendar.timeZone=components?.timeZone ?? .current
+            let value=TaskItem(id:item.calendarItemIdentifier,listID:item.calendar.calendarIdentifier,title:item.title ?? "Untitled reminder",due:components.flatMap{calendar.date(from:$0)},hasTime:components?.hour != nil,sourceLabel:option(item.calendar).label,writable:item.calendar.allowsContentModifications,recurring:item.hasRecurrenceRules,modified:item.lastModifiedDate)
+            return .init(item:value,completedAt:completed)
+        }
+    }
     func complete(id: String) async throws -> String {
         try await access(.reminder)
         guard let item = store.calendarItem(withIdentifier: id) as? EKReminder, !item.isCompleted else { throw IntegrationError.missing }

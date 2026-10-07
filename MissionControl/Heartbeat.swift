@@ -9,6 +9,21 @@ struct PAHeartbeatAccount: Codable {
     var assessed:Date? = nil
     var pending:Bool? = nil
     var mailLanes:[String:PAHeartbeatMailLane]? = nil
+    var reviews:[PAReviewRun]? = nil
+}
+struct PAReviewRun:Codable,Identifiable {
+    var id:String
+    var started:Date
+    var finished:Date?
+    var manual:Bool
+    var phase:String
+    var detail:String
+    var calls:Int = 0
+    var checkedAccounts:Int = 0
+    var waitingAccounts:Int = 0
+    var preparedItems:Int = 0
+    var drafts:Int = 0
+    var handled:Int = 0
 }
 struct PAHeartbeatMailLane:Codable {
     var checked:Date?

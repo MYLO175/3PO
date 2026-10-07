@@ -8,12 +8,16 @@ struct PATasksView: View {
     @State private var copied=false
     @State private var draftSaved=false
     @State private var sourceDiscovery:PADiscovery?
+    @State private var showingActivity=false
     private var emails:[(MailMessage,EmailSummary)] {
-        model.emailSummaries.highlights(model).filter { EmailHighlightRules.needsAction($0.1,replied:$0.0.replied) }.map { message,summary in
+        model.emailSummaries.highlights(model).filter { EmailHighlightRules.needsAction($0.1,replied:$0.0.replied) && model.emailSummaries.handling($0.1,message:$0.0,model:model) == nil }.map { message,summary in
             var value=summary
             if message.replied || EmailSummary.fingerprint(message) != summary.fingerprint { value.replyDraft=nil }
             return (message,value)
         }
+    }
+    private var handled:[(MailMessage,EmailSummary,EmailHandling)] {
+        model.emailSummaries.highlights(model).compactMap {message,summary in model.emailSummaries.handling(summary,message:message,model:model).map{(message,summary,$0)} }
     }
     private var discoveries:[PADiscovery] { model.proactive.state.records.filter { model.proactive.visible($0,model:model) } }
     private var pending:[PAQueuedRequest] { PAQueueRules.handoffs(model.assistant.queue.items,registration:model.chatGPT.activeID) }
@@ -40,6 +44,7 @@ struct PATasksView: View {
                 }
             }
             Text("3PO suggests; you decide. Approve applies the displayed change. Dismiss leaves the original unchanged.").font(.caption).foregroundStyle(.secondary)
+            Button("Background activity") {showingActivity=true}.buttonStyle(.borderless).font(.caption)
             ScrollView {
                 LazyVStack(alignment:.leading,spacing:12) {
                     if !discoveries.isEmpty { Text("From your background review").font(.headline) }
@@ -71,13 +76,39 @@ struct PATasksView: View {
                             Label(summary.replyDraft == nil ? "Needs attention" : "Reply draft ready",systemImage:summary.replyDraft == nil ? "checklist" : "pencil.line").font(.caption).foregroundStyle(.secondary)
                             Text(message.subject).font(.callout.weight(.semibold)).lineLimit(2)
                             Text(summary.reason.isEmpty ? summary.summary : summary.reason).font(.callout).textSelection(.enabled)
+                            if summary.keepInReview == true {HStack {Text("Kept in review by you").font(.caption).foregroundStyle(.secondary);Button("Allow planned status") {model.emailSummaries.keepForReview(summary.id,model:model,keep:false)}.buttonStyle(.borderless).font(.caption)}}
+                            if let reply=summary.replyDraft {
+                                VStack(alignment:.leading,spacing:5) {
+                                    Text("Suggested reply").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                    if summary.replyDraftEdited == true,summary.replyDraftCheckedBody != summary.bodyFingerprint {Text("Your saved draft is preserved, but the email changed. Review its details.").font(.caption).foregroundStyle(.orange)}
+                                    Text(reply).font(.callout).textSelection(.enabled)
+                                    Text("Check placeholders and details before using it.").font(.caption2).foregroundStyle(.secondary)
+                                }.padding(10).frame(maxWidth:.infinity,alignment:.leading).background(Color.primary.opacity(0.04),in:RoundedRectangle(cornerRadius:8))
+                            }
+                            if summary.replyDraft == nil,EmailReplyDraftRules.canReply(summary,message:message) {
+                                Text(EmailReplyDraftRules.needsBackgroundDraft(summary,message:message) ? "Reply preparation pending" : "Check details before preparing a reply").font(.caption).foregroundStyle(.secondary)
+                            }
                             HStack {
                                 if let reply=summary.replyDraft { Button("Review draft") { editing=summary; draft=reply; copied=false; draftSaved=false } }
-                                else if summary.needsReply == true { Button("Draft reply") { model.emailSummaries.prepareReply(message,summary:summary,model:model) }.disabled(model.emailSummaries.busy || model.assistant.busy || model.chatGPT.busy || model.proactive.busy || model.writing) }
+                                else if EmailReplyDraftRules.canReply(summary,message:message) {
+                                    Button("Prepare now") { model.emailSummaries.prepareReply(message,summary:summary,model:model) }.disabled(model.emailSummaries.busy || model.assistant.busy || model.chatGPT.busy || model.proactive.busy || model.writing)
+                                }
                                 Button("Original") { model.select(message) }
                                 Spacer(); Button("Dismiss") { model.emailSummaries.dismiss(message.id,model:model) }
                             }.controlSize(.small)
                         }.taskCard()
+                    }
+                    if !handled.isEmpty {
+                        DisclosureGroup("Already planned or addressed (\(handled.count))") {
+                            ForEach(handled,id:\.0.id) { message,summary,handling in
+                                VStack(alignment:.leading,spacing:6) {
+                                    Label(handling.label,systemImage:handling.native.completedAt == nil ? "calendar.badge.checkmark" : "checkmark.circle").font(.caption).foregroundStyle(.secondary)
+                                    Text(message.subject).font(.callout.weight(.semibold))
+                                    Text("Inferred connection to “"+handling.native.title+"” · "+handling.reason).font(.callout).textSelection(.enabled)
+                                    HStack {Button("Original") {model.select(message)};Button("Keep in review") {model.emailSummaries.keepForReview(summary.id,model:model)}}.controlSize(.small)
+                                }.taskCard()
+                            }
+                        }
                     }
                     if !pending.isEmpty { Text("Delegated work").font(.headline) }
                     ForEach(pending) { item in
@@ -89,13 +120,14 @@ struct PATasksView: View {
                             if item.state != .running { HStack { if item.state == .waiting { Button("Continue queue") { model.assistant.resumeQueue(model:model) }.disabled(model.assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }; Button("Remove") { model.assistant.discardQueued(item.id) } }.controlSize(.small) }
                         }.taskCard()
                     }
-                    if emails.isEmpty && discoveries.isEmpty && pending.isEmpty {
+                    if emails.isEmpty && discoveries.isEmpty && pending.isEmpty && handled.isEmpty {
                         ContentUnavailableView("Nothing waiting for review",systemImage:"checkmark.circle",description:Text("Proposed changes, useful updates and prepared work appear here when enabled sources reveal something useful."))
                     }
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
         .sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record,model:model) }
+        .sheet(isPresented:$showingActivity) {BackgroundActivityView(model:model)}
         .sheet(item:$reviewingProject) { record in LifeItemEditor(model:model,item:.init(registration:record.registration,kind:.project,title:String((record.sourceTitle ?? "New project").prefix(160)),notes:record.evidence),close:{reviewingProject=nil},reviewedSuggestion:record) }
         .sheet(item:$editing) { summary in
             VStack(alignment:.leading,spacing:14) {
