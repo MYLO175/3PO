@@ -176,7 +176,8 @@ struct AssistantPanel: View {
                                     Text(turn.content.components(separatedBy:"\n\n").first ?? turn.content).lineLimit(3).textSelection(.enabled)
                                     DisclosureGroup("Details") { Text(turn.content).textSelection(.enabled) }.font(.caption)
                                 } else if turn.role == "assistant" {
-                                    Text((try? AttributedString(markdown:turn.content,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(turn.content)).textSelection(.enabled).lineSpacing(3).id(turn.completed)
+                                    let content=PAIntentFailure.correctedLegacyReply(turn.content,errors:turn.toolErrors)
+                                    Text((try? AttributedString(markdown:content,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(content)).textSelection(.enabled).lineSpacing(3).id(turn.completed)
                                 } else if !turn.content.isEmpty { Text(turn.content).textSelection(.enabled) }
                                 if turn.completed, turn.role == "assistant",turn.id == selected?.turns.last?.id,let choices=turn.choices {
                                     ViewThatFits(in:.horizontal) {

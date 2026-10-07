@@ -344,7 +344,10 @@ import Observation
             return nil
         })
         let permitted=Set(memory.permittedRecords.filter{MemoryRules.usable($0,registration:connection.activeID)}.map(\.id))
-        return ConversationRules.sourceMemoryHistory(ConversationRules.history(feed:feed,topic:topic,excludedDeliveries:excluded),permitted:permitted)
+        return ConversationRules.sourceMemoryHistory(ConversationRules.history(feed:feed,topic:topic,excludedDeliveries:excluded),permitted:permitted).map{turn in
+            guard turn.role == "assistant" else {return turn}
+            var value=turn;value.content=PAIntentFailure.correctedLegacyReply(turn.content,errors:turn.toolErrors);return value
+        }
     }
     func send(context: String?, model: DashboardModel) {
         let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -480,6 +483,12 @@ import Observation
                             if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {
                                 var errors=allConversations[c].turns[t].toolErrors ?? [];errors.append(note)
                                 allConversations[c].turns[t].toolErrors=Array(errors.suffix(PAToolProtocol.maxStoredToolErrors));save()
+                            }
+                            if let failure=error as? PAIntentFailure,failure.kind == .unavailable {
+                                guard valid() else {throw ActionFailure.message("Configuration changed during the AI check; remaining task stopped.")}
+                                self.error=failure.localizedDescription
+                                setResponse(failure.stoppedReply(receipts:session.receipts),completed:true)
+                                return
                             }
                             if ["save_memory","remember_context","change_memory","organise_memory"].contains(call.name) { session.memoryNotes.append(String(error.localizedDescription.prefix(500))) }
                             let guidance=(error as? PAIntentFailure) != nil ? PAIntentFailure.guidance : ["save_memory","remember_context"].contains(call.name)

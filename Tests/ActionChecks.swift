@@ -10,6 +10,22 @@ import Foundation
         assert(refused.localizedDescription == "Resolve the opening date before scheduling.")
         assert(refused.note.contains("before executing"))
         assert(PAIntentFailure.guidance.contains("before any native save"))
+        let overloaded=PAIntentFailure(reason:"ChatGPT request failed. (server_is_overloaded). No paid fallback or automatic retry.",kind:.unavailable)
+        let stopped=overloaded.stoppedReply(receipts:[])
+        assert(overloaded.kind == .unavailable && refused.kind == .refused)
+        assert(stopped.contains("ChatGPT was temporarily overloaded") && stopped.contains("wasn’t attempted") && !stopped.contains("Reminders service"))
+        let partial=overloaded.stoppedReply(receipts:["Created fictional event"])
+        assert(partial.hasPrefix("Created fictional event\n\n") && !partial.contains("No change was made"),"Earlier verified changes must not be denied")
+        let legacy="I couldn’t update it because the Reminders service was overloaded; no change was made."
+        assert(PAIntentFailure.correctedLegacyReply(legacy,errors:[overloaded.note]) == stopped)
+        assert(PAIntentFailure.correctedLegacyReply(legacy.replacingOccurrences(of:"’",with:"'"),errors:[overloaded.note]) == stopped,"Rendered typography must not decide whether a known failure is corrected")
+        let formattedLegacy="I couldn't update it because the Reminders service was overloaded; **no change was made**."
+        assert(PAIntentFailure.correctedLegacyReply(formattedLegacy,errors:[overloaded.note]) == stopped,"Preserved Markdown must not hide a proven pre-operation error")
+        assert(PAIntentFailure.correctedLegacyReply(legacy,errors:nil) == legacy,"Do not rewrite an unsupported historical explanation")
+        assert(PAIntentFailure.correctedLegacyReply("A native save failed; verify its outcome.",errors:[overloaded.note]) == "A native save failed; verify its outcome.")
+        assert(PAIntentFailure.correctedLegacyReply(legacy,errors:["server_is_overloaded"]) == legacy,"A code without a pre-execution receipt is not proof no save occurred")
+        let oldPartial="Created fictional event\n\n"+legacy
+        assert(PAIntentFailure.correctedLegacyReply(oldPartial,errors:[overloaded.note]) == oldPartial,"Never erase a historical partial-success receipt")
         let receipt=String(repeating:"a",count:64),marker="Mission Control request "+String(repeating:"a",count:64)
         assert(NativeRequestNotes.creation(nil).isEmpty)
         assert(NativeRequestNotes.creation("Buy unscented pods") == "Buy unscented pods")

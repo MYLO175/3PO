@@ -117,6 +117,12 @@ enum PAToolProtocol {
     static func evidence(_ quote: String?, human: String) throws {
         guard let quote, !quote.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, human.contains(quote) else { throw ActionFailure.message("The tool did not cite your current message. No change was attempted.") }
     }
+    /// Local prerequisites must be satisfied before spending an AI intent-check request.
+    static func nativeReadPreflight(_ name:String,operation:String,hasSources:Bool,hasDetails:Bool)throws {
+        guard ["change_calendar","change_reminder"].contains(name) else {return}
+        if operation == "create",!hasSources {throw ActionFailure.message("Read the appropriate Calendar or Reminders source first to discover enabled destinations; no creation was attempted.")}
+        if ["edit","delete"].contains(operation),!hasDetails {throw ActionFailure.message("Read the exact item's current details before editing or deleting it.")}
+    }
     static func exclusiveAllDayEnd(_ end: Date, calendar: Calendar = .current) -> Date {
         let midnight = calendar.startOfDay(for:end)
         return end == midnight ? end : calendar.date(byAdding:.day,value:1,to:midnight)!

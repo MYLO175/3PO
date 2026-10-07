@@ -8,6 +8,9 @@ import Foundation
         assert(ChatGPTRecovery.blocked(after:"subscription_sharing_usage_limit_exceeded",registration:"",existing:[]) == [])
         assert(!ChatGPTRecovery.quota("subscription_sharing_usage_unavailable"))
         assert(!ChatGPTRecovery.quota("rate_limit_exceeded"))
+        assert(!ChatGPTRecovery.quota("server_is_overloaded"))
+        assert(ChatGPTRecovery.blocked(after:"server_is_overloaded",registration:"request-account",existing:[]) == [])
+        for status in [0,200,429,503] {assert(ChatGPTRecovery.message(code:"server_is_overloaded",status:status).contains("ChatGPT is temporarily overloaded"))}
         assert(ChatGPTRecovery.message(code:"rate_limit_exceeded",status:429).contains("not confirmed"))
         assert(ChatGPTRecovery.message(code:"subscription_sharing_usage_unavailable",status:503).contains("session is retained"))
         assert(ChatGPTRecovery.safe("req_test-123") == "req_test-123")

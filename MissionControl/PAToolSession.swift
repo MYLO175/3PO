@@ -84,9 +84,11 @@ import Foundation
             }
             target = try json(resolved)
         }
+        try PAToolProtocol.nativeReadPreflight(call.name,operation:text("operation") ?? "",hasSources:!(call.name == "change_calendar" ? calendar.sources : reminders.sources).isEmpty,hasDetails:text("target").flatMap{itemDetails[$0]} != nil)
         let organisationAccepted: Bool
         do { organisationAccepted=try await PAToolAuthorization.check(call:call,args:args,human:human,history:history,target:target,model:model) }
         catch is CancellationError { throw CancellationError() }
+        catch let failure as PAIntentFailure {throw failure}
         catch { throw PAIntentFailure(reason:error.localizedDescription) }
         if !organisationAccepted,args["organisation"] as? [String:Any] != nil { args["organisation"]=NSNull();memoryNotes.append("Unsupported organisation was omitted; the validated personal fact can still be saved.") }
         try Task.checkCancellation()
@@ -149,14 +151,6 @@ import Foundation
             return try json(["id":text("id")!,"title":item.title,"notes":String(item.notes.prefix(10000)),"notesTruncated":item.notes.count > 10000,"location":item.location,"recurring":item.recurring,"writable":item.writable,"sourceID":item.sourceID,"timeZone":item.timeZoneID,"url":item.url,"priority":item.priority,"availability":item.availability,"repeatRules":try JSONSerialization.jsonObject(with:encoder.encode(item.recurrenceRules)),"timeAlerts":try JSONSerialization.jsonObject(with:encoder.encode(item.alarms)),"repeatScope":item.kind == .event ? "occurrence or futureEvents (includes selected occurrence)" : "reminderSeries for a repeating reminder","otherNativeAlertsPreserved":item.otherAlarmSignatures.count > item.alarms.count])
         case "change_calendar","change_reminder":
             let operation = text("operation")!
-            if operation == "create" {
-                guard !(call.name == "change_calendar" ? calendar.sources : reminders.sources).isEmpty else {
-                    throw ActionFailure.message("Read the appropriate Calendar or Reminders source first to discover enabled destinations; no creation was attempted.")
-                }
-            }
-            if operation == "edit" || operation == "delete" {
-                guard let id=text("target"), itemDetails[id] != nil else {throw ActionFailure.message("Read the exact item's current details before editing or deleting it.")}
-            }
             let kind: ActionKind = call.name == "change_calendar" ? (operation == "create" ? .createEvent : operation == "delete" ? .deleteEvent : .editEvent) : (operation == "create" ? .createReminder : operation == "complete" ? .completeReminder : operation == "delete" ? .deleteReminder : .editReminder)
             let draft = ActionDraft(kind:kind,target:text("target"),destination:text("destination"),title:text("title"),due:text("due"),hasTime:args["hasTime"] as? Bool,start:text("start"),end:text("end"),allDay:args["allDay"] as? Bool,scope:text("scope"),notes:text("notes"),location:text("location"),options:try (args["options"] as? [String:Any]).map { try json($0) })
             let result = try await model.assistantActions.performTool(draft,human:human,authorization:text("authorization"),turnID:turnID,model:model,calendar:calendar,reminders:reminders,expectedDetails:draft.target.flatMap {itemDetails[$0]},valid:valid)

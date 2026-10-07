@@ -19,6 +19,7 @@ enum ChatGPTRecovery {
     }
     static func message(code: String, status: Int) -> String {
         if quota(code) { return "OpenAI rejected 3PO's ChatGPT plan allowance. This does not prove your whole plan is empty. Check the selected account's app limit in ChatGPT Usage, then Check access after it resets or changes." }
+        if code == "server_is_overloaded" { return "ChatGPT is temporarily overloaded. Try again later. Your session is retained; this is not confirmed subscription quota exhaustion." }
         if code == "subscription_sharing_usage_unavailable" || code == "subscription_sharing_user_unavailable" || status == 503 { return "OpenAI could not check subscription access or the service is temporarily unavailable. Your session is retained. Try again later; this is not confirmed quota exhaustion." }
         if status == 429 { return "OpenAI temporarily rate-limited this request. Try again later. This is not confirmed subscription quota exhaustion." }
         if code.contains("not_eligible") { return "This account or workspace is not eligible for ChatGPT plan usage. The dashboard remains available." }
