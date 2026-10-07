@@ -64,14 +64,20 @@ test('identity changes during content retrieval or unavailable content never bec
 });
 
 function batchFixture({count=75,changed=false}={}) {
-  let idReads=0,individualReads=0,filterReads=0;
+  let idReads=0,individualReads=0,filterReads=0,resolutions=0,resolvedIDReads=0;
   const ids=Array.from({length:count},(_,i)=>i+1);
-  const dated={
+  const dated=()=>{resolutions++;return ids.map((id,index)=>({
+    id:()=>{resolvedIDReads++;return changed&&resolvedIDReads>ids.length?ids[ids.length-1-index]:id},
+    messageId:()=>`fixture${id}@example.invalid`,
+    subject:()=>id===70?'Engineering Part IIB: module choices':'Unrelated newsletter',
+    sender:()=> 'Coordinator <fixture@example.invalid>'
+  }))};
+  Object.assign(dated,{
     id:()=>{idReads++;return changed&&idReads>1?ids.slice().reverse():ids},
     subject:()=>ids.map(id=>id===70?'Engineering Part IIB: module choices':'Unrelated newsletter'),
     sender:()=>ids.map(()=> 'Coordinator <fixture@example.invalid>'),
     messageId:()=>ids.map(id=>`fixture${id}@example.invalid`)
-  };
+  });
   const box={messages:{
     whose:()=>{filterReads++;return dated},
     byId:id=>()=>{individualReads++;return {
@@ -84,20 +90,20 @@ function batchFixture({count=75,changed=false}={}) {
   }};
   const mailboxes=[()=>box];mailboxes.name=()=>['Inbox'];
   const account={enabled:()=>true,name:()=> 'Fixture',mailboxes};
-  return {mail:{accounts:{byId:()=>()=>account}},reads:()=>({idReads,individualReads,filterReads})};
+  return {mail:{accounts:{byId:()=>()=>account}},reads:()=>({idReads,individualReads,filterReads,resolutions})};
 }
 const batchRequest={accountID:'fixture-account',start:Date.parse('2026-10-05T00:00:00Z')/1000,end:Date.parse('2026-10-06T00:00:00Z')/1000,offset:0,limit:20};
 test('arrival scan gets date-filtered IDs in one bulk read, then only the bounded page',()=>{
   const f=batchFixture(),result=reader().runBatch(f.mail,batchRequest);
   assert.equal(result.messages.length,20);assert.equal(result.complete,false);assert.equal(result.nextOffset,20);
-  assert.deepEqual(f.reads(),{idReads:1,individualReads:20,filterReads:1});
+  assert.deepEqual(f.reads(),{idReads:1,individualReads:20,filterReads:1,resolutions:0});
   const second=reader().runBatch(f.mail,{...batchRequest,messageIDs:Array.from(result.messageIDs),offset:20});
   assert.equal(second.messages.length,20);assert.equal(f.reads().idReads,1,'resuming must reuse exact saved IDs');
 });
 test('on-demand header matching finds a later hit without spending pages on unrelated mail',()=>{
   const f=batchFixture(),result=reader().runBatch(f.mail,{...batchRequest,searchTerms:['Part IIB'],mailboxRole:'inbox'});
   assert.equal(result.messages.length,1);assert.equal(result.messages[0].messageID,70);assert.equal(result.complete,true);
-  assert.equal(f.reads().individualReads,1);assert.equal(f.reads().idReads,2);
+  assert.equal(f.reads().individualReads,1);assert.equal(f.reads().idReads,0);assert.equal(f.reads().resolutions,1);
 });
 test('changing header collection fails closed; Sent retains recipient-only candidates',()=>{
   assert.throws(()=>reader().runBatch(batchFixture({changed:true}).mail,{...batchRequest,searchTerms:['IIB']}),/changed or moved/);
@@ -110,7 +116,18 @@ test('identity delta finds late received mail without rehydrating known headers;
   delete known['70'];known['71']='old-replaced@example.invalid';
   const f=batchFixture(),result=reader().runBatch(f.mail,{...batchRequest,knownMessages:known});
   assert.deepEqual(Array.from(result.messageIDs),[70,71]);assert.equal(result.messages.length,2);
-  assert.equal(result.retainedIDs.length,73);assert.equal(f.reads().individualReads,2);
+  assert.equal(result.retainedIDs.length,73);assert.equal(f.reads().individualReads,2);assert.equal(f.reads().idReads,0);assert.equal(f.reads().resolutions,1);
   const allKnown=reader().runBatch(batchFixture().mail,{...batchRequest,knownMessages:Object.fromEntries(Array.from({length:75},(_,i)=>[String(i+1),`fixture${i+1}@example.invalid`]))});
   assert.equal(allKnown.messages.length,0);assert.equal(allKnown.retainedIDs.length,75);assert.equal(allKnown.complete,true);
+});
+
+test('resolved arrival identities retain continuation cursors and never rerun date filtering on later pages',()=>{
+  const f=batchFixture(),known={'1':'fixture1@example.invalid'};
+  const first=reader().runBatch(f.mail,{...batchRequest,knownMessages:known});
+  const next=reader().runBatch(f.mail,{...batchRequest,messageIDs:Array.from(first.messageIDs),offset:first.nextOffset,knownMessages:known});
+  assert.equal(next.messages[0].messageID,22);
+  assert.deepEqual(f.reads(),{idReads:0,individualReads:40,filterReads:1,resolutions:1});
+});
+test('a resolved identity change fails closed before hiding known rows',()=>{
+  assert.throws(()=>reader().runBatch(batchFixture({changed:true}).mail,{...batchRequest,knownMessages:{'1':'fixture1@example.invalid'}}),/changed or moved/);
 });

@@ -83,7 +83,7 @@ import SwiftData
     }
     private let container: ModelContainer?
     private var task: Task<Void,Never>?
-    private var readable = true
+    private(set) var readable = true
     init(container:ModelContainer?,clock:@escaping ()->Date = {Date.now}) {
         self.container = container
         self.clock=clock

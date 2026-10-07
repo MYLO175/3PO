@@ -435,12 +435,24 @@ struct BackgroundActivityView:View {
                 VStack(alignment:.leading,spacing:16) {
                     activitySection("Communication review") {
                         VStack(alignment:.leading,spacing:8) {
+                            Text("3PO suggests; you decide. Approve applies the displayed change. Dismiss leaves the original unchanged.").font(.caption).foregroundStyle(.secondary)
                             Text(model.heartbeat.statusFor(registration)).textSelection(.enabled)
+                            DisclosureGroup("Details") {
+                                VStack(alignment:.leading,spacing:8) {
+                                    if let error=model.emailSummaries.error {Text("Email: "+error).foregroundStyle(.orange).textSelection(.enabled)}
+                                    if let error=model.proactive.error {Text("Suggestions: "+error).foregroundStyle(.orange).textSelection(.enabled)}
+                                    if let error=model.mailHealth.error {Text("Mail: "+error).foregroundStyle(.orange).textSelection(.enabled)}
+                                    if !model.mailCoverage.isEmpty {Text(model.mailCoverage)}
+                                    if model.proactive.state.records.contains(where:{$0.registration == registration && !$0.dismissed && $0.reviewState != "approved" && $0.memoryDependencies != nil && !model.proactive.visible($0,model:model)}) {
+                                        Text("Earlier suggestions are set aside while their supporting context has changed or is unavailable. Fresh review can replace them.")
+                                    }
+                                }.font(.caption).frame(maxWidth:.infinity,alignment:.leading)
+                            }
                             Text(model.heartbeat.budgetStatus(registration)).font(.caption).foregroundStyle(.secondary)
                             Text(model.heartbeat.scheduleStatus(model)).font(.callout)
                             Text("This is app review usage, separate from your subscription allowance and other AI jobs.").font(.caption).foregroundStyle(.secondary)
                             let mailStatus=model.heartbeat.mailReviewStatus(model)
-                            if !mailStatus.isEmpty {Text(mailStatus).font(.callout)}
+                            if !mailStatus.isEmpty {Text("Last review coverage").font(.caption).foregroundStyle(.secondary);Text(mailStatus).font(.callout)}
                             Text(model.emailSummaries.coverage(model)).font(.caption).foregroundStyle(.secondary)
                             Text("Calendar: "+model.paOrientationHealth.detail).font(.caption)
                             Text("Reminders: "+model.reminderHealth.detail).font(.caption)

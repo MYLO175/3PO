@@ -25,29 +25,45 @@ struct PATasksView: View {
         item.sourceTitle ?? (item.needsDateClarification && item.sourceKind != "whatsapp" ? model.emailSummaries.highlights(model).first{$0.0.id == item.mailID}?.0.subject : nil)
     }
     private func dateLabel(_ date:Date?,hasTime:Bool,fallback:String)->String {date?.formatted(date:.abbreviated,time:hasTime ? .shortened : .omitted) ?? fallback}
+    private var reviewBusy:Bool {model.heartbeat.busy || model.proactive.busy || model.emailSummaries.busy}
+    private var reviewPaused:Bool {
+        model.heartbeat.state.accounts[model.chatGPT.activeID]?.phase == "paused" ||
+        (model.emailSummaries.enabled && model.emailSummaries.paused) ||
+        (model.proactive.enabled && model.proactive.state.accounts[model.chatGPT.activeID]?.paused == true)
+    }
+    private var reviewStatus:String {
+        if reviewBusy {return "Reviewing your sources…"}
+        if !model.heartbeat.readable {return "Review history unavailable. See Activity for details."}
+        if reviewPaused {
+            let details=[model.emailSummaries.error,model.proactive.error,model.heartbeat.statusFor(model.chatGPT.activeID)].compactMap{$0}.joined(separator:" ").lowercased()
+            if details.contains("server_is_overloaded") || details.contains("temporarily overloaded") {return "Review paused · ChatGPT was temporarily busy."}
+            return "Review paused · your saved work is safe."
+        }
+        if model.emailSummaries.error != nil || model.proactive.error != nil {return "Review needs attention. See Activity for details."}
+        return model.heartbeat.scheduleStatus(model)
+    }
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
-            HStack { Label("Review inbox",systemImage:"tray.full").font(.title3.weight(.semibold));Spacer();Button { model.proactive.check(model,manual:true) } label:{Image(systemName:"arrow.clockwise")}.buttonStyle(.borderless).help("Check for useful suggestions").disabled(model.proactive.busy || model.assistant.busy || model.chatGPT.busy || model.writing) }
-            if model.proactive.busy || model.emailSummaries.busy { Text(model.proactive.busy ? "Looking for useful suggestions…" : "Preparing email work…").font(.caption).foregroundStyle(.secondary) }
-            if let error=model.proactive.error { Text(error).font(.caption).foregroundStyle(.orange).lineLimit(3) }
-            if model.heartbeat.busy || model.heartbeat.state.accounts[model.chatGPT.activeID]?.pending == true || model.heartbeat.state.accounts[model.chatGPT.activeID]?.phase == "paused" {
-                Text(model.heartbeat.statusFor(model.chatGPT.activeID)).font(.caption).foregroundStyle(.secondary).lineLimit(4)
+            HStack {
+                Label("Review inbox",systemImage:"tray.full").font(.title3.weight(.semibold))
+                Spacer()
+                Button { showingActivity=true } label:{Image(systemName:"clock.arrow.circlepath")}
+                    .buttonStyle(.borderless).help("Background activity and details").accessibilityLabel("Background activity")
+                Button { model.heartbeat.check(model,manual:true) } label:{Image(systemName:"arrow.clockwise")}
+                    .buttonStyle(.borderless).help("Check sources and review new material").accessibilityLabel("Check for suggestions")
+                    .disabled(reviewBusy || model.assistant.busy || model.chatGPT.busy || model.writing)
             }
-            if model.proactive.state.records.contains(where:{$0.registration == model.chatGPT.activeID && !$0.dismissed && $0.reviewState != "approved" && $0.memoryDependencies != nil && !model.proactive.visible($0,model:model)}) {
-                Text("Earlier suggestions have been set aside because their supporting context changed or is unavailable. Check for fresh suggestions when ready.").font(.caption).foregroundStyle(.secondary)
-            }
-            if let error=model.emailSummaries.error {
-                VStack(alignment:.leading,spacing:6) {
-                    Text(error).font(.caption).foregroundStyle(.orange).lineLimit(4)
-                    if model.emailSummaries.paused && model.emailSummaries.enabled {
-                        Button("Resume email processing") { model.emailSummaries.process(model,resume:true) }
-                            .buttonStyle(.borderless).font(.caption)
-                            .disabled(model.emailSummaries.busy || model.proactive.busy || model.assistant.busy || model.chatGPT.busy || model.writing)
-                    }
+            HStack(spacing:8) {
+                if reviewBusy {ProgressView().controlSize(.mini)}
+                Text(reviewStatus).font(.caption).foregroundStyle(reviewPaused ? Color.orange : Color.secondary)
+                    .fixedSize(horizontal:false,vertical:true)
+                Spacer(minLength:0)
+                if reviewPaused {
+                    Button("Resume") {model.heartbeat.check(model,manual:true)}.buttonStyle(.borderless).font(.caption)
+                        .help("Resume background review, including enabled email processing")
+                        .disabled(reviewBusy || model.assistant.busy || model.chatGPT.busy || model.writing)
                 }
             }
-            Text("3PO suggests; you decide. Approve applies the displayed change. Dismiss leaves the original unchanged.").font(.caption).foregroundStyle(.secondary)
-            Button("Background activity") {showingActivity=true}.buttonStyle(.borderless).font(.caption)
             ScrollView {
                 LazyVStack(alignment:.leading,spacing:12) {
                     if !discoveries.isEmpty { Text("From your background review").font(.headline) }

@@ -205,12 +205,16 @@ function runBatch(mail, input) {
     let retainedIDs = [];
     if (!Array.isArray(ids)) {
         const lower = {}, upper = {}; lower[dateField] = { _greaterThanEquals:start }; upper[dateField] = { _lessThan:end };
-        // One bulk Apple event rather than resolving every dated message ID.
         const dated = inbox.messages.whose({ _and:[lower,upper] });
-        ids = listValue(dated.id()).map(Number);
+        // A property read on an unresolved `whose` repeats the date query.
+        // Resolve once when comparing several fields. The resolved references
+        // keep native IDs; continuation pages still reuse the persisted ID list.
+        const resolved = input.knownMessages || (input.searchTerms && input.mailboxRole !== 'sent') ? listValue(dated()) : null;
+        const values = property => resolved ? resolved.map(message => message[property]()) : listValue(dated[property]());
+        ids = values('id').map(Number);
         if (input.knownMessages) {
-            const internetIDs=listValue(dated.messageId());
-            const checkedIDs=listValue(dated.id()).map(Number);
+            const internetIDs=values('messageId');
+            const checkedIDs=values('id').map(Number);
             if(internetIDs.length!==ids.length||checkedIDs.length!==ids.length||checkedIDs.some((id,index)=>id!==ids[index])) throw new Error('Mailbox identities changed or moved; retry this date window');
             retainedIDs=ids.filter((id,index)=>input.knownMessages[String(id)]===stringValue(internetIDs[index]));
             const retained=new Set(retainedIDs);
@@ -219,8 +223,8 @@ function runBatch(mail, input) {
         if (input.searchTerms && input.mailboxRole !== 'sent') {
             if (!Array.isArray(input.searchTerms) || !input.searchTerms.length || input.searchTerms.length > 5 || input.searchTerms.some(term => typeof term !== 'string' || term.length < 2 || term.length > 80)) throw new Error('Invalid header search terms');
             const terms = input.searchTerms.map(term => term.toLowerCase());
-            const subjects = listValue(dated.subject()), senders = listValue(dated.sender());
-            const checkedIDs = listValue(dated.id()).map(Number);
+            const subjects = values('subject'), senders = values('sender');
+            const checkedIDs = values('id').map(Number);
             if (subjects.length !== ids.length || senders.length !== ids.length || checkedIDs.length !== ids.length || checkedIDs.some((id,index) => id !== ids[index])) throw new Error('Mailbox headers changed or moved during search; retry this date window');
             ids = ids.filter((id,index) => terms.some(term => stringValue(subjects[index]).toLowerCase().includes(term) || stringValue(senders[index]).toLowerCase().includes(term)));
         }

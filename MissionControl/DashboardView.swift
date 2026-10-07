@@ -269,9 +269,23 @@ struct DashboardView: View {
             Button { model.editTarget = .reminder(item) } label: { Image(systemName:"pencil") }.buttonStyle(.borderless).help("Edit reminder").accessibilityLabel("Edit reminder: " + item.title).disabled(model.writing)
         }.padding(.vertical, 3)
     }
+    private var mailStatusSummary:String {
+        let accounts=model.mailData.accounts.filter{model.mailIndex.accountErrors?[$0.id] != nil}.map(\.title)
+        let label=accounts.isEmpty ? "Mail" : accounts.joined(separator:", ")
+        let slow=model.mailHealth.error?.contains("did not respond") == true
+        let explanation=slow ? "is taking longer to respond" : "couldn’t refresh"
+        return label+" "+explanation+". "+(visibleMessages.isEmpty ? "Open the status dot for details." : "Showing saved mail.")
+    }
     var inboxPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            panelHeader("Inbox", icon: "tray", health: model.mailHealth, loadingLabel:"Checking for mail changes…")
+            HStack(spacing:8) {
+                Label("Inbox",systemImage:"tray").font(.title3.weight(.semibold))
+                SourceStatusIndicator(title:"Mail",health:model.mailHealth,coverage:model.mailCoverage,refresh:{model.mailIndex.resume();Task {await model.refreshMail()}})
+                Spacer()
+            }
+            if model.mailHealth.error != nil {
+                Text(mailStatusSummary).font(.caption).foregroundStyle(.orange).fixedSize(horizontal:false,vertical:true)
+            }
             HStack {
                 Menu {
                     Button("Enable all") { accountExclusions.wrappedValue = [] }
@@ -284,9 +298,6 @@ struct DashboardView: View {
                 } label: { Label("Mailboxes", systemImage: "line.3.horizontal.decrease") }.controlSize(.small)
                 Spacer()
                 Text("Last 30 days · \(visibleMessages.count)").font(.caption).foregroundStyle(.secondary)
-            }
-            if !model.mailCoverage.isEmpty {
-                Text(model.mailCoverage).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
             Divider()
             if visibleMessages.isEmpty {
