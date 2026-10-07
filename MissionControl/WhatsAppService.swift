@@ -18,6 +18,14 @@ import CryptoKit
     var accessRevision = UUID()
     private var accesses: [String:WhatsAppAccess] = [:]
     var coverage = "No WhatsApp data received."
+    #if DEBUG
+    func seedReviewSourceFixture(_ message:WhatsAppReadMessage,registration:String) {
+        guard ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"),ProcessInfo.processInfo.arguments.contains("--source-details-preview") else {return}
+        linkedIdentity="fictional-review-device";messages=[message];chats=[.init(id:message.chat,name:"Orion project group",group:true)]
+        if let key=WhatsAppReadRules.accessKey(registration:registration,linkedIdentity:linkedIdentity) {accesses=[key:.init(enabled:true,chats:[message.chat],includeInSuggestions:true)]}
+        // In-memory fixture only: no helper start, Keychain, encrypted access save or permission change.
+    }
+    #endif
     private var process: Process?
     private var input: FileHandle?
     private var reader: WhatsAppOutputReader?

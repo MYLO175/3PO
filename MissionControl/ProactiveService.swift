@@ -49,6 +49,15 @@ import SwiftData
         if record.sourceKind == "whatsapp" { return ProactiveRules.permittedWhatsApp(record,access:model.whatsapp.access(for:record.registration),identity:model.whatsapp.linkedIdentity,messages:model.whatsapp.messages) }
         return model.emailSummaries.highlights(model).contains { $0.0.id == record.mailID && $0.1.fingerprint == EmailSummary.fingerprint($0.0) && (record.sourceRevision == nil || $0.1.fingerprint == record.sourceRevision) && (record.sourceAssessmentRevision == nil || $0.1.adviceRevision(replied:$0.0.replied) == record.sourceAssessmentRevision) }
     }
+    func sourceDetails(_ record:PADiscovery,model:DashboardModel)->ReviewSourceDetails? {
+        guard sourceEvidenceAvailable(record,model:model) else {return nil}
+        if record.sourceKind == "whatsapp" {
+            guard let message=model.whatsapp.messages.first(where:{$0.id == record.sourceMessageID && $0.chat == record.sourceChatID}) else {return nil}
+            let name=model.whatsapp.chats.first(where:{$0.id == message.chat})?.name ?? record.sourceLabel ?? "Selected chat"
+            return .whatsapp(message,chatName:name)
+        }
+        return model.emailSummaries.highlights(model).first(where:{$0.0.id == record.mailID}).map{.email($0.0)}
+    }
     func earlierVersions(_ record:PADiscovery)->[PADiscovery] {
         var ids=record.replaces ?? [],seen=Set<String>(),result:[PADiscovery]=[]
         while let id=ids.popLast(),result.count < 12 {
@@ -276,7 +285,7 @@ import SwiftData
     #if DEBUG
     func seedAdviceFixture(_ records:[PADiscovery],model:DashboardModel) throws {
         guard ["--validate-advice-context","--validate-review-inbox","--preview-review-inbox"].contains(where:ProcessInfo.processInfo.arguments.contains) else { throw SummaryFailure.invalid }
-        state.records=records.map{record in var value=record;value.scope=legacyMailScope(model);return value}
+        state.records=records.map{record in var value=record;value.scope=record.sourceKind == "whatsapp" ? scope(model) : legacyMailScope(model);return value}
         try save()
     }
     func validate(_ model: DashboardModel) async throws -> String {

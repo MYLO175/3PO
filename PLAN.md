@@ -312,3 +312,8 @@ Implemented the requested single header refresh, inline Updated time and ellipsi
 ### 7 October — Compact chat and Reminders
 
 Implemented message context menus/accessibility inspection, last completed heartbeat in the PA header, reminder-name editing and saved per-account/widget list folding. Removed repeated inline context links and reminder pencils; the old Calendar drag hint was already removed. STATUS distinguishes installed native editor/folding/inspection checks from the unavailable pointer-right-click automation check.
+
+
+### 8 October — Review inbox source details
+
+Implemented visible original-message references for background suggestions, email work, draft review, planned/addressed cards and available replacement history. Source evidence identifies email account/mailbox/sender/subject/received time or WhatsApp chat/sender/sent time. Question context retains source dates. Existing account/permission/identity/revision checks gate inspection; no new inference, history indexing or native writes. STATUS records fictional and installed acceptance.

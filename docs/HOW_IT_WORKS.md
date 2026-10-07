@@ -384,3 +384,10 @@ Dragging a repeating event moves only that occurrence. Undo restores the selecte
 Right-click a PA reply and choose **Context details…** to inspect the context captured for that reply. The same action is available to accessibility tools; the repeated inline link is gone. Genuine unresolved failures still show **What went wrong**. The PA header shows the last completed heartbeat in local time, adding its date for an earlier day. Source collection and failed or unfinished reviews do not advance that timestamp.
 
 Click a reminder's name to open its existing native editor. The separate circle still completes it. In Lists view, click a list heading to fold or unfold its contents; each widget remembers that choice for the current account using the original list identity. Old layouts start expanded, and folding never excludes a list from source access or AI context. Calendar no longer shows the old drag instruction below its timeline.
+
+
+## Finding the original Review inbox message
+
+Background suggestions now show a compact source reference on the card and fuller details in **Source evidence**, beside the original quote. Email identifies the account, mailbox when available, original subject, sender and **Received** date/time. WhatsApp identifies the chat, sender and **Sent** date/time. Times use your Mac's local timezone. These are source-message times, separate from when the PA prepared its suggestion. You can select and copy the details to find the message in Mail or WhatsApp.
+
+Email work, prepared draft reviews and already planned/addressed email cards show the same source reference. Question context includes its retained source dates. Available earlier suggestions retain their own original source details. The evidence lookup uses exact source identities and existing account, access and revision checks; unavailable or changed source evidence stays hidden. Displaying these details does not fetch history, run AI, send anything or approve a change.

@@ -77,7 +77,7 @@ struct PATasksView: View {
                         VStack(alignment:.leading,spacing:8) {
                             Label("Your answer would help",systemImage:"questionmark.bubble").font(.caption).foregroundStyle(.secondary)
                             Text(item.question).font(.callout).textSelection(.enabled)
-                            DisclosureGroup("Context") {ForEach(item.sourceIDs,id:\.self) {id in if let source=item.snapshot.sources.first(where:{$0.id == id}) {Text(source.label).font(.caption)}}}
+                            DisclosureGroup("Context") {ForEach(item.sourceIDs,id:\.self) {id in if let source=item.snapshot.sources.first(where:{$0.id == id}) {Text(source.label + (source.date.map{" · " + $0.formatted(date:.abbreviated,time:.shortened)} ?? "")).font(.caption).textSelection(.enabled)}}}
                             HStack {Button("Answer") {answering=item;answer="";answerError=nil};Spacer();Button("Dismiss") {_ = model.briefings.resolveQuestion(item,model:model,answered:false)}}.controlSize(.small)
                         }.taskCard()
                     }
@@ -98,9 +98,10 @@ struct PATasksView: View {
                                 Text(dateLabel(change.target.start ?? change.target.due,hasTime:change.target.hasTime,fallback:"No date") + " → " + dateLabel(change.date(),hasTime:change.hasTime,fallback:change.newDate)).font(.callout).textSelection(.enabled)
                                 Text("Inferred connection · " + change.connection).font(.caption).foregroundStyle(.secondary)
                             }
-                            Label(item.sourceKind == "whatsapp" ? "WhatsApp · " + (item.sourceLabel ?? "Selected chat") : item.kind == "reply" ? "Reply draft" : item.kind == "update" ? "Update" : item.kind == "change" ? "Date change" : "Missing plan",systemImage:item.kind == "calendar" ? "calendar.badge.plus" : "checklist").font(.caption).foregroundStyle(.secondary)
+                            Label(item.kind == "reply" ? "Reply draft" : item.kind == "update" ? "Update" : item.kind == "change" ? "Date change" : "Missing plan",systemImage:item.kind == "calendar" ? "calendar.badge.plus" : "checklist").font(.caption).foregroundStyle(.secondary)
                             if let title=discoveryTitle(item) { Text(title).font(.callout.weight(.semibold)) }
                             Text(item.message).textSelection(.enabled)
+                            if let details=model.proactive.sourceDetails(item,model:model) {ReviewSourceLabel(details:details,showsTitle:true)}
                             if let reply=item.replyDraft {
                                 Text(reply).font(.callout).textSelection(.enabled).padding(10).frame(maxWidth:.infinity,alignment:.leading).background(Color.primary.opacity(0.04),in:RoundedRectangle(cornerRadius:8))
                                 Text("Check the details before using this draft.").font(.caption2).foregroundStyle(.secondary)
@@ -122,6 +123,7 @@ struct PATasksView: View {
                         VStack(alignment:.leading,spacing:8) {
                             Label(summary.replyDraft == nil ? "Needs attention" : "Reply draft ready",systemImage:summary.replyDraft == nil ? "checklist" : "pencil.line").font(.caption).foregroundStyle(.secondary)
                             Text(message.subject).font(.callout.weight(.semibold)).lineLimit(2)
+                            ReviewSourceLabel(details:.email(message))
                             Text(summary.reason.isEmpty ? summary.summary : summary.reason).font(.callout).textSelection(.enabled)
                             if summary.keepInReview == true {HStack {Text("Kept in review by you").font(.caption).foregroundStyle(.secondary);Button("Allow planned status") {model.emailSummaries.keepForReview(summary.id,model:model,keep:false)}.buttonStyle(.borderless).font(.caption)}}
                             if let reply=summary.replyDraft {
@@ -151,6 +153,7 @@ struct PATasksView: View {
                                 VStack(alignment:.leading,spacing:6) {
                                     Label(handling.label,systemImage:handling.native.completedAt == nil ? "calendar.badge.checkmark" : "checkmark.circle").font(.caption).foregroundStyle(.secondary)
                                     Text(message.subject).font(.callout.weight(.semibold))
+                                    ReviewSourceLabel(details:.email(message))
                                     Text("Inferred connection to “"+handling.native.title+"” · "+handling.reason).font(.callout).textSelection(.enabled)
                                     HStack {Button("Original") {model.select(message)};Button("Keep in review") {model.emailSummaries.keepForReview(summary.id,model:model)}}.controlSize(.small)
                                 }.taskCard()
@@ -207,6 +210,7 @@ struct PATasksView: View {
             VStack(alignment:.leading,spacing:14) {
                 Text("Review reply draft").font(.title2.weight(.semibold))
                 Text(summary.message?.subject ?? "Email reply").foregroundStyle(.secondary)
+                if let message=emails.first(where:{$0.1.id == summary.id && $0.1.fingerprint == summary.fingerprint})?.0 {ReviewSourceLabel(details:.email(message))}
                 TextEditor(text:$draft).onChange(of:draft) { copied=false; draftSaved=false }.font(.body).frame(minHeight:240)
                 Text("Check details and placeholders before using this draft.").font(.caption).foregroundStyle(.secondary)
                 HStack { Button("Close") { editing=nil }; Spacer(); Button(draftSaved ? "Saved" : "Save draft") { draftSaved=model.emailSummaries.saveReplyDraft(draft,summary:summary,model:model) }; Button(copied ? "Copied" : "Copy draft") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(draft,forType:.string); copied=true } }

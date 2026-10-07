@@ -151,6 +151,44 @@ import EventKit
         model.completedReminders=[.init(item:task,completedAt:now)];model.completedReminderHealth = .init(lastSuccess:now)
         try model.emailSummaries.seedAdviceFixture(summaries)
     }
+    static func seedSourceDetailsPreview(_ model:DashboardModel)throws {
+        let preferences=UserDefaults.standard.dictionaryRepresentation() as NSDictionary
+        let sent=ISO8601DateFormatter().date(from:"2026-10-07T16:25:00Z")!
+        let message=WhatsAppReadMessage(id:"fictional-wa-message",chat:"fictional-orion-chat",sender:"Fictional coordinator",text:"The Orion review moved to 20 October at 14:00.",sentByMe:false,time:sent.timeIntervalSince1970*1000)
+        model.whatsapp.seedReviewSourceFixture(message,registration:model.chatGPT.activeID)
+        let mail=try seed(model)
+        let wa=PADiscovery(id:"fictional-wa-review",registration:model.chatGPT.activeID,mailID:message.id,kind:"update",message:"The project group's review time has changed. Check whether your plan needs updating.",evidence:message.text,created:.now,scope:"fixture",sourceKind:"whatsapp",sourceChatID:message.chat,sourceMessageID:message.id,sourceIdentity:model.whatsapp.linkedIdentity,sourceRevision:SourceContextRules.revision(message),sourceLabel:"Orion project group")
+        try model.proactive.seedAdviceFixture([mail,wa],model:model)
+        let records=model.proactive.state.records,mailRecord=records[0],waRecord=records[1]
+        let email=model.proactive.sourceDetails(mailRecord,model:model),whatsapp=model.proactive.sourceDetails(waRecord,model:model)
+        var checks:[String:Bool]=[
+            "legacy email resolves original account sender subject and received date":email != nil && email == model.mailData.messages.first.map(ReviewSourceDetails.email),
+            "WhatsApp resolves exact chat sender and original sent time":whatsapp?.location == "Orion project group" && whatsapp?.sender == message.sender && whatsapp?.date == sent && whatsapp?.date != wa.created,
+            "email received and WhatsApp sent labels remain distinct":email?.dateLabel == "Received" && whatsapp?.dateLabel == "Sent"
+        ]
+        var changed=mailRecord;changed.registration="another-account"
+        checks["wrong registration withholds metadata"]=model.proactive.sourceDetails(changed,model:model) == nil
+        changed=mailRecord;changed.mailID="unknown-exact-id"
+        checks["unknown exact email identity withholds metadata"]=model.proactive.sourceDetails(changed,model:model) == nil
+        changed=mailRecord;changed.sourceRevision="old-version"
+        checks["changed email revision withholds metadata"]=model.proactive.sourceDetails(changed,model:model) == nil
+        let accounts=model.mailData.accounts;model.mailData = .init(messages:model.mailData.messages,accounts:[],errors:[])
+        checks["withdrawn email account withholds metadata"]=model.proactive.sourceDetails(mailRecord,model:model) == nil
+        model.mailData = .init(messages:model.mailData.messages,accounts:accounts,errors:[])
+        changed=waRecord;changed.sourceIdentity="another-device"
+        checks["wrong linked WhatsApp identity withholds metadata"]=model.proactive.sourceDetails(changed,model:model) == nil
+        model.whatsapp.messages=[]
+        checks["missing WhatsApp message withholds metadata"]=model.proactive.sourceDetails(waRecord,model:model) == nil
+        model.whatsapp.messages=[message]
+        changed=waRecord;changed.sourceRevision="old-version"
+        checks["changed WhatsApp revision withholds metadata"]=model.proactive.sourceDetails(changed,model:model) == nil
+        model.whatsapp.seedReviewSourceFixture(message,registration:"another-account")
+        checks["unselected WhatsApp source withholds metadata"]=model.proactive.sourceDetails(waRecord,model:model) == nil
+        model.whatsapp.seedReviewSourceFixture(message,registration:model.chatGPT.activeID)
+        checks["fixture leaves saved preferences unchanged"]=preferences.isEqual(to:UserDefaults.standard.dictionaryRepresentation())
+        let report:[String:Any]=["passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"storage":"Disposable in-memory review source fixtures; zero AI, native writes, helper/auth or preference changes."]
+        try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:"/tmp/missioncontrol-review-source-details-evaluation.json"))
+    }
     static func previewSession(_ target:NativeEditTarget)->NativeEditSession? {
         guard ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"),case .reviewReminder(let task,_) = target else {return nil}
         return .init(item:.init(kind:.reminder,itemID:task.id,occurrenceID:task.id,sourceID:task.listID,title:task.title,notes:"Original fictional notes stay intact.",due:task.due,hasTime:task.hasTime,writable:true,modified:task.modified),sources:[.init(id:task.listID,title:task.sourceLabel,account:"Fictional",writable:true)])
@@ -403,7 +441,7 @@ struct ReviewInboxPreview:View {
         VStack {Text("Fictional review inbox · disposable storage · no Apple writes").font(.caption);if ready {PATasksView(model:model);if model.briefings.undoQuestionDate(model.chatGPT.activeID) != nil {Button("Undo question dismissal") {model.briefings.undoQuestion(model.chatGPT.activeID)}};if model.proactive.canUndo {Button("Undo dismissed fixture") {model.proactive.undo(model)}}} }
             .padding(16).frame(width:ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 840 : 600,height:ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 780 : 660)
             .sheet(item:Binding(get:{model.editTarget},set:{model.editTarget=$0})){NativeItemEditor(model:model,target:$0)}
-            .task {guard !ready else {return};if ProcessInfo.processInfo.arguments.contains("--email-work-preview") {try? ReviewInboxEvaluation.seedEmailWorkPreview(model);if ProcessInfo.processInfo.arguments.contains("--heartbeat-preview") {try? model.briefings.seedHeartbeatPreview(model)}} else {_ = try? ReviewInboxEvaluation.seed(model)};ready=true}
+            .task {guard !ready else {return};if ProcessInfo.processInfo.arguments.contains("--source-details-preview") {try? ReviewInboxEvaluation.seedSourceDetailsPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--email-work-preview") {try? ReviewInboxEvaluation.seedEmailWorkPreview(model);if ProcessInfo.processInfo.arguments.contains("--heartbeat-preview") {try? model.briefings.seedHeartbeatPreview(model)}} else {_ = try? ReviewInboxEvaluation.seed(model)};ready=true}
     }
 }
 #endif

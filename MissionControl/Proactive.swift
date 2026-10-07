@@ -38,6 +38,23 @@ struct PADiscovery: Codable, Identifiable, Equatable {
     var deliveryID: String { "discovery:" + id }
     var needsDateClarification:Bool { SourceDateGrounding.needsWeekAnchor(evidence) && !["project","reply"].contains(kind) }
 }
+/// Display only: resolved from the exact currently permitted source, never generated advice.
+struct ReviewSourceDetails:Equatable {
+    var kind:String
+    var location:String
+    var sender:String
+    var title:String?
+    var date:Date
+    var dateLabel:String {kind == "whatsapp" ? "Sent" : "Received"}
+    var channel:String {kind == "whatsapp" ? "WhatsApp" : "Email"}
+    static func email(_ message:MailMessage)->Self {
+        let folder=message.mailboxName.flatMap{$0.isEmpty ? nil : $0}
+        return .init(kind:"mail",location:([message.account]+(folder.map{[$0]} ?? [])).joined(separator:" · "),sender:message.sender,title:message.subject,date:message.received)
+    }
+    static func whatsapp(_ message:WhatsAppReadMessage,chatName:String)->Self {
+        .init(kind:"whatsapp",location:chatName,sender:message.sentByMe ? "You" : message.sender,date:Date(timeIntervalSince1970:message.time/1000))
+    }
+}
 /// An issued native snapshot, never a model-selected title lookup or a write instruction.
 struct DiscoveryNativeTarget:Codable,Equatable {
     var kind:String

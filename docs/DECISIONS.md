@@ -282,3 +282,8 @@ Keep one brief-only refresh in the header and the dated saved timestamp beside i
 ## 7 October — Quiet message and reminder controls
 
 Move captured reply context into a message context menu, with an equivalent accessibility action, instead of repeating a link in every bubble. Keep real failure disclosures visible. Show the existing completed-heartbeat timestamp beside the PA title; do not equate source refresh with AI review. Reminder text opens the unchanged editor while its separate circle completes the item. List folding is optional account-scoped widget presentation keyed by exact source IDs, independent of permissions and source selection. Preserve existing transcripts, layouts and native revision/write guards.
+
+
+## 8 October — Visible Review inbox provenance
+
+A quote alone is insufficient to locate its source. Show compact account/chat, sender and source time on cards, with original subject and full date in the evidence inspector. Resolve metadata from exact currently permitted source records through the existing source-evidence guards, rather than requesting attribution from AI or adding another stored snapshot. Preserve legacy records and original timestamps: Apple Mail supplies Received, WhatsApp supplies Sent; neither is the suggestion creation time. Keep read/copy-only inspection and existing approval boundaries.
