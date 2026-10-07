@@ -36,3 +36,18 @@ struct LifeItemQuery {
         return result
     }
 }
+
+
+/// Browsing is distinct from a widget's saved starting branch. Home/back never edit it.
+struct LifeProjectNavigation:Equatable {
+    private(set) var isBrowsing=false
+    private(set) var currentID:UUID?
+    func destination(startingAt root:UUID?)->UUID? { isBrowsing ? currentID : root }
+    mutating func open(_ id:UUID) { isBrowsing=true;currentID=id }
+    mutating func home() { isBrowsing=true;currentID=nil }
+    mutating func back(startingAt root:UUID?,items:[LifeItem]) {
+        let parent=items.first{$0.id == destination(startingAt:root)}?.parentID
+        isBrowsing=true;currentID=parent.flatMap { id in items.contains{$0.id == id} ? id : nil }
+    }
+    mutating func reconcile(items:[LifeItem]) { if isBrowsing,let currentID,!items.contains(where:{$0.id == currentID}) { home() } }
+}

@@ -84,6 +84,7 @@ struct WidgetConfiguration: Codable, Equatable {
     var clockUses24Hour:Bool? = nil
     var projectRoots: [String:String]? = nil
     var projectCollapsed: [String:[String]]? = nil
+    var lifeMapView: String? = nil
     var projectView: String? = nil
     var projectOnlyUnfinished: Bool? = nil
 }

@@ -4,7 +4,8 @@ struct PALifeMapWidget: View {
     var configuration:Binding<WidgetConfiguration>
     @State private var selected:PAMemory?
     @State private var selectedArea:LifeArea?
-    @State private var presentation="Map"
+    private var presentation:String { ["Map","Notes","Structure"].contains(configuration.wrappedValue.lifeMapView ?? "") ? configuration.wrappedValue.lifeMapView! : "Map" }
+    private var presentationBinding:Binding<String> { Binding(get:{presentation},set:{ view in var config=configuration.wrappedValue;config.lifeMapView=view;configuration.wrappedValue=config }) }
     @State private var areaDetails:LifeArea?
     @State private var areaMemory:PAMemory?
     @State private var detailOrganising:PAMemory?
@@ -29,10 +30,10 @@ struct PALifeMapWidget: View {
                 LifeFocusPicker(selection:focusBinding).frame(maxWidth:160,alignment:.trailing)
             }
             .fixedSize(horizontal:false,vertical:true)
-            Picker("Life map view",selection:$presentation) { Text("Map").tag("Map");Text("Notes").tag("Notes");Text("Structure").tag("Structure") }
-                .pickerStyle(.segmented).labelsHidden().frame(width:230).fixedSize(horizontal:false,vertical:true)
+            Picker("Life map view",selection:presentationBinding) { Text("Map").tag("Map");Text("Notes").tag("Notes");Text("Projects").tag("Structure") }
+                .pickerStyle(.segmented).labelsHidden().frame(maxWidth:270).fixedSize(horizontal:false,vertical:true)
             if presentation == "Structure" {
-                LifeProjectWidget(model:model,configuration:configuration,showsHeader:false,structureMode:true,focusAreas:focusAreas)
+                LifeProjectWidget(model:model,configuration:configuration,showsHeader:false,focusAreas:focusAreas)
             } else if !model.assistant.memory.enabled && notebook.anchors.isEmpty {
                 Text("Saved memory is off. Enable it in Memory to use your life notebook.").foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity)
             } else if notes.isEmpty {
@@ -46,7 +47,7 @@ struct PALifeMapWidget: View {
                         .frame(maxWidth:.infinity,alignment:.leading)
                 }
             }
-            HStack {
+            if presentation != "Structure" { HStack {
                 Text("\(Set(notes.flatMap { $0.records.map(\.id) }).count) available facts").font(.caption).foregroundStyle(.secondary).lineLimit(1).help(model.lifeOrganisation.summary(model))
                 Spacer()
                 Menu("Memory & context") {
@@ -54,8 +55,8 @@ struct PALifeMapWidget: View {
                     if model.lifeOrganisation.busy { Button("Stop organising") { model.lifeOrganisation.cancel() } }
                     else { Button("Organise memories · AI") { model.lifeOrganisation.check(model,manual:true,topic:topic) }.disabled(!model.assistant.memory.enabled || !model.assistant.memory.learningEnabled || model.chatGPT.busy || model.assistant.busy || !model.chatGPT.inferenceVerified || model.chatGPT.usagePaused) }
                 }
-            }.controlSize(.small)
-            if let error=model.lifeOrganisation.error { Text(error).font(.caption).foregroundStyle(.orange).lineLimit(3) }
+            }.controlSize(.small) }
+            if presentation != "Structure",let error=model.lifeOrganisation.error { Text(error).font(.caption).foregroundStyle(.orange).lineLimit(3) }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
         .sheet(isPresented:$showContext) { PAMemoryView(memory:model.assistant.memory,registration:model.chatGPT.activeID,learning:model.memoryLearning,assistant:model.assistant,checkContext:{model.memoryLearning.check(model,manual:true)},organisation:model.lifeOrganisation,organiseContext:{model.lifeOrganisation.check(model,manual:true)},model:model,focusAreas:focusAreas) }
         .sheet(item:$areaDetails) { area in

@@ -42,16 +42,16 @@ struct WorkspaceChecks {
         configuration.paTopicSelections = ["account-one":"","account-two":UUID().uuidString]
         configuration.lifeFocusSelections = ["account-one":["studies","career"],"account-two":[]]
         configuration.projectRoots = ["account-one":UUID().uuidString,"account-two":""]
-        configuration.projectView = "Board"; configuration.projectOnlyUnfinished = true
+        configuration.lifeMapView = "Structure";configuration.projectView = "Board"; configuration.projectOnlyUnfinished = true
         configuration.clockStyle="calendar";configuration.clockAlignment="leading";configuration.clockUses24Hour=true
         configuration.colourProfiles = ["light":["widget":"#FFEEEE"],"dark":["widget":"#332222","text":"#FFFFFF"]]
         var legacyConfiguration = try JSONSerialization.jsonObject(with:JSONEncoder().encode(configuration)) as! [String:Any]
         legacyConfiguration.removeValue(forKey:"colourProfiles")
         let migratedColours = try JSONDecoder().decode(WidgetConfiguration.self,from:JSONSerialization.data(withJSONObject:legacyConfiguration))
         assert(migratedColours.colourProfiles == nil && migratedColours.paTopicSelections == configuration.paTopicSelections,"Old layouts inherit theme and retain topic selections")
-        for key in ["lifeFocusSelections","clockStyle","clockAlignment","clockUses24Hour","projectRoots","projectView","projectOnlyUnfinished"] { legacyConfiguration.removeValue(forKey:key) }
+        for key in ["lifeMapView","lifeFocusSelections","clockStyle","clockAlignment","clockUses24Hour","projectRoots","projectView","projectOnlyUnfinished"] { legacyConfiguration.removeValue(forKey:key) }
         let migratedFocus=try JSONDecoder().decode(WidgetConfiguration.self,from:JSONSerialization.data(withJSONObject:legacyConfiguration))
-        assert(migratedFocus.projectRoots == nil && migratedFocus.projectView == nil && migratedFocus.projectOnlyUnfinished == nil,"Old dashboards decode without project preferences")
+        assert(migratedFocus.lifeMapView == nil && migratedFocus.projectRoots == nil && migratedFocus.projectView == nil && migratedFocus.projectOnlyUnfinished == nil,"Old dashboards decode without project preferences")
         assert(migratedFocus.lifeFocusSelections == nil && migratedFocus.clockStyle == nil && migratedFocus.clockAlignment == nil && migratedFocus.clockUses24Hour == nil && migratedFocus.paTopicSelections == configuration.paTopicSelections,"New preferences are optional; old topic selection and layout survive")
         let state = GridRules.defaults()
         let stateRoundTrip = try JSONDecoder().decode(WorkspaceState.self, from: JSONEncoder().encode(state))

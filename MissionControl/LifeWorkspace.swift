@@ -3,7 +3,7 @@ import Foundation
 enum LifeItemKind: String, Codable, CaseIterable, Identifiable {
     case area, organisation, course, project, section, task, milestone, person, goal, resource
     var id: String { rawValue }
-    var title: String { rawValue.capitalized }
+    var title: String { switch self { case .section: "Folder";case .resource: "Note / resource";default:rawValue.capitalized } }
     var symbol: String { switch self {
     case .area: "square.grid.2x2"; case .organisation: "building.2"; case .course: "graduationcap"
     case .project: "folder"; case .section: "rectangle.3.group"; case .task: "checkmark.circle"

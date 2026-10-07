@@ -328,3 +328,8 @@ Inbox uses a connection-status dot, with a short visible warning on failure. Cli
 
 
 Stopping a source-only review releases an in-flight Mail helper promptly. Completed pages and the interrupted continuation remain saved; cancellation does not masquerade as a Mail account outage or add failure backoff. Failed/interrupted AI assessments still require explicit Resume. True Mail timeouts retain the existing bounded retry behaviour.
+
+
+## Project pages
+
+Life map → **Projects** replaces the Structure label. It opens the same saved workspace records as a Projects widget, with a remembered Map/Notes/Projects tab and visible Overview/List/Board/Outline/Deadlines choices. Home and the ancestor menu browse without changing the widget's saved starting page. Project pages have known progress, editable notes, upcoming work and inspectable connections/PA context. + offers projects, folders and notes as well as work. Add project task saves on Return; checkboxes update local project work and progress. Apple Reminders remains authoritative for linked reminders and shopping/to-do lists. Saved notes/status edits use existing revision-safe session Undo; creation does not. Opening/browsing adds no AI job. See [Project workspace](PROJECT_WORKSPACE.md).

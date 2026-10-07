@@ -59,6 +59,33 @@ import SwiftData
         precondition(store.state.items.first(where: { $0.id == saved.id })?.title == saved.title && store.undoDate("fictional-a") == nil)
         rejects { try store.undo("fictional-a") }
         precondition(LifeWorkspaceStore(container:container).undoDate("fictional-a") == nil, "Project Undo is session-only")
+        // Browsing must not mutate a widget's separately saved starting page.
+        let bookmark=course.id
+        var navigation=LifeProjectNavigation()
+        precondition(navigation.destination(startingAt:bookmark) == course.id)
+        navigation.open(task.id)
+        navigation.back(startingAt:bookmark,items:store.items("fictional-a"))
+        precondition(navigation.destination(startingAt:bookmark) == course.id)
+        navigation.back(startingAt:bookmark,items:store.items("fictional-a"))
+        precondition(navigation.destination(startingAt:bookmark) == root.id)
+        navigation.home()
+        precondition(navigation.destination(startingAt:bookmark) == nil && bookmark == course.id)
+        navigation.open(task.id)
+        navigation.reconcile(items:store.items("fictional-a").filter{$0.id != task.id})
+        precondition(navigation.destination(startingAt:bookmark) == nil, "Missing/deleted/focus-hidden page returns home, not the bookmark")
+        navigation = .init()
+        precondition(navigation.destination(startingAt:bookmark) == bookmark, "Remount/account reset uses its own saved starting page")
+        let notesOriginal=store.items("fictional-a").first{$0.id == task.id}!
+        var external=notesOriginal;external.title="Renamed while notes draft was open"
+        let externalSaved=try store.save(external,expected:notesOriginal.revision)
+        var notesDraft=notesOriginal;notesDraft.notes="Unsubmitted ideas"
+        rejects { _ = try store.save(notesDraft,expected:notesOriginal.revision) }
+        precondition(store.items("fictional-a").first{$0.id == task.id} == externalSaved, "Stale notes cannot overwrite another edit")
+        var freshNotes=externalSaved;freshNotes.notes="My saved plan"
+        let notesSaved=try store.save(freshNotes,expected:externalSaved.revision)
+        precondition(notesSaved.id == task.id && notesSaved.title == externalSaved.title && notesSaved.notes == "My saved plan")
+        try store.undo("fictional-a")
+        precondition(store.items("fictional-a").first{$0.id == task.id}?.notes == notesOriginal.notes)
         // Corrupt/unsupported storage stays intact and cannot be replaced by an empty state.
         let broken = try ModelContainer(for: CachedDashboard.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let bytes = Data("{\"version\":99,\"items\":[],\"links\":[],\"receipts\":[]}".utf8)
@@ -67,6 +94,6 @@ import SwiftData
         rejects { _ = try unavailable.save(root, expected: nil) }
         let preserved = try broken.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first!.data
         precondition(preserved == bytes)
-        print("PASS: project persistence, identity, scope, dates, optimistic edits, hierarchy/dependency cycles, atomic batches, saved receipts and corrupt-store preservation")
+        print("PASS: project persistence, identity, scope, dates, optimistic edits, hierarchy/dependency cycles, atomic batches, saved receipts, corrupt-store preservation, bookmark-independent navigation and stale notes/Undo")
     }
 }

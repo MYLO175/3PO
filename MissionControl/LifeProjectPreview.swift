@@ -23,7 +23,10 @@ import AppKit
     }
     static func render(_ model: DashboardModel) async {
         guard let (registration,university,engineering,project) = seed(model) else { return }
-        for (name,width,height,mode,view,root) in [
+        let previews:[(String,CGFloat,CGFloat,String,String,UUID?)]=[
+            ("home",620,500,"light","Overview",nil),
+            ("compact",240,500,"dark","Overview",engineering.id),
+            ("list",520,570,"light","List",project.id),
             ("life-map",CGFloat(620),CGFloat(500),"light","LifeMap",engineering.id),
             ("overview",CGFloat(620),CGFloat(500),"light","Overview",engineering.id),
             ("detail",CGFloat(520),CGFloat(570),"dark","Overview",project.id),
@@ -31,10 +34,11 @@ import AppKit
             ("board",CGFloat(740),CGFloat(490),"light","Board",project.id),
             ("outline",CGFloat(500),CGFloat(600),"dark","Outline",university.id),
             ("deadlines",CGFloat(420),CGFloat(360),"light","Deadlines",project.id)
-        ] {
+        ]
+        for (name,width,height,mode,view,root) in previews {
             var overrides = WorkspaceColorOverrides(); overrides.profiles = WorkspaceColorTheme.threePO.profiles
             let palette = WorkspacePalette.resolved(raw:overrides.encoded, mode:mode, theme:"warm", accent:"sage")
-            var config = WidgetConfiguration(); config.projectRoots = [registration:root.uuidString]; config.projectView = view
+            var config = WidgetConfiguration(); config.projectRoots = [registration:root?.uuidString ?? ""]; config.projectView = view
             let widget = view == "LifeMap" ? AnyView(PALifeMapWidget(model:model,configuration:.constant(config))) : AnyView(LifeProjectWidget(model:model, configuration:.constant(config), previewRegistration:registration))
             let content = widget
                 .padding(16).frame(width:width,height:height).foregroundStyle(palette[.text]).background(palette[.widget],in:RoundedRectangle(cornerRadius:16))
