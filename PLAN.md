@@ -307,3 +307,8 @@ Implemented: bounded source-grounded pending-advice replacement chains across Ma
 ### 7 October — Compact Today’s brief controls
 
 Implemented the requested single header refresh, inline Updated time and ellipsis options. Weather-card visibility persists per widget; account-scoped editable writing instructions apply on the next initial/manual/heartbeat brief, with Use default and Cancel. Fixed timing/evidence/output/approval rules remain outside the writing preferences; captured prompt revisions reject late preparation and stale editors. Saved prose, morning delivery/notification claims and source permissions remain intact. STATUS records checks, signed installation and native acceptance.
+
+
+### 7 October — Compact chat and Reminders
+
+Implemented message context menus/accessibility inspection, last completed heartbeat in the PA header, reminder-name editing and saved per-account/widget list folding. Removed repeated inline context links and reminder pencils; the old Calendar drag hint was already removed. STATUS distinguishes installed native editor/folding/inspection checks from the unavailable pointer-right-click automation check.

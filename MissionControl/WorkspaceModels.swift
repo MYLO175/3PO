@@ -71,6 +71,7 @@ struct WidgetConfiguration: Codable, Equatable {
     var date: Date = .now
     var calendarMode: String = "agenda"
     var reminderGrouping: String = "lists"
+    var reminderCollapsedLists:[String:[String]]? = nil
     var conversationID: UUID? = nil
     var conversationSelections: [String:UUID]? = nil
     // Empty string is explicit general PA mode, distinct from an unmigrated legacy selection.

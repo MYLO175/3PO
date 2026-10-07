@@ -277,3 +277,8 @@ Time-only native edits also preserve the existing optional timezone representati
 ## 7 October — Brief presentation and writing preferences
 
 Keep one brief-only refresh in the header and the dated saved timestamp beside it. Weather-card visibility is widget-local presentation, independent of forecast collection/permissions and AI weather context. Writing instructions belong to the account because initial daily preparation, heartbeat updates and all brief widgets share its cache. Use default restores the existing attention/formatting instructions rather than rewriting history. Save affects the next preparation; editing never requests inference. Prompt revisions persist through restoration so an away-and-back change still rejects an older in-flight capture. Keep clock/evidence/date/source/output/approval constraints outside these writing preferences.
+
+
+## 7 October — Quiet message and reminder controls
+
+Move captured reply context into a message context menu, with an equivalent accessibility action, instead of repeating a link in every bubble. Keep real failure disclosures visible. Show the existing completed-heartbeat timestamp beside the PA title; do not equate source refresh with AI review. Reminder text opens the unchanged editor while its separate circle completes the item. List folding is optional account-scoped widget presentation keyed by exact source IDs, independent of permissions and source selection. Preserve existing transcripts, layouts and native revision/write guards.

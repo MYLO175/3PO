@@ -128,11 +128,24 @@ struct AssistantPanel: View {
         Button(record.sourceKind == "whatsapp" ? "Source message" : "Source email") { if record.sourceKind == "whatsapp" { sourceDiscovery=record } else if let message = model.emailSummaries.highlights(model).first(where:{ $0.0.id == record.mailID })?.0 { model.select(message) } }
         Button("Dismiss") { model.proactive.dismiss(record) }
     }
+    private func inspectContext(_ turn:AssistantTurn) {
+        guard var capture=turn.contextCapture else {return}
+        if capture.preparationNotes == nil {capture.preparationNotes=(turn.toolErrors ?? []).filter(PAReadPrerequisite.legacyPreparation)}
+        inspectingContext=capture
+    }
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing:8) {
                 Label(assistant.displayName,systemImage:"sparkles").font(.title3.weight(.semibold)).lineLimit(1).truncationMode(.tail)
                 Spacer(minLength:4)
+                if let completed=model.heartbeat.state.accounts[model.chatGPT.activeID]?.assessed {
+                    TimelineView(.periodic(from:.now,by:60)) {context in
+                        Text("Heartbeat \(completed.formatted(date:Calendar.current.isDate(completed,inSameDayAs:context.date) ? .omitted : .abbreviated,time:.shortened))")
+                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                            .help("Last completed AI heartbeat: \(completed.formatted(date:.abbreviated,time:.shortened))")
+                            .accessibilityLabel("Last completed heartbeat \(completed.formatted(date:.abbreviated,time:.shortened))")
+                    }
+                }
                 LifeFocusPicker(selection:focusBinding).frame(maxWidth:160,alignment:.trailing)
                 Menu {
                     Button("Name your PA…") { showRename = true }
@@ -209,8 +222,18 @@ struct AssistantPanel: View {
                                 }
                                 if turn.role == "assistant" && !turn.completed && assistant.requestTurnID != turn.id && !turn.content.isEmpty { Text("Partial response").font(.caption).foregroundStyle(.orange) }
                                 if let date = turn.created { Text(date.formatted(date:.omitted,time:.shortened)).font(.caption2).foregroundStyle(.secondary) }
-                                if let capture=turn.contextCapture { Button("Context details") { var value=capture;if value.preparationNotes == nil {value.preparationNotes=(turn.toolErrors ?? []).filter(PAReadPrerequisite.legacyPreparation)};inspectingContext=value }.font(.caption).buttonStyle(.plain).foregroundStyle(.secondary) }
                             }.font(.callout).padding(12).frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children:.contain).accessibilityLabel(turn.role == "user" ? "Your message" : "PA message").background(palette[turn.role == "user" ? .userBubble : .assistantBubble],in:RoundedRectangle(cornerRadius:10))
+                            .contextMenu {
+                                if turn.contextCapture != nil {
+                                    Button("Context details…") {inspectContext(turn)}
+                                }
+                            }
+                            .accessibilityActions {
+                                if turn.contextCapture != nil {
+                                    Button("Context details") {inspectContext(turn)}
+                                }
+                            }
+                            .accessibilityIdentifier("pa-turn-"+turn.id.uuidString)
                             if turn.role != "user" { Spacer(minLength:20) }
                             }.id(turn.id)
                         }

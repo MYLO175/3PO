@@ -44,6 +44,7 @@ struct WorkspaceChecks {
         configuration.sourceExclusions = ["source-a", "source-b"]
         configuration.calendarMode = "week"
         configuration.reminderGrouping = "dueDate"
+        configuration.reminderCollapsedLists=["account-one":["source-a"],"account-two":["source-b"]]
         configuration.conversationID = UUID()
         configuration.conversationSelections = ["account-one":UUID(),"account-two":UUID()]
         configuration.paTopicSelections = ["account-one":"","account-two":UUID().uuidString]
@@ -56,10 +57,11 @@ struct WorkspaceChecks {
         legacyConfiguration.removeValue(forKey:"colourProfiles")
         let migratedColours = try JSONDecoder().decode(WidgetConfiguration.self,from:JSONSerialization.data(withJSONObject:legacyConfiguration))
         assert(migratedColours.colourProfiles == nil && migratedColours.paTopicSelections == configuration.paTopicSelections,"Old layouts inherit theme and retain topic selections")
-        for key in ["lifeMapView","lifeFocusSelections","clockStyle","clockAlignment","clockUses24Hour","projectRoots","projectView","projectOnlyUnfinished"] { legacyConfiguration.removeValue(forKey:key) }
+        for key in ["lifeMapView","lifeFocusSelections","clockStyle","clockAlignment","clockUses24Hour","projectRoots","projectView","projectOnlyUnfinished","reminderCollapsedLists"] { legacyConfiguration.removeValue(forKey:key) }
         let migratedFocus=try JSONDecoder().decode(WidgetConfiguration.self,from:JSONSerialization.data(withJSONObject:legacyConfiguration))
         assert(migratedFocus.lifeMapView == nil && migratedFocus.projectRoots == nil && migratedFocus.projectView == nil && migratedFocus.projectOnlyUnfinished == nil,"Old dashboards decode without project preferences")
         assert(migratedFocus.lifeFocusSelections == nil && migratedFocus.clockStyle == nil && migratedFocus.clockAlignment == nil && migratedFocus.clockUses24Hour == nil && migratedFocus.paTopicSelections == configuration.paTopicSelections,"New preferences are optional; old topic selection and layout survive")
+        assert(migratedFocus.reminderCollapsedLists == nil && migratedFocus.sourceExclusions == configuration.sourceExclusions,"Legacy reminder lists begin expanded without changing source filters")
         let state = GridRules.defaults()
         let stateRoundTrip = try JSONDecoder().decode(WorkspaceState.self, from: JSONEncoder().encode(state))
         assert(stateRoundTrip == state, "Workspace state survives JSON encoding")
@@ -74,6 +76,7 @@ struct WorkspaceChecks {
         let configuredPlacement = WidgetPlacement(kind: .conversation, rect: GridRect(x: 0, y: 0, w: 4, h: 5), configuration: configuration)
         let placementRoundTrip = try JSONDecoder().decode(WidgetPlacement.self, from: JSONEncoder().encode(configuredPlacement))
         assert(placementRoundTrip == configuredPlacement)
+        assert(placementRoundTrip.configuration.reminderCollapsedLists?["account-one"] == ["source-a"] && placementRoundTrip.configuration.reminderCollapsedLists?["account-two"] == ["source-b"],"Collapsed lists persist per account and widget using exact source IDs")
 
         let row = (0..<GridRules.columns).map { column in
             WidgetPlacement(kind: .overview, rect: GridRect(x: column, y: 0, w: 1, h: 1))

@@ -9,11 +9,31 @@ struct DashboardView: View {
     @AppStorage("assistantExpanded") private var assistantExpanded = false
     @AppStorage("assistantReadingMode") private var assistantReadingMode = false
     @AppStorage("reminderGroupingMode") private var legacyReminderGroupingMode = "lists"
+    @State private var legacyCollapsedReminderLists:[String:Set<String>]=[:]
     private var reminderGroupingMode: String { widgetConfiguration?.wrappedValue.reminderGrouping ?? legacyReminderGroupingMode }
     private var reminderGroupingBinding: Binding<String> { widgetConfiguration.map { binding in Binding(get:{ binding.wrappedValue.reminderGrouping },set:{ binding.wrappedValue.reminderGrouping = $0 }) } ?? $legacyReminderGroupingMode }
     private var listExclusions: Binding<Set<String>> { widgetConfiguration.map { binding in Binding(get:{ binding.wrappedValue.sourceExclusions },set:{ binding.wrappedValue.sourceExclusions = $0 }) } ?? $model.excludedLists }
     private var accountExclusions: Binding<Set<String>> { widgetConfiguration.map { binding in Binding(get:{ binding.wrappedValue.sourceExclusions },set:{ binding.wrappedValue.sourceExclusions = $0 }) } ?? $model.excludedAccounts }
     private var visibleReminders: [TaskItem] { model.reminderData.reminders.filter { !listExclusions.wrappedValue.contains($0.listID) } }
+    private func reminderListExpanded(_ listID:String)->Binding<Bool> {
+        let registration=model.chatGPT.activeID
+        return Binding(get:{
+            if let widgetConfiguration {return !(widgetConfiguration.wrappedValue.reminderCollapsedLists?[registration] ?? []).contains(listID)}
+            return !(legacyCollapsedReminderLists[registration] ?? []).contains(listID)
+        },set:{expanded in
+            if let widgetConfiguration {
+                var value=widgetConfiguration.wrappedValue
+                var collapsed=Set(value.reminderCollapsedLists?[registration] ?? [])
+                if expanded {collapsed.remove(listID)} else {collapsed.insert(listID)}
+                if value.reminderCollapsedLists == nil {value.reminderCollapsedLists=[:]}
+                value.reminderCollapsedLists?[registration]=collapsed.sorted()
+                widgetConfiguration.wrappedValue=value
+            } else {
+                if expanded {legacyCollapsedReminderLists[registration,default:[]].remove(listID)}
+                else {legacyCollapsedReminderLists[registration,default:[]].insert(listID)}
+            }
+        })
+    }
     private var visibleMessages: [MailMessage] { model.mailData.messages.filter { !accountExclusions.wrappedValue.contains($0.accountID) }.sorted { $0.received > $1.received } }
     var body: some View {
         VStack(spacing: 0) {
@@ -221,21 +241,25 @@ struct DashboardView: View {
                     if reminderGroupingMode == "lists" {
                         ForEach(visibleReminderListIDs, id: \.self) { listID in
                             let items = DateRules.ordered(visibleReminders.filter { $0.listID == listID })
-                            HStack {
-                                Text(reminderListLabel(listID)).font(.subheadline.weight(.semibold)).foregroundStyle(sourceColor(listID, explicit: reminderSource(listID)?.color)).lineLimit(1)
-                                Spacer(minLength: 4)
-                                Text("\(items.count)").foregroundStyle(.secondary).font(.caption)
-                            }
-                            ForEach(items) { item in
-                                reminderRow(item, showSource: false, showOverdueBadge: true)
-                            }
+                            DisclosureGroup(isExpanded:reminderListExpanded(listID)) {
+                                VStack(alignment:.leading,spacing:12) {
+                                    ForEach(items) { item in
+                                        reminderRow(item, showSource: false, showOverdueBadge: true)
+                                    }
+                                }.padding(.top,8)
+                            } label: {
+                                HStack {
+                                    Text(reminderListLabel(listID)).font(.subheadline.weight(.semibold)).foregroundStyle(sourceColor(listID, explicit: reminderSource(listID)?.color)).lineLimit(1)
+                                    Spacer(minLength: 4)
+                                    Text("\(items.count)").foregroundStyle(.secondary).font(.caption)
+                                }
+                            }.tint(sourceColor(listID,explicit:reminderSource(listID)?.color))
                             Divider()
                         }
                     } else {
                         ForEach(["Overdue", "Today", "Upcoming", "Undated"], id: \.self) { group in
                             let items = visibleReminders.filter { DateRules.group($0) == group }
                             HStack { Text(group).font(.subheadline.weight(.semibold)); Spacer(); Text("\(items.count)").foregroundStyle(.secondary).font(.caption) }
-                            if items.isEmpty { Text("Nothing here").font(.caption).foregroundStyle(.tertiary) }
                             ForEach(items) { item in
                                 reminderRow(item, showSource: true, showOverdueBadge: false)
                             }
@@ -251,6 +275,7 @@ struct DashboardView: View {
         return HStack(alignment: .top, spacing: 8) {
             Button { model.complete(item) } label: { Image(systemName: item.writable ? "circle" : "lock.circle").font(.title3) }
                 .buttonStyle(.plain).disabled(!item.writable || model.writing).help(item.writable ? "Complete reminder" : "Read-only list")
+            Button { model.editTarget = .reminder(item) } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(item.title).font(.callout).fixedSize(horizontal: false, vertical: true)
@@ -265,9 +290,8 @@ struct DashboardView: View {
                         if item.recurring { Image(systemName: "repeat") }
                     }.font(.caption2).foregroundStyle(.secondary)
                 }
-            }
-            Spacer(minLength: 0)
-            Button { model.editTarget = .reminder(item) } label: { Image(systemName:"pencil") }.buttonStyle(.borderless).help("Edit reminder").accessibilityLabel("Edit reminder: " + item.title).disabled(model.writing)
+            }.frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
+            }.buttonStyle(.plain).help("Edit reminder").accessibilityLabel("Edit reminder: " + item.title).disabled(model.writing)
         }.padding(.vertical, 3)
     }
     private var mailStatusSummary:String {

@@ -377,3 +377,10 @@ A paused AI review now stays out of automatic heartbeat scheduling, rather than 
 In Day or Week, drag a timed writable event to change its time. Release saves directly in Apple Calendar, snapped to fifteen-minute slots. Its duration, calendar, notes, location and alerts stay intact. Click an event to open its details and edit other fields. All-day and read-only events open details without dragging.
 
 Dragging a repeating event moves only that occurrence. Undo restores the selected event's time; Apple's detached-occurrence representation is retained so Undo cannot create another series. Stale events and changed dashboard/account/source controls refuse the save. The preview remains at the proposed time while the native save is checked. A failure shows a short error and reloads the native state; the app never automatically repeats a write. These direct human edits make no AI request. Background suggestions continue to require approval.
+
+
+## Compact chat and Reminders
+
+Right-click a PA reply and choose **Context details…** to inspect the context captured for that reply. The same action is available to accessibility tools; the repeated inline link is gone. Genuine unresolved failures still show **What went wrong**. The PA header shows the last completed heartbeat in local time, adding its date for an earlier day. Source collection and failed or unfinished reviews do not advance that timestamp.
+
+Click a reminder's name to open its existing native editor. The separate circle still completes it. In Lists view, click a list heading to fold or unfold its contents; each widget remembers that choice for the current account using the original list identity. Old layouts start expanded, and folding never excludes a list from source access or AI context. Calendar no longer shows the old drag instruction below its timeline.
