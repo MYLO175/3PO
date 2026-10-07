@@ -32,7 +32,9 @@ extension DashboardModel {
         }
     }
     func automaticMemory(_ use:AutomaticMemoryUse,query:String? = nil,mailAccounts:Set<String>? = nil,whatsappReady:Bool = true)->AutomaticMemoryCapture {
-        let selection=assistant.memory.selection(chatGPT.activeID,includeTopics:use == .brief,query:query,sourceFilter:{record in
+        // A source assessment without a retrieval subject must not fall back to a biography.
+        // The daily brief remains an explicitly broad day-planning consumer.
+        let selection=assistant.memory.selection(chatGPT.activeID,includeTopics:use == .brief,query:query ?? (use == .brief ? nil : ""),sourceFilter:{record in
             self.automaticMemorySourceAllowed(record,use:use) && record.allSourceEvidence.allSatisfy{source in
                 (source.identity.kind != .mail || mailAccounts?.contains(source.identity.accountID) ?? true) && (source.identity.kind != .whatsapp || whatsappReady)
             }

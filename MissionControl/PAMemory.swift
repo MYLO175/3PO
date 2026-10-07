@@ -151,9 +151,15 @@ struct MemorySelection {
 }
 enum MemoryRetrieval {
     static let byteLimit = 20_000
-    private static let ignored = Set("the a an and or of to for in on at with is are was be been i me my you your we it that this what how do does can could should please about from have has need want tell know remember".split(separator:" ").map(String.init))
+    private static let ignored = Set("the a an and or of to for in on at with is are was be been i me my you your we it that this what how do does can could should please about from have has need want tell know remember user users their they them not don dont would will when then if but so just here there some more any all help anything things".split(separator:" ").map(String.init))
     static func tokens(_ text: String) -> Set<String> {
         Set(text.folding(options:[.caseInsensitive,.diacriticInsensitive],locale:Locale(identifier:"en_GB")).split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 2 && !ignored.contains($0) })
+    }
+    static func queryTerms(_ query:String?,selfLabel:String)->Set<String> {
+        tokens(query ?? "").subtracting(tokens(selfLabel))
+    }
+    static func emailQuery(subject:String,sender:String,body:String,reply:Bool = false)->String {
+        [subject,sender,String(body.prefix(16000)),reply ? "Email reply writing style tone" : ""].joined(separator:"\n")
     }
     static func record(_ memory: PAMemory) -> [String:String] {
         let encoder=JSONEncoder();encoder.outputFormatting = [.sortedKeys]
@@ -177,8 +183,11 @@ enum MemoryRetrieval {
     /// Local relevance retrieval never changes stored facts, certainty or scope.
     static func select(_ memories: [PAMemory], registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, now: Date = .now, limit: Int = 40, bytes: Int = byteLimit, focus:[LifeArea] = [], notebook suppliedNotebook:LifeNotebook? = nil) -> MemorySelection {
         let eligible = memories.filter { MemoryRules.usable($0,registration:registration,now:now) && MemoryRules.inScope($0,conversationID:conversationID,includeTopics:includeTopics) }
-        let terms = tokens(query ?? "")
         let notebook=suppliedNotebook ?? LifeNotebook.build(eligible,registration:registration,topic:conversationID,now:now,includeTopics:includeTopics)
+        // A targeted request may select nothing. The user's name is not a route to every fact about them.
+        // A nil query deliberately requests bounded orientation, including confirmed preferences.
+        let targeted=query != nil
+        let terms = queryTerms(query,selfLabel:notebook.selfLabel)
         let eligibleIDs=Set(eligible.map(\.id))
         let seedEntities=Array(notebook.entities.filter { $0.id != LifeNotebook.selfID && !$0.memoryIDs.isDisjoint(with:eligibleIDs) && !tokens($0.label).isDisjoint(with:terms) }.prefix(20))
         let seeds=Set(seedEntities.map(\.id))
@@ -212,10 +221,15 @@ enum MemoryRetrieval {
             if lhs.reviewed != rhs.reviewed { return lhs.reviewed > rhs.reviewed }
             return lhs.id.uuidString < rhs.id.uuidString
         }
-        let ranked = eligible.sorted(by:ordered)
-        // Keep a small stable core of confirmed preferences, leaving room for old relevant facts.
+        func relevant(_ memory:PAMemory)->Bool {
+            let text=memory.text+" "+(memory.connections ?? []).map{$0.subject+" "+$0.relation+" "+$0.object}.joined(separator:" ")
+            return !tokens(text).isDisjoint(with:terms) || connected.contains(memory.id) || planConnected.contains(memory.id) ||
+                (terms.isEmpty && memory.organisation?.areas.contains(where:focus.contains) == true)
+        }
+        let ranked = eligible.filter{!targeted || relevant($0)}.sorted(by:ordered)
+        // Core preferences belong to broad orientation, not every unrelated source assessment.
         let preferences = eligible.filter { $0.explicit && $0.kind == .preference }.sorted(by:ordered)
-        let pinned = Array(preferences.filter { $0.conversationID == nil }.prefix(6)) + Array(preferences.filter { conversationID != nil && $0.conversationID == conversationID }.prefix(6))
+        let pinned = targeted ? [] : Array(preferences.filter { $0.conversationID == nil }.prefix(6)) + Array(preferences.filter { conversationID != nil && $0.conversationID == conversationID }.prefix(6))
         var seen = Set<UUID>(), result: [[String:String]] = [], used = 2, reasons:[UUID:[String]]=[:]
         for memory in pinned + ranked where result.count < max(0,limit) {
             guard seen.insert(memory.id).inserted else { continue }

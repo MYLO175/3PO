@@ -71,6 +71,19 @@ import SwiftUI
         let request=WhatsAppReadMessage(id:"fictional-request",chat:"fictional-study",sender:"Tutor",text:quote,sentByMe:false,time:now.timeIntervalSince1970*1000)
         let cancel=WhatsAppReadMessage(id:"fictional-cancel",chat:request.chat,sender:"Tutor",text:"The supervision has been cancelled.",sentByMe:false,time:request.time+1000)
         checks["later cancellation changes conversation receipt"]=ProactiveRules.whatsappWindow([request],chats:[request.chat],identity:"fictional-link") != ProactiveRules.whatsappWindow([request,cancel],chats:[request.chat],identity:"fictional-link")
+        let study=PAMemory(registration:registration,text:"Alex is entering fourth year of Cambridge Engineering.",kind:.context,provenance:"Fictional human",evidence:"Alex is entering fourth year of Cambridge Engineering.",organisation:.init(areas:[.studies],connections:[],selfName:"Alex"))
+        let weather=PAMemory(registration:registration,text:"Include the weather forecast in today's brief.",kind:.preference,provenance:"Fictional human")
+        let family=PAMemory(registration:registration,text:"My family live in Newbury.",kind:.context,provenance:"Fictional human")
+        checks["relevance fixtures save without replacing existing memory"]=store.put(study) && store.put(weather) && store.put(family)
+        let securityQuery=MemoryRetrieval.emailQuery(subject:"Security alert",sender:"Google",body:"Alex: We noticed a new sign-in to your Google Account on a Mac OS device. If this was you, you don't need to do anything. If not, we'll help you secure your account.")
+        let securityMemory=model.automaticMemory(.heartbeatSuggestions,query:securityQuery)
+        checks["actual automatic security context omits unrelated biography and preferences"]=securityMemory.records.isEmpty && securityMemory.dependencies.isEmpty
+        checks["actual email classification context omits unrelated human facts"]=store.context(registration,query:securityQuery,includeSources:false).isEmpty
+        checks["actual notebook security input supplies no facts"]=PAContextCapture.notebookIDs(store.notebook(registration).context(query:securityQuery,selectedMemoryIDs:[])).memories.isEmpty
+        let university=model.automaticMemory(.heartbeatSuggestions,query:"Cambridge Engineering module selection")
+        checks["actual university context keeps the study fact only"]=university.records.map{$0["id"]} == [study.id.uuidString]
+        checks["source assessment without a query does not supply a biography"]=model.automaticMemory(.heartbeatSuggestions).records.isEmpty
+        checks["broad day planning remains available without editing saved memory"]=model.automaticMemory(.brief).records.contains{$0["id"] == weather.id.uuidString} && store.records.contains{$0.id == family.id && $0.text == family.text}
         checks["fixture uses only its account and starts no native write"]=store.records.allSatisfy{$0.registration == registration} && model.writing == false
         return ["completed":Date.now.ISO8601Format(),"requests":0,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"storage":"Fictional claims, messages and outputs in disposable SwiftData before source startup. No inference, native writes, permission changes or personal store writes. This tests actual consumer projections, not scheduler races or real message delivery."]
     }

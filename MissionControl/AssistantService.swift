@@ -374,7 +374,7 @@ import Observation
         let weatherScope = model.weather.scope
         let selectedModel = connection.selectedModel, capturedPreferences = preferences, capturedName = displayName
         let sourceEnabled = contextEnabled, calendars = excludedCalendars, lists = excludedLists, accounts = excludedAccounts
-        let notebookContext=memory.notebook(registration,topic:contextID,includeTopics:lifeFocus != nil).context(query:prompt,focus:lifeFocus ?? topic?.notebookAreas ?? [])
+        let notebookContext=memory.notebook(registration,topic:contextID,includeTopics:lifeFocus != nil).context(query:prompt,focus:lifeFocus ?? topic?.notebookAreas ?? [],selectedMemoryIDs:Set(selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))}))
         let notebookIDs=PAContextCapture.notebookIDs(notebookContext)
         let capture=PAContextCapture(model:selectedModel,focusAreas:lifeFocus,memoryIDs:selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))},eligibleMemoryCount:selection.eligibleCount,notebookMemoryIDs:notebookIDs.memories,workspaceIDs:notebookIDs.workspace,historyTurnIDs:replayTurns.map(\.id),excerptedHistoryIDs:replayTurns.filter{turn in permittedHistory.first(where:{$0.id == turn.id})?.content != turn.content}.map(\.id),sourceSnapshotIncluded:sourceEnabled && !setupMode && context != nil,sourceSnapshotBytes:sourceEnabled && !setupMode ? context?.utf8.count ?? 0 : 0,profileSetup:setupMode)
         if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) { allConversations[c].turns[t].contextCapture=capture;save() }

@@ -35,7 +35,7 @@ import Foundation
         many += [older,scoped,foreign,anotherTopic,stale,resolved]
         let retrieved = MemoryRetrieval.select(many,registration:"one",query:"Help with thermodynamics entropy revision",now:now)
         let ids = Set(retrieved.records.compactMap { $0["id"] })
-        precondition(retrieved.eligibleCount == 61 && retrieved.records.count == 40 && ids.contains(older.id.uuidString))
+        precondition(retrieved.eligibleCount == 61 && retrieved.records.count == 1 && ids.contains(older.id.uuidString),"Unused context capacity must not be filled with irrelevant preferences")
         precondition(!ids.contains(scoped.id.uuidString) && !ids.contains(foreign.id.uuidString) && !ids.contains(stale.id.uuidString) && !ids.contains(resolved.id.uuidString))
         let focused = MemoryRetrieval.select(many,registration:"one",conversationID:topic,query:"thermodynamics",now:now)
         precondition(focused.records.contains { $0["id"] == scoped.id.uuidString } && !focused.records.contains { $0["id"] == anotherTopic.id.uuidString })
@@ -43,6 +43,22 @@ import Foundation
         let budget = MemoryRetrieval.select(many,registration:"one",query:"thermodynamics",now:now,bytes:1000)
         let budgetData = try JSONSerialization.data(withJSONObject:budget.records,options:[.sortedKeys]); precondition(budgetData.count <= 1000)
         precondition(many.count == 66 && many.contains { $0 == older }, "Retrieval never deletes or edits saved records")
+        let biography=PAMemory(registration:"one",text:"Alex is entering fourth year of Cambridge Engineering.",kind:.context,provenance:"User",reviewed:now,evidence:"Alex is entering fourth year of Cambridge Engineering.",organisation:.init(areas:[.studies],connections:[],selfName:"Alex"))
+        let weather=PAMemory(registration:"one",text:"Include the weather forecast in today's brief.",kind:.preference,provenance:"User",reviewed:now)
+        let injury=PAMemory(registration:"one",text:"Football ankle injuries mean an MRI next week.",kind:.context,provenance:"User",reviewed:now)
+        let familyFact=PAMemory(registration:"one",text:"My family live in Newbury.",kind:.context,provenance:"User",reviewed:now)
+        let life=[biography,weather,injury,familyFact]
+        let security="Alex: We noticed a new sign-in to your Google Account on a Mac OS device. If this was you, you don't need to do anything. If not, we'll help you secure your account."
+        precondition(MemoryRetrieval.select(life,registration:"one",query:security,now:now,focus:[.studies]).records.isEmpty,"A sign-in alert must not receive biography, weather, health or family facts, even with a Studies focus or the user's name")
+        precondition(MemoryRetrieval.select(life,registration:"one",query:"Cambridge Engineering module selection",now:now).records.map{$0["id"]} == [biography.id.uuidString])
+        precondition(MemoryRetrieval.select(life,registration:"one",query:"Weather for today's brief",now:now).records.map{$0["id"]} == [weather.id.uuidString],"A confirmed preference still applies to its own task")
+        precondition(MemoryRetrieval.select(life,registration:"one",query:"please help me with this",now:now).records.isEmpty)
+        precondition(MemoryRetrieval.select(life,registration:"one",now:now).records.count == 4,"Explicit broad orientation remains available without changing the saved notebook")
+        let securityQuery=MemoryRetrieval.emailQuery(subject:"Security alert",sender:"Google",body:security)
+        precondition(MemoryRetrieval.select(life,registration:"one",query:securityQuery,now:now).records.isEmpty)
+        let style=PAMemory(registration:"one",text:"My email reply writing style should be concise.",kind:.preference,provenance:"User",reviewed:now)
+        let replyQuery=MemoryRetrieval.emailQuery(subject:"Prototype review",sender:"Orion tutor",body:"Please confirm whether the prototype is ready.",reply:true)
+        precondition(MemoryRetrieval.select(life+[style],registration:"one",query:replyQuery,now:now).records.map{$0["id"]} == [style.id.uuidString],"Reply writing preferences belong to drafting, without pinning unrelated weather preferences")
         var huge = older; huge.id = UUID(); huge.text = String(repeating:"🧠",count:6000)
         precondition(MemoryRetrieval.select([huge,older],registration:"one",now:now).records.map { $0["id"] } == [older.id.uuidString])
         var stable = stale; stable.certainty = .stated; stable.durability = .stable

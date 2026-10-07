@@ -114,8 +114,22 @@ struct LifeNotebook {
         return .init(selfLabel:selfLabel,entities:entities.values.sorted{$0.id < $1.id},links:links,notes:LifeArea.allCases.compactMap { area in notes[area].map { .init(area:area,records:$0) } },eligibleCount:permitted.count,memoryHistory:history)
     }
     /// Bounded inspectable notes, derived from facts rather than an ungrounded synthetic biography.
-    func context(query:String?,focus:[LifeArea] = [],maxBytes:Int = 8000)->String {
-        let terms=MemoryRetrieval.tokens(query ?? "")
+    func context(query:String?,focus:[LifeArea] = [],maxBytes:Int = 8000,selectedMemoryIDs:Set<UUID>? = nil)->String {
+        let terms=MemoryRetrieval.queryTerms(query,selfLabel:selfLabel)
+        // The notebook cannot silently refill a targeted request with unselected facts.
+        let facts=notes.flatMap(\.records)
+        let selected=selectedMemoryIDs ?? query.map { _ in
+            Set(MemoryRetrieval.select(facts,registration:facts.first?.registration ?? "",includeTopics:true,query:query,focus:focus,notebook:self).records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))})
+        }
+        let relevantNotes=notes.compactMap { note -> LifeAreaNote? in
+            let records=note.records.filter{selected?.contains($0.id) ?? true}
+            return records.isEmpty ? nil : .init(area:note.area,records:records)
+        }
+        let relevantAnchors=anchors.filter { anchor in
+            guard query != nil else { return true }
+            return !MemoryRetrieval.tokens(anchor.label+" "+anchor.notes+" "+anchor.path.joined(separator:" ")).isDisjoint(with:terms) ||
+                !anchor.memoryIDs.isDisjoint(with:selected!) || (terms.isEmpty && !Set(anchor.areas).isDisjoint(with:focus))
+        }
         let matchingItemFacts=Set(anchors.filter{!MemoryRetrieval.tokens($0.label).isDisjoint(with:terms)}.flatMap(\.memoryIDs))
         func recordScore(_ record:PAMemory)->Int { MemoryRetrieval.tokens(record.text+" "+(record.connections ?? []).map{$0.subject+" "+$0.object}.joined(separator:" ")).intersection(terms).count + (matchingItemFacts.contains(record.id) ? 8 : 0) }
         func score(_ note:LifeAreaNote)->Int {
@@ -127,11 +141,12 @@ struct LifeNotebook {
         if encoded(value).utf8.count > maxBytes { value["knownAreas"]=[];value["coverage"]="Partial saved memory." }
         guard encoded(value).utf8.count <= maxBytes else { return maxBytes >= 2 ? "{}" : "" }
         var structure:[[String:Any]]=[]
-        for anchor in anchors.sorted(by:{ a,b in
+        for anchor in relevantAnchors.sorted(by:{ a,b in
             func rank(_ value:LifeNotebookAnchor)->Int { MemoryRetrieval.tokens(value.label+" "+value.notes+" "+value.path.joined(separator:" ")).intersection(terms).count*4 + (focus.isEmpty || !Set(value.areas).isDisjoint(with:focus) ? 2 : 0) }
             return rank(a) == rank(b) ? a.id < b.id : rank(a)>rank(b)
         }).prefix(12) {
-            let row:[String:Any]=["id":anchor.id,"label":anchor.label,"kind":anchor.kind,"parent":anchor.parent as Any? ?? NSNull(),"path":anchor.path,"areas":anchor.areas.map(\.rawValue),"notes":String(anchor.notes.prefix(250)),"relationships":anchor.relations,"linkedFactIDs":Array(anchor.memoryIDs.map(\.uuidString).sorted().prefix(8)),"linkedFactCount":anchor.memoryIDs.count]
+            let linked=selected.map{anchor.memoryIDs.intersection($0)} ?? anchor.memoryIDs
+            let row:[String:Any]=["id":anchor.id,"label":anchor.label,"kind":anchor.kind,"parent":anchor.parent as Any? ?? NSNull(),"path":anchor.path,"areas":anchor.areas.map(\.rawValue),"notes":String(anchor.notes.prefix(250)),"relationships":anchor.relations,"linkedFactIDs":Array(linked.map(\.uuidString).sorted().prefix(8)),"linkedFactCount":linked.count]
             var candidate=value;candidate["lifeStructure"]=structure+[row]
             if encoded(candidate).utf8.count <= min(maxBytes,4000) { structure.append(row) }
         }
@@ -141,7 +156,7 @@ struct LifeNotebook {
         if encoded(value).utf8.count > maxBytes { value.removeValue(forKey:"lifeStructure") }
 
 
-        for note in notes.sorted(by:{score($0)==score($1) ? $0.id < $1.id : score($0)>score($1)}).prefix(4) {
+        for note in relevantNotes.sorted(by:{score($0)==score($1) ? $0.id < $1.id : score($0)>score($1)}).prefix(4) {
             let records=note.records.sorted { recordScore($0) == recordScore($1) ? ($0.reviewed == $1.reviewed ? $0.id.uuidString < $1.id.uuidString : $0.reviewed > $1.reviewed) : recordScore($0)>recordScore($1) }
             var facts:[[String:String]]=[]
             for record in records.prefix(6) {

@@ -147,7 +147,7 @@ import SwiftData
         guard !busy,!model.assistant.busy,!model.chatGPT.busy,!model.projectPlacement.busy,!model.writing,!model.proactive.busy,!model.briefings.busy,!model.memoryLearning.busy,!model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy,
               model.assistant.contextEnabled,model.chatGPT.inferenceVerified,!model.chatGPT.usagePaused,summary.registration == model.chatGPT.activeID,EmailReplyDraftRules.canReply(summary,message:message),summary.replyDraft == nil,!model.assistant.excludedAccounts.contains(message.accountID),current(message,model:model)?.created == summary.created else { return }
         let registration=model.chatGPT.activeID,selectedModel=model.chatGPT.selectedModel,memoryRevision=model.assistant.memory.revision
-        let sourceRevision=model.sourceRevision,memory=model.assistant.memory.context(registration,includeTopics:true,includeSources:false)
+        let sourceRevision=model.sourceRevision
         busy=true;error=nil
         task=Task {
             defer { busy=false }
@@ -157,6 +157,7 @@ import SwiftData
             do {
                 let body=try await model.mail.body(accountID:message.accountID,messageID:message.messageID,expectedInternetMessageID:message.internetMessageID,mailboxName:message.mailboxName)
                 try Task.checkCancellation();guard valid(),!body.isEmpty,body.count <= 16000 else { throw ActionFailure.message("The email changed or its full body is unavailable; no draft saved.") }
+                let memory=model.assistant.memory.context(registration,includeTopics:true,query:MemoryRetrieval.emailQuery(subject:message.subject,sender:message.sender,body:body,reply:true),includeSources:false)
                 let input:[String:Any]=["subject":message.subject,"sender":message.sender,"received":message.received.ISO8601Format(),"body":body,"sharedMemory":memory]
                 let data=try JSONSerialization.data(withJSONObject:input,options:.sortedKeys)
                 let text=try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:data,as:UTF8.self)]],instructions:EmailReplyDraftRules.instructions,model:selectedModel,purpose:.replyDraft) { _ in }
@@ -275,7 +276,7 @@ import SwiftData
                     if var saved = current(message, model: model), saved.bodyFingerprint == bodyHash, saved.worthReading != nil, saved.needsReply != nil {
                         if EmailReplyDraftRules.needsBackgroundDraft(saved,message:message),body.count <= 16000 {
                             phase="Preparing background reply draft"
-                            let memoryRevision=model.assistant.memory.revision,memory=model.assistant.memory.context(registration,includeSources:false)
+                            let memoryRevision=model.assistant.memory.revision,memory=model.assistant.memory.context(registration,query:MemoryRetrieval.emailQuery(subject:message.subject,sender:message.sender,body:body,reply:true),includeSources:false)
                             let source:[String:Any]=["subject":message.subject,"sender":message.sender,"body":body,"sharedMemory":memory]
                             let input=String(decoding:try JSONSerialization.data(withJSONObject:source,options:.sortedKeys),as:UTF8.self)
                             if heartbeat {try model.heartbeat.claimCall(registration)}
@@ -296,7 +297,7 @@ import SwiftData
                     let dismissalFeedback = dismissalContext(model)
                     let memoryRevision=model.assistant.memory.revision
                     // Classification has no saved source-memory dependency receipt; keep source facts out.
-                    let memoryContext=model.assistant.memory.context(registration,includeSources:false)
+                    let memoryContext=model.assistant.memory.context(registration,query:MemoryRetrieval.emailQuery(subject:message.subject,sender:message.sender,body:excerpt),includeSources:false)
                     let source = ["sharedMemory":memoryContext,"dismissedSuggestions":dismissalFeedback,"reviewFeedback":dismissalFeedback,"now":Date.now.ISO8601Format(),"timezone":TimeZone.current.identifier,"sender":message.sender,"subject":message.subject,"received":message.received.ISO8601Format(),"body":excerpt,"bodyTruncated":body.count > 16000,"replied":message.replied] as [String:Any]
                     let input = String(data: try JSONSerialization.data(withJSONObject: source), encoding: .utf8)!
                     phase = "Receiving subscription inference"

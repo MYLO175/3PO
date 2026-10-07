@@ -1,5 +1,11 @@
 # Decisions
 
+## 8 October — Relevant memory before filling context
+
+The user identified unrelated biography/preferences in a security-alert review. A maximum context size is a ceiling, not a target. Targeted queries now require word or supported relationship/plan relevance; zero saved facts is a valid result. Confirmed preferences are pinned only for deliberate broad orientation. Self-name tokens cannot seed all personal facts, and Focus alone cannot widen a nonempty targeted query. Foreground notebook facts share the actual selected IDs; task-irrelevant anchors and earlier tool-read entities are not added back. Email assessment and drafting query the specific message, with writing-style terms reserved for actual drafting. Account/source/current-belief/budget checks stay ahead of selection.
+
+Broad life/day orientation remains available through the brief or explicitly null-query read tools, preserving the usefulness of the larger notebook. Review suggestions keep truthful batch-level memory receipts: several messages can share a context, and old records are not rewritten to hide the previous larger input. This is a precision improvement in the existing local retrieval, not newly implemented embeddings or per-suggestion model-attention tracking.
+
 These are significant product choices, not a record of every code edit.
 
 ## Local native app

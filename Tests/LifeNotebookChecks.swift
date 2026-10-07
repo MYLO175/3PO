@@ -56,6 +56,12 @@ import Foundation
         let parsed=try JSONSerialization.jsonObject(with:Data(notebook.context(query:"Signal Garden").utf8)) as! [String:Any]
         let noteIDs=(parsed["areas"] as? [[String:Any]] ?? []).flatMap{$0["facts"] as? [[String:String]] ?? []}.compactMap{$0["id"]}
         precondition(noteIDs.contains(project.id.uuidString) && !noteIDs.contains(privateTopic.id.uuidString))
+        precondition(!noteIDs.contains(study.id.uuidString) && !noteIDs.contains(habit.id.uuidString) && !noteIDs.contains(family.id.uuidString),"Notebook context must not reintroduce irrelevant facts")
+        let security=try JSONSerialization.jsonObject(with:Data(notebook.context(query:"Alex Google sign-in security alert",focus:[.studies]).utf8)) as! [String:Any]
+        precondition((security["areas"] as? [[String:Any]] ?? []).isEmpty,"User identity and area focus must not refill a targeted check")
+        let capped=try JSONSerialization.jsonObject(with:Data(notebook.context(query:"Signal Garden",selectedMemoryIDs:[project.id]).utf8)) as! [String:Any]
+        let cappedIDs=Set((capped["areas"] as? [[String:Any]] ?? []).flatMap{$0["facts"] as? [[String:String]] ?? []}.compactMap{$0["id"]})
+        precondition(cappedIDs == [project.id.uuidString],"Notebook shares the actual selection budget instead of supplying additional two-hop facts")
         var bad=study.organisation!;bad.connections[0].subjectKind = .goal
         precondition(!LifeMemoryOrganisation.valid(bad,record:study))
         bad=study.organisation!;bad.areas=[.about,.studies,.career,.projects]

@@ -25,7 +25,8 @@ import SwiftData
         let limited=MemoryRetrieval.select(records.filter{permitted.contains($0.id)},registration:account,includeTopics:true,query:"Orion",now:now,limit:1)
         precondition(limited.records.count == 1 && limited.eligibleCount == 2 && limited.reasons.count == 1)
         var preference=stable;preference.id=UUID();preference.kind = .preference
-        let pinned=MemoryRetrieval.select([preference],registration:account,query:"unrelated",now:now)
+        precondition(MemoryRetrieval.select([preference],registration:account,query:"unrelated",now:now).records.isEmpty)
+        let pinned=MemoryRetrieval.select([preference],registration:account,now:now)
         precondition(pinned.reasons[preference.id]?.contains("Core confirmed preference") == true)
         let notebook=LifeNotebook.build(records.filter{permitted.contains($0.id)},registration:account,now:now,includeTopics:true)
         let context=notebook.context(query:"Orion")

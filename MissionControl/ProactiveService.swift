@@ -158,7 +158,8 @@ import SwiftData
         let heartbeatRevision=model.heartbeat.controlsRevision
         let projectsRevision=assistant.projects.revision
         let memoryUse:AutomaticMemoryUse = manual ? .manualSuggestions : heartbeat ? .heartbeatSuggestions : .suggestions
-        let memoryQuery=String((emails.map{$0.1.evidence+" "+$0.1.summary} + whatsapp.map(\.text)).joined(separator:"\n").prefix(2500))
+        // Give each supplied message a bounded retrieval subject; do not let the first email own the whole query.
+        let memoryQuery=String((emails.map{MemoryRetrieval.emailQuery(subject:$0.0.subject,sender:$0.0.sender,body:String(($0.1.evidence+" "+$0.1.summary).prefix(1200)))} + whatsapp.map{String($0.text.prefix(1200))}).joined(separator:"\n").prefix(24000))
         let memoryCapture=model.automaticMemory(memoryUse,query:memoryQuery,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady)
         let whatsappDependencies=ProactiveRules.whatsappDependencies(model.whatsapp.messages,chats:Set(whatsapp.map(\.chatID)).union(memoryCapture.whatsappChats),identity:waScope.linkedIdentity)
         let whatsappChats=Set(whatsappDependencies.map(\.chatID))

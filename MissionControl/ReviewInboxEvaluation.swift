@@ -226,8 +226,8 @@ import EventKit
         }
         let healthyMemory=sourceMemory(healthy),failedMemory=sourceMemory(failed)
         checks["disposable memory fixtures saved"]=model.assistant.memory.put(human) && model.assistant.memory.put(healthyMemory) && model.assistant.memory.put(failedMemory)
-        let baseline=Set(model.automaticMemory(.heartbeatSuggestions).dependencies.map(\.id))
-        let filtered=Set(model.automaticMemory(.heartbeatSuggestions,mailAccounts:scope.accountIDs,whatsappReady:false).dependencies.map(\.id))
+        let baseline=Set(model.automaticMemory(.heartbeatSuggestions,query:"Fictional").dependencies.map(\.id))
+        let filtered=Set(model.automaticMemory(.heartbeatSuggestions,query:"Fictional",mailAccounts:scope.accountIDs,whatsappReady:false).dependencies.map(\.id))
         checks["source memory fixture is eligible before account lens"]=baseline.contains(failedMemory.id.uuidString) && baseline.contains(healthyMemory.id.uuidString)
         checks["actual automatic context keeps human and healthy memory, omits failed source memory"]=filtered.contains(human.id.uuidString) && filtered.contains(healthyMemory.id.uuidString) && !filtered.contains(failedMemory.id.uuidString)
         model.mailIndex.failed(healthy.accountID,detail:"Fictional body failure",now:now)

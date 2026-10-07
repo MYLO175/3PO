@@ -230,11 +230,12 @@ import Foundation
             let focus=focusAreas ?? assistant.conversation(topicID)?.notebookAreas ?? []
             let selection=memory.selection(registration,conversationID:topicID,includeTopics:focusAreas != nil,query:text("query"),focus:focus)
             issuedMemory.formUnion(selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))})
-            let notes=try JSONSerialization.jsonObject(with:Data(notebook.context(query:text("query"),focus:focus).utf8)) as! [String:Any]
+            let notes=try JSONSerialization.jsonObject(with:Data(notebook.context(query:text("query"),focus:focus,selectedMemoryIDs:Set(selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))})).utf8)) as! [String:Any]
             for area in notes["areas"] as? [[String:Any]] ?? [] { issuedMemory.formUnion((area["facts"] as? [[String:String]] ?? []).compactMap{$0["id"].flatMap(UUID.init(uuidString:))}) }
             consultedMemory.formUnion(selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))})
             for area in notes["areas"] as? [[String:Any]] ?? [] { consultedMemory.formUnion((area["facts"] as? [[String:String]] ?? []).compactMap{$0["id"].flatMap(UUID.init(uuidString:))}) }
-            return try json(["notes":notes,"records":selection.records,"entities":notebook.entities.filter{!$0.memoryIDs.isDisjoint(with:issuedMemory)}.prefix(40).map{["id":$0.id,"label":$0.label,"kind":$0.kind.rawValue,"areas":$0.areas.map(\.rawValue).sorted()] as [String:Any]},"coverage":focusAreas != nil ? "Partial bounded account-owned notebook with life-area focus; source permissions still apply." : "Partial bounded shared/current-topic notebook; no other-topic facts or source reads."])
+            let selectedIDs=Set(selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))})
+            return try json(["notes":notes,"records":selection.records,"entities":notebook.entities.filter{!$0.memoryIDs.isDisjoint(with:selectedIDs)}.prefix(40).map{["id":$0.id,"label":$0.label,"kind":$0.kind.rawValue,"areas":$0.areas.map(\.rawValue).sorted()] as [String:Any]},"coverage":focusAreas != nil ? "Partial bounded account-owned notebook with life-area focus; source permissions still apply." : "Partial bounded shared/current-topic notebook; no other-topic facts or source reads."])
         case "organise_memory":
             guard memory.enabled,let id=UUID(uuidString:text("id")!),issuedMemory.contains(id),let record=memory.permittedRecords.first(where:{$0.id == id && $0.source == nil && $0.registration == registration && (focusAreas != nil || MemoryRules.inScope($0,conversationID:topicID))}) else { throw ActionFailure.message("Read a permitted human memory before organising it. Source interpretations keep their separate evidence and provisional areas.") }
             var object=args;object.removeValue(forKey:"id")

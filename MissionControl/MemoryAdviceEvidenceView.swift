@@ -14,7 +14,7 @@ struct MemoryAdviceEvidenceView:View {
                 }
                 DisclosureGroup("Memory supplied (\(dependencies.count) facts)") {
                     VStack(alignment:.leading,spacing:10) {
-                        Text("These facts were supplied to help interpret the sources. Being supplied does not mean every fact influenced the result.").font(.caption).foregroundStyle(.secondary)
+                        Text(use == .brief ? "Context supplied for this brief; this does not show which facts influenced the wording." : "Context supplied to the review batch, which may cover several messages. This does not show which facts influenced this suggestion.").font(.caption).foregroundStyle(.secondary)
                         if records.count < dependencies.count { Text("\(dependencies.count-records.count) supporting facts have changed or are unavailable under current access. This advice is a dated record.").font(.caption).foregroundStyle(.secondary) }
                         ForEach(records) { record in
                             VStack(alignment:.leading,spacing:5) {

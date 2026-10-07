@@ -4,6 +4,14 @@ import Foundation
         let definitions = PAToolProtocol.tools[0]["tools"] as! [[String:Any]]
         assert(PAToolProtocol.tools[0]["type"] as? String == "namespace")
         assert(Set(definitions.compactMap { $0["name"] as? String }).count == definitions.count)
+        for name in ["read_memory","read_life_notebook"] {
+            for query:Any in ["Cambridge Engineering",NSNull()] {
+                _=try PAToolProtocol.arguments(.init(id:UUID().uuidString,name:name,namespace:"pa",arguments:String(data:try JSONSerialization.data(withJSONObject:["query":query]),encoding:.utf8)!))
+            }
+            var invalidQuery=false
+            do { _=try PAToolProtocol.arguments(.init(id:"invalid-query",name:name,namespace:"pa",arguments:"{\"query\":true}")) } catch { invalidQuery=true }
+            precondition(invalidQuery,"Broad overview is explicit null, not an untyped query bypass")
+        }
         let batch: [String:Any] = ["items":[["title":"Fictional project", "kind":"project", "parent":NSNull(), "notes":"", "due":NSNull(), "estimateMinutes":NSNull(), "areas":["projects"]], ["title":"Read paper", "kind":"task", "parent":"batch:0", "notes":"", "due":NSNull(), "estimateMinutes":30, "areas":["studies"]]], "authorization":"Set up that project"]
         _ = try PAToolProtocol.arguments(.init(id:"create-life", name:"create_life_items", namespace:"pa", arguments:String(data:try JSONSerialization.data(withJSONObject:batch), encoding:.utf8)!))
         var malformedBatch = batch; malformedBatch["items"] = [["title":"Hidden command", "kind":"run_script", "parent":NSNull(), "notes":"", "due":NSNull(), "estimateMinutes":NSNull(), "areas":[]]] as [[String:Any]]
