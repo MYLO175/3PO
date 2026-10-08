@@ -15,8 +15,13 @@ The latest broad direction and recommended delivery sequence is **[PA architectu
 | [PA architecture review](PA_ARCHITECTURE_REVIEW.md) | Current architecture assessment and recommended route to communications understanding, durable jobs and local inference |
 | [Decisions](DECISIONS.md) | Significant choices and their consequences |
 | [PLAN](../PLAN.md) | Full approved implementation scope |
-| [STATUS](../STATUS.md) | Detailed engineering evidence, checkpoints and unfinished validation |
+| [Agent instructions](../AGENTS.md) | How Codex should develop the repository and preserve invariants |
+| [Development workflow](DEVELOPMENT_WORKFLOW.md) | Worktree ownership, bounded delegation, integration and release |
+| [STATUS](../STATUS.md) | Current summary plus detailed dated engineering evidence |
+| [VALIDATION](../VALIDATION.md) | Concise current validation index and known limits, with earlier history |
 | [Repository README](../README.md) | Build/run instructions and integration details |
+
+AGENTS governs Codex development agents, not the installed PA's runtime prompt. Current human direction sets requirements; PLAN records approved scope, Next improvements records gaps/success criteria, and Decisions explains agreed choices. README and How it works describe the product. STATUS and VALIDATION establish what was actually checked; they do not authorise new features or Apple writes. Older dated architecture reviews/plans are historical snapshots where later changes supersede them.
 
 ## Keeping this useful
 
@@ -24,4 +29,4 @@ After a meaningful feature changes, update its explanation here and the relevant
 
 Git is the history and backup mechanism; these Markdown pages are the explanation. They can be read in Codex, a text editor or Obsidian. Obsidian is optional and is not part of Mission Control's runtime. These files document the software, not your personal life: emails, chats, credentials and private memory remain outside the repository.
 
-Last checked against the implementation: 6 October 2026. An installed build and a passing test are different from a completed live acceptance check; see STATUS for those boundaries.
+Current entry points reconciled with the recorded 8 October application checkpoint. No new app/model/live acceptance is implied by this documentation pass. An installed build and a passing test are different from a completed live acceptance check; see STATUS and VALIDATION for those boundaries.

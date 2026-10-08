@@ -32,7 +32,7 @@ Example worker brief:
 
 > Implement the agreed memory-relevance improvement in this worktree. Read AGENTS, the current STATUS summary and MEMORY_AND_CONTEXT first. Report your base commit, proposed files and any required workspace/API change before editing shared contracts. Preserve account/source/current-belief boundaries and all stored IDs. Use focused fictional checks and isolated output paths. Commit the result and report what passed and what remains unverified. Leave installation and personal-data acceptance to the integration chat.
 
-An independently opened worker chat stays under the user's control. The integration agent only creates or messages other chats when the user explicitly requests that coordination. Delegated subagents remain the owning chat's responsibility; no nested delegation. Read-only reviewers can share code, but concurrent writers require separate worktrees and agreed ownership.
+An independently opened worker chat stays under the user's control. The integration agent only creates or messages other chats when the user explicitly requests that coordination. The user authorises the main agent to choose bounded subagents when useful for an assigned change, without a separate question each time. Give each subagent a concrete independent task and return evidence to the owning chat; no nested delegation. Read-only reviewers can share code, but concurrent writers require separate worktrees and agreed ownership.
 
 ## Builds and checks have shared resources too
 
@@ -56,10 +56,16 @@ Check reported account usage at start and major milestones. The user has more al
 
 Choose the main chat's model/reasoning in the UI. GPT-6.1 Sol Medium Standard remains the user's recorded preference, not a setting imposed by text. Workers use suitable available models under the user's direction; the old mandatory Luna High choice is retired. A Codex worker's model choice must not alter the PA application's inference model.
 
-## Documentation entry points
+## Questions and documentation entry points
+
+Ask about missing requirements, priorities and consequential implementation choices as work progresses. Keep questions concrete and continue useful independent work while awaiting answers. Record answered Codex workflow preferences in AGENTS; record product decisions in PLAN/DECISIONS/roadmap. Do not interpret an unanswered option as consent. A request to update GitHub authorises this publication; future release/install defaults should follow the user's answered preference and explicit task scope.
+
+AGENTS is for Codex developing this repository. It does not change how the installed 3PO assistant reasons, retrieves memory or uses tools: that behaviour is implemented in the app's prompts, schemas and services and requires code/validation changes.
 
 - AGENTS.md: current working rules and invariant boundaries.
 - STATUS.md: current summary first, then preserved dated engineering evidence.
+- VALIDATION.md: concise current evidence/limitations, with earlier records labelled as history.
+- README.md: project introduction, current features, build/run/privacy guidance and links.
 - PLAN.md and docs/NEXT_IMPROVEMENTS.md: scope, open product work and success criteria; historical entries are not current completion claims.
 - docs/HOW_IT_WORKS.md and docs/MEMORY_AND_CONTEXT.md: current implementation and memory behaviour.
 - docs/DECISIONS.md: significant design choices.

@@ -2,6 +2,8 @@
 
 Architecture review and recommended delivery sequence, 6 October 2026.
 
+This is a dated architecture assessment, not the current delivery summary. Later 7–8 October changes include selective Mail lanes, source-aware advice, Review inbox, targeted memory relevance, Space/Task-only Projects and scheduled heartbeat recovery. Read [STATUS](../STATUS.md), [VALIDATION](../VALIDATION.md) and [Next improvements](NEXT_IMPROVEMENTS.md) before applying its older observations or proposed sequence. Broader shared episodes, semantic recall and offline inference remain future work.
+
 Mission Control should become a personal workspace whose assistant understands ongoing work, follows communications, and produces useful results while you are elsewhere. The native dashboard, project space and PA should share the same records. Your knowledge should remain usable when the inference provider changes. Offline inference is a later goal, not a prerequisite for the next delivery.
 
 The recommendation is to evolve the existing native app around evidence, changing situations and durable jobs. Its current source readers, memory history, workspace identities and verified action tools are valuable foundations. The biggest missing connection is a shared account of ongoing commitments across sources, with measured collection and assessment coverage.

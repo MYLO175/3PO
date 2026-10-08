@@ -9,11 +9,13 @@ This repository contains the app source, focused checks, build scripts and imple
 - **Dashboard:** saved pages, movable and resizable widgets, independent light/dark colours, native toolbar and menu commands, and a focused view for narrow windows.
 - **Calendar and Reminders:** native reading, review forms and assistant tools for supported explicit changes, with identity/revision checks, saved receipts and limited Undo.
 - **Personal assistant:** an ongoing conversation with optional Life-area focus, streamed responses, pasted screenshot input, explicit queued work and a dedicated setup interview.
-- **Life notebook:** evidence-backed memories, human-owned projects and content, connections, searchable notes and an inspectable graphical map.
-- **Daily workflow:** an immutable morning brief, explicit brief updates, email assessments, source-linked recommendations and local review/edit/copy-only reply drafts.
+- **Memory and Projects:** inspectable evidence-backed beliefs and exact connections, alongside human-owned nested spaces, notes and local tasks with boards and progress. Tasks remain separate from Apple Reminders.
+- **Daily workflow:** Review inbox for email assessments, source-linked proposals, questions and local review/edit/copy-only drafts; an immutable original daily brief plus the latest heartbeat/manual update.
 - **Optional sources:** coarse-location weather and an encrypted, selected-chat WhatsApp linked-device reader.
 
 Apple apps remain the source of truth. Ordinary source refresh makes no AI requests. Foreground assistant work continues without a fixed tool-count allowance, while Stop, subscription limits and bounded source reads remain. Independent automatic work has its own budgets and persisted controls.
+
+The configurable heartbeat coordinates automatic communication review and brief preparation while the Mac/app are running. Failed runs retain completed work and schedule a fresh check at the configured interval; there is no independent morning inference timer. The pulse toolbar action **Run heartbeat** (⌘R) explicitly starts AI review. **Refresh sources only** (⌥⌘R) updates local caches without inference. Background proposals require human approval before native changes.
 
 ## Privacy and permissions
 
@@ -56,7 +58,13 @@ Optional assistant inference uses Settings → Continue with ChatGPT and the doc
 
 The first command is a focused baseline check, not an aggregate of every test. Other `scripts/test-*.sh` files cover individual components; inspect each script before running live developer acceptance modes. Disposable native write checks require an appropriate test account and permission to create/clean their fixtures.
 
-[STATUS.md](STATUS.md) records dated builds, subscription checks, installs and outstanding acceptance boundaries; its newest dated entries describe the latest delivery. [VALIDATION.md](VALIDATION.md) retains earlier validation history. Historical success does not establish every current source/account race, prolonged assistant task or sustained background scheduling behaviour.
+[STATUS.md](STATUS.md) begins with the current checkpoint and retains dated engineering evidence below. [VALIDATION.md](VALIDATION.md) summarises current recorded checks and remaining limits before its historical log. Latest application code checkpoint: 8 October 2026, including Space/Task-only Projects, targeted lexical/typed-link memory selection, Review inbox provenance and scheduled heartbeat recovery. Focused fixtures and one recorded full production heartbeat support those bounded scenarios; they do not establish semantic recall, every source/account race or sustained sleep/wake reliability.
+
+## Working on the repository
+
+Read [AGENTS.md](AGENTS.md) for Codex's development rules and [Development workflow](docs/DEVELOPMENT_WORKFLOW.md) for parallel worktrees, shared-file contracts, usage and integration. Requested Memory, Projects and Appearance features can develop in isolated chats/worktrees, with one integration owner for combined checks and the installed app. Existing build/test scripts share absolute temporary paths; isolate outputs or run fixed-path checks serially.
+
+AGENTS controls development behaviour; it does not configure the installed PA's runtime prompt. The main agent may choose bounded subagents when useful, while new independent chats require the user's request. Ask and record useful requirements/tradeoff decisions as work progresses. Product direction belongs in approved scope and roadmap/decision docs; validation files describe evidence rather than grant feature or write authority.
 
 ## Implementation notebook
 
@@ -66,6 +74,8 @@ The first command is a focused baseline check, not an aggregate of every test. O
 - [Decisions](docs/DECISIONS.md): significant implementation choices.
 - [PA intelligence plan](docs/PA_INTELLIGENCE_PLAN.md): staged memory and reasoning work.
 - [Project workspace](docs/PROJECT_WORKSPACE.md): durable life/project structure.
+- [Notebook index](docs/README.md): which document to read or update.
+- [Development workflow](docs/DEVELOPMENT_WORKFLOW.md): Codex agents, worktrees, integration and release.
 - [Plan](PLAN.md) and [agent instructions](AGENTS.md): delivery scope and development boundaries.
 
 Service boundaries separate native sources, subscription transport, assistant tools, memory, briefing and background scheduling. The repository preserves the existing development history; account data, registration identity, installed app and saved layouts are independent of GitHub hosting.

@@ -1,4 +1,45 @@
-# Current delivery — 3 October 2026
+# Validation
+
+## Current recorded validation — 8 October 2026
+
+This is an index of existing evidence, reconciled during the GitHub documentation update. It does not report a new build, model evaluation, installation or personal-source test. [STATUS](STATUS.md) has the current summary, exact commands, intermediate failures, installation hashes and dated acceptance limits. Historical records below apply to their named builds and may describe superseded behaviour.
+
+### Latest application checkpoint
+
+Application code: `40d596c` (scheduled heartbeat recovery). Last recorded signed install: 8 October at 14:23, `/Users/mylomichael/Applications/3PO.app`, bundle ID `com.mylomichael.missioncontrol`. The 14:23 build changed Help wording after the preceding validated recovery build. Source, registration, storage, transcripts, layouts and original daily delivery identities were preserved according to that checkpoint's recorded checks.
+
+| Area | Recorded evidence | What it does not establish |
+| --- | --- | --- |
+| Heartbeat recovery and brief ownership | Final signed Xcode build; focused heartbeat, briefing, review-inbox and WhatsApp suites; 51/51 actual-service in-memory scheduler/storage checks with zero AI/native changes | Prolonged real hourly scheduling, OS sleep/wake or genuine consecutive provider outages |
+| Installed heartbeat | One explicit full production subscription run on 8 October, 14:13–14:15, completed all four stages with five AI requests; current afternoon widget brief and original morning chat delivery retained | Every automatic tick or remote failure; the first automatic cold-start catch-up exposed a preparation failure before the final fix |
+| Space/Task Projects | Five focused workspace/placement/tool/ownership/second-brain suites; disposable native creation/progress/conversion-refusal preview; installed Space/Task menus and retained legacy record editing inspected | Every task-page pointer gesture or broad project/memory identity accuracy; local tasks do not complete Apple Reminders |
+| Targeted memory selection | Retrieval/notebook/inspection/store/dependency/placement/tool checks; 27/27 actual-consumer no-AI context checks and 11/11 Mail projection checks on 8 October | Embeddings, semantic aliases, exhaustive paraphrase recall or per-suggestion model attention |
+| Source beliefs and memory review | Focused source/version/account/current-belief fixtures; fictional subscription extraction/review checks in the 6–7 October records; native inspectors/controls inspected within recorded limits | Exhaustive source coverage, automatic semantic consolidation or a confirmed cross-source episode ledger |
+| Review inbox and advice dependencies | Exact source/native/memory revision fixtures, fictional proposal/evidence evaluations, approval coordinator checks and recorded installed provenance/history inspection | General temporal understanding, arbitrary native edits or certainty that all proposals are useful |
+| Native Calendar time moves | Focused edit/timeline checks and 12/12 production native move/readback/occurrence-Undo checks using an isolated disposable calendar, with cleanup | Actual continuous pointer smoothness, all overlap/cross-day/long/narrow gesture behaviour |
+| Projects board stage drag | Recorded fictional and installed gesture/progress checks with captured account/folder/revision and session Undo | Calendar gesture acceptance or synchronisation with linked Apple work |
+| PA foreground tools and persistence | Earlier dated subscription/native disposable operation, semantic-intent, completed-stream/reasoning, ownership, receipt and relaunch checks | Every prolonged request, adversarial input, account-switch race, series/deletion Undo or full Apple-app parity |
+
+The latest tests use bounded fixtures; separate real-model checks use fictional data and disposable storage. Intermediate model/compile/native failures are preserved in STATUS and are not replaced by final passing counts. Earlier native writes used identified disposable fixtures; this documentation update performs no Apple write, personal-memory mutation, permission change or inference.
+
+### Remaining acceptance
+
+- Real repeated scheduled reviews across source arrivals, idle/typing, midnight, sleep/wake and provider failure/recovery.
+- Sustained personal memory usefulness, multi-turn/paraphrase quality, measured source coverage, useful/noisy proposal quality and broader identity workflows.
+- Calendar pointer-preview ergonomics and native recurrence/provider cases beyond the exact recorded fixtures.
+- Broader Mail folder/search/read-status and account/model/source revocation races beyond individually documented checks.
+
+No full-suite, complete-history, semantic-intelligence or full-native-parity claim is made. The selected app model/settings remain unchanged. Source-only collection/refresh is no-AI; only explicit or separately controlled AI jobs infer. Mail/WhatsApp remain read-only, proposals need approval and uncertain native writes are not replayed.
+
+### Checking a future change
+
+Read its relevant focused `scripts/test-*.sh` runners and acceptance mode before execution. `scripts/test.sh` is a baseline, not an aggregate suite. Use fictional in-memory/source-free checks where possible; actual subscription quality, signed build, process launch and live UI/native acceptance are separate evidence. Existing fixed `/tmp` executable/cache paths need isolation or serial execution across worktrees. See [Development workflow](docs/DEVELOPMENT_WORKFLOW.md).
+
+## Historical validation log
+
+The following is the preserved earlier record. Its topic UX, toolbar wording, drag review and old acceptance gaps are historical; later STATUS/current docs supersede them.
+
+### Current delivery — 3 October 2026 (historical)
 
 Installed signed app: `~/Applications/Mission Control.app`. Matching local build: `build/Mission Control.app` (ignored by Git).
 Stable bundle identifier: `com.mylomichael.missioncontrol`.

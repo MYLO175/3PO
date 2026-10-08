@@ -21,7 +21,7 @@ Read this summary first. Detailed dated entries below preserve implementation ev
 
 ### Current development workflow
 
-The user upgraded their plan and requested a workflow for concurrent Memory, Projects and Appearance work. Use isolated worktrees/chats for requested independent implementations and one local integration owner for shared interfaces, combined checks and the installed app. Only one writer per checkout. Agree exact file ownership and memory/project contracts before parallel edits. Optional bounded subagents do not automatically isolate files; no nested delegation. No additional worker chat/worktree has been created by this documentation change.
+The user upgraded their plan and requested a workflow for concurrent Memory, Projects and Appearance work. Use isolated worktrees/chats for requested independent implementations and one local integration owner for shared interfaces, combined checks and the installed app. Only one writer per checkout. Agree exact file ownership and memory/project contracts before parallel edits. The main agent may choose bounded subagents when useful, without asking for each delegation; new independent chats require the user's request. Subagents do not automatically isolate files; no nested delegation. No additional worker chat/worktree has been created by this documentation change.
 
 The original one-main/mandatory-Luna restriction and fixed 20% five-hour reserve are retired. Check actual reported usage, use available allowance sensibly and save resumable checkpoints; no purchases, resets or API fallback. On this documentation pass the account tool reported 23% weekly used and no five-hour window. That is a dated snapshot, not a continuing allowance guarantee.
 
@@ -30,6 +30,14 @@ Build/test isolation needs attention before concurrent execution: scripts/build.
 ### Documentation checkpoint — 8 October
 
 Consolidated AGENTS into current rules, preserved its exact prior contents in docs/archive/AGENTS-2026-10-08-before-workflow-refresh.md, added the concrete multi-worktree workflow and aligned PLAN's opening delivery policy. Added this current summary without deleting or rewriting historical STATUS evidence. Documentation-only validation uses diff, link and archive-consistency checks; no app rebuild, installation, inference, personal-source read or native mutation is required or claimed.
+
+### GitHub documentation reconciliation — 8 October
+
+The user explicitly requested updating the existing GitHub repository with the latest local code/documentation and asking useful questions during future development. Live GitHub metadata confirmed `MYLO175/3PO` remains private, default branch main, with remote checkpoint `0e0a505` from 6 October; 34 local commits through `68c2636` were unpublished at the start. The unpublished-history audit scanned 676 blob/commit objects (about 30.8 MB) for common private-key/GitHub/OpenAI/AWS/JWT patterns, sensitive cache/credential filenames and large blobs with no findings. This is a bounded hygiene check, not proof of exhaustive secret absence; the final publication check includes the new documentation commit.
+
+README now describes current Review inbox, Spaces/Tasks, heartbeat recovery and distinct AI/source-only toolbar actions. VALIDATION starts with the 8 October evidence matrix and open acceptance, preserving the old log below. The notebook index explains each document's role; readable implementation/roadmap/intelligence docs reconcile source learning, Focus/relevance, retained placement and recovery policies instead of treating older snapshots as current. AGENTS/PLAN/workflow/DECISIONS record the answered preference: the main agent chooses useful bounded subagents; independently opened chats require a human request. The user clarified these questions concern Codex development agents, not changes to the shipped PA's runtime prompt.
+
+This is documentation/publication work, with no application code, app settings, installation or additional model/native acceptance change. Further product priorities and future default install/release preferences were asked, not inferred from unanswered options. Current task explicitly authorises commit/push of these validated changes. Publication success requires remote/local hash agreement and clean tracking after push; it is not inferred from this log entry.
 
 ## Historical engineering log
 

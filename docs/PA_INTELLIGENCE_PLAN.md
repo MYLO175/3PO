@@ -1,6 +1,12 @@
 # Building a useful personal assistant
 
-Approved direction, 4 October 2026. This plan concerns the PA's understanding, memory, reasoning and useful behaviour. Icon/toolbar/Settings polish is deferred. No model training, paid API/embedding service, hosted agent migration or new source permission is required for the initial work.
+Memory acceptance plan approved 4 October 2026, with subsequent dated corrections below. This plan concerns the PA's understanding, memory, reasoning and useful behaviour. Current requested Memory, Projects and Appearance work may use separate development streams; this plan does not independently defer a newly requested appearance task. No model training, paid API/embedding service, hosted agent migration or new source permission is required for the initial work.
+
+## Current checkpoint — 8 October
+
+Implemented foundations include one general conversation with multi-area Focus, exact current-belief/source-permission gates, inspectable evidence/history, bounded native/WhatsApp source learning, human-reviewed plan links and persistent advice dependencies. Targeted recall is lexical/typed-link/exact human-binding selection, permits zero facts and does not always inject unrelated identity/preferences. Notebook facts share the selected IDs. Projects creates only Space/Task while preserving rich memory entity types and legacy IDs. Semantic aliases, embeddings, actual consolidation and broad cross-source episode understanding remain separate uncompleted units.
+
+Use [MEMORY_AND_CONTEXT](MEMORY_AND_CONTEXT.md) for current selection contracts, [VALIDATION](../VALIDATION.md) for evidence/limits and the top of [STATUS](../STATUS.md) for the latest checkpoint. Older dated implementation notes below are history where later corrections supersede them. Heartbeat recovery does not override paused memory-learning claims or foreground queues.
 
 ## What good means
 
@@ -28,9 +34,9 @@ Acceptance: project has a meaningful area; goals/habits retain their kind; multi
 
 ## 3. Retrieval that connects relevant context
 
-Supply a small identity/preferences core, relevant area summaries and the most relevant source facts within a byte/count budget. Find graph neighbours by entity IDs, excluding the universal self hub from expansion so every query does not pull in the whole life. Keep confidence/freshness visible. Tools can request another area/entity when more detail is needed; original source readers supply fresh Calendar/Reminders/Mail/selected WhatsApp information when needed.
+Supply relevant permitted facts and matching notebook context within a byte/count budget. Broad life/day orientation may include identity/preferences; targeted tasks must not fill their budget with unrelated facts. Find graph neighbours by entity IDs, excluding the universal self hub from expansion so every query does not pull in the whole life. Keep confidence/freshness visible. Tools can request another area/entity when more detail is needed; original source readers supply fresh Calendar/Reminders/Mail/selected WhatsApp information when needed.
 
-A topic adds a retrieval focus over shared and its permitted scoped memory, while retaining its own ongoing transcript. Focus must never override explicit questions or expose a different topic's private records. Start with deterministic local retrieval and measured recall; add semantic search only if tests show a real need and an authorised runtime is available.
+One ongoing general conversation uses multi-select LifeArea Focus as a relevance lens. Preserve earlier topic transcripts/drafts and captured legacy queue scope without merging or deleting them; this account's usable legacy topic memories are available to the current Focus notebook. Focus must never override explicit questions, broaden source permissions or expose another account's records. Start with deterministic local retrieval and measured recall; add semantic search only if tests show a real need and an authorised runtime is available.
 
 Acceptance: study question finds old relevant project facts despite many newer unrelated notes; self-hub does not cause global expansion; explicit out-of-focus question still works; bytes stay bounded; excluded account/topic/source records are absent.
 
