@@ -32,20 +32,12 @@ struct PATasksView: View {
     }
     private func dateLabel(_ date:Date?,hasTime:Bool,fallback:String)->String {date?.formatted(date:.abbreviated,time:hasTime ? .shortened : .omitted) ?? fallback}
     private var reviewBusy:Bool {model.heartbeat.busy || model.proactive.busy || model.emailSummaries.busy}
-    private var reviewPaused:Bool {
-        model.heartbeat.state.accounts[model.chatGPT.activeID]?.phase == "paused" ||
-        (model.emailSummaries.enabled && model.emailSummaries.paused) ||
-        (model.proactive.enabled && model.proactive.state.accounts[model.chatGPT.activeID]?.paused == true)
+    private var reviewRetrying:Bool {
+        model.heartbeat.state.accounts[model.chatGPT.activeID]?.retryReason == "failure"
     }
     private var reviewStatus:String {
         if reviewBusy {return "Reviewing your sources…"}
         if !model.heartbeat.readable {return "Review history unavailable. See Activity for details."}
-        if reviewPaused {
-            let details=[model.emailSummaries.error,model.proactive.error,model.heartbeat.statusFor(model.chatGPT.activeID)].compactMap{$0}.joined(separator:" ").lowercased()
-            if details.contains("server_is_overloaded") || details.contains("temporarily overloaded") {return "Review paused · ChatGPT was temporarily busy."}
-            return "Review paused · your saved work is safe."
-        }
-        if model.emailSummaries.error != nil || model.proactive.error != nil {return "Review needs attention. See Activity for details."}
         return model.heartbeat.scheduleStatus(model)
     }
     var body: some View {
@@ -61,14 +53,9 @@ struct PATasksView: View {
             }
             HStack(spacing:8) {
                 if reviewBusy {ProgressView().controlSize(.mini)}
-                Text(reviewStatus).font(.caption).foregroundStyle(reviewPaused ? Color.orange : Color.secondary)
+                Text(reviewStatus).font(.caption).foregroundStyle(reviewRetrying ? Color.orange : Color.secondary)
                     .fixedSize(horizontal:false,vertical:true)
                 Spacer(minLength:0)
-                if reviewPaused {
-                    Button("Resume") {model.heartbeat.check(model,manual:true)}.buttonStyle(.borderless).font(.caption)
-                        .help("Resume background review, including enabled email processing")
-                        .disabled(model.heartbeat.manualCheckBlockReason(model) != nil)
-                }
             }
             ScrollView {
                 LazyVStack(alignment:.leading,spacing:12) {

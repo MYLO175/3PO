@@ -33,8 +33,8 @@ struct PAReviewRun:Codable,Identifiable {
 
     func outcome(running:Bool = false)->String {
         if finished == nil {return running ? "Running" : "Interrupted"}
-        if briefUpdated == true {return phase == "paused" ? "Partly completed" : "Completed"}
-        return phase == "paused" ? "Stopped" : phase == "waiting" ? "Waiting" : "Checked"
+        if briefUpdated == true {return ["paused","failed","interrupted"].contains(phase) ? "Partly completed" : "Completed"}
+        return phase == "failed" ? "Failed" : phase == "interrupted" ? "Interrupted" : phase == "paused" ? "Stopped" : phase == "waiting" ? "Waiting" : "Checked"
     }
     var summary:String {
         var parts=[briefUpdated == nil ? "Earlier review saved" : briefUpdated == true ? "Brief updated" : "Brief not updated"]
@@ -73,9 +73,13 @@ enum PAHeartbeatRules {
     static func canContinue(owner:String,currentOwner:String,controls:UUID,currentControls:UUID,scope:String,currentScope:String,day:String,currentDay:String,model:String,currentModel:String)->Bool {
         owner == currentOwner && controls == currentControls && scope == currentScope && day == currentDay && model == currentModel
     }
+    static func canPrepareSources(settings:String,currentSettings:String,choices:UUID,currentChoices:UUID,identity:String,currentIdentity:String)->Bool {
+        settings == currentSettings && choices == currentChoices && (identity.isEmpty || identity == currentIdentity)
+    }
     static let defaultMinutes = 60
     static func nextReview(_ account:PAHeartbeatAccount,now:Date,minutes:Int = defaultMinutes,day:String? = nil,allowance:Int? = nil)->Date {
         if account.phase != "paused",let retry=account.retryAfter {
+            if account.retryReason == "failure",let checked=account.checked {return checked.addingTimeInterval(Double(minutes)*60)}
             if account.retryReason == "allowance",let day,account.budgetDay != day {return now}
             if account.retryReason == "allowance",let day,let allowance,callCount(account,day:day) < allowance {return now}
             return retry
@@ -103,9 +107,14 @@ enum PAHeartbeatRules {
         for id in ready where value.mailLanes?[id] != nil {value.mailLanes?[id]?.pending=false}
         return value
     }
-    static func interrupted(_ account:PAHeartbeatAccount,now:Date,foreground:Bool)->PAHeartbeatAccount {
+    static func failed(_ account:PAHeartbeatAccount,now:Date,minutes:Int = defaultMinutes)->PAHeartbeatAccount {
+        var value=account;value.phase="idle";value.pending=true;value.checked=now
+        value.retryReason="failure";value.retryAfter=now.addingTimeInterval(Double(minutes)*60)
+        return value
+    }
+    static func interrupted(_ account:PAHeartbeatAccount,now:Date,foreground:Bool,minutes:Int = defaultMinutes)->PAHeartbeatAccount {
         if account.phase == "assessing" || account.phase == "paused" {
-            var value=clearWait(account);value.phase="paused";value.pending=true;return value
+            return failed(account,now:now,minutes:minutes)
         }
         return deferred(account,now:now,reason:foreground ? .foreground : .sources)
     }
@@ -118,8 +127,10 @@ enum PAHeartbeatRules {
         guard count < limit else { throw HeartbeatBudgetExhausted() }
         var value=account;value.budgetDay=day;value.calls=count+1;return value
     }
-    static func recovered(_ account: PAHeartbeatAccount,now:Date = .now) -> PAHeartbeatAccount {
-        if account.phase == "assessing" || account.phase == "paused" {return interrupted(account,now:now,foreground:false)}
+    static func recovered(_ account: PAHeartbeatAccount,now:Date = .now,minutes:Int = defaultMinutes) -> PAHeartbeatAccount {
+        // Recovery starts a new run, never replays an interrupted request. Keep
+        // its original timing so repeated launches cannot postpone the next check.
+        if account.phase == "assessing" || account.phase == "paused" {return failed(account,now:account.checked ?? now,minutes:minutes)}
         if account.phase == "refreshing" {return deferred(account,now:now,reason:.sources)}
         return account
     }

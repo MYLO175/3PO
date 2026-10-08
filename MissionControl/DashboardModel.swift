@@ -369,7 +369,7 @@ import EventKit
                 }
             }
         })
-        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.refresh(retryMail: false); if let self { self.briefings.check(self);if !self.briefings.busy { self.heartbeat.check(self) } } } })
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.refresh(retryMail: false); if let self { self.heartbeat.check(self) } } })
         poll = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(300))
@@ -381,8 +381,7 @@ import EventKit
         briefingPoll = Task { [weak self] in
             while !Task.isCancelled {
                 if let self {
-                    self.briefings.check(self)
-                    if !self.briefings.busy { self.heartbeat.check(self) }
+                    self.heartbeat.check(self)
                     if !self.heartbeat.busy && !self.briefings.busy {
                         self.projectPlacement.check(self);self.memoryLearning.recoverDelivery(self);self.memoryLearning.check(self);self.proactive.recoverDelivery(self)
                         if self.nativeSourceLearning.lastAssessment(self.chatGPT.activeID) <= self.sourceLearning.lastAssessment(self) {
@@ -397,7 +396,7 @@ import EventKit
             }
         }
         refresh(retryMail: false)
-        briefings.check(self);if !briefings.busy { heartbeat.check(self) }
+        heartbeat.check(self)
         if ProcessInfo.processInfo.arguments.contains("--validate-live") {
             Task {
                 do { validationReport = try await eventKit.validateDisposableReminders() }

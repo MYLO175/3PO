@@ -33,6 +33,12 @@ import Foundation
         var many=ProactiveProgress();many.delivered=10000
         precondition(ProactiveRules.allowed(many,now:now,manual:true))
         precondition(ProactiveRules.allowed(many,now:now,heartbeat:true,comparisonLimit:96))
+        var stopped=many;stopped.paused=true;stopped.lastAttempt=now;stopped.attempts=1
+        precondition(!ProactiveRules.allowed(stopped,now:now,heartbeat:true,comparisonLimit:96,cooldown:3600))
+        precondition(ProactiveRules.allowed(stopped,now:now.addingTimeInterval(3600),heartbeat:true,comparisonLimit:96,cooldown:3600),"A fresh due heartbeat can recover a failed comparison")
+        precondition(!ProactiveRules.allowed(stopped,now:now.addingTimeInterval(3600)),"Independent discovery retains explicit retry policy")
+        stopped.attempts=96
+        precondition(!ProactiveRules.allowed(stopped,now:now.addingTimeInterval(3600),heartbeat:true,comparisonLimit:96,cooldown:3600),"Recovery cannot bypass comparison allowance")
         let versions=Dictionary(uniqueKeysWithValues:(0..<8).map{(ProactiveRules.sourceKey("whatsapp",String($0)),"v1")})
         let firstKeys=Set((0..<3).map{ProactiveRules.sourceKey("whatsapp",String($0))})
         let limited=ProactiveRules.completing(many,versions:versions,context:"epoch",limited:true,reportedKeys:firstKeys)

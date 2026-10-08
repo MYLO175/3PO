@@ -184,17 +184,15 @@ import UserNotifications
     func cancel() { task?.cancel() }
     func check(_ model: DashboardModel, manual: Bool = false, live requestedUpdate: Bool = false, heartbeatID:String? = nil, mailReview:MailReviewScope? = nil, whatsappReady:Bool = true) {
         let heartbeat=heartbeatID != nil,heartbeatControls=model.heartbeat.controlsRevision
+        guard BriefingRules.requestAllowed(manual:manual,heartbeat:heartbeat) else {return}
         let now = Date.now, calendar = Calendar.current
         let day = BriefingRules.day(now,calendar:calendar)
         let live=heartbeat || requestedUpdate || (manual && hasMorningToday(model))
         let completed=BriefingRules.completedDays(records:state.records,registration:model.chatGPT.activeID)
-        if !heartbeat,enabled, let saved=today(model) { model.assistant.deliverMorning(saved) }
         guard readable,!busy else { return }
         if let reason=availability(model).reason { if manual { error=reason };return }
-        guard heartbeat || manual || enabled else { return }
         guard !backgroundBusy(model) || (heartbeat && model.heartbeat.busy && !model.emailSummaries.busy && !model.proactive.busy && !model.sourceLearning.busy && !model.nativeSourceLearning.busy && !model.memoryMaintenance.busy && !model.memoryLearning.busy && !model.lifeOrganisation.busy && !model.projectPlacement.busy) else { if manual { error="Background work is running. Use Update brief to wait for it." };return }
         guard live || (!completed.contains(day) && (manual || (!state.paused && BriefingRules.due(now:now,completed:completed)))) else { return }
-        if live && state.overviewPaused == true && !manual { return }
         if live { state.overviewPaused = false } else { state.paused = false }; error = nil; busy = true;phase="Reading your current sources…"
         let morning = morningAnchor(model)
         let registration = model.chatGPT.activeID, selectedModel = model.chatGPT.selectedModel, preferences = model.assistant.preferences
@@ -414,6 +412,11 @@ import UserNotifications
         service.state.records=[morning];service.state.updatedBriefs=[owner:updated];service.state.reviewQuestions=[question];service.state.notificationClaims=[day]
         try service.save()
         var checks:[String:Bool]=[:]
+        let encoder=JSONEncoder();encoder.outputFormatting=[.sortedKeys]
+        let beforeAutomatic=try encoder.encode(service.state)
+        service.check(model)
+        let afterAutomatic=try encoder.encode(service.state)
+        checks["automatic brief entry point makes no request or saved-state mutation"] = !service.busy && afterAutomatic == beforeAutomatic
         let originalPrompt=service.writingPrompt(owner)
         try service.saveWritingPrompt("Focus on fictional engineering preparation.",expected:originalPrompt,model:model)
         let customPrompt=service.writingPrompt(owner)

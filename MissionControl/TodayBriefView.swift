@@ -74,7 +74,7 @@ struct TodayBriefView: View {
                 }
             } else {
                 if showsWeather.wrappedValue {WeatherBriefCard(weather:model.weather)}
-                ContentUnavailableView("A clear start to your day",systemImage:"sun.horizon",description:Text(!model.assistant.contextEnabled ? "Enable assistant source context in Settings." : briefings.busy ? "Your PA is preparing today’s message…" : briefings.hasCurrentToday(model) ? "Your morning message is saved with earlier source choices. Update the brief to use your current sources." : !briefings.enabled ? "Prepare a brief whenever you like. Automatic 7:30 preparation is optional in Settings." : model.chatGPT.usagePaused ? "Subscription access is paused. Your Apple sources remain available." : "Your PA brings together today’s calendar, reminders and relevant recent mail. Prepared at 7:30, with catch-up after launch or wake."))
+                ContentUnavailableView("Your day at a glance",systemImage:"sun.horizon",description:Text(!model.assistant.contextEnabled ? "Enable assistant source context in Settings." : briefings.busy ? "Your PA is preparing today’s brief…" : model.chatGPT.usagePaused ? "Subscription access is paused. Your Apple sources remain available." : "Updated with each heartbeat. Refresh here for a manual update."))
             }
             if let error = briefings.error { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
             if model.chatGPT.usagePaused { Button("Check subscription access") { model.chatGPT.testConnection() }.controlSize(.small).disabled(model.chatGPT.busy || model.assistant.busy) }

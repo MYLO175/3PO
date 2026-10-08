@@ -92,6 +92,7 @@ struct BriefingRequestAvailability {
     }
 }
 enum BriefingRules {
+    static func requestAllowed(manual:Bool,heartbeat:Bool)->Bool {manual || heartbeat}
     /// Canonical supplied content plus original identity; notifications alone never invalidate this.
     static func sourceSnapshot(_ input:[String:Any],sources:[BriefingSource]) throws -> Data {
         let encoder=JSONEncoder();encoder.outputFormatting = [.sortedKeys]

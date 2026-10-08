@@ -16,6 +16,7 @@ import CryptoKit
     var chats: [WhatsAppChat] = []
     var linkedIdentity = ""
     var accessRevision = UUID()
+    private(set) var choicesRevision = UUID()
     private var accesses: [String:WhatsAppAccess] = [:]
     var coverage = "No WhatsApp data received."
     #if DEBUG
@@ -68,7 +69,7 @@ import CryptoKit
             let path=directory.appendingPathComponent("access.enc")
             try sealed.write(to:path,options:.atomic)
             try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:path.path)
-            accesses=updated; accessRevision=UUID()
+            accesses=updated;accessRevision=UUID();choicesRevision=UUID()
         } catch { status="Could not save WhatsApp source choices; previous choices retained." }
     }
     func refreshSnapshot() async -> Bool {
@@ -123,7 +124,7 @@ import CryptoKit
     }
     func stop(persistPause: Bool = true) { if persistPause { reconnectAtLaunch=false }; generation=UUID(); process?.terminationHandler=nil; input?.closeFile(); process?.terminate(); process=nil; input=nil; reader=nil; namesBusy=false; connected=false; qr=nil; status="Paused · session retained" }
     func disconnect() {
-        stop(); messages=[]; chats=[]; accesses=[:]; linkedIdentity=""; accessRevision=UUID()
+        stop(); messages=[]; chats=[]; accesses=[:]; linkedIdentity="";accessRevision=UUID();choicesRevision=UUID()
         do {
             if FileManager.default.fileExists(atPath:directory.path) { try FileManager.default.removeItem(at:directory) }
             let result=SecItemDelete(query as CFDictionary)

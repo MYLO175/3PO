@@ -166,7 +166,7 @@ enum ProactiveRules {
         return SourceContextRules.revision(message) == record.sourceRevision
     }
     static func allowed(_ progress: ProactiveProgress, now: Date, manual: Bool = false, heartbeat: Bool = false, updateLimit:Int = .max, comparisonLimit:Int = 8, cooldown:TimeInterval = 1800) -> Bool {
-        guard manual || (!progress.paused && progress.attempts < (heartbeat ? comparisonLimit : 4)) else { return false }
+        guard manual || ((heartbeat || !progress.paused) && progress.attempts < (heartbeat ? comparisonLimit : 4)) else { return false }
         return manual || progress.lastAttempt.map { now.timeIntervalSince($0) >= cooldown } ?? true
     }
     static let evidenceInstructions = "For each Mail suggestion, choose its supplied evidenceID or followUpEvidenceID and return that exact ID as evidenceID; omit the evidence field. The app will attach the original exact quote. Never invent an ID or reference a different source. WhatsApp still requires an exact 8-500-character quote in evidence. An evidence reference is data attribution only, not proof of identity or authority to write."

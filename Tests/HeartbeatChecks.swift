@@ -12,16 +12,16 @@ import Foundation
         precondition(PAHeartbeatRules.needsAssessment(account,fingerprint:"same",manual:false,pendingSources:true))
         precondition(PAHeartbeatRules.needsAssessment(account,fingerprint:"new",manual:false))
         account.phase="assessing"
-        let recovered=PAHeartbeatRules.recovered(account)
-        precondition(!PAHeartbeatRules.due(recovered,now:now.addingTimeInterval(86400*3)),"Paused assessment cannot start repeated automatic cycles on wake")
-        precondition(recovered.phase == "paused" && recovered.checked == account.checked && recovered.fingerprint == "same")
-        precondition(!PAHeartbeatRules.needsAssessment(recovered,fingerprint:"new",manual:false))
-        precondition(!PAHeartbeatRules.needsAssessment(recovered,fingerprint:"same",manual:false,pendingSources:true))
+        let recovered=PAHeartbeatRules.recovered(account,now:now)
+        precondition(PAHeartbeatRules.due(recovered,now:now.addingTimeInterval(86400*3)),"Interrupted assessment catches up with one fresh run after wake")
+        precondition(recovered.phase == "idle" && recovered.retryReason == "failure" && recovered.checked == account.checked && recovered.fingerprint == "same")
+        precondition(PAHeartbeatRules.needsAssessment(recovered,fingerprint:"new",manual:false))
+        precondition(PAHeartbeatRules.needsAssessment(recovered,fingerprint:"same",manual:false,pendingSources:true))
         precondition(PAHeartbeatRules.needsAssessment(recovered,fingerprint:"same",manual:true,pendingSources:true))
         precondition(PAHeartbeatRules.needsAssessment(recovered,fingerprint:"new",manual:true))
         var state=PAHeartbeatState(accounts:["a":recovered,"b":PAHeartbeatAccount()])
         state=try JSONDecoder().decode(PAHeartbeatState.self,from:JSONEncoder().encode(state))
-        precondition(state.accounts["a"]?.phase == "paused" && PAHeartbeatRules.due(state.accounts["b"]!,now:now))
+        precondition(state.accounts["a"]?.phase == "idle" && PAHeartbeatRules.due(state.accounts["b"]!,now:now))
         precondition(!PAHeartbeatRules.due(account,now:now.addingTimeInterval(3599),minutes:60))
         precondition(PAHeartbeatRules.due(account,now:now.addingTimeInterval(3600),minutes:60))
         precondition(PAHeartbeatRules.due(account,now:now.addingTimeInterval(900),minutes:15))
@@ -50,7 +50,7 @@ import Foundation
         lanes=PAHeartbeatRules.completedMail(lanes,fingerprints:["failed":"opaque-recovered"],pending:["failed"],now:now.addingTimeInterval(3600))
         precondition(lanes.mailLanes?["failed"]?.assessed == now.addingTimeInterval(3600) && lanes.mailLanes?["healthy"]?.assessed == now)
         let stopped=PAHeartbeatRules.recovered(PAHeartbeatAccount(phase:"assessing",mailLanes:lanes.mailLanes))
-        precondition(stopped.phase == "paused" && stopped.mailLanes?["failed"]?.fingerprint == "opaque-recovered")
+        precondition(stopped.phase == "idle" && stopped.retryReason == "failure" && stopped.mailLanes?["failed"]?.fingerprint == "opaque-recovered")
         let narrowed=PAHeartbeatRules.collectingMail(lanes,enabled:["healthy"],ready:["healthy"],issues:[:],now:now)
         precondition(narrowed.mailLanes?.count == 1 && narrowed.calls == lanes.calls)
         let legacy=try JSONDecoder().decode(PAHeartbeatAccount.self,from:Data(#"{"phase":"idle"}"#.utf8))
@@ -66,9 +66,10 @@ import Foundation
         let restoredCollection=PAHeartbeatRules.recovered(PAHeartbeatAccount(checked:now,phase:"refreshing"),now:now)
         precondition(restoredCollection.phase == "idle" && restoredCollection.retryAfter == now.addingTimeInterval(300))
         let interruptedInference=PAHeartbeatRules.interrupted(PAHeartbeatAccount(checked:now,phase:"assessing",retryAfter:now),now:now,foreground:true)
-        precondition(interruptedInference.phase == "paused" && interruptedInference.retryAfter == nil)
-        precondition(!PAHeartbeatRules.needsAssessment(interruptedInference,fingerprint:"changed",manual:false,pendingSources:true),"A scheduled retry must never resume interrupted inference")
-        precondition(PAHeartbeatRules.deferred(interruptedInference,now:now,reason:.foreground).phase == "paused")
+        precondition(interruptedInference.phase == "idle" && interruptedInference.retryAfter == now.addingTimeInterval(3600))
+        precondition(PAHeartbeatRules.needsAssessment(interruptedInference,fingerprint:"changed",manual:false,pendingSources:true),"The next scheduled run captures fresh context")
+        precondition(!PAHeartbeatRules.due(interruptedInference,now:now.addingTimeInterval(3599)))
+        precondition(PAHeartbeatRules.due(interruptedInference,now:now.addingTimeInterval(3600)))
         var london=Calendar(identifier:.gregorian);london.timeZone=TimeZone(identifier:"Europe/London")!
         let formatter=ISO8601DateFormatter(),nearMidnight=formatter.date(from:"2026-10-06T22:58:00Z")!,midnight=formatter.date(from:"2026-10-06T23:00:00Z")!
         let exhausted=PAHeartbeatRules.deferred(PAHeartbeatAccount(checked:nearMidnight,budgetDay:"2026-10-06",calls:2),now:nearMidnight,reason:.allowance,calendar:london)
@@ -89,7 +90,22 @@ import Foundation
         let quietComplete=PAHeartbeatRules.quiet(quietPartial,fingerprint:"already-checked",ready:["healthy","failed"],pending:false)
         precondition(quietComplete.pending == false && quietComplete.mailLanes?["failed"]?.pending == false,"A quiet complete check clears stale waiting flags")
         precondition(quietComplete.assessed == quietPartial.assessed && quietComplete.mailLanes?["healthy"]?.assessed == quietPartial.mailLanes?["healthy"]?.assessed && quietComplete.calls == quietPartial.calls,"Quiet checks never invent an AI review or reset the allowance")
-        precondition(PAHeartbeatRules.quiet(interruptedInference,fingerprint:"new",ready:[],pending:false).phase == "paused")
+        for minutes in [15,30,60,120] {
+            let failed=PAHeartbeatRules.failed(lanes,now:now,minutes:minutes)
+            let retry=now.addingTimeInterval(Double(minutes)*60)
+            precondition(!PAHeartbeatRules.due(failed,now:retry.addingTimeInterval(-1),minutes:minutes))
+            precondition(PAHeartbeatRules.due(failed,now:retry,minutes:minutes))
+            precondition(failed.calls == lanes.calls && failed.mailLanes?["healthy"]?.fingerprint == lanes.mailLanes?["healthy"]?.fingerprint)
+            let persisted=try JSONDecoder().decode(PAHeartbeatAccount.self,from:JSONEncoder().encode(failed))
+            precondition(PAHeartbeatRules.recovered(persisted,now:retry.addingTimeInterval(300),minutes:minutes).retryAfter == retry,"Reopening never postpones a due retry")
+            var legacyPause=failed;legacyPause.phase="paused";legacyPause.retryAfter=nil;legacyPause.retryReason=nil
+            let migrated=PAHeartbeatRules.recovered(legacyPause,now:retry.addingTimeInterval(600),minutes:minutes)
+            precondition(migrated.checked == now && migrated.retryAfter == retry && PAHeartbeatRules.due(migrated,now:retry,minutes:minutes))
+            let repeated=PAHeartbeatRules.failed(persisted,now:retry,minutes:minutes)
+            precondition(!PAHeartbeatRules.due(repeated,now:retry.addingTimeInterval(1),minutes:minutes),"A second failure cannot create an immediate request loop")
+        }
+        let shorter=PAHeartbeatRules.failed(lanes,now:now,minutes:120)
+        precondition(PAHeartbeatRules.nextReview(shorter,now:now,minutes:30) == now.addingTimeInterval(1800),"Retry timing follows a changed interval")
         let slept=try JSONDecoder().decode(PAHeartbeatAccount.self,from:JSONEncoder().encode(PAHeartbeatAccount(checked:now,assessed:now)))
         let wake=now.addingTimeInterval(8*3600)
         precondition(PAHeartbeatRules.due(slept,now:wake))
@@ -97,6 +113,10 @@ import Foundation
         precondition(!PAHeartbeatRules.due(caughtUp,now:wake.addingTimeInterval(1)),"A missed eight-hour span runs once, not eight times")
         precondition(PAHeartbeatRules.needsAssessment(caughtUp,fingerprint:"same",manual:false))
         let control=UUID()
+        precondition(PAHeartbeatRules.canPrepareSources(settings:"same",currentSettings:"same",choices:control,currentChoices:control,identity:"",currentIdentity:"verified"),"Saved connection authentication before inference is ordinary preparation")
+        precondition(!PAHeartbeatRules.canPrepareSources(settings:"same",currentSettings:"changed",choices:control,currentChoices:control,identity:"",currentIdentity:"verified"))
+        precondition(!PAHeartbeatRules.canPrepareSources(settings:"same",currentSettings:"same",choices:control,currentChoices:UUID(),identity:"",currentIdentity:"verified"),"Human WhatsApp selection changes still cancel preparation")
+        precondition(!PAHeartbeatRules.canPrepareSources(settings:"same",currentSettings:"same",choices:control,currentChoices:control,identity:"known",currentIdentity:"different"),"An already known linked identity cannot be retargeted")
         func allowed(owner:String="a",scope:String="permitted",day:String="today",model:String="chosen",controls:UUID? = nil)->Bool {
             PAHeartbeatRules.canContinue(owner:"a",currentOwner:owner,controls:control,currentControls:controls ?? control,scope:"permitted",currentScope:scope,day:"today",currentDay:day,model:"chosen",currentModel:model)
         }
@@ -107,8 +127,11 @@ import Foundation
         let newHistory=try JSONDecoder().decode(PAReviewRun.self,from:JSONEncoder().encode(completed))
         precondition(newHistory.steps?[3].status == "done" && newHistory.briefUpdated == true)
         precondition(run.steps == nil && run.failure == nil && run.outcome() == "Stopped")
+        var failedHistory=completed;failedHistory.phase="failed"
+        precondition(failedHistory.outcome() == "Partly completed")
+        failedHistory.briefUpdated=false;precondition(failedHistory.outcome() == "Failed")
         var crashed=completed;crashed.finished=nil
         precondition(crashed.outcome() == "Interrupted" && crashed.outcome(running:true) == "Running")
-        print("PASS heartbeat: configurable due boundaries, periodic assessment including unchanged context and single catch-up, persisted daily request allowance, day rollover, captured account isolation and interrupted inference requiring explicit resume")
+        print("PASS heartbeat: configurable due boundaries, periodic assessment including unchanged context and single catch-up, persisted daily request allowance, day rollover, captured account isolation and failed/incomplete inference rescheduled with fresh context and preserved receipts")
     }
 }

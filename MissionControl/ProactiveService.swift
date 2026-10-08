@@ -24,10 +24,11 @@ import SwiftData
             if let saved = try container?.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first(where:{ $0.key == "paDiscoveries" }) { state = try JSONDecoder().decode(ProactiveState.self,from:saved.data); guard state.version == 1 else { throw SummaryFailure.invalid } }
         } catch { readable = false; self.error = "Saved PA suggestions could not be read; original data is preserved." }
     }
-    private func legacyMailScope(_ model:DashboardModel)->String {
+    func sourceSettingsScope(_ model:DashboardModel)->String {
         let values=[String(model.assistant.contextEnabled),String(model.emailSummaries.enabled)] + model.assistant.excludedCalendars.sorted() + ["lists"] + model.assistant.excludedLists.sorted() + ["mail"] + model.assistant.excludedAccounts.sorted()
         return SHA256.hash(data:Data(values.joined(separator:"\n").utf8)).map{String(format:"%02x",$0)}.joined()
     }
+    private func legacyMailScope(_ model:DashboardModel)->String {sourceSettingsScope(model)}
     func scope(_ model: DashboardModel) -> String {
         let values = [String(model.assistant.contextEnabled),String(model.emailSummaries.enabled)] + model.assistant.excludedCalendars.sorted() + ["lists"] + model.assistant.excludedLists.sorted() + ["mail"] + model.assistant.excludedAccounts.sorted()
         let wa=model.whatsapp.scope(for:model.chatGPT.activeID),access=model.whatsapp.access(for:model.chatGPT.activeID)
@@ -143,10 +144,19 @@ import SwiftData
         guard manual || now.timeIntervalSince(lastCheck) >= 300 else { return }
         guard (!model.heartbeat.busy || heartbeat), readable, enabled, !busy, assistant.contextEnabled, (heartbeat ? !model.heartbeat.composerActive : !assistant.hasDraft), !assistant.busy, !model.writing, !model.chatGPT.busy,!model.projectPlacement.busy, model.chatGPT.inferenceVerified, !model.chatGPT.usagePaused, !model.briefings.busy, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.memoryLearning.busy, !model.emailSummaries.busy, !registration.isEmpty else { return }
         lastCheck = now
+        if heartbeat {error=nil}
         let day = BriefingRules.day(now)
         var progress = state.accounts[registration] ?? ProactiveProgress()
         if progress.day != day { progress.day = day; progress.attempts = 0; progress.delivered = 0 }
         guard ProactiveRules.allowed(progress,now:now,manual:manual,heartbeat:heartbeat,comparisonLimit:96,cooldown:heartbeat ? Double(model.heartbeat.intervalMinutes)*60 : 1800) else { return }
+        if heartbeat {
+            // The coordinator starts one fresh scheduled pass. Completed source
+            // receipts, fingerprints, attempt counts and cooldown stay intact.
+            let previous=state
+            progress.paused=false;state.accounts[registration]=progress
+            do {try save()} catch {state=previous;self.error="Saved suggestion progress is unavailable.";return}
+            error=nil
+        }
         let memoryWhatsAppReady = !heartbeat || heartbeatWhatsAppReady
         var context=contextRevision(model,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady)
         let emails=emailReviewCandidates(model,heartbeat:heartbeat,mailReview:mailReview,whatsappReady:memoryWhatsAppReady,now:now)

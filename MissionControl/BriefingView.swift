@@ -4,14 +4,13 @@ struct BriefingView: View {
     @Bindable var briefings: BriefingService
     @State private var selectedRecord = ""
     var body: some View {
-        DisclosureGroup("Morning briefing") {
+        DisclosureGroup("Saved briefings") {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Button("Prepare today") { briefings.check(model, manual: true) }.disabled(!briefings.enabled || model.chatGPT.usagePaused || briefings.busy || model.chatGPT.busy || !model.chatGPT.inferenceVerified)
+                    Button("Prepare today") { briefings.check(model, manual: true) }.disabled(model.chatGPT.usagePaused || briefings.busy || model.chatGPT.busy || !model.chatGPT.inferenceVerified)
                     if briefings.busy { ProgressView().controlSize(.small); Button("Stop") { briefings.cancel() } }
                 }
                 if let error = briefings.error { Text(error).font(.caption).foregroundStyle(.orange) }
-                if briefings.state.paused && briefings.error == nil { Text("Briefing paused. Prepare today retries once when access is available.").font(.caption).foregroundStyle(.orange) }
                 let records = briefings.records(model)
                 if !records.isEmpty {
                     Picker("Saved briefing", selection: $selectedRecord) {
@@ -40,7 +39,7 @@ struct BriefingView: View {
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }.frame(maxHeight: 220)
-                } else { Text(briefings.enabled ? "No saved briefing yet. Scheduled for 7:30; missed runs catch up while the app is awake and running." : "Enable the daily briefing in Settings.").font(.caption).foregroundStyle(.secondary) }
+                } else { Text("Today’s brief updates with each heartbeat. You can also prepare it manually.").font(.caption).foregroundStyle(.secondary) }
             }
         }
     }
@@ -49,14 +48,8 @@ struct BriefingSettings: View {
     @Bindable var model: DashboardModel
     @Bindable var briefings: BriefingService
     var body: some View {
-        Section("Morning brief") {
-            Toggle("Prepare a daily briefing", isOn: $briefings.enabled)
-            Text("Runs in this app while your Mac is awake. A missed 7:30 run catches up at the next launch or wake. Calendar and Reminders follow assistant source-context controls; email uses saved summaries from enabled email assessment. The brief shows incomplete coverage when a source is partial. Preparing it sends the enabled snapshots and saved summaries through your ChatGPT plan. Its preparation and delivery limits are separate from background communication review. Each morning message is saved once; errors pause until you choose Prepare today. Update brief prepares a fresh daytime version without another chat message or notification.").font(.caption)
-            Button("Allow briefing notifications") { briefings.requestNotifications() }
-            #if DEBUG
-            Button("Send test notification (no AI)") { briefings.testNotification() }
-            #endif
-            Text(briefings.notificationStatus).font(.caption).foregroundStyle(.secondary)
+        Section("Today’s brief") {
+            Text("Updated with each heartbeat using your permitted sources and the current time. Refresh it from the widget or ask 3PO whenever you want a manual update. There is no separate morning timer.").font(.caption).foregroundStyle(.secondary)
         }
     }
 }

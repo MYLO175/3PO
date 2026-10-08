@@ -2,6 +2,9 @@ import Foundation
 @main struct Checks {
     static func main() throws {
         precondition(BriefingRequestAvailability().reason == nil)
+        precondition(!BriefingRules.requestAllowed(manual:false,heartbeat:false),"Timers, startup and source refresh cannot independently prepare a brief")
+        precondition(BriefingRules.requestAllowed(manual:true,heartbeat:false))
+        precondition(BriefingRules.requestAllowed(manual:false,heartbeat:true))
         let blocked: [BriefingRequestAvailability] = [
             .init(contextEnabled:false), .init(verified:false), .init(paused:true),
             .init(connectionBusy:true), .init(assistantBusy:true), .init(writing:true), .init(hasAccount:false)

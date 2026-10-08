@@ -394,7 +394,7 @@ struct AssistantSourceSettings: View {
 
                 }
                 Section("Other background work") {
-                    Text("The heartbeat uses the interval above and updates the brief. The optional morning message is delivered once at 7:30. Memory learning/organisation are controlled in Memory. Your queued requests use Continue queue.").font(.caption).foregroundStyle(.secondary)
+                    Text("Heartbeats update Today’s brief. Failed runs try fresh information at the next interval. Memory learning and organisation are controlled in Memory. Your queued requests use Continue queue.").font(.caption).foregroundStyle(.secondary)
                 }
                 DisclosureGroup("Advanced review limits") {
                     Picker("AI calls for email and communication review",selection:$model.heartbeat.dailyCallLimit) { ForEach([8,16,32,64,96],id:\.self) { Text(String($0)).tag($0) } }
@@ -448,7 +448,7 @@ struct BackgroundActivityView:View {
     @Environment(\.dismiss) private var dismiss
     private var registration:String {model.chatGPT.activeID}
     private var runs:[PAReviewRun] {Array((model.heartbeat.state.accounts[registration]?.reviews ?? []).reversed())}
-    private var paused:Bool {model.heartbeat.state.accounts[registration]?.phase == "paused"}
+    private var retrying:Bool {model.heartbeat.state.accounts[registration]?.retryReason == "failure"}
     var body:some View {
         VStack(alignment:.leading,spacing:16) {
             HStack {
@@ -457,14 +457,14 @@ struct BackgroundActivityView:View {
                 Button("Done") {dismiss()}.keyboardShortcut(.cancelAction)
             }
             HStack {
-                Label(model.heartbeat.scheduleStatus(model),systemImage:paused ? "pause.circle" : "waveform.path.ecg")
-                    .font(.callout).foregroundStyle(paused ? .orange : .secondary)
+                Label(model.heartbeat.scheduleStatus(model),systemImage:"waveform.path.ecg")
+                    .font(.callout).foregroundStyle(retrying ? .orange : .secondary)
                 Spacer()
-                Button(paused ? "Resume heartbeat" : "Run now") {model.heartbeat.check(model,manual:true)}
+                Button("Run now") {model.heartbeat.check(model,manual:true)}
                     .disabled(model.heartbeat.manualCheckBlockReason(model) != nil)
                     .help(model.heartbeat.manualCheckHelp(model))
             }
-            if paused {Text("The last review stopped. Saved work is kept; Resume runs a fresh check.").font(.caption).foregroundStyle(.secondary)}
+            if retrying {Text("The last heartbeat did not finish. Saved work is kept; the next check runs automatically.").font(.caption).foregroundStyle(.secondary)}
             ScrollView {
                 VStack(alignment:.leading,spacing:10) {
                     if runs.isEmpty {Text("Heartbeats will appear here as they run.").foregroundStyle(.secondary).padding(.vertical,24)}
@@ -496,7 +496,7 @@ struct BackgroundActivityView:View {
                                     Text(run.started.formatted(date:.abbreviated,time:.shortened)).font(.callout.weight(.semibold))
                                     Spacer()
                                     Text(run.outcome(running:running)).font(.caption.weight(.medium))
-                                        .foregroundStyle(run.phase == "paused" ? .orange : run.briefUpdated == true ? .green : .secondary)
+                                        .foregroundStyle(["paused","failed","interrupted"].contains(run.phase) ? .orange : run.briefUpdated == true ? .green : .secondary)
                                 }
                                 Text(running ? model.heartbeat.statusFor(registration) : run.summary).font(.caption).foregroundStyle(.secondary)
                             }

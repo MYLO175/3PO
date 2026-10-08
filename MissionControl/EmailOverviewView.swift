@@ -77,8 +77,8 @@ struct EmailSummarySettings: View {
             Picker("Email reasoning", selection: $summaries.effort) {
                 Text("Low").tag("low"); Text("Medium").tag("medium"); Text("High").tag("high")
             }.disabled(summaries.busy)
-            Text("Include email assessment above controls this processing. It sends headers and selected relevant plain-text bodies from enabled accounts through your ChatGPT plan. It does not read attachments or send email, and starts from new mail rather than analysing the historical inbox. Each review saves a bounded batch. Unavailable Mail accounts keep pending work while checked accounts continue. AI connection, storage or usage failures pause processing and need explicit resume. Existing assessments are reused.").font(.caption)
-            Text("Choose which mail accounts may provide assistant context in Settings → Assistant → Assistant source scope. Dashboard mailbox filters only change the source view; morning brief controls are in this section of Background settings.").font(.caption).foregroundStyle(.secondary)
+            Text("Heartbeats assess new permitted mail and prepare relevant reply drafts through your ChatGPT plan. Completed assessments are reused; unavailable accounts keep their work waiting. A failed check tries fresh information at the next heartbeat. Nothing is sent.").font(.caption)
+            Text("Choose permitted mail accounts in Settings → Assistant → Assistant source scope. Mailbox filters change only the source view.").font(.caption).foregroundStyle(.secondary)
         }
     }
 }
