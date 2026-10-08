@@ -1,5 +1,41 @@
 # Status
-Current delivery (2 October): signed Stage 1 app ready for user review. Resumable Mail, colours/list grouping, independent permissions, Calendar edge cases and lifecycle checks passed. Latest validation and boundaries are recorded at the end; earlier sections preserve historical checkpoints.
+
+## Current summary — 8 October 2026
+
+Read this summary first. Detailed dated entries below preserve implementation evidence and intermediate failures; older instructions/next-step lists are superseded by later corrections and current AGENTS.md. Do not restart Stage 1/2 or historical Mail indexing.
+
+### Latest recorded application checkpoint
+
+- Code checkpoint: `40d596c` — Retry failed heartbeats with fresh context on schedule. Last recorded signed installation: 8 October at 14:23, `/Users/mylomichael/Applications/3PO.app`, stable identity `com.mylomichael.missioncontrol`. This summary references the recorded acceptance below; it is not a new live app inspection.
+- Native dashboard, subscription PA tools, inspectable/source-permitted memory, editable Projects and Review inbox are implemented with incremental validation. Projects now creates only Space and Task, preserving legacy identities and rich memory entity types. Memory recall is lexical/typed-link relevance with exact human bindings; semantic embeddings/aliases/consolidation are not claimed implemented.
+- Heartbeat is the single automatic brief owner. Failed/interrupted runs schedule a fresh cycle at the configured interval while retaining completed receipts/history and all budgets/ownership/evidence checks. Independent launch/wake/minute brief inference is removed. Source-only refresh/collection remains no-AI. Foreground queues/writes and memory-learning failure policies remain separate.
+- Final recorded live production run at 14:13–14:15 completed Sources, Email review, Suggestions & drafts and Today's brief through subscription inference; the original morning chat delivery remained intact. Focused suites and 51/51 no-AI in-memory scheduler/storage checks passed. The later 14:23 build changed Help wording only. See “Scheduled heartbeat recovery and one brief owner” below for failure evidence, exact installation verification and inspection limits.
+
+### Open acceptance and product work
+
+- Sustained real hourly scheduling, actual sleep/wake and genuine consecutive provider failures remain unverified beyond the recorded bounded/live checks. Calendar pointer smoothness and broader source/identity/model quality still need targeted acceptance.
+- Memory: measured semantic/alias recall, consolidation/conflict quality, broader source and cross-source episode identity, sustained personal-profile use. Preserve current account/source/current-belief and human-owned workspace boundaries.
+- Projects: user-directed Space/task UX, richer navigation/views and exact memory/workspace association quality. Project tasks remain independent of Apple Reminders; further feature scope must be agreed rather than inferred from this stream list.
+- Appearance: user-directed palette/layout/typography refinements while preserving saved layouts, custom palettes, native toolbar IDs, draft/Focus state and existing gesture/Undo behaviour.
+- See docs/NEXT_IMPROVEMENTS.md, docs/PA_INTELLIGENCE_PLAN.md and docs/MEMORY_AND_CONTEXT.md for success criteria and validation limits. Listing streams does not start or approve unspecified product changes.
+
+### Current development workflow
+
+The user upgraded their plan and requested a workflow for concurrent Memory, Projects and Appearance work. Use isolated worktrees/chats for requested independent implementations and one local integration owner for shared interfaces, combined checks and the installed app. Only one writer per checkout. Agree exact file ownership and memory/project contracts before parallel edits. Optional bounded subagents do not automatically isolate files; no nested delegation. No additional worker chat/worktree has been created by this documentation change.
+
+The original one-main/mandatory-Luna restriction and fixed 20% five-hour reserve are retired. Check actual reported usage, use available allowance sensibly and save resumable checkpoints; no purchases, resets or API fallback. On this documentation pass the account tool reported 23% weekly used and no five-hour window. That is a dated snapshot, not a continuing allowance guarantee.
+
+Build/test isolation needs attention before concurrent execution: scripts/build.sh uses `/tmp/missioncontrol-derived`; several test scripts share module-cache/executable paths. Use separate build/log paths and serialise fixed-path checks until isolated. Worktrees still share personal app storage, Keychain, Apple accounts and installation. Full working agreement: [AGENTS](AGENTS.md) and [Development workflow](docs/DEVELOPMENT_WORKFLOW.md).
+
+### Documentation checkpoint — 8 October
+
+Consolidated AGENTS into current rules, preserved its exact prior contents in docs/archive/AGENTS-2026-10-08-before-workflow-refresh.md, added the concrete multi-worktree workflow and aligned PLAN's opening delivery policy. Added this current summary without deleting or rewriting historical STATUS evidence. Documentation-only validation uses diff, link and archive-consistency checks; no app rebuild, installation, inference, personal-source read or native mutation is required or claimed.
+
+## Historical engineering log
+
+The following starts with the original Stage 1 record. Current delivery is summarised above; later dated entries in this log supersede earlier acceptance and recovery policies.
+
+Current delivery (2 October, historical): signed Stage 1 app ready for user review. Resumable Mail, colours/list grouping, independent permissions, Calendar edge cases and lifecycle checks passed. Latest validation and boundaries are recorded at the end; earlier sections preserve historical checkpoints.
 Stage 1 in progress. Empty folder inspected. Xcode 27.0 / Apple Development identity available. Initial five-hour remaining: 66%; weekly remaining: 53%. Main UI setting cannot be changed by prompt.
 No personal source data in repository. One Luna High task assigned: Mail reader/service only.
 

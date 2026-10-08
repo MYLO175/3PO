@@ -1,5 +1,11 @@
 # Decisions
 
+## 8 October — Independent feature worktrees, one integration owner
+
+The user upgraded their plan and wants to develop memory, Projects and appearance concurrently. Use separate worktrees/chats for requested independent streams; one local integration owner coordinates shared data/API contracts, combined validation, documentation and installation. Memory and Projects share canonical identities, so foundational changes need one nominated owner and dependency order. Appearance work must coordinate shared views/configuration rather than assume visual edits are independent.
+
+The old fixed 20% five-hour reserve and mandatory single-main/one-Luna allocation are retired; actual usage checks and resumable checkpoints remain. Extra chats/subagents are not started automatically by this agreement, and runtime inference budgets/source permissions are unchanged. Worktrees separate repository files, not shared absolute build/test paths, personal app storage, Keychain or Apple accounts. Preserve the exact earlier AGENTS contents as history and present current rules plus a current STATUS summary first. See [Development workflow](DEVELOPMENT_WORKFLOW.md).
+
 ## 8 October — Relevant memory before filling context
 
 The user identified unrelated biography/preferences in a security-alert review. A maximum context size is a ceiling, not a target. Targeted queries now require word or supported relationship/plan relevance; zero saved facts is a valid result. Confirmed preferences are pinned only for deliberate broad orientation. Self-name tokens cannot seed all personal facts, and Focus alone cannot widen a nonempty targeted query. Foreground notebook facts share the actual selected IDs; task-irrelevant anchors and earlier tool-read entities are not added back. Email assessment and drafting query the specific message, with writing-style terms reserved for actual drafting. Account/source/current-belief/budget checks stay ahead of selection.
