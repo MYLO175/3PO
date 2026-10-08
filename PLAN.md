@@ -326,3 +326,8 @@ Implemented a relevance gate for non-null memory queries: no unrelated filler or
 ## 8 October approved simplification: spaces and tasks
 
 User requested removing the extra workspace types. Implement two creation/editing choices, Space and Task; keep notes within either, nesting and three-stage task boards. Existing records display through the two-type projection while compatibility metadata preserves exact IDs/revisions/source and memory associations. Keep tasks independent of Apple Reminders, current-human intent for PA edits and source-first/no-AI refresh. New spaces save in their chosen parent; no automatic placement request. Retained old requests remain recoverable. See STATUS for validation/install boundaries.
+
+
+### 8 October — Heartbeat history and source arrivals
+
+Show neat expandable runs in Settings → Background → Heartbeat history, including brief completion, stage outcomes and failures. Keep the existing account-scoped 20-run history compatible. Permit current source content at each next stage rather than pausing when arrivals change a previous stage's cache; child inference jobs retain exact stale-output guards. Every completed heartbeat still requires a saved current-time brief; failed inference remains explicitly resumable. STATUS records build, focused persistence checks and installed native acceptance.

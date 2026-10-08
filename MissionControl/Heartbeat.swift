@@ -28,6 +28,31 @@ struct PAReviewRun:Codable,Identifiable {
     var handled:Int = 0
     var briefUpdated:Bool? = nil
     var questions:Int? = nil
+    var steps:[PAHeartbeatStep]? = nil
+    var failure:String? = nil
+
+    func outcome(running:Bool = false)->String {
+        if finished == nil {return running ? "Running" : "Interrupted"}
+        if briefUpdated == true {return phase == "paused" ? "Partly completed" : "Completed"}
+        return phase == "paused" ? "Stopped" : phase == "waiting" ? "Waiting" : "Checked"
+    }
+    var summary:String {
+        var parts=[briefUpdated == nil ? "Earlier review saved" : briefUpdated == true ? "Brief updated" : "Brief not updated"]
+        if preparedItems > 0 {parts.append("\(preparedItems) suggestion\(preparedItems == 1 ? "" : "s")")}
+        if drafts > 0 {parts.append("\(drafts) draft\(drafts == 1 ? "" : "s")")}
+        if let questions,questions > 0 {parts.append("\(questions) question\(questions == 1 ? "" : "s")")}
+        if waitingAccounts > 0 {parts.append("\(waitingAccounts) Mail account\(waitingAccounts == 1 ? "" : "s") waiting")}
+        return parts.joined(separator:" · ")
+    }
+}
+struct PAHeartbeatStep:Codable,Identifiable {
+    var id:String
+    var title:String
+    var status:String = "pending"
+    var detail:String? = nil
+    var label:String {
+        switch status {case "done":return "Done";case "running":return "Running";case "failed":return "Stopped";case "skipped":return "Off";case "waiting":return "Waiting";default:return "Not run"}
+    }
 }
 struct PAHeartbeatMailLane:Codable {
     var checked:Date?
@@ -40,6 +65,14 @@ struct PAHeartbeatState: Codable {
     var accounts: [String:PAHeartbeatAccount] = [:]
 }
 enum PAHeartbeatRules {
+    static func stages()->[PAHeartbeatStep] {
+        [.init(id:"sources",title:"Sources"),.init(id:"email",title:"Email review"),.init(id:"suggestions",title:"Suggestions & drafts"),.init(id:"brief",title:"Today’s brief")]
+    }
+    // Cache arrivals between completed stages are fresh input to the next stage.
+    // Each inference job still validates the exact context it actually supplied.
+    static func canContinue(owner:String,currentOwner:String,controls:UUID,currentControls:UUID,scope:String,currentScope:String,day:String,currentDay:String,model:String,currentModel:String)->Bool {
+        owner == currentOwner && controls == currentControls && scope == currentScope && day == currentDay && model == currentModel
+    }
     static let defaultMinutes = 60
     static func nextReview(_ account:PAHeartbeatAccount,now:Date,minutes:Int = defaultMinutes,day:String? = nil,allowance:Int? = nil)->Date {
         if account.phase != "paused",let retry=account.retryAfter {

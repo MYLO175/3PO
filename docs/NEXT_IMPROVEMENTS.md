@@ -133,3 +133,6 @@ Next acceptance priorities: an actual missed-heartbeat reopen/wake while permitt
 
 
 8 October workspace simplification: creation, editing and AI tools now offer only spaces (folders) and tasks, with notes inside either. Existing records and exact memory/source associations are preserved through compatibility metadata. Project tasks remain separate from Apple Reminders; new spaces save directly in the chosen home. Next, validate sustained real-folder workflows and evaluate semantic relevance with useful paraphrase cases; richer file types are outside the current product direction. See STATUS for actual install/UI evidence.
+
+
+8 October heartbeat follow-up: compact per-account run/stage history and fresh between-stage inputs are implemented. Remaining acceptance is a real completed personal heartbeat after explicit Resume, then sustained source arrivals during multi-stage reviews and actual Mac sleep/wake recovery. Fictional cache checks and native history inspection do not prove those live runs. Failed inference must not automatically replay.

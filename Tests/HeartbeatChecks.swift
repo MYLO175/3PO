@@ -96,6 +96,19 @@ import Foundation
         var caughtUp=slept;caughtUp.checked=wake;caughtUp.assessed=wake
         precondition(!PAHeartbeatRules.due(caughtUp,now:wake.addingTimeInterval(1)),"A missed eight-hour span runs once, not eight times")
         precondition(PAHeartbeatRules.needsAssessment(caughtUp,fingerprint:"same",manual:false))
+        let control=UUID()
+        func allowed(owner:String="a",scope:String="permitted",day:String="today",model:String="chosen",controls:UUID? = nil)->Bool {
+            PAHeartbeatRules.canContinue(owner:"a",currentOwner:owner,controls:control,currentControls:controls ?? control,scope:"permitted",currentScope:scope,day:"today",currentDay:day,model:"chosen",currentModel:model)
+        }
+        precondition(allowed(),"Next stage can capture new source content under the same ownership")
+        precondition(!allowed(owner:"b") && !allowed(scope:"changed") && !allowed(day:"tomorrow") && !allowed(model:"different") && !allowed(controls:UUID()),"Fresh inputs never widen captured ownership")
+        var completed=run;completed.phase="waiting";completed.briefUpdated=true;completed.steps=PAHeartbeatRules.stages();completed.steps?[3].status="done"
+        precondition(completed.outcome() == "Completed","Pending source lanes do not relabel a saved brief as a failed heartbeat")
+        let newHistory=try JSONDecoder().decode(PAReviewRun.self,from:JSONEncoder().encode(completed))
+        precondition(newHistory.steps?[3].status == "done" && newHistory.briefUpdated == true)
+        precondition(run.steps == nil && run.failure == nil && run.outcome() == "Stopped")
+        var crashed=completed;crashed.finished=nil
+        precondition(crashed.outcome() == "Interrupted" && crashed.outcome(running:true) == "Running")
         print("PASS heartbeat: configurable due boundaries, periodic assessment including unchanged context and single catch-up, persisted daily request allowance, day rollover, captured account isolation and interrupted inference requiring explicit resume")
     }
 }

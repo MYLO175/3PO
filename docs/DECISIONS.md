@@ -298,3 +298,10 @@ A quote alone is insufficient to locate its source. Show compact account/chat, s
 ## 8 October: two workspace types
 
 Projects exposes only Space and Task. A space is a generic folder, with notes as a field; tasks are local work independent of Apple Reminders. Retain legacy raw kind values only as compatibility metadata rather than rewriting stable records or losing typed memory identities. Canonical UI/tool/graph-anchor output is space/task; new creation schema rejects retired kinds. New spaces do not enqueue automatic placement; older pending/paused requests remain saved. Exact human-reviewed notebook bindings preserve semantic course/project identities without adding workspace types or inferring a same-name merge. Only spaces can be new parents; changing a space with contents into a task is refused.
+
+
+## 8 October — Clear heartbeat history and fresh stage boundaries
+
+The reported morning-only brief followed a heartbeat pause: the coordinator compared source content after email assessment against its earlier pre-email cache and stopped when ordinary arrivals changed it. Subsequent jobs should capture current context independently; a cache arrival after completed email work is not a failed inference. Remove that between-stage content equality gate while retaining captured account/model/day/source choices, child-job exact supplied-evidence validation and explicit recovery of failed/interrupted AI. No inference retry or Apple write is introduced.
+
+Keep existing per-account 20-run history and original IDs. Add optional stage/failure metadata with compatible old decoding; persist stage transitions so a crash remains inspectable. Put compact expandable runs first in the shared activity sheet, accessed as Heartbeat history from Background settings. A brief saved successfully counts as Completed even with partial source lanes. Preserve raw failure details behind expansion and current source/usage/dismissal diagnostics behind separate disclosures.

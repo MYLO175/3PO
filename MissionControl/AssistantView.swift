@@ -385,16 +385,13 @@ struct AssistantSourceSettings: View {
                     Toggle("Notify when review items are ready",isOn:$model.heartbeat.notificationsEnabled)
                     let progress=model.heartbeat.state.accounts[model.chatGPT.activeID]
                     LabeledContent("Last source check",value:progress?.checked?.formatted(date:.abbreviated,time:.shortened) ?? "Not recorded")
-                    LabeledContent("Last completed review",value:progress?.assessed?.formatted(date:.abbreviated,time:.shortened) ?? "Not recorded")
+                    LabeledContent("Last completed heartbeat",value:progress?.assessed?.formatted(date:.abbreviated,time:.shortened) ?? "Not recorded")
                     LabeledContent("Automatic review",value:model.heartbeat.scheduleStatus(model))
-                    if progress?.pending == true { Text("Changed or unfinished review work is waiting.").font(.caption).foregroundStyle(.secondary) }
-                    Text(model.heartbeat.statusFor(model.chatGPT.activeID)).font(.caption).foregroundStyle(.secondary)
-                    Text("Each heartbeat refreshes enabled sources, reviews what matters, prepares suggestions or reply drafts, and updates Today’s brief. Questions and proposals go to Review inbox; you approve changes. A missed check runs once after reopening or waking. 3PO must be open and the Mac awake. Failed AI work waits for Resume.").font(.caption).foregroundStyle(.secondary)
+                    Text("Each heartbeat checks sources, prepares review items and rewrites Today’s brief for the current time. Missed checks catch up once on opening or waking.").font(.caption).foregroundStyle(.secondary)
                     Button("Open Review inbox") {model.workspace.showReviewInbox();openWindow(id:"dashboard")}.disabled(model.workspace.readOnly)
-                    Button("Background activity") {showingActivity=true}
+                    Button("View heartbeat history…") {showingActivity=true}
                     Button("Run heartbeat now") { model.heartbeat.check(model,manual:true) }.disabled(model.heartbeat.manualCheckBlockReason(model) != nil).help(model.heartbeat.manualCheckHelp(model))
-                    let mailReviewStatus=model.heartbeat.mailReviewStatus(model)
-                    if !mailReviewStatus.isEmpty {Text(mailReviewStatus).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)}
+
                 }
                 Section("Other background work") {
                     Text("The heartbeat uses the interval above and updates the brief. The optional morning message is delivered once at 7:30. Memory learning/organisation are controlled in Memory. Your queued requests use Continue queue.").font(.caption).foregroundStyle(.secondary)
@@ -451,83 +448,91 @@ struct BackgroundActivityView:View {
     @Environment(\.dismiss) private var dismiss
     private var registration:String {model.chatGPT.activeID}
     private var runs:[PAReviewRun] {Array((model.heartbeat.state.accounts[registration]?.reviews ?? []).reversed())}
+    private var paused:Bool {model.heartbeat.state.accounts[registration]?.phase == "paused"}
     var body:some View {
-        VStack(alignment:.leading,spacing:14) {
-            HStack {Text("Background activity").font(.title2.weight(.semibold));Spacer();Button("Done") {dismiss()}.keyboardShortcut(.cancelAction)}
+        VStack(alignment:.leading,spacing:16) {
+            HStack {
+                Text("Heartbeat history").font(.title2.weight(.semibold))
+                Spacer()
+                Button("Done") {dismiss()}.keyboardShortcut(.cancelAction)
+            }
+            HStack {
+                Label(model.heartbeat.scheduleStatus(model),systemImage:paused ? "pause.circle" : "waveform.path.ecg")
+                    .font(.callout).foregroundStyle(paused ? .orange : .secondary)
+                Spacer()
+                Button(paused ? "Resume heartbeat" : "Run now") {model.heartbeat.check(model,manual:true)}
+                    .disabled(model.heartbeat.manualCheckBlockReason(model) != nil)
+                    .help(model.heartbeat.manualCheckHelp(model))
+            }
+            if paused {Text("The last review stopped. Saved work is kept; Resume runs a fresh check.").font(.caption).foregroundStyle(.secondary)}
             ScrollView {
-                VStack(alignment:.leading,spacing:16) {
-                    activitySection("Communication review") {
-                        VStack(alignment:.leading,spacing:8) {
-                            Text("3PO suggests; you decide. Approve applies the displayed change. Dismiss leaves the original unchanged.").font(.caption).foregroundStyle(.secondary)
-                            Text(model.heartbeat.statusFor(registration)).textSelection(.enabled)
-                            DisclosureGroup("Details") {
-                                VStack(alignment:.leading,spacing:8) {
-                                    if let error=model.emailSummaries.error {Text("Email: "+error).foregroundStyle(.orange).textSelection(.enabled)}
-                                    if let error=model.proactive.error {Text("Suggestions: "+error).foregroundStyle(.orange).textSelection(.enabled)}
-                                    if let error=model.mailHealth.error {Text("Mail: "+error).foregroundStyle(.orange).textSelection(.enabled)}
-                                    if !model.mailCoverage.isEmpty {Text(model.mailCoverage)}
-                                    if model.proactive.state.records.contains(where:{$0.registration == registration && !$0.dismissed && $0.reviewState != "approved" && $0.memoryDependencies != nil && !model.proactive.visible($0,model:model)}) {
-                                        Text("Earlier suggestions are set aside while their supporting context has changed or is unavailable. Fresh review can replace them.")
-                                    }
-                                }.font(.caption).frame(maxWidth:.infinity,alignment:.leading)
-                            }
-                            Text(model.heartbeat.budgetStatus(registration)).font(.caption).foregroundStyle(.secondary)
-                            Text(model.heartbeat.scheduleStatus(model)).font(.callout)
-                            Text("This is app review usage, separate from your subscription allowance and other AI jobs.").font(.caption).foregroundStyle(.secondary)
-                            let mailStatus=model.heartbeat.mailReviewStatus(model)
-                            if !mailStatus.isEmpty {Text("Last review coverage").font(.caption).foregroundStyle(.secondary);Text(mailStatus).font(.callout)}
-                            Text(model.emailSummaries.coverage(model)).font(.caption).foregroundStyle(.secondary)
-                            Text("Calendar: "+model.paOrientationHealth.detail).font(.caption)
-                            Text("Reminders: "+model.reminderHealth.detail).font(.caption)
-                            Text("Recent reminder completions: "+model.completedReminderHealth.detail).font(.caption)
-                            Text("Completion evidence covers up to 80 permitted reminders ticked off in the last 30 days. A missing item does not mean it was completed.").font(.caption).foregroundStyle(.secondary)
-                            let pending=model.emailSummaries.highlights(model).filter{EmailReplyDraftRules.needsBackgroundDraft($0.1,message:$0.0)}.count
-                            Text("\(pending) replies awaiting preparation · \(model.emailSummaries.rejectedCount(model)) emails with rejected assessments").font(.caption)
-                        }.frame(maxWidth:.infinity,alignment:.leading).padding(5)
-                    }
-                    activitySection("Recent reviews") {
-                        VStack(alignment:.leading,spacing:12) {
-                            if runs.isEmpty {Text("New review activity will be recorded here. Earlier reviews have no detailed history.").foregroundStyle(.secondary)}
-                            ForEach(runs) {run in
-                                let running=model.heartbeat.reviewInProgress(run,registration:registration)
-                                VStack(alignment:.leading,spacing:5) {
-                                    HStack {Text(run.started.formatted(date:.abbreviated,time:.shortened)).font(.callout.weight(.semibold));Spacer();Text(run.finished == nil ? (running ? "Running" : "Interrupted") : run.phase == "paused" ? "Paused" : run.phase == "waiting" ? "Work waiting" : "Checked").font(.caption)}
-                                    Text(running ? model.heartbeat.statusFor(registration) : run.detail).font(.callout).textSelection(.enabled)
-                                    if run.finished != nil {
-                                        Text("\(run.calls) AI calls · \(run.checkedAccounts) checked Mail accounts · \(run.waitingAccounts) waiting").font(.caption).foregroundStyle(.secondary)
-                                        Text("\(run.preparedItems) new proposals · \(run.drafts) new drafts · \(run.handled) new planned/addressed connections").font(.caption).foregroundStyle(.secondary)
-                                        if let updated=run.briefUpdated {Text((updated ? "Brief updated" : "Brief not updated")+" · \(run.questions ?? 0) new questions").font(.caption).foregroundStyle(.secondary)}
+                VStack(alignment:.leading,spacing:10) {
+                    if runs.isEmpty {Text("Heartbeats will appear here as they run.").foregroundStyle(.secondary).padding(.vertical,24)}
+                    ForEach(runs) {run in
+                        let running=model.heartbeat.reviewInProgress(run,registration:registration)
+                        DisclosureGroup {
+                            VStack(alignment:.leading,spacing:10) {
+                                if let steps=run.steps {
+                                    ForEach(steps) {step in
+                                        VStack(alignment:.leading,spacing:3) {
+                                            HStack {Text(step.title);Spacer();Text(step.status == "running" && !running ? "Interrupted" : step.label).foregroundStyle(step.status == "failed" ? .orange : .secondary)}
+                                            if let detail=step.detail {Text(detail).font(.caption).foregroundStyle(.secondary)}
+                                        }
                                     }
                                 }
-                                Divider()
+                                Text(running ? model.heartbeat.statusFor(registration) : run.failure ?? run.detail)
+                                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                                HStack {
+                                    Text("\(run.calls) AI call\(run.calls == 1 ? "" : "s")")
+                                    Spacer()
+                                    Text(run.manual ? "Run manually" : "Scheduled")
+                                    if let finished=run.finished {Text("· \(max(0,Int(finished.timeIntervalSince(run.started))))s")}
+                                }.font(.caption).foregroundStyle(.secondary)
+                                if run.handled > 0 {Text("\(run.handled) items linked to existing plans or completed reminders").font(.caption).foregroundStyle(.secondary)}
+                            }.padding(.top,10)
+                        } label: {
+                            VStack(alignment:.leading,spacing:5) {
+                                HStack {
+                                    Text(run.started.formatted(date:.abbreviated,time:.shortened)).font(.callout.weight(.semibold))
+                                    Spacer()
+                                    Text(run.outcome(running:running)).font(.caption.weight(.medium))
+                                        .foregroundStyle(run.phase == "paused" ? .orange : run.briefUpdated == true ? .green : .secondary)
+                                }
+                                Text(running ? model.heartbeat.statusFor(registration) : run.summary).font(.caption).foregroundStyle(.secondary)
                             }
-                            Text("Last 20 communication reviews for this account. Counts describe saved work, not complete inbox coverage. Source bodies and AI reasoning are not copied into this history.").font(.caption).foregroundStyle(.secondary)
-                        }.frame(maxWidth:.infinity,alignment:.leading).padding(5)
+                        }.padding(12).background(Color.primary.opacity(0.04),in:RoundedRectangle(cornerRadius:10))
                     }
-                    activitySection("Learning from dismissals") {
+                    DisclosureGroup("Source status & usage") {
                         VStack(alignment:.leading,spacing:8) {
-                            Text("Dismissal says a review item was unhelpful, not that its task is complete. Repeated similar dismissals guide future assessments; new requests and changed deadlines can still be raised. Undo removes that signal.").font(.caption).foregroundStyle(.secondary)
+                            Text(model.heartbeat.budgetStatus(registration))
+                            if let error=model.emailSummaries.error {Text("Email: "+error).foregroundStyle(.orange)}
+                            if let error=model.proactive.error {Text("Suggestions: "+error).foregroundStyle(.orange)}
+                            if let error=model.mailHealth.error {Text("Mail: "+error).foregroundStyle(.orange)}
+                            Text(model.heartbeat.mailReviewStatus(model))
+                            Text(model.emailSummaries.coverage(model))
+                            Text("Calendar: "+model.paOrientationHealth.detail)
+                            Text("Reminders: "+model.reminderHealth.detail)
+                            Text("Completion evidence: "+model.completedReminderHealth.detail)
+                        }.font(.caption).foregroundStyle(.secondary).textSelection(.enabled).padding(.top,8)
+                    }.padding(12)
+                    DisclosureGroup("Learning from dismissals") {
+                        VStack(alignment:.leading,spacing:8) {
+                            Text("Repeated similar dismissals guide future reviews. Dismissal does not mean a task is complete; Undo removes the signal.").font(.caption).foregroundStyle(.secondary)
                             let feedback=model.emailSummaries.dismissalContext(model)
-                            if feedback.isEmpty {Text("No recent email dismissal examples.").foregroundStyle(.secondary)}
+                            if feedback.isEmpty {Text("No recent examples.").foregroundStyle(.secondary)}
                             ForEach(Array(feedback.enumerated()),id:\.offset) {_,row in
-                                VStack(alignment:.leading,spacing:3) {
-                                    Text(row["subject"] ?? "Email").font(.callout)
-                                    Text((row["sender"] ?? "")+" · "+(row["similarSenderDismissals"] ?? "1")+" recent dismissals from this sender").font(.caption).foregroundStyle(.secondary)
-                                }
+                                Text((row["subject"] ?? "Email")+" · "+(row["similarSenderDismissals"] ?? "1")+" dismissals").font(.caption)
                             }
-                        }.frame(maxWidth:.infinity,alignment:.leading).padding(5)
-                    }
-                    Text("Opening this page makes no AI request. The heartbeat reviews sources and updates the brief. Optional morning delivery, memory learning and your queued requests have separate controls. 3PO must be open and the Mac awake.").font(.caption).foregroundStyle(.secondary)
+                        }.padding(.top,8)
+                    }.padding(12)
+                    Text("Last 20 runs for this account. Opening history uses no AI. 3PO must be open and the Mac awake.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,12)
                 }
             }
         }.padding(24).frame(width:650,height:650)
-    }
-    private func activitySection<Content:View>(_ title:String,@ViewBuilder content:()->Content)->some View {
-        VStack(alignment:.leading,spacing:10) {
-            Text(title).font(.headline).accessibilityAddTraits(.isHeader)
-            content()
-        }.frame(maxWidth:.infinity,alignment:.leading).padding(14)
-            .background(Color.primary.opacity(0.04),in:RoundedRectangle(cornerRadius:10))
-            .accessibilityElement(children:.contain)
+            .onAppear {
+                #if DEBUG
+                model.heartbeat.seedHistoryPreview(registration)
+                #endif
+            }
     }
 }
