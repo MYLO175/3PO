@@ -28,7 +28,7 @@ struct TodayBriefView: View {
                         .accessibilityLabel("Brief updated \(record.created.formatted(date:.omitted,time:.shortened))")
                 }
                 if briefings.busy { ProgressView().controlSize(.small); Button("Stop") { briefings.cancel() }.fixedSize() }
-                else { Button { briefings.updateToday(model) } label: { Image(systemName:"arrow.clockwise") }.help(!briefings.hasCurrentToday(model) ? "Prepare today’s brief using AI" : "Refresh today’s brief using AI and fresh sources; keeps the original message").accessibilityLabel(!briefings.hasCurrentToday(model) ? "Prepare today’s brief" : "Refresh today’s brief").disabled(model.heartbeat.busy) }
+                else { Button { briefings.updateToday(model) } label: { Image(systemName:"arrow.clockwise") }.help(!briefings.hasCurrentToday(model) ? "Prepare today’s brief using AI" : "Refresh today’s brief using AI and fresh sources").accessibilityLabel(!briefings.hasCurrentToday(model) ? "Prepare today’s brief" : "Refresh today’s brief").disabled(model.heartbeat.busy) }
                 Menu {
                     Toggle("Show weather",isOn:showsWeather)
                     Divider()
@@ -47,11 +47,6 @@ struct TodayBriefView: View {
                             Label(note,systemImage:"clock.arrow.circlepath").font(.caption).foregroundStyle(.secondary).padding(10).frame(maxWidth:.infinity,alignment:.leading).background(Color.primary.opacity(0.04),in:RoundedRectangle(cornerRadius:8))
                         }
                         Text((try? AttributedString(markdown:BriefingRules.prose(record),options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(BriefingRules.prose(record))).font(.callout).lineSpacing(5).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)
-                        if record.morningID != nil, let morning = briefings.savedMorning(model) {
-                            DisclosureGroup("Original brief") {
-                                Text((try? AttributedString(markdown:BriefingRules.prose(morning),options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(BriefingRules.prose(morning))).font(.callout).lineSpacing(5).textSelection(.enabled).padding(.top,8)
-                            }.font(.caption)
-                        }
                         DisclosureGroup("Sources and coverage") {
                             VStack(alignment:.leading,spacing:10) {
                                 Text(record.coverage).font(.caption).foregroundStyle(.secondary)

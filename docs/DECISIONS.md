@@ -340,3 +340,8 @@ The user clarified that a dismissed Review inbox item has been seen and acknowle
 Keep source input available for independent sibling actions when one proposal is dismissed. Supply the exact concern/quote/native target as bounded, currently permitted data and deduplicate that concern, including regenerated assessment wording. An explicitly dismissed Email work card hides its saved assessment. Capture registration and source version from the displayed/issued receipt; never stamp newer content from a stale card. Undo restores the prior attention state.
 
 Use additive optional receipts/times on existing records, with unknown historical dismissal times left unknown. Original memory/source/comparison dependencies and the current consumer purpose/checked lanes constrain exported acknowledgement prose. Compare captured acknowledgement context before saving inferred advice; persist negative-context ID/revision receipts for brief freshness. Successful owned foreground mutations may refresh their supporting context while unrelated Dismiss/Undo races still stop the captured turn. No new inference on Dismiss, body scanning, native completion, memory learning or sender rules.
+
+
+## 8 October — One current brief
+
+The user considers Today’s brief one current summary, not an original plus updates. Remove the Original brief disclosure and original-message wording from widget refresh/help. Keep the current update time, sources/coverage and freshness explanations. This is a presentation change: retained records, transcripts and immutable delivery/notification identities remain intact without another visible brief section.
