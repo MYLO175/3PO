@@ -188,6 +188,8 @@ Older cache work is separate: at most one 20-header page per account every five 
 
 A PA search retrieves older mail on demand from discovered enabled Inbox/Sent/Archive independently of monitoring. It may correct spelling or use relevant topic synonyms; exact sender/subject words are not required. Inbox/Archive bulk-filter sender/subject candidates before paging, whereas Sent retains recipient matching. Search remains bounded, header-based and coverage-qualified; body-only keywords, attachments and undiscovered/custom folders remain outside scope. Plain-text previews preserve unread state and verify message identity. Source refresh makes no inference request and does not restart historical email assessment.
 
+Search progress belongs to the exact assistant reply that last searched Mail. Its collapsed **Mail search details** disclosure contains coverage, any retrieved sources and optional Continue/Retry controls. Unsearched windows do not keep a strip above the composer after an answer or a later action. Continuation retains the existing account/topic/source checks and bounded cursor; hiding progress does not mark partial coverage complete. The search session remains transient, as before.
+
 
 ### Background review
 

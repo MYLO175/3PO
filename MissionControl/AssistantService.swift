@@ -61,6 +61,7 @@ import Observation
     private(set) var requestConversationID: UUID?
     private(set) var errorConversationID: UUID?
     private(set) var mailSearchConversationID: UUID?
+    private(set) var mailSearchTurnID: UUID?
     private(set) var contextRevision = UUID()
     var contextEnabled = UserDefaults.standard.bool(forKey: "assistantContextEnabled") { didSet { UserDefaults.standard.set(contextEnabled, forKey: "assistantContextEnabled");contextRevision = UUID() } }
     var displayName = PAIdentity.name(UserDefaults.standard.string(forKey:"paDisplayName")) { didSet { UserDefaults.standard.set(displayName,forKey:"paDisplayName") } }
@@ -488,7 +489,7 @@ import Observation
                             if call.name.contains("memory") || call.name == "remember_context" { expectedMemory = memory.revision;expectedSourceMemoryIDs=Set(memory.permittedRecords.filter{$0.source != nil && MemoryRules.usable($0,registration:registration)}.map(\.id)) }
                             if LifeWorkspaceTools.names.contains(call.name) { expectedProjects = projects.revision }
                             if ["search_mail","continue_mail"].contains(call.name) {
-                                toolMail = session.localMail; toolMailRegistration = registration; mailSearchConversationID = id; mailSearchTopicID = contextID
+                                toolMail = session.localMail; toolMailRegistration = registration; mailSearchConversationID = id; mailSearchTopicID = contextID; mailSearchTurnID = response.id
                             }
                         } catch is CancellationError { throw CancellationError() }
                         catch {

@@ -4,7 +4,9 @@
 
 This is an index of existing evidence, reconciled during the GitHub documentation update. It does not report a new build, model evaluation, installation or personal-source test. [STATUS](STATUS.md) has the current summary, exact commands, intermediate failures, installation hashes and dated acceptance limits. Historical records below apply to their named builds and may describe superseded behaviour.
 
-### Latest application checkpoint
+Subsequent 8 October Mail presentation update: `test-mail-lookup.sh` and signed Xcode build passed. Installed at 18:04 with candidate/installed executable hashes and deep-strict signatures verified. The old stale search strip was inspected live before replacement and confirmed absent from the retained Barclays conversation after reopening, by native accessibility and pixels. Coverage/Continue/Retry now belong to the search reply's collapsed disclosure. No new production search or continuation was exercised; the transient search session was already reset by relaunch, so this live check does not separately validate disclosure interaction. See the dated STATUS record.
+
+### Preceding heartbeat application checkpoint
 
 Application code: `40d596c` (scheduled heartbeat recovery). Last recorded signed install: 8 October at 14:23, `/Users/mylomichael/Applications/3PO.app`, bundle ID `com.mylomichael.missioncontrol`. The 14:23 build changed Help wording after the preceding validated recovery build. Source, registration, storage, transcripts, layouts and original daily delivery identities were preserved according to that checkpoint's recorded checks.
 

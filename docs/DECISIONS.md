@@ -1,5 +1,9 @@
 # Decisions
 
+## 8 October 2026 — Mail search details belong to their reply
+
+An answered request could leave a global Continue mail search strip above the PA composer because the search had unsearched windows. Capture the assistant reply ID when search/continuation succeeds and show its coverage and controls in a collapsed Mail search details disclosure on that reply, with the existing registration/conversation/topic guards. An empty result set has no empty Mail sources menu. Preserve partial-coverage honesty, retry authority and the reusable bounded search; answering a question does not require exhausting every mailbox window.
+
 ## 8 October — Independent feature worktrees, one integration owner
 
 The user upgraded their plan and wants to develop memory, Projects and appearance concurrently. Use separate worktrees/chats for requested independent streams; one local integration owner coordinates shared data/API contracts, combined validation, documentation and installation. Memory and Projects share canonical identities, so foundational changes need one nominated owner and dependency order. Appearance work must coordinate shared views/configuration rather than assume visual edits are independent.

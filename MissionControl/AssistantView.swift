@@ -205,6 +205,20 @@ struct AssistantPanel: View {
                                 if case let errors = PAReadPrerequisite.visibleFailures(unresolved:turn.unresolvedToolErrors,history:turn.toolErrors),!errors.isEmpty {
                                     DisclosureGroup("What went wrong") { ForEach(Array(errors.enumerated()),id:\.offset) { _,reason in Text(reason).font(.caption).textSelection(.enabled) } }.font(.caption)
                                 }
+                                if turn.role == "assistant", assistant.mailSearchTurnID == turn.id,
+                                   assistant.mailSearchConversationID == selectedID, assistant.mailSearchTopicID == selectedTopicID,
+                                   let lookup = assistant.visibleMailLookup, !lookup.status.isEmpty {
+                                    DisclosureGroup("Mail search details") {
+                                        VStack(alignment:.leading,spacing:6) {
+                                            Text(lookup.status).foregroundStyle(.secondary).textSelection(.enabled)
+                                            if !lookup.results.isEmpty {
+                                                Menu("Mail sources") { ForEach(lookup.results) { message in Button(message.account + " · " + message.subject) { model.select(message) } } }
+                                            }
+                                            if lookup.hasUnavailable { Button("Retry unavailable reads") { draft.wrappedValue = "Retry unavailable mail reads."; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
+                                            if lookup.hasMore { Button("Continue mail search") { draft.wrappedValue = "Continue the email search."; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
+                                        }.controlSize(.small)
+                                    }.font(.caption).accessibilityIdentifier("pa-mail-search-details")
+                                }
                                 if replyingHere && !turn.content.isEmpty {
                                     Text(assistant.toolStatus.isEmpty ? "Thinking…" : assistant.toolStatus).font(.caption).foregroundStyle(.secondary)
                                 }
@@ -244,14 +258,6 @@ struct AssistantPanel: View {
                 .onAppear { if let id = selected?.turns.last?.id { proxy.scrollTo(id,anchor:.bottom) } }
             }
             if model.memoryLearning.canUndoQuestion(model.chatGPT.activeID) { HStack { Text("Question dismissed").font(.caption).foregroundStyle(.secondary); Button("Undo") { model.memoryLearning.undoQuestion(model.chatGPT.activeID) }.controlSize(.small); Spacer() } }
-            if assistant.mailSearchConversationID == selectedID && assistant.mailSearchTopicID == selectedTopicID, let lookup = assistant.visibleMailLookup, !lookup.status.isEmpty {
-                HStack {
-                    Text(lookup.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    Menu("Mail sources") { ForEach(lookup.results) { message in Button(message.account + " · " + message.subject) { model.select(message) } } }
-                    if lookup.hasUnavailable { Button("Retry unavailable reads") { draft.wrappedValue = "Retry unavailable mail reads."; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
-                    if lookup.hasMore { Button("Continue mail search") { draft.wrappedValue = "Continue the email search."; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
-                }
-            }
             if let error = assistant.error, errorHere, !model.chatGPT.usagePaused { DisclosureGroup("Request didn’t complete") { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }.font(.caption) }
             if model.chatGPT.usagePaused {
                 HStack {
