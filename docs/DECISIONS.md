@@ -331,3 +331,12 @@ The brief has one automatic owner: the heartbeat. Remove independent morning/sta
 
 
 Installed catch-up exposed a cold-start false failure: the saved WhatsApp connection becomes authenticated during source collection, changing the runtime scope before any AI was requested. Track human source-choice changes independently of connection authentication. Permit initial unknown-to-verified identity only before inference; retain known-identity and choice/account/model/day/control checks. Capture the verified scope after collection, then keep exact per-job and between-stage ownership guards. The failed first live run remains in history and its scheduled retry remains visible.
+
+
+## 8 October — Dismiss means acknowledged
+
+The user clarified that a dismissed Review inbox item has been seen and acknowledged, so the PA should stop worrying about it. Apply this specific human choice to foreground context/read_attention, brief preparation and subsequent comparison. Preserve weak similarity feedback as a separate mechanism; dismissal is never completion, a sender blacklist or authority for an Apple write.
+
+Keep source input available for independent sibling actions when one proposal is dismissed. Supply the exact concern/quote/native target as bounded, currently permitted data and deduplicate that concern, including regenerated assessment wording. An explicitly dismissed Email work card hides its saved assessment. Capture registration and source version from the displayed/issued receipt; never stamp newer content from a stale card. Undo restores the prior attention state.
+
+Use additive optional receipts/times on existing records, with unknown historical dismissal times left unknown. Original memory/source/comparison dependencies and the current consumer purpose/checked lanes constrain exported acknowledgement prose. Compare captured acknowledgement context before saving inferred advice; persist negative-context ID/revision receipts for brief freshness. Successful owned foreground mutations may refresh their supporting context while unrelated Dismiss/Undo races still stop the captured turn. No new inference on Dismiss, body scanning, native completion, memory learning or sender rules.

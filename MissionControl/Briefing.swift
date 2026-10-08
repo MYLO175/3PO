@@ -1,5 +1,11 @@
 import Foundation
 
+/// Stored negative-context dependency, with no duplicate concern prose.
+struct ReviewAcknowledgementReceipt:Codable,Equatable {
+    var id:String
+    var revision:String
+}
+
 struct BriefingContextChanged: Error {
     var kinds: Set<String>
 }
@@ -48,6 +54,8 @@ struct DailyBriefing: Codable, Identifiable {
     var widgetOnly:Bool? = nil
     var memoryDependencies:[MemoryDependency]? = nil
     var whatsappDependencies:[WhatsAppWindowDependency]? = nil
+    var reviewAcknowledgementRevision:String? = nil
+    var reviewAcknowledgementReceipts:[ReviewAcknowledgementReceipt]? = nil
 }
 struct BriefingState: Codable {
     var records: [DailyBriefing] = []

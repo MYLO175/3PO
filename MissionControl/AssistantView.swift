@@ -126,7 +126,7 @@ struct AssistantPanel: View {
     }
     @ViewBuilder private func discoverySourceButtons(_ record: PADiscovery) -> some View {
         Button(record.sourceKind == "whatsapp" ? "Source message" : "Source email") { if record.sourceKind == "whatsapp" { sourceDiscovery=record } else if let message = model.emailSummaries.highlights(model).first(where:{ $0.0.id == record.mailID })?.0 { model.select(message) } }
-        Button("Dismiss") { model.proactive.dismiss(record) }
+        Button("Dismiss") { model.proactive.dismiss(record,model:model) }
     }
     private func inspectContext(_ turn:AssistantTurn) {
         guard var capture=turn.contextCapture else {return}
@@ -523,7 +523,7 @@ struct BackgroundActivityView:View {
                     }.padding(12)
                     DisclosureGroup("Learning from dismissals") {
                         VStack(alignment:.leading,spacing:8) {
-                            Text("Repeated similar dismissals guide future reviews. Dismissal does not mean a task is complete; Undo removes the signal.").font(.caption).foregroundStyle(.secondary)
+                            Text("Dismissed items count as acknowledged and stop repeated follow-ups. Similar dismissals also guide future reviews. Dismissal does not mean a task is complete; Undo restores attention.").font(.caption).foregroundStyle(.secondary)
                             let feedback=model.emailSummaries.dismissalContext(model)
                             if feedback.isEmpty {Text("No recent examples.").foregroundStyle(.secondary)}
                             ForEach(Array(feedback.enumerated()),id:\.offset) {_,row in

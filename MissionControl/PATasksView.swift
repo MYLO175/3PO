@@ -16,7 +16,7 @@ struct PATasksView: View {
     private var learningQuestions:[PALearningQuestion] {(model.memoryLearning.state.questions ?? []).filter{model.memoryLearning.visible($0,assistant:model.assistant)}}
     private var questions:[BriefingQuestion] {model.briefings.pendingQuestions(model)}
     private var emails:[(MailMessage,EmailSummary)] {
-        model.emailSummaries.highlights(model).filter { EmailHighlightRules.needsAction($0.1,replied:$0.0.replied) && model.emailSummaries.handling($0.1,message:$0.0,model:model) == nil }.map { message,summary in
+        model.emailSummaries.highlights(model).filter { EmailHighlightRules.needsAction($0.1,replied:$0.0.replied) && !model.acknowledgedEmail($0.0,$0.1) && model.emailSummaries.handling($0.1,message:$0.0,model:model) == nil }.map { message,summary in
             var value=summary
             if message.replied || EmailSummary.fingerprint(message) != summary.fingerprint { value.replyDraft=nil }
             return (message,value)
@@ -101,7 +101,7 @@ struct PATasksView: View {
                                     Button(model.approvingDiscoveryID == item.id ? "Approving…" : "Approve") { Task {await model.approveDiscovery(item)} }.disabled(!model.proactive.canReview(item.id,model:model) || model.writing || model.assistant.busy)
                                     Button("View/edit") {model.reviewDiscovery(item)}.disabled(!model.proactive.canReview(item.id,model:model) || model.writing)
                                 } else { Button("Review suggestion") { model.reviewDiscovery(item) }.disabled(!model.proactive.canReview(item.id,model:model) || model.writing) }
-                            }; Spacer(); Button("Dismiss") { model.proactive.dismiss(item) }.disabled(model.writing) }.controlSize(.small)
+                            }; Spacer(); Button("Dismiss") { model.proactive.dismiss(item,model:model) }.disabled(model.writing) }.controlSize(.small)
                             if model.reviewApprovalErrorAccount == item.registration,model.reviewApprovalErrorID == item.id,let error=model.reviewApprovalError {Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)}
                         }.taskCard()
                     }
@@ -130,7 +130,7 @@ struct PATasksView: View {
                                     Button("Prepare now") { model.emailSummaries.prepareReply(message,summary:summary,model:model) }.disabled(model.emailSummaries.busy || model.assistant.busy || model.chatGPT.busy || model.proactive.busy || model.writing)
                                 }
                                 Button("Original") { model.select(message) }
-                                Spacer(); Button("Dismiss") { model.emailSummaries.dismiss(message.id,model:model) }
+                                Spacer(); Button("Dismiss") { model.emailSummaries.dismiss(message.id,model:model,expectedRegistration:summary.registration,expectedVersion:ReviewAcknowledgementRules.emailVersion(message,summary)) }
                             }.controlSize(.small)
                         }.taskCard()
                     }

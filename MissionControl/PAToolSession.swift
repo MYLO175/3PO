@@ -22,6 +22,8 @@ import Foundation
     var memoryNotes: [String] = []
     var clarification: (String,[String])?
     var issuedSuggestions: Set<String> = []
+    var issuedEmailDismissalVersions:[String:String] = [:]
+    var issuedDiscoveryDismissals:[String:PADiscovery] = [:]
     private lazy var life = LifeWorkspaceToolSession(model:model, registration:registration, topic:topicID, includeTopics:focusAreas != nil, turnID:turnID, evaluationStore:evaluationProjects)
     private var issuedWhatsApp: [String:LifeReference] = [:]
     private var issuedLifeMail = Set<String>()
@@ -197,24 +199,27 @@ import Foundation
         case "read_weather":
             await model.weather.prepareForBrief(); return try json(model.weather.context())
         case "read_attention":
-            let summaries = model.emailSummaries.highlights(model)
+            let summaries = model.emailSummaries.highlights(model).filter{!model.acknowledgedEmail($0.0,$0.1)}
             let discoveries = model.proactive.state.records.filter { model.proactive.visible($0,model:model) }.map(ProactiveRules.reviewProjection)
-            issuedSuggestions.formUnion(summaries.map { "email:" + $0.1.id }); issuedSuggestions.formUnion(discoveries.map { "discovery:" + $0.id })
+            issuedSuggestions.formUnion(summaries.prefix(40).map { "email:" + $0.1.id }); issuedSuggestions.formUnion(discoveries.prefix(10).map { "discovery:" + $0.id })
+            for pair in summaries.prefix(40) {issuedEmailDismissalVersions[pair.1.id]=ReviewAcknowledgementRules.emailVersion(pair.0,pair.1)}
+            for record in discoveries.prefix(10) {issuedDiscoveryDismissals[record.id]=record}
             let brief = model.briefings.current(model)
-            return try json(["brief":brief?.message ?? "No saved brief for today", "briefCoverage":brief?.coverage ?? "Unavailable", "emailCoverage":model.emailSummaries.coverage(model),"emails":summaries.prefix(40).map { ["id":$0.1.id,"subject":$0.0.subject,"account":$0.0.account,"summary":$0.1.summary,"category":EmailHighlightRules.category($0.1,replied:$0.0.replied),"evidence":$0.1.evidence] },"suggestions":discoveries.prefix(10).map { ["id":$0.id,"kind":$0.kind,"message":$0.message,"evidence":$0.evidence] }])
+            return try json(["reviewAcknowledgements":try JSONSerialization.jsonObject(with:JSONEncoder().encode(model.reviewAcknowledgements())),"brief":brief?.message ?? "No saved brief for today", "briefCoverage":brief?.coverage ?? "Unavailable", "emailCoverage":model.emailSummaries.coverage(model),"emails":summaries.prefix(40).map { ["id":$0.1.id,"subject":$0.0.subject,"account":$0.0.account,"summary":$0.1.summary,"category":EmailHighlightRules.category($0.1,replied:$0.0.replied),"evidence":$0.1.evidence] },"suggestions":discoveries.prefix(10).map { ["id":$0.id,"kind":$0.kind,"message":$0.message,"evidence":$0.evidence] }])
         case "dismiss_suggestion":
             try PAToolProtocol.evidence(text("authorization"),human:human)
             let id = text("id")!, kind = text("kind")!
             guard issuedSuggestions.contains(kind + ":" + id) else { throw ActionFailure.message("Read the exact visible suggestion before dismissing it.") }
             if kind == "email" {
-                model.emailSummaries.dismiss(id,model:model)
-                guard model.emailSummaries.records.contains(where:{ $0.id == id && $0.registration == registration && $0.dismissed == true }) else { throw ActionFailure.message("Email suggestion dismissal was not saved.") }
+                guard let version=issuedEmailDismissalVersions[id] else {throw ActionFailure.message("Read this exact email assessment again before dismissing it.")}
+                model.emailSummaries.dismiss(id,model:model,expectedRegistration:registration,expectedVersion:version)
+                guard let saved=model.emailSummaries.records.first(where:{$0.id == id && $0.registration == registration && $0.dismissed == true && $0.dismissedSourceVersion == version}),let current=model.mailData.messages.first(where:{$0.id == id}) ?? saved.message,saved.fingerprint == EmailSummary.fingerprint(current),ReviewAcknowledgementRules.emailVersion(current,saved) == version else { throw ActionFailure.message("Email suggestion dismissal was not saved.") }
             } else {
-                guard let record = model.proactive.state.records.first(where:{ $0.id == id && model.proactive.visible($0,model:model) }) else { throw ActionFailure.message("Suggestion no longer available.") }
-                model.proactive.dismiss(record)
+                guard let record=issuedDiscoveryDismissals[id],let current=model.proactive.state.records.first(where:{$0.id == id && model.proactive.visible($0,model:model)}),ProactiveRules.reviewProjection(current) == record else { throw ActionFailure.message("Suggestion changed. Read the current item before dismissing it.") }
+                model.proactive.dismiss(record,model:model)
                 guard model.proactive.state.records.contains(where:{ $0.id == id && $0.dismissed }) else { throw ActionFailure.message("Dismissal was not saved.") }
             }
-            receipts.append("Suggestion dismissed. Undo is available in its widget."); return try json(["saved":true,"dismissed":id])
+            receipts.append("Item acknowledged. Undo is available in its widget."); return try json(["saved":true,"dismissed":id,"acknowledged":true,"completed":false])
         case "undo_apple_change":
             try PAToolProtocol.evidence(text("authorization"),human:human)
             let result = try await model.undoAssistantAppleChange(); receipts.append(result); return try json(["verified":true,"result":result])

@@ -111,7 +111,7 @@ import EventKit
                 checks["cancellation retires obsolete native edits without deleting or completing anything"]=active.first?.kind == "update" && active.first?.proposedChange == nil && service.state.records.filter{$0.supersededBy != nil}.count == 3
                 checks["same-name different-person plan and unchanged Vega are ignored"]=decoded.allSatisfy{$0.mailID != "fictional-sam" && $0.proposedChange?.target.itemID != vega.id}
                 checks["evidence history follows all three earlier suggestions"]=active.first.map{service.earlierVersions($0).count == 3} ?? false
-                if let latest=active.first {service.dismiss(latest);service=ProactiveService(container:cache);checks["dismissal after reopen cannot resurrect old deadlines"]=service.state.records.allSatisfy{$0.dismissed || $0.supersededBy != nil}}
+                if let latest=active.first {service.dismiss(latest,model:model);service=ProactiveService(container:cache);checks["dismissal after reopen cannot resurrect old deadlines"]=service.state.records.allSatisfy{$0.dismissed || $0.supersededBy != nil}}
             }
             trace.append(["round":round+1,"source":isMail ? "Mail" : "WhatsApp","active":active.map{["kind":$0.kind,"date":$0.proposedChange?.newDate ?? "","replaces":$0.replaces ?? []] as [String:Any]}])
         }
@@ -328,7 +328,7 @@ import EventKit
         do {
             try stage(fixture.item)
             checks["proposal alone leaves native item untouched"] = try await model.eventKit.readApprovalFixture(fixture) == fixture.item
-            model.proactive.dismiss(record)
+            model.proactive.dismiss(record,model:model)
             checks["Dismiss preserves complete native item and does not claim a save"] = try await model.eventKit.readApprovalFixture(fixture) == fixture.item && model.proactive.state.records[0].dismissed && model.proactive.state.records[0].reviewState == nil
             model.proactive.undo(model)
             // Saved assessment headers deliberately survive mail-page eviction; withdraw the account too.

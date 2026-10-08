@@ -25,12 +25,13 @@ struct EmailSummary: Codable, Identifiable {
     var replyDraftCheckedBody:String? = nil
     var replyDraftEdited:Bool? = nil
     var dismissedAt:Date? = nil
+    var dismissedSourceVersion:String? = nil
     var handling:EmailHandling? = nil
     var keepInReview:Bool? = nil
     // Presentation-only grounding keeps the original assessment receipt authoritative.
     var groundingRevision:String? = nil
     enum CodingKeys:String,CodingKey {
-        case id,registration,fingerprint,summary,attention,reason,evidence,created,bodyFingerprint,bodyCheckedAt,messageReceived,message,followUpDate,followUpEvidence,dismissed,worthReading,needsReply,replyDraft,replyChannel,replyDraftCheckedBody,replyDraftEdited,dismissedAt,handling,keepInReview
+        case id,registration,fingerprint,summary,attention,reason,evidence,created,bodyFingerprint,bodyCheckedAt,messageReceived,message,followUpDate,followUpEvidence,dismissed,worthReading,needsReply,replyDraft,replyChannel,replyDraftCheckedBody,replyDraftEdited,dismissedAt,dismissedSourceVersion,handling,keepInReview
     }
     var dateClarificationQuote:String? {
         [followUpEvidence,evidence].compactMap{$0}.first{SourceDateGrounding.needsWeekAnchor($0)}

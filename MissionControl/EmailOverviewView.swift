@@ -37,7 +37,7 @@ struct EmailOverviewView: View {
                             HStack(alignment:.top) {
                                 Text(EmailHighlightRules.category(summary,replied:message.replied)).font(.caption.weight(.semibold)).foregroundStyle(summary.attention ? Color.accentColor : Color.secondary)
                                 Spacer()
-                                Button { summaries.dismiss(message.id,model:model) } label: { Image(systemName:"xmark") }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary).help("Dismiss suggestion").accessibilityLabel("Dismiss email suggestion")
+                                Button { summaries.dismiss(message.id,model:model,expectedRegistration:summary.registration,expectedVersion:ReviewAcknowledgementRules.emailVersion(message,summary)) } label: { Image(systemName:"xmark") }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary).help("Dismiss suggestion").accessibilityLabel("Dismiss email suggestion")
                             }
                             Text(message.subject).font(.callout.weight(.semibold)).lineLimit(2)
                             Text(summary.summary).font(.callout).lineSpacing(3).lineLimit(4).textSelection(.enabled)

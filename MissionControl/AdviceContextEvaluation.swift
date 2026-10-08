@@ -25,7 +25,7 @@ import SwiftUI
         let json:[String:Any]=["id":"fictional-message","accountID":"fictional-mail","account":"Fictional Mail","messageID":1,"internetMessageID":"orion@example.invalid","sender":"Fictional tutor","subject":"Orion preparation","received":now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
         let message=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:json))
         model.mailData = .init(messages:[message],accounts:[.init(id:message.accountID,title:message.account)],errors:[])
-        let summary=EmailSummary(id:message.id,registration:registration,fingerprint:EmailSummary.fingerprint(message),summary:"Orion preparation requested.",attention:true,reason:"Prepare the prototype",evidence:quote,bodyFingerprint:"fictional-body-v1",message:message)
+        let summary=EmailSummary(id:message.id,registration:registration,fingerprint:EmailSummary.fingerprint(message),summary:"Orion preparation requested.",attention:true,reason:"Prepare the prototype",evidence:quote,bodyFingerprint:"fictional-body-v1",message:message,worthReading:true,needsReply:false)
         try model.emailSummaries.seedAdviceFixture([summary])
         checks["brief input includes exact current email assessment"] = model.briefings.currentEmails(model).count == 1
         var renamedJSON=json;renamedJSON["sender"]="Updated fictional contact name"
@@ -92,6 +92,40 @@ import SwiftUI
         checks["source assessment without a query does not supply a biography"]=model.automaticMemory(.heartbeatSuggestions).records.isEmpty
         checks["broad day planning remains available without editing saved memory"]=model.automaticMemory(.brief).records.contains{$0["id"] == weather.id.uuidString} && store.records.contains{$0.id == family.id && $0.text == family.text}
         checks["fixture uses only its account and starts no native write"]=store.records.allSatisfy{$0.registration == registration} && model.writing == false
+        model.mailData = .init(messages:[message],accounts:model.mailData.accounts,errors:[])
+        try model.emailSummaries.seedAdviceFixture([summary])
+        let acknowledgement=PADiscovery(id:"fictional-ack",registration:registration,mailID:message.id,kind:"reminder",message:"Review the Orion preparation request.",evidence:quote,created:now,scope:"fictional",sourceRevision:summary.fingerprint,sourceAssessmentRevision:summary.adviceRevision(replied:message.replied))
+        try model.proactive.seedAdviceFixture([acknowledgement],model:model)
+        let beforeAcknowledgement=model.reviewAcknowledgementRevision,nativeBefore=DiscoveryNativeTarget.fingerprint(model.reminderData),memoryBefore=store.revision
+        model.proactive.dismiss(model.proactive.state.records[0],model:model)
+        checks["Dismiss counts as exact acknowledgement without native or memory changes"] = model.reviewAcknowledgementRevision != beforeAcknowledgement && !model.acknowledgedEmail(message,summary) && DiscoveryNativeTarget.fingerprint(model.reminderData) == nativeBefore && store.revision == memoryBefore
+        checks["dismissing one proposal preserves independent actions in the same source"] = model.briefings.currentEmails(model).count == 1 && model.proactive.emailReviewCandidates(model,heartbeat:true,mailReview:nil,whatsappReady:false,now:now).count == 1
+        let ackRows=model.reviewAcknowledgements()
+        let snapshot=model.assistant.snapshot(model).flatMap{try? JSONSerialization.jsonObject(with:Data($0.utf8)) as? [String:Any]}
+        checks["foreground source context knows the acknowledged concern"] = ackRows.contains{$0.id == "discovery:fictional-ack"} && (snapshot?["reviewAcknowledgements"] as? [[String:Any]])?.contains{$0["id"] as? String == "discovery:fictional-ack"} == true && (snapshot?["savedEmailSummaries"] as? [[String:Any]])?.count == 1
+        checks["actual dismissal survives reopening its cache"] = model.proactive.reopenedAcknowledgementFixture().first?.dismissed == true && model.proactive.reopenedAcknowledgementFixture().first?.dismissedSourceVersion != nil
+        checks["unavailable Mail lanes supply no acknowledged source prose"] = model.reviewAcknowledgements(use:.brief,mailAccounts:[],whatsappReady:false).isEmpty
+        let acknowledgedBrief=DailyBriefing(id:"fictional-ack-brief",registration:registration,day:BriefingRules.day(now),created:now,items:[],sources:[],coverage:"Fictional",message:"The dismissed concern has been seen.",reviewAcknowledgementRevision:model.reviewAcknowledgementRevision,reviewAcknowledgementReceipts:ackRows.map(ReviewAcknowledgementReceipt.init))
+        try model.briefings.seedAdviceFixture(acknowledgedBrief,model:model)
+        checks["saved brief keeps current acknowledgement support"] = model.briefings.current(model)?.id == acknowledgedBrief.id
+        var changedAssessment=summary;changedAssessment.bodyFingerprint="fictional-body-v2"
+        try model.emailSummaries.seedAdviceFixture([changedAssessment])
+        checks["changed negative-context source withholds saved advice but keeps history"] = model.briefings.current(model) == nil && model.briefings.savedToday(model)?.id == acknowledgedBrief.id && model.reviewAcknowledgements().isEmpty
+        try model.emailSummaries.seedAdviceFixture([summary])
+        model.proactive.undo(model)
+        checks["Undo restores concern and original human-choice revision"] = !model.acknowledgedEmail(message,summary) && model.reviewAcknowledgementRevision == beforeAcknowledgement && model.briefings.currentEmails(model).count == 1
+        model.emailSummaries.dismiss(message.id,model:model,expectedRegistration:summary.registration,expectedVersion:ReviewAcknowledgementRules.emailVersion(message,summary))
+        checks["email-work dismissal is acknowledged across contexts"] = model.acknowledgedEmail(message,model.emailSummaries.records[0]) && model.reviewAcknowledgements().contains{$0.id == "email:"+message.id} && model.briefings.currentEmails(model).isEmpty
+        model.emailSummaries.undoDismiss(model)
+        checks["email-work Undo restores source attention"] = model.briefings.currentEmails(model).count == 1 && model.reviewAcknowledgementRevision == beforeAcknowledgement
+        model.emailSummaries.dismiss(message.id,model:model,expectedRegistration:"fictional-other-registration",expectedVersion:ReviewAcknowledgementRules.emailVersion(message,summary))
+        checks["stale registration cannot acknowledge another account's email"] = model.emailSummaries.records[0].dismissed != true
+        try model.emailSummaries.seedAdviceFixture([changedAssessment])
+        model.emailSummaries.dismiss(message.id,model:model,expectedRegistration:registration,expectedVersion:ReviewAcknowledgementRules.emailVersion(message,summary))
+        checks["stale email card cannot acknowledge changed content"] = model.emailSummaries.records[0].dismissed != true
+        let oldProposal=model.proactive.state.records[0]
+        model.proactive.dismiss(oldProposal,model:model)
+        checks["stale proposal dismissal does not acknowledge newer source content"] = model.proactive.state.records[0].dismissedSourceVersion == nil && model.reviewAcknowledgements().isEmpty
         return ["completed":Date.now.ISO8601Format(),"requests":0,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"storage":"Fictional claims, messages and outputs in disposable SwiftData before source startup. No inference, native writes, permission changes or personal store writes. This tests actual consumer projections, not scheduler races or real message delivery."]
     }
 }

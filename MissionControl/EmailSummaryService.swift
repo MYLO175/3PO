@@ -124,12 +124,18 @@ import SwiftData
     func undoDismiss(_ model: DashboardModel) {
         guard let (id,registration) = dismissedUndo, registration == model.chatGPT.activeID else { return }
         let previous = records
-        for i in records.indices where records[i].id == id && records[i].registration == registration { records[i].dismissed = false;records[i].dismissedAt=nil }
+        for i in records.indices where records[i].id == id && records[i].registration == registration { records[i].dismissed = false;records[i].dismissedAt=nil;records[i].dismissedSourceVersion=nil }
         do { try save(); dismissedUndo = nil; dismissalDate = nil } catch { records = previous; self.error = "Dismissal could not be undone." }
     }
-    func dismiss(_ id: String, model: DashboardModel) {
+    func dismiss(_ id: String, model: DashboardModel,expectedRegistration:String,expectedVersion:String) {
+        guard expectedRegistration == model.chatGPT.activeID else {self.error="The account changed before dismissal. The item has not been acknowledged.";return}
         let previous = records
-        for index in records.indices where records[index].id == id && records[index].registration == model.chatGPT.activeID { records[index].dismissed = true;records[index].dismissedAt = .now }
+        for index in records.indices where records[index].id == id && records[index].registration == model.chatGPT.activeID {
+            let message=model.mailData.messages.first{$0.id == id} ?? records[index].message
+            guard let message,records[index].fingerprint == EmailSummary.fingerprint(message),expectedVersion == ReviewAcknowledgementRules.emailVersion(message,records[index]) else {self.error="This email changed before dismissal. Review its current details; the newer item has not been acknowledged.";return}
+            records[index].dismissedSourceVersion=expectedVersion
+            records[index].dismissed = true;records[index].dismissedAt = .now
+        }
         do { try save(); dismissedUndo = (id,model.chatGPT.activeID); dismissalDate = .now } catch { records = previous; self.error = "Email suggestion could not be dismissed." }
     }
     @discardableResult func saveReplyDraft(_ value:String, summary:EmailSummary, model:DashboardModel,humanEdited:Bool = true)->Bool {
@@ -325,7 +331,12 @@ import SwiftData
                     summary.bodyFingerprint = bodyHash; summary.bodyCheckedAt = .now
                     summary.replyDraftCheckedBody=bodyHash
                     let original=records.first(where: { $0.id == message.id && $0.registration == registration })
-                    summary.dismissed=original?.dismissed;summary.dismissedAt=original?.dismissedAt
+                    if let original,original.dismissed == true {
+                        let priorVersion=original.dismissedSourceVersion ?? original.message.map{ReviewAcknowledgementRules.emailVersion($0,original)}
+                        if priorVersion == ReviewAcknowledgementRules.emailVersion(message,summary) {
+                            summary.dismissed=true;summary.dismissedAt=original.dismissedAt;summary.dismissedSourceVersion=priorVersion
+                        }
+                    }
                     summary.keepInReview=original?.keepInReview
                     if original?.replyDraftEdited == true {summary.replyDraft=original?.replyDraft;summary.replyDraftEdited=true;summary.replyDraftCheckedBody=original?.replyDraftCheckedBody}
                     if original?.adviceRevision(replied:message.replied) == summary.adviceRevision(replied:message.replied) {summary.handling=original?.handling}

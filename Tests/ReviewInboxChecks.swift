@@ -104,6 +104,34 @@ import Foundation
         try round(nextDay);precondition(issued == 3 && timeline.records.count == 8 && review.calls == 1 && review.pending == false)
         for hour in 1...48 {try round(nextDay.addingTimeInterval(Double(hour)*3600))}
         precondition(issued == 3 && timeline.records.count == 8 && Set(timeline.records.map(\.mailID)).count == 8 && review.pending == false,"Quiet multi-day checks must neither repeat requests nor lose capped sources")
-        print("PASS review inbox: exact issued target/evidence, date semantics, stale native/scope/timezone rejection, distinct proposed vs confirmed links, duplicate suppression, no daily output cap, persisted quiet/limited-batch progress and legacy decode. No native writes or AI.")
+        let mail=try JSONDecoder().decode(MailMessage.self,from:Data(#"{"id":"mail-ack","accountID":"provider","account":"Fictional","messageID":1,"internetMessageID":"ack@example.invalid","sender":"Tutor","subject":"Orion report","received":"2026-10-07T09:00:00Z","unread":true,"replied":false,"flagged":false}"#.utf8))
+        let assessment=EmailSummary(id:mail.id,registration:"account",fingerprint:EmailSummary.fingerprint(mail),summary:"Submit the report.",attention:true,reason:"Report requested",evidence:"Submit the report.",bodyFingerprint:"body-v1",message:mail)
+        var ack=record;ack.sourceKind=nil;ack.mailID=mail.id;ack.sourceRevision=assessment.fingerprint;ack.sourceAssessmentRevision=assessment.adviceRevision(replied:false);ack.dismissed=true;ack.dismissedAt=now;ack.dismissedSourceVersion=ReviewAcknowledgementRules.emailVersion(mail,assessment)
+        precondition(ReviewAcknowledgementRules.matches(ack,message:mail,summary:assessment,registration:"account"))
+        var regenerated=assessment;regenerated.summary="Different generated wording for the same request."
+        precondition(ReviewAcknowledgementRules.matches(ack,message:mail,summary:regenerated,registration:"account"),"Regenerated wording is not a new concern")
+        regenerated.bodyFingerprint="body-v2"
+        precondition(!ReviewAcknowledgementRules.matches(ack,message:mail,summary:regenerated,registration:"account"),"Changed source content can need attention")
+        precondition(!ReviewAcknowledgementRules.matches(ack,message:mail,summary:assessment,registration:"another-account"))
+        let newMail=try JSONDecoder().decode(MailMessage.self,from:Data(#"{"id":"new-mail","accountID":"provider","account":"Fictional","messageID":2,"internetMessageID":"new@example.invalid","sender":"Tutor","subject":"Orion report","received":"2026-10-07T10:00:00Z","unread":true,"replied":false,"flagged":false}"#.utf8))
+        precondition(!ReviewAcknowledgementRules.matches(ack,message:newMail,summary:assessment,registration:"account"),"Same sender and title do not acknowledge a new message")
+        var regeneratedProposal=ack;regeneratedProposal.dismissed=false;regeneratedProposal.sourceAssessmentRevision="regenerated-assessment"
+        let acknowledgedVersions=[ProactiveRules.sourceKey("mail",mail.id):ReviewAcknowledgementRules.emailVersion(mail,assessment)]
+        precondition(ProactiveRules.unreported([regeneratedProposal],prior:[ack],dismissedVersions:acknowledgedVersions).isEmpty,"Same exact dismissed concern stays acknowledged after prose regeneration")
+        var sibling=regeneratedProposal;sibling.proposedChange=nil;sibling.kind="reminder";sibling.evidence="Return the separate safety form."
+        precondition(ProactiveRules.unreported([sibling],prior:[ack],dismissedVersions:acknowledgedVersions).count == 1,"A dismissed date change cannot hide a separate action")
+        var firstAction=ack;firstAction.proposedChange=nil;firstAction.kind="reminder"
+        precondition(ProactiveRules.unreported([sibling],prior:[firstAction],dismissedVersions:acknowledgedVersions).count == 1,"Two reminder concerns with different source quotes stay distinct")
+        var undone=ack;undone.dismissed=false
+        precondition(!ReviewAcknowledgementRules.matches(undone,message:mail,summary:assessment,registration:"account"),"Undo restores eligibility")
+        let restoredAck=try JSONDecoder().decode(PADiscovery.self,from:JSONEncoder().encode(ack))
+        precondition(restoredAck.dismissedAt == now && restoredAck.dismissedSourceVersion == ack.dismissedSourceVersion && restoredAck.proposedChange == record.proposedChange && restoredAck.reviewState == nil)
+        let wa=WhatsAppReadMessage(id:"message",chat:"studies",sender:"Tutor",text:quote,sentByMe:false,time:now.timeIntervalSince1970*1000)
+        var waAck=record;waAck.dismissed=true;waAck.sourceRevision=SourceContextRules.revision(wa)
+        precondition(ReviewAcknowledgementRules.matches(waAck,message:wa,registration:"account",identity:"linked"))
+        precondition(!ReviewAcknowledgementRules.matches(waAck,message:wa,registration:"account",identity:"different-device"))
+        let editedWA=WhatsAppReadMessage(id:wa.id,chat:wa.chat,sender:wa.sender,text:"A new report deadline.",sentByMe:false,time:wa.time)
+        precondition(!ReviewAcknowledgementRules.matches(waAck,message:editedWA,registration:"account",identity:"linked"))
+        print("PASS review inbox: exact evidence/native guards, persistent acknowledgement, regenerated wording, changed content, new messages, account/WhatsApp identity, Undo, bounded scheduling and legacy decode. No native writes or AI.")
     }
 }
