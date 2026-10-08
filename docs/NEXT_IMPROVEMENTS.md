@@ -1,5 +1,7 @@
 # Next improvements
 
+8 October heartbeat refinement: explicit sleep/lid/dark-wake gating, persisted due-anchor retention, and one overdue wake catch-up are implemented with injected-state/storage checks. Brief preparation withholds stale assessments and has bounded fresh-evidence recovery with optional-source omission. Physical lid-close/full-wake acceptance and sustained real scheduling remain separate from these focused checks; no general semantic or full-source coverage claim follows.
+
 8 October Mail search presentation: coverage and optional Continue/Retry now belong to the reply that performed the search, under collapsed Mail search details. No persistent search strip occupies the composer after an answer. Search coverage and retrieval quality remain separate from this presentation fix; it does not broaden Mail scope or claim exhaustive results.
 
 This is the product roadmap to review together. The detailed next-stage architecture is in [PA intelligence plan](PA_INTELLIGENCE_PLAN.md), approved scope in [PLAN](../PLAN.md), and exact validation boundaries in [STATUS](../STATUS.md). PA quality remains the priority; map layout, 3PO palettes and local PA naming have also been refined.

@@ -11,6 +11,7 @@ import EventKit
     private(set) var orientationCollectionRevision = -1
     private(set) var reminderCollectionRevision = -1
     private var lastOrientationCheck = Date.distantPast
+    private var heartbeatPowerMonitor:HeartbeatPowerMonitor?
     var reminderData = ReminderSnapshot(sources: [], reminders: [])
     var completedReminders:[CompletedReminder] = []
     var completedReminderHealth=SourceHealth()
@@ -369,7 +370,10 @@ import EventKit
                 }
             }
         })
-        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.refresh(retryMail: false); if let self { self.heartbeat.check(self) } } })
+        heartbeatPowerMonitor=HeartbeatPowerMonitor { [weak self] in if let self {self.heartbeat.deviceAvailabilityChanged(self)} }
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { if let self {self.heartbeat.willSleep(self)} } })
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in if let self {self.refresh(retryMail:false);self.heartbeat.didWake(self)} } })
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in if let self {self.heartbeat.deviceAvailabilityChanged(self)} } })
         poll = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(300))

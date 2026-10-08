@@ -51,22 +51,31 @@ import UserNotifications
         record.registration == model.chatGPT.activeID && record.invalidated != true && freshnessNote(record,model:model) == nil
     }
     private func sourceEvidenceAvailable(_ record:DailyBriefing,model:DashboardModel)->Bool {
-        let emails=model.emailSummaries.highlights(model)
-        return record.sources.allSatisfy { source in
-            guard let revision=source.contentRevision else { return true }
+        changedSourceKinds(record,model:model).isEmpty
+    }
+    func currentEmails(_ model:DashboardModel,mailAccounts:Set<String>? = nil)->[(MailMessage,EmailSummary)] {
+        model.emailSummaries.highlights(model).filter { message,summary in
+            (mailAccounts?.contains(message.accountID) ?? true) && summary.fingerprint == EmailSummary.fingerprint(message)
+        }
+    }
+    private func changedSourceKinds(_ record:DailyBriefing,model:DashboardModel)->Set<String> {
+        let emails=currentEmails(model)
+        return Set(record.sources.compactMap { source -> String? in
+            guard let revision=source.contentRevision else { return nil }
             if source.kind == "mail" {
-                return emails.contains{$0.0.id == source.originalID && $0.1.fingerprint == EmailSummary.fingerprint($0.0) && $0.1.adviceRevision(replied:$0.0.replied) == revision}
+                return emails.contains{$0.0.id == source.originalID && $0.1.adviceRevision(replied:$0.0.replied) == revision} ? nil : "mail"
             }
             if source.kind == "whatsapp" {
-                return source.linkedIdentity == model.whatsapp.linkedIdentity && model.whatsapp.messages.contains {
+                let current = source.linkedIdentity == model.whatsapp.linkedIdentity && model.whatsapp.messages.contains {
                     $0.id == source.originalID && $0.chat == source.chatID && SourceContextRules.revision($0) == revision
                 }
+                return current ? nil : "whatsapp"
             }
             if source.kind == "workspace" {
-                return model.assistant.projects.items(record.registration).contains{$0.id.uuidString == source.originalID && $0.revision.uuidString == revision}
+                return model.assistant.projects.items(record.registration).contains{$0.id.uuidString == source.originalID && $0.revision.uuidString == revision} ? nil : "workspace"
             }
-            return true
-        }
+            return nil
+        })
     }
     private func availability(_ model:DashboardModel)->BriefingRequestAvailability {
         .init(contextEnabled:model.assistant.contextEnabled,verified:model.chatGPT.inferenceVerified,paused:model.chatGPT.usagePaused,connectionBusy:model.chatGPT.busy,assistantBusy:model.assistant.busy,writing:model.writing,hasAccount:!model.chatGPT.activeID.isEmpty)
@@ -199,11 +208,15 @@ import UserNotifications
         let writingPrompt=state.writingPrompt(registration)
         task = Task {
             defer { busy = false;phase="" }
+            var recovery=BriefingPreparationRecovery()
+            while true {
             do {
+                try Task.checkCancellation()
+                let now=Date.now
                 guard registration == model.chatGPT.activeID, selectedModel == model.chatGPT.selectedModel, !model.assistant.busy, !model.chatGPT.busy, !model.writing else { throw ActionFailure.message("The account or active work changed before preparation; update the brief again.") }
                 let weatherScope = model.weather.scope
                 let contextWasEnabled = model.assistant.contextEnabled
-                let memoryCapture = model.automaticMemory(.brief,mailAccounts:mailReview?.accountIDs,whatsappReady:whatsappReady)
+                let memoryCapture = recovery.omittedKinds.contains("memory") ? AutomaticMemoryCapture(records:[],dependencies:[],eligibleCount:0) : model.automaticMemory(.brief,mailAccounts:recovery.omittedKinds.contains("mail") ? [] : mailReview?.accountIDs,whatsappReady:whatsappReady && !recovery.omittedKinds.contains("whatsapp"))
                 let memorySnapshot = memoryCapture.records
                 let calendars = model.assistant.excludedCalendars, lists = model.assistant.excludedLists, accounts = model.assistant.excludedAccounts
                 let emailsWereEnabled = model.emailSummaries.enabled
@@ -213,22 +226,25 @@ import UserNotifications
                 @MainActor func validatePreparation() throws {
                     let checks: [(Bool,String)] = [
                         (registration == model.chatGPT.activeID,"account"),
-                        (!heartbeat || (model.heartbeat.busy && heartbeatControls == model.heartbeat.controlsRevision && (manual || model.heartbeat.enabled) && !model.heartbeat.composerActive),"heartbeat ownership"),
+                        (!heartbeat || (model.heartbeat.busy && model.heartbeat.deviceAvailable && heartbeatControls == model.heartbeat.controlsRevision && (manual || model.heartbeat.enabled) && !model.heartbeat.composerActive),"heartbeat ownership"),
                         (selectedModel == model.chatGPT.selectedModel,"AI model"),
                         (calendar.timeZone == Calendar.current.timeZone,"local timezone"),
                         (preferences == model.assistant.preferences,"PA preferences"),
                         (writingPrompt == state.writingPrompt(registration),"brief prompt"),
                         (weatherScope == model.weather.scope,"weather permissions"),
                         (whatsappAccess.briefEnabled == model.whatsapp.access(for:registration).briefEnabled && (!whatsappAccess.briefEnabled || whatsappScope == model.whatsapp.scope(for:model.chatGPT.activeID)),"WhatsApp connection or selection"),
-                        (memoryCapture == model.automaticMemory(.brief,mailAccounts:mailReview?.accountIDs,whatsappReady:whatsappReady) && model.memoryDependenciesAvailable(memoryCapture.dependencies,use:.brief),"PA memory or evidence"),
+                        (recovery.omittedKinds.contains("memory") || (memoryCapture == model.automaticMemory(.brief,mailAccounts:recovery.omittedKinds.contains("mail") ? [] : mailReview?.accountIDs,whatsappReady:whatsappReady && !recovery.omittedKinds.contains("whatsapp")) && model.memoryDependenciesAvailable(memoryCapture.dependencies,use:.brief)),"PA memory or evidence"),
                         (model.assistant.contextEnabled && (heartbeat || manual || enabled),"brief access"),
                         (contextWasEnabled == model.assistant.contextEnabled,"source access"),
                         (calendars == model.assistant.excludedCalendars && lists == model.assistant.excludedLists && accounts == model.assistant.excludedAccounts,"source selection"),
                         (emailsWereEnabled == model.emailSummaries.enabled,"email access"),
-                        (mailReview.map{$0.accountIDs.isSubset(of:$0.available(index:model.mailIndex,snapshot:model.mailData,excluded:model.assistant.excludedAccounts).accountIDs)} ?? true,"checked Mail coverage"),
+                        (recovery.omittedKinds.contains("mail") || (mailReview.map{$0.accountIDs.isSubset(of:$0.available(index:model.mailIndex,snapshot:model.mailData,excluded:model.assistant.excludedAccounts).accountIDs)} ?? true),"checked Mail coverage"),
                         (!model.writing && !model.assistant.busy,"active PA work")
                     ]
                     let changed=checks.filter { !$0.0 }.map { $0.1 }
+                    if !changed.isEmpty,Set(changed).isSubset(of:["PA memory or evidence","checked Mail coverage"]) {
+                        throw BriefingContextChanged(kinds:Set(changed.map{$0 == "checked Mail coverage" ? "mail" : "memory"}))
+                    }
                     guard changed.isEmpty else { throw ActionFailure.message("Preparation stopped because \(changed.joined(separator:", ")) changed. No outdated brief was saved; prepare again.") }
                 }
                 var sources: [BriefingSource] = [], input: [String:Any] = BriefingRules.clockInput(now,calendar:calendar)
@@ -270,7 +286,7 @@ import UserNotifications
                     guard native.revision != model.sourceRevision else { return }
                     let fresh=try await readNative()
                     guard try BriefingRules.sourceSnapshot(native.input,sources:native.sources) == BriefingRules.sourceSnapshot(fresh.input,sources:fresh.sources) else {
-                        throw ActionFailure.message("Calendar or reminder details changed during preparation. No outdated brief was saved; prepare again for the latest details.")
+                        throw BriefingContextChanged(kinds:["native"])
                     }
                     native=fresh
                 }
@@ -279,13 +295,14 @@ import UserNotifications
                     input["localWeather"] = model.weather.context(now:now)
                     if model.weather.enabled, model.weather.allowed, let forecast = model.weather.forecast, forecast.usable(now:now) { sources.append(.init(id:"weather_0",label:"Nearby forecast · Open-Meteo",kind:"weather",date:forecast.fetched,originalID:nil)) }
                 }
-                let emails = model.emailSummaries.enabled ? model.emailSummaries.highlights(model).filter{mailReview?.accountIDs.contains($0.0.accountID) ?? true} : []
+                let emails = model.emailSummaries.enabled && !recovery.omittedKinds.contains("mail") ? currentEmails(model,mailAccounts:mailReview?.accountIDs) : []
+                let staleEmailCount=model.emailSummaries.enabled ? model.emailSummaries.highlights(model).filter{mailReview?.accountIDs.contains($0.0.accountID) ?? true}.filter{$0.1.fingerprint != EmailSummary.fingerprint($0.0)}.count : 0
                 input["emailSummaries"] = emails.prefix(40).enumerated().map { ["id":"mail_\($0.offset)","received":$0.element.0.received.ISO8601Format(),"summary":$0.element.1.summary,"reason":$0.element.1.reason,"evidence":$0.element.1.evidence,"attention":EmailHighlightRules.needsAction($0.element.1,replied:$0.element.0.replied),"needsReply":$0.element.1.needsReply == true && !$0.element.0.replied,"replied":$0.element.0.replied,"assessmentCategory":EmailHighlightRules.category($0.element.1,replied:$0.element.0.replied),"followUpDate":$0.element.1.followUpDate ?? "none","followUpEvidence":$0.element.1.followUpEvidence ?? ""] as [String:Any] }
                 sources += emails.prefix(40).enumerated().map { .init(id: "mail_\($0.offset)", label: $0.element.0.account + " · " + $0.element.0.subject, kind: "mail", date: $0.element.0.received, originalID: $0.element.0.id,contentRevision:$0.element.1.adviceRevision(replied:$0.element.0.replied)) }
                 var whatsappCoverage=""
                 var whatsappDependencies:[WhatsAppWindowDependency]=[]
                 var whatsappWindow:String?
-                if contextWasEnabled && whatsappAccess.briefEnabled && whatsappReady {
+                if contextWasEnabled && whatsappAccess.briefEnabled && whatsappReady && !recovery.omittedKinds.contains("whatsapp") {
                     let snapshot=WhatsAppReadRules.brief(model.whatsapp.messages,access:whatsappAccess,now:now)
                     whatsappDependencies=ProactiveRules.whatsappDependencies(model.whatsapp.messages,chats:Set(snapshot.messages.map(\.chat)).union(memoryCapture.whatsappChats),identity:whatsappIdentity)
                     if !whatsappDependencies.isEmpty { whatsappWindow=ProactiveRules.whatsappWindow(model.whatsapp.messages,chats:Set(whatsappDependencies.map(\.chatID)),identity:whatsappIdentity) }
@@ -298,7 +315,7 @@ import UserNotifications
                     whatsappCoverage=" WhatsApp: \(snapshot.messages.count) of \(snapshot.total) cached selected-chat messages from the last 48 hours; at most 40, text shortened to 800 characters. Partial received cache, \(model.whatsapp.connected ? "connected" : "offline"); no claim of all messages or read/reply status."
                     input["whatsappCoverage"]=whatsappCoverage
                 }
-                let coverage = (mailReview.map{"Freshly checked Mail accounts: \($0.accountIDs.count); unavailable/pending: \($0.issues.count). "} ?? "") + (model.emailSummaries.enabled ? model.emailSummaries.coverage(model) : "Email processing disabled.") + " · At most 40 saved email summaries. Calendar/reminders " + (model.assistant.contextEnabled ? "enabled." : "disabled.") + whatsappCoverage
+                let coverage = (mailReview.map{"Freshly checked Mail accounts: \($0.accountIDs.count); unavailable/pending: \($0.issues.count). "} ?? "") + (model.emailSummaries.enabled ? model.emailSummaries.coverage(model) : "Email processing disabled.") + " · At most 40 current saved email summaries. \(staleEmailCount) outdated assessments withheld. Calendar/reminders " + (model.assistant.contextEnabled ? "enabled." : "disabled.") + whatsappCoverage + (recovery.omittedKinds.isEmpty ? "" : " Temporarily omitted because their evidence kept changing: " + recovery.omittedKinds.sorted().joined(separator:", ") + ". Do not claim these sources were assessed in this brief.")
                 input["communicationStatus"] = [
                     "email": emailsWereEnabled ? (emails.isEmpty ? "No saved email summaries available to assess; do not claim the inbox is quiet." : "Assess only supplied saved summaries; coverage is bounded and not a fresh full-inbox check.") : "Disabled; email was not checked.",
                     "whatsapp": whatsappAccess.briefEnabled ? (whatsappCoverage.isEmpty ? "Unavailable; WhatsApp was not checked." : "Assess only supplied recent selected-chat cached text. An empty set means no text available, not proof there are no important messages.") : "Disabled; WhatsApp was not checked."
@@ -309,16 +326,18 @@ import UserNotifications
                 sources += memorySnapshot.enumerated().map { index,record in
                     .init(id:"memory_\(index)",label:"Memory · " + String((record["text"] ?? "Saved fact").prefix(120)),kind:"memory",date:nil,originalID:record["id"])
                 }
-                if heartbeat {
+                if heartbeat && !recovery.omittedKinds.contains("workspace") {
                     let items=Array(model.assistant.projects.items(registration).prefix(40))
                     input["workspace"]=items.enumerated().map{["id":"workspace_\($0.offset)","title":$0.element.title,"kind":$0.element.kind.rawValue,"status":$0.element.status.rawValue,"notes":String($0.element.notes.prefix(300))]}
                     sources += items.enumerated().map{.init(id:"workspace_\($0.offset)",label:$0.element.title,kind:"workspace",date:nil,originalID:$0.element.id.uuidString,contentRevision:$0.element.revision.uuidString)}
                 }
                 input["allowedSourceIDs"]=sources.map(\.id).sorted()
-                if live, let morning,usable(morning,model:model),let earlier=BriefingRules.earlierMessage(morning:morning,sourceScope:scope(model)) { input["earlierBrief"] = ["prepared":morning.created.ISO8601Format(),"message":earlier] }
+                if live,recovery.omittedKinds.isEmpty,let morning,usable(morning,model:model),let earlier=BriefingRules.earlierMessage(morning:morning,sourceScope:scope(model)) { input["earlierBrief"] = ["prepared":morning.created.ISO8601Format(),"message":earlier] }
                 @MainActor func validateMessages() throws {
                     let snapshot=DailyBriefing(id:"capture",registration:registration,day:day,created:now,items:[],sources:sources,coverage:coverage)
-                    guard sourceEvidenceAvailable(snapshot,model:model),whatsappWindow.map({$0 == ProactiveRules.whatsappWindow(model.whatsapp.messages,chats:Set(whatsappDependencies.map(\.chatID)),identity:whatsappIdentity)}) ?? true else { throw ActionFailure.message("A supplied message, conversation or assessment changed during preparation. No outdated brief was saved; prepare again.") }
+                    var changed=changedSourceKinds(snapshot,model:model)
+                    if let whatsappWindow,whatsappWindow != ProactiveRules.whatsappWindow(model.whatsapp.messages,chats:Set(whatsappDependencies.map(\.chatID)),identity:whatsappIdentity) { changed.insert("whatsapp") }
+                    if !changed.isEmpty { throw BriefingContextChanged(kinds:changed) }
                 }
                 try Task.checkCancellation()
                 try await validateNative()
@@ -332,8 +351,10 @@ import UserNotifications
                 if live && !manual && !heartbeat && state.overviewFingerprints?[registration] == fingerprint { return }
                 phase="Writing today’s brief…"
                 if heartbeat {
-                    input["reviewQuestions"]=(state.reviewQuestions ?? []).filter{$0.snapshot.registration == registration}.suffix(12).map{["question":$0.question,"dismissed":$0.dismissed,"answered":$0.answered] as [String:Any]}
-                    input["reviewInbox"]=model.proactive.state.records.filter{model.proactive.visible($0,model:model)}.suffix(12).map(\.message)
+                    if recovery.omittedKinds.isEmpty {
+                        input["reviewQuestions"]=(state.reviewQuestions ?? []).filter{$0.snapshot.registration == registration}.suffix(12).map{["question":$0.question,"dismissed":$0.dismissed,"answered":$0.answered] as [String:Any]}
+                        input["reviewInbox"]=model.proactive.state.records.filter{model.proactive.visible($0,model:model)}.suffix(12).map(\.message)
+                    }
                     try model.heartbeat.claimCall(registration)
                 }
                 let text = String(data:try JSONSerialization.data(withJSONObject:input),encoding:.utf8)!
@@ -358,8 +379,14 @@ import UserNotifications
                 do { try save() } catch { state = previous; throw error }
                 if heartbeat,let question {await notifyQuestion(question,model:model)}
                 if !heartbeat && !live { model.assistant.deliverMorning(record); await notify(record,model:model) }
-            } catch is CancellationError { error = "Briefing stopped; no completed update was saved."; if live { state.overviewPaused = true } else { state.paused = true }; try? save() }
-            catch { self.error = error.localizedDescription; if live { state.overviewPaused = true } else { state.paused = true }; try? save() }
+                return
+            } catch let change as BriefingContextChanged {
+                if recovery.advance(change) { phase="Refreshing changed evidence for today’s brief…"; continue }
+                error="The supplied \(change.kinds.sorted().joined(separator:", ")) evidence is still changing. Completed review work is saved; the next heartbeat uses fresh context."
+                return
+            } catch is CancellationError { error = "Briefing stopped; no completed update was saved."; if live { state.overviewPaused = true } else { state.paused = true }; try? save();return }
+            catch { self.error = error.localizedDescription; if live { state.overviewPaused = true } else { state.paused = true }; try? save();return }
+            }
         }
     }
     func pendingQuestions(_ model:DashboardModel)->[BriefingQuestion] {

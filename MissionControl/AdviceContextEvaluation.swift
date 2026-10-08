@@ -27,6 +27,13 @@ import SwiftUI
         model.mailData = .init(messages:[message],accounts:[.init(id:message.accountID,title:message.account)],errors:[])
         let summary=EmailSummary(id:message.id,registration:registration,fingerprint:EmailSummary.fingerprint(message),summary:"Orion preparation requested.",attention:true,reason:"Prepare the prototype",evidence:quote,bodyFingerprint:"fictional-body-v1",message:message)
         try model.emailSummaries.seedAdviceFixture([summary])
+        checks["brief input includes exact current email assessment"] = model.briefings.currentEmails(model).count == 1
+        var renamedJSON=json;renamedJSON["sender"]="Updated fictional contact name"
+        let renamedSender=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:renamedJSON))
+        model.mailData = .init(messages:[renamedSender],accounts:model.mailData.accounts,errors:[])
+        checks["stale sender metadata withholds old assessment before brief inference"] = model.briefings.currentEmails(model).isEmpty
+        checks["withholding a stale assessment preserves saved history"] = model.emailSummaries.records.count == 1 && model.emailSummaries.records[0].fingerprint == summary.fingerprint
+        model.mailData = .init(messages:[message],accounts:model.mailData.accounts,errors:[])
         let advice=PADiscovery(id:UUID().uuidString,registration:registration,mailID:message.id,kind:"reminder",message:"Would a prototype reminder help?",evidence:quote,created:now,scope:"fixture",sourceRevision:summary.fingerprint,memoryDependencies:capture.dependencies,memoryUse:.manualSuggestions,sourceAssessmentRevision:summary.adviceRevision(replied:false))
         try model.proactive.seedAdviceFixture([advice],model:model)
         try model.briefings.seedAdviceFixture(morning,model:model)

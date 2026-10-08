@@ -108,6 +108,14 @@ import Foundation
         precondition(PAHeartbeatRules.nextReview(shorter,now:now,minutes:30) == now.addingTimeInterval(1800),"Retry timing follows a changed interval")
         let slept=try JSONDecoder().decode(PAHeartbeatAccount.self,from:JSONEncoder().encode(PAHeartbeatAccount(checked:now,assessed:now)))
         let wake=now.addingTimeInterval(8*3600)
+        var interruptedSleep=slept;interruptedSleep.checked=wake;interruptedSleep.calls=7;interruptedSleep.phase="assessing"
+        let suspended=PAHeartbeatRules.suspended(interruptedSleep,prior:slept)
+        precondition(suspended.checked == slept.checked && suspended.calls == 7 && suspended.phase == "idle" && suspended.pending == true)
+        precondition(PAHeartbeatRules.due(suspended,now:wake),"Closing during a due heartbeat must not postpone reopening by a fresh hour")
+        let suspendedRestored=try JSONDecoder().decode(PAHeartbeatAccount.self,from:JSONEncoder().encode(suspended))
+        precondition(PAHeartbeatRules.due(suspendedRestored,now:wake),"Sleep catch-up survives cache reopening")
+        let sleepRun=PAReviewRun(id:"sleep",started:now,finished:wake,manual:false,phase:"suspended",detail:"Laptop closed")
+        precondition(sleepRun.outcome() == "Paused for sleep","Sleep is reported distinctly from a failed provider request")
         precondition(PAHeartbeatRules.due(slept,now:wake))
         var caughtUp=slept;caughtUp.checked=wake;caughtUp.assessed=wake
         precondition(!PAHeartbeatRules.due(caughtUp,now:wake.addingTimeInterval(1)),"A missed eight-hour span runs once, not eight times")

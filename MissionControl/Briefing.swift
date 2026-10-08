@@ -1,5 +1,22 @@
 import Foundation
 
+struct BriefingContextChanged: Error {
+    var kinds: Set<String>
+}
+/// Only evidence churn can rebuild a read-only brief. Ownership/permission errors
+/// and provider failures never enter this bounded preparation recovery.
+struct BriefingPreparationRecovery {
+    private(set) var attempt = 0
+    private var changedKinds: Set<String> = []
+    private(set) var omittedKinds: Set<String> = []
+    mutating func advance(_ change: BriefingContextChanged) -> Bool {
+        guard attempt < 2 else { return false }
+        changedKinds.formUnion(change.kinds); attempt += 1
+        if attempt == 2 { omittedKinds = changedKinds.intersection(["mail","whatsapp","workspace","memory"]) }
+        return true
+    }
+}
+
 struct BriefingItem: Codable, Identifiable {
     var id = UUID()
     var text: String

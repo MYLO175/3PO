@@ -165,6 +165,13 @@ import Foundation
         let decodedState=try JSONDecoder().decode(BriefingState.self,from:JSONEncoder().encode(questionState))
         precondition(decodedState.reviewQuestions?.first?.dismissed == true && decodedState.updatedBriefs?["owner"]?.heartbeatID == "run-1")
         precondition(decodedState.records.isEmpty && decodedState.notificationClaims.isEmpty,"Heartbeat updates never claim a morning delivery or notification")
+        var recovery=BriefingPreparationRecovery()
+        precondition(recovery.advance(.init(kinds:["whatsapp"])) && recovery.omittedKinds.isEmpty,"First evidence change recaptures fresh context")
+        precondition(recovery.advance(.init(kinds:["mail"])) && recovery.omittedKinds == ["mail","whatsapp"],"Repeated churn omits only affected optional sources on final preparation")
+        precondition(!recovery.advance(.init(kinds:["workspace"])),"Preparation has no infinite inference retry loop")
+        var nativeRecovery=BriefingPreparationRecovery()
+        _=nativeRecovery.advance(.init(kinds:["native"]));_=nativeRecovery.advance(.init(kinds:["native"]))
+        precondition(nativeRecovery.omittedKinds.isEmpty,"Native source changes never bypass exact validation")
         print("PASS: account-scoped prompt/default persistence and stale captures; local dayparts/timezone/DST, immutable prose, catch-up, delivery claims and source validation")
     }
 }

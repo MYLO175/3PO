@@ -33,6 +33,7 @@ struct PAReviewRun:Codable,Identifiable {
 
     func outcome(running:Bool = false)->String {
         if finished == nil {return running ? "Running" : "Interrupted"}
+        if phase == "suspended" { return "Paused for sleep" }
         if briefUpdated == true {return ["paused","failed","interrupted"].contains(phase) ? "Partly completed" : "Completed"}
         return phase == "failed" ? "Failed" : phase == "interrupted" ? "Interrupted" : phase == "paused" ? "Stopped" : phase == "waiting" ? "Waiting" : "Checked"
     }
@@ -110,6 +111,13 @@ enum PAHeartbeatRules {
     static func failed(_ account:PAHeartbeatAccount,now:Date,minutes:Int = defaultMinutes)->PAHeartbeatAccount {
         var value=account;value.phase="idle";value.pending=true;value.checked=now
         value.retryReason="failure";value.retryAfter=now.addingTimeInterval(Double(minutes)*60)
+        return value
+    }
+    static func suspended(_ account:PAHeartbeatAccount,prior:PAHeartbeatAccount)->PAHeartbeatAccount {
+        // Keep completed work/call claims, but a lid/sleep interruption does not
+        // consume the due interval or postpone the fresh wake catch-up.
+        var value=account;value.phase="idle";value.pending=true
+        value.checked=prior.checked;value.retryAfter=prior.retryAfter;value.retryReason=prior.retryReason
         return value
     }
     static func interrupted(_ account:PAHeartbeatAccount,now:Date,foreground:Bool,minutes:Int = defaultMinutes)->PAHeartbeatAccount {

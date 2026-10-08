@@ -1,5 +1,11 @@
 # Decisions
 
+## 8 October 2026 — Sleep-aware heartbeat and changing brief evidence
+
+The user wants no heartbeat attempts while the laptop is closed/asleep, then one overdue run on opening at the configured hourly cadence. Read lid state and current CPU/Graphics capabilities through public IOKit registry APIs, observe root-domain hints and workspace sleep/wake, and recheck before each request. Persist the sleep interruption synchronously, retaining the previous due anchor, completed work and consumed calls. Ordinary provider failures remain separate and keep interval recovery. Physical sleep/wake acceptance must be distinguished from injected-state scheduling fixtures.
+
+Repeated live failures were in brief evidence validation, not logged system sleep. One current saved assessment had a different sender-header fingerprint yet remained in the highlight projection supplied to the brief. Filter such assessments from current brief input without deleting history. Rebuild read-only preparation on evidence churn within the same owned budget, at most three times; on the final preparation omit changing optional sources and indirect previous advice. Do not bypass stale-output or permission checks to force a success. See STATUS for the OS timeline, tests and actual live outcome.
+
 ## 8 October 2026 — Mail search details belong to their reply
 
 An answered request could leave a global Continue mail search strip above the PA composer because the search had unsearched windows. Capture the assistant reply ID when search/continuation succeeds and show its coverage and controls in a collapsed Mail search details disclosure on that reply, with the existing registration/conversation/topic guards. An empty result set has no empty Mail sources menu. Preserve partial-coverage honesty, retry authority and the reusable bounded search; answering a question does not require exhausting every mailbox window.
