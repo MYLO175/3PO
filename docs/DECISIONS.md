@@ -345,3 +345,9 @@ Use additive optional receipts/times on existing records, with unknown historica
 ## 8 October — One current brief
 
 The user considers Today’s brief one current summary, not an original plus updates. Remove the Original brief disclosure and original-message wording from widget refresh/help. Keep the current update time, sources/coverage and freshness explanations. This is a presentation change: retained records, transcripts and immutable delivery/notification identities remain intact without another visible brief section.
+
+## 8 October — Explicit attention choices and current-life email relevance
+
+The user wants routine irrelevance to become teachable and emails connected to their current life to receive more attention. Keep ordinary Dismiss as acknowledgement and weak feedback. Add editable “Not relevant to me” and “Important to me” topics, with inspectable account-owned preferences, Disable/Restore and local Undo. A less-attention choice also acknowledges the exact still-current card; no sender blacklist or automatic permanent rule from silence. New personal requests are assessed afresh.
+
+Use bounded targeted human facts and current human projects at both header and body review. Positive connections require an exact source quotation and issued supporting IDs/revisions. Rank useful connected material within its category; relevance alone cannot create an action, reply, deadline or urgency. Preserve source-derived classification exclusion until its dependency contract exists. Changes to supporting facts/projects/preferences withdraw stale relevance, and preference edits invalidate captured read-only advice. Corrupt/invalid preference storage blocks exposure and inference instead of dropping human choices. Feedback itself adds no AI call, source scan or native write; unchanged assessments are not automatically replayed.

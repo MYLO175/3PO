@@ -136,6 +136,32 @@ import Foundation
         actionable.keepInReview=true;refuseHandling(actionable,"done_0")
         let savedHandling=try JSONDecoder().decode(EmailHandling.self,from:JSONEncoder().encode(handled[0].1))
         assert(savedHandling == handled[0].1)
-        print("PASS: exact source evidence, attention evidence requirement, invalid-output rejection, cache round-trip and changed-header fingerprint")
+
+        let relevanceContext=EmailRelevanceContext(memories:[["id":"human_1","text":"Current Orion work"]],workspace:[["id":"life:project_1","revision":UUID().uuidString,"title":"Orion"]],memoryReceipts:[.init(id:"human_1",fingerprint:"f1")])
+        let connection=EmailRelevanceJudgement(reason:"Useful for the current Orion project",evidence:body,memoryIDs:["human_1"],workspaceIDs:["life:project_1"],preferenceIDs:[])
+        let relevance=try EmailRelevanceRules.validated(connection,context:relevanceContext,message:message,body:body)
+        precondition(relevance.memories.count == 1 && relevance.workspace.count == 1)
+        var informational=reading;informational.personalRelevance=relevance
+        precondition(!informational.attention && EmailHighlightRules.rank(informational,replied:false) > EmailHighlightRules.rank(reply,replied:false))
+        var badConnection=connection;badConnection.memoryIDs=["invented_id"]
+        do {_ = try EmailRelevanceRules.validated(badConnection,context:relevanceContext,message:message,body:body);fatalError("Invented relevance ID accepted")} catch SummaryFailure.unsupportedEvidence {}
+        badConnection=connection;badConnection.evidence="Invented request"
+        do {_ = try EmailRelevanceRules.validated(badConnection,context:relevanceContext,message:message,body:body);fatalError("Unsupported relevance quote accepted")} catch SummaryFailure.unsupportedEvidence {}
+        precondition(legacy.personalRelevance == nil)
+        let restoredRelevance=try JSONDecoder().decode(EmailSummary.self,from:JSONEncoder().encode(informational))
+        precondition(restoredRelevance.personalRelevance == relevance)
+        precondition(Set((0..<30).map{_ in informational.adviceRevision(replied:false)}).count == 1,"Exact relevance fingerprint stays canonical")
+        let preference=ReviewRelevancePreference(registration:"owner",topic:"Orion prototype",direction:"more")
+        precondition(EmailRelevanceRules.validPreferences([preference]))
+        precondition(!EmailRelevanceRules.validPreferences([preference,preference]))
+        var invalidPreference=preference;invalidPreference.direction="blacklist"
+        precondition(!EmailRelevanceRules.validPreferences([invalidPreference]))
+        invalidPreference=preference;invalidPreference.topic="  "
+        precondition(!EmailRelevanceRules.validPreferences([invalidPreference]))
+        let maximum=(0..<40).map{ReviewRelevancePreference(registration:"owner",topic:"Topic \($0)",direction:"less")}
+        precondition(EmailRelevanceRules.validPreferences(maximum) && !EmailRelevanceRules.validPreferences(maximum+[preference]))
+        var inactive=preference;inactive.inactive=true
+        precondition(EmailRelevanceRules.validPreferences(maximum+[inactive]))
+        print("PASS: source grounding, current-life relevance receipts, canonical revisions, bounded preference validation, legacy/cache round-trip, reply/action separation and weak feedback")
     }
 }

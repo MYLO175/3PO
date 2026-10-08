@@ -40,11 +40,13 @@ struct PATasksView: View {
         if !model.heartbeat.readable {return "Review history unavailable. See Activity for details."}
         return model.heartbeat.scheduleStatus(model)
     }
+    @State private var showingRelevance=false
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
             HStack {
                 Label("Review inbox",systemImage:"tray.full").font(.title3.weight(.semibold))
                 Spacer()
+                Button {showingRelevance=true} label:{Image(systemName:"slider.horizontal.3")}.buttonStyle(.borderless).help("What matters to me").accessibilityLabel("What matters to me")
                 Button { showingActivity=true } label:{Image(systemName:"clock.arrow.circlepath")}
                     .buttonStyle(.borderless).help("Background activity and details").accessibilityLabel("Background activity")
                 Button { model.heartbeat.check(model,manual:true) } label:{Image(systemName:"waveform.path.ecg")}
@@ -94,6 +96,7 @@ struct PATasksView: View {
                                 Text("Check the details before using this draft.").font(.caption2).foregroundStyle(.secondary)
                                 Button("Copy draft") {NSPasteboard.general.clearContents();NSPasteboard.general.setString(reply,forType:.string)}.controlSize(.small)
                             }
+                            ReviewRelevanceFeedbackMenu(model:model,topic:discoveryTitle(item) ?? item.message,isCurrent:{model.proactive.state.records.first(where:{$0.id == item.id}).map{ProactiveRules.reviewProjection($0) == item && model.proactive.visible($0,model:model)} == true},acknowledge:{model.proactive.dismiss(item,model:model)})
                             Button("Source evidence") { sourceDiscovery=item }.buttonStyle(.borderless).font(.caption)
                             HStack { if item.kind == "project" { if model.assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) == nil { Button("Review space…") { reviewingProject=item } } else { Label("Created",systemImage:"checkmark.circle") } } else if !["update","reply"].contains(item.kind) {
                                 if item.reviewState == "pending" { Text("Save needs checking in Apple; it will not be repeated.").font(.caption).foregroundStyle(.orange) }
@@ -124,6 +127,8 @@ struct PATasksView: View {
                             if summary.replyDraft == nil,EmailReplyDraftRules.canReply(summary,message:message) {
                                 Text(EmailReplyDraftRules.needsBackgroundDraft(summary,message:message) ? "Reply preparation pending" : "Check details before preparing a reply").font(.caption).foregroundStyle(.secondary)
                             }
+                            if let relevance=summary.personalRelevance {Label(relevance.reason,systemImage:"person.crop.circle.badge.checkmark").font(.caption).foregroundStyle(.secondary)}
+                            ReviewRelevanceFeedbackMenu(model:model,topic:message.subject,isCurrent:{model.emailSummaries.feedbackSourceCurrent(message,summary:summary,model:model)},acknowledge:{model.emailSummaries.dismiss(message.id,model:model,expectedRegistration:summary.registration,expectedVersion:ReviewAcknowledgementRules.emailVersion(message,summary))})
                             HStack {
                                 if let reply=summary.replyDraft { Button("Review draft") { editing=summary; draft=reply; copied=false; draftSaved=false } }
                                 else if EmailReplyDraftRules.canReply(summary,message:message) {
@@ -163,6 +168,8 @@ struct PATasksView: View {
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+        .sheet(isPresented:$showingRelevance) {ReviewRelevancePreferencesView(model:model)}
+        .onChange(of:model.chatGPT.activeID) {showingRelevance=false}
         .sheet(item:$answering) {question in
             VStack(alignment:.leading,spacing:16) {
                 Text(question.question).font(.headline)

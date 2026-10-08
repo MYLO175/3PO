@@ -1,6 +1,7 @@
 #if DEBUG
 import Foundation
 import SwiftUI
+import SwiftData
 
 /// Actual consumer projections, fictional data and disposable storage; zero subscription requests.
 @MainActor enum AdviceContextEvaluation {
@@ -126,6 +127,69 @@ import SwiftUI
         let oldProposal=model.proactive.state.records[0]
         model.proactive.dismiss(oldProposal,model:model)
         checks["stale proposal dismissal does not acknowledge newer source content"] = model.proactive.state.records[0].dismissedSourceVersion == nil && model.reviewAcknowledgements().isEmpty
+
+        try model.emailSummaries.seedAdviceFixture([summary])
+        checks["feedback accepts only exact current permitted email"] = model.emailSummaries.feedbackSourceCurrent(message,summary:summary,model:model)
+        model.mailData = .init(messages:[renamedSender],accounts:model.mailData.accounts,errors:[])
+        checks["feedback rejects live header change"] = !model.emailSummaries.feedbackSourceCurrent(message,summary:summary,model:model)
+        model.mailData = .init(messages:[message],accounts:[],errors:[])
+        checks["feedback rejects removed Mail account"] = !model.emailSummaries.feedbackSourceCurrent(message,summary:summary,model:model)
+        model.mailData = .init(messages:[message],accounts:[.init(id:message.accountID,title:message.account)],errors:[])
+        let project=try model.assistant.projects.save(LifeItem(registration:registration,kind:.space,title:"Orion prototype",status:.active),expected:nil)
+        let projectContext=model.emailSummaries.relevanceContext(message,model:model)
+        checks["header relevance retrieves current project even without matching human facts"] = projectContext.workspace.contains{$0["id"] == "life:"+project.id.uuidString} && projectContext.memories.isEmpty
+        let relevantHuman=PAMemory(registration:registration,text:"I am building the Orion prototype this term.",kind:.context,provenance:"Fictional human",evidence:"I am building the Orion prototype this term.")
+        guard store.put(relevantHuman) else {throw SummaryFailure.invalid}
+        let relevanceContext=model.emailSummaries.relevanceContext(message,model:model,body:quote)
+        checks["email life context selects matching human facts without source facts or biography"] = relevanceContext.memories.contains{$0["id"] == relevantHuman.id.uuidString} && !relevanceContext.memories.contains{$0["id"] == fact.id.uuidString || $0["id"] == human.id.uuidString}
+        let supported=try EmailRelevanceRules.validated(.init(reason:"Matches current Orion work",evidence:quote,memoryIDs:[relevantHuman.id.uuidString],workspaceIDs:["life:"+project.id.uuidString],preferenceIDs:[]),context:relevanceContext,message:message,body:quote)
+        checks["supported life relevance remains currently usable"] = model.emailSummaries.relevanceAvailable(supported,model:model)
+        var newerJSON=json;newerJSON["id"]="fictional-unrelated";newerJSON["received"]=now.addingTimeInterval(60).ISO8601Format()
+        let newer=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:newerJSON))
+        var taskJSON=newerJSON;taskJSON["id"]="fictional-task"
+        let taskMail=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:taskJSON))
+        var reading=summary;reading.attention=false;reading.personalRelevance=supported
+        var unrelated=summary;unrelated.id=newer.id;unrelated.fingerprint=EmailSummary.fingerprint(newer);unrelated.message=newer;unrelated.attention=false
+        var actualTask=summary;actualTask.id=taskMail.id;actualTask.fingerprint=EmailSummary.fingerprint(taskMail);actualTask.message=taskMail
+        actualTask.personalRelevance=supported;actualTask.followUpEvidence="Wednesday of week one"
+        model.mailData = .init(messages:[message,newer,taskMail],accounts:model.mailData.accounts,errors:[])
+        try model.emailSummaries.seedAdviceFixture([reading,unrelated,actualTask])
+        checks["current relevance ranks useful reading above newer routine reading while actual tasks stay first"] = model.emailSummaries.highlights(model).map{$0.0.id} == [taskMail.id,message.id,newer.id]
+        let taskAssessment=model.emailSummaries.highlights(model).first{$0.0.id == taskMail.id}!.1.adviceRevision(replied:false)
+        var renamedProject=project;renamedProject.title="Orion renamed"
+        _ = try model.assistant.projects.save(renamedProject,expected:project.revision)
+        checks["project change withdraws saved relevance boost"] = !model.emailSummaries.relevanceAvailable(supported,model:model)
+        checks["stale life-only reading is withheld from current brief input"] = !model.briefings.currentEmails(model).contains{$0.0.id == message.id}
+        checks["date-clarified actionable assessment also invalidates withdrawn life relevance"] = model.emailSummaries.highlights(model).first{$0.0.id == taskMail.id}!.1.adviceRevision(replied:false) != taskAssessment
+        model.mailData = .init(messages:[message],accounts:model.mailData.accounts,errors:[])
+        try model.emailSummaries.seedAdviceFixture([summary])
+        let beforePreference=model.reviewAcknowledgementRevision
+        let preference=ReviewRelevancePreference(registration:registration,topic:"Orion prototype",direction:"more")
+        try model.emailSummaries.savePreference(preference,expected:nil,model:model)
+        let savedPreference=model.emailSummaries.relevancePreferences.first{$0.id == preference.id}!
+        checks["explicit relevance preference changes advice context and matches its topic"] = model.reviewAcknowledgementRevision != beforePreference && model.emailSummaries.preferences(registration,query:"Orion update").count == 1 && model.emailSummaries.preferences(registration,query:"Unrelated shopping discount").isEmpty
+        var outdatedPreference=savedPreference;outdatedPreference.topic="Earlier overwrite"
+        do {try model.emailSummaries.savePreference(outdatedPreference,expected:preference,model:model);checks["stale preference editor cannot overwrite current receipt"]=false} catch {checks["stale preference editor cannot overwrite current receipt"]=true}
+        var anotherOwner=ReviewRelevancePreference(registration:"fictional-other",topic:"Private",direction:"less")
+        do {try model.emailSummaries.savePreference(anotherOwner,expected:nil,model:model);checks["preference account ownership is captured"]=false} catch {checks["preference account ownership is captured"]=true}
+        anotherOwner.registration=registration
+        try model.emailSummaries.undoPreference(model)
+        checks["preference Undo restores original attention and human-choice stamp"] = model.emailSummaries.preferences(registration).isEmpty && model.reviewAcknowledgementRevision == beforePreference
+        let isolated=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+        let preferenceStore=EmailSummaryService(container:isolated)
+        try preferenceStore.savePreference(preference,expected:nil,model:model)
+        let reopened=EmailSummaryService(container:isolated)
+        checks["explicit preferences reopen from independent saved storage"] = reopened.preferences(registration).map(\.topic) == [preference.topic]
+        let maximum=(0..<40).map{ReviewRelevancePreference(registration:registration,topic:"Fictional topic \($0)",direction:"less")}
+        var inactive=preference;inactive.inactive=true
+        let cache=try isolated.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first{$0.key == "reviewRelevancePreferences"}!
+        cache.data=try JSONEncoder().encode(maximum+[inactive]);try isolated.mainContext.save()
+        let full=EmailSummaryService(container:isolated)
+        var restored=inactive;restored.inactive=false
+        do {try full.savePreference(restored,expected:inactive,model:model);checks["restoring preference cannot exceed current attention bound"]=false} catch {checks["restoring preference cannot exceed current attention bound"]=full.preferences(registration).count == 40}
+        let invalidBytes=try JSONEncoder().encode([preference,preference]);cache.data=invalidBytes;try isolated.mainContext.save()
+        let invalid=EmailSummaryService(container:isolated)
+        checks["invalid saved preferences are blocked and preserved without exposure"] = !invalid.relevanceReadable && invalid.preferences(registration).isEmpty && cache.data == invalidBytes
         return ["completed":Date.now.ISO8601Format(),"requests":0,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"storage":"Fictional claims, messages and outputs in disposable SwiftData before source startup. No inference, native writes, permission changes or personal store writes. This tests actual consumer projections, not scheduler races or real message delivery."]
     }
 }

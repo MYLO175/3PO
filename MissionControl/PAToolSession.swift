@@ -199,13 +199,14 @@ import Foundation
         case "read_weather":
             await model.weather.prepareForBrief(); return try json(model.weather.context())
         case "read_attention":
+            guard model.emailSummaries.relevanceReadable else {throw ActionFailure.message("Saved attention preferences are unavailable. No review advice was supplied.")}
             let summaries = model.emailSummaries.highlights(model).filter{!model.acknowledgedEmail($0.0,$0.1)}
             let discoveries = model.proactive.state.records.filter { model.proactive.visible($0,model:model) }.map(ProactiveRules.reviewProjection)
             issuedSuggestions.formUnion(summaries.prefix(40).map { "email:" + $0.1.id }); issuedSuggestions.formUnion(discoveries.prefix(10).map { "discovery:" + $0.id })
             for pair in summaries.prefix(40) {issuedEmailDismissalVersions[pair.1.id]=ReviewAcknowledgementRules.emailVersion(pair.0,pair.1)}
             for record in discoveries.prefix(10) {issuedDiscoveryDismissals[record.id]=record}
             let brief = model.briefings.current(model)
-            return try json(["reviewAcknowledgements":try JSONSerialization.jsonObject(with:JSONEncoder().encode(model.reviewAcknowledgements())),"brief":brief?.message ?? "No saved brief for today", "briefCoverage":brief?.coverage ?? "Unavailable", "emailCoverage":model.emailSummaries.coverage(model),"emails":summaries.prefix(40).map { ["id":$0.1.id,"subject":$0.0.subject,"account":$0.0.account,"summary":$0.1.summary,"category":EmailHighlightRules.category($0.1,replied:$0.0.replied),"evidence":$0.1.evidence] },"suggestions":discoveries.prefix(10).map { ["id":$0.id,"kind":$0.kind,"message":$0.message,"evidence":$0.evidence] }])
+            return try json(["attentionPreferences":model.emailSummaries.preferences(registration).map{["topic":$0.topic,"attention":$0.direction]},"reviewAcknowledgements":try JSONSerialization.jsonObject(with:JSONEncoder().encode(model.reviewAcknowledgements())),"brief":brief?.message ?? "No saved brief for today", "briefCoverage":brief?.coverage ?? "Unavailable", "emailCoverage":model.emailSummaries.coverage(model),"emails":summaries.prefix(40).map { ["id":$0.1.id,"subject":$0.0.subject,"account":$0.0.account,"summary":$0.1.summary,"category":EmailHighlightRules.category($0.1,replied:$0.0.replied),"evidence":$0.1.evidence] },"suggestions":discoveries.prefix(10).map { ["id":$0.id,"kind":$0.kind,"message":$0.message,"evidence":$0.evidence] }])
         case "dismiss_suggestion":
             try PAToolProtocol.evidence(text("authorization"),human:human)
             let id = text("id")!, kind = text("kind")!
