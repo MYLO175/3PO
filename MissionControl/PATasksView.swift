@@ -108,7 +108,7 @@ struct PATasksView: View {
                                 Button("Copy draft") {NSPasteboard.general.clearContents();NSPasteboard.general.setString(reply,forType:.string)}.controlSize(.small)
                             }
                             Button("Source evidence") { sourceDiscovery=item }.buttonStyle(.borderless).font(.caption)
-                            HStack { if item.kind == "project" { if model.assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) == nil { Button("Review project…") { reviewingProject=item } } else { Label("Created",systemImage:"checkmark.circle") } } else if !["update","reply"].contains(item.kind) {
+                            HStack { if item.kind == "project" { if model.assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) == nil { Button("Review space…") { reviewingProject=item } } else { Label("Created",systemImage:"checkmark.circle") } } else if !["update","reply"].contains(item.kind) {
                                 if item.reviewState == "pending" { Text("Save needs checking in Apple; it will not be repeated.").font(.caption).foregroundStyle(.orange) }
                                 else if item.proposedChange != nil {
                                     Button(model.approvingDiscoveryID == item.id ? "Approving…" : "Approve") { Task {await model.approveDiscovery(item)} }.disabled(!model.proactive.canReview(item.id,model:model) || model.writing || model.assistant.busy)
@@ -205,7 +205,7 @@ struct PATasksView: View {
         }
         .sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record,model:model) }
         .sheet(isPresented:$showingActivity) {BackgroundActivityView(model:model)}
-        .sheet(item:$reviewingProject) { record in LifeItemEditor(model:model,item:.init(registration:record.registration,kind:.project,title:String((record.sourceTitle ?? "New project").prefix(160)),notes:record.evidence),close:{reviewingProject=nil},reviewedSuggestion:record) }
+        .sheet(item:$reviewingProject) { record in LifeItemEditor(model:model,item:.init(registration:record.registration,kind:.space,title:String((record.sourceTitle ?? "New space").prefix(160)),notes:record.evidence),close:{reviewingProject=nil},reviewedSuggestion:record) }
         .sheet(item:$editing) { summary in
             VStack(alignment:.leading,spacing:14) {
                 Text("Review reply draft").font(.title2.weight(.semibold))

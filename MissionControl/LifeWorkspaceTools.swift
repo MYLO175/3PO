@@ -37,10 +37,10 @@ import CryptoKit
         let all = store.items(registration, topic:topic, includeTopics:includeTopics,includeDeleted:true)
         var targets: [[String:Any]] = requested.sorted { $0.uuidString < $1.uuidString }.compactMap { id in
             guard let item = issued[id], all.contains(where: { $0.id == id && $0.revision == item.revision }) else { return nil }
-            return ["id":item.id.uuidString, "titleData":item.title, "kind":item.kind.rawValue, "status":item.status.rawValue, "pathData":LifeItemQuery.path(item, in:all).map(\.title), "directContentCount":all.filter{$0.parentID == item.id && $0.deletedAt == nil}.count, "directContentsData":Array(all.filter{$0.parentID == item.id && $0.deletedAt == nil}.prefix(20)).map{["id":$0.id.uuidString,"title":$0.title,"kind":$0.kind.rawValue]}]
+            return ["id":item.id.uuidString, "titleData":item.title, "kind":item.kind.workspaceKind.rawValue, "status":item.status.rawValue, "pathData":LifeItemQuery.path(item, in:all).map(\.title), "directContentCount":all.filter{$0.parentID == item.id && $0.deletedAt == nil}.count, "directContentsData":Array(all.filter{$0.parentID == item.id && $0.deletedAt == nil}.prefix(20)).map{["id":$0.id.uuidString,"title":$0.title,"kind":$0.kind.workspaceKind.rawValue]}]
         }
         if args.count == 1, args["authorization"] != nil, let ticket = store.undoEdit(registration) {
-            targets.append(["undoItemID":ticket.before.id.uuidString, "titleData":ticket.before.title, "kind":ticket.before.kind.rawValue])
+            targets.append(["undoItemID":ticket.before.id.uuidString, "titleData":ticket.before.title, "kind":ticket.before.kind.workspaceKind.rawValue])
         }
         if let id = (args["id"] as? String).flatMap(UUID.init(uuidString:)), issuedLinks[id] != nil, let link = store.state.links.first(where: { $0.id == id && $0.registration == registration }), let owner = issued[link.from] {
             targets.append(["relationshipID":link.id.uuidString, "ownerTitleData":owner.title, "relation":link.relation.rawValue, "kind":link.target.kind.rawValue])
@@ -51,7 +51,7 @@ import CryptoKit
         return try json(["resolvedIssuedItems":targets, "proposedBatchStructureData":batch])
     }
     private func object(_ item: LifeItem) -> [String:Any] {
-        ["id":item.id.uuidString, "title":item.title, "kind":item.kind.rawValue, "parent":item.parentID?.uuidString as Any? ?? NSNull(), "status":item.status.rawValue, "notes":String(item.notes.prefix(2000)), "notesTruncated":item.notes.count > 2000, "due":item.due as Any? ?? NSNull(), "estimateMinutes":item.estimateMinutes as Any? ?? NSNull(), "areas":item.areas.map(\.rawValue), "ownership":item.ownership ?? "workspace", "deleted":item.deletedAt != nil, "sortOrder":item.sortOrder as Any? ?? NSNull(), "path":LifeItemQuery.path(item, in:store.items(registration, topic:topic, includeTopics:includeTopics)).map(\.title)]
+        ["id":item.id.uuidString, "title":item.title, "kind":item.kind.workspaceKind.rawValue, "parent":item.parentID?.uuidString as Any? ?? NSNull(), "status":item.status.rawValue, "notes":String(item.notes.prefix(2000)), "notesTruncated":item.notes.count > 2000, "due":item.due as Any? ?? NSNull(), "estimateMinutes":item.estimateMinutes as Any? ?? NSNull(), "areas":item.areas.map(\.rawValue), "ownership":item.ownership ?? "workspace", "deleted":item.deletedAt != nil, "sortOrder":item.sortOrder as Any? ?? NSNull(), "path":LifeItemQuery.path(item, in:store.items(registration, topic:topic, includeTopics:includeTopics)).map(\.title)]
     }
     private func resolve(_ reference: LifeReference) -> LifeLinkOption? {
         if reference.kind == .item, let id = UUID(uuidString:reference.id), let item = store.items(registration, topic:topic, includeTopics:includeTopics).first(where: { $0.id == id }) {
@@ -121,12 +121,15 @@ import CryptoKit
                     if token.hasPrefix("batch:"), let index = Int(token.dropFirst(6)), values.indices.contains(index) { parent = values[index] }
                     else { parent = try current(token) }
                 } else { parent = nil }
+                guard let kind = (entry["kind"] as? String).flatMap(LifeItemKind.init(rawValue:)), LifeItemKind.allCases.contains(kind) else {
+                    throw LifeWorkspaceFailure.message("Create a space or a task.")
+                }
+                guard parent?.kind.isWork != true else { throw LifeWorkspaceFailure.message("Choose a space as the parent. Tasks cannot contain other items.") }
                 let scope: UUID?
                 if let parent { scope = parent.conversationID } else { scope = topic }
-                values.append(.init(registration:registration, conversationID:scope, kind:LifeItemKind(rawValue:entry["kind"] as! String)!, title:(entry["title"] as! String).trimmingCharacters(in:.whitespacesAndNewlines), parentID:parent?.id, notes:entry["notes"] as! String, due:entry["due"] as? String, estimateMinutes:entry["estimateMinutes"] as? Int, areas:(entry["areas"] as! [String]).compactMap(LifeArea.init(rawValue:)), sourceTurnID:turnID.uuidString, humanEvidence:String((text("authorization") ?? "").prefix(2000))))
+                values.append(.init(registration:registration, conversationID:scope, kind:kind, title:(entry["title"] as! String).trimmingCharacters(in:.whitespacesAndNewlines), parentID:parent?.id, notes:entry["notes"] as! String, due:entry["due"] as? String, estimateMinutes:entry["estimateMinutes"] as? Int, areas:(entry["areas"] as! [String]).compactMap(LifeArea.init(rawValue:)), sourceTurnID:turnID.uuidString, humanEvidence:String((text("authorization") ?? "").prefix(2000))))
             }
-            for index in values.indices where values[index].kind == .project { values[index].placement = .init(parentPinned:values[index].parentID != nil) }
-            let summary = "Created \(values.count) local project items."
+            let summary = "Created \(values.count) local workspace items."
             let saved = try store.create(values, receipt:.init(id:operationKey, registration:registration, result:summary, itemID:values.first?.id))
             for item in saved { issued[item.id] = item }; changes += 1
             return try json(["saved":true, "result":summary, "items":saved.map(object)])

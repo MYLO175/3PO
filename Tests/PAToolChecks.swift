@@ -12,8 +12,16 @@ import Foundation
             do { _=try PAToolProtocol.arguments(.init(id:"invalid-query",name:name,namespace:"pa",arguments:"{\"query\":true}")) } catch { invalidQuery=true }
             precondition(invalidQuery,"Broad overview is explicit null, not an untyped query bypass")
         }
-        let batch: [String:Any] = ["items":[["title":"Fictional project", "kind":"project", "parent":NSNull(), "notes":"", "due":NSNull(), "estimateMinutes":NSNull(), "areas":["projects"]], ["title":"Read paper", "kind":"task", "parent":"batch:0", "notes":"", "due":NSNull(), "estimateMinutes":30, "areas":["studies"]]], "authorization":"Set up that project"]
+        let batch: [String:Any] = ["items":[["title":"Fictional project", "kind":"space", "parent":NSNull(), "notes":"", "due":NSNull(), "estimateMinutes":NSNull(), "areas":["projects"]], ["title":"Read paper", "kind":"task", "parent":"batch:0", "notes":"", "due":NSNull(), "estimateMinutes":30, "areas":["studies"]]], "authorization":"Set up that project"]
         _ = try PAToolProtocol.arguments(.init(id:"create-life", name:"create_life_items", namespace:"pa", arguments:String(data:try JSONSerialization.data(withJSONObject:batch), encoding:.utf8)!))
+        for legacyKind in ["area", "organisation", "course", "project", "section", "milestone", "person", "goal", "resource"] {
+            var legacyBatch = batch
+            var entries = batch["items"] as! [[String:Any]]
+            entries[0]["kind"] = legacyKind; legacyBatch["items"] = entries
+            var rejected = false
+            do { _ = try PAToolProtocol.arguments(.init(id:"legacy-type", name:"create_life_items", namespace:"pa", arguments:String(data:try JSONSerialization.data(withJSONObject:legacyBatch), encoding:.utf8)!)) } catch { rejected = true }
+            precondition(rejected, "Legacy types remain readable but cannot be created by the AI")
+        }
         var malformedBatch = batch; malformedBatch["items"] = [["title":"Hidden command", "kind":"run_script", "parent":NSNull(), "notes":"", "due":NSNull(), "estimateMinutes":NSNull(), "areas":[]]] as [[String:Any]]
         var badKindRejected = false
         do { _ = try PAToolProtocol.arguments(.init(id:"bad-life", name:"create_life_items", namespace:"pa", arguments:String(data:try JSONSerialization.data(withJSONObject:malformedBatch), encoding:.utf8)!)) } catch { badKindRejected = true }; assert(badKindRejected)

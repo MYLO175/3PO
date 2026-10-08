@@ -116,7 +116,7 @@ struct AssistantPanel: View {
             Label(claim.receipt == nil ? "Check save outcome" : "Created",systemImage:claim.receipt == nil ? "exclamationmark.circle" : "checkmark.circle").font(.caption).foregroundStyle(.secondary)
         } else if record.kind == "project" {
             if model.assistant.projects.receipt("project-suggestion:"+record.id,registration:record.registration) != nil { Label("Created",systemImage:"checkmark.circle").font(.caption) }
-            else { Button("Review project…") { reviewingProject=record }.disabled(model.writing || model.assistant.projects.readOnly) }
+            else { Button("Review space…") { reviewingProject=record }.disabled(model.writing || model.assistant.projects.readOnly) }
         } else if ["calendar","reminder"].contains(record.kind) {
             Button(record.kind == "calendar" ? "Review event" : "Review reminder") { model.reviewDiscovery(record) }.disabled(model.writing)
             Menu("Instead…") {
@@ -332,7 +332,7 @@ struct AssistantPanel: View {
         }.onChange(of:model.chatGPT.usagePaused) { _, paused in
             if !paused, assistant.error?.contains("subscription_sharing_usage_limit_exceeded") == true { assistant.error = nil }
         }.sheet(item:$reviewingProject) { record in
-            LifeItemEditor(model:model,item:.init(registration:record.registration,kind:.project,title:String((record.sourceTitle ?? "New project").prefix(160)),notes:record.evidence),close:{reviewingProject=nil},reviewedSuggestion:record)
+            LifeItemEditor(model:model,item:.init(registration:record.registration,kind:.space,title:String((record.sourceTitle ?? "New space").prefix(160)),notes:record.evidence),close:{reviewingProject=nil},reviewedSuggestion:record)
         }.sheet(isPresented:$showRename) { PANameEditor(assistant:assistant) }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { PAMemoryView(memory:assistant.memory,registration:model.chatGPT.activeID,conversationID:selectedTopicID,topicTitle:topic?.title,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) },organisation:model.lifeOrganisation,organiseContext:{ model.lifeOrganisation.check(model,manual:true,topic:selectedTopicID) },model:model,focusAreas:focusAreas) }.sheet(item:$inspectingContext) { capture in PAContextCaptureView(capture:capture,model:model,registration:model.chatGPT.activeID) }.sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record,model:model) }.sheet(isPresented:$showProfileSetup) {
             PAProfileSetupPanel(model:model,assistant:assistant,topicID:selectedTopicID,registration:model.chatGPT.activeID)
         }.sheet(isPresented:$showDictation) {

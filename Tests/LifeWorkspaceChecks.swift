@@ -6,6 +6,14 @@ import SwiftData
         let container = try ModelContainer(for: CachedDashboard.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let store = LifeWorkspaceStore(container: container)
         func rejects(_ body: () throws -> Void) { var rejected = false; do { try body() } catch { rejected = true }; precondition(rejected) }
+        precondition(LifeItemKind.allCases == [.space, .task], "Only spaces and tasks are offered for new content")
+        for raw in ["area", "organisation", "course", "project", "section", "person", "goal", "resource", "task", "milestone", "space"] {
+            let kind = LifeItemKind(rawValue: raw)!
+            let legacy = LifeItem(registration: "compatibility", kind: kind, title: raw, notes: "Retained notes", status: .active, due: "2026-10-10", areas: [.studies], sortOrder: 4, icon: "book.closed")
+            let roundTrip = try JSONDecoder().decode(LifeItem.self, from: JSONEncoder().encode(legacy))
+            precondition(roundTrip == legacy && roundTrip.kind.rawValue == raw, "Reading an old item never rewrites its identity/revision/content")
+            precondition(kind.title == (kind.isWork ? "Task" : "Space") && kind.workspaceKind == (kind.isWork ? .task : .space))
+        }
         precondition(LifeBoardScrollRules.step(pointerY:300,height:600,offset:100,contentHeight:2000) == 0)
         precondition(LifeBoardScrollRules.step(pointerY:599,height:600,offset:100,contentHeight:2000) > 0)
         precondition(LifeBoardScrollRules.step(pointerY:1,height:600,offset:100,contentHeight:2000) < 0)
@@ -25,6 +33,24 @@ import SwiftData
         var moved = root; moved.parentID = task.id
         rejects { _ = try store.save(moved, expected: root.revision) }
         precondition(store.state == reloaded.state, "Cycle rejection is atomic")
+        let beforeInvalid = store.state
+        rejects { _ = try store.save(LifeItem(registration: "fictional-a", kind: .space, title: "Inside a task", parentID: task.id), expected: nil) }
+        rejects { try store.move(course.id, registration: "fictional-a", parent: task.id, expectedRevision: store.revision) }
+        var convert = course; convert.kind = .task
+        rejects { _ = try store.save(convert, expected: course.revision) }
+        rejects { _ = try store.save(LifeItem(registration: "fictional-a", kind: .space, title: "Engineering", parentID: root.id), expected: nil) }
+        precondition(store.state == beforeInvalid, "Invalid hierarchy/type/legacy duplicate changes leave storage untouched")
+        let containerTask = LifeItem(registration: "fictional-a", kind: .task, title: "Cannot contain children")
+        let invalidNested = LifeItem(registration: "fictional-a", kind: .space, title: "Nested", parentID: containerTask.id)
+        rejects { _ = try store.create([containerTask, invalidNested], receipt: .init(id: "invalid-task-parent", registration: "fictional-a", result: "", itemID: nil)) }
+        precondition(store.state == beforeInvalid && store.receipt("invalid-task-parent", registration: "fictional-a") == nil)
+        let space = LifeItem(registration: "spaces", kind: .space, title: "Study", notes: "General notes")
+        let childSpace = LifeItem(registration: "spaces", kind: .space, title: "Modules", parentID: space.id)
+        let localTask = LifeItem(registration: "spaces", kind: .task, title: "Prepare notes", parentID: childSpace.id)
+        _ = try store.create([space, childSpace, localTask], receipt: .init(id: "spaces-batch", registration: "spaces", result: "Saved hierarchy", itemID: space.id))
+        let spaceReload = LifeWorkspaceStore(container: container)
+        precondition(spaceReload.items("spaces").count == 3 && LifeItemQuery.path(localTask, in: spaceReload.items("spaces")).map(\.title) == ["Study", "Modules", "Prepare notes"])
+        precondition(spaceReload.state.items.first { $0.id == course.id } == course, "Saving new spaces does not migrate unrelated legacy records")
         var other = LifeItem(registration: "fictional-b", kind: .project, title: "Private project", parentID: root.id)
         rejects { _ = try store.save(other, expected: nil) }; other.parentID = nil; _ = try store.save(other, expected: nil)
         let scoped = LifeItem(registration: "fictional-a", conversationID: UUID(), kind: .project, title: "Legacy scope")

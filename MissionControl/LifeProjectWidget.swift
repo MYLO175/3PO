@@ -87,7 +87,7 @@ struct LifeProjectWidget: View {
                         if !atHome { quickCapture }
                     }
                     if atHome && folders.isEmpty && looseWork.isEmpty {
-                        Button { add(.section) } label: { Label("New folder",systemImage:"plus").padding(.vertical,20) }.buttonStyle(.plain).foregroundStyle(palette[.accent]).disabled(store.readOnly || registration.isEmpty)
+                        Button { add(.space) } label: { Label("New space",systemImage:"plus").padding(.vertical,20) }.buttonStyle(.plain).foregroundStyle(palette[.accent]).disabled(store.readOnly || registration.isEmpty)
                     }
                     if let error = store.error ?? notice { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(.bottom,8)
@@ -125,18 +125,19 @@ struct LifeProjectWidget: View {
                 } label: { HStack(spacing:5) { Image(systemName:presentation.symbol);if availableWidth >= 420 { Text(viewTitle) };if unfinished { Image(systemName:"line.3.horizontal.decrease").font(.caption2) } }.font(.callout) }
                     .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Project view: " + viewTitle)
             }
-            Menu {
-                ForEach([LifeItemKind.section,.project,.course,.area,.resource],id:\.self) { kind in Button(kind == .resource ? "Note" : kind.title) { add(kind) } }
-                if !atHome { Divider();Button("Task") { add(.task) };Button("Milestone") { add(.milestone) } }
-            } label: { Image(systemName:"plus") }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel("Add to this folder").disabled(registration.isEmpty || store.readOnly)
+            if current?.kind.isWork != true {
+                Menu {
+                    ForEach(LifeItemKind.allCases) { kind in Button(kind.title) { add(kind) } }
+                } label: { Image(systemName:"plus") }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel("Add to this folder").disabled(registration.isEmpty || store.readOnly)
+            }
             Menu {
                 if let current {
                     Button("Edit details…") { editing=current };Button("Edit notes…") { notesEditing=current }
                     Button("Connections & organisation…") { inspecting=true }
                     Button("Move…") { moving=current }
                     Divider()
-                    Toggle("Open this folder by default",isOn:Binding(get:{savedRoot == current.id},set:{setRoot($0 ? current.id : nil)}))
+                    Toggle(current.kind.isWork ? "Open this task by default" : "Open this folder by default",isOn:Binding(get:{savedRoot == current.id},set:{setRoot($0 ? current.id : nil)}))
                     Button("Delete…",role:.destructive) { deleting=current }
                 }
                 if savedRoot != nil { Button("Open Projects home by default") { setRoot(nil) };Divider() }
@@ -248,8 +249,7 @@ struct LifeProjectWidget: View {
                 interactive(item) {
                     Button { open(item) } label: {
                         VStack(spacing:12) {
-                            Image(systemName:item.icon ?? (item.kind == .resource ? "doc.text.fill" : "folder.fill")).font(.system(size:48,weight:.regular)).foregroundStyle(palette[.accent].opacity(0.85))
-                                .overlay(alignment:.bottomTrailing) { if item.icon == nil,![LifeItemKind.section,.resource,.project].contains(item.kind) { Image(systemName:item.displaySymbol).font(.system(size:13,weight:.semibold)).foregroundStyle(palette[.widget]).padding(4) } }
+                            Image(systemName:item.icon ?? "folder.fill").font(.system(size:48,weight:.regular)).foregroundStyle(palette[.accent].opacity(0.85))
                             Text(item.title).font(.callout.weight(.medium)).foregroundStyle(palette[.text]).multilineTextAlignment(.center).lineLimit(3).frame(maxWidth:.infinity)
                             let progress=LifeFolderContents.progress(under:item.id,in:items)
                             if progress.total > 0 { LifeTaskProgressView(progress:progress,showsLegend:false).frame(maxWidth:100) }
@@ -440,7 +440,7 @@ struct LifeTaskProgressView:View {
                 HStack(spacing:0) { ForEach(Array(LifeTaskStage.allCases.enumerated()),id:\.element.id) { index,stage in
                     if progress.counts[index] > 0 { stage.color.frame(width:proxy.size.width*Double(progress.counts[index])/Double(max(1,progress.total))) }
                 } }.clipShape(Capsule())
-            }.frame(height:showsLegend ? 7 : 4).accessibilityLabel("Overall task progress").accessibilityValue(LifeTaskStage.allCases.enumerated().map{"\($0.element.rawValue) \(progress.percentages[$0.offset]) percent"}.joined(separator:", ")).help("Overall progress across \(progress.total) saved tasks and milestones, including subfolders.")
+            }.frame(height:showsLegend ? 7 : 4).accessibilityLabel("Overall task progress").accessibilityValue(LifeTaskStage.allCases.enumerated().map{"\($0.element.rawValue) \(progress.percentages[$0.offset]) percent"}.joined(separator:", ")).help("Overall progress across \(progress.total) saved tasks, including subfolders.")
             if showsLegend {
                 ViewThatFits(in:.horizontal) {
                     HStack(spacing:16) { legend }
@@ -488,20 +488,22 @@ struct LifeItemEditor: View {
     @State private var dueDate = Date.now
     @State private var estimate = ""
     @State private var parentChanged=false
-    @State private var autoPlace=true
     private var original: LifeItem? { model.assistant.projects.state.items.first { $0.id == item.id } }
     @State private var expected: UUID?
     private var parents: [LifeItem] {
         let all = model.assistant.projects.items(item.registration, topic: item.conversationID)
         let forbidden = LifeWorkspaceRules.descendants(item.id, in: all).union([item.id])
-        return all.filter { !forbidden.contains($0.id) && $0.conversationID == item.conversationID }
+        return all.filter { !$0.kind.isWork && !forbidden.contains($0.id) && $0.conversationID == item.conversationID }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text((expected == nil ? "New " : "Edit ") + item.kind.title.lowercased()).font(.title2.weight(.semibold))
             Form {
                 TextField("Name", text: $item.title)
-                Picker("Type", selection: $item.kind) { ForEach(LifeItemKind.allCases) { Text($0.title).tag($0) } }
+                Picker("Type", selection: Binding(get: { item.kind.workspaceKind }, set: { kind in
+                    // Opening an old course/project as a space keeps its exact memory association.
+                    if kind != item.kind.workspaceKind { item.kind = kind }
+                })) { ForEach(LifeItemKind.allCases) { Text($0.title).tag($0) } }
                 if !item.kind.isWork {
                     Picker("Icon",selection:$item.icon) {
                         Label("Default",systemImage:item.kind.symbol).tag(Optional<String>.none)
@@ -516,7 +518,6 @@ struct LifeItemEditor: View {
                     ForEach(LifeTaskStage.allCases) { Text($0.rawValue).tag($0.status) }
                     if item.status == .waiting || item.status == .archived { Text(item.status.title).tag(item.status) }
                 }
-                if item.kind == .project,expected == nil { Toggle("Let PA find its place in my Life map",isOn:$autoPlace) }
                 Toggle("Deadline", isOn: $dueEnabled)
                 if dueEnabled { DatePicker("Due", selection: $dueDate, displayedComponents: .date) }
                 TextField("Estimate (minutes, optional)", text: $estimate)
@@ -529,7 +530,7 @@ struct LifeItemEditor: View {
                 } label: { LabeledContent("Life areas", value: item.areas.isEmpty ? "None" : item.areas.map(\.title).joined(separator: ", ")) }
                 TextField("Notes", text: $item.notes, axis: .vertical).lineLimit(4...8)
             }.formStyle(.grouped)
-            Text("Workspace tasks track project work. Your linked Apple reminders and calendar keep their own dates and completion state.").font(.caption).foregroundStyle(.secondary)
+            if item.kind.isWork { Text("Project tasks are separate from Apple Reminders.").font(.caption).foregroundStyle(.secondary) }
             if let error { Text(error).foregroundStyle(.orange).font(.callout) }
             HStack { Button("Cancel", action: close).keyboardShortcut(.cancelAction); Spacer(); Button("Save") { save() }.keyboardShortcut(.defaultAction).disabled(item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || item.registration != model.chatGPT.activeID) }
         }.padding(24).frame(width: 500).frame(maxHeight: 720)
@@ -545,22 +546,19 @@ struct LifeItemEditor: View {
         guard item.registration == model.chatGPT.activeID else { error = "Account changed; your draft has not been saved."; return }
         let value = estimate.trimmingCharacters(in: .whitespacesAndNewlines)
         if !value.isEmpty, Int(value).map({ (1...100000).contains($0) }) != true { error = "Enter a positive estimate in minutes, or leave it empty."; return }
-        if [.project,.section,.task,.milestone,.resource].contains(item.kind) { item.ownership="workspace" }
+        if [.space,.project,.section,.task,.milestone,.resource].contains(item.kind) { item.ownership="workspace" }
         item.title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
         item.due = dueEnabled ? DateRules.localDate(dueDate) : nil; item.estimateMinutes = Int(value)
-        if item.kind == .project {
-            if expected == nil,autoPlace { item.placement = .init(parentPinned:parentChanged || item.parentID != nil) }
-            else if parentChanged { item.placement = .init(status:"placed",reason:"Your chosen home is pinned.",parentPinned:true) }
-        }
+        if item.kind == .project,parentChanged { item.placement = .init(status:"placed",reason:"Your chosen home is pinned.",parentPinned:true) }
         do {
             if let proposal=reviewedSuggestion {
                 guard expected == nil,model.proactive.visible(proposal,model:model),proposal.registration == model.chatGPT.activeID else { throw LifeWorkspaceFailure.message("The source suggestion changed or is no longer permitted. Your draft is kept.") }
-                item.humanEvidence="Accepted a reviewed PA project suggestion."
+                item.humanEvidence="Accepted a reviewed PA space suggestion."
                 let reference:LifeReference
                 if proposal.sourceKind == "whatsapp",let chat=proposal.sourceChatID,let message=proposal.sourceMessageID,let identity=proposal.sourceIdentity,let version=proposal.sourceRevision { reference = .init(kind:.whatsapp,id:message,containerID:chat,linkedIdentity:identity,contentRevision:version) }
                 else if let message=model.emailSummaries.highlights(model).first(where:{$0.0.id == proposal.mailID})?.0 { reference = .init(kind:.mail,id:message.id,containerID:message.accountID,contentRevision:message.internetMessageID) }
-                else { throw LifeWorkspaceFailure.message("The original source is unavailable; no project saved.") }
-                _ = try model.assistant.projects.create([item],receipt:.init(id:"project-suggestion:"+proposal.id,registration:item.registration,result:"Created a human-reviewed project.",itemID:item.id),links:[.init(registration:item.registration,conversationID:item.conversationID,from:item.id,relation:.evidence,target:reference)])
+                else { throw LifeWorkspaceFailure.message("The original source is unavailable; no space saved.") }
+                _ = try model.assistant.projects.create([item],receipt:.init(id:"project-suggestion:"+proposal.id,registration:item.registration,result:"Created a human-reviewed space.",itemID:item.id),links:[.init(registration:item.registration,conversationID:item.conversationID,from:item.id,relation:.evidence,target:reference)])
             } else { _ = try model.assistant.projects.save(item, expected: expected) }
             model.projectPlacement.check(model);close()
         } catch { self.error = error.localizedDescription }

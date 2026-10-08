@@ -321,3 +321,8 @@ Implemented visible original-message references for background suggestions, emai
 ### 8 October — Targeted memory relevance
 
 Implemented a relevance gate for non-null memory queries: no unrelated filler or always-pinned preferences, supported self-name excluded from query terms, and Focus cannot widen an otherwise targeted subject. Notebook facts reuse selected IDs and matching/linked anchors, preserving byte limits and account/source/current-belief checks. Email classification and explicit/background reply drafts retrieve from the specific message; drafting adds writing-style terms. Review batches include bounded subjects from each supplied message. No-query background suggestions select nothing; the daily brief and deliberate null-query life/setup tools retain broad orientation. Existing receipts/history remain inspectable and the evidence panel distinguishes batch context from model influence. STATUS records focused and actual signed consumer checks plus installation. Semantic synonym/alias retrieval, per-message inference isolation and sustained proposal quality remain future acceptance work.
+
+
+## 8 October approved simplification: spaces and tasks
+
+User requested removing the extra workspace types. Implement two creation/editing choices, Space and Task; keep notes within either, nesting and three-stage task boards. Existing records display through the two-type projection while compatibility metadata preserves exact IDs/revisions/source and memory associations. Keep tasks independent of Apple Reminders, current-human intent for PA edits and source-first/no-AI refresh. New spaces save in their chosen parent; no automatic placement request. Retained old requests remain recoverable. See STATUS for validation/install boundaries.

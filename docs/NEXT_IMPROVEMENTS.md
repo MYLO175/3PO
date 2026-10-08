@@ -130,3 +130,6 @@ Next acceptance priorities: an actual missed-heartbeat reopen/wake while permitt
 
 
 7 October Calendar follow-through: direct timed-event dragging now saves the new time, clicking opens editable details, and detached repeating-occurrence Undo is fixed. Twelve disposable native save/readback/Undo/stale-control checks pass; focused timeline checks cover snapping, clipped overnight moves and DST. The next Calendar acceptance step is an actual Day/Week pointer drag, overlap/cross-day preview and long gesture in a narrow widget. The computer-control service currently refuses coordinate drags even after reconnection; this does not establish pointer smoothness. Broader background reliability and memory/workspace work remain on the existing plan.
+
+
+8 October workspace simplification: creation, editing and AI tools now offer only spaces (folders) and tasks, with notes inside either. Existing records and exact memory/source associations are preserved through compatibility metadata. Project tasks remain separate from Apple Reminders; new spaces save directly in the chosen home. Next, validate sustained real-folder workflows and evaluate semantic relevance with useful paraphrase cases; richer file types are outside the current product direction. See STATUS for actual install/UI evidence.

@@ -293,3 +293,8 @@ Move captured reply context into a message context menu, with an equivalent acce
 ## 8 October — Visible Review inbox provenance
 
 A quote alone is insufficient to locate its source. Show compact account/chat, sender and source time on cards, with original subject and full date in the evidence inspector. Resolve metadata from exact currently permitted source records through the existing source-evidence guards, rather than requesting attribution from AI or adding another stored snapshot. Preserve legacy records and original timestamps: Apple Mail supplies Received, WhatsApp supplies Sent; neither is the suggestion creation time. Keep read/copy-only inspection and existing approval boundaries.
+
+
+## 8 October: two workspace types
+
+Projects exposes only Space and Task. A space is a generic folder, with notes as a field; tasks are local work independent of Apple Reminders. Retain legacy raw kind values only as compatibility metadata rather than rewriting stable records or losing typed memory identities. Canonical UI/tool/graph-anchor output is space/task; new creation schema rejects retired kinds. New spaces do not enqueue automatic placement; older pending/paused requests remain saved. Exact human-reviewed notebook bindings preserve semantic course/project identities without adding workspace types or inferring a same-name merge. Only spaces can be new parents; changing a space with contents into a task is refused.

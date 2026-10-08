@@ -1,14 +1,15 @@
 import Foundation
 
 enum LifeItemKind: String, Codable, CaseIterable, Identifiable {
-    case area, organisation, course, project, section, task, milestone, person, goal, resource
+    case space, task
+    // Decode old records without changing their IDs, revisions or typed memory identities.
+    // These compatibility values are never offered for new workspace content.
+    case area, organisation, course, project, section, milestone, person, goal, resource
+    static let allCases: [LifeItemKind] = [.space, .task]
+    var workspaceKind: LifeItemKind { isWork ? .task : .space }
     var id: String { rawValue }
-    var title: String { switch self { case .section: "Folder";case .resource: "Note / resource";default:rawValue.capitalized } }
-    var symbol: String { switch self {
-    case .area: "square.grid.2x2"; case .organisation: "building.2"; case .course: "graduationcap"
-    case .project: "folder"; case .section: "rectangle.3.group"; case .task: "checkmark.circle"
-    case .milestone: "flag"; case .person: "person"; case .goal: "target"; case .resource: "doc"
-    } }
+    var title: String { isWork ? "Task" : "Space" }
+    var symbol: String { isWork ? "checkmark.circle" : "folder" }
     var isWork: Bool { self == .task || self == .milestone }
 }
 enum LifeItemStatus: String, Codable, CaseIterable, Identifiable {
@@ -97,6 +98,16 @@ enum LifeWorkspaceFailure: LocalizedError {
     var errorDescription: String? { if case .message(let value) = self { return value }; return nil }
 }
 enum LifeWorkspaceRules {
+    /// Enforce the simple hierarchy on new filing/type changes without rewriting legacy storage.
+    static func validateChange(_ item: LifeItem, from old: LifeItem?, in items: [LifeItem]) throws {
+        if old == nil || item.parentID != old?.parentID, let parent = item.parentID,
+           items.first(where: { $0.id == parent })?.kind.isWork == true {
+            throw LifeWorkspaceFailure.message("Choose a space to put this item inside. Tasks cannot contain other items.")
+        }
+        if item.kind.isWork, old?.kind.isWork == false, items.contains(where: { $0.parentID == item.id }) {
+            throw LifeWorkspaceFailure.message("Move this space’s contents before changing it into a task.")
+        }
+    }
     static func key(_ label: String) -> String { label.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_GB")).split(whereSeparator: { $0.isWhitespace }).joined(separator: " ") }
     static func scoped(_ item: LifeItem, registration: String, topic: UUID?, includeTopics: Bool) -> Bool {
         item.registration == registration && (includeTopics || item.conversationID == nil || item.conversationID == topic)

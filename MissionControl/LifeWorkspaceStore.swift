@@ -63,7 +63,7 @@ struct LifeWorkspaceEditUndo {
         if self.receipt(receipt?.id,registration:registration) != nil { return }
         guard revision == expectedRevision,let item=items(registration,includeTopics:true).first(where:{$0.id == id}),parent != id else { throw LifeWorkspaceFailure.message("Structure changed. Read it again before moving.") }
         let all=items(registration,topic:item.conversationID)
-        if let parent { guard all.contains(where:{$0.id == parent && $0.conversationID == item.conversationID}),!LifeWorkspaceRules.descendants(id,in:all).contains(parent) else { throw LifeWorkspaceFailure.message("Choose a parent outside this branch in the same scope.") } }
+        if let parent { guard all.contains(where:{$0.id == parent && !$0.kind.isWork && $0.conversationID == item.conversationID}),!LifeWorkspaceRules.descendants(id,in:all).contains(parent) else { throw LifeWorkspaceFailure.message("Choose a space outside this branch in the same scope.") } }
         var siblings=all.filter{$0.parentID == parent && $0.id != id && $0.conversationID == item.conversationID}
         if let sibling { guard let offset=siblings.firstIndex(where:{$0.id == sibling}) else { throw LifeWorkspaceFailure.message("Insertion target changed.") };siblings.insert(item,at:offset) } else { siblings.append(item) }
         var candidate=state,before:[LifeItem]=[]
@@ -108,13 +108,15 @@ struct LifeWorkspaceEditUndo {
         if let index = candidate.items.firstIndex(where: { $0.id == item.id }) {
             let old = candidate.items[index]
             guard old.registration == item.registration && old.conversationID == item.conversationID && old.revision == expected && old.deletedAt == nil else { throw LifeWorkspaceFailure.message("This item changed while you were editing. Reopen it before saving.") }
+            try LifeWorkspaceRules.validateChange(item, from: old, in: candidate.items)
             if item.placement?.status == "running" { item.placement?.status="paused";item.placement?.reason="Project edited during placement. Continue explicitly to reconsider it." }
             if item.parentID != old.parentID { item.sortOrder=candidate.items.filter{$0.registration == item.registration && $0.conversationID == item.conversationID && $0.parentID == item.parentID && $0.deletedAt == nil}.count }
             item.created = old.created; item.updated = .now; item.revision = UUID(); candidate.items[index] = item
             before = old
         } else {
             guard expected == nil else { throw LifeWorkspaceFailure.message("The item is no longer available.") }
-            if candidate.items.contains(where: { $0.registration == item.registration && $0.conversationID == item.conversationID && $0.parentID == item.parentID && $0.kind == item.kind && LifeWorkspaceRules.key($0.title) == LifeWorkspaceRules.key(item.title) }) {
+            try LifeWorkspaceRules.validateChange(item, from: nil, in: candidate.items)
+            if candidate.items.contains(where: { $0.registration == item.registration && $0.conversationID == item.conversationID && $0.parentID == item.parentID && $0.kind.workspaceKind == item.kind.workspaceKind && LifeWorkspaceRules.key($0.title) == LifeWorkspaceRules.key(item.title) }) {
                 throw LifeWorkspaceFailure.message("That item already exists here. Open it rather than adding another copy.")
             }
             item.updated = .now;item.ownership = item.ownership ?? "workspace";item.sortOrder = max(candidate.items.filter{$0.parentID == item.parentID && $0.registration == item.registration}.count,(candidate.items.filter{$0.parentID == item.parentID && $0.registration == item.registration}.compactMap(\.sortOrder).max() ?? -1)+1); candidate.items.append(item)
@@ -131,7 +133,8 @@ struct LifeWorkspaceEditUndo {
         guard (1...12).contains(items.count), items.allSatisfy({ $0.registration == receipt.registration }) else { throw LifeWorkspaceFailure.message("Create between one and twelve items for this account.") }
         var candidate = state
         for item in items {
-            guard !candidate.items.contains(where: { $0.id == item.id || ($0.registration == item.registration && $0.conversationID == item.conversationID && $0.kind == item.kind && $0.parentID == item.parentID && LifeWorkspaceRules.key($0.title) == LifeWorkspaceRules.key(item.title)) }) else { throw LifeWorkspaceFailure.message("An item in this batch already exists here. Read the current structure before adding it.") }
+            try LifeWorkspaceRules.validateChange(item, from: nil, in: candidate.items + items)
+            guard !candidate.items.contains(where: { $0.id == item.id || ($0.registration == item.registration && $0.conversationID == item.conversationID && $0.kind.workspaceKind == item.kind.workspaceKind && $0.parentID == item.parentID && LifeWorkspaceRules.key($0.title) == LifeWorkspaceRules.key(item.title)) }) else { throw LifeWorkspaceFailure.message("An item in this batch already exists here. Read the current structure before adding it.") }
             var item=item;item.ownership = item.ownership ?? "workspace";candidate.items.append(item)
         }
         candidate.links.append(contentsOf:links)

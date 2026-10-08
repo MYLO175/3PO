@@ -16,6 +16,18 @@ import SwiftData
         var memory=PAMemory(registration:registration,text:"My project is Sensor Garden",kind:.context,provenance:"Fictional",sourceTurnID:"fictional",evidence:"My project is Sensor Garden",certainty:.stated,connections:[connection])
         memory.organisation = .init(areas:[.studies],connections:[.init(connection:"0",subjectKind:.person,objectKind:.project,subjectIsSelf:true,objectIsSelf:false)])
         let notebook=LifeNotebook.build([memory],registration:registration)
+        let memoryEntity = notebook.entities.first { $0.kind == .project }!
+        var genericSpace = LifeItem(registration: registration, kind: .space, title: "Sensor Garden", notes: "My folder", areas: [.studies])
+        let unboundSpace = notebook.integrating([genericSpace], links: [])
+        precondition(unboundSpace.entities.contains { $0.id == memoryEntity.id } && unboundSpace.entities.first { $0.id == "life:" + genericSpace.id.uuidString }?.kind == .concept, "A same-name generic space must not infer a memory identity")
+        genericSpace.notebookEntityID = memoryEntity.id; genericSpace.title = "My renamed research"
+        let boundSpace = notebook.integrating([genericSpace], links: [])
+        precondition(boundSpace.entities.filter { $0.kind == .project }.count == 1 && boundSpace.entities.first { $0.id == "life:" + genericSpace.id.uuidString }?.memoryIDs == [memory.id], "An exact reviewed identity survives generic space type and renaming")
+        precondition(boundSpace.links.first { $0.memoryID == memory.id }?.to == "life:" + genericSpace.id.uuidString && boundSpace.anchors.first?.kind == "space")
+        let withdrawn = LifeNotebook.build([], registration: registration).integrating([genericSpace], links: [])
+        precondition(withdrawn.entities.first { $0.id == "life:" + genericSpace.id.uuidString }?.memoryIDs.isEmpty == true)
+        genericSpace.conversationID = UUID()
+        precondition(notebook.integrating([genericSpace], links: []).entities.contains { $0.id == memoryEntity.id }, "A space cannot bind an identity from another topic")
         let raw:[String:Any]=["decision":"clear","parent":course.id.uuidString,"reason":"Your Engineering project belongs under Engineering.","areas":["studies"],"links":[],"bindings":[],"question":NSNull(),"choices":[]]
         let text=String(data:try JSONSerialization.data(withJSONObject:raw),encoding:.utf8)!
         project=try store.placementStatus(project.id,expected:project.revision,status:"running",reason:"Test")

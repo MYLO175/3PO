@@ -109,7 +109,7 @@ struct LifeIdentitySheet:View {
     @State private var revision:UUID?
     @State private var error:String?
     private var notebook:LifeNotebook { LifeNotebook.build(model.assistant.memory.enabled ? model.assistant.memory.permittedRecords.filter{$0.source == nil} : [],registration:item.registration,topic:item.conversationID) }
-    private var entities:[LifeEntity] { notebook.entities.filter{$0.kind.rawValue == item.kind.rawValue && $0.kind != .person && $0.id.hasPrefix((item.conversationID?.uuidString ?? "shared")+":")} }
+    private var entities:[LifeEntity] { notebook.entities.filter{(item.kind == .space ? $0.kind != .concept : $0.kind.rawValue == item.kind.rawValue) && $0.kind != .person && $0.id != LifeNotebook.selfID && $0.id.hasPrefix((item.conversationID?.uuidString ?? "shared")+":")} }
     var body:some View {
         VStack(alignment:.leading,spacing:16) {
             HStack { Text("Match PA understanding").font(.title2.weight(.semibold));Spacer();Button("Done",action:close) }
@@ -120,12 +120,12 @@ struct LifeIdentitySheet:View {
                     if let issue=issue(entity) { Text(issue).font(.caption).foregroundStyle(.secondary) }
                     ForEach(notebook.notes.flatMap(\.records).filter{entity.memoryIDs.contains($0.id)}.prefix(3)) { Text($0.text).font(.caption).foregroundStyle(.secondary) }
                 }.padding(10).background(Color.primary.opacity(0.035),in:RoundedRectangle(cornerRadius:10))
-            };if entities.isEmpty { Text("No permitted saved descriptions of this type.").foregroundStyle(.secondary) } } }
+            };if entities.isEmpty { Text("No matching saved descriptions available.").foregroundStyle(.secondary) } } }
             if let error { Text(error).font(.caption).foregroundStyle(.orange) }
         }.padding(24).frame(width:560,height:470).onAppear { revision=model.assistant.memory.revision }
     }
     private func issue(_ entity:LifeEntity)->String? {
-        if let other=model.assistant.projects.items(item.registration,topic:item.conversationID).first(where:{other in other.id != item.id && other.kind == item.kind && (other.notebookEntityID == entity.id || model.assistant.projects.state.links.contains(where:{$0.from == other.id && $0.target.containerID == entity.id && $0.relation == .identifies}))}) { return "Already associated with "+other.title+". Resolve duplicate items with Move/Delete before matching; neither is merged silently." }
+        if let other=model.assistant.projects.items(item.registration,topic:item.conversationID).first(where:{other in other.id != item.id && other.kind.workspaceKind == item.kind.workspaceKind && (other.notebookEntityID == entity.id || model.assistant.projects.state.links.contains(where:{$0.from == other.id && $0.target.containerID == entity.id && $0.relation == .identifies}))}) { return "Already associated with "+other.title+". Resolve duplicate items with Move/Delete before matching; neither is merged silently." }
         return nil
     }
     private func match(_ entity:LifeEntity) {
