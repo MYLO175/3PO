@@ -190,6 +190,41 @@ import SwiftData
         let invalidBytes=try JSONEncoder().encode([preference,preference]);cache.data=invalidBytes;try isolated.mainContext.save()
         let invalid=EmailSummaryService(container:isolated)
         checks["invalid saved preferences are blocked and preserved without exposure"] = !invalid.relevanceReadable && invalid.preferences(registration).isEmpty && cache.data == invalidBytes
+        try model.proactive.seedAdviceFixture([],model:model)
+        try ReviewInboxEvaluation.seedEmailWorkPreview(model)
+        let reviewBase=model.reviewInbox.pendingCount
+        checks["review badge counts actionable email and excludes planned and completed email"] = reviewBase == 1 && model.reviewInbox.emails.count == 1 && model.reviewInbox.handled.count == 2
+        let reviewMail=model.reviewInbox.emails[0]
+        model.emailSummaries.dismiss(reviewMail.0.id,model:model,expectedRegistration:registration,expectedVersion:ReviewAcknowledgementRules.emailVersion(reviewMail.0,reviewMail.1))
+        checks["review badge immediately drops a dismissed concern"] = model.reviewInbox.pendingCount == reviewBase-1
+        model.emailSummaries.undoDismiss(model)
+        checks["review badge restores dismissed concern on Undo"] = model.reviewInbox.pendingCount == reviewBase
+        let handledMail=model.reviewInbox.handled[0]
+        model.emailSummaries.keepForReview(handledMail.1.id,model:model)
+        checks["Keep in review restores a handled email to the count"] = model.reviewInbox.pendingCount == reviewBase+1
+        model.emailSummaries.keepForReview(handledMail.1.id,model:model,keep:false)
+        let proposal=PADiscovery(id:UUID().uuidString,registration:registration,mailID:reviewMail.0.id,kind:"reminder",message:"Review the separate Orion reminder proposal.",evidence:reviewMail.1.evidence,created:now,scope:"fictional",sourceRevision:reviewMail.1.fingerprint,sourceAssessmentRevision:reviewMail.1.adviceRevision(replied:false))
+        try model.proactive.seedAdviceFixture([proposal],model:model)
+        checks["badge counts independent email and proposal cards from one source"] = model.reviewInbox.pendingCount == reviewBase+1
+        let creationRequest=NativeCreationRequest(id:UUID(uuidString:proposal.id)!,kind:.reminder,registration:registration)
+        try model.nativeCreations.begin(creationRequest)
+        checks["uncertain native save remains counted and is recognised for outcome checking"] = model.reviewInbox.pendingCount == reviewBase+1 && model.reviewCreationClaim(proposal)?.receipt == nil && model.reviewCreationClaim(proposal) != nil
+        try model.nativeCreations.complete(creationRequest,receipt:.init(requestID:creationRequest.id,registration:registration,kind:.reminder,itemID:"fictional-saved-reminder",title:"Fictional Orion reminder",destination:"Fixture",created:now,sourceScope:"fictional-list"))
+        checks["verified creation leaves history visible without inflating badge"] = model.reviewInbox.pendingCount == reviewBase && model.reviewInbox.discoveries.count == 1
+        _=model.assistant.queue.add(registration:registration,topicID:nil,prompt:"Fictional delegated work")
+        let queued=model.assistant.queue.items.last!
+        checks["ordinary queued work does not need human review"] = model.reviewInbox.pendingCount == reviewBase
+        _=model.assistant.queue.mark(queued.id,.running)
+        checks["running delegated work does not inflate review count"] = model.reviewInbox.pendingCount == reviewBase
+        _=model.assistant.queue.mark(queued.id,.needsAnswer)
+        checks["delegated question counts as needing review"] = model.reviewInbox.pendingCount == reviewBase+1
+        _=model.assistant.queue.mark(queued.id,.interrupted)
+        checks["interrupted delegated work counts as needing review"] = model.reviewInbox.pendingCount == reviewBase+1
+        _=model.assistant.queue.mark(queued.id,.completed)
+        checks["completed delegated work leaves review count"] = model.reviewInbox.pendingCount == reviewBase
+        let reviewMailData=model.mailData;model.mailData = .init(messages:reviewMailData.messages,accounts:[],errors:[])
+        checks["removed account withdraws unsupported review count"] = model.reviewInbox.pendingCount == 0
+        model.mailData=reviewMailData
         return ["completed":Date.now.ISO8601Format(),"requests":0,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"storage":"Fictional claims, messages and outputs in disposable SwiftData before source startup. No inference, native writes, permission changes or personal store writes. This tests actual consumer projections, not scheduler races or real message delivery."]
     }
 }

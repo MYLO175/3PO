@@ -4,6 +4,7 @@ import CoreGraphics
 @main
 struct WorkspaceChecks {
     static func main() throws {
+        try savedThemeChecks()
         var folderConfig=WidgetConfiguration();folderConfig.projectView="Overview";folderConfig.projectFolderViews=["fictional-a":["folder-1":"Board","folder-2":"List"],"fictional-b":["folder-1":"Outline"]]
         let folderRestored=try JSONDecoder().decode(WidgetConfiguration.self,from:JSONEncoder().encode(folderConfig))
         precondition(folderRestored == folderConfig && folderRestored.projectFolderViews?["fictional-a"]?["folder-1"] == "Board")
@@ -146,6 +147,54 @@ struct WorkspaceChecks {
         let clockData = try JSONEncoder().encode(clock), restoredClock = try JSONDecoder().decode(WidgetConfiguration.self,from:clockData)
         assert(restoredClock.clockShowsTime == false && restoredClock.clockShowsSeconds == true)
         assert(WidgetKind.clock.minimumRows == 2 && WidgetKind.clock.minimumColumns == 3)
-        print("PASS: fixed viewport geometry, continuous previews, workspace persistence, clock preferences, toolbar preservation and latest-supported Undo ordering")
+        print("PASS: named theme persistence and revision guards, fixed viewport geometry, continuous previews, workspace persistence, clock preferences, toolbar preservation and latest-supported Undo ordering")
+    }
+    static func savedThemeChecks() throws {
+        let colors = ##"{"profiles":{"light":{"canvas":"#EEF1F3"},"dark":{"canvas":"#101823","futureRole":"#AABBCC"},"futureMode":{"canvas":"#112233"}},"futureMetadata":{"keep":true}}"##
+        var library=try WorkspaceThemeLibrary(raw:#"{"futureLibrary":"preserve"}"#)
+        let recipe=SavedWorkspaceTheme(name:"  Evening  ",colorOverrides:colors,baseTheme:"native",accent:"ocean")
+        try library.save(recipe)
+        var reopened=try WorkspaceThemeLibrary(raw:library.encoded)
+        let saved=reopened.themes[0]
+        precondition(saved.id == recipe.id && saved.name == "Evening" && saved.colorOverrides == colors && saved.baseTheme == "native" && saved.accent == "ocean","Reopening retains both palettes, inherited roles, base style and accent")
+        var sameColors=recipe;sameColors.id=UUID();sameColors.name="Morning"
+        try reopened.save(sameColors)
+        precondition(reopened.selected(sameColors.id.uuidString,colors:colors,baseTheme:"native",accent:"ocean")?.name == "Morning","Identical palettes retain the explicitly selected name")
+        precondition(reopened.selected(recipe.id.uuidString,colors:"{}",baseTheme:"native",accent:"ocean") == nil && reopened.selected("",colors:colors,baseTheme:"native",accent:"ocean") == nil,"Modified colours and built-in selection do not misidentify a saved theme")
+        let identicalReopened=try WorkspaceThemeLibrary(raw:reopened.encoded)
+        precondition(identicalReopened.selected(sameColors.id.uuidString,colors:colors,baseTheme:"native",accent:"ocean")?.id == sameColors.id,"Selection identity survives a library reopen")
+        var root=try JSONSerialization.jsonObject(with:Data(try library.encoded.utf8)) as! [String:Any]
+        var row=(root["themes"] as! [[String:Any]])[0];row["id"]=recipe.id.uuidString.lowercased();row["futureRecipe"]="preserve";root["themes"]=[row]
+        reopened=try WorkspaceThemeLibrary(raw:String(decoding:try JSONSerialization.data(withJSONObject:root),as:UTF8.self))
+        var renamed=saved;renamed.name="Night study"
+        try reopened.save(renamed,expected:saved)
+        let renamedRoot=try JSONSerialization.jsonObject(with:Data(try reopened.encoded.utf8)) as! [String:Any]
+        let rows=renamedRoot["themes"] as! [[String:Any]]
+        precondition(rows.count == 1 && rows[0]["futureRecipe"] as? String == "preserve" && renamedRoot["futureLibrary"] as? String == "preserve","Rename handles lower-case IDs and retains unknown fields without duplicate recipes")
+        var duplicate=recipe;duplicate.id=UUID();duplicate.name=" NIGHT STUDY "
+        let unchanged=try reopened.encoded
+        do {try reopened.save(duplicate);preconditionFailure("Duplicate name accepted")} catch {}
+        do {try reopened.save(renamed,expected:saved);preconditionFailure("Stale revision accepted")} catch {}
+        do {try reopened.remove(saved);preconditionFailure("Stale deletion accepted")} catch {}
+        let afterRejection=try reopened.encoded
+        precondition(afterRejection == unchanged,"Rejected changes preserve the original library")
+        var invalid=recipe;invalid.colorOverrides=##"{"profiles":{"light":{"canvas":"#badhex"}}}"##
+        do {try reopened.save(invalid);preconditionFailure("Invalid palette accepted")} catch {}
+        for raw in ["broken",#"{"version":2,"themes":[]}"#,#"{"themes":{}}"#] {
+            do {_=try WorkspaceThemeLibrary(raw:raw);preconditionFailure("Invalid library accepted")} catch {}
+        }
+        let current=reopened.themes[0]
+        try reopened.remove(current)
+        let empty=try WorkspaceThemeLibrary(raw:reopened.encoded)
+        precondition(empty.themes.isEmpty && current.colorOverrides == colors,"Removing a recipe leaves its active colour snapshot intact")
+        var inherited=try WorkspaceThemeLibrary(raw:"{}");try inherited.save(.init(name:"Inherited",colorOverrides:"{}",baseTheme:"warm",accent:"sage"))
+        let inheritedReopened=try WorkspaceThemeLibrary(raw:inherited.encoded)
+        precondition(inheritedReopened.themes[0].colorOverrides == "{}","Default inheritance remains inheritance")
+        let nearLimit=String(decoding:try JSONSerialization.data(withJSONObject:["futureMetadata":String(repeating:"x",count:1_048_500)]),as:UTF8.self)
+        var full=try WorkspaceThemeLibrary(raw:nearLimit)
+        let beforeFull=try full.encoded
+        do {try full.save(recipe);preconditionFailure("Unreadable oversized library persisted")} catch {}
+        let afterFull=try full.encoded
+        precondition(full.themes.isEmpty && beforeFull == afterFull,"Storage bounds reject writes atomically, preserving valid future metadata")
     }
 }

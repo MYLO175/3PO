@@ -4,7 +4,9 @@ Mission Control combines a custom dashboard with a personal assistant. Apple Cal
 
 ## The dashboard
 
-Pages hold movable, resizable widgets. A page fits the window; content inside a widget can scroll. Pages have selectable icons. Toolbar arrangement is saved separately from widget layouts. Workspace and individual widget colours are customisable.
+Pages hold movable, resizable widgets. A page fits the window; content inside a widget can scroll. Pages have selectable icons. Toolbar arrangement is saved separately from widget layouts. Workspace and individual widget colours are customisable; named colour themes can be saved locally.
+
+The Review inbox sidebar icon and widget header show a live number of items needing your attention. It counts current questions, actionable email cards, proposals or updates, and delegated work needing an answer or outcome check. Dismiss, Undo and Keep in review update it immediately. Already planned/addressed emails, approved proposals, verified creations and ordinary queued/running work do not inflate it. Independent cards from the same source remain separate. Zero hides the badge; above 99 displays 99+ with the full accessible count. Viewing it reads existing local projections only.
 
 Current widgets include Calendar, Reminders, Mail, Today's brief, Email summary, Your PA, Review inbox, Date & clock and Life map. Adding or viewing a widget does not itself start an AI request.
 
@@ -124,6 +126,8 @@ Facts and opaque per-message assessment receipts save together. Receipts include
 These source memories feed foreground chat/notebook retrieval and, from the 7 October advice increment, permitted automatic brief/proactive inputs with persistent dependency invalidation. New chat replies save conservative dependency IDs and are omitted from subsequent AI history if those source beliefs become unavailable. This does not delete the local transcript.
 
 ### Appearance and PA name
+
+**Appearance → Customise colours… → Save as theme…** saves a named local colour recipe, including both light and dark palettes and their inherited defaults. Choose it in Theme; My themes offers Use, Update from current colours, Rename and Remove. Removing a saved recipe leaves the applied colours in place. Undo theme change reverses the latest library edit while that library remains unchanged. Widget colour overrides keep their own values. Saving a recipe does not change System/Light/Dark appearance. Invalid saved libraries are preserved and left unavailable.
 
 Choose **3PO** in Customise colours for coordinated light/dark gold, ivory and bronze profiles. Existing themes and individual widget overrides keep their behaviour. Use the PA’s ellipsis menu → **Name your PA…**, or Assistant settings, to choose a name. This is a local display preference, not a new thread or memory profile. The default remains Your PA. Name changes during an AI request invalidate late output.
 

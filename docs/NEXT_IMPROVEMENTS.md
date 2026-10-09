@@ -1,5 +1,7 @@
 # Next improvements
 
+9 October presentation additions: a shared current Review inbox projection supplies a live sidebar/header count; saved named workspace colour recipes retain light/dark palettes, inherited defaults and selection identity. Local Save/Update/Rename/Remove/Undo controls preserve widget overrides. Focused and native acceptance evidence is recorded in STATUS; these additions do not expand source scanning or background inference.
+
 8 October heartbeat refinement: explicit sleep/lid/dark-wake gating, persisted due-anchor retention, and one overdue wake catch-up are implemented with injected-state/storage checks. Brief preparation withholds stale assessments and has bounded fresh-evidence recovery with optional-source omission. Physical lid-close/full-wake acceptance and sustained real scheduling remain separate from these focused checks; no general semantic or full-source coverage claim follows.
 
 8 October Mail search presentation: coverage and optional Continue/Retry now belong to the reply that performed the search, under collapsed Mail search details. No persistent search strip occupies the composer after an answer. Search coverage and retrieval quality remain separate from this presentation fix; it does not broaden Mail scope or claim exhaustive results.

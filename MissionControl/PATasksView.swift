@@ -1,5 +1,43 @@
 import SwiftUI
 import AppKit
+
+struct ReviewInboxProjection {
+    var questions:[BriefingQuestion]
+    var learningQuestions:[PALearningQuestion]
+    var discoveries:[PADiscovery]
+    var emails:[(MailMessage,EmailSummary)]
+    var handled:[(MailMessage,EmailSummary,EmailHandling)]
+    var pending:[PAQueuedRequest]
+    var pendingCount:Int
+}
+extension DashboardModel {
+    func reviewCreationClaim(_ item:PADiscovery)->NativeCreationClaim? {
+        guard nativeCreations.readable,let id=UUID(uuidString:item.id) else {return nil}
+        return nativeCreations.state.claims[item.registration+":"+id.uuidString]
+    }
+    func reviewDiscoveryCompleted(_ item:PADiscovery)->Bool {
+        if item.kind == "project" {return !assistant.projects.readOnly && assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) != nil}
+        return reviewCreationClaim(item)?.receipt != nil
+    }
+    var reviewInbox:ReviewInboxProjection {
+        let questions=briefings.pendingQuestions(self),learning=(memoryLearning.state.questions ?? []).filter{memoryLearning.visible($0,assistant:assistant)}
+        let discoveries=proactive.state.records.filter{proactive.visible($0,model:self)}.map(ProactiveRules.reviewProjection)
+        let highlights=emailSummaries.highlights(self)
+        let emails=highlights.filter{EmailHighlightRules.needsAction($0.1,replied:$0.0.replied) && !acknowledgedEmail($0.0,$0.1) && emailSummaries.handling($0.1,message:$0.0,model:self) == nil}.map {message,summary in
+            var value=summary;if message.replied || EmailSummary.fingerprint(message) != summary.fingerprint {value.replyDraft=nil};return (message,value)
+        }
+        let handled=highlights.compactMap {message,summary in emailSummaries.handling(summary,message:message,model:self).map{(message,summary,$0)}}
+        let pending=PAQueueRules.handoffs(assistant.queue.items,registration:chatGPT.activeID)
+        let count=questions.count+learning.count+discoveries.filter{!reviewDiscoveryCompleted($0)}.count+emails.count+pending.filter{$0.state == .needsAnswer || $0.state == .interrupted}.count
+        return .init(questions:questions,learningQuestions:learning,discoveries:discoveries,emails:emails,handled:handled,pending:pending,pendingCount:count)
+    }
+}
+struct ReviewInboxBadge:View {
+    var count:Int
+    var body:some View {
+        if count > 0 {Text(count > 99 ? "99+" : String(count)).font(.system(size:10,weight:.semibold)).monospacedDigit().foregroundStyle(.white).padding(.horizontal,5).frame(minWidth:17,minHeight:17).background(Color.red,in:Capsule()).accessibilityLabel("\(count) items need review")}
+    }
+}
 struct PATasksView: View {
     @Bindable var model: DashboardModel
     @State private var reviewingProject:PADiscovery?
@@ -13,20 +51,6 @@ struct PATasksView: View {
     @State private var answer=""
     @State private var answerError:String?
     @State private var answeringLearning:PALearningQuestion?
-    private var learningQuestions:[PALearningQuestion] {(model.memoryLearning.state.questions ?? []).filter{model.memoryLearning.visible($0,assistant:model.assistant)}}
-    private var questions:[BriefingQuestion] {model.briefings.pendingQuestions(model)}
-    private var emails:[(MailMessage,EmailSummary)] {
-        model.emailSummaries.highlights(model).filter { EmailHighlightRules.needsAction($0.1,replied:$0.0.replied) && !model.acknowledgedEmail($0.0,$0.1) && model.emailSummaries.handling($0.1,message:$0.0,model:model) == nil }.map { message,summary in
-            var value=summary
-            if message.replied || EmailSummary.fingerprint(message) != summary.fingerprint { value.replyDraft=nil }
-            return (message,value)
-        }
-    }
-    private var handled:[(MailMessage,EmailSummary,EmailHandling)] {
-        model.emailSummaries.highlights(model).compactMap {message,summary in model.emailSummaries.handling(summary,message:message,model:model).map{(message,summary,$0)} }
-    }
-    private var discoveries:[PADiscovery] { model.proactive.state.records.filter { model.proactive.visible($0,model:model) }.map(ProactiveRules.reviewProjection) }
-    private var pending:[PAQueuedRequest] { PAQueueRules.handoffs(model.assistant.queue.items,registration:model.chatGPT.activeID) }
     private func discoveryTitle(_ item:PADiscovery)->String? {
         item.sourceTitle ?? (item.needsDateClarification && item.sourceKind != "whatsapp" ? model.emailSummaries.highlights(model).first{$0.0.id == item.mailID}?.0.subject : nil)
     }
@@ -42,9 +66,11 @@ struct PATasksView: View {
     }
     @State private var showingRelevance=false
     var body: some View {
-        VStack(alignment:.leading,spacing:12) {
+        let inbox=model.reviewInbox,questions=inbox.questions,learningQuestions=inbox.learningQuestions,discoveries=inbox.discoveries,emails=inbox.emails,handled=inbox.handled,pending=inbox.pending
+        return VStack(alignment:.leading,spacing:12) {
             HStack {
                 Label("Review inbox",systemImage:"tray.full").font(.title3.weight(.semibold))
+                ReviewInboxBadge(count:inbox.pendingCount)
                 Spacer()
                 Button {showingRelevance=true} label:{Image(systemName:"slider.horizontal.3")}.buttonStyle(.borderless).help("What matters to me").accessibilityLabel("What matters to me")
                 Button { showingActivity=true } label:{Image(systemName:"clock.arrow.circlepath")}
@@ -98,7 +124,7 @@ struct PATasksView: View {
                             }
                             ReviewRelevanceFeedbackMenu(model:model,topic:discoveryTitle(item) ?? item.message,isCurrent:{model.proactive.state.records.first(where:{$0.id == item.id}).map{ProactiveRules.reviewProjection($0) == item && model.proactive.visible($0,model:model)} == true},acknowledge:{model.proactive.dismiss(item,model:model)})
                             Button("Source evidence") { sourceDiscovery=item }.buttonStyle(.borderless).font(.caption)
-                            HStack { if item.kind == "project" { if model.assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) == nil { Button("Review space…") { reviewingProject=item } } else { Label("Created",systemImage:"checkmark.circle") } } else if !["update","reply"].contains(item.kind) {
+                            HStack { if let claim=model.reviewCreationClaim(item) {Label(claim.receipt == nil ? "Check save outcome" : "Created",systemImage:claim.receipt == nil ? "exclamationmark.circle" : "checkmark.circle").font(.caption).foregroundStyle(.secondary)} else if item.kind == "project" { if model.assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) == nil { Button("Review space…") { reviewingProject=item } } else { Label("Created",systemImage:"checkmark.circle") } } else if !["update","reply"].contains(item.kind) {
                                 if item.reviewState == "pending" { Text("Save needs checking in Apple; it will not be repeated.").font(.caption).foregroundStyle(.orange) }
                                 else if item.proposedChange != nil {
                                     Button(model.approvingDiscoveryID == item.id ? "Approving…" : "Approve") { Task {await model.approveDiscovery(item)} }.disabled(!model.proactive.canReview(item.id,model:model) || model.writing || model.assistant.busy)

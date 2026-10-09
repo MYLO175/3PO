@@ -155,7 +155,8 @@ struct WorkspaceView: View {
         Menu { widgetChoices } label: { Label("Add widget",systemImage:"plus") }
     }
     private var sidebar: some View {
-        VStack(alignment:.leading,spacing:12) {
+        let reviewCount=model.reviewInbox.pendingCount
+        return VStack(alignment:.leading,spacing:12) {
             if sidebarVisible {
                 Text("3PO").font(.caption2.weight(.semibold)).tracking(1.2)
                     .foregroundStyle(.secondary).padding(.horizontal,12).padding(.top,8)
@@ -166,14 +167,16 @@ struct WorkspaceView: View {
                         Button { store.select(page.id) } label: {
                             HStack(spacing:10) {
                                 Image(systemName:page.displayIcon).font(.system(size:16)).frame(width:22)
+                                    .overlay(alignment:.topTrailing) {if !sidebarVisible,page.widgets.contains(where:{$0.kind == .tasks}) {ReviewInboxBadge(count:reviewCount).offset(x:10,y:-10).accessibilityHidden(true)}}
                                 if sidebarVisible { Text(page.title).lineLimit(1); Spacer(minLength:0) }
+                                if sidebarVisible,page.widgets.contains(where:{$0.kind == .tasks}) {ReviewInboxBadge(count:reviewCount).accessibilityHidden(true)}
                             }
                             .font(.callout).padding(.horizontal,sidebarVisible ? 12 : 0)
                             .frame(maxWidth:.infinity,minHeight:40,alignment:sidebarVisible ? .leading : .center)
                             .background(page.id == store.selected.id ? accentColor.opacity(0.14) : Color.clear,
                                         in:RoundedRectangle(cornerRadius:12,style:.continuous))
                             .contentShape(RoundedRectangle(cornerRadius:12,style:.continuous))
-                        }.buttonStyle(.plain).accessibilityLabel(page.title).help(page.title)
+                        }.buttonStyle(.plain).accessibilityLabel(page.title+(page.widgets.contains(where:{$0.kind == .tasks}) && reviewCount > 0 ? ", \(reviewCount) items need review" : "")).help(page.title+(page.widgets.contains(where:{$0.kind == .tasks}) && reviewCount > 0 ? " · \(reviewCount) items need review" : ""))
                             .contextMenu { Button("Edit name and icon…") { naming = page.id; name = page.title; dashboardSymbol=page.symbol; showName = true }; Button("Duplicate") { store.duplicate(page.id) }; Button("Move up") { store.movePage(page.id,offset:-1) }; Button("Move down") { store.movePage(page.id,offset:1) }; Divider(); Button("Remove dashboard") { store.removePage(page.id) }.disabled(store.state.pages.count == 1) }
                     }
                 }

@@ -1,5 +1,75 @@
 import Foundation
 
+struct SavedWorkspaceTheme:Codable,Identifiable,Equatable {
+    var id=UUID()
+    var name:String
+    var colorOverrides:String
+    var baseTheme:String
+    var accent:String
+    var revision=UUID()
+}
+enum WorkspaceThemeFailure:LocalizedError {
+    case message(String)
+    var errorDescription:String? {if case .message(let value)=self {return value};return nil}
+}
+/// Local recipes preserve inherited roles and unknown JSON fields; invalid libraries remain untouched.
+struct WorkspaceThemeLibrary {
+    private var object:[String:Any]
+    private(set) var themes:[SavedWorkspaceTheme]
+    init(raw:String)throws {
+        guard raw.utf8.count <= 1_048_576,let root=try JSONSerialization.jsonObject(with:Data(raw.utf8)) as? [String:Any],root["version"] == nil || root["version"] as? Int == 1,
+              root["themes"] == nil || root["themes"] is [[String:Any]] else {throw WorkspaceThemeFailure.message("Saved themes are unavailable. Their storage is preserved.")}
+        let rows=root["themes"] as? [[String:Any]] ?? []
+        let decoded=try rows.map{try JSONDecoder().decode(SavedWorkspaceTheme.self,from:JSONSerialization.data(withJSONObject:$0))}
+        guard Set(decoded.map(\.id)).count == decoded.count,Set(decoded.map{Self.nameKey($0.name)}).count == decoded.count,decoded.allSatisfy(Self.valid) else {throw WorkspaceThemeFailure.message("Saved themes are unavailable. Their storage is preserved.")}
+        object=root;themes=decoded
+    }
+    static func validColors(_ raw:String)->Bool {
+        guard let root=(try? JSONSerialization.jsonObject(with:Data(raw.utf8))) as? [String:Any] else {return false}
+        guard let profiles=root["profiles"] else {return true}
+        guard let modes=profiles as? [String:[String:String]] else {return false}
+        return modes.allSatisfy{!$0.key.isEmpty && $0.value.allSatisfy{!$0.key.isEmpty && validHex($0.value)}}
+    }
+    private static func validHex(_ raw:String)->Bool {
+        let hex=raw.hasPrefix("#") ? String(raw.dropFirst()) : raw
+        return hex.count == 6 && hex.allSatisfy(\.isHexDigit) && UInt32(hex,radix:16) != nil
+    }
+    private static func nameKey(_ name:String)->String {name.trimmingCharacters(in:.whitespacesAndNewlines).folding(options:[.caseInsensitive],locale:Locale(identifier:"en_GB"))}
+    private static func valid(_ value:SavedWorkspaceTheme)->Bool {!nameKey(value.name).isEmpty && value.name.count <= 60 && validColors(value.colorOverrides) && !value.baseTheme.isEmpty && !value.accent.isEmpty}
+    func selected(_ id:String,colors:String,baseTheme:String,accent:String)->SavedWorkspaceTheme? {
+        guard let uuid=UUID(uuidString:id),let value=themes.first(where:{$0.id == uuid}),value.baseTheme == baseTheme,value.accent == accent,
+              let current=(try? JSONSerialization.jsonObject(with:Data(colors.utf8))) as? [String:Any],
+              let saved=(try? JSONSerialization.jsonObject(with:Data(value.colorOverrides.utf8))) as? [String:Any],
+              NSDictionary(dictionary:current).isEqual(to:saved) else {return nil}
+        return value
+    }
+    var encoded:String {get throws {
+        let data=try JSONSerialization.data(withJSONObject:object,options:.sortedKeys)
+        guard data.count <= 1_048_576 else {throw WorkspaceThemeFailure.message("Saved themes are full. Remove an unused theme before saving another.")}
+        return String(decoding:data,as:UTF8.self)
+    }}
+    mutating func save(_ value:SavedWorkspaceTheme,expected:SavedWorkspaceTheme? = nil)throws {
+        guard Self.valid(value) else {throw WorkspaceThemeFailure.message("Choose a name of up to 60 characters and valid colours.")}
+        if let expected {guard themes.first(where:{$0.id == value.id}) == expected else {throw WorkspaceThemeFailure.message("This theme changed. Reopen it before saving.")}}
+        else {guard !themes.contains(where:{$0.id == value.id}) else {throw WorkspaceThemeFailure.message("This theme already exists.")}}
+        guard !themes.contains(where:{$0.id != value.id && Self.nameKey($0.name) == Self.nameKey(value.name)}) else {throw WorkspaceThemeFailure.message("A theme with that name exists. Choose another name or update it.")}
+        var updated=value;updated.name=updated.name.trimmingCharacters(in:.whitespacesAndNewlines);updated.revision=UUID()
+        var rows=object["themes"] as? [[String:Any]] ?? []
+        let fields=try JSONSerialization.jsonObject(with:JSONEncoder().encode(updated)) as! [String:Any]
+        if let index=rows.firstIndex(where:{($0["id"] as? String).flatMap(UUID.init(uuidString:)) == value.id}) {rows[index].merge(fields){_,new in new}}
+        else {rows.append(fields)}
+        var next=object;next["themes"]=rows;next["version"]=1
+        guard try JSONSerialization.data(withJSONObject:next,options:.sortedKeys).count <= 1_048_576 else {throw WorkspaceThemeFailure.message("Saved themes are full. Remove an unused theme before saving another.")}
+        object=next
+        themes.removeAll{$0.id == value.id};themes.append(updated)
+    }
+    mutating func remove(_ expected:SavedWorkspaceTheme)throws {
+        guard themes.first(where:{$0.id == expected.id}) == expected else {throw WorkspaceThemeFailure.message("This theme changed. Reopen it before removing it.")}
+        object["themes"]=(object["themes"] as? [[String:Any]] ?? []).filter{($0["id"] as? String).flatMap(UUID.init(uuidString:)) != expected.id}
+        themes.removeAll{$0.id == expected.id}
+    }
+}
+
 enum WidgetKind: String, Codable, CaseIterable {
     case calendar
     case reminders

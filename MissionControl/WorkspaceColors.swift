@@ -93,9 +93,16 @@ struct WorkspaceColorEditor: View {
     @AppStorage("workspaceColorOverrides") private var raw = "{}"
     @AppStorage("workspaceTheme") private var theme = "warm"
     @AppStorage("workspaceAccent") private var accent = "sage"
+    @AppStorage("workspaceSavedThemes") private var savedThemes = "{}"
+    @AppStorage("workspaceSelectedSavedTheme") private var selectedSavedTheme = ""
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dismiss) private var dismiss
     @State private var mode = "light"
+    @State private var themeName:WorkspaceThemeNameDraft?
+    @State private var themeError:String?
+    @State private var themeUndo:(previous:String,expected:String,previousSelection:String,expectedSelection:String)?
+    private var library:WorkspaceThemeLibrary? {try? .init(raw:savedThemes)}
+    private var currentTheme:SavedWorkspaceTheme? {library?.selected(selectedSavedTheme,colors:raw,baseTheme:theme,accent:accent)}
     private var overrides: WorkspaceColorOverrides { .init(raw:raw) }
     private var palette: WorkspacePalette { .resolved(raw:raw,mode:mode,theme:theme,accent:accent) }
     var body: some View {
@@ -103,7 +110,9 @@ struct WorkspaceColorEditor: View {
             HStack { Text("Workspace colours").font(.title2.weight(.semibold)); Spacer(); Picker("Palette",selection:$mode) { Text("Light").tag("light"); Text("Dark").tag("dark") }.pickerStyle(.segmented).labelsHidden().frame(width:150) }
             Text("Changes save automatically. Light and dark keep their own colours; System appearance switches between them.").font(.callout).foregroundStyle(.secondary)
             HStack {
-                Picker("Theme",selection:Binding(get:{ overrides.profiles.isEmpty ? "defaults" : WorkspaceColorTheme.allCases.first(where:{ $0.profiles == overrides.profiles })?.rawValue ?? "custom" },set:{ selected in
+                Picker("Theme",selection:Binding(get:{ currentTheme.map{"saved:"+$0.id.uuidString} ?? (overrides.profiles.isEmpty ? "defaults" : WorkspaceColorTheme.allCases.first(where:{ $0.profiles == overrides.profiles })?.rawValue ?? "custom") },set:{ selected in
+                    if selected.hasPrefix("saved:"),let value=library?.themes.first(where:{"saved:"+$0.id.uuidString == selected}) {applyTheme(value);return}
+                    selectedSavedTheme=""
                     var value = overrides
                     if selected == "defaults" { value.profiles = [:] }
                     else if let preset = WorkspaceColorTheme(rawValue:selected) { value.profiles = preset.profiles }
@@ -112,10 +121,28 @@ struct WorkspaceColorEditor: View {
                     Text("Custom / current").tag("custom")
                     Text("Theme defaults").tag("defaults")
                     ForEach(WorkspaceColorTheme.allCases) { Text($0.title).tag($0.rawValue) }
+                    if let library,!library.themes.isEmpty {Section("My themes") {ForEach(library.themes) {Text($0.name).tag("saved:"+$0.id.uuidString)}}}
                 }.frame(width:240)
                 Spacer()
                 Text("Applies light and dark").font(.caption).foregroundStyle(.secondary)
             }
+            HStack {
+                Button("Save as theme…") {themeName = .init(value:.init(name:"",colorOverrides:raw,baseTheme:theme,accent:accent))}.disabled(library == nil || !WorkspaceThemeLibrary.validColors(raw))
+                Menu("My themes") {
+                    if let library {ForEach(library.themes) {value in
+                        Menu(value.name) {
+                            Button("Use theme") {applyTheme(value)}
+                            Button("Update from current colours") {saveTheme(.init(id:value.id,name:value.name,colorOverrides:raw,baseTheme:theme,accent:accent),expected:value)}
+                            Button("Rename…") {themeName = .init(value:value,expected:value)}
+                            Button("Remove saved theme") {do {var current=try WorkspaceThemeLibrary(raw:savedThemes);try current.remove(value);try commit(current,selection:selectedSavedTheme == value.id.uuidString ? "" : nil)} catch {themeError=error.localizedDescription}}
+                        }
+                    }}
+                }.disabled(library?.themes.isEmpty != false)
+                Spacer()
+                if let undo=themeUndo,savedThemes == undo.expected {Button("Undo theme change") {savedThemes=undo.previous;if selectedSavedTheme == undo.expectedSelection {selectedSavedTheme=undo.previousSelection};themeUndo=nil;themeError=nil}.buttonStyle(.borderless)}
+            }.controlSize(.small)
+            if let error=themeError {Text(error).font(.caption).foregroundStyle(.orange)}
+            if library == nil {Text("Saved themes are unavailable. Their storage is preserved.").font(.caption).foregroundStyle(.orange)}
             preview
             ScrollView {
                 VStack(spacing:12) {
@@ -134,8 +161,17 @@ struct WorkspaceColorEditor: View {
                 }.padding(4)
             }
             HStack { Button("Reset this palette") { var value = overrides; value.profiles[mode] = nil; raw = value.encoded }; Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }
-        }.padding(24).frame(width:560,height:620).onAppear { mode = scheme == .dark ? "dark" : "light" }
+        }.padding(24).frame(width:580,height:680).onAppear { mode = scheme == .dark ? "dark" : "light" }
+            .sheet(item:$themeName) {draft in WorkspaceThemeNameEditor(draft:draft) {value in try saveThemeOrThrow(value,expected:draft.expected)}}
     }
+    private func applyTheme(_ value:SavedWorkspaceTheme) {raw=value.colorOverrides;theme=value.baseTheme;accent=value.accent;selectedSavedTheme=value.id.uuidString}
+    private func commit(_ value:WorkspaceThemeLibrary,selection:String? = nil)throws {
+        let previous=savedThemes,previousSelection=selectedSavedTheme,next=try value.encoded;savedThemes=next
+        if let selection {selectedSavedTheme=selection}
+        themeUndo=(previous,next,previousSelection,selectedSavedTheme);themeError=nil
+    }
+    private func saveThemeOrThrow(_ value:SavedWorkspaceTheme,expected:SavedWorkspaceTheme?,selectCurrent:Bool = false)throws {var current=try WorkspaceThemeLibrary(raw:savedThemes);try current.save(value,expected:expected);try commit(current,selection:expected == nil || selectedSavedTheme == value.id.uuidString || selectCurrent ? value.id.uuidString : nil)}
+    private func saveTheme(_ value:SavedWorkspaceTheme,expected:SavedWorkspaceTheme?) {do {try saveThemeOrThrow(value,expected:expected,selectCurrent:true)} catch {themeError=error.localizedDescription}}
     private func binding(_ role: WorkspaceColorRole) -> Binding<Color> {
         Binding(get:{ palette[role] },set:{ color in var value = overrides; value.set(role,mode:mode,color:color); raw = value.encoded })
     }
@@ -144,12 +180,52 @@ struct WorkspaceColorEditor: View {
             VStack(alignment:.leading,spacing:8) { Text("Dashboard").font(.caption.weight(.semibold)); Label("Today",systemImage:"square.grid.2x2").foregroundStyle(palette[.accent]); Spacer() }.padding(10).frame(width:105).background(palette[.sidebar],in:RoundedRectangle(cornerRadius:8))
             VStack(alignment:.leading,spacing:7) {
                 Text("Your PA").font(.headline)
-                Text("A little clarity for your day.").font(.caption).foregroundStyle(.secondary)
+                Text("A little clarity for your day.").font(.caption).foregroundStyle(palette[.text].opacity(0.65))
                 Text("Good morning.").padding(6).background(palette[.assistantBubble],in:RoundedRectangle(cornerRadius:6))
                 HStack { Spacer(); Text("What's on today?").padding(6).background(palette[.userBubble],in:RoundedRectangle(cornerRadius:6)) }
-                HStack { Text("Message your PA").foregroundStyle(.secondary); Spacer(); Image(systemName:"paperplane").foregroundStyle(palette[.accent]) }.font(.caption).padding(6).background(palette[.input],in:RoundedRectangle(cornerRadius:5))
+                HStack { Text("Message your PA").foregroundStyle(palette[.text].opacity(0.65)); Spacer(); Image(systemName:"paperplane").foregroundStyle(palette[.accent]) }.font(.caption).padding(6).background(palette[.input],in:RoundedRectangle(cornerRadius:5))
             }.font(.caption).padding(10).background(palette[.widget],in:RoundedRectangle(cornerRadius:9)).overlay(RoundedRectangle(cornerRadius:9).stroke(palette[.border]))
         }.foregroundStyle(palette[.text]).padding(10).frame(height:180).background(palette[.canvas],in:RoundedRectangle(cornerRadius:12))
+    }
+}
+
+#if DEBUG
+/// Uses a fresh defaults suite and the existing source-free review preview startup.
+struct WorkspaceThemePreview:View {
+    @State private var suite="threepo-theme-preview-"+UUID().uuidString
+    @State private var showing=false
+    var body:some View {
+        VStack(spacing:16) {
+            Text("Fictional colour themes · isolated preferences · no source startup").font(.caption)
+            Button("Open colour editor") {showing=true}
+        }.padding(24).frame(width:640,height:740)
+            .defaultAppStorage(UserDefaults(suiteName:suite)!)
+            .sheet(isPresented:$showing) {WorkspaceColorEditor().defaultAppStorage(UserDefaults(suiteName:suite)!)}
+            .onDisappear {UserDefaults.standard.removePersistentDomain(forName:suite)}
+    }
+}
+#endif
+
+private struct WorkspaceThemeNameDraft:Identifiable {
+    var id=UUID()
+    var value:SavedWorkspaceTheme
+    var expected:SavedWorkspaceTheme? = nil
+}
+private struct WorkspaceThemeNameEditor:View {
+    let draft:WorkspaceThemeNameDraft
+    var save:(SavedWorkspaceTheme)throws->Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var name:String
+    @State private var error:String?
+    init(draft:WorkspaceThemeNameDraft,save:@escaping(SavedWorkspaceTheme)throws->Void) {self.draft=draft;self.save=save;_name=State(initialValue:draft.value.name)}
+    var body:some View {
+        VStack(alignment:.leading,spacing:16) {
+            Text(draft.expected == nil ? "Save colour theme" : "Rename theme").font(.title2.weight(.semibold))
+            Text("Includes your light and dark colours. Individual widget colours keep their own overrides.").font(.callout).foregroundStyle(.secondary)
+            TextField("Theme name",text:$name).textFieldStyle(.roundedBorder).accessibilityLabel("Theme name")
+            if let error {Text(error).font(.caption).foregroundStyle(.orange)}
+            HStack {Button("Cancel") {dismiss()}.keyboardShortcut(.cancelAction);Spacer();Button("Save") {do {var value=draft.value;value.name=name;try save(value);dismiss()} catch {self.error=error.localizedDescription}}.keyboardShortcut(.defaultAction).disabled(name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || name.count > 60)}
+        }.padding(24).frame(width:440)
     }
 }
 
