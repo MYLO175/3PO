@@ -428,3 +428,10 @@ A failed heartbeat is a failed run, not a permanent pause. History keeps the ori
 
 
 On cold launch, WhatsApp may authenticate its saved linked connection during no-AI source collection. Heartbeat preparation allows that initial unknown-to-verified identity transition, then captures its verified source scope before the first AI request. Explicit source-choice changes, a change to an already known linked identity, and account/model/day/heartbeat-control changes still stop preparation. This does not enable another identity’s chat choices or broaden access; WhatsApp access remains encrypted and keyed to the verified account/linked identity.
+
+
+## Typing and page responsiveness
+
+The chat display checks visibility once per turn and computes date/resumption separators in one pass, retaining earlier visible history for paged messages. A closed source-details sheet does not scan all suggestions just to watch for changes. Draft saves retain their debounce and flush on page/account changes or Quit; draft and workspace persistence fetch their exact cache keys. Clicking an already mounted page performs no redundant save.
+
+WhatsApp dependency checks reuse only derived single-chat fingerprints in a bounded in-memory cache. Every message-array or linked-identity mutation clears it synchronously, including in-place edits and source loss. Hits still observe those inputs so mounted UI updates. Permissions, account, consumer purpose and exact saved evidence are checked afresh by callers; the cache adds no source reads, inference or stored message copy.

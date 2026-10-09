@@ -101,6 +101,19 @@ import Foundation
         precondition(protectedReplay.last?["content"] == reply.content)
         var later=reply;later.created=origin.addingTimeInterval(5*3600)
         precondition(ConversationRules.separator(before:later,previous:reply,previousHuman:question) != nil)
+        var projectionFeed=(0..<2000).map { n in AssistantTurn(role:n.isMultiple(of:3) ? "user" : "assistant",content:"Fictional turn \(n)",completed:true,created:origin.addingTimeInterval(Double(n)*600)) }
+        projectionFeed[1980].created=nil
+        var visibilityCalls=0
+        let rows=ConversationRules.transcript(projectionFeed,visible:{turn in visibilityCalls+=1;return turn.id != projectionFeed[1998].id})
+        precondition(visibilityCalls == projectionFeed.count,"Visibility must run once per turn rather than once per displayed divider")
+        let visible=projectionFeed.filter{$0.id != projectionFeed[1998].id}
+        precondition(rows.map(\.id) == visible.map(\.id),"Pagination projections retain exact turn identities and order")
+        for index in rows.indices {
+            let previous=index > 0 ? visible[index-1] : nil
+            let previousHuman=visible.prefix(index).last{$0.role == "user"}
+            precondition(rows[index].separator == ConversationRules.separator(before:visible[index],previous:previous,previousHuman:previousHuman),"Linear separators preserve day and resumed-conversation boundaries, including outside the displayed suffix")
+        }
+        precondition(Array(rows.suffix(40)).first?.id == visible[visible.count-40].id)
         let legacyTurn=try JSONDecoder().decode(AssistantTurn.self,from:Data(#"{"role":"assistant","content":"Saved old reply","completed":true,"id":"84E20284-7BCE-41BD-B801-D600733F2068"}"#.utf8))
         precondition(legacyTurn.toolErrors == nil)
         var failureTurn=legacyTurn;failureTurn.toolErrors=["3PO stopped this request before executing the operation: Resolve the opening date."]

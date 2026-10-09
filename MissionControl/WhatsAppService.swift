@@ -12,9 +12,30 @@ import CryptoKit
     var namesBusy=false
     var namesStatus=""
     var qr: NSImage?
-    var messages: [WhatsAppReadMessage] = []
+    var messages: [WhatsAppReadMessage] = [] {
+        didSet { windowFingerprints.removeAll(keepingCapacity:true) }
+    }
     var chats: [WhatsAppChat] = []
-    var linkedIdentity = ""
+    var linkedIdentity = "" {
+        didSet { windowFingerprints.removeAll(keepingCapacity:true) }
+    }
+    @ObservationIgnored private var windowFingerprints:[String:String]=[:]
+    #if DEBUG
+    @ObservationIgnored private(set) var windowFingerprintBuilds=0
+    #endif
+    /// Derived hashes only; permissions and ownership are checked by each caller.
+    /// Read both observed inputs even on a hit so mounted views track invalidation.
+    func windowFingerprint(chat:String)->String {
+        let currentMessages=messages,identity=linkedIdentity
+        if let saved=windowFingerprints[chat] {return saved}
+        let value=ProactiveRules.whatsappWindow(currentMessages,chats:[chat],identity:identity)
+        if windowFingerprints.count >= 64 {windowFingerprints.removeAll(keepingCapacity:true)}
+        windowFingerprints[chat]=value
+        #if DEBUG
+        windowFingerprintBuilds+=1
+        #endif
+        return value
+    }
     var accessRevision = UUID()
     private(set) var choicesRevision = UUID()
     private var accesses: [String:WhatsAppAccess] = [:]

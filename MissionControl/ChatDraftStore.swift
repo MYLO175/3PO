@@ -16,13 +16,18 @@ import AppKit
     init(container: ModelContainer?) {
         self.container = container
         do {
-            if let record = try container?.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first(where:{ $0.key == "assistantDrafts" }) {
+            if let record = try container?.mainContext.fetch(Self.savedDraft()).first {
                 let saved = try JSONDecoder().decode(ChatDraftState.self,from:record.data)
                 guard saved.version == 1 else { throw Failure.unsupported }
                 state = saved
             }
         } catch { writable = false; self.error = "Saved drafts are unavailable. Their original record is preserved; editing is disabled." }
         termination = NotificationCenter.default.addObserver(forName:NSApplication.willTerminateNotification,object:nil,queue:.main) { [weak self] _ in MainActor.assumeIsolated { self?.flush() } }
+    }
+    private static func savedDraft()->FetchDescriptor<CachedDashboard> {
+        var request=FetchDescriptor<CachedDashboard>(predicate:#Predicate{$0.key == "assistantDrafts"})
+        request.fetchLimit=1
+        return request
     }
     func text(registration: String, widget: UUID, conversation: UUID?) -> String { state.values[ChatDraftRules.key(registration:registration,widget:widget,conversation:conversation)] ?? "" }
     func set(_ text: String, registration: String, widget: UUID, conversation: UUID?) {
@@ -59,7 +64,7 @@ import AppKit
         guard let container else { error = "Draft is kept in this session but could not be saved. Copy it before quitting."; return }
         do {
             let context = container.mainContext, data = try JSONEncoder().encode(state)
-            if let record = try context.fetch(FetchDescriptor<CachedDashboard>()).first(where:{ $0.key == "assistantDrafts" }) { record.data = data; record.updated = .now }
+            if let record = try context.fetch(Self.savedDraft()).first { record.data = data; record.updated = .now }
             else { context.insert(CachedDashboard(key:"assistantDrafts",data:data)) }
             try context.save(); dirty = false; error = nil
         } catch { container.mainContext.rollback(); self.error = "Draft is kept in this session but could not be saved. Copy it before quitting." }

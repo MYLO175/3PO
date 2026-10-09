@@ -2,9 +2,77 @@
 import Foundation
 import SwiftUI
 import SwiftData
+import Observation
+import Synchronization
 
 /// Actual consumer projections, fictional data and disposable storage; zero subscription requests.
 @MainActor enum AdviceContextEvaluation {
+    private static func navigationStorageChecks()throws->[String:Bool] {
+        let container=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+        let context=container.mainContext,unrelated=Data(repeating:42,count:1_000_000)
+        context.insert(CachedDashboard(key:"fictional-unrelated-cache",data:unrelated));try context.save()
+        let workspace=WorkspaceStore(container:container,calendars:[],lists:[],accounts:[],date:.now)
+        let original=workspace.state.selectedPageID,next=workspace.state.pages.first{$0.id != original}!.id
+        let before=try context.fetch(FetchDescriptor<CachedDashboard>()).first{$0.key == "workspace"}!.updated
+        workspace.select(original)
+        let after=try context.fetch(FetchDescriptor<CachedDashboard>()).first{$0.key == "workspace"}!.updated
+        var checks=["selecting the mounted page performs no redundant save":before == after]
+        workspace.select(next)
+        let reopened=WorkspaceStore(container:container,calendars:[],lists:[],accounts:[],date:.now)
+        checks["page selection persists through exact-key fetch and reopen"]=reopened.state.selectedPageID == next && reopened.state.pages == workspace.state.pages
+        let drafts=ChatDraftStore(container:container),widget=UUID(),other=UUID(),conversation=UUID()
+        drafts.set("Fictional draft",registration:"fixture-one",widget:widget,conversation:conversation)
+        drafts.set("Other fictional draft",registration:"fixture-two",widget:other,conversation:conversation);drafts.flush()
+        let reopenedDrafts=ChatDraftStore(container:container)
+        checks["exact-key draft save preserves account and widget isolation on reopen"]=reopenedDrafts.text(registration:"fixture-one",widget:widget,conversation:conversation) == "Fictional draft" && reopenedDrafts.text(registration:"fixture-two",widget:other,conversation:conversation) == "Other fictional draft" && reopenedDrafts.text(registration:"fixture-two",widget:widget,conversation:conversation).isEmpty
+        reopenedDrafts.set("",registration:"fixture-one",widget:widget,conversation:conversation);reopenedDrafts.flush()
+        let clearedDrafts=ChatDraftStore(container:container)
+        checks["clearing one saved draft preserves the other account draft"]=clearedDrafts.text(registration:"fixture-one",widget:widget,conversation:conversation).isEmpty && clearedDrafts.text(registration:"fixture-two",widget:other,conversation:conversation) == "Other fictional draft"
+        let records=try context.fetch(FetchDescriptor<CachedDashboard>())
+        checks["targeted UI saves preserve unrelated cache bytes and unique keys"]=records.first{$0.key == "fictional-unrelated-cache"}?.data == unrelated && records.filter{$0.key == "workspace"}.count == 1 && records.filter{$0.key == "assistantDrafts"}.count == 1
+        return checks
+    }
+    private static func fingerprintCacheChecks(_ model:DashboardModel)->[String:Bool] {
+        let service=model.whatsapp,oldMessages=service.messages,oldIdentity=service.linkedIdentity
+        defer {service.messages=oldMessages;service.linkedIdentity=oldIdentity}
+        service.linkedIdentity="fictional-cache-device"
+        service.messages=(0..<2000).map{.init(id:"cache-\($0)",chat:$0.isMultiple(of:2) ? "fixture-a" : "fixture-b",sender:"Fictional sender",text:"Fictional text \($0)",sentByMe:false,time:Double($0))}
+        var checks:[String:Bool]=[:]
+        let initialBuilds=service.windowFingerprintBuilds
+        let changed=Mutex(false)
+        let fingerprint=withObservationTracking {service.windowFingerprint(chat:"fixture-a")} onChange:{changed.withLock{$0=true}}
+        for _ in 0..<200 { _=service.windowFingerprint(chat:"fixture-a") }
+        checks["200 repeated window checks hash a large unchanged chat only once"]=service.windowFingerprintBuilds == initialBuilds+1
+        checks["cache population does not invalidate observed source inputs"]=changed.withLock{!$0}
+        checks["cached fingerprint exactly matches canonical source revisions"]=fingerprint == ProactiveRules.whatsappWindow(service.messages,chats:["fixture-a"],identity:service.linkedIdentity)
+        let warmedMessages=Mutex(false)
+        withObservationTracking {_=service.windowFingerprint(chat:"fixture-a")} onChange:{warmedMessages.withLock{$0=true}}
+        let original=service.messages[0]
+        service.messages[0] = .init(id:original.id,chat:original.chat,sender:original.sender,text:"Changed fictional source content",sentByMe:original.sentByMe,time:original.time)
+        let edited=service.windowFingerprint(chat:"fixture-a")
+        checks["same-count in-place source correction invalidates a warmed window"]=edited != fingerprint && edited == ProactiveRules.whatsappWindow(service.messages,chats:["fixture-a"],identity:service.linkedIdentity)
+        checks["warmed cache hits still observe message changes"]=warmedMessages.withLock{$0}
+        let unrelated=service.messages[1]
+        service.messages[1] = .init(id:unrelated.id,chat:unrelated.chat,sender:unrelated.sender,text:"An unrelated chat changed",sentByMe:unrelated.sentByMe,time:unrelated.time)
+        checks["unrelated chat changes preserve exact fingerprint after rebuilding"]=service.windowFingerprint(chat:"fixture-a") == edited
+        service.messages.reverse()
+        checks["message order retains canonical window fingerprint"]=service.windowFingerprint(chat:"fixture-a") == edited
+        service.messages.append(.init(id:"fixture-new",chat:"fixture-a",sender:"Fictional sender",text:"New reply",sentByMe:true,time:3000))
+        let appended=service.windowFingerprint(chat:"fixture-a")
+        checks["appending new evidence invalidates the warmed window"]=appended != edited
+        service.messages.removeLast()
+        checks["removing evidence restores the exact earlier fingerprint"]=service.windowFingerprint(chat:"fixture-a") == edited
+        let warmedIdentity=Mutex(false)
+        withObservationTracking {_=service.windowFingerprint(chat:"fixture-a")} onChange:{warmedIdentity.withLock{$0=true}}
+        service.linkedIdentity="fictional-other-device"
+        checks["warmed cache observes identity changes and cannot reuse another device window"]=warmedIdentity.withLock{$0} && service.windowFingerprint(chat:"fixture-a") != edited
+        service.linkedIdentity=""
+        checks["identity reset recomputes the canonical empty-identity window"]=service.windowFingerprint(chat:"fixture-a") == ProactiveRules.whatsappWindow(service.messages,chats:["fixture-a"],identity:"")
+        service.messages=[]
+        checks["source loss invalidates the cached window"]=service.windowFingerprint(chat:"fixture-a") == ProactiveRules.whatsappWindow([],chats:["fixture-a"],identity:"")
+        checks["a cached fingerprint cannot bypass current purpose and access guards"] = !model.whatsappDependenciesAvailable([.init(chatID:"fixture-a",linkedIdentity:"fictional-cache-device",fingerprint:fingerprint)],use:.brief)
+        return checks
+    }
     static func run(_ model:DashboardModel)throws->[String:Any] {
         guard ProcessInfo.processInfo.arguments.contains("--validate-advice-context"),model.assistant.memory.enabled,model.assistant.contextEnabled else {
             throw ActionFailure.message("This check requires the existing memory/source context settings to be on. No settings were changed.")
@@ -20,7 +88,8 @@ import SwiftData
         store.sourcePermissionProjection={permitted ? [fact.id] : []}
         guard store.putSources([fact],evidenceTexts:[identity:quote],expectedRevision:store.revision),store.put(human) else { throw SummaryFailure.invalid }
         let capture=model.automaticMemory(.brief)
-        var checks:[String:Bool]=[:]
+        var checks=fingerprintCacheChecks(model)
+        checks.merge(try navigationStorageChecks(),uniquingKeysWith:{$1})
         checks["actual capture includes permitted source and human facts"]=capture.records.count == 2 && capture.dependencies.count == 2
         let morning=DailyBriefing(id:"fictional-morning",registration:registration,day:BriefingRules.day(now),created:now,items:[.init(text:"Prepare the Orion prototype.",sourceIDs:["memory_0"])],sources:[.init(id:"memory_0",label:"Fictional memory",kind:"memory",date:nil,originalID:fact.id.uuidString)],coverage:"Fictional",message:"Good morning. Prepare the Orion prototype.",memoryDependencies:capture.dependencies)
         let json:[String:Any]=["id":"fictional-message","accountID":"fictional-mail","account":"Fictional Mail","messageID":1,"internetMessageID":"orion@example.invalid","sender":"Fictional tutor","subject":"Orion preparation","received":now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]

@@ -59,7 +59,23 @@ struct AssistantConversation: Codable, Identifiable {
     var notebookAreas:[LifeArea]? = nil
 }
 
+struct AssistantTranscriptRow:Identifiable {
+    var turn:AssistantTurn
+    var separator:String?
+    var id:UUID {turn.id}
+}
+
 enum ConversationRules {
+    /// One visibility check per turn; separators retain preceding hidden-by-pagination history.
+    static func transcript(_ turns:[AssistantTurn],visible:(AssistantTurn)->Bool,calendar:Calendar = .current)->[AssistantTranscriptRow] {
+        var rows:[AssistantTranscriptRow]=[],previous:AssistantTurn?,previousHuman:AssistantTurn?
+        for turn in turns where visible(turn) {
+            rows.append(.init(turn:turn,separator:separator(before:turn,previous:previous,previousHuman:previousHuman,calendar:calendar)))
+            previous=turn
+            if turn.role == "user" {previousHuman=turn}
+        }
+        return rows
+    }
     static func topics(in conversations: [AssistantConversation], registration: String) -> [AssistantConversation] {
         conversations.filter { $0.accountID == registration && $0.isPrimary != true && ($0.isTopic == true || $0.focus != nil) }
             .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }

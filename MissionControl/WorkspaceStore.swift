@@ -26,7 +26,7 @@ import SwiftData
         state = initial
         guard !sample else { return }
         do {
-            if let record = try container?.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first(where: { $0.key == "workspace" }) {
+            if let record = try container?.mainContext.fetch(Self.savedWorkspace()).first {
                 let saved = try JSONDecoder().decode(WorkspaceState.self,from:record.data)
                 guard saved.schemaVersion == 1, !saved.pages.isEmpty,
                       saved.pages.allSatisfy({ page in Set(page.widgets.map(\.id)).count == page.widgets.count && page.widgets.allSatisfy { GridRules.valid($0.rect,among:page.widgets,excluding:$0.id) } }),
@@ -38,11 +38,16 @@ import SwiftData
             } else { try save() }
         } catch { readable = false; self.error = "Saved workspace could not be read. Its original record is preserved; changes are disabled. " + error.localizedDescription }
     }
+    private static func savedWorkspace()->FetchDescriptor<CachedDashboard> {
+        var request=FetchDescriptor<CachedDashboard>(predicate:#Predicate{$0.key == "workspace"})
+        request.fetchLimit=1
+        return request
+    }
     private func save() throws {
         guard !sample else { return }
         guard let container else { throw WorkspaceFailure.storage }
         let context = container.mainContext, data = try JSONEncoder().encode(state)
-        if let record = try context.fetch(FetchDescriptor<CachedDashboard>()).first(where: { $0.key == "workspace" }) { record.data = data; record.updated = .now }
+        if let record = try context.fetch(Self.savedWorkspace()).first { record.data = data; record.updated = .now }
         else { context.insert(CachedDashboard(key:"workspace",data:data)) }
         do { try context.save() } catch { context.rollback(); throw error }
     }
@@ -53,7 +58,7 @@ import SwiftData
         do { try save(); if undoable && old != state { previous = old; undoDate = .now }; error = nil }
         catch { state = old; self.error = "Workspace change was not saved. " + error.localizedDescription }
     }
-    func select(_ id: UUID) { guard state.pages.contains(where: { $0.id == id }) else { return }; change({ $0.selectedPageID = id },undoable:false) }
+    func select(_ id: UUID) { guard state.selectedPageID != id,state.pages.contains(where: { $0.id == id }) else { return }; change({ $0.selectedPageID = id },undoable:false) }
     func addPage(_ title: String = "New dashboard", symbol: String? = nil) {
         var page = DashboardPage(title:String(title.trimmingCharacters(in:.whitespacesAndNewlines).prefix(80)).isEmpty ? "New dashboard" : String(title.prefix(80)),widgets:[],canvasRows:8)
         page.symbol = symbol.flatMap { DashboardSymbols.choices.contains($0) ? $0 : nil }

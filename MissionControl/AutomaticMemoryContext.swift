@@ -17,7 +17,7 @@ extension DashboardModel {
         guard assistant.contextEnabled,use.allowsWhatsApp(enabled:access.enabled,brief:access.briefEnabled,suggestions:access.includeInSuggestions == true,heartbeat:heartbeat.whatsappEnabled),dependencies.count <= MemoryDependencyRules.sourceChatLimit,Set(dependencies.map(\.chatID)).count == dependencies.count else { return false }
         return dependencies.allSatisfy { value in
             !value.linkedIdentity.isEmpty && value.linkedIdentity == whatsapp.linkedIdentity && access.chats.contains(value.chatID) &&
-            ProactiveRules.whatsappWindow(whatsapp.messages,chats:[value.chatID],identity:whatsapp.linkedIdentity) == value.fingerprint
+            whatsapp.windowFingerprint(chat:value.chatID) == value.fingerprint
         }
     }
     private func automaticMemorySourceAllowed(_ record:PAMemory,use:AutomaticMemoryUse)->Bool {
