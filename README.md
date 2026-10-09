@@ -15,7 +15,7 @@ This repository contains the app source, focused checks, build scripts and imple
 
 Apple apps remain the source of truth. Ordinary source refresh makes no AI requests. Foreground assistant work continues without a fixed tool-count allowance, while Stop, subscription limits and bounded source reads remain. Independent automatic work has its own budgets and persisted controls.
 
-The configurable heartbeat coordinates automatic communication review and brief preparation while the Mac/app are running. Failed runs retain completed work and schedule a fresh check at the configured interval; there is no independent morning inference timer. The pulse toolbar action **Run heartbeat** (⌘R) explicitly starts AI review. **Refresh sources only** (⌥⌘R) updates local caches without inference. Background proposals require human approval before native changes.
+The configurable heartbeat analyses independently collected Mail and enabled context, then prepares Review items and the brief while the Mac/app are running. Mail polls separately every five minutes; heartbeat does not force another Mail refresh. Failed runs retain completed work and schedule a fresh check at the configured interval; there is no independent morning inference timer. The pulse toolbar action **Run heartbeat** (⌘R) explicitly starts AI review. **Refresh sources only** (⌥⌘R) updates local caches without inference. Background proposals require human approval before native changes.
 
 ## Privacy and permissions
 

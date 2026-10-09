@@ -260,7 +260,7 @@ import SwiftData
                 let acknowledgementContext=model.reviewAcknowledgements(use:memoryUse,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady)
                 input["reviewAcknowledgements"]=try JSONSerialization.jsonObject(with:JSONEncoder().encode(acknowledgementContext))
                 input["whatsappCoverage"]=whatsapp.isEmpty ? "No WhatsApp material supplied; unavailable, disabled or no eligible received text. Never claim nothing important exists." : "Selected chats, last 48 hours, at most eight cached messages; partial linked-device history."
-                input["emailCoverage"]=model.mailCoverage + ". Only supplied permitted assessments; not proof of whole-inbox coverage." + (mailReview.map{" This review supplies only \($0.accountIDs.count) freshly checked Mail account(s); \($0.issues.count) unavailable or unfinished account(s) are omitted and remain pending. Do not conclude omitted accounts contain nothing important."} ?? "")
+                input["emailCoverage"]=model.mailCoverage + ". Only supplied permitted assessments; not proof of whole-inbox coverage. " + (mailReview.map{$0.coverage(accounts:model.mailData.accounts)} ?? "")
                 let data = try JSONSerialization.data(withJSONObject:input,options:[.sortedKeys]), fingerprint = SHA256.hash(data:data).map { String(format:"%02x",$0) }.joined()
                 try Task.checkCancellation()
                 guard acknowledgementContext == model.reviewAcknowledgements(use:memoryUse,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady),currentEmailInputs() else { throw ActionFailure.message("A supplied email or its assessment changed before discovery; no request sent.") }

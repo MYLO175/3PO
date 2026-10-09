@@ -204,14 +204,27 @@ function runBatch(mail, input) {
     let ids = input.messageIDs;
     let retainedIDs = [];
     if (!Array.isArray(ids)) {
-        const lower = {}, upper = {}; lower[dateField] = { _greaterThanEquals:start }; upper[dateField] = { _lessThan:end };
+        // Apple-event dates have whole-second precision. Round the native
+        // predicate outwards, then keep only the exact captured logical range.
+        const queryStart = new Date(Math.floor(start.getTime() / 1000) * 1000);
+        const queryEnd = new Date(Math.ceil(end.getTime() / 1000) * 1000);
+        const exactDateFilter = queryStart.getTime() !== start.getTime() || queryEnd.getTime() !== end.getTime();
+        const lower = {}, upper = {}; lower[dateField] = { _greaterThanEquals:queryStart }; upper[dateField] = { _lessThan:queryEnd };
         const dated = inbox.messages.whose({ _and:[lower,upper] });
         // A property read on an unresolved `whose` repeats the date query.
         // Resolve once when comparing several fields. The resolved references
         // keep native IDs; continuation pages still reuse the persisted ID list.
-        const resolved = input.knownMessages || (input.searchTerms && input.mailboxRole !== 'sent') ? listValue(dated()) : null;
+        let resolved = exactDateFilter || input.knownMessages || (input.searchTerms && input.mailboxRole !== 'sent') ? listValue(dated()) : null;
         const values = property => resolved ? resolved.map(message => message[property]()) : listValue(dated[property]());
         ids = values('id').map(Number);
+        if (exactDateFilter) {
+            const dates = values(dateField).map(dateISO);
+            const checkedIDs = values('id').map(Number);
+            if (dates.length !== ids.length || checkedIDs.length !== ids.length || checkedIDs.some((id,index) => id !== ids[index]) || dates.some(date => !date || new Date(date) < queryStart || new Date(date) >= queryEnd)) throw new Error('Mailbox dates changed or moved; retry this date window');
+            const exactMatches = dates.map(date => new Date(date) >= start && new Date(date) < end);
+            resolved = resolved.filter((message,index) => exactMatches[index]);
+            ids = ids.filter((id,index) => exactMatches[index]);
+        }
         if (input.knownMessages) {
             const internetIDs=values('messageId');
             const checkedIDs=values('id').map(Number);

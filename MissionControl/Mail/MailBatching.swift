@@ -154,8 +154,8 @@ struct MailCheckpoint: Codable {
     var index: MailIndexState
 }
 
-// A review uses only accounts whose bounded arrival check finished in this collection.
-// Older cached rows remain available to the dashboard, without becoming fresh review input.
+// Explicit fresh-check scopes and heartbeat's independently collected cache have
+// separate coverage contracts. Both retain account and exact-message guards.
 struct MailReviewWindow:Equatable {
     var start:Date
     var end:Date
@@ -165,8 +165,37 @@ struct MailReviewScope:Equatable {
     var windows:[String:MailReviewWindow] = [:]
     var issues:[String:String] = [:]
     var discoveryFailed=false
+    var usesCollectedMail=false
+    var capturedFailures:[String:Int] = [:]
+    var capturedRetries:[String:Date] = [:]
     var accountIDs:Set<String> {Set(windows.keys)}
     var pending:Bool {discoveryFailed || !issues.isEmpty}
+    static func collected(index:MailIndexState,snapshot:MailSnapshot,excluded:Set<String>)->MailReviewScope {
+        var value=MailReviewScope();value.usesCollectedMail=true
+        value.discoveryFailed=index.discoveryError != nil || index.discoveryChecked == nil
+        let pages=(index.monitors ?? [])+index.windows
+        for account in snapshot.accounts where !excluded.contains(account.id) {
+            // A successful partial page is usable too. Completion describes
+            // coverage, not whether its already collected headers can be analysed.
+            if let page=pages.filter({$0.accountID == account.id && $0.lastSuccess != nil}).max(by:{($0.lastSuccess ?? .distantPast) < ($1.lastSuccess ?? .distantPast)}),let checked=page.lastSuccess {
+                value.windows[account.id] = .init(start:page.start,end:page.end,checked:checked)
+                value.capturedFailures[account.id]=index.failures?[account.id] ?? 0
+                value.capturedRetries[account.id]=index.retryAfter?[account.id]
+            }
+            if let error=index.accountErrors?[account.id] {value.issues[account.id]=String(error.prefix(300))}
+            else if value.discoveryFailed {value.issues[account.id]="Background account discovery unavailable"}
+            else if index.monitors?.first(where:{$0.accountID == account.id})?.complete != true {value.issues[account.id]="Background arrival check unfinished"}
+            else if value.windows[account.id] == nil {value.issues[account.id]="No collected Mail available yet"}
+        }
+        return value
+    }
+    func coverage(accounts:[MailAccount])->String {
+        guard usesCollectedMail else {return "Freshly checked Mail accounts: \(accountIDs.count); unavailable/pending: \(issues.count). "}
+        let dates=windows.keys.sorted().map{id in
+            (accounts.first{$0.id == id}?.title ?? "Mail account")+": last successful batch "+windows[id]!.checked.ISO8601Format()
+        }.joined(separator:"; ")
+        return "Collected Mail available from \(accountIDs.count) account(s); background collection issues: \(issues.count). \(dates). Heartbeat did not refresh Mail. Coverage may be partial or outdated; do not infer an empty or fully checked inbox. "
+    }
     static func capture(index:MailIndexState,snapshot:MailSnapshot,excluded:Set<String>,since:Date)->MailReviewScope {
         var value=MailReviewScope()
         let discovered=index.discoveryError == nil && (index.discoveryChecked ?? .distantPast) >= since.addingTimeInterval(-30)
@@ -181,6 +210,12 @@ struct MailReviewScope:Equatable {
         return value
     }
     func permits(_ accountID:String,index:MailIndexState,snapshot:MailSnapshot,excluded:Set<String>)->Bool {
+        if usesCollectedMail {
+            // Pre-existing collection errors do not discard verified cached
+            // headers. A new read failure still narrows an in-flight assessment.
+            let sameFailure=index.retryAfter?[accountID] == nil || index.retryAfter?[accountID] == capturedRetries[accountID]
+            return windows[accountID] != nil && !excluded.contains(accountID) && snapshot.accounts.contains{$0.id == accountID} && sameFailure && (index.failures?[accountID] ?? 0) <= (capturedFailures[accountID] ?? 0)
+        }
         guard let captured=windows[accountID],index.discoveryError == nil,!excluded.contains(accountID),
               snapshot.accounts.contains(where:{$0.id == accountID}),index.accountErrors?[accountID] == nil,
               let current=index.monitors?.first(where:{$0.accountID == accountID}),current.complete,
@@ -189,6 +224,10 @@ struct MailReviewScope:Equatable {
     }
     func available(index:MailIndexState,snapshot:MailSnapshot,excluded:Set<String>)->MailReviewScope {
         var value=self
+        if usesCollectedMail {
+            let current=Self.collected(index:index,snapshot:snapshot,excluded:excluded)
+            value.issues=current.issues;value.discoveryFailed=current.discoveryFailed
+        }
         for id in windows.keys where !permits(id,index:index,snapshot:snapshot,excluded:excluded) {
             value.windows[id]=nil;value.issues[id]=String((index.accountErrors?[id] ?? "Account changed or is unavailable").prefix(300))
         }

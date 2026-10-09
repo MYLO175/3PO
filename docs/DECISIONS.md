@@ -1,5 +1,11 @@
 # Decisions
 
+## 9 October 2026 — Heartbeat analyses independently collected Mail
+
+The user wants heartbeat to run AI analysis over Mail that already refreshes in the background. Keep the five-minute source collector as the sole owner of automatic Mail arrival reads; heartbeat does not force a refresh, resume backoff, drain pages or wait for Mail collection. Analyse successful collected pages with exact header/account guards, even when an arrival check is partial or failed. Report collection time and gaps separately from AI completion. New body/read failures still narrow captured review scope; saved decisions, drafts, source permissions and daily allowance remain authoritative. Calendar/Reminders freshness and selected WhatsApp snapshot acknowledgement remain. This supersedes the earlier same-cycle completed-Mail requirement.
+
+A source-free reproduction showed Apple-event dates truncate fractional seconds. Query outward at whole-second precision and filter candidates to the captured exact interval before known-ID retention; keep strict validation for saved page IDs. The live stalled cursors match this defect, but their exact offending messages were not inspected. Preserve all stored ranges and history rather than resetting the index.
+
 ## 8 October 2026 — Sleep-aware heartbeat and changing brief evidence
 
 The user wants no heartbeat attempts while the laptop is closed/asleep, then one overdue run on opening at the configured hourly cadence. Read lid state and current CPU/Graphics capabilities through public IOKit registry APIs, observe root-domain hints and workspace sleep/wake, and recheck before each request. Persist the sleep interruption synchronously, retaining the previous due anchor, completed work and consumed calls. Ordinary provider failures remain separate and keep interval recovery. Physical sleep/wake acceptance must be distinguished from injected-state scheduling fixtures.

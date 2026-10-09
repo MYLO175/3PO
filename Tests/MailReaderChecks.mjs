@@ -131,3 +131,47 @@ test('resolved arrival identities retain continuation cursors and never rerun da
 test('a resolved identity change fails closed before hiding known rows',()=>{
   assert.throws(()=>reader().runBatch(batchFixture({changed:true}).mail,{...batchRequest,knownMessages:{'1':'fixture1@example.invalid'}}),/changed or moved/);
 });
+
+// Mail's Apple-event date predicate truncates to whole seconds, independently
+// of the helper's exact logical interval. Reproduce that transport behaviour.
+function datePrecisionFixture(dates,hydratedDates=dates) {
+  let queries=0;
+  const record=(id,received)=>({
+    id:()=>Number(id),messageId:()=>`precision${id}@example.invalid`,
+    dateReceived:()=>new Date(received),dateSent:()=>new Date(received),
+    sender:()=> 'Fixture',subject:()=> 'Fixture date boundaries',
+    readStatus:()=>false,wasRepliedTo:()=>false,flaggedStatus:()=>false
+  });
+  const records=Object.entries(dates).map(([id,date])=>record(id,date));
+  const messages={
+    whose:({_and:[lower,upper]})=>{
+      queries++;
+      const field=Object.keys(lower)[0];
+      const start=Math.floor(lower[field]._greaterThanEquals.getTime()/1000)*1000;
+      const end=Math.floor(upper[field]._lessThan.getTime()/1000)*1000;
+      const selected=records.filter(message=>message[field]().getTime()>=start&&message[field]().getTime()<end);
+      return Object.assign(()=>selected,{id:()=>selected.map(message=>message.id())});
+    },
+    byId:id=>()=>record(id,hydratedDates[id])
+  };
+  const mailboxes=[()=>({messages})];mailboxes.name=()=>['Inbox'];
+  const account={enabled:()=>true,name:()=> 'Fixture',mailboxes};
+  return {mail:{accounts:{byId:()=>()=>account}},queries:()=>queries};
+}
+const fractionalRequest={...batchRequest,start:Date.parse('2026-10-05T12:00:00.731Z')/1000,end:Date.parse('2026-10-05T12:00:03.421Z')/1000};
+const boundaryDates={1:'2026-10-05T12:00:00Z',2:'2026-10-05T12:00:01Z',3:'2026-10-05T12:00:02Z',4:'2026-10-05T12:00:03Z',5:'2026-10-05T12:00:04Z'};
+test('whole-second Mail predicates preserve exact fractional range before known identity retention',()=>{
+  const f=datePrecisionFixture(boundaryDates),result=reader().runBatch(f.mail,{...fractionalRequest,knownMessages:{'1':'precision1@example.invalid','2':'precision2@example.invalid'}});
+  assert.deepEqual(Array.from(result.messageIDs),[3,4]);
+  assert.deepEqual(Array.from(result.retainedIDs),[2]);
+  assert.equal(result.messages.length,2);assert.equal(result.complete,true);assert.equal(f.queries(),1);
+  const direct=reader().runBatch(datePrecisionFixture(boundaryDates).mail,fractionalRequest);
+  assert.deepEqual(Array.from(direct.messageIDs),[2,3,4]);
+});
+test('persisted pages retain exact dates and reject actual moved or unavailable dates without requerying',()=>{
+  for(const changedDate of ['2026-10-05T12:00:00Z','2026-10-05T12:00:04Z',undefined]) {
+    const f=datePrecisionFixture(boundaryDates,{...boundaryDates,3:changedDate});
+    assert.throws(()=>reader().runBatch(f.mail,{...fractionalRequest,messageIDs:[3]}),/changed or moved/);
+    assert.equal(f.queries(),0,'a saved exact ID page must never silently broaden or replace its range');
+  }
+});

@@ -56,6 +56,12 @@ import Foundation
         let legacy=try JSONDecoder().decode(PAHeartbeatAccount.self,from:Data(#"{"phase":"idle"}"#.utf8))
         precondition(legacy.mailLanes == nil)
         let run=PAReviewRun(id:"run",started:now,finished:now,manual:true,phase:"paused",detail:"Rejected target",calls:2,checkedAccounts:1,waitingAccounts:1,preparedItems:0,drafts:1,handled:0)
+        var collectedRun=run;collectedRun.phase="waiting";collectedRun.briefUpdated=true;collectedRun.mailCollectionIndependent=true
+        precondition(collectedRun.outcome() == "Completed" && collectedRun.summary.contains("Mail collection issue") && !collectedRun.summary.contains("accounts waiting"),"Completed analysis reports collection issues separately")
+        let cachedLane=PAHeartbeatRules.completedMail(lanes,fingerprints:["healthy":"collected-v2"],pending:[],now:now,issues:["healthy":"Background arrival check unfinished"])
+        precondition(cachedLane.mailLanes?["healthy"]?.assessed == now && cachedLane.mailLanes?["healthy"]?.issue != nil && cachedLane.mailLanes?["healthy"]?.pending == true,"AI completion retains separate collection coverage and pending work")
+        let retainedRun=try JSONDecoder().decode(PAReviewRun.self,from:JSONEncoder().encode(collectedRun))
+        precondition(retainedRun.mailCollectionIndependent == true && run.mailCollectionIndependent == nil,"New history metadata is additive; old history retains its wording")
         let activity=try JSONDecoder().decode(PAHeartbeatAccount.self,from:JSONEncoder().encode(PAHeartbeatAccount(phase:"paused",reviews:[run])))
         precondition(activity.reviews?.first?.calls == 2 && activity.reviews?.first?.detail == "Rejected target" && legacy.reviews == nil)
         let interruptedCollection=PAHeartbeatRules.interrupted(PAHeartbeatAccount(checked:now,phase:"refreshing",budgetDay:"2026-10-06",calls:1,mailLanes:lanes.mailLanes,reviews:[run]),now:now,foreground:true)

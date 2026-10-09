@@ -1,5 +1,8 @@
 # Validation
 
+9 October heartbeat/Mail collection separation: focused Mail reader 13/13, monitoring, heartbeat, proactive, briefing and Review checks passed. Signed build/installation verified. Actual fictional scheduler and email-consumer checks passed 62/62 with zero AI/native/settings changes. Existing saved fractional arrival windows completed in both real Mail accounts after one separate source-only refresh; heartbeat itself no longer requests that refresh. A real scheduled heartbeat completed all stages at 17:30 using 4 subscription calls and two collected accounts; Mail discovery/cursors stayed unchanged during AI. Native history verified Completed and original unsent draft remained. Sustained collection and model quality remain separate.
+
+
 ## Current recorded validation — 9 October 2026
 
 Latest navigation follow-up: signed isolated Xcode build and proactive/briefing/Review inbox suites passed. Actual source-free consumer/storage checks passed 96/96 with zero inference requests, covering count-policy equivalence, aged native coverage and empty acknowledgement receipts without bypassing human-choice/evidence guards. Native fictional sidebar count survives page changes, Dismiss (1→0) and keyboard Undo (0→1). Signed install/readback at 16:24 retained the original draft. Matched 20-second production profiles remove repeated Review/acknowledgement work from page navigation, but click/inspection timings remain variable and do not prove consistently faster switching. See STATUS for exact results and limits.

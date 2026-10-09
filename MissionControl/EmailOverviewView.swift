@@ -81,7 +81,7 @@ struct EmailSummarySettings: View {
             Picker("Email reasoning", selection: $summaries.effort) {
                 Text("Low").tag("low"); Text("Medium").tag("medium"); Text("High").tag("high")
             }.disabled(summaries.busy)
-            Text("Heartbeats assess new permitted mail and prepare relevant reply drafts through your ChatGPT plan. Completed assessments are reused; unavailable accounts keep their work waiting. A failed check tries fresh information at the next heartbeat. Nothing is sent.").font(.caption)
+            Text("Heartbeats analyse collected permitted mail and prepare relevant reply drafts through your ChatGPT plan. Mail refreshes separately every five minutes. Completed assessments are reused; collection issues are shown without discarding collected data. A failed AI check tries again at the next heartbeat. Nothing is sent.").font(.caption)
             Text("Choose permitted mail accounts in Settings → Assistant → Assistant source scope. Mailbox filters change only the source view.").font(.caption).foregroundStyle(.secondary)
         }
     }

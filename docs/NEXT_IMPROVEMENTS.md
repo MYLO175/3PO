@@ -26,6 +26,10 @@ The [6 October PA architecture review](PA_ARCHITECTURE_REVIEW.md) recommends the
 | Useful tasks | Pending queue work, source-linked Mail/WhatsApp missing-plan suggestions, local email drafts | Better progress, source references, editable outputs and resumption controls | You can delegate several tasks and review their results later |
 | Reliability | Bounded tools, ownership, deterministic notebook fixtures and a repeatable fictional subscription evaluator | Broader multi-turn/source/proactive evaluations plus live personal acceptance | Correct recall/actions, honest uncertainty and no duplicated changes |
 
+## 9 October — Independent Mail analysis
+
+Heartbeat now analyses collected Mail while the five-minute collector owns refresh/retry work. Fractional Apple-event date boundaries have a focused regression fix. Both previously stalled account cursors recovered in a separate real source-only refresh without an index reset, and a real heartbeat completed AI analysis without changing Mail discovery/cursors. Source-free checks cover analysis during incomplete collection and new read-failure narrowing. Further acceptance should exercise real body/identity changes and sustained partial coverage. Sustained polling and model-quality acceptance remain separate from fixture/build results.
+
 ## 8 October checkpoint and next choices
 
 Explicit Review attention preferences and current-life email relevance are implemented: editable positive/negative topics, targeted human facts/current workspace in header and body review, supported relevance explanations and priority within categories. Passive dismissals retain the existing weak examples rather than a new permanent learning algorithm. Acceptance should measure repeated-topic behaviour, genuinely new requests from the same sender, false marketing matches, project/fact corrections and long-term personal usefulness. Broader semantic/alias matching, stronger inspectable passive suggestions and source-derived classification context remain open; do not infer them from this checkpoint.

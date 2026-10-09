@@ -394,7 +394,7 @@ struct AssistantSourceSettings: View {
                     LabeledContent("Last source check",value:progress?.checked?.formatted(date:.abbreviated,time:.shortened) ?? "Not recorded")
                     LabeledContent("Last completed heartbeat",value:progress?.assessed?.formatted(date:.abbreviated,time:.shortened) ?? "Not recorded")
                     LabeledContent("Automatic review",value:model.heartbeat.scheduleStatus(model))
-                    Text("Each heartbeat checks sources, prepares review items and rewrites Today’s brief for the current time. Missed checks catch up once on opening or waking.").font(.caption).foregroundStyle(.secondary)
+                    Text("Each heartbeat analyses collected mail and enabled context, prepares review items and rewrites Today’s brief for the current time. Mail refreshes independently every five minutes. Missed checks catch up once on opening or waking.").font(.caption).foregroundStyle(.secondary)
                     Button("Open Review inbox") {model.workspace.showReviewInbox();openWindow(id:"dashboard")}.disabled(model.workspace.readOnly)
                     Button("View heartbeat history…") {showingActivity=true}
                     Button("Run heartbeat now") { model.heartbeat.check(model,manual:true) }.disabled(model.heartbeat.manualCheckBlockReason(model) != nil).help(model.heartbeat.manualCheckHelp(model))

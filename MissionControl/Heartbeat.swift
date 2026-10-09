@@ -30,6 +30,7 @@ struct PAReviewRun:Codable,Identifiable {
     var questions:Int? = nil
     var steps:[PAHeartbeatStep]? = nil
     var failure:String? = nil
+    var mailCollectionIndependent:Bool? = nil
 
     func outcome(running:Bool = false)->String {
         if finished == nil {return running ? "Running" : "Interrupted"}
@@ -42,7 +43,7 @@ struct PAReviewRun:Codable,Identifiable {
         if preparedItems > 0 {parts.append("\(preparedItems) suggestion\(preparedItems == 1 ? "" : "s")")}
         if drafts > 0 {parts.append("\(drafts) draft\(drafts == 1 ? "" : "s")")}
         if let questions,questions > 0 {parts.append("\(questions) question\(questions == 1 ? "" : "s")")}
-        if waitingAccounts > 0 {parts.append("\(waitingAccounts) Mail account\(waitingAccounts == 1 ? "" : "s") waiting")}
+        if waitingAccounts > 0 {parts.append(mailCollectionIndependent == true ? "\(waitingAccounts) Mail collection issue\(waitingAccounts == 1 ? "" : "s")" : "\(waitingAccounts) Mail account\(waitingAccounts == 1 ? "" : "s") waiting")}
         return parts.joined(separator:" · ")
     }
 }
@@ -67,7 +68,7 @@ struct PAHeartbeatState: Codable {
 }
 enum PAHeartbeatRules {
     static func stages()->[PAHeartbeatStep] {
-        [.init(id:"sources",title:"Sources"),.init(id:"email",title:"Email review"),.init(id:"suggestions",title:"Suggestions & drafts"),.init(id:"brief",title:"Today’s brief")]
+        [.init(id:"sources",title:"Context"),.init(id:"email",title:"Email review"),.init(id:"suggestions",title:"Suggestions & drafts"),.init(id:"brief",title:"Today’s brief")]
     }
     // Cache arrivals between completed stages are fresh input to the next stage.
     // Each inference job still validates the exact context it actually supplied.
@@ -151,10 +152,10 @@ enum PAHeartbeatRules {
         }
         value.mailLanes=lanes;return value
     }
-    static func completedMail(_ account:PAHeartbeatAccount,fingerprints:[String:String],pending:Set<String>,now:Date)->PAHeartbeatAccount {
+    static func completedMail(_ account:PAHeartbeatAccount,fingerprints:[String:String],pending:Set<String>,now:Date,issues:[String:String] = [:])->PAHeartbeatAccount {
         var value=account,lanes=account.mailLanes ?? [:]
         for (id,fingerprint) in fingerprints {
-            var lane=lanes[id] ?? .init();lane.assessed=now;lane.fingerprint=fingerprint;lane.pending=pending.contains(id);lane.issue=nil;lanes[id]=lane
+            var lane=lanes[id] ?? .init();lane.assessed=now;lane.fingerprint=fingerprint;lane.pending=pending.contains(id) || issues[id] != nil;lane.issue=issues[id];lanes[id]=lane
         }
         value.mailLanes=lanes;return value
     }

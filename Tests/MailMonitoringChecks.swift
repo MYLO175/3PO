@@ -89,6 +89,37 @@ import Foundation
         assert(MailReviewScope.capture(index:oldIndex,snapshot:original,excluded:[],since:now).accountIDs.isEmpty,"Legacy cache waits for first real source check")
         let roundtrip=try JSONDecoder().decode(MailIndexState.self,from:JSONEncoder().encode(reviews))
         assert(roundtrip.discoveryChecked == now && roundtrip.discoveryError == "discovery timeout")
+        // Heartbeat analyses independently collected data without requiring a
+        // new complete arrival check or resetting the collector's retry state.
+        var collecting=MailIndexState();collecting.discovered(now:now.addingTimeInterval(-300));collecting.prepare(accounts:accounts,now:now,calendar:calendar)
+        _ = collecting.apply(MailBatch(messages:[kept],messageIDs:[1,2],nextOffset:1,complete:false,errors:[]),to:collecting.monitor("a")!.id,snapshot:original,now:now.addingTimeInterval(-300))
+        collecting.failed("a",detail:"A message changed or moved",now:now)
+        let checkpointEncoder=JSONEncoder();checkpointEncoder.outputFormatting=[.sortedKeys]
+        let collectorBefore=try checkpointEncoder.encode(collecting)
+        let cachedReview=MailReviewScope.collected(index:collecting,snapshot:original,excluded:[])
+        assert(cachedReview.accountIDs == ["a"] && cachedReview.issues["a"] != nil && cachedReview.issues["b"] != nil,"Previously collected partial data stays eligible; uncollected accounts remain pending")
+        assert(cachedReview.permits("a",index:collecting,snapshot:original,excluded:[]),"Existing collection failure does not prevent AI analysis")
+        let collectorAfter=try checkpointEncoder.encode(collecting)
+        assert(collectorAfter == collectorBefore,"Review capture must not resume, reset or advance the collector")
+        assert(cachedReview.coverage(accounts:accounts).contains("last successful batch") && !cachedReview.coverage(accounts:accounts).contains("Freshly checked"),"Review coverage describes the collected cache honestly")
+        let removedAccount=MailSnapshot(messages:original.messages,accounts:[accounts[1]],errors:[])
+        assert(!cachedReview.permits("a",index:collecting,snapshot:original,excluded:["a"]) && !cachedReview.permits("a",index:collecting,snapshot:removedAccount,excluded:[]),"Collected mode retains account removal and permission guards")
+        collecting.discovered(error:"discovery timeout",now:now)
+        let discoveryCache=MailReviewScope.collected(index:collecting,snapshot:original,excluded:[])
+        assert(discoveryCache.discoveryFailed && discoveryCache.accountIDs == ["a"],"Background discovery failure reports partial coverage without erasing collected mail")
+        collecting.failed("a",detail:"body identity unavailable",now:now.addingTimeInterval(10))
+        assert(!cachedReview.permits("a",index:collecting,snapshot:original,excluded:[]) && cachedReview.available(index:collecting,snapshot:original,excluded:[]).accountIDs.isEmpty,"A new body/read failure narrows in-flight analysis")
+        let nextReview=MailReviewScope.collected(index:collecting,snapshot:original,excluded:[])
+        assert(nextReview.accountIDs == ["a"] && nextReview.issues["a"] == "body identity unavailable","A later heartbeat may analyse retained headers with the failure disclosed")
+        for _ in 0..<8 {collecting.failed("a",detail:"timeout",now:now)}
+        let exhaustedBackoff=MailReviewScope.collected(index:collecting,snapshot:original,excluded:[])
+        collecting.failed("a",detail:"timeout",now:now.addingTimeInterval(20))
+        assert(!exhaustedBackoff.permits("a",index:collecting,snapshot:original,excluded:[]),"New failures still invalidate capture after the failure count saturates")
+        collecting.resume();collecting.discovered(now:now.addingTimeInterval(30))
+        _ = collecting.apply(empty,to:collecting.monitor("a")!.id,snapshot:original,now:now.addingTimeInterval(30))
+        let completedCollection=exhaustedBackoff.available(index:collecting,snapshot:original,excluded:["b"])
+        assert(completedCollection.accountIDs == ["a"] && !completedCollection.pending,"Completed background collection clears outdated coverage issues without widening captured account scope")
+        assert(MailReviewScope.collected(index:oldIndex,snapshot:original,excluded:[]).accountIDs.isEmpty,"Legacy rows without a successful source receipt are not asserted available")
         print("PASS Mail monitoring: legacy migration, late-delivery overlap and arrival watermark, immutable interrupted cursors, bounded rotating audit/history, per-account retry isolation, offline catch-up, source removal and exact-range reconciliation")
     }
 }
