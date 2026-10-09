@@ -43,9 +43,7 @@ struct TodayBriefView: View {
                 ScrollView {
                     VStack(alignment:.leading,spacing:16) {
                         if showsWeather.wrappedValue {WeatherBriefCard(weather:model.weather)}
-                        if let note=briefings.freshnessNote(record,model:model) {
-                            Label(note,systemImage:"clock.arrow.circlepath").font(.caption).foregroundStyle(.secondary).padding(10).frame(maxWidth:.infinity,alignment:.leading).background(Color.primary.opacity(0.04),in:RoundedRectangle(cornerRadius:8))
-                        }
+                        BriefFreshnessNote(model:model,briefings:briefings,record:record)
                         Text((try? AttributedString(markdown:BriefingRules.prose(record),options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(BriefingRules.prose(record))).font(.callout).lineSpacing(5).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)
                         DisclosureGroup("Sources and coverage") {
                             VStack(alignment:.leading,spacing:10) {
@@ -77,6 +75,21 @@ struct TodayBriefView: View {
         .sheet(isPresented:$showMemory) { PAMemoryView(memory:model.assistant.memory,registration:model.chatGPT.activeID,model:model) }
         .sheet(item:$editingPrompt) {edit in BriefPromptEditor(model:model,briefings:briefings,capture:edit.capture)}
         .onChange(of:model.chatGPT.activeID) { showMemory=false;editingPrompt=nil }
+    }
+}
+
+/// Independent observed inputs keep weather/header/layout updates from repeating
+/// the evidence projection. A remounted page still checks current evidence once.
+private struct BriefFreshnessNote:View {
+    var model:DashboardModel
+    var briefings:BriefingService
+    var record:DailyBriefing
+    var body:some View {
+        TimelineView(.periodic(from:.now,by:60)) {_ in
+            if let note=briefings.freshnessNote(record,model:model) {
+                Label(note,systemImage:"clock.arrow.circlepath").font(.caption).foregroundStyle(.secondary).padding(10).frame(maxWidth:.infinity,alignment:.leading).background(Color.primary.opacity(0.04),in:RoundedRectangle(cornerRadius:8))
+            }
+        }
     }
 }
 

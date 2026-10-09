@@ -124,6 +124,18 @@ import Foundation
         precondition(cancelledChain[0].supersededBy != nil && cancelledChain[1].supersededBy != nil,"Dismissing the cancellation cannot revive obsolete advice")
         let staleTurn=AssistantTurn(role:"assistant",content:old.message,completed:true,deliveryID:old.deliveryID)
         precondition(ProactiveReviewRules.reference("yes",turns:[staleTurn],records:cancelledChain) == nil)
+        var legacyAck=dismissed;legacyAck.id="legacy-ack";legacyAck.sourceKind=nil
+        var sameSource=legacyAck;sameSource.id="sibling-ack"
+        var otherOwner=legacyAck;otherOwner.registration="other"
+        var retired=legacyAck;retired.supersededBy="replacement"
+        var notDismissed=legacyAck;notDismissed.dismissed=false
+        var waAck=legacyAck;waAck.id="wa-first";waAck.sourceKind="whatsapp";waAck.sourceChatID="a:b";waAck.sourceMessageID="c"
+        var anotherChat=waAck;anotherChat.id="wa-second";anotherChat.sourceChatID="a";anotherChat.sourceMessageID="b:c"
+        let unrelatedAcknowledgements=(0..<2000).map {n -> PADiscovery in var value=legacyAck;value.id="unrelated-\(n)";value.mailID="unrelated-mail-\(n)";return value}
+        let index=ReviewAcknowledgementIndex(unrelatedAcknowledgements+[legacyAck,sameSource,sameSource,otherOwner,retired,notDismissed,waAck,anotherChat],registration:legacyAck.registration)
+        precondition(index.mail[legacyAck.mailID]?.map(\.id) == [legacyAck.id,sameSource.id,sameSource.id],"Exact-source lookup preserves legacy mail, sibling order and duplicates while excluding retired/other-owner/undismissed records")
+        precondition(index.whatsapp[.init(chat:"a:b",message:"c")]?.map(\.id) == [waAck.id] && index.whatsapp[.init(chat:"a",message:"b:c")]?.map(\.id) == [anotherChat.id],"Chat and message identity must remain separate typed keys")
+        precondition(index.mail["missing"] == nil && index.whatsapp[.init(chat:"other",message:"c")] == nil)
         print("PASS proactive rules: grounded aliases/quotes, prohibited kinds, account dedup/dismissal, daily budget, pause/cooldown/persistence and conservative current-thread latest-suggestion review references.")
     }
 }

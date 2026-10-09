@@ -167,7 +167,11 @@ import Synchronization
         let acknowledgement=PADiscovery(id:"fictional-ack",registration:registration,mailID:message.id,kind:"reminder",message:"Review the Orion preparation request.",evidence:quote,created:now,scope:"fictional",sourceRevision:summary.fingerprint,sourceAssessmentRevision:summary.adviceRevision(replied:message.replied))
         try model.proactive.seedAdviceFixture([acknowledgement],model:model)
         let beforeAcknowledgement=model.reviewAcknowledgementRevision,nativeBefore=DiscoveryNativeTarget.fingerprint(model.reminderData),memoryBefore=store.revision
+        var emptyReceiptBrief=savedMorning
+        emptyReceiptBrief.reviewAcknowledgementRevision=beforeAcknowledgement;emptyReceiptBrief.reviewAcknowledgementReceipts=[]
+        checks["empty acknowledgement receipts retain all other brief freshness checks"] = model.briefings.freshnessNote(emptyReceiptBrief,model:model) == model.briefings.freshnessNote(emptyReceiptBrief,model:model,checkAcknowledgements:false)
         model.proactive.dismiss(model.proactive.state.records[0],model:model)
+        checks["empty acknowledgement receipts cannot bypass changed human choices"] = model.briefings.freshnessNote(emptyReceiptBrief,model:model)?.contains("choices changed") == true
         checks["Dismiss counts as exact acknowledgement without native or memory changes"] = model.reviewAcknowledgementRevision != beforeAcknowledgement && !model.acknowledgedEmail(message,summary) && DiscoveryNativeTarget.fingerprint(model.reminderData) == nativeBefore && store.revision == memoryBefore
         checks["dismissing one proposal preserves independent actions in the same source"] = model.briefings.currentEmails(model).count == 1 && model.proactive.emailReviewCandidates(model,heartbeat:true,mailReview:nil,whatsappReady:false,now:now).count == 1
         let ackRows=model.reviewAcknowledgements()
@@ -261,8 +265,14 @@ import Synchronization
         checks["invalid saved preferences are blocked and preserved without exposure"] = !invalid.relevanceReadable && invalid.preferences(registration).isEmpty && cache.data == invalidBytes
         try model.proactive.seedAdviceFixture([],model:model)
         try ReviewInboxEvaluation.seedEmailWorkPreview(model)
-        let reviewBase=model.reviewInbox.pendingCount
+        let reviewBase=model.reviewInboxPendingCount
         checks["review badge counts actionable email and excludes planned and completed email"] = reviewBase == 1 && model.reviewInbox.emails.count == 1 && model.reviewInbox.handled.count == 2
+        checks["sidebar count-only path agrees with the full Review projection"] = model.reviewInboxPendingCount == model.reviewInbox.pendingCount
+        let orientationHealth=model.paOrientationHealth,reminderHealth=model.reminderHealth
+        model.paOrientationHealth = .init(lastSuccess:now.addingTimeInterval(-601));model.reminderHealth = .init(lastSuccess:now.addingTimeInterval(-601))
+        checks["count-only badge rechecks aged native evidence instead of retaining handled state"] = model.reviewInboxPendingCount == 3 && model.reviewInboxPendingCount == model.reviewInbox.pendingCount
+        model.paOrientationHealth=orientationHealth;model.reminderHealth=reminderHealth
+        checks["refreshed native evidence restores the current badge count"] = model.reviewInboxPendingCount == reviewBase
         let reviewMail=model.reviewInbox.emails[0]
         model.emailSummaries.dismiss(reviewMail.0.id,model:model,expectedRegistration:registration,expectedVersion:ReviewAcknowledgementRules.emailVersion(reviewMail.0,reviewMail.1))
         checks["review badge immediately drops a dismissed concern"] = model.reviewInbox.pendingCount == reviewBase-1

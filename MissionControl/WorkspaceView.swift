@@ -155,8 +155,7 @@ struct WorkspaceView: View {
         Menu { widgetChoices } label: { Label("Add widget",systemImage:"plus") }
     }
     private var sidebar: some View {
-        let reviewCount=model.reviewInbox.pendingCount
-        return VStack(alignment:.leading,spacing:12) {
+        VStack(alignment:.leading,spacing:12) {
             if sidebarVisible {
                 Text("3PO").font(.caption2.weight(.semibold)).tracking(1.2)
                     .foregroundStyle(.secondary).padding(.horizontal,12).padding(.top,8)
@@ -165,18 +164,11 @@ struct WorkspaceView: View {
                 VStack(spacing:4) {
                     ForEach(store.state.pages) { page in
                         Button { store.select(page.id) } label: {
-                            HStack(spacing:10) {
-                                Image(systemName:page.displayIcon).font(.system(size:16)).frame(width:22)
-                                    .overlay(alignment:.topTrailing) {if !sidebarVisible,page.widgets.contains(where:{$0.kind == .tasks}) {ReviewInboxBadge(count:reviewCount).offset(x:10,y:-10).accessibilityHidden(true)}}
-                                if sidebarVisible { Text(page.title).lineLimit(1); Spacer(minLength:0) }
-                                if sidebarVisible,page.widgets.contains(where:{$0.kind == .tasks}) {ReviewInboxBadge(count:reviewCount).accessibilityHidden(true)}
-                            }
-                            .font(.callout).padding(.horizontal,sidebarVisible ? 12 : 0)
-                            .frame(maxWidth:.infinity,minHeight:40,alignment:sidebarVisible ? .leading : .center)
+                            WorkspacePageLabel(model:model,title:page.title,icon:page.displayIcon,expanded:sidebarVisible,showsReview:page.widgets.contains(where:{$0.kind == .tasks}))
                             .background(page.id == store.selected.id ? accentColor.opacity(0.14) : Color.clear,
                                         in:RoundedRectangle(cornerRadius:12,style:.continuous))
                             .contentShape(RoundedRectangle(cornerRadius:12,style:.continuous))
-                        }.buttonStyle(.plain).accessibilityLabel(page.title+(page.widgets.contains(where:{$0.kind == .tasks}) && reviewCount > 0 ? ", \(reviewCount) items need review" : "")).help(page.title+(page.widgets.contains(where:{$0.kind == .tasks}) && reviewCount > 0 ? " · \(reviewCount) items need review" : ""))
+                        }.buttonStyle(.plain)
                             .contextMenu { Button("Edit name and icon…") { naming = page.id; name = page.title; dashboardSymbol=page.symbol; showName = true }; Button("Duplicate") { store.duplicate(page.id) }; Button("Move up") { store.movePage(page.id,offset:-1) }; Button("Move down") { store.movePage(page.id,offset:1) }; Divider(); Button("Remove dashboard") { store.removePage(page.id) }.disabled(store.state.pages.count == 1) }
                     }
                 }
@@ -193,6 +185,33 @@ struct WorkspaceView: View {
     }
     private func saveName() { if let naming { store.configurePage(naming,title:name,symbol:dashboardSymbol) } else { store.addPage(name,symbol:dashboardSymbol) }; showName = false }
     private func widgetBinding(_ original: WidgetPlacement) -> Binding<WidgetPlacement> { Binding(get:{ store.selected.widgets.first { $0.id == original.id } ?? original },set:{ store.update($0) }) }
+}
+/// This child observes Review inputs, never the selected page. Navigation only
+/// changes the parent's decoration; data changes still update count and accessibility.
+private struct WorkspacePageLabel:View {
+    var model:DashboardModel
+    var title:String
+    var icon:String
+    var expanded:Bool
+    var showsReview:Bool
+    var body:some View {
+        if showsReview {
+            // Read-only time-sensitive source validity, without source reads or AI.
+            TimelineView(.periodic(from:.now,by:60)) {_ in label(count:model.reviewInboxPendingCount)}
+        } else {label(count:0)}
+    }
+    private func label(count:Int)->some View {
+        HStack(spacing:10) {
+            Image(systemName:icon).font(.system(size:16)).frame(width:22)
+                .overlay(alignment:.topTrailing) {if !expanded,showsReview {ReviewInboxBadge(count:count).offset(x:10,y:-10).accessibilityHidden(true)}}
+            if expanded {Text(title).lineLimit(1);Spacer(minLength:0)}
+            if expanded,showsReview {ReviewInboxBadge(count:count).accessibilityHidden(true)}
+        }.font(.callout).padding(.horizontal,expanded ? 12 : 0)
+            .frame(maxWidth:.infinity,minHeight:40,alignment:expanded ? .leading : .center)
+            .accessibilityElement(children:.ignore)
+            .accessibilityLabel(title+(showsReview && count > 0 ? ", \(count) items need review" : ""))
+            .help(title+(showsReview && count > 0 ? " · \(count) items need review" : ""))
+    }
 }
 private struct WorkspaceTile: View {
     @Environment(\.workspacePalette) private var themePalette

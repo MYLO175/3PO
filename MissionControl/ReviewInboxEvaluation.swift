@@ -479,10 +479,19 @@ struct ReviewInboxPreview:View {
     var model:DashboardModel
     @State private var ready=false
     var body:some View {
-        VStack {Text("Fictional review inbox · disposable storage · no Apple writes").font(.caption);if ready {PATasksView(model:model);if model.briefings.undoQuestionDate(model.chatGPT.activeID) != nil {Button("Undo question dismissal") {model.briefings.undoQuestion(model.chatGPT.activeID)}};if model.proactive.canUndo {Button("Undo dismissed fixture") {model.proactive.undo(model)}}} }
-            .padding(16).frame(width:ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 840 : 600,height:ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 780 : 660)
+        VStack {Text("Fictional review inbox · disposable storage · no Apple writes").font(.caption);if ready {
+            if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {WorkspaceView(model:model)} else {PATasksView(model:model)}
+            if model.briefings.undoQuestionDate(model.chatGPT.activeID) != nil {Button("Undo question dismissal") {model.briefings.undoQuestion(model.chatGPT.activeID)}};if model.proactive.canUndo {Button("Undo dismissed fixture") {model.proactive.undo(model)}}
+        } }
+            .padding(16).frame(width:ProcessInfo.processInfo.arguments.contains("--navigation-preview") ? 1120 : ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 840 : 600,height:ProcessInfo.processInfo.arguments.contains("--navigation-preview") ? 820 : ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 780 : 660)
             .sheet(item:Binding(get:{model.editTarget},set:{model.editTarget=$0})){NativeItemEditor(model:model,target:$0)}
-            .task {guard !ready else {return};if ProcessInfo.processInfo.arguments.contains("--source-details-preview") {try? ReviewInboxEvaluation.seedSourceDetailsPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--email-work-preview") {try? ReviewInboxEvaluation.seedEmailWorkPreview(model);if ProcessInfo.processInfo.arguments.contains("--heartbeat-preview") {try? model.briefings.seedHeartbeatPreview(model)}} else {_ = try? ReviewInboxEvaluation.seed(model)};ready=true}
+            .task {guard !ready else {return};if ProcessInfo.processInfo.arguments.contains("--source-details-preview") {try? ReviewInboxEvaluation.seedSourceDetailsPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--email-work-preview") {try? ReviewInboxEvaluation.seedEmailWorkPreview(model);if ProcessInfo.processInfo.arguments.contains("--heartbeat-preview") {try? model.briefings.seedHeartbeatPreview(model)}} else {_ = try? ReviewInboxEvaluation.seed(model)};if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {
+                // Default pages contain native widgets whose mount can independently read sources.
+                let defaults=model.workspace.state.pages.map(\.id)
+                model.workspace.addPage("Navigation fixture")
+                for id in defaults {model.workspace.removePage(id)}
+                model.workspace.showReviewInbox()
+            };ready=true}
     }
 }
 #endif

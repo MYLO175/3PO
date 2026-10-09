@@ -20,13 +20,19 @@ extension DashboardModel {
         return reviewCreationClaim(item)?.receipt != nil
     }
     var reviewInbox:ReviewInboxProjection {
+        reviewInboxProjection(includeHandled:true)
+    }
+    var reviewInboxPendingCount:Int {
+        reviewInboxProjection(includeHandled:false).pendingCount
+    }
+    private func reviewInboxProjection(includeHandled:Bool)->ReviewInboxProjection {
         let questions=briefings.pendingQuestions(self),learning=(memoryLearning.state.questions ?? []).filter{memoryLearning.visible($0,assistant:assistant)}
         let discoveries=proactive.state.records.filter{proactive.visible($0,model:self)}.map(ProactiveRules.reviewProjection)
         let highlights=emailSummaries.highlights(self)
         let emails=highlights.filter{EmailHighlightRules.needsAction($0.1,replied:$0.0.replied) && !acknowledgedEmail($0.0,$0.1) && emailSummaries.handling($0.1,message:$0.0,model:self) == nil}.map {message,summary in
             var value=summary;if message.replied || EmailSummary.fingerprint(message) != summary.fingerprint {value.replyDraft=nil};return (message,value)
         }
-        let handled=highlights.compactMap {message,summary in emailSummaries.handling(summary,message:message,model:self).map{(message,summary,$0)}}
+        let handled:[(MailMessage,EmailSummary,EmailHandling)]=includeHandled ? highlights.compactMap {message,summary in emailSummaries.handling(summary,message:message,model:self).map{(message,summary,$0)}} : []
         let pending=PAQueueRules.handoffs(assistant.queue.items,registration:chatGPT.activeID)
         let count=questions.count+learning.count+discoveries.filter{!reviewDiscoveryCompleted($0)}.count+emails.count+pending.filter{$0.state == .needsAnswer || $0.state == .interrupted}.count
         return .init(questions:questions,learningQuestions:learning,discoveries:discoveries,emails:emails,handled:handled,pending:pending,pendingCount:count)

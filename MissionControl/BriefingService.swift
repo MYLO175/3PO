@@ -43,7 +43,7 @@ import UserNotifications
     func savedMorning(_ model:DashboardModel)->DailyBriefing? { morningAnchor(model) }
     func freshnessNote(_ record:DailyBriefing,model:DashboardModel,checkAcknowledgements:Bool = true)->String? {
         if checkAcknowledgements && (record.reviewAcknowledgementRevision.map{$0 != model.reviewAcknowledgementRevision} ?? model.hasReviewAcknowledgements) {return "Your Review inbox choices changed. Update the brief for current advice."}
-        if checkAcknowledgements,let receipts=record.reviewAcknowledgementReceipts {
+        if checkAcknowledgements,let receipts=record.reviewAcknowledgementReceipts,!receipts.isEmpty {
             let current=model.reviewAcknowledgements(use:.brief).map(ReviewAcknowledgementReceipt.init)
             if !receipts.allSatisfy({current.contains($0)}) {return "Context for a Review inbox acknowledgement changed. Update the brief for current advice."}
         }
