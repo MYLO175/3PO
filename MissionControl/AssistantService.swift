@@ -79,6 +79,8 @@ import Observation
     private var allConversations: [AssistantConversation] = []
     private var conversationsWritable = true
     private let container: ModelContainer?
+    private let engine: PAConversationEngine
+    private let conversationRepository: ConversationRepository
     private var task: Task<Void, Never>?
     var toolStatus = ""
     var visibleMailLookup: MailLookup? { toolMailRegistration == connection.activeID ? toolMail : nil }
@@ -88,7 +90,9 @@ import Observation
     var topics: [AssistantConversation] { ConversationRules.topics(in:conversations,registration:connection.activeID) }
     var feed: AssistantConversation? { conversations.first { $0.isPrimary == true } }
     var active: AssistantConversation? { conversations.first { $0.id == activeID } }
-    init(connection: ChatGPTConnection, container: ModelContainer?) {
+    init(connection: ChatGPTConnection, container: ModelContainer?, engine: PAConversationEngine? = nil) {
+        self.engine = engine ?? PAConversationEngine()
+        self.conversationRepository = ConversationRepository(container: container)
         self.connection = connection; self.container = container; self.memory = PAMemoryStore(container:container); self.projects = LifeWorkspaceStore(container:container); self.images = ChatImageStore(container:container); self.drafts = ChatDraftStore(container:container); self.queue = PARequestQueue(container:container)
         memory.notebookProjection = { [weak projects] base,registration,topic,includeTopics in
             guard let projects else { return base }
@@ -96,11 +100,10 @@ import Observation
             let ids=Set(items.map(\.id))
             return base.integrating(items,links:projects.state.links.filter{ids.contains($0.from) && $0.registration == registration})
         }
+        memory.notebookProjectionRevision = { [weak projects] in projects?.revision ?? UUID() }
 
         do {
-            if let record = try container?.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first(where: { $0.key == "assistantConversations" }) {
-                allConversations = try JSONDecoder().decode([AssistantConversation].self, from: record.data)
-            }
+            allConversations = try conversationRepository.load()
         } catch { conversationsWritable = false; self.error = "Saved conversations could not be read; their record is preserved and changes are disabled." }
         activeID = feed?.id
     }
@@ -327,12 +330,9 @@ import Observation
     @discardableResult private func save() -> Bool {
         guard conversationsWritable, let container else { error = "Conversation storage is unavailable; nothing was saved."; return false }
         do {
-            let context = container.mainContext
-            let data = try JSONEncoder().encode(allConversations)
-            if let record = try context.fetch(FetchDescriptor<CachedDashboard>()).first(where: { $0.key == "assistantConversations" }) { record.data = data; record.updated = .now }
-            else { context.insert(CachedDashboard(key: "assistantConversations", data: data)) }
-            try context.save(); return true
-        } catch { container.mainContext.rollback(); self.error = "Conversation could not be saved: " + error.localizedDescription; return false }
+            try conversationRepository.save(allConversations)
+            return true
+        } catch { self.error = "Conversation could not be saved: " + error.localizedDescription; return false }
     }
     func sourceSafeHistory(_ model: DashboardModel, feed: AssistantConversation, topic: AssistantConversation?) -> [AssistantTurn] {
         let excluded = Set(ConversationRules.thread(feed:feed,topic:topic).compactMap { turn -> String? in
@@ -365,7 +365,8 @@ import Observation
         let replayTurns = ConversationRules.replayTurns(permittedHistory,currentUserID:currentUserID)
         let history = replayTurns.map { ["role":$0.role,"content":$0.content] }
         guard !history.isEmpty else { busy = false; error = "This message could not fit safely in the PA request. Please split it into smaller messages."; return }
-        let selection=memory.selection(connection.activeID,conversationID:contextID,includeTopics:response.focusAreas != nil,query:prompt,focus:response.focusAreas ?? topic?.notebookAreas ?? [])
+        let recallQuery: String? = setupMode ? nil : prompt
+        let selection=memory.selection(connection.activeID,conversationID:contextID,includeTopics:response.focusAreas != nil,query:recallQuery,focus:response.focusAreas ?? topic?.notebookAreas ?? [])
         let memorySnapshot = sharedMemoryContext(selection), topicFocus = topic?.focus ?? "", registration = connection.activeID
         let topicAreas=topic?.notebookAreas ?? []
         let lifeFocus=response.focusAreas
@@ -379,7 +380,7 @@ import Observation
         let weatherScope = model.weather.scope
         let selectedModel = connection.selectedModel, capturedPreferences = preferences, capturedName = displayName
         let sourceEnabled = contextEnabled, calendars = excludedCalendars, lists = excludedLists, accounts = excludedAccounts
-        let notebookContext=memory.notebook(registration,topic:contextID,includeTopics:lifeFocus != nil).context(query:prompt,focus:lifeFocus ?? topic?.notebookAreas ?? [],selectedMemoryIDs:Set(selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))}))
+        let notebookContext=memory.notebook(registration,topic:contextID,includeTopics:lifeFocus != nil).context(query:recallQuery,focus:lifeFocus ?? topic?.notebookAreas ?? [],selectedMemoryIDs:Set(selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))}))
         let notebookIDs=PAContextCapture.notebookIDs(notebookContext)
         let capture=PAContextCapture(model:selectedModel,focusAreas:lifeFocus,memoryIDs:selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))},eligibleMemoryCount:selection.eligibleCount,notebookMemoryIDs:notebookIDs.memories,workspaceIDs:notebookIDs.workspace,historyTurnIDs:replayTurns.map(\.id),excerptedHistoryIDs:replayTurns.filter{turn in permittedHistory.first(where:{$0.id == turn.id})?.content != turn.content}.map(\.id),sourceSnapshotIncluded:sourceEnabled && !setupMode && context != nil,sourceSnapshotBytes:sourceEnabled && !setupMode ? context?.utf8.count ?? 0 : 0,profileSetup:setupMode)
         if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) { allConversations[c].turns[t].contextCapture=capture;save() }
@@ -439,45 +440,18 @@ import Observation
             }
             var preparations:[String:[PAReadPrerequisite]]=[:]
             if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {allConversations[c].turns[t].unresolvedToolErrors=[]}
-            var input: [[String:Any]] = []
-            var run=PAForegroundRun(),firstRound=true,outcome = ""
             do {
                 let base = try images.input(replayTurns,currentUserID:currentUserID,registration:registration)
-                while true {
-                    try Task.checkCancellation()
-                    guard valid() else { throw ActionFailure.message("Account, memory, topic or sources changed; remaining task stopped.") }
-                    input = try run.input(base:base,receipts:session.receipts)
-                    toolStatus = firstRound ? "Thinking…" : "Working on your request…";firstRound=false
-                    var partial = ""
-                    let result = try await connection.toolResponse(input:input,instructions:instructions + " Group independent calls when possible. Complete the requested work before giving your final reply.",tools:setupMode ? PAProfileSetup.tools : PAToolProtocol.tools,model:selectedModel,purpose:setupMode ? .setup : .conversation) { delta in
-                        guard valid() else { return }
-                        partial += delta; if !setupMode { setResponse(partial,completed:false) }
-                    }
-                    try Task.checkCancellation()
-                    guard valid() else { throw ActionFailure.message("Configuration changed during inference; no new tool executed.") }
-                    if result.calls.isEmpty {
-                        if setupMode {
-                            guard let question=PAProfileSetup.question(from:result.text) else { throw ActionFailure.message("The interview did not return one short question. Your answer and any verified memories are kept; use Continue to try the next question.") }
-                            outcome=question
-                        } else { outcome=result.text }
-                        setResponse(outcome,completed:true); return
-                    }
-                    // Carry complete reasoning/function items back locally with store:false.
-                    var roundItems=result.output,roundResults:[[String:Any]]=[],successes=0
-                    setResponse(session.receipts.joined(separator:"\n"),completed:false)
-                    for call in result.calls {
-                        try Task.checkCancellation()
-                        guard valid() else { throw ActionFailure.message("Configuration changed; remaining task stopped.") }
-                        try run.accept(call)
-                        if setupMode && !PAProfileSetup.allowedTools.contains(call.name) { throw ActionFailure.message("That action is unavailable in memory setup. Use your PA chat for tasks.") }
-                        toolStatus = "Using " + call.name.replacingOccurrences(of:"_",with:" ") + "…"
-                        if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {
-                            var names=allConversations[c].turns[t].contextCapture?.attemptedTools ?? []
-                            if !names.contains(call.name) { names.append(call.name);allConversations[c].turns[t].contextCapture?.attemptedTools=names }
-                        }
+                let result = try await engine.run(
+                    base: base, allowedTools: setupMode ? PAProfileSetup.allowedTools : nil,
+                    valid: valid, receipts: { session.receipts },
+                    infer: { input, delta in
+                        try await self.connection.toolResponse(input:input,instructions:instructions + " Group independent calls when possible. Complete the requested work before giving your final reply.",tools:setupMode ? PAProfileSetup.tools : PAToolProtocol.tools,model:selectedModel,purpose:setupMode ? .setup : .conversation,onDelta:delta)
+                    }, execute: { call in
+                        var succeeded = false
                         let output: String
                         do {
-                            output = try await session.execute(call,valid:validOwnership);successes+=1
+                            output = try await session.execute(call,valid:validOwnership);succeeded=true
                             if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {
                                 let readID=(try? PAToolProtocol.arguments(call))?["id"] as? String
                                 let prepared = call.name == "read_calendar" ? !session.calendar.sources.isEmpty : call.name == "read_reminders" ? !session.reminders.sources.isEmpty : call.name == "read_item_details" ? readID.flatMap{session.itemDetails[$0]} != nil : false
@@ -493,7 +467,7 @@ import Observation
                                 setResponse(([session.receipts.joined(separator:"\n"),question].filter{!$0.isEmpty}).joined(separator:"\n\n"),completed:true)
                                 if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) { allConversations[c].turns[t].choices=options }
                                 queueRunning=false; queuedNeedsAnswer=true
-                                return
+                                return .stopped
                             }
                             if call.name.contains("memory") || call.name == "remember_context" { expectedMemory = memory.revision;expectedSourceMemoryIDs=Set(memory.permittedRecords.filter{$0.source != nil && MemoryRules.usable($0,registration:registration)}.map(\.id)) }
                             if LifeWorkspaceTools.names.contains(call.name) { expectedProjects = projects.revision }
@@ -527,7 +501,7 @@ import Observation
                                 guard valid() else {throw ActionFailure.message("Configuration changed during the AI check; remaining task stopped.")}
                                 self.error=failure.localizedDescription
                                 setResponse(failure.stoppedReply(receipts:session.receipts),completed:true)
-                                return
+                                return .stopped
                             }
                             if ["save_memory","remember_context","change_memory","organise_memory"].contains(call.name) { session.memoryNotes.append(String(error.localizedDescription.prefix(500))) }
                             let guidance=(error as? PAIntentFailure) != nil ? PAIntentFailure.guidance : ["save_memory","remember_context"].contains(call.name)
@@ -536,12 +510,27 @@ import Observation
                             var failure:[String:Any] = ["error":error.localizedDescription,"verified":false,"instruction":guidance]
                             if error is PAIntentFailure { failure["stage"]="human_intent_check";failure["nativeSaveAttempted"]=false }
                             output = String(data:try JSONSerialization.data(withJSONObject:failure),encoding:.utf8)! }
-                        guard valid() else { throw ActionFailure.message("Configuration changed during tool execution; check any saved receipt before repeating.") }
-                        roundItems.append(["type":"function_call_output","call_id":call.id,"output":output])
-                        roundResults.append(["name":call.name,"arguments":(try? JSONSerialization.jsonObject(with:Data(call.arguments.utf8))) ?? call.arguments,"output":output])
-                        if !session.receipts.isEmpty { setResponse(session.receipts.joined(separator:"\n"),completed:false); save() }
-                    }
-                    try run.finish(roundItems,results:roundResults,successes:successes)
+                        return .output(output, succeeded: succeeded)
+                    }, progress: { self.toolStatus = $0 },
+                    partial: { if !setupMode { setResponse($0,completed:false) } },
+                    toolRound: { setResponse(session.receipts.joined(separator:"\n"),completed:false) },
+                    attempted: { call in
+                        if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {
+                            var names=allConversations[c].turns[t].contextCapture?.attemptedTools ?? []
+                            if !names.contains(call.name) { names.append(call.name);allConversations[c].turns[t].contextCapture?.attemptedTools=names }
+                        }
+                    }, toolFinished: {
+                        if !session.receipts.isEmpty { setResponse(session.receipts.joined(separator:"\n"),completed:false); self.save() }
+                    })
+                switch result {
+                case .stopped: return
+                case .completed(let text):
+                    let outcome: String
+                    if setupMode {
+                        guard let question=PAProfileSetup.question(from:text) else { throw ActionFailure.message("The interview did not return one short question. Your answer and any verified memories are kept; use Continue to try the next question.") }
+                        outcome=question
+                    } else { outcome=text }
+                    setResponse(outcome,completed:true); return
                 }
             } catch is CancellationError { error = "Stopped. " + (session.receipts.isEmpty ? "No verified changes were reported." : "Verified changes are retained below.") }
             catch { self.error = error.localizedDescription }

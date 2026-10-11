@@ -131,14 +131,14 @@ import Foundation
         case "read_calendar":
             let start = try ActionRules.date(text("start")!,dateOnly:true), end = try ActionRules.date(text("end")!,dateOnly:true)
             guard end > start, end.timeIntervalSince(start) <= 91*86400 else { throw ActionFailure.message("Choose a calendar range of at most 90 days.") }
-            let result = try await model.eventKit.calendar(from:start,to:end)
+            let result = try await model.nativeSources.calendar(from:start,to:end)
             let enabled = result.events.filter { !assistant.excludedCalendars.contains($0.calendarID) }
             let returned = Array(enabled.prefix(200))
             calendar.sources = result.sources.filter { !assistant.excludedCalendars.contains($0.id) }
             for event in returned { calendar.events.removeAll { $0.id == event.id }; calendar.events.append(event) }
             return try json(["sources":calendar.sources.map { ["id":$0.id,"label":$0.label,"writable":$0.writable] as [String:Any] },"events":returned.map { ["id":$0.id,"source":$0.sourceLabel,"title":$0.title,"start":$0.allDay ? DateRules.localDate($0.start) : DateRules.localTimestamp($0.start),"end":$0.allDay ? DateRules.localDate(PAToolProtocol.exclusiveAllDayEnd($0.end)) : DateRules.localTimestamp($0.end),"allDay":$0.allDay,"location":$0.location] as [String:Any] },"coverage":"\(returned.count) of \(enabled.count) enabled occurrences in requested range. Read fresh; do not interpret omitted occurrences as absent."])
         case "read_reminders":
-            let result = try await model.eventKit.reminders()
+            let result = try await model.nativeSources.reminders()
             let enabled = result.reminders.filter { !assistant.excludedLists.contains($0.listID) }
             reminders = .init(sources:result.sources.filter { !assistant.excludedLists.contains($0.id) },reminders:Array(enabled.prefix(300)))
             return try json(["sources":reminders.sources.map { ["id":$0.id,"label":$0.label,"writable":$0.writable] as [String:Any] },"reminders":reminders.reminders.map { ["id":$0.id,"listID":$0.listID,"title":$0.title,"source":$0.sourceLabel,"due":DateRules.reminderDue($0),"hasTime":$0.hasTime,"recurring":$0.recurring,"writable":$0.writable] as [String:Any] },"coverage":"\(reminders.reminders.count) of \(enabled.count) incomplete enabled reminders. Completed reminders are outside this read."])
