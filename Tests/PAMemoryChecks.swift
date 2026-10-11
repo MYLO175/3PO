@@ -53,6 +53,15 @@ import Foundation
         precondition(MemoryRetrieval.select(life,registration:"one",query:"Cambridge Engineering module selection",now:now).records.map{$0["id"]} == [biography.id.uuidString])
         precondition(MemoryRetrieval.select(life,registration:"one",query:"Weather for today's brief",now:now).records.map{$0["id"]} == [weather.id.uuidString],"A confirmed preference still applies to its own task")
         precondition(MemoryRetrieval.select(life,registration:"one",query:"please help me with this",now:now).records.isEmpty)
+        for query in ["", " ", "Alex", "please help me with this"] {
+            precondition(MemoryRetrieval.select(life,registration:"one",query:query,now:now,focus:[.studies]).records.isEmpty,"Focus never turns an empty targeted question into broad biography")
+        }
+        let abbreviations=["AI","ML","CV","UK"].map { word in PAMemory(registration:"one",text:"\(word) matters to my career",kind:.context,provenance:"Fictional human",reviewed:now) }
+        for memory in abbreviations {
+            let word=String(memory.text.prefix(2))
+            precondition(MemoryRetrieval.select(life+abbreviations,registration:"one",query:word.lowercased(),now:now,focus:[.studies]).records.map{$0["id"]} == [memory.id.uuidString],"Meaningful short terms select their own facts")
+        }
+        precondition(MemoryRetrieval.tokens("in on at to we AI ML CV UK") == ["ai","ml","cv","uk"],"Short filler words remain excluded")
         precondition(MemoryRetrieval.select(life,registration:"one",now:now).records.count == 4,"Explicit broad orientation remains available without changing the saved notebook")
         let securityQuery=MemoryRetrieval.emailQuery(subject:"Security alert",sender:"Google",body:security)
         precondition(MemoryRetrieval.select(life,registration:"one",query:securityQuery,now:now).records.isEmpty)

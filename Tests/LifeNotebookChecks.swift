@@ -44,8 +44,9 @@ import Foundation
         let noise=(0..<50).map { i in fact("I enjoy unrelated activity \(i).","You","enjoys","Unrelated activity \(i)",[.interests],.person,.interest,selfSubject:true) }
         let retrieval=MemoryRetrieval.select([project,aim,value]+noise,registration:"owner",query:"Signal Garden",now:now,limit:3)
         precondition(Set(retrieval.records.compactMap{$0["id"]}) == [project.id.uuidString,aim.id.uuidString,value.id.uuidString],"Useful two-hop connection outranks unrelated self links")
-        let studyFocus=MemoryRetrieval.select(noise+[study],registration:"owner",query:"",now:now,limit:1,focus:[.studies])
+        let studyFocus=MemoryRetrieval.select(noise+[study],registration:"owner",query:nil,now:now,limit:1,focus:[.studies])
         precondition(studyFocus.records.first?["id"] == study.id.uuidString)
+        precondition(MemoryRetrieval.select(noise+[study],registration:"owner",query:"",now:now,focus:[.studies]).records.isEmpty,"Only null asks for broad orientation; Focus cannot widen a targeted query")
         let outside=MemoryRetrieval.select(noise+[family,study],registration:"owner",query:"The Nest family",now:now,limit:1,focus:[.studies])
         precondition(outside.records.first?["id"] == family.id.uuidString,"Area focus does not exclude a relevant shared fact")
         for bound in [2,300,1000,8000] {
