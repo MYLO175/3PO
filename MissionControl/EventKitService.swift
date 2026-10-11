@@ -2,7 +2,7 @@ import Foundation
 import EventKit
 import AppKit
 
-actor EventKitService {
+actor EventKitService: NativeSourceReading {
     #if DEBUG
     var nativeCheckMismatch: String?
     var creationNotesCheckIDs: [String] = []
@@ -15,10 +15,13 @@ actor EventKitService {
         let detachedID: String?
     }
     private var undoItems: [String: CompletionRecord] = [:]
-    private func allReminders(in calendar: EKCalendar) async -> [EKReminder] {
-        await withCheckedContinuation { continuation in
-            store.fetchReminders(matching: store.predicateForReminders(in: [calendar])) { continuation.resume(returning: $0 ?? []) }
+    private func fetchedReminders(matching predicate: NSPredicate) async throws -> [EKReminder] {
+        try await NativeSourceRead.fetchSnapshot(source: "Reminders") { completion in
+            store.fetchReminders(matching: predicate, completion: completion)
         }
+    }
+    private func allReminders(in calendar: EKCalendar) async throws -> [EKReminder] {
+        try await fetchedReminders(matching: store.predicateForReminders(in: [calendar]))
     }
     func access(_ type: EKEntityType) async throws {
         let status = EKEventStore.authorizationStatus(for: type)
@@ -52,9 +55,7 @@ actor EventKitService {
     func reminders() async throws -> ReminderSnapshot {
         try await access(.reminder)
         let calendars = store.calendars(for: .reminder)
-        let items: [EKReminder] = await withCheckedContinuation { continuation in
-            store.fetchReminders(matching: store.predicateForIncompleteReminders(withDueDateStarting: nil, ending: nil, calendars: calendars)) { continuation.resume(returning: $0 ?? []) }
-        }
+        let items = try await fetchedReminders(matching: store.predicateForIncompleteReminders(withDueDateStarting: nil, ending: nil, calendars: calendars))
         let reminders = items.map { item in
             let components = item.dueDateComponents
             var calendar = components?.calendar ?? Calendar.current
@@ -70,8 +71,7 @@ actor EventKitService {
         let calendars=store.calendars(for:.reminder).filter{!excluded.contains($0.calendarIdentifier)}
         guard !calendars.isEmpty else {return []}
         let predicate=store.predicateForCompletedReminders(withCompletionDateStarting:now.addingTimeInterval(-30*86400),ending:now,calendars:calendars)
-        let items:[EKReminder]?=await withCheckedContinuation { continuation in store.fetchReminders(matching:predicate){continuation.resume(returning:$0)} }
-        guard let items else {throw IntegrationError.missing}
+        let items = try await fetchedReminders(matching: predicate)
         return Array(items.filter{$0.isCompleted && $0.completionDate != nil}.sorted{($0.completionDate ?? .distantPast) > ($1.completionDate ?? .distantPast)}.prefix(80)).compactMap { item in
             guard let completed=item.completionDate else {return nil}
             let components=item.dueDateComponents
@@ -89,7 +89,7 @@ actor EventKitService {
         let notes = item.notes
         let calendar = item.calendar!
         let wasRecurring = item.hasRecurrenceRules
-        let priorIDs = wasRecurring ? Set(await allReminders(in: calendar).map(\.calendarItemIdentifier)) : []
+        let priorIDs = wasRecurring ? Set(try await allReminders(in: calendar).map(\.calendarItemIdentifier)) : []
         let saveStarted = Date.now
         item.isCompleted = true
         do { try store.save(item, commit: true) } catch { store.reset(); throw error }
@@ -98,7 +98,10 @@ actor EventKitService {
         if !saved.isCompleted {
             // EventKit advances the original series and creates a detached completed occurrence.
             guard wasRecurring, saved.dueDateComponents != originalDue else { throw IntegrationError.verification }
-            let candidates = await allReminders(in: calendar).filter {
+            let after: [EKReminder]
+            do { after = try await allReminders(in: calendar) }
+            catch { throw IntegrationError.verification }
+            let candidates = after.filter {
                 !priorIDs.contains($0.calendarItemIdentifier) && $0.isCompleted &&
                 $0.dueDateComponents == originalDue && $0.title == title && $0.notes == notes &&
                 ($0.completionDate ?? .distantPast) >= saveStarted.addingTimeInterval(-2)
@@ -174,28 +177,28 @@ actor EventKitService {
             let recurringToken: String
             do { recurringToken = try await complete(id: recurringID) }
             catch {
-                let diagnostic: [EKReminder] = await withCheckedContinuation { continuation in
-                    store.fetchReminders(matching: store.predicateForReminders(in: [destination])) { continuation.resume(returning: $0 ?? []) }
-                }
-                let matching = diagnostic.filter { $0.notes == marker && $0.title.hasSuffix(" recurring") }
-                result += "Recurring metadata: " + matching.map { item in
-                    "originalID=\(item.calendarItemIdentifier == recurringID), sameExternal=\(item.calendarItemExternalIdentifier == beforeExternal), completed=\(item.isCompleted), sameDue=\(item.dueDateComponents == beforeDue)"
-                }.joined(separator: " | ") + "; "
+                do {
+                    let diagnostic = try await allReminders(in: destination)
+                    let matching = diagnostic.filter { $0.notes == marker && $0.title.hasSuffix(" recurring") }
+                    result += "Recurring metadata: " + matching.map { item in
+                        "originalID=\(item.calendarItemIdentifier == recurringID), sameExternal=\(item.calendarItemExternalIdentifier == beforeExternal), completed=\(item.isCompleted), sameDue=\(item.dueDateComponents == beforeDue)"
+                    }.joined(separator: " | ") + "; "
+                } catch { result += "Recurring metadata unavailable: " + error.localizedDescription + "; " }
                 throw error
             }
             try await undo(token: recurringToken)
             guard (store.calendarItem(withIdentifier: recurringID) as? EKReminder)?.isCompleted == false else { throw IntegrationError.verification }
-            let recurrenceRows = await allReminders(in: destination).filter { $0.notes == marker && $0.title.hasSuffix(" recurring") }
+            let recurrenceRows = try await allReminders(in: destination).filter { $0.notes == marker && $0.title.hasSuffix(" recurring") }
             guard recurrenceRows.count == 1, !recurrenceRows[0].isCompleted, recurrenceRows[0].dueDateComponents == beforeDue else { throw IntegrationError.verification }
             result += "PASS recurring completion and Undo (one restored occurrence, no duplicate)."
         } catch { result += "FAIL: " + error.localizedDescription }
-        let all: [EKReminder] = await withCheckedContinuation { continuation in
-            store.fetchReminders(matching: store.predicateForReminders(in: [destination])) { continuation.resume(returning: $0 ?? []) }
-        }
         var cleanupErrors = 0
-        for item in all where item.notes == marker {
-            do { try store.remove(item, commit: true) } catch { cleanupErrors += 1 }
-        }
+        do {
+            let all = try await allReminders(in: destination)
+            for item in all where item.notes == marker {
+                do { try store.remove(item, commit: true) } catch { cleanupErrors += 1 }
+            }
+        } catch { cleanupErrors += 1 }
         // Freshly saved objects may precede EventKit's async fetch snapshot.
         for item in created {
             if let remaining = store.calendarItem(withIdentifier: item.calendarItemIdentifier) as? EKReminder, remaining.notes == marker {
