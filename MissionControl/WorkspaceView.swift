@@ -82,6 +82,7 @@ struct WorkspaceView: View {
             .sheet(isPresented:$showName) { VStack(alignment:.leading,spacing:16) { Text(naming == nil ? "New dashboard" : "Edit dashboard").font(.title2.weight(.semibold)); TextField("Name",text:$name).onSubmit { saveName() }; Text("Icon").font(.headline); LazyVGrid(columns:Array(repeating:GridItem(.fixed(38)),count:6),spacing:8) { ForEach(DashboardSymbols.choices,id:\.self) { symbol in Button { dashboardSymbol=symbol } label: { Image(systemName:symbol).frame(width:32,height:32).background(dashboardSymbol == symbol ? Color.accentColor.opacity(0.15) : Color.clear,in:RoundedRectangle(cornerRadius:7)) }.buttonStyle(.borderless).accessibilityLabel(symbol).help(symbol) } }; Button("Automatic icon") { dashboardSymbol=nil }.controlSize(.small); HStack { Spacer(); Button("Cancel") { showName = false }.keyboardShortcut(.cancelAction); Button("Save") { saveName() }.keyboardShortcut(.defaultAction).disabled(name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty) } }.padding(24).frame(width:360) }
             .sheet(item:$model.selectedMessage) { DashboardView(model:model).previewSheet($0) }
             .sheet(item:$model.editTarget) { NativeItemEditor(model:model,target:$0) }
+            .sheet(item:$model.calendarRemovalReview) { CalendarRemovalReviewSheet(model:model,session:$0) }
             .sheet(isPresented:$legacy) { DashboardView(model:model).frame(width:1150,height:750) }
     }
     // Native toolbar identifiers own macOS persistence; dashboard layouts remain independent.

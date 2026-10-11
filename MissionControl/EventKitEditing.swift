@@ -1,6 +1,64 @@
 import Foundation
 import EventKit
 
+#if DEBUG
+struct CalendarRemovalFixture {
+    var calendarID:String
+    var marker:String
+    var start:Date
+    var end:Date
+    var itemIDs:[String:String]
+}
+extension EventKitService {
+    func makeRemovalFixture()throws->CalendarRemovalFixture {
+        guard EKEventStore.authorizationStatus(for:.event) == .fullAccess else {throw IntegrationError.denied("Existing Calendar permission required for disposable check")}
+        store.reset()
+        guard let source=store.defaultCalendarForNewEvents?.source else {throw IntegrationError.readOnly}
+        let marker="3PO removal validation "+UUID().uuidString
+        let calendar=EKCalendar(for:.event,eventStore:store);calendar.title=marker;calendar.source=source
+        try store.saveCalendar(calendar,commit:true)
+        let start=Calendar.current.startOfDay(for:.now),end=Calendar.current.date(byAdding:.day,value:8,to:start)!
+        var fixture=CalendarRemovalFixture(calendarID:calendar.calendarIdentifier,marker:marker,start:start,end:end,itemIDs:[:])
+        do {
+            for (key,day,allDay) in [("single",1,false),("repeat",2,false),("allDay",6,true)] {
+                let event=EKEvent(eventStore:store);event.calendar=calendar;event.title="Orion Computer Vision lecture · "+key;event.notes=marker
+                let date=Calendar.current.date(byAdding:.day,value:day,to:start)!
+                event.startDate=allDay ? date : date.addingTimeInterval(14*3600)
+                event.endDate=allDay ? date.addingTimeInterval(86400-1) : event.startDate.addingTimeInterval(3600)
+                event.isAllDay=allDay
+                if key == "repeat" {event.recurrenceRules=[EKRecurrenceRule(recurrenceWith:.daily,interval:1,end:EKRecurrenceEnd(occurrenceCount:3))]}
+                try store.save(event,span:.thisEvent,commit:true);fixture.itemIDs[key]=event.calendarItemIdentifier
+            }
+            return fixture
+        } catch {try? removeRemovalFixture(fixture);throw error}
+    }
+    private func removalFixtureItems(_ fixture:CalendarRemovalFixture,key:String)throws->[EKEvent] {
+        store.reset()
+        guard let calendar=store.calendar(withIdentifier:fixture.calendarID),calendar.title == fixture.marker,let id=fixture.itemIDs[key] else {throw IntegrationError.missing}
+        return store.events(matching:store.predicateForEvents(withStart:fixture.start,end:fixture.end,calendars:[calendar])).filter{$0.calendarItemIdentifier == id && ($0.notes == fixture.marker || $0.notes == fixture.marker+" external edit")}.sorted{$0.startDate < $1.startDate}
+    }
+    func removalFixtureEvent(_ fixture:CalendarRemovalFixture,key:String,index:Int = 0)throws->AgendaEvent {
+        let values=try removalFixtureItems(fixture,key:key)
+        guard values.indices.contains(index) else {throw IntegrationError.missing}
+        let event=values[index]
+        return AgendaEvent(id:DateRules.occurrenceID(event.eventIdentifier ?? event.calendarItemIdentifier,start:event.startDate),calendarID:fixture.calendarID,title:event.title,start:event.startDate,end:event.endDate,allDay:event.isAllDay,location:event.location ?? "",sourceLabel:fixture.marker,modified:event.lastModifiedDate,memoryItemID:event.calendarItemIdentifier)
+    }
+    func removalFixtureCount(_ fixture:CalendarRemovalFixture,key:String)throws->Int {try removalFixtureItems(fixture,key:key).count}
+    func changeRemovalFixture(_ fixture:CalendarRemovalFixture,key:String)throws {
+        guard let event=try removalFixtureItems(fixture,key:key).first else {throw IntegrationError.missing}
+        event.notes=fixture.marker+" external edit";try store.save(event,span:.thisEvent,commit:true);store.reset()
+    }
+    func removeRemovalFixture(_ fixture:CalendarRemovalFixture)throws {
+        store.reset()
+        guard let calendar=store.calendar(withIdentifier:fixture.calendarID),calendar.title == fixture.marker else {throw IntegrationError.missing}
+        let items=store.events(matching:store.predicateForEvents(withStart:fixture.start,end:fixture.end,calendars:[calendar]))
+        guard items.allSatisfy({$0.notes == fixture.marker || $0.notes == fixture.marker+" external edit"}) else {throw IntegrationError.verification}
+        try store.removeCalendar(calendar,commit:true);store.reset()
+        guard store.calendar(withIdentifier:fixture.calendarID) == nil else {throw IntegrationError.verification}
+    }
+}
+#endif
+
 extension EventKitService {
     func editorDetails(_ item: EKCalendarItem) -> NativeEditDetails {
         var value = NativeEditDetails(kind:item is EKEvent ? .event : .reminder,itemID:item.calendarItemIdentifier,occurrenceID:item.calendarItemIdentifier,sourceID:item.calendar.calendarIdentifier,title:item.title ?? "",notes:item.notes ?? "",recurring:item.hasRecurrenceRules,writable:item.calendar.allowsContentModifications,modified:item.lastModifiedDate)
@@ -371,28 +429,46 @@ extension EventKitService {
             try verify(saved.recurrenceRules == native,"repeat pattern")
         }
     }
-    func deleteItem(baseline: NativeEditDetails, scope: NativeChangeScope, valid: NativeWriteValidity? = nil) async throws -> String {
-        try NativeEditRules.validateDeletion(scope,baseline:baseline)
-        try await access(baseline.kind == .event ? .event : .reminder)
-        if let valid {guard await valid() else {throw ActionFailure.message("Account or assistant controls changed before deletion; nothing removed.")}}
-        try Task.checkCancellation();store.reset()
-        if baseline.kind == .event {
-            let event = try editorEvent(baseline.occurrenceID,sourceID:baseline.sourceID,start:baseline.start,end:baseline.end)
-            guard editorDetails(event) == baseline else { throw IntegrationError.missing }
-            try store.remove(event,span:scope == .futureEvents ? .futureEvents : .thisEvent,commit:true)
+    func deleteItem(baseline: NativeEditDetails, scope: NativeChangeScope, valid: NativeWriteValidity? = nil, claim:NativeWriteClaim? = nil) async throws -> String {
+        var removalAttempted=false
+        do {
+            try NativeEditRules.validateDeletion(scope,baseline:baseline)
+            try await access(baseline.kind == .event ? .event : .reminder)
+            if let valid {guard await valid() else {throw ActionFailure.message("Account, source or assistant controls changed before deletion; nothing removed.")}}
+            try Task.checkCancellation();store.reset()
+            func currentItem()throws->EKCalendarItem {
+                if baseline.kind == .event {return try editorEvent(baseline.occurrenceID,sourceID:baseline.sourceID,start:baseline.start,end:baseline.end)}
+                guard let reminder=store.calendarItem(withIdentifier:baseline.itemID) as? EKReminder,!reminder.isCompleted else {throw IntegrationError.missing}
+                return reminder
+            }
+            var native=try currentItem()
+            guard editorDetails(native) == baseline else {throw IntegrationError.missing}
+            if let claim {try await claim();try Task.checkCancellation()}
+            // Claim/validity can suspend. Recheck ownership and every native field afterwards.
+            if let valid {guard await valid() else {throw ActionFailure.message("Account, source or assistant controls changed before deletion; nothing removed.")}}
+            try Task.checkCancellation();store.reset();native=try currentItem()
+            guard editorDetails(native) == baseline else {throw IntegrationError.missing}
+            if let event=native as? EKEvent {
+                removalAttempted=true
+                try store.remove(event,span:scope == .futureEvents ? .futureEvents : .thisEvent,commit:true)
+                store.reset()
+                guard let calendar=store.calendar(withIdentifier:baseline.sourceID) else {throw IntegrationError.verification}
+                let end=scope == .futureEvents ? Calendar.current.date(byAdding:.year,value:4,to:baseline.start)! : baseline.end.addingTimeInterval(1)
+                let remaining=store.events(matching:store.predicateForEvents(withStart:baseline.start.addingTimeInterval(-1),end:end,calendars:[calendar]))
+                guard !remaining.contains(where:{candidate in
+                    scope == .futureEvents ? candidate.calendarItemIdentifier == baseline.itemID && candidate.startDate >= baseline.start : DateRules.occurrenceID(candidate.eventIdentifier ?? candidate.calendarItemIdentifier,start:candidate.startDate) == baseline.occurrenceID
+                }) else {throw IntegrationError.verification}
+            } else if let reminder=native as? EKReminder {
+                removalAttempted=true
+                try store.remove(reminder,commit:true);store.reset()
+                guard store.calendarItem(withIdentifier:baseline.itemID) == nil else {throw IntegrationError.verification}
+            } else {throw IntegrationError.missing}
+            return baseline.kind == .event ? (scope == .futureEvents ? "Deleted this and all future events: " : "Deleted event: ") + baseline.title : (baseline.recurring ? "Deleted repeating reminder: " : "Deleted reminder: ") + baseline.title
+        } catch {
             store.reset()
-            guard let calendar = store.calendar(withIdentifier:baseline.sourceID) else { throw IntegrationError.verification }
-            let end = scope == .futureEvents ? Calendar.current.date(byAdding:.year,value:4,to:baseline.start)! : baseline.end.addingTimeInterval(1)
-            let remaining = store.events(matching:store.predicateForEvents(withStart:baseline.start.addingTimeInterval(-1),end:end,calendars:[calendar]))
-            guard !remaining.contains(where:{ candidate in
-                scope == .futureEvents ? candidate.calendarItemIdentifier == baseline.itemID && candidate.startDate >= baseline.start : DateRules.occurrenceID(candidate.eventIdentifier ?? candidate.calendarItemIdentifier,start:candidate.startDate) == baseline.occurrenceID
-            }) else { throw IntegrationError.verification }
-        } else {
-            guard let reminder = store.calendarItem(withIdentifier:baseline.itemID) as? EKReminder, !reminder.isCompleted, editorDetails(reminder) == baseline else { throw IntegrationError.missing }
-            try store.remove(reminder,commit:true); store.reset()
-            guard store.calendarItem(withIdentifier:baseline.itemID) == nil else { throw IntegrationError.verification }
+            if !removalAttempted {if claim != nil {throw NativePreSaveFailure(message:error.localizedDescription)};throw error}
+            throw ActionFailure.message(error.localizedDescription + " Check Apple Calendar or Reminders before trying again; this removal will not be repeated automatically.")
         }
-        return baseline.kind == .event ? (scope == .futureEvents ? "Deleted this and all future events: " : "Deleted event: ") + baseline.title : (baseline.recurring ? "Deleted repeating reminder: " : "Deleted reminder: ") + baseline.title
     }
 }
 

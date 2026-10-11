@@ -86,9 +86,12 @@ import SwiftData
     }
     func visible(_ record:PADiscovery,model:DashboardModel)->Bool {
         guard record.reviewState != "approved",reviewEvidenceAvailable(record.id,model:model) else { return false }
-        if record.sourceKind == nil,record.reviewState != "pending",let pair=model.emailSummaries.highlights(model).first(where:{$0.0.id == record.mailID}),model.emailSummaries.handling(pair.1,message:pair.0,model:model) != nil {return false}
+        if record.sourceKind == nil,record.nativeTarget == nil,record.reviewState != "pending",let pair=model.emailSummaries.highlights(model).first(where:{$0.0.id == record.mailID}),model.emailSummaries.handling(pair.1,message:pair.0,model:model) != nil {return false}
         if let change=record.proposedChange,record.reviewState != "pending",!record.needsDateClarification {
             return change.date() != nil && change.target.matches(events:(model.paOrientation?.calendar ?? model.calendarData).events,reminders:model.reminderData.reminders,excludedCalendars:model.assistant.excludedCalendars,excludedLists:model.assistant.excludedLists)
+        }
+        if let removal=record.proposedRemoval,record.reviewState != "pending",!record.needsDateClarification {
+            return removal.valid && removal.target.matches(events:(model.paOrientation?.calendar ?? model.calendarData).events,reminders:[],excludedCalendars:model.assistant.excludedCalendars,excludedLists:[])
         }
         return true
     }
@@ -136,7 +139,7 @@ import SwiftData
     }
     private func contextRevision(_ model:DashboardModel,mailAccounts:Set<String>? = nil,whatsappReady:Bool = true)->String {
         let facts=model.assistant.memory.permittedRecords.filter{$0.registration == model.chatGPT.activeID && MemoryRules.usable($0,registration:model.chatGPT.activeID) && $0.allSourceEvidence.allSatisfy{source in (source.identity.kind != .mail || (mailAccounts?.contains(source.identity.accountID) ?? true)) && (source.identity.kind != .whatsapp || whatsappReady)}}
-        let values:[String]=[TimeZone.current.identifier,scope(model),model.chatGPT.selectedModel,model.assistant.preferences,model.heartbeat.whatsappEnabled.description,DiscoveryNativeTarget.fingerprint(facts.sorted{$0.id.uuidString < $1.id.uuidString}.map{MemoryDependencyRules.fingerprint(MemoryRetrieval.record($0))}),DiscoveryNativeTarget.fingerprint(model.paOrientation?.calendar ?? model.calendarData),DiscoveryNativeTarget.fingerprint(model.reminderData),EmailNativeEvidence.hash(model.completedReminders),EmailNativeEvidence.hash(model.emailSummaries.dismissalContext(model)),model.reviewAcknowledgementRevision,model.emailSummaries.preferenceRevision(model.chatGPT.activeID)]
+        let values:[String]=["calendar-removal-v1",TimeZone.current.identifier,scope(model),model.chatGPT.selectedModel,model.assistant.preferences,model.heartbeat.whatsappEnabled.description,DiscoveryNativeTarget.fingerprint(facts.sorted{$0.id.uuidString < $1.id.uuidString}.map{MemoryDependencyRules.fingerprint(MemoryRetrieval.record($0))}),DiscoveryNativeTarget.fingerprint(model.paOrientation?.calendar ?? model.calendarData),DiscoveryNativeTarget.fingerprint(model.reminderData),EmailNativeEvidence.hash(model.completedReminders),EmailNativeEvidence.hash(model.emailSummaries.dismissalContext(model)),model.reviewAcknowledgementRevision,model.emailSummaries.preferenceRevision(model.chatGPT.activeID)]
         return DiscoveryNativeTarget.fingerprint(values)
     }
     func hasPendingSources(_ model:DashboardModel,mailReview:MailReviewScope? = nil,whatsappReady:Bool = true,mailAccountID:String? = nil)->Bool {
@@ -228,7 +231,7 @@ import SwiftData
                     guard record.registration == registration,!record.dismissed,record.reviewState == nil,record.supersededBy == nil,record.created >= now.addingTimeInterval(-30*86400),self.sourceEvidenceAvailable(record,model:model) else {return false}
                     if record.sourceKind == "whatsapp" && !memoryWhatsAppReady {return false}
                     if record.sourceKind == nil,!model.emailSummaries.highlights(model).contains(where:{$0.0.id == record.mailID && model.emailSummaries.reviewPermitted($0.0,model:model,scope:mailReview)}) {return false}
-                    return record.proposedChange.map{$0.target.matches(events:events,reminders:tasks,excludedCalendars:assistant.excludedCalendars,excludedLists:assistant.excludedLists)} ?? true
+                    return record.nativeTarget.map{$0.matches(events:events,reminders:tasks,excludedCalendars:assistant.excludedCalendars,excludedLists:assistant.excludedLists)} ?? true
                 }.suffix(12)
                 let earlier=Dictionary(uniqueKeysWithValues:earlierRecords.enumerated().map{("review_\($0.offset)",$0.element)})
                 let earlierWhatsApp=ProactiveRules.whatsappDependencies(model.whatsapp.messages,chats:Set(earlier.values.filter{$0.sourceKind == "whatsapp"}.compactMap(\.sourceChatID)),identity:waScope.linkedIdentity)
@@ -270,7 +273,7 @@ import SwiftData
                 let previous = state
                 progress.paused = true; progress.attempts += 1; progress.lastAttempt = now; state.accounts[registration] = progress
                 do { try save() } catch { state = previous; throw error }
-                let response = try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:data,as:UTF8.self)]],instructions:(heartbeat ? ProactiveRules.heartbeatInstructions : ProactiveRules.instructions) + " " + MemoryDependencyRules.instructions + " " + CommitmentRules.instructions + " " + ProactiveRules.changeInstructions + " " + ProactiveRules.evidenceInstructions + " " + ProactiveRules.replacementInstructions + " " + EmailReviewRules.instructions + " " + EmailReviewRules.feedbackInstructions + " " + EmailRelevanceRules.instructions + " " + ReviewAcknowledgementRules.instructions + " " + SourceDateGrounding.instructions + " Calendar start/end and timed reminder due values already contain local times and UTC offsets; do not add the timezone offset again.",model:selectedModel,purpose:.suggestions) { _ in }
+                let response = try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:data,as:UTF8.self)]],instructions:(heartbeat ? ProactiveRules.heartbeatInstructions : ProactiveRules.instructions) + " " + MemoryDependencyRules.instructions + " " + CommitmentRules.instructions + " " + ProactiveRules.changeInstructions + " " + ProactiveRules.removalInstructions + " " + ProactiveRules.evidenceInstructions + " " + ProactiveRules.replacementInstructions + " " + EmailReviewRules.instructions + " " + EmailReviewRules.feedbackInstructions + " " + EmailRelevanceRules.instructions + " " + ReviewAcknowledgementRules.instructions + " " + SourceDateGrounding.instructions + " Calendar start/end and timed reminder due values already contain local times and UTC offsets; do not add the timezone offset again.",model:selectedModel,purpose:.suggestions) { _ in }
                 try Task.checkCancellation()
                 guard BriefingRules.day(.now) == day,enabled, (!heartbeat || ((manual || model.heartbeat.enabled) && heartbeatRevision == model.heartbeat.controlsRevision)), revision == model.sourceRevision,projectsRevision == assistant.projects.revision, scope == self.scope(model), waScope == model.whatsapp.scope(for:registration), whatsappWindow.map({$0 == ProactiveRules.whatsappWindow(model.whatsapp.messages,chats:whatsappChats,identity:waScope.linkedIdentity)}) ?? true, whatsapp.allSatisfy({ original in model.whatsapp.messages.contains { $0.id == original.itemID && $0.chat == original.chatID && SourceContextRules.revision($0) == original.revision } }), registration == model.chatGPT.activeID, memoryCapture == model.automaticMemory(memoryUse,query:memoryQuery,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady) && model.memoryDependenciesAvailable(memoryCapture.dependencies,use:memoryUse), preferences == assistant.preferences,context == contextRevision(model,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady), selectedModel == model.chatGPT.selectedModel,
                       currentEmailInputs() else { throw ActionFailure.message("Source or PA settings changed during discovery; no suggestion delivered.") }
@@ -318,6 +321,10 @@ import SwiftData
         guard ["--validate-advice-context","--validate-review-inbox","--preview-review-inbox"].contains(where:ProcessInfo.processInfo.arguments.contains) else { throw SummaryFailure.invalid }
         state.records=records.map{record in var value=record;value.scope=record.sourceKind == "whatsapp" ? scope(model) : legacyMailScope(model);return value}
         try save()
+    }
+    func reopenedReviewFixture()throws->ProactiveService {
+        guard ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") else {throw SummaryFailure.invalid}
+        return ProactiveService(container:container)
     }
     func reopenedAcknowledgementFixture()->[PADiscovery] {
         guard ProcessInfo.processInfo.arguments.contains("--validate-advice-context") else {return []}
@@ -386,7 +393,7 @@ import SwiftData
                     values.append(.init(id:"email:"+summary.id,kind:"email",sourceID:message.id,title:String(message.subject.prefix(200)),concern:String((summary.reason.isEmpty ? summary.summary : summary.reason).prefix(500)),acknowledgedAt:summary.dismissedAt))
                 }
                 for record in proposals.mail[message.id] ?? [] where ReviewAcknowledgementRules.matches(record,message:message,summary:summary,registration:registration) && proactive.acknowledgementAdviceAvailable(record,model:self,use:use ?? .manualSuggestions,mailAccounts:mailAccounts,whatsappReady:whatsappReady) {
-                    values.append(.init(id:"discovery:"+record.id,kind:record.kind,sourceID:message.id,title:String(message.subject.prefix(200)),concern:String(record.message.prefix(500)),acknowledgedAt:record.dismissedAt,evidence:String(record.evidence.prefix(500)),nativeTargetID:record.proposedChange?.target.itemID))
+                    values.append(.init(id:"discovery:"+record.id,kind:record.kind,sourceID:message.id,title:String(message.subject.prefix(200)),concern:String(record.message.prefix(500)),acknowledgedAt:record.dismissedAt,evidence:String(record.evidence.prefix(500)),nativeTargetID:record.nativeTarget?.itemID))
                 }
             }
         }
@@ -395,7 +402,7 @@ import SwiftData
         if !proposals.whatsapp.isEmpty && whatsappReady && waPermitted && !whatsapp.linkedIdentity.isEmpty {
             for message in whatsapp.messages where access.chats.contains(message.chat) {
                 for record in proposals.whatsapp[.init(chat:message.chat,message:message.id)] ?? [] where ReviewAcknowledgementRules.matches(record,message:message,registration:registration,identity:whatsapp.linkedIdentity) && proactive.acknowledgementAdviceAvailable(record,model:self,use:use ?? .manualSuggestions,mailAccounts:mailAccounts,whatsappReady:whatsappReady) {
-                    values.append(.init(id:"discovery:"+record.id,kind:record.kind,sourceID:message.id,title:String((whatsapp.chats.first{$0.id == message.chat}?.name ?? "Selected chat").prefix(200)),concern:String(record.message.prefix(500)),acknowledgedAt:record.dismissedAt,evidence:String(record.evidence.prefix(500)),nativeTargetID:record.proposedChange?.target.itemID))
+                    values.append(.init(id:"discovery:"+record.id,kind:record.kind,sourceID:message.id,title:String((whatsapp.chats.first{$0.id == message.chat}?.name ?? "Selected chat").prefix(200)),concern:String(record.message.prefix(500)),acknowledgedAt:record.dismissedAt,evidence:String(record.evidence.prefix(500)),nativeTargetID:record.nativeTarget?.itemID))
                 }
             }
         }

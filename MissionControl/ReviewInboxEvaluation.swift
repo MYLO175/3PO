@@ -159,6 +159,119 @@ import EventKit
         checks["captured account/model and native records preserved"]=registration == model.chatGPT.activeID && selected == model.chatGPT.selectedModel && !model.writing
         return ["requests":4,"model":selected,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"trace":trace,"storage":"Fictional source snapshots; production decoder and ProactiveService cache commits/reopening. No source startup, native writes or personal retry. Not exhaustive semantic matching or real sleep/wake."]
     }
+    static func seedRemoval(_ model:DashboardModel,event supplied:AgendaEvent? = nil)throws->PADiscovery {
+        let account=model.chatGPT.activeID,now=Date.now
+        let event=supplied ?? AgendaEvent(id:"fictional-lecture",calendarID:"fictional-studies",title:"Orion Computer Vision lecture",start:now.addingTimeInterval(86400),end:now.addingTimeInterval(90000),allDay:false,location:"Room 1",sourceLabel:"Fictional Studies",modified:now)
+        let quote="The Orion Computer Vision lecture on \(DateRules.localDate(event.start)) has been postponed. No replacement date has been arranged."
+        let payload:[String:Any]=["id":"fictional-removal-mail","accountID":"fictional-mail","account":"Fictional Mail","messageID":1,"internetMessageID":"postponed@example.invalid","sender":"Fictional tutor","subject":"Orion lecture postponed","received":now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
+        let mail=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:payload))
+        model.mailData = .init(messages:[mail],accounts:[.init(id:mail.accountID,title:mail.account)],errors:[])
+        let summary=EmailSummary(id:mail.id,registration:account,fingerprint:EmailSummary.fingerprint(mail),summary:"The lecture has been postponed with no replacement date.",attention:true,reason:"The old Calendar slot no longer applies.",evidence:quote,bodyFingerprint:"fictional-removal-body",message:mail)
+        try model.emailSummaries.seedAdviceFixture([summary])
+        model.paOrientation=nil
+        model.calendarData = .init(sources:[.init(id:event.calendarID,title:event.sourceLabel,account:"Fictional",writable:true)],events:[event])
+        let proposal=DiscoveryCalendarRemoval(target:.event(event,writable:true),connection:"The distinctive Orion lecture and its dated slot match this postponed event.",timeZoneID:TimeZone.current.identifier)
+        let record=PADiscovery(id:UUID().uuidString,registration:account,mailID:mail.id,kind:"remove",message:"The Orion lecture has been postponed with no replacement date. Remove this occurrence from Calendar?",evidence:quote,created:now,scope:"fixture",sourceRevision:summary.fingerprint,sourceAssessmentRevision:summary.adviceRevision(replied:false),proposedRemoval:proposal)
+        try model.proactive.seedAdviceFixture([record],model:model)
+        return model.proactive.state.records[0]
+    }
+    static func runCalendarRemoval(_ model:DashboardModel)async throws->[String:Any] {
+        let owner=model.chatGPT.activeID,selected=model.chatGPT.selectedModel,preferences=NSDictionary(dictionary:UserDefaults.standard.dictionaryRepresentation())
+        var checks:[String:Bool]=[:],failure="",cleanupError=""
+        let record=try seedRemoval(model),calendar=model.calendarData,mail=model.mailData
+        checks["removal card visible with exact supported event"]=model.proactive.visible(record,model:model) && model.reviewInbox.discoveries.contains(record)
+        checks["View event resolves the exact occurrence"]={model.reviewDiscovery(record);if case .event(let event)=model.editTarget {return event.id == record.nativeTarget?.itemID};return false}()
+        model.editTarget=nil
+        model.calendarData.events[0].modified = .now.addingTimeInterval(5)
+        checks["changed event revision withholds old removal"] = !model.proactive.visible(record,model:model)
+        model.calendarData=calendar
+        model.mailData = .init(messages:[],accounts:[],errors:[])
+        checks["withdrawn source prevents removal approval"] = !model.proactive.canReview(record.id,model:model)
+        model.mailData=mail
+        model.proactive.dismiss(record,model:model)
+        checks["Dismiss leaves native snapshot intact and records no approval"]=model.proactive.state.records[0].reviewState == nil && !model.proactive.canReview(record.id,model:model) && model.calendarData.events[0].id == calendar.events[0].id
+        model.proactive.undo(model)
+        checks["Dismiss Undo restores removal review"]=model.proactive.canReview(record.id,model:model)
+        try model.proactive.beginReview(record.id,model:model)
+        model.calendarData.events=[]
+        checks["uncertain removal remains inspectable after event disappearance"]=model.proactive.visible(model.proactive.state.records[0],model:model) && !model.proactive.canReview(record.id,model:model)
+        model.proactive=try model.proactive.reopenedReviewFixture()
+        checks["pending receipt survives reopening and refuses replay"]=model.proactive.state.records[0].reviewState == "pending" && !model.proactive.canReview(record.id,model:model)
+        try model.proactive.abortReview(record.id,registration:owner);model.calendarData=calendar
+        checks["proven pre-removal refusal can restore review"]=model.proactive.canReview(record.id,model:model)
+        if ProcessInfo.processInfo.arguments.contains("--removal-native") {
+            let fixture=try await model.eventKit.makeRemovalFixture()
+            do {
+                let original=try await model.eventKit.removalFixtureEvent(fixture,key:"single")
+                let removal=try seedRemoval(model,event:original)
+                let baseline=try await model.eventKit.editSession(.event(original)).item
+                do {try await model.saveCalendarRemoval(removal,baseline:baseline,selectedModel:"different-model",sourceScope:model.proactive.scope(model));checks["captured model change refuses removal"]=false}
+                catch {checks["captured model change refuses removal"]=true}
+                do {try await model.saveCalendarRemoval(removal,baseline:baseline,selectedModel:selected,sourceScope:"changed-controls");checks["captured source control change refuses removal"]=false}
+                catch {checks["captured source control change refuses removal"]=true}
+                do {_=try await model.eventKit.deleteItem(baseline:baseline,scope:.occurrence,valid:{false},claim:{});checks["revoked validity refuses deletion before claim"]=false}
+                catch is NativePreSaveFailure {checks["revoked validity refuses deletion before claim"]=true}
+                model.proactive.dismiss(removal,model:model)
+                checks["native Dismiss preserves all event fields"]=try await model.eventKit.editSession(.event(original)).item == baseline
+                model.proactive.undo(model)
+                let claim:NativeWriteClaim = {try await model.eventKit.changeRemovalFixture(fixture,key:"single")}
+                do {_=try await model.eventKit.deleteItem(baseline:baseline,scope:.occurrence,claim:claim);checks["external notes change during claim prevents removal"]=false}
+                catch is NativePreSaveFailure {checks["external notes change during claim prevents removal"]=true}
+                await model.approveDiscovery(removal)
+                checks["old proposal refuses externally changed event"]=model.proactive.state.records[0].reviewState == nil && model.reviewApprovalError != nil
+                let changed=try await model.eventKit.removalFixtureEvent(fixture,key:"single")
+                let fresh=try seedRemoval(model,event:changed)
+                await model.approveDiscovery(fresh)
+                checks["Approve verifies native absence and persists receipt"]=try await model.eventKit.removalFixtureCount(fixture,key:"single") == 0 && model.proactive.state.records[0].reviewState == "approved"
+                await model.approveDiscovery(fresh)
+                checks["repeated Approve does not replay removal"]=try await model.eventKit.removalFixtureCount(fixture,key:"single") == 0 && !model.writing
+                let recurring=try await model.eventKit.removalFixtureEvent(fixture,key:"repeat",index:1)
+                let repeatingRecord=try seedRemoval(model,event:recurring)
+                await model.approveDiscovery(repeatingRecord)
+                let repeatCount=try await model.eventKit.removalFixtureCount(fixture,key:"repeat")
+                checks["repeating event opens exact occurrence review before removal"]=model.calendarRemovalReview?.baseline.recurring == true && model.proactive.state.records[0].reviewState == nil && repeatCount == 3
+                if let session=model.calendarRemovalReview {
+                    try await model.saveCalendarRemoval(session.record,baseline:session.baseline,selectedModel:session.selectedModel,sourceScope:session.sourceScope,occurrenceConfirmed:true)
+                    checks["approved repeat removes only selected occurrence"]=try await model.eventKit.removalFixtureCount(fixture,key:"repeat") == 2 && model.proactive.state.records[0].reviewState == "approved"
+                    let first=try await model.eventKit.removalFixtureEvent(fixture,key:"repeat",index:0),last=try await model.eventKit.removalFixtureEvent(fixture,key:"repeat",index:1)
+                    checks["earlier and later occurrences retain their dates"]=first.start < recurring.start && last.start > recurring.start
+                    model.calendarRemovalReview=nil
+                }
+                let allDay=try await model.eventKit.removalFixtureEvent(fixture,key:"allDay")
+                let allDayRecord=try seedRemoval(model,event:allDay)
+                await model.approveDiscovery(allDayRecord)
+                checks["all-day removal preserves native inclusive date semantics"]=try await model.eventKit.removalFixtureCount(fixture,key:"allDay") == 0 && model.proactive.state.records[0].reviewState == "approved"
+            } catch {failure=error.localizedDescription}
+            do {try await model.eventKit.removeRemovalFixture(fixture);checks["fixture calendar and all remaining events cleaned"]=true}
+            catch {cleanupError=error.localizedDescription;checks["fixture calendar and all remaining events cleaned"]=false}
+        }
+        if ProcessInfo.processInfo.arguments.contains("--removal-model") {
+            do {let quality=try await runCalendarRemovalModel(model);checks.merge(quality){_,new in new}}
+            catch {checks["model comparison decoded supported proposals"]=false;failure=error.localizedDescription}
+        }
+        checks["account model and preferences unchanged"]=owner == model.chatGPT.activeID && selected == model.chatGPT.selectedModel && preferences.isEqual(to:UserDefaults.standard.dictionaryRepresentation())
+        checks["removal creates no normal chat message"]=model.assistant.feed?.turns.isEmpty ?? true
+        return ["checks":checks,"passed":checks.values.filter{$0}.count,"total":checks.count,"error":failure,"cleanupError":cleanupError,"AIRequests":ProcessInfo.processInfo.arguments.contains("--removal-model") ? 1 : 0,"storage":"Disposable SwiftData and fictional Mail; optional exact UUID fixture calendar under existing permission. No normal source startup or personal event mutation."]
+    }
+    static func runCalendarRemovalModel(_ model:DashboardModel)async throws->[String:Bool] {
+        let record=try seedRemoval(model),event=model.calendarData.events[0],now=Date.now
+        let date=DateRules.localDate(event.start),zone=TimeZone.current.identifier
+        let quotes=[record.evidence,"The Alex meeting on \(date) has been cancelled.","If we postponed the Vega lecture on \(date) it might help, but it has NOT been postponed."]
+        var events=[event]
+        for name in ["Alex meeting","Alex meeting","Vega lecture"] {
+            var copy=event;copy.id="fictional-"+String(events.count);copy.title=name;events.append(copy)
+        }
+        let targets=Dictionary(uniqueKeysWithValues:events.enumerated().map{("event_\($0.offset)",DiscoveryNativeTarget.event($0.element,writable:true))})
+        let candidates=quotes.enumerated().map{DiscoveryCandidate(alias:"mail_\($0.offset)",mailID:"fictional-quality-\($0.offset)",evidence:$0.element,followUpEvidence:"",sourceRevision:"v1",sourceDate:now)}
+        var earlier=record;earlier.message="The lecture was postponed; the existing Calendar slot may no longer reflect the plan.";earlier.kind="update";earlier.proposedRemoval=nil;earlier.mailID=candidates[0].mailID;earlier.sourceRevision="v1";earlier.sourceAssessmentRevision=nil;earlier.sourceDate=now
+        let prior=["review_0":earlier]
+        let input:[String:Any]=["localDay":BriefingRules.day(now),"timezone":zone,"calendarCoverage":"Complete fictional fixture of supplied events","events":events.enumerated().map{["id":"event_\($0.offset)","title":$0.element.title,"start":DateRules.localTimestamp($0.element.start),"end":DateRules.localTimestamp($0.element.end),"allDay":false,"writable":true] as [String:Any]},"reminderCoverage":"Complete fictional empty fixture","reminders":[],"emails":candidates.map{["id":$0.alias,"subject":"Schedule update","summary":$0.evidence,"evidence":$0.evidence,"evidenceID":$0.alias+":primary","received":now.ISO8601Format(),"needsReply":false,"replyDraftReady":false] as [String:Any]},"whatsapp":[],"paMemory":"{}","recentGeneralChat":[],"deliveredSuggestions":[earlier.message],"earlierProposals":ProactiveRules.earlierRows(prior,targets:targets)]
+        let instructions=ProactiveRules.heartbeatInstructions+" "+ProactiveRules.changeInstructions+" "+ProactiveRules.removalInstructions+" "+ProactiveRules.evidenceInstructions+" "+ProactiveRules.replacementInstructions+" "+EmailReviewRules.instructions+" "+SourceDateGrounding.instructions
+        let response=try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:try JSONSerialization.data(withJSONObject:input,options:.sortedKeys),as:UTF8.self)]],instructions:instructions,model:model.chatGPT.selectedModel,purpose:.diagnostic){_ in}
+        try Data(response.utf8).write(to:URL(fileURLWithPath:"/tmp/3po-calendar-removal-model-response.json"),options:.atomic)
+        let decoded=try ProactiveRules.decode(response,candidates:candidates,registration:model.chatGPT.activeID,scope:"fixture",now:now,targets:targets,earlier:prior)
+        return ["actual model proposes removing clearly postponed lecture":decoded.contains{$0.mailID == candidates[0].mailID && $0.proposedRemoval?.target.itemID == event.id && $0.proposedRemoval?.scope == "occurrence"},"actual model upgrades same-source informative update":decoded.contains{$0.proposedRemoval != nil && $0.replaces == [earlier.id]},"ambiguous duplicate meetings never propose removal":!decoded.contains{$0.mailID == candidates[1].mailID && $0.proposedRemoval != nil},"hypothetical negated postponement never proposes removal":!decoded.contains{$0.mailID == candidates[2].mailID && $0.proposedRemoval != nil}]
+    }
     static func seed(_ model:DashboardModel)throws->PADiscovery {
         let account=model.chatGPT.activeID,now=Date.now,quote="The Orion prototype report deadline has moved to 20 October 2026."
         let messageJSON:[String:Any]=["id":"fictional-orion-mail","accountID":"fictional-mail","account":"Fictional Mail","messageID":1,"internetMessageID":"orion@example.invalid","sender":"Fictional tutor","subject":"Orion deadline change","received":now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
@@ -485,7 +598,8 @@ struct ReviewInboxPreview:View {
         } }
             .padding(16).frame(width:ProcessInfo.processInfo.arguments.contains("--navigation-preview") ? 1120 : ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 840 : 600,height:ProcessInfo.processInfo.arguments.contains("--navigation-preview") ? 820 : ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 780 : 660)
             .sheet(item:Binding(get:{model.editTarget},set:{model.editTarget=$0})){NativeItemEditor(model:model,target:$0)}
-            .task {guard !ready else {return};if ProcessInfo.processInfo.arguments.contains("--source-details-preview") {try? ReviewInboxEvaluation.seedSourceDetailsPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--email-work-preview") {try? ReviewInboxEvaluation.seedEmailWorkPreview(model);if ProcessInfo.processInfo.arguments.contains("--heartbeat-preview") {try? model.briefings.seedHeartbeatPreview(model)}} else {_ = try? ReviewInboxEvaluation.seed(model)};if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {
+            .sheet(item:Binding(get:{model.calendarRemovalReview},set:{model.calendarRemovalReview=$0})){CalendarRemovalReviewSheet(model:model,session:$0)}
+            .task {guard !ready else {return};if ProcessInfo.processInfo.arguments.contains("--source-details-preview") {try? ReviewInboxEvaluation.seedSourceDetailsPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--calendar-removal-preview") {_ = try? ReviewInboxEvaluation.seedRemoval(model)} else if ProcessInfo.processInfo.arguments.contains("--email-work-preview") {try? ReviewInboxEvaluation.seedEmailWorkPreview(model);if ProcessInfo.processInfo.arguments.contains("--heartbeat-preview") {try? model.briefings.seedHeartbeatPreview(model)}} else {_ = try? ReviewInboxEvaluation.seed(model)};if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {
                 // Default pages contain native widgets whose mount can independently read sources.
                 let defaults=model.workspace.state.pages.map(\.id)
                 model.workspace.addPage("Navigation fixture")

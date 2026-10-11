@@ -3,6 +3,14 @@ import SwiftData
 import AppKit
 import EventKit
 
+struct CalendarRemovalReviewSession:Identifiable {
+    var record:PADiscovery
+    var baseline:NativeEditDetails
+    var selectedModel:String
+    var sourceScope:String
+    var id:String {record.id}
+}
+
 @MainActor @Observable final class DashboardModel {
     let whatsapp = WhatsAppService()
     var calendarData = CalendarSnapshot(sources: [], events: [])
@@ -34,6 +42,7 @@ import EventKit
     }
     var selectedMessage: MailMessage?
     var editTarget: NativeEditTarget?
+    var calendarRemovalReview:CalendarRemovalReviewSession?
     var nativeWriteNotice: String?
     var preview = ""
     var previewLoading = false
@@ -187,6 +196,7 @@ import EventKit
         if ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") {
             Task {
                 let result:[String:Any]
+                let removalOnly=ProcessInfo.processInfo.arguments.contains("--calendar-removal-only")
                 let approvalOnly=ProcessInfo.processInfo.arguments.contains("--approval-only")
                 let mailOnly=ProcessInfo.processInfo.arguments.contains("--mail-review-only")
                 let evidenceOnly=ProcessInfo.processInfo.arguments.contains("--mail-evidence-only")
@@ -197,8 +207,8 @@ import EventKit
                 let heartbeatContract=ProcessInfo.processInfo.arguments.contains("--heartbeat-contract-only")
                 let briefDayparts=ProcessInfo.processInfo.arguments.contains("--brief-dayparts-only")
                 let proposalTimeline=ProcessInfo.processInfo.arguments.contains("--proposal-timeline-only")
-                do {result=try await (relevanceOnly ? ReviewInboxEvaluation.runRelevance(self) : briefDayparts ? ReviewInboxEvaluation.runBriefDayparts(self) : intentPreparation ? ReviewInboxEvaluation.runIntentPreparation(self) : heartbeatContract ? ReviewInboxEvaluation.runHeartbeatContract(self) : proposalTimeline ? ReviewInboxEvaluation.runProposalTimeline(self) : schedulerOnly ? HeartbeatService.evaluateScheduling(self) : emailWork ? ReviewInboxEvaluation.runEmailWork(self) : evidenceOnly ? ReviewInboxEvaluation.runMailEvidence(self) : mailOnly ? ReviewInboxEvaluation.runMailReview(self) : approvalOnly ? ReviewInboxEvaluation.runApproval(self) : ReviewInboxEvaluation.run(self))} catch {result=["error":error.localizedDescription,"storage":"Fictional disposable source-free startup"]}
-                let path=relevanceOnly ? "/tmp/missioncontrol-relevance-evaluation.json" : briefDayparts ? "/tmp/missioncontrol-brief-dayparts-evaluation.json" : intentPreparation ? "/tmp/missioncontrol-intent-preparation-evaluation.json" : heartbeatContract ? "/tmp/missioncontrol-heartbeat-contract-evaluation.json" : proposalTimeline ? "/tmp/missioncontrol-proposal-timeline-evaluation.json" : schedulerOnly ? "/tmp/missioncontrol-review-scheduler-evaluation.json" : emailWork ? "/tmp/missioncontrol-email-work-evaluation.json" : evidenceOnly ? "/tmp/missioncontrol-mail-evidence-evaluation.json" : mailOnly ? "/tmp/missioncontrol-mail-review-evaluation.json" : approvalOnly ? "/tmp/missioncontrol-review-approval-evaluation.json" : "/tmp/missioncontrol-review-inbox-evaluation.json"
+                do {result=try await (removalOnly ? ReviewInboxEvaluation.runCalendarRemoval(self) : relevanceOnly ? ReviewInboxEvaluation.runRelevance(self) : briefDayparts ? ReviewInboxEvaluation.runBriefDayparts(self) : intentPreparation ? ReviewInboxEvaluation.runIntentPreparation(self) : heartbeatContract ? ReviewInboxEvaluation.runHeartbeatContract(self) : proposalTimeline ? ReviewInboxEvaluation.runProposalTimeline(self) : schedulerOnly ? HeartbeatService.evaluateScheduling(self) : emailWork ? ReviewInboxEvaluation.runEmailWork(self) : evidenceOnly ? ReviewInboxEvaluation.runMailEvidence(self) : mailOnly ? ReviewInboxEvaluation.runMailReview(self) : approvalOnly ? ReviewInboxEvaluation.runApproval(self) : ReviewInboxEvaluation.run(self))} catch {result=["error":error.localizedDescription,"storage":"Fictional disposable source-free startup"]}
+                let path=removalOnly ? "/tmp/missioncontrol-calendar-removal-evaluation.json" : relevanceOnly ? "/tmp/missioncontrol-relevance-evaluation.json" : briefDayparts ? "/tmp/missioncontrol-brief-dayparts-evaluation.json" : intentPreparation ? "/tmp/missioncontrol-intent-preparation-evaluation.json" : heartbeatContract ? "/tmp/missioncontrol-heartbeat-contract-evaluation.json" : proposalTimeline ? "/tmp/missioncontrol-proposal-timeline-evaluation.json" : schedulerOnly ? "/tmp/missioncontrol-review-scheduler-evaluation.json" : emailWork ? "/tmp/missioncontrol-email-work-evaluation.json" : evidenceOnly ? "/tmp/missioncontrol-mail-evidence-evaluation.json" : mailOnly ? "/tmp/missioncontrol-mail-review-evaluation.json" : approvalOnly ? "/tmp/missioncontrol-review-approval-evaluation.json" : "/tmp/missioncontrol-review-inbox-evaluation.json"
                 if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:path),options:.atomic)}
                 NSApp.terminate(nil)
             };return
@@ -574,6 +584,9 @@ import EventKit
     }
     func reviewDiscovery(_ record:PADiscovery,as kind:NativeItemKind? = nil) {
         guard proactive.visible(record,model:self),!record.needsDateClarification,record.registration == chatGPT.activeID,let id=UUID(uuidString:record.id) else { return }
+        if let removal=record.proposedRemoval,let event=(paOrientation?.calendar ?? calendarData).events.first(where:{$0.id == removal.target.itemID}) {
+            editTarget = .event(event);return
+        }
         if record.proposedChange != nil {
             guard !writing,proactive.canReview(record.id,model:self),let current=proactive.state.records.first(where:{$0.id == record.id && $0.registration == record.registration}) else {return}
             editTarget=dateReviewTarget(current)
@@ -596,9 +609,11 @@ import EventKit
         return nil
     }
     func approveDiscovery(_ record:PADiscovery) async {
+        if record.proposedRemoval != nil {await approveCalendarRemoval(record);return}
         guard !sample,!writing,!assistant.busy,approvingDiscoveryID == nil,
               record.registration == chatGPT.activeID,proactive.canReview(record.id,model:self),
               let current=proactive.state.records.first(where:{$0.id == record.id && $0.registration == record.registration}),
+              ProactiveRules.reviewProjection(current) == record,
               let target=dateReviewTarget(current) else {return}
         let review:NativeDateReview
         switch target {case .reviewEvent(_,let value),.reviewReminder(_,let value):review=value;default:return}
@@ -620,6 +635,79 @@ import EventKit
             if review.registration == chatGPT.activeID {
                 reviewApprovalError=error.localizedDescription;reviewApprovalErrorID=record.id;reviewApprovalErrorAccount=record.registration
             }
+        }
+    }
+    private func approveCalendarRemoval(_ record:PADiscovery) async {
+        guard !sample,!writing,!assistant.busy,approvingDiscoveryID == nil,record.registration == chatGPT.activeID,
+              proactive.canReview(record.id,model:self),let current=proactive.state.records.first(where:{$0.id == record.id}),current == record,
+              let removal=current.proposedRemoval,removal.valid,
+              let event=(paOrientation?.calendar ?? calendarData).events.first(where:{$0.id == removal.target.itemID}) else {return}
+        let selectedModel=chatGPT.selectedModel,sourceScope=proactive.scope(self)
+        approvingDiscoveryID=record.id;reviewApprovalError=nil;reviewApprovalErrorID=nil;reviewApprovalErrorAccount=nil;writing=true
+        defer {writing=false;approvingDiscoveryID=nil}
+        do {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {throw ActionFailure.message("Fictional preview is read-only; no Apple write.")}
+            #endif
+            let session=try await eventKit.editSession(.event(event))
+            try Task.checkCancellation()
+            guard selectedModel == chatGPT.selectedModel,sourceScope == proactive.scope(self) else {throw ActionFailure.message("Account, model or source controls changed; reopen the removal proposal.")}
+            try validateCalendarRemoval(record,baseline:session.item)
+            if session.item.recurring {calendarRemovalReview = .init(record:record,baseline:session.item,selectedModel:selectedModel,sourceScope:sourceScope);return}
+            writing=false
+            try await saveCalendarRemoval(record,baseline:session.item,selectedModel:selectedModel,sourceScope:sourceScope)
+        } catch {
+            if record.registration == chatGPT.activeID {reviewApprovalError=error.localizedDescription;reviewApprovalErrorID=record.id;reviewApprovalErrorAccount=record.registration}
+        }
+    }
+    private func validateCalendarRemoval(_ record:PADiscovery,baseline:NativeEditDetails)throws {
+        guard record.registration == chatGPT.activeID,proactive.canReview(record.id,model:self),
+              proactive.state.records.first(where:{$0.id == record.id}) == record,let removal=record.proposedRemoval,removal.valid,
+              baseline.kind == .event,baseline.writable,baseline.occurrenceID == removal.target.itemID,baseline.sourceID == removal.target.sourceID,
+              baseline.title == removal.target.title,baseline.start == removal.target.start,baseline.end == removalEditorEnd(removal.target),
+              !baseline.allDay == removal.target.hasTime,baseline.modified == removal.target.modified else {
+            throw ActionFailure.message("The proposal, source or Calendar event changed. Check for a fresh proposal before approving removal.")
+        }
+    }
+    private func removalEditorEnd(_ target:DiscoveryNativeTarget)->Date? {
+        guard let end=target.end,!target.hasTime else {return target.end}
+        let day=Calendar.current.startOfDay(for:end)
+        return end == day ? end : Calendar.current.date(byAdding:.day,value:1,to:day)
+    }
+    func saveCalendarRemoval(_ record:PADiscovery,baseline:NativeEditDetails,selectedModel:String,sourceScope:String,occurrenceConfirmed:Bool = false) async throws {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {throw ActionFailure.message("Fictional preview is read-only; no Apple write.")}
+        #endif
+        guard !sample,!writing,!assistant.busy,!baseline.recurring || occurrenceConfirmed else {throw ActionFailure.message("Review the exact occurrence before removing a repeating event.")}
+        guard selectedModel == chatGPT.selectedModel,sourceScope == proactive.scope(self) else {throw ActionFailure.message("Model or source controls changed; reopen the removal proposal.")}
+        try validateCalendarRemoval(record,baseline:baseline)
+        let registration=record.registration
+        writing=true;writeError=nil;defer {writing=false}
+        var claimed=false
+        do {
+            let valid:NativeWriteValidity = { [self] in
+                registration == chatGPT.activeID && selectedModel == chatGPT.selectedModel && sourceScope == proactive.scope(self) && record.proposedRemoval?.valid == true &&
+                proactive.reviewEvidenceAvailable(record.id,model:self) &&
+                proactive.state.records.first(where:{$0.id == record.id}).map{current in
+                    var original=current;original.reviewState=record.reviewState;original.reviewedAt=record.reviewedAt
+                    return original == record
+                } == true
+            }
+            let claim:NativeWriteClaim = { [self] in
+                guard valid() else {throw ActionFailure.message("Removal ownership changed before the save claim.")}
+                try validateCalendarRemoval(record,baseline:baseline)
+                try proactive.beginReview(record.id,model:self);claimed=true
+            }
+            let result=try await eventKit.deleteItem(baseline:baseline,scope:.occurrence,valid:valid,claim:claim)
+            editUndo=nil;widgetCalendars.invalidate()
+            try proactive.finishReview(record.id,registration:registration)
+            showFeedback(result)
+            await refreshCalendar();await refreshPAOrientation()
+        } catch {
+            if error is NativePreSaveFailure,claimed {try? proactive.abortReview(record.id,registration:registration)}
+            // Removal may have succeeded even if verification or receipt storage failed.
+            if claimed {widgetCalendars.invalidate();await refreshCalendar();await refreshPAOrientation()}
+            writeError=error.localizedDescription;throw error
         }
     }
     func createNativeItem(_ request: NativeCreationRequest, baseline: NativeEditDetails, edited: NativeEditDetails, dateSelected: Bool) async throws {

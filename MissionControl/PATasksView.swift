@@ -119,7 +119,14 @@ struct PATasksView: View {
                                 Text(dateLabel(change.target.start ?? change.target.due,hasTime:change.target.hasTime,fallback:"No date") + " → " + dateLabel(change.date(),hasTime:change.hasTime,fallback:change.newDate)).font(.callout).textSelection(.enabled)
                                 Text("Inferred connection · " + change.connection).font(.caption).foregroundStyle(.secondary)
                             }
-                            Label(item.kind == "reply" ? "Reply draft" : item.kind == "update" ? "Update" : item.kind == "change" ? "Date change" : "Missing plan",systemImage:item.kind == "calendar" ? "calendar.badge.plus" : "checklist").font(.caption).foregroundStyle(.secondary)
+                            if let removal=item.proposedRemoval {
+                                Label("Needs approval · Remove from Calendar",systemImage:"calendar.badge.minus").font(.caption.weight(.semibold))
+                                Text(removal.target.title).font(.callout.weight(.semibold))
+                                Text(dateLabel(removal.target.start,hasTime:removal.target.hasTime,fallback:"No date")).font(.callout).textSelection(.enabled)
+                                Text("Only this occurrence · " + removal.connection).font(.caption).foregroundStyle(.secondary)
+                                Text("Removal cannot be undone in 3PO.").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Label(item.kind == "reply" ? "Reply draft" : item.kind == "update" ? "Update" : item.kind == "change" ? "Date change" : item.kind == "remove" ? "Calendar removal" : "Missing plan",systemImage:item.kind == "calendar" ? "calendar.badge.plus" : "checklist").font(.caption).foregroundStyle(.secondary)
                             if let title=discoveryTitle(item) { Text(title).font(.callout.weight(.semibold)) }
                             Text(item.message).textSelection(.enabled)
                             if let details=model.proactive.sourceDetails(item,model:model) {ReviewSourceLabel(details:details,showsTitle:true)}
@@ -131,10 +138,10 @@ struct PATasksView: View {
                             ReviewRelevanceFeedbackMenu(model:model,topic:discoveryTitle(item) ?? item.message,isCurrent:{model.proactive.state.records.first(where:{$0.id == item.id}).map{ProactiveRules.reviewProjection($0) == item && model.proactive.visible($0,model:model)} == true},acknowledge:{model.proactive.dismiss(item,model:model)})
                             Button("Source evidence") { sourceDiscovery=item }.buttonStyle(.borderless).font(.caption)
                             HStack { if let claim=model.reviewCreationClaim(item) {Label(claim.receipt == nil ? "Check save outcome" : "Created",systemImage:claim.receipt == nil ? "exclamationmark.circle" : "checkmark.circle").font(.caption).foregroundStyle(.secondary)} else if item.kind == "project" { if model.assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) == nil { Button("Review space…") { reviewingProject=item } } else { Label("Created",systemImage:"checkmark.circle") } } else if !["update","reply"].contains(item.kind) {
-                                if item.reviewState == "pending" { Text("Save needs checking in Apple; it will not be repeated.").font(.caption).foregroundStyle(.orange) }
-                                else if item.proposedChange != nil {
+                                if item.reviewState == "pending" { Text(item.proposedRemoval == nil ? "Save needs checking in Apple; it will not be repeated." : "Removal needs checking in Calendar; it will not be repeated.").font(.caption).foregroundStyle(.orange) }
+                                else if item.nativeTarget != nil {
                                     Button(model.approvingDiscoveryID == item.id ? "Approving…" : "Approve") { Task {await model.approveDiscovery(item)} }.disabled(!model.proactive.canReview(item.id,model:model) || model.writing || model.assistant.busy)
-                                    Button("View/edit") {model.reviewDiscovery(item)}.disabled(!model.proactive.canReview(item.id,model:model) || model.writing)
+                                    Button(item.proposedRemoval == nil ? "View/edit" : "View event") {model.reviewDiscovery(item)}.disabled(!model.proactive.canReview(item.id,model:model) || model.writing)
                                 } else { Button("Review suggestion") { model.reviewDiscovery(item) }.disabled(!model.proactive.canReview(item.id,model:model) || model.writing) }
                             }; Spacer(); Button("Dismiss") { model.proactive.dismiss(item,model:model) }.disabled(model.writing) }.controlSize(.small)
                             if model.reviewApprovalErrorAccount == item.registration,model.reviewApprovalErrorID == item.id,let error=model.reviewApprovalError {Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)}
@@ -247,4 +254,33 @@ struct PATasksView: View {
 }
 private extension View {
     func taskCard()->some View { padding(12).frame(maxWidth:.infinity,alignment:.leading).background(Color.primary.opacity(0.035),in:RoundedRectangle(cornerRadius:12)) }
+}
+
+struct CalendarRemovalReviewSheet:View {
+    var model:DashboardModel
+    var session:CalendarRemovalReviewSession
+    @Environment(\.dismiss) private var dismiss
+    @State private var saving=false
+    @State private var error:String?
+    var body:some View {
+        VStack(alignment:.leading,spacing:16) {
+            Label("Remove this Calendar occurrence?",systemImage:"calendar.badge.minus").font(.title2.weight(.semibold))
+            Text(session.baseline.title).font(.headline)
+            Text(session.baseline.start.formatted(date:.complete,time:session.baseline.allDay ? .omitted : .shortened))
+            Text("This event repeats. Approval removes only the occurrence shown above. Other occurrences stay in Calendar.").font(.callout)
+            Text(session.record.message).textSelection(.enabled)
+            DisclosureGroup("Source evidence") {Text(session.record.evidence).font(.callout).textSelection(.enabled)}
+            Text("Removal cannot be undone in 3PO.").font(.caption).foregroundStyle(.secondary)
+            if let error {Text(error).font(.callout).foregroundStyle(.orange).textSelection(.enabled)}
+            HStack {
+                Button("Cancel") {dismiss()}.keyboardShortcut(.cancelAction).disabled(saving)
+                Spacer()
+                Button(saving ? "Approving…" : "Approve this occurrence") {Task {
+                    saving=true;defer {saving=false}
+                    do {try await model.saveCalendarRemoval(session.record,baseline:session.baseline,selectedModel:session.selectedModel,sourceScope:session.sourceScope,occurrenceConfirmed:true);dismiss()}
+                    catch {self.error=error.localizedDescription}
+                }}.disabled(saving || model.writing || model.assistant.busy || !model.proactive.canReview(session.record.id,model:model))
+            }
+        }.padding(24).frame(width:520).interactiveDismissDisabled(saving)
+    }
 }

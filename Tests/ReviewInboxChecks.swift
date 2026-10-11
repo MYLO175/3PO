@@ -39,6 +39,65 @@ import Foundation
         precondition(!ProactiveRules.allowed(stopped,now:now.addingTimeInterval(3600)),"Independent discovery retains explicit retry policy")
         stopped.attempts=96
         precondition(!ProactiveRules.allowed(stopped,now:now.addingTimeInterval(3600),heartbeat:true,comparisonLimit:96,cooldown:3600),"Recovery cannot bypass comparison allowance")
+        // Removal requires one issued writable Calendar occurrence and explicit occurrence scope.
+        let cancellation="The Orion Computer Vision lecture on 12 October 2026 at 14:00 is postponed. A new date will be announced later."
+        let event=AgendaEvent(id:"exact-lecture-occurrence",calendarID:"studies",title:"Orion Computer Vision lecture",start:now.addingTimeInterval(86400),end:now.addingTimeInterval(90000),allDay:false,location:"Room 1",sourceLabel:"Studies",modified:now)
+        let eventTarget=DiscoveryNativeTarget.event(event,writable:true)
+        var cancelledCandidate=candidate;cancelledCandidate.sourceText=cancellation;cancelledCandidate.sourceDate=now
+        let removalJSON=#"{"suggestions":[{"mailID":"wa_0","kind":"remove","targetID":"event_0","scope":"occurrence","connection":"The distinctive Orion lecture and its old slot match this event; it has been postponed with no replacement date.","message":"Remove this postponed lecture from Calendar?","evidence":"The Orion Computer Vision lecture on 12 October 2026 at 14:00 is postponed. A new date will be announced later."}]}"#
+        func decodeRemoval(_ text:String,_ issued:[String:DiscoveryNativeTarget] = ["event_0":eventTarget],earlier:[String:PADiscovery] = [:])throws->[PADiscovery] {
+            try ProactiveRules.decode(text,candidates:[cancelledCandidate],registration:"account",scope:"scope",now:now,targets:issued,earlier:earlier)
+        }
+        func rejectRemoval(_ text:String,_ issued:[String:DiscoveryNativeTarget] = ["event_0":eventTarget],earlier:[String:PADiscovery] = [:]) {
+            do {_=try decodeRemoval(text,issued,earlier:earlier);fatalError("Unsupported removal accepted")}catch{}
+        }
+        let removalRecord=try decodeRemoval(removalJSON)[0]
+        precondition(removalRecord.proposedChange == nil && removalRecord.proposedRemoval?.valid == true && removalRecord.nativeTarget == eventTarget)
+        func withoutField(_ text:String,_ field:String)throws->String {
+            var payload=try JSONSerialization.jsonObject(with:Data(text.utf8)) as! [String:Any]
+            var suggestions=payload["suggestions"] as! [[String:Any]];suggestions[0].removeValue(forKey:field);payload["suggestions"]=suggestions
+            return String(decoding:try JSONSerialization.data(withJSONObject:payload),as:UTF8.self)
+        }
+        let noRemovalProse=try withoutField(removalJSON,"message")
+        let localQuestion=try decodeRemoval(noRemovalProse)[0]
+        precondition(localQuestion.proposedRemoval == removalRecord.proposedRemoval && localQuestion.message == "Remove this cancelled or postponed occurrence from Calendar?","A valid removal still presents a local approval question if optional model prose is absent")
+        reject(try withoutField(json,"message"))
+        precondition(removalRecord.proposedRemoval?.scope == "occurrence")
+        rejectRemoval(removalJSON.replacingOccurrences(of:"event_0",with:"invented"))
+        rejectRemoval(removalJSON,["event_0":target]) // No Reminder removal in background review.
+        var lockedEvent=eventTarget;lockedEvent.writable=false;rejectRemoval(removalJSON,["event_0":lockedEvent])
+        rejectRemoval(removalJSON.replacingOccurrences(of:"occurrence",with:"futureEvents"))
+        rejectRemoval(try withoutField(removalJSON,"scope"))
+        rejectRemoval(removalJSON.replacingOccurrences(of:#""scope":"occurrence""#,with:#""scope":"occurrence","newDate":"2026-10-20""#))
+        rejectRemoval(removalJSON.replacingOccurrences(of:cancellation,with:"Invented cancellation"))
+        precondition(removalRecord.nativeTarget!.matches(events:[event],reminders:[],excludedCalendars:[],excludedLists:[]))
+        var externalEvent=event;externalEvent.location="Room 2"
+        precondition(!removalRecord.nativeTarget!.matches(events:[externalEvent],reminders:[],excludedCalendars:[],excludedLists:[]))
+        precondition(!removalRecord.nativeTarget!.matches(events:[event],reminders:[],excludedCalendars:["studies"],excludedLists:[]))
+        precondition(ProactiveRules.unreported([removalRecord],prior:[removalRecord]).isEmpty)
+        var notice=removalRecord;notice.kind="update";notice.proposedRemoval=nil;notice.created=now.addingTimeInterval(-3600);notice.sourceDate=notice.created
+        precondition(ProactiveRules.unreported([removalRecord],prior:[notice]).count == 1)
+        var dateProposal=record;dateProposal.proposedChange?.target=eventTarget
+        precondition(!ProactiveRules.sameProposal(dateProposal,removalRecord))
+        var wrongZone=removalRecord;wrongZone.proposedRemoval?.timeZoneID="Pacific/Honolulu"
+        precondition(wrongZone.proposedRemoval?.valid == false && !ProactiveRules.sameProposal(wrongZone,removalRecord))
+        let replacementJSON=removalJSON.replacingOccurrences(of:#""scope":"occurrence""#,with:#""scope":"occurrence","replaces":["review_0"],"replacementReason":"The newer explicit postponement makes the old date proposal obsolete.""#)
+        var oldDate=dateProposal;oldDate.created=notice.created;oldDate.sourceDate=notice.created
+        let replacement=try decodeRemoval(replacementJSON,earlier:["review_0":oldDate])[0]
+        let reconciled=try ProactiveRules.reconciled([replacement],prior:[oldDate],issued:["review_0":oldDate],now:now)
+        precondition(reconciled[0].supersededBy == replacement.id && reconciled[0].proposedChange == oldDate.proposedChange)
+        var unrelated=oldDate;unrelated.proposedChange?.target.itemID="other-occurrence"
+        rejectRemoval(replacementJSON,earlier:["review_0":unrelated])
+        var unchangedUpdate=removalRecord;unchangedUpdate.kind="update";unchangedUpdate.proposedRemoval=nil
+        let upgrade=try decodeRemoval(replacementJSON,earlier:["review_0":unchangedUpdate])[0]
+        precondition(upgrade.replaces == [unchangedUpdate.id],"An existing update can become an actionable removal from its same exact source")
+        unchangedUpdate.evidence="A different concern from that message."
+        rejectRemoval(replacementJSON,earlier:["review_0":unchangedUpdate])
+        let removalRoundtrip=try JSONDecoder().decode(ProactiveState.self,from:JSONEncoder().encode(ProactiveState(records:[removalRecord])))
+        precondition(removalRoundtrip.records == [removalRecord])
+        var ambiguousRemoval=removalRecord;ambiguousRemoval.evidence=weekQuoteForRemoval()
+        precondition(ProactiveRules.reviewProjection(ambiguousRemoval).proposedRemoval == nil)
+        func weekQuoteForRemoval()->String {"The Orion lecture on Wednesday of week one is cancelled."}
         let versions=Dictionary(uniqueKeysWithValues:(0..<8).map{(ProactiveRules.sourceKey("whatsapp",String($0)),"v1")})
         let firstKeys=Set((0..<3).map{ProactiveRules.sourceKey("whatsapp",String($0))})
         let limited=ProactiveRules.completing(many,versions:versions,context:"epoch",limited:true,reportedKeys:firstKeys)

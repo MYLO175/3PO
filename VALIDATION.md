@@ -1,5 +1,9 @@
 # Validation
 
+## Current recorded validation — 11 October 2026
+
+Calendar-removal proposals: proactive, Review inbox, native-editing and briefing suites passed; isolated signed Xcode build and strict deep signature verification passed. Final actual-service evaluation passed 28/28 using disposable SwiftData, fictional Mail, one UUID-marked native Calendar and one final fictional subscription comparison. Checks include exact scope/identity/source/model guards, stale native fields, claim-hop mutation, Dismiss/Undo, persistent uncertain receipts, verified native removal, repeating-neighbour preservation, all-day semantics, same-source Update upgrade and ambiguous/negated refusal. Test calendar cleanup was verified. Fictional native UI showed the removal card and Approve; signed installation/relaunch at 21:51 retained the original unsent draft and conversation. No personal event removal or personal review inference was performed. Sustained real matching remains separate; see STATUS for exact evidence and earlier failed diagnostic attempts.
+
 9 October heartbeat/Mail collection separation: focused Mail reader 13/13, monitoring, heartbeat, proactive, briefing and Review checks passed. Signed build/installation verified. Actual fictional scheduler and email-consumer checks passed 62/62 with zero AI/native/settings changes. Existing saved fractional arrival windows completed in both real Mail accounts after one separate source-only refresh; heartbeat itself no longer requests that refresh. A real scheduled heartbeat completed all stages at 17:30 using 4 subscription calls and two collected accounts; Mail discovery/cursors stayed unchanged during AI. Native history verified Completed and original unsent draft remained. Sustained collection and model quality remain separate.
 
 
