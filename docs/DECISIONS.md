@@ -1,5 +1,16 @@
 # Decisions
 
+## 11 October: one acknowledgement and explicit feedback memory
+
+Feedback's editable About field is retained as a human-confirmed topic anchor, separate from the exact feedback evidence. It gives context to words such as these/this without turning source text into a human assertion or a blanket sender rule.
+
+The user requested a simple Review inbox containing only worthwhile review, useful Approve/View actions, one Dismiss and a free-text Feedback prompt. Dismiss means acknowledged and out of the inbox; it must not infer an importance preference or completion. Background and email duplicates stay one card. Planned/addressed/completed material belongs outside the main inbox, with supported evidence and overrides in Activity.
+
+New feedback is human-authored canonical PAMemory, not a second attention database or a positive/negative vote. Preserve the exact reason, conditional exceptions, account, evidence and correction lineage. Inspect/edit/disable it from Review preferences and Memory. Do not automatically rewrite/consolidate confirmed reasons or blacklist a sender. Earlier topic preferences are preserved. Relevant conditions guide bounded header/body assessment and ordinary permitted PA/brief/proactive recall. Actual model quality and sustained personal adaptation remain separate acceptance.
+
+An issued native ID and fresh snapshot do not establish semantic task identity. Require distinctive target qualifiers in the exact outstanding request quote and explicit all-actions coverage; informational confirmations cannot be handled against a native task. Apply the predicate to historical saved associations without deleting them or modifying Apple records. Preserve uncertain claim outcome checking.
+
+
 ## 11 October 2026 — Later email confirmations resolve earlier email attention
 
 A routine successful assessment receipt is evidence of progress, and a later assessment invitation is a new obligation. Match message purpose and exact action/stage across two saved, current, same-account email assessments; common sender/company/title alone is insufficient. All original actions must be covered. Keep exact quotes, source/body/assessment revisions, original drafts and dependency receipts. Surface unresolved failures, partial work, results and next-stage requests independently.

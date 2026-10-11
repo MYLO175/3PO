@@ -38,9 +38,9 @@ extension DashboardModel {
     }
     private func reviewInboxProjection(includeHandled:Bool)->ReviewInboxProjection {
         let questions=briefings.pendingQuestions(self),learning=(memoryLearning.state.questions ?? []).filter{memoryLearning.visible($0,assistant:assistant)}
-        let discoveries=proactive.state.records.filter{proactive.visible($0,model:self)}.map(ProactiveRules.reviewProjection)
+        let discoveries=proactive.state.records.filter{proactive.visible($0,model:self)}.map(ProactiveRules.reviewProjection).filter{!reviewDiscoveryCompleted($0)}
         let highlights=emailSummaries.highlights(self)
-        let emails=highlights.filter{EmailHighlightRules.needsAction($0.1,replied:$0.0.replied) && !acknowledgedEmail($0.0,$0.1) && emailSummaries.handling($0.1,message:$0.0,model:self) == nil}.map {message,summary in
+        let emails=highlights.filter{EmailHighlightRules.needsReview($0.1,replied:$0.0.replied) && !acknowledgedEmail($0.0,$0.1) && emailSummaries.handling($0.1,message:$0.0,model:self) == nil}.map {message,summary in
             var value=summary;if message.replied || EmailSummary.fingerprint(message) != summary.fingerprint {value.replyDraft=nil};return (message,value)
         }
         let actionableIDs=Set(emails.map{$0.0.id})
@@ -103,14 +103,14 @@ struct PATasksView: View {
                 Label("Needs approval · Remove from Calendar",systemImage:"calendar.badge.minus").font(.caption.weight(.semibold))
                 Text(removal.target.title).font(.callout.weight(.semibold))
                 Text(dateLabel(removal.target.start,hasTime:removal.target.hasTime,fallback:"No date")).font(.callout).textSelection(.enabled)
-                Text("Only this occurrence · " + removal.connection).font(.caption).foregroundStyle(.secondary)
+                Text("Only this occurrence").font(.caption).foregroundStyle(.secondary)
                 Text("Removal cannot be undone in 3PO.").font(.caption).foregroundStyle(.secondary)
             }
             if !embedded || item.nativeTarget == nil {
                 Label(item.kind == "reply" ? "Reply draft" : item.kind == "update" ? "Update" : item.kind == "change" ? "Date change" : item.kind == "remove" ? "Calendar removal" : "Missing plan",systemImage:item.kind == "calendar" ? "calendar.badge.plus" : "checklist").font(.caption).foregroundStyle(.secondary)
             }
             if let title=discoveryTitle(item),!embedded || (title != emailTitle && title != item.nativeTarget?.title) { Text(title).font(.callout.weight(.semibold)) }
-            Text(item.message).textSelection(.enabled)
+            if !embedded || item.nativeTarget == nil {Text(item.message).textSelection(.enabled)}
             if !embedded,let details=model.proactive.sourceDetails(item,model:model) {ReviewSourceLabel(details:details,showsTitle:true)}
             if let reply=item.replyDraft {
                 Text(reply).font(.callout).textSelection(.enabled).padding(10).frame(maxWidth:.infinity,alignment:.leading).background(Color.primary.opacity(0.04),in:RoundedRectangle(cornerRadius:8))
@@ -118,7 +118,7 @@ struct PATasksView: View {
                 Button("Copy draft") {NSPasteboard.general.clearContents();NSPasteboard.general.setString(reply,forType:.string)}.controlSize(.small)
             }
             if !embedded {
-                ReviewRelevanceFeedbackMenu(model:model,topic:discoveryTitle(item) ?? item.message,isCurrent:{model.proactive.state.records.first(where:{$0.id == item.id}).map{ProactiveRules.reviewProjection($0) == item && model.proactive.visible($0,model:model)} == true},acknowledge:{model.proactive.dismiss(item,model:model)})
+                ReviewFeedbackButton(model:model,topic:discoveryTitle(item) ?? item.message,isCurrent:{model.proactive.state.records.first(where:{$0.id == item.id}).map{ProactiveRules.reviewProjection($0) == item && model.proactive.visible($0,model:model)} == true})
             }
             Button("Source evidence") { sourceDiscovery=item }.buttonStyle(.borderless).font(.caption)
             HStack { if let claim=model.reviewCreationClaim(item) {Label(claim.receipt == nil ? "Check save outcome" : "Created",systemImage:claim.receipt == nil ? "exclamationmark.circle" : "checkmark.circle").font(.caption).foregroundStyle(.secondary)} else if item.kind == "project" { if model.assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) == nil { Button("Review space…") { reviewingProject=item } } else { Label("Created",systemImage:"checkmark.circle") } } else if !["update","reply"].contains(item.kind) {
@@ -127,19 +127,19 @@ struct PATasksView: View {
                     Button(model.approvingDiscoveryID == item.id ? "Approving…" : "Approve") { Task {await model.approveDiscovery(item)} }.disabled(!model.proactive.canReview(item.id,model:model) || model.writing || model.assistant.busy)
                     Button(item.proposedRemoval == nil ? "View/edit" : "View event") {model.reviewDiscovery(item)}.disabled(!model.proactive.canReview(item.id,model:model) || model.writing)
                 } else { Button("Review suggestion") { model.reviewDiscovery(item) }.disabled(!model.proactive.canReview(item.id,model:model) || model.writing) }
-            }; Spacer(); Button(embedded ? "Dismiss suggestion" : "Dismiss") { model.proactive.dismiss(item,model:model) }.disabled(model.writing) }.controlSize(.small)
+            }; Spacer(); if !embedded {Button("Dismiss") {model.proactive.dismiss(item,model:model)}.disabled(model.writing)} }.controlSize(.small)
             if model.reviewApprovalErrorAccount == item.registration,model.reviewApprovalErrorID == item.id,let error=model.reviewApprovalError {Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)}
         }
     }
     @State private var showingRelevance=false
     var body: some View {
-        let inbox=model.reviewInbox,questions=inbox.questions,learningQuestions=inbox.learningQuestions,discoveries=inbox.discoveries,emails=inbox.emails,emailCards=inbox.emailCards,standaloneDiscoveries=inbox.standaloneDiscoveries,handled=inbox.handled,resolved=inbox.resolved,pending=inbox.pending
+        let inbox=model.reviewInbox,questions=inbox.questions,learningQuestions=inbox.learningQuestions,discoveries=inbox.discoveries,emails=inbox.emails,emailCards=inbox.emailCards,standaloneDiscoveries=inbox.standaloneDiscoveries,pending=inbox.pending
         return VStack(alignment:.leading,spacing:12) {
             HStack {
                 Label("Review inbox",systemImage:"tray.full").font(.title3.weight(.semibold))
                 ReviewInboxBadge(count:inbox.pendingCount)
                 Spacer()
-                Button {showingRelevance=true} label:{Image(systemName:"slider.horizontal.3")}.buttonStyle(.borderless).help("What matters to me").accessibilityLabel("What matters to me")
+                Button {showingRelevance=true} label:{Image(systemName:"slider.horizontal.3")}.buttonStyle(.borderless).help("Review preferences in PA memory").accessibilityLabel("Review preferences")
                 Button { showingActivity=true } label:{Image(systemName:"clock.arrow.circlepath")}
                     .buttonStyle(.borderless).help("Background activity and details").accessibilityLabel("Background activity")
                 Button { model.heartbeat.check(model,manual:true) } label:{Image(systemName:"waveform.path.ecg")}
@@ -212,50 +212,16 @@ struct PATasksView: View {
                                     ForEach(updates) { item in discoveryContent(item,embedded:true,emailTitle:message.subject) }
                                 }
                             }
-                            ReviewRelevanceFeedbackMenu(model:model,topic:message.subject,isCurrent:{model.emailSummaries.feedbackSourceCurrent(message,summary:summary,model:model)},acknowledge:{model.emailSummaries.dismiss(message.id,model:model,expectedRegistration:summary.registration,expectedVersion:ReviewAcknowledgementRules.emailVersion(message,summary))})
                             HStack {
+                                ReviewFeedbackButton(model:model,topic:message.subject,isCurrent:{model.emailSummaries.feedbackSourceCurrent(message,summary:summary,model:model)})
                                 if let reply=summary.replyDraft { Button("Review draft") { editing=summary; draft=reply; copied=false; draftSaved=false } }
                                 else if EmailReplyDraftRules.canReply(summary,message:message) {
                                     Button("Prepare now") { model.emailSummaries.prepareReply(message,summary:summary,model:model) }.disabled(model.emailSummaries.busy || model.assistant.busy || model.chatGPT.busy || model.proactive.busy || model.writing)
                                 }
-                                Button("Original") { model.select(message) }
-                                Spacer(); Button(card.discoveries.isEmpty ? "Dismiss" : "Dismiss email") { model.emailSummaries.dismiss(message.id,model:model,expectedRegistration:summary.registration,expectedVersion:ReviewAcknowledgementRules.emailVersion(message,summary)) }
+                                Button("View email") { model.select(message) }
+                                Spacer(); Button("Dismiss") { model.emailSummaries.dismiss(message.id,model:model,expectedRegistration:summary.registration,expectedVersion:ReviewAcknowledgementRules.emailVersion(message,summary)) }
                             }.controlSize(.small)
                         }.taskCard()
-                    }
-                    if !handled.isEmpty {
-                        DisclosureGroup("Already planned or addressed (\(handled.count))") {
-                            ForEach(handled,id:\.0.id) { message,summary,handling in
-                                VStack(alignment:.leading,spacing:6) {
-                                    Label(handling.label,systemImage:handling.native.completedAt == nil ? "calendar.badge.checkmark" : "checkmark.circle").font(.caption).foregroundStyle(.secondary)
-                                    Text(message.subject).font(.callout.weight(.semibold))
-                                    ReviewSourceLabel(details:.email(message))
-                                    Text("Inferred connection to “"+handling.native.title+"” · "+handling.reason).font(.callout).textSelection(.enabled)
-                                    HStack {Button("Original") {model.select(message)};Button("Keep in review") {model.emailSummaries.keepForReview(summary.id,model:model)}}.controlSize(.small)
-                                }.taskCard()
-                            }
-                        }
-                    }
-                    if !resolved.isEmpty {
-                        DisclosureGroup("Addressed by later email (\(resolved.count))") {
-                            ForEach(resolved,id:\.0.id) {message,summary,value in
-                                VStack(alignment:.leading,spacing:8) {
-                                    Label("Addressed · confirmed by email",systemImage:"checkmark.circle").font(.caption).foregroundStyle(.secondary)
-                                    Text(message.subject).font(.callout.weight(.semibold))
-                                    ReviewSourceLabel(details:.email(message))
-                                    Text(value.reason).font(.callout).textSelection(.enabled)
-                                    DisclosureGroup("Evidence") {
-                                        Text("Earlier request: “"+value.requestQuote+"”").textSelection(.enabled)
-                                        Text("Later confirmation: “"+value.confirmation.quote+"”").textSelection(.enabled)
-                                        if let confirmation=model.emailSummaries.sourceAssessments(model).first(where:{$0.0.id == value.confirmation.messageID})?.0 {
-                                            ReviewSourceLabel(details:.email(confirmation),showsTitle:true)
-                                            Button("Open confirmation") {model.select(confirmation)}.controlSize(.small)
-                                        }
-                                    }
-                                    HStack {Button("Original request") {model.select(message)};Button("Keep in review") {model.emailSummaries.keepForReview(summary.id,model:model)}}.controlSize(.small)
-                                }.taskCard()
-                            }
-                        }
                     }
                     if !pending.isEmpty { Text("Delegated work").font(.headline) }
                     ForEach(pending) { item in
@@ -267,7 +233,7 @@ struct PATasksView: View {
                             if item.state != .running { HStack { if item.state == .waiting { Button("Continue queue") { model.assistant.resumeQueue(model:model) }.disabled(model.assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }; Button("Remove") { model.assistant.discardQueued(item.id) } }.controlSize(.small) }
                         }.taskCard()
                     }
-                    if emailCards.isEmpty && standaloneDiscoveries.isEmpty && pending.isEmpty && handled.isEmpty && resolved.isEmpty && questions.isEmpty && learningQuestions.isEmpty {
+                    if emailCards.isEmpty && standaloneDiscoveries.isEmpty && pending.isEmpty && questions.isEmpty && learningQuestions.isEmpty {
                         ContentUnavailableView("Nothing waiting for review",systemImage:"checkmark.circle",description:Text("Proposed changes, useful updates and prepared work appear here when enabled sources reveal something useful."))
                     }
                 }.frame(maxWidth:.infinity,alignment:.leading)
@@ -348,5 +314,25 @@ struct CalendarRemovalReviewSheet:View {
                 }}.disabled(saving || model.writing || model.assistant.busy || !model.proactive.canReview(session.record.id,model:model))
             }
         }.padding(24).frame(width:520).interactiveDismissDisabled(saving)
+    }
+}
+
+struct ReviewHistoryView:View {
+    @Bindable var model:DashboardModel
+    var body:some View {
+        let handled=model.reviewInbox.handled,resolved=model.reviewInbox.resolved
+        DisclosureGroup("Review history") {
+            VStack(alignment:.leading,spacing:12) {
+                Text("Items with current evidence that the action is planned or addressed. These stay out of your inbox. Keep in review overrides the inferred status.").font(.caption).foregroundStyle(.secondary)
+                ForEach(handled,id:\.0.id) {message,summary,value in
+                    VStack(alignment:.leading,spacing:6) {Text(message.subject).font(.callout.weight(.semibold));Text(value.reason).font(.caption);Text(value.native.title).font(.caption).foregroundStyle(.secondary);HStack {Button("View email") {model.select(message)};Button("Keep in review") {model.emailSummaries.keepForReview(summary.id,model:model)}}.controlSize(.small)}.taskCard()
+                }
+                ForEach(resolved,id:\.0.id) {message,summary,value in
+                    VStack(alignment:.leading,spacing:6) {Text(message.subject).font(.callout.weight(.semibold));Text(value.reason).font(.caption);DisclosureGroup("Evidence") {Text("Earlier request: “"+value.requestQuote+"”");Text("Confirmation: “"+value.confirmation.quote+"”");if let confirmation=model.emailSummaries.sourceAssessments(model).first(where:{$0.0.id == value.confirmation.messageID})?.0 {Button("View confirmation") {model.select(confirmation)}}}.font(.caption);HStack {Button("View email") {model.select(message)};Button("Keep in review") {model.emailSummaries.keepForReview(summary.id,model:model)}}.controlSize(.small)}.taskCard()
+                }
+                if handled.isEmpty && resolved.isEmpty {Text("No currently supported addressed items.").font(.caption).foregroundStyle(.secondary)}
+                Text("Dismiss acknowledges the displayed concern. Undo restores it. Feedback is saved separately in PA memory.").font(.caption).foregroundStyle(.secondary)
+            }.padding(.top,8)
+        }.padding(12)
     }
 }

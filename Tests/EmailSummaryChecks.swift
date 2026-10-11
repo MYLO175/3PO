@@ -125,13 +125,19 @@ import Foundation
         assert(!addressed.matches(events:[],reminders:[],completed:[.init(item:task,completedAt:now)],excludedCalendars:[],excludedLists:["list"]))
         var other=task;other.id="same-title-other-id"
         assert(!planned.matches(events:[],reminders:[other],completed:[],excludedCalendars:[],excludedLists:[]))
-        var actionable=ready;actionable.needsReply=false
-        let handled=try EmailReviewRules.decodeHandled(#"{"suggestions":[],"handled":[{"mailID":"mail_0","targetID":"done_0","reason":"Exact distinctive report submission was ticked off."}]}"#,summaries:["mail_0":actionable],targets:["done_0":addressed],now:now)
+        var actionable=ready;actionable.needsReply=false;actionable.evidence="Please submit the Orion report.";actionable.bodyFingerprint="fictional-body"
+        let handled=try EmailReviewRules.decodeHandled(#"{"suggestions":[],"handled":[{"mailID":"mail_0","targetID":"done_0","requestEvidenceID":"mail_0:primary","allActionsAddressed":true,"reason":"Exact distinctive report submission was ticked off."}]}"#,summaries:["mail_0":actionable],targets:["done_0":addressed],now:now)
         assert(handled.count == 1 && handled[0].1.native.itemID == task.id && handled[0].1.label.contains("Addressed"))
         func refuseHandling(_ value:EmailSummary,_ target:String) {
-            let json="{\"handled\":[{\"mailID\":\"mail_0\",\"targetID\":\"\(target)\",\"reason\":\"Match\"}]}"
+            let json="{\"handled\":[{\"mailID\":\"mail_0\",\"targetID\":\"\(target)\",\"requestEvidenceID\":\"mail_0:primary\",\"allActionsAddressed\":true,\"reason\":\"Match\"}]}"
             do {_ = try EmailReviewRules.decodeHandled(json,summaries:["mail_0":value],targets:["done_0":addressed],now:now);fatalError("Invalid handling accepted")} catch {}
         }
+        var quietHandling=actionable;quietHandling.attention=false
+        refuseHandling(quietHandling,"done_0")
+        var risk=addressed;risk.title="Check whether risk assessment is required and complete it if needed"
+        assert(!EmailReviewRules.supportsNativeHandling(actionable,native:risk))
+        var coding=actionable;coding.evidence="Please complete the Orion Labs coding assessment."
+        assert(!EmailReviewRules.supportsNativeHandling(coding,native:risk))
         refuseHandling(ready,"done_0");refuseHandling(actionable,"invented")
         actionable.keepInReview=true;refuseHandling(actionable,"done_0")
         let savedHandling=try JSONDecoder().decode(EmailHandling.self,from:JSONEncoder().encode(handled[0].1))

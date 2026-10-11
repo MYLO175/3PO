@@ -36,6 +36,18 @@ import SwiftData
     }
     func items(_ registration: String) -> [PAMemory] { records.filter { $0.registration == registration }.sorted { $0.reviewed > $1.reviewed } }
     func suppressed(_ registration: String) -> Set<String> { state.suppressed[registration] ?? [] }
+    func reviewPreferences(_ registration:String,includeRetired:Bool=false)->[PAMemory] {
+        records.filter{$0.registration == registration && $0.source == nil && $0.reviewPreference == true && $0.supersededBy == nil && (includeRetired || MemoryRules.usable($0,registration:registration))}.sorted{$0.created == $1.created ? $0.id.uuidString < $1.id.uuidString : $0.created > $1.created}
+    }
+    /// Local human-authored preference, never a paraphrase of the email or an inferred completion.
+    @discardableResult func saveReviewPreference(_ text:String,registration:String,expected:PAMemory? = nil,about:String="")->Bool {
+        let words=text.trimmingCharacters(in:.whitespacesAndNewlines)
+        guard !registration.isEmpty,!words.isEmpty,words.count <= 2000,about.count <= 300 else {error="Write feedback of up to 2,000 characters.";return false}
+        if let expected {guard records.first(where:{$0.id == expected.id}) == expected,expected.registration == registration,expected.reviewPreference == true,expected.source == nil,expected.supersededBy == nil else {error="This memory changed. Reopen it before saving.";return false}}
+        var value=PAMemory(registration:registration,text:words,kind:.preference,provenance:expected == nil ? "Your Review feedback" : "Review preference edited by you",evidence:words,sourceDate:.now,certainty:.stated,durability:.stable)
+        value.reviewPreference=true;value.reviewContext=about.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty ? nil : about.trimmingCharacters(in:.whitespacesAndNewlines);value.retiredAt=expected?.retiredAt
+        return expected.map{correct($0.id,with:value)} ?? put(value)
+    }
     @discardableResult func put(_ memory: PAMemory) -> Bool {
         guard !memory.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, !memory.registration.isEmpty else { return false }
         var value = memory; value.text = String(value.text.prefix(2000)); value.reviewed = .now

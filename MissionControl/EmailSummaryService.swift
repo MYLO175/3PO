@@ -93,7 +93,11 @@ import SwiftData
     func relevanceContext(_ message:MailMessage,model:DashboardModel,body:String="",header:Bool=false)->EmailRelevanceContext {
         guard model.assistant.contextEnabled else {return .init()}
         let registration=model.chatGPT.activeID,query=MemoryRetrieval.emailQuery(subject:message.subject,sender:message.sender,body:body)
-        let selected=Array(model.assistant.memory.selection(registration,query:query,includeSources:false).records.prefix(header ? 2 : 6))
+        let memory=model.assistant.memory
+        let review=memory.enabled ? MemoryRetrieval.select(memory.reviewPreferences(registration),registration:registration,query:query,limit:header ? 2 : 4).records : []
+        let reviewIDs=Set(review.compactMap{$0["id"]})
+        let other=memory.selection(registration,query:query,includeSources:false).records.filter{!reviewIDs.contains($0["id"] ?? "")}
+        let selected=Array((review+other).prefix(header ? 2 : 6))
         let ids=Set(selected.compactMap{$0["id"].flatMap(UUID.init(uuidString:))})
         let items=model.assistant.projects.items(registration).filter{$0.status != .archived && $0.status != .done}
         let notebook=LifeNotebook.build(model.assistant.memory.enabled ? model.assistant.memory.records.filter{$0.source == nil} : [],registration:registration).integrating(items,links:model.assistant.projects.state.links.filter{$0.registration == registration})
@@ -104,6 +108,16 @@ import SwiftData
             return ["id":id,"revision":item.revision.uuidString,"title":item.title,"notes":String(item.notes.prefix(header ? 80 : 250)),"status":item.status.rawValue]
         }
         return .init(memories:selected,workspace:workspace,preferences:Array(preferences(registration,query:query).prefix(header ? 2 : 4)),memoryReceipts:MemoryDependencyRules.capture(selected))
+    }
+    func reviewPreferenceStamp(_ message:MailMessage,model:DashboardModel,evidence:String="")->String? {
+        guard model.assistant.memory.enabled else {return nil}
+        let query=MemoryRetrieval.emailQuery(subject:message.subject,sender:message.sender,body:evidence)
+        let selected=MemoryRetrieval.select(model.assistant.memory.reviewPreferences(model.chatGPT.activeID),registration:model.chatGPT.activeID,query:query,limit:4).records
+        return selected.isEmpty ? nil : EmailNativeEvidence.hash(MemoryDependencyRules.capture(selected))
+    }
+    func preferenceNeedsRecheck(_ summary:EmailSummary,message:MailMessage,model:DashboardModel)->Bool {
+        guard !ReviewAcknowledgementRules.emailDismissed(summary,message:message,registration:model.chatGPT.activeID),message.received >= Date.now.addingTimeInterval(-30*86400) else {return false}
+        return summary.reviewPolicyVersion != 2 || summary.reviewPreferenceRevision != reviewPreferenceStamp(message,model:model,evidence:summary.summary+" "+summary.evidence)
     }
     func relevanceAvailable(_ value:EmailPersonalRelevance,model:DashboardModel)->Bool {
         guard relevanceReadable,model.assistant.contextEnabled,model.memoryDependenciesAvailable(value.memories,use:.suggestions) else {return false}
@@ -139,8 +153,8 @@ import SwiftData
             guard reviewPermitted(message,model:model,scope:mailReview) else {return false}
             guard current(message,model:model) == nil,!rejected.contains(where:{$0.matches(message,registration:model.chatGPT.activeID)}) else { return false }
             let decision=decisions.first { $0.id == message.id && $0.registration == model.chatGPT.activeID && $0.fingerprint == EmailSummary.fingerprint(message) }
-            return decision == nil || decision?.readBody == true || mightConfirmOutstanding(message,model:model)
-        } || highlights(model).contains {message,summary in reviewPermitted(message,model:model,scope:mailReview) && EmailReplyDraftRules.needsBackgroundDraft(summary,message:message)} || sourceAssessments(model,includeStale:true).contains {message,summary in !rejected.contains(where:{$0.matches(message,registration:model.chatGPT.activeID)}) && reviewPermitted(message,model:model,scope:mailReview) && ((summary.observedBodyFingerprint != nil && summary.observedBodyFingerprint != summary.bodyFingerprint) || (summary.completionEvidenceChecked != true && mightConfirmOutstanding(message,model:model)) || (resolutionSourceIDs(model).contains(message.id) && (summary.bodyCheckedAt ?? .distantPast) < Date.now.addingTimeInterval(-86400)))}
+            return decision == nil || decision?.readBody == true || (message.received >= Date.now.addingTimeInterval(-30*86400) && decision?.reviewPreferenceRevision != reviewPreferenceStamp(message,model:model)) || mightConfirmOutstanding(message,model:model)
+        } || highlights(model).contains {message,summary in reviewPermitted(message,model:model,scope:mailReview) && EmailReplyDraftRules.needsBackgroundDraft(summary,message:message)} || sourceAssessments(model,includeStale:true).contains {message,summary in !rejected.contains(where:{$0.matches(message,registration:model.chatGPT.activeID)}) && reviewPermitted(message,model:model,scope:mailReview) && (preferenceNeedsRecheck(summary,message:message,model:model) || (summary.observedBodyFingerprint != nil && summary.observedBodyFingerprint != summary.bodyFingerprint) || (summary.completionEvidenceChecked != true && mightConfirmOutstanding(message,model:model)) || (resolutionSourceIDs(model).contains(message.id) && (summary.bodyCheckedAt ?? .distantPast) < Date.now.addingTimeInterval(-86400)))}
     }
     private func resolutionSourceIDs(_ model:DashboardModel)->Set<String> {
         Set(records.filter{$0.registration == model.chatGPT.activeID && $0.resolution != nil}.flatMap{[$0.id,$0.resolution!.confirmation.messageID]})
@@ -227,7 +241,7 @@ import SwiftData
         EmailReviewRules.feedback(records.filter { $0.registration == model.chatGPT.activeID && $0.message.map {message in !model.assistant.excludedAccounts.contains(message.accountID) && model.mailData.accounts.contains{$0.id == message.accountID}} == true })
     }
     func handling(_ summary:EmailSummary,message:MailMessage,model:DashboardModel)->EmailHandling? {
-        guard summary.observedBodyFingerprint.map({$0 == summary.bodyFingerprint}) ?? true,summary.dateClarificationQuote == nil,summary.registration == model.chatGPT.activeID,!model.assistant.excludedAccounts.contains(message.accountID),model.mailData.accounts.contains(where:{$0.id == message.accountID}),summary.keepInReview != true,let handling=summary.handling,handling.assessmentRevision == summary.adviceRevision(replied:message.replied),summary.fingerprint == EmailSummary.fingerprint(message),!EmailReplyDraftRules.canReply(summary,message:message),model.assistant.contextEnabled,
+        guard summary.observedBodyFingerprint.map({$0 == summary.bodyFingerprint}) ?? true,summary.dateClarificationQuote == nil,summary.registration == model.chatGPT.activeID,!model.assistant.excludedAccounts.contains(message.accountID),model.mailData.accounts.contains(where:{$0.id == message.accountID}),summary.keepInReview != true,let handling=summary.handling,EmailReviewRules.supportsNativeHandling(summary,native:handling.native),handling.assessmentRevision == summary.adviceRevision(replied:message.replied),summary.fingerprint == EmailSummary.fingerprint(message),!EmailReplyDraftRules.canReply(summary,message:message),model.assistant.contextEnabled,
               model.paOrientationHealth.error == nil,model.reminderHealth.error == nil,
               model.memoryDependenciesAvailable(handling.memoryDependencies,use:handling.memoryUse ?? .suggestions),model.whatsappDependenciesAvailable(handling.whatsappDependencies,use:handling.memoryUse ?? .suggestions),
               model.paOrientationHealth.lastSuccess.map{Date.now.timeIntervalSince($0) < 600} == true,model.reminderHealth.lastSuccess.map{Date.now.timeIntervalSince($0) < 600} == true,
@@ -371,7 +385,7 @@ import SwiftData
             do {
                 guard registration == model.chatGPT.activeID, !model.assistant.busy, !model.chatGPT.busy,!model.projectPlacement.busy, !model.writing, requestedModel == modelID, selectedEffort == effort, selectedModel == (modelID.isEmpty ? model.chatGPT.selectedModel : modelID) else { return }
                 let messages = monitored(model).filter(permitted)
-                let unknown = Array(messages.filter { message in current(message,model:model) == nil && !decisions.contains { $0.id == message.id && $0.registration == registration && $0.fingerprint == EmailSummary.fingerprint(message) } }.prefix(20))
+                let unknown = Array(messages.filter { message in current(message,model:model) == nil && !decisions.contains { $0.id == message.id && $0.registration == registration && $0.fingerprint == EmailSummary.fingerprint(message) && ($0.reviewPreferenceRevision == reviewPreferenceStamp(message,model:model) || message.received < Date.now.addingTimeInterval(-30*86400)) } }.prefix(20))
                 if !unknown.isEmpty {
                     phase = "Assessing incoming headers"
                     let aliases = Dictionary(uniqueKeysWithValues:unknown.enumerated().map { ("mail_\($0.offset)",$0.element) })
@@ -387,7 +401,7 @@ import SwiftData
                     let previous = decisions
                     for (alias,message) in aliases {
                         decisions.removeAll { $0.id == message.id && $0.registration == registration }
-                        decisions.append(.init(id:message.id,registration:registration,fingerprint:EmailSummary.fingerprint(message),received:message.received,readBody:selected.contains(alias)))
+                        decisions.append(.init(id:message.id,registration:registration,fingerprint:EmailSummary.fingerprint(message),received:message.received,readBody:selected.contains(alias),reviewPreferenceRevision:reviewPreferenceStamp(message,model:model)))
                     }
                     do { try save() } catch { decisions = previous; throw error }
                 }
@@ -396,7 +410,7 @@ import SwiftData
                 let rechecks = sourceAssessments(model,includeStale:true).map(\.0).filter { message in
                     guard permitted(message) else {return false}
                     guard !rejected.contains(where: { $0.matches(message,registration:registration) }), let saved = current(message, model: model) else { return false }
-                    return (saved.observedBodyFingerprint != nil && saved.observedBodyFingerprint != saved.bodyFingerprint) || (saved.completionEvidenceChecked != true && mightConfirmOutstanding(message,model:model)) || ((resolutionSourceIDs(model).contains(message.id) || (EmailHighlightRules.visible(saved) && resolution(saved,message:message,model:model) == nil)) && (EmailReplyDraftRules.needsBackgroundDraft(saved,message:message) || (saved.bodyCheckedAt ?? .distantPast) < Date.now.addingTimeInterval(-86400)))
+                    return preferenceNeedsRecheck(saved,message:message,model:model) || (saved.observedBodyFingerprint != nil && saved.observedBodyFingerprint != saved.bodyFingerprint) || (saved.completionEvidenceChecked != true && mightConfirmOutstanding(message,model:model)) || ((resolutionSourceIDs(model).contains(message.id) || (EmailHighlightRules.visible(saved) && resolution(saved,message:message,model:model) == nil)) && (EmailReplyDraftRules.needsBackgroundDraft(saved,message:message) || (saved.bodyCheckedAt ?? .distantPast) < Date.now.addingTimeInterval(-86400)))
                 }.sorted { first,second in
                     let a=current(first,model:model).map{EmailReplyDraftRules.needsBackgroundDraft($0,message:first)} ?? false
                     let b=current(second,model:model).map{EmailReplyDraftRules.needsBackgroundDraft($0,message:second)} ?? false
@@ -425,7 +439,7 @@ import SwiftData
                     guard requestedModel == modelID, selectedEffort == effort, selectedModel == (modelID.isEmpty ? model.chatGPT.selectedModel : modelID), enabled, !paused, !model.assistant.excludedAccounts.contains(message.accountID), registration == model.chatGPT.activeID, !model.assistant.busy, !model.chatGPT.busy,!model.projectPlacement.busy, !model.briefings.busy, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing else { return }
                     let bodyHash = EmailSummary.fingerprintBody(body)
                     try observeBodyVersion(message,hash:bodyHash,model:model)
-                    if var saved = current(message, model: model), saved.bodyFingerprint == bodyHash, saved.worthReading != nil, saved.needsReply != nil,!(saved.completionEvidenceChecked != true && mightConfirmOutstanding(message,model:model)) {
+                    if var saved = current(message, model: model), saved.bodyFingerprint == bodyHash, saved.worthReading != nil, saved.needsReply != nil,!preferenceNeedsRecheck(saved,message:message,model:model),!(saved.completionEvidenceChecked != true && mightConfirmOutstanding(message,model:model)) {
                         if EmailReplyDraftRules.needsBackgroundDraft(saved,message:message),body.count <= 16000 {
                             phase="Preparing background reply draft"
                             let memoryRevision=model.assistant.memory.revision,memory=model.assistant.memory.context(registration,query:MemoryRetrieval.emailQuery(subject:message.subject,sender:message.sender,body:body,reply:true),includeSources:false)
@@ -446,7 +460,7 @@ import SwiftData
                         continue // No inference for unchanged bodies.
                     }
                     let excerpt = String(body.prefix(16000))
-                    let dismissalFeedback = dismissalContext(model)
+                    let dismissalFeedback:[[String:String]] = []
                     let memoryRevision=model.assistant.memory.revision,projectsRevision=model.assistant.projects.revision,preferenceRevision=self.preferenceRevision(registration)
                     let relevanceContext=self.relevanceContext(message,model:model,body:excerpt)
                     // Classification has no saved source-memory dependency receipt; keep source facts out.
@@ -459,7 +473,7 @@ import SwiftData
                     try Task.checkCancellation()
                     guard permitted(message) else {return}
                     guard requestedModel == modelID, selectedEffort == effort, selectedModel == (modelID.isEmpty ? model.chatGPT.selectedModel : modelID), enabled, !paused, registration == model.chatGPT.activeID, !model.assistant.excludedAccounts.contains(message.accountID) else { return }
-                    guard dismissalFeedback == dismissalContext(model),memoryRevision == model.assistant.memory.revision,projectsRevision == model.assistant.projects.revision,preferenceRevision == self.preferenceRevision(registration),relevanceContext == self.relevanceContext(message,model:model,body:excerpt) else { return }
+                    guard memoryRevision == model.assistant.memory.revision,projectsRevision == model.assistant.projects.revision,preferenceRevision == self.preferenceRevision(registration),relevanceContext == self.relevanceContext(message,model:model,body:excerpt) else { return }
                     phase = "Validating completed summary"
                     let decoded: EmailSummary
                     do { decoded = try EmailSummary.decode(text,message:message,body:excerpt,registration:registration,relevanceContext:relevanceContext) }
@@ -475,7 +489,8 @@ import SwiftData
                     }
                     phase = "Saving validated summary"
                     var summary = decoded
-                    summary.bodyFingerprint = bodyHash; summary.bodyCheckedAt = .now;summary.completionEvidenceChecked=true
+                    summary.bodyFingerprint = bodyHash; summary.bodyCheckedAt = .now;summary.completionEvidenceChecked=true;summary.reviewPolicyVersion=2
+                    summary.reviewPreferenceRevision=reviewPreferenceStamp(message,model:model,evidence:summary.summary+" "+summary.evidence)
                     summary.replyDraftCheckedBody=bodyHash
                     let original=records.first(where: { $0.id == message.id && $0.registration == registration })
                     if let original,original.dismissed == true {

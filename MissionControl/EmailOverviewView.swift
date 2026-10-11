@@ -39,7 +39,7 @@ struct EmailOverviewView: View {
                             HStack(alignment:.top) {
                                 Text(EmailHighlightRules.category(summary,replied:message.replied)).font(.caption.weight(.semibold)).foregroundStyle(summary.attention ? Color.accentColor : Color.secondary)
                                 Spacer()
-                                ReviewRelevanceFeedbackMenu(model:model,topic:message.subject,isCurrent:{model.emailSummaries.feedbackSourceCurrent(message,summary:summary,model:model)},acknowledge:{summaries.dismiss(message.id,model:model,expectedRegistration:summary.registration,expectedVersion:ReviewAcknowledgementRules.emailVersion(message,summary))})
+                                ReviewFeedbackButton(model:model,topic:message.subject,isCurrent:{model.emailSummaries.feedbackSourceCurrent(message,summary:summary,model:model)})
                                 Button { summaries.dismiss(message.id,model:model,expectedRegistration:summary.registration,expectedVersion:ReviewAcknowledgementRules.emailVersion(message,summary)) } label: { Image(systemName:"xmark") }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary).help("Dismiss suggestion").accessibilityLabel("Dismiss email suggestion")
                             }
                             Text(message.subject).font(.callout.weight(.semibold)).lineLimit(2)
@@ -95,19 +95,56 @@ struct ReviewPreferenceDraft:Identifiable {
     var isCurrent:()->Bool={true}
     var onSaved:()->Void={}
 }
-struct ReviewRelevanceFeedbackMenu:View {
+struct ReviewFeedbackButton:View {
     @Bindable var model:DashboardModel
     var topic:String
     var isCurrent:()->Bool
-    var acknowledge:()->Void
-    @State private var draft:ReviewPreferenceDraft?
+    @State private var showingFeedback=false
+    @State private var saved=false
     var body:some View {
-        Menu("Feedback") {
-            Button("Not relevant to me…") {draft = .init(value:.init(registration:model.chatGPT.activeID,topic:String(topic.prefix(300)),direction:"less"),isCurrent:isCurrent,onSaved:acknowledge)}
-            Button("Important to me…") {draft = .init(value:.init(registration:model.chatGPT.activeID,topic:String(topic.prefix(300)),direction:"more"),isCurrent:isCurrent)}
-        }.controlSize(.small).help("Teach future reviews what matters to you")
-            .sheet(item:$draft) {ReviewRelevanceEditor(model:model,draft:$0)}
-            .onChange(of:model.chatGPT.activeID) {draft=nil}
+        HStack(spacing:8) {
+            Button("Feedback") {showingFeedback=true}.controlSize(.small).help("Explain what matters; save your words in PA memory")
+            if saved {Text("Saved in PA memory").font(.caption).foregroundStyle(.secondary)}
+        }
+        .sheet(isPresented:$showingFeedback) {ReviewFeedbackEditor(model:model,topic:topic,isCurrent:isCurrent,onSaved:{saved=true})}
+        .onChange(of:model.chatGPT.activeID) {showingFeedback=false;saved=false}
+    }
+}
+struct ReviewFeedbackEditor:View {
+    @Bindable var model:DashboardModel
+    var topic:String=""
+    var expected:PAMemory? = nil
+    var isCurrent:()->Bool={true}
+    var onSaved:()->Void={}
+    private let registration:String
+    @Environment(\.dismiss) private var dismiss
+    @State private var words:String
+    @State private var about:String
+    @State private var error:String?
+    init(model:DashboardModel,topic:String="",expected:PAMemory?=nil,isCurrent:@escaping ()->Bool={true},onSaved:@escaping ()->Void={}) {
+        self.model=model;self.topic=topic;self.expected=expected;self.isCurrent=isCurrent;self.onSaved=onSaved;registration=model.chatGPT.activeID;_words=State(initialValue:expected?.text ?? "");_about=State(initialValue:expected?.reviewContext ?? String(topic.prefix(300)))
+    }
+    var body:some View {
+        VStack(alignment:.leading,spacing:14) {
+            Text(expected == nil ? "Feedback" : "Edit review preference").font(.title2.weight(.semibold))
+            LabeledContent("About") {TextField("Optional topic",text:$about).textFieldStyle(.roundedBorder).accessibilityLabel("Feedback topic")}
+            Text("The topic helps your PA understand feedback such as ‘these can stay quiet’. You can make it broader or more specific.").font(.caption).foregroundStyle(.secondary)
+            Text("What should your PA learn about what is worth reviewing?").font(.headline)
+            TextEditor(text:$words).frame(height:140).font(.body).border(Color.secondary.opacity(0.25))
+            Text("For example: Assessment submission confirmations can stay quiet. Invitations to complete an assessment, new stages and results are important to me.").font(.caption).foregroundStyle(.secondary)
+            Text("Your exact words will be saved as a preference in PA memory. You can edit or disable it in Review preferences or Memory. Dismiss only means acknowledged.").font(.caption).foregroundStyle(.secondary)
+            if !model.assistant.memory.enabled {Text("Memory use is paused. The preference will be saved and used when you turn it back on.").font(.caption).foregroundStyle(.secondary)}
+            if let error {Text(error).font(.caption).foregroundStyle(.orange)}
+            HStack {
+                Button("Cancel") {dismiss()}.keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("Save to memory") {
+                    guard registration == model.chatGPT.activeID,isCurrent() else {error="The item or account changed. Reopen Feedback before saving.";return}
+                    guard model.assistant.memory.saveReviewPreference(words,registration:registration,expected:expected,about:about) else {error=model.assistant.memory.error;return}
+                    onSaved();dismiss()
+                }.keyboardShortcut(.defaultAction).disabled(words.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || words.count > 2000 || about.count > 300)
+            }
+        }.padding(24).frame(width:540).onChange(of:model.chatGPT.activeID) {dismiss()}
     }
 }
 struct ReviewRelevanceEditor:View {
@@ -122,7 +159,7 @@ struct ReviewRelevanceEditor:View {
     }
     var body:some View {
         VStack(alignment:.leading,spacing:16) {
-            Text("What matters to me").font(.title2.weight(.semibold))
+            Text("Review preferences").font(.title2.weight(.semibold))
             Text("Choose the kind of information this applies to. Future reviews and briefs will use your preference.").font(.callout)
             TextField("Topic or kind of request",text:$topic).textFieldStyle(.roundedBorder).accessibilityLabel("Relevance topic")
             Picker("Attention",selection:$direction) {Text("Less attention").tag("less");Text("Prioritise").tag("more")}.pickerStyle(.segmented)
@@ -145,29 +182,42 @@ struct ReviewRelevancePreferencesView:View {
     private let registration:String
     @Environment(\.dismiss) private var dismiss
     @State private var editing:ReviewPreferenceDraft?
+    @State private var editingMemory:PAMemory?
+    @State private var addingMemory=false
     @State private var error:String?
     init(model:DashboardModel) {self.model=model;registration=model.chatGPT.activeID}
     var body:some View {
         VStack(alignment:.leading,spacing:16) {
-            HStack {Text("What matters to me").font(.title2.weight(.semibold));Spacer();Button("Done") {dismiss()}}
-            Text("These are your explicit attention preferences. Your current projects, plans and relevant saved facts also help prioritise useful information.").font(.callout).foregroundStyle(.secondary)
-            List {
-                ForEach(model.emailSummaries.relevancePreferences.filter{$0.registration == registration}) {value in
-                    HStack {
-                        VStack(alignment:.leading) {Text(value.topic);Text(value.inactive ? "Inactive" : value.direction == "more" ? "Prioritise" : "Less attention").font(.caption).foregroundStyle(.secondary)}
-                        Spacer();Button("Edit") {editing = .init(value:value,expected:value)}
-                        Button(value.inactive ? "Restore" : "Disable") {
-                            do {var updated=value;updated.inactive.toggle();try model.emailSummaries.savePreference(updated,expected:value,model:model)} catch {self.error=error.localizedDescription}
+            HStack {Text("Review preferences").font(.title2.weight(.semibold));Spacer();Button("Done") {dismiss()}}
+            Text("Your feedback is part of PA memory. Each preference keeps your words and edit history. Dismiss simply clears the item; it does not teach a preference.").font(.callout).foregroundStyle(.secondary)
+            ScrollView {
+                VStack(alignment:.leading,spacing:12) {
+                    ForEach(model.assistant.memory.reviewPreferences(registration,includeRetired:true)) {value in
+                        HStack(alignment:.top) {
+                            VStack(alignment:.leading,spacing:5) {if let about=value.reviewContext {Text(about).font(.callout.weight(.semibold))};Text(value.text).textSelection(.enabled);Text(value.retiredAt == nil ? "Saved in PA memory" : "Disabled").font(.caption).foregroundStyle(.secondary)}
+                            Spacer()
+                            Menu {Button("Edit") {editingMemory=value};Button(value.retiredAt == nil ? "Disable" : "Restore") {
+                                guard model.assistant.memory.retire(value.id,retired:value.retiredAt == nil,expectedRevision:model.assistant.memory.revision) else {error=model.assistant.memory.error;return}
+                            }} label:{Image(systemName:"ellipsis")}.menuStyle(.borderlessButton).fixedSize()
+                        }.padding(12).background(Color.primary.opacity(0.04),in:RoundedRectangle(cornerRadius:10))
+                    }
+                    if model.assistant.memory.reviewPreferences(registration,includeRetired:true).isEmpty {Text("Use Feedback on an item to explain what matters to you, or add a preference below.").foregroundStyle(.secondary).padding(.vertical)}
+                    let legacy=model.emailSummaries.relevancePreferences.filter{$0.registration == registration}
+                    if !legacy.isEmpty {
+                        DisclosureGroup("Earlier topic preferences (\(legacy.count))") {
+                            ForEach(legacy) {value in
+                                HStack {VStack(alignment:.leading) {Text(value.topic);Text(value.inactive ? "Inactive" : value.direction == "more" ? "Prioritise" : "Less attention").font(.caption).foregroundStyle(.secondary)};Spacer();Button("Edit") {editing = .init(value:value,expected:value)}}.padding(.vertical,6)
+                            }
                         }
                     }
-                }
+                }.frame(maxWidth:.infinity,alignment:.leading)
             }
             if let error=error ?? model.emailSummaries.relevanceError {Text(error).font(.caption).foregroundStyle(.orange)}
             HStack {
-                Button("Add preference…") {editing = .init(value:.init(registration:registration,topic:"",direction:"more"))}
+                Button("Add preference…") {addingMemory=true}
                 if model.emailSummaries.canUndoPreference(registration) {Button("Undo last change") {do {try model.emailSummaries.undoPreference(model)} catch {self.error=error.localizedDescription}}}
                 Spacer()
             }
-        }.padding(24).frame(width:620,height:430).sheet(item:$editing) {ReviewRelevanceEditor(model:model,draft:$0)}.onChange(of:model.chatGPT.activeID) {dismiss()}
+        }.padding(24).frame(width:620,height:430).sheet(item:$editing) {ReviewRelevanceEditor(model:model,draft:$0)}.sheet(item:$editingMemory) {ReviewFeedbackEditor(model:model,expected:$0)}.sheet(isPresented:$addingMemory) {ReviewFeedbackEditor(model:model)}.onChange(of:model.chatGPT.activeID) {dismiss()}
     }
 }

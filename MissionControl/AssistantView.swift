@@ -522,16 +522,7 @@ struct BackgroundActivityView:View {
                             Text("Completion evidence: "+model.completedReminderHealth.detail)
                         }.font(.caption).foregroundStyle(.secondary).textSelection(.enabled).padding(.top,8)
                     }.padding(12)
-                    DisclosureGroup("Learning from dismissals") {
-                        VStack(alignment:.leading,spacing:8) {
-                            Text("Dismissed items count as acknowledged and stop repeated follow-ups. Similar dismissals also guide future reviews. Dismissal does not mean a task is complete; Undo restores attention.").font(.caption).foregroundStyle(.secondary)
-                            let feedback=model.emailSummaries.dismissalContext(model)
-                            if feedback.isEmpty {Text("No recent examples.").foregroundStyle(.secondary)}
-                            ForEach(Array(feedback.enumerated()),id:\.offset) {_,row in
-                                Text((row["subject"] ?? "Email")+" · "+(row["similarSenderDismissals"] ?? "1")+" dismissals").font(.caption)
-                            }
-                        }.padding(.top,8)
-                    }.padding(12)
+                    ReviewHistoryView(model:model)
                     Text("Last 20 runs for this account. Opening history uses no AI. 3PO must be open and the Mac awake.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,12)
                 }
             }

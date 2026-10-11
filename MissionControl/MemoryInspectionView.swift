@@ -9,6 +9,7 @@ struct PAMemoryOverviewView:View {
     var inspect:(PAMemory)->Void
     @State private var query=""
     @State private var filter:MemoryAvailability?
+    @State private var showingReviewPreferences=false
     private var rows:[MemoryInspectionRow] { MemoryInspection.rows(memory.records,permitted:Set(memory.permittedRecords.map(\.id)),registration:registration,topic:topic) }
     var body:some View {
         VStack(alignment:.leading,spacing:18) {
@@ -30,6 +31,9 @@ struct PAMemoryOverviewView:View {
                 Text("Focus prefers relevant life areas; it does not grant source access. A source reporting ‘completed’ does not complete an Apple reminder.").font(.caption).foregroundStyle(.secondary)
             }
             if let model {
+                GroupBox("Review preferences") {
+                    HStack {Text("Feedback you save in Review becomes an editable preference in this same memory notebook.").font(.caption).foregroundStyle(.secondary);Spacer();Button("View preferences") {showingReviewPreferences=true}}
+                }.sheet(isPresented:$showingReviewPreferences) {ReviewRelevancePreferencesView(model:model)}
                 GroupBox("Current source context") {
                     VStack(alignment:.leading,spacing:8) {
                         Text(model.assistant.contextEnabled ? "Source context is enabled for PA requests." : "Source context is off; source read tools are unavailable.")
@@ -84,6 +88,7 @@ struct PAMemoryEvidenceView:View {
         DisclosureGroup("Evidence and dates") {
             VStack(alignment:.leading,spacing:8) {
                 Text(record.attribution+" · "+record.provenance).font(.caption)
+                if record.reviewPreference == true {Text("Review preference · your exact feedback").font(.caption);if let about=record.reviewContext {Text("About: "+about).font(.caption)}}
                 if record.source == nil,let evidence=record.evidence { Text("“"+evidence+"”").textSelection(.enabled) }
                 if record.source != nil {
                     if sourcePermitted && record.sourceInvalidation != .forgotten {

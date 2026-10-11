@@ -5,6 +5,28 @@ import SwiftData
         let configuration = ModelConfiguration(isStoredInMemoryOnly:true)
         let container = try ModelContainer(for:CachedDashboard.self,configurations:configuration)
         let store = PAMemoryStore(container:container)
+        let reviewWords="Assessment submission confirmations can stay quiet. Assessment invitations, results and new stages are important to me."
+        precondition(store.saveReviewPreference(reviewWords,registration:"review-account"))
+        let preference=store.reviewPreferences("review-account")[0]
+        precondition(preference.text == reviewWords && preference.evidence == reviewWords && preference.source == nil && preference.kind == .preference && preference.explicit && preference.conversationID == nil)
+        let reviewReload=PAMemoryStore(container:container)
+        precondition(reviewReload.reviewPreferences("review-account") == [preference] && reviewReload.reviewPreferences("other").isEmpty)
+        precondition(reviewReload.selection("review-account",query:"coding assessment invitation",includeSources:false).records.first?["purpose"] == "review preference")
+        precondition(reviewReload.selection("review-account",query:"unrelated shopping sale",includeSources:false).records.isEmpty)
+        precondition(reviewReload.saveReviewPreference("Assessment results are important; routine submission receipts can stay quiet.",registration:"review-account",expected:preference))
+        let revised=reviewReload.reviewPreferences("review-account")[0]
+        precondition(revised.id != preference.id && revised.supersedes == preference.id && reviewReload.lineage(revised.id).count == 2 && reviewReload.records.first{$0.id == preference.id}?.evidence == reviewWords)
+        precondition(!reviewReload.saveReviewPreference("Stale overwrite",registration:"review-account",expected:preference))
+        precondition(reviewReload.retire(revised.id,retired:true,expectedRevision:reviewReload.revision) && reviewReload.reviewPreferences("review-account").isEmpty)
+        precondition(reviewReload.retire(revised.id,retired:false,expectedRevision:reviewReload.revision) && reviewReload.reviewPreferences("review-account").count == 1)
+        precondition(!reviewReload.saveReviewPreference("",registration:"review-account") && !reviewReload.saveReviewPreference(String(repeating:"x",count:2001),registration:"review-account"))
+        precondition(reviewReload.forget(revised.id) && reviewReload.reviewPreferences("review-account").isEmpty)
+        precondition(store.forget(preference.id))
+        precondition(store.saveReviewPreference("These can stay quiet, but new deadlines matter.",registration:"context-account",about:"Assessment submission confirmations"))
+        let contextual=store.reviewPreferences("context-account")[0]
+        precondition(contextual.text == "These can stay quiet, but new deadlines matter." && contextual.reviewContext == "Assessment submission confirmations" && store.selection("context-account",query:"Coding assessment submitted",includeSources:false).records.first?["reviewAbout"] == contextual.reviewContext)
+        precondition(store.selection("context-account",query:"Shopping discounts",includeSources:false).records.isEmpty)
+        precondition(store.forget(contextual.id))
         let initialRevision = store.revision
         let learned = LearnedMemory(turnID:"one",text:"Needs two weeks notice",kind:.preference,evidence:"I need two weeks notice")
         let messageDate = Date(timeIntervalSince1970:1_790_000_000)

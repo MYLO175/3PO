@@ -324,6 +324,29 @@ import Synchronization
         checks["invalid saved preferences are blocked and preserved without exposure"] = !invalid.relevanceReadable && invalid.preferences(registration).isEmpty && cache.data == invalidBytes
         try model.proactive.seedAdviceFixture([],model:model)
         try ReviewInboxEvaluation.seedEmailWorkPreview(model)
+        let words="Assessment submission confirmations can stay quiet. Assessment invitations and results are important to me."
+        guard model.assistant.memory.saveReviewPreference(words,registration:registration) else {throw SummaryFailure.invalid}
+        let reviewMemory=model.assistant.memory.reviewPreferences(registration).first!
+        var example=model.mailData.messages[0]
+        let assessmentRaw:[String:Any]=["id":"feedback-assessment","accountID":"fictional-mail","account":"Fictional Mail","messageID":10,"internetMessageID":"feedback-assessment@example.invalid","sender":"Assessment portal <fixture@example.invalid>","subject":"Orion Labs coding assessment invitation","received":now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
+        example=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:assessmentRaw))
+        let feedbackContext=model.emailSummaries.relevanceContext(example,model:model,body:"Please complete your Orion Labs coding assessment.")
+        checks["human feedback reaches actual assessment header and body with exact memory receipts"] = feedbackContext.memories.contains{$0["id"] == reviewMemory.id.uuidString && $0["text"] == words} && feedbackContext.memoryReceipts.contains{$0.id == reviewMemory.id.uuidString} && model.emailSummaries.relevanceContext(example,model:model,header:true).memories.contains{$0["id"] == reviewMemory.id.uuidString}
+        checks["feedback does not fill unrelated email context"] = !model.emailSummaries.relevanceContext(model.mailData.messages[0],model:model,body:"Orion project review attendance").memories.contains{$0["id"] == reviewMemory.id.uuidString}
+        var currentAssessment=EmailSummary(id:example.id,registration:registration,fingerprint:EmailSummary.fingerprint(example),summary:"Coding assessment invitation",attention:true,reason:"Complete coding assessment",evidence:"Please complete your Orion Labs coding assessment.",bodyFingerprint:"fixture",message:example,worthReading:true,needsReply:false,reviewPreferenceRevision:model.emailSummaries.reviewPreferenceStamp(example,model:model,evidence:"Coding assessment invitation Please complete your Orion Labs coding assessment."),reviewPolicyVersion:2)
+        checks["unchanged feedback does not repeatedly reassess saved email"] = !model.emailSummaries.preferenceNeedsRecheck(currentAssessment,message:example,model:model)
+        guard model.assistant.memory.saveReviewPreference("Assessment invitations matter; successful submission confirmations do not need review.",registration:registration,expected:reviewMemory) else {throw SummaryFailure.invalid}
+        checks["edited feedback schedules bounded reconsideration and invalidates old exact support"] = model.emailSummaries.preferenceNeedsRecheck(currentAssessment,message:example,model:model) && !model.memoryDependenciesAvailable(feedbackContext.memoryReceipts,use:.suggestions)
+        currentAssessment.dismissed=true;currentAssessment.dismissedSourceVersion=ReviewAcknowledgementRules.emailVersion(example,currentAssessment)
+        checks["feedback changes do not resurrect acknowledged concerns"] = !model.emailSummaries.preferenceNeedsRecheck(currentAssessment,message:example,model:model)
+        let revisedReview=model.assistant.memory.reviewPreferences(registration).first!
+        guard model.assistant.memory.retire(revisedReview.id,retired:true,expectedRevision:model.assistant.memory.revision) else {throw SummaryFailure.invalid}
+        checks["disabled feedback leaves current input but retains original human evidence"] = !model.emailSummaries.relevanceContext(example,model:model).memories.contains{$0["id"] == revisedReview.id.uuidString} && model.assistant.memory.lineage(revisedReview.id).count == 2
+        guard model.assistant.memory.saveReviewPreference("These can stay quiet, but invitations and new deadlines matter.",registration:registration,about:"Assessment submission confirmations") else {throw SummaryFailure.invalid}
+        let contextualReview=model.assistant.memory.reviewPreferences(registration).first!
+        let contextualInput=model.emailSummaries.relevanceContext(example,model:model,body:"Please complete your coding assessment.")
+        checks["contextual feedback retains its human-confirmed topic in actual targeted input"] = contextualInput.memories.contains{$0["id"] == contextualReview.id.uuidString && $0["text"] == "These can stay quiet, but invitations and new deadlines matter." && $0["reviewAbout"] == "Assessment submission confirmations"}
+        guard model.assistant.memory.retire(contextualReview.id,retired:true,expectedRevision:model.assistant.memory.revision) else {throw SummaryFailure.invalid}
         let reviewBase=model.reviewInboxPendingCount
         checks["review badge counts actionable email and excludes planned and completed email"] = reviewBase == 1 && model.reviewInbox.emails.count == 1 && model.reviewInbox.handled.count == 2
         checks["sidebar count-only path agrees with the full Review projection"] = model.reviewInboxPendingCount == model.reviewInbox.pendingCount
@@ -337,6 +360,11 @@ import Synchronization
         checks["review badge immediately drops a dismissed concern"] = model.reviewInbox.pendingCount == reviewBase-1
         model.emailSummaries.undoDismiss(model)
         checks["review badge restores dismissed concern on Undo"] = model.reviewInbox.pendingCount == reviewBase
+        let completedEmail=model.reviewInbox.handled.first{$0.0.id == "preview-2"}!
+        var bad=completedEmail.1;bad.handling?.native.title="Check whether risk assessment is required and complete it if needed"
+        checks["unrelated legacy assessment association is withheld without deleting its receipt"] = model.emailSummaries.handling(bad,message:completedEmail.0,model:model) == nil && bad.handling != nil
+        var quiet=completedEmail.1;quiet.attention=false
+        checks["informational confirmation cannot be marked handled by a native task"] = model.emailSummaries.handling(quiet,message:completedEmail.0,model:model) == nil
         let handledMail=model.reviewInbox.handled[0]
         model.emailSummaries.keepForReview(handledMail.1.id,model:model)
         checks["Keep in review restores a handled email to the count"] = model.reviewInbox.pendingCount == reviewBase+1
@@ -361,24 +389,35 @@ import Synchronization
         try model.nativeCreations.begin(creationRequest)
         checks["uncertain native save remains inside the counted card for outcome checking"] = model.reviewInbox.pendingCount == reviewBase && model.reviewCreationClaim(proposal)?.receipt == nil && model.reviewCreationClaim(proposal) != nil && model.reviewInbox.emailCards[0].discoveries == [proposal]
         try model.nativeCreations.complete(creationRequest,receipt:.init(requestID:creationRequest.id,registration:registration,kind:.reminder,itemID:"fictional-saved-reminder",title:"Fictional Orion reminder",destination:"Fixture",created:now,sourceScope:"fictional-list"))
-        checks["verified creation leaves history visible without inflating badge"] = model.reviewInbox.pendingCount == reviewBase && model.reviewInbox.discoveries.count == 1
+        checks["verified creation leaves active Review while preserving its canonical receipt"] = model.reviewInbox.pendingCount == reviewBase && model.reviewInbox.discoveries.isEmpty && model.proactive.state.records.count == 1 && model.reviewCreationClaim(proposal)?.receipt != nil
         let planned=model.reviewInbox.handled.first{$0.0.id == "preview-1"}!
         var plannedProposal=proposal;plannedProposal.id=UUID().uuidString;plannedProposal.mailID=planned.0.id;plannedProposal.kind="remove";plannedProposal.evidence=planned.1.evidence
         plannedProposal.sourceRevision=planned.1.fingerprint;plannedProposal.sourceAssessmentRevision=planned.1.adviceRevision(replied:planned.0.replied)
         plannedProposal.proposedRemoval = .init(target:.event(model.paOrientation!.calendar.events[0],writable:true),connection:"Fictional separate proposal for the same exact review.",timeZoneID:TimeZone.current.identifier)
         try model.proactive.seedAdviceFixture([proposal,plannedProposal],model:model)
         checks["grouped native proposal retains planned context without a second history card"] = model.reviewInbox.emailCards.first{$0.id == planned.0.id}?.handling == planned.2 && !model.reviewInbox.handled.contains{$0.0.id == planned.0.id} && model.reviewInbox.pendingCount == reviewBase+1
+        var uncertain=plannedProposal;uncertain.id=UUID().uuidString;uncertain.kind="reminder";uncertain.proposedRemoval=nil
+        try model.proactive.seedAdviceFixture([uncertain],model:model)
+        try model.nativeCreations.begin(.init(id:UUID(uuidString:uncertain.id)!,kind:.reminder,registration:registration))
+        checks["native handled status cannot hide an uncertain canonical creation claim"] = model.proactive.visible(uncertain,model:model) && !model.proactive.canReview(uncertain.id,model:model) && model.proactive.sourceDetails(uncertain,model:model) != nil
+        try model.proactive.seedAdviceFixture([plannedProposal],model:model)
         model.emailSummaries.keepForReview(planned.1.id,model:model)
         checks["Keep in review still overrides planned context on a grouped card"] = model.reviewInbox.emailCards.first{$0.id == planned.0.id}?.handling == nil && model.reviewInbox.emailCards.first{$0.id == planned.0.id}?.needsReview == true
         model.emailSummaries.keepForReview(planned.1.id,model:model,keep:false)
         let savedAssessments=model.emailSummaries.records
-        var informational=reviewMail.1;informational.attention=false;informational.needsReply=false;informational.worthReading=true;informational.replyDraft=nil
+        var informational=reviewMail.1;informational.attention=false;informational.needsReply=false;informational.worthReading=false;informational.replyDraft=nil
         var completedProposal=proposal;completedProposal.id=UUID().uuidString;completedProposal.sourceAssessmentRevision=informational.adviceRevision(replied:false)
         try model.emailSummaries.seedAdviceFixture([informational]);try model.proactive.seedAdviceFixture([completedProposal],model:model)
         let completedRequest=NativeCreationRequest(id:UUID(uuidString:completedProposal.id)!,kind:.reminder,registration:registration)
         try model.nativeCreations.begin(completedRequest)
         try model.nativeCreations.complete(completedRequest,receipt:.init(requestID:completedRequest.id,registration:registration,kind:.reminder,itemID:"fictional-completed-only",title:"Fictional created reminder",destination:"Fixture",created:now,sourceScope:"fictional-list"))
-        checks["completed-only email group stays visible as reviewed history with no pending badge"] = model.reviewInbox.emailCards.count == 1 && !model.reviewInbox.emailCards[0].needsReview && model.reviewInbox.pendingCount == 0
+        checks["completed-only quiet email group leaves the inbox with its receipt preserved"] = model.reviewInbox.emailCards.isEmpty && model.reviewInbox.pendingCount == 0 && model.reviewCreationClaim(completedProposal)?.receipt != nil
+        informational.worthReading=true
+        try model.emailSummaries.seedAdviceFixture([informational])
+        checks["older informational reading judgements await quiet-policy recheck without filling Review"] = model.reviewInbox.emailCards.isEmpty && model.reviewInbox.pendingCount == 0 && model.emailSummaries.records.count == 1
+        informational.reviewPolicyVersion=2
+        try model.emailSummaries.seedAdviceFixture([informational])
+        checks["freshly assessed worthwhile reading appears once without an invented task"] = model.reviewInbox.emailCards.count == 1 && model.reviewInbox.pendingCount == 1 && model.reviewInbox.emailCards[0].summary.attention == false
         try model.emailSummaries.seedAdviceFixture(savedAssessments);try model.proactive.seedAdviceFixture([proposal],model:model)
         _=model.assistant.queue.add(registration:registration,topicID:nil,prompt:"Fictional delegated work")
         let queued=model.assistant.queue.items.last!

@@ -160,7 +160,8 @@ struct LifeNotebook {
             let records=note.records.sorted { recordScore($0) == recordScore($1) ? ($0.reviewed == $1.reviewed ? $0.id.uuidString < $1.id.uuidString : $0.reviewed > $1.reviewed) : recordScore($0)>recordScore($1) }
             var facts:[[String:String]]=[]
             for record in records.prefix(6) {
-                let fact=["id":record.id.uuidString,"text":String(record.text.prefix(500)),"certainty":record.explicit || record.certainty == .stated ? "stated" : "inferred"]
+                var fact=["id":record.id.uuidString,"text":String(record.text.prefix(500)),"certainty":record.explicit || record.certainty == .stated ? "stated" : "inferred"]
+                if record.reviewPreference == true {fact["purpose"]="review preference";fact["reviewAbout"]=record.reviewContext ?? ""}
                 var candidate=value
                 candidate["areas"]=included+[["area":note.area.rawValue,"title":note.area.title,"facts":facts+[fact],"totalFacts":note.records.count]]
                 if encoded(candidate).utf8.count <= maxBytes { facts.append(fact) }

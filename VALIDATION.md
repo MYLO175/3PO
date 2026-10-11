@@ -1,5 +1,13 @@
 # Validation
 
+## 11 October — Simple Review and feedback memory
+
+- Focused summary, Review, proactive, briefing, advice-dependency, memory-store, PA-memory and inspection suites passed. Final actual-service consumer checks passed 137/137 with zero AI/native/personal-state changes.
+- Final configured-model fictional relevance 14/14 and email/native matching 17/17 passed across four requests on the existing gpt-6-luna. Cases distinguish quiet receipts, invitations, new stages/results and coding versus risk assessments. Strict source evidence remains required; intermediate fixture-alias and missing-quote failures and their corrections are recorded in STATUS.
+- Native fictional Feedback/About/Save/Edit/Disable/Restore and one Dismiss/Undo verified. Signed build/install/readback passed at 23:08; installed Review shows one retained lecture-removal card, useful approval/source controls and no addressed section or old informational backlog. Original conversation/draft and earlier topic preferences retained; no fictional personal preference saved.
+- Older informational judgements await the next eligible bounded policy recheck. No personal manual heartbeat or Apple mutation. Sustained real relevance and semantic consolidation remain separate. Reports: /tmp/missioncontrol-advice-context-evaluation.json, /tmp/missioncontrol-relevance-evaluation.json and /tmp/missioncontrol-email-work-evaluation.json.
+
+
 ## 11 October — Email completion attention
 
 - Pure strict resolution checks 80/80; current consumer checks 125/125; configured-model 12/12 matching/purpose assertions across two final fictional requests.

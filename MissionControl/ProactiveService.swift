@@ -87,7 +87,7 @@ import SwiftData
     }
     func visible(_ record:PADiscovery,model:DashboardModel)->Bool {
         guard record.reviewState != "approved",reviewEvidenceAvailable(record.id,model:model,allowResolved:record.reviewState == "pending" || model.reviewCreationClaim(record).map{$0.receipt == nil} == true) else { return false }
-        if record.sourceKind == nil,record.nativeTarget == nil,record.reviewState != "pending",let pair=model.emailSummaries.highlights(model).first(where:{$0.0.id == record.mailID}),model.emailSummaries.handling(pair.1,message:pair.0,model:model) != nil {return false}
+        if record.sourceKind == nil,record.nativeTarget == nil,record.reviewState != "pending",model.reviewCreationClaim(record).map{$0.receipt == nil} != true,let pair=model.emailSummaries.highlights(model).first(where:{$0.0.id == record.mailID}),model.emailSummaries.handling(pair.1,message:pair.0,model:model) != nil {return false}
         if let change=record.proposedChange,record.reviewState != "pending",!record.needsDateClarification {
             return change.date() != nil && change.target.matches(events:(model.paOrientation?.calendar ?? model.calendarData).events,reminders:model.reminderData.reminders,excludedCalendars:model.assistant.excludedCalendars,excludedLists:model.assistant.excludedLists)
         }
@@ -267,7 +267,7 @@ import SwiftData
                 input["earlierProposals"]=ProactiveRules.earlierRows(earlier,targets:targets)
                 input["completedReminders"]=completed.enumerated().map{["id":"completed_\($0.offset)","title":$0.element.item.title,"due":DateRules.reminderDue($0.element.item),"completed":$0.element.completedAt.ISO8601Format()]}
                 input["completionCoverage"]=completionError == nil ? "At most80recently completed permitted reminders from the last30days; bounded local evidence. Missing entries are unknown." : "Completed reminders unavailable; no completion evidence supplied. Never infer completion from absence."
-                let feedback=model.emailSummaries.dismissalContext(model)
+                let feedback:[[String:String]]=[]
                 input["reviewFeedback"]=feedback
                 let relevanceQuery=(emails.map{$0.0.subject+" "+$0.1.summary+" "+$0.1.evidence}+whatsapp.map{$0.chatName+" "+$0.sender+" "+$0.text}).joined(separator:"\n")
                 input["attentionPreferences"]=model.emailSummaries.preferences(registration,query:relevanceQuery).map{["topic":$0.topic,"attention":$0.direction]}
@@ -288,7 +288,7 @@ import SwiftData
                 try Task.checkCancellation()
                 guard BriefingRules.day(.now) == day,enabled, (!heartbeat || ((manual || model.heartbeat.enabled) && heartbeatRevision == model.heartbeat.controlsRevision)), revision == model.sourceRevision,projectsRevision == assistant.projects.revision, scope == self.scope(model), waScope == model.whatsapp.scope(for:registration), whatsappWindow.map({$0 == ProactiveRules.whatsappWindow(model.whatsapp.messages,chats:whatsappChats,identity:waScope.linkedIdentity)}) ?? true, whatsapp.allSatisfy({ original in model.whatsapp.messages.contains { $0.id == original.itemID && $0.chat == original.chatID && SourceContextRules.revision($0) == original.revision } }), registration == model.chatGPT.activeID, memoryCapture == model.automaticMemory(memoryUse,query:memoryQuery,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady) && model.memoryDependenciesAvailable(memoryCapture.dependencies,use:memoryUse), preferences == assistant.preferences,context == contextRevision(model,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady), selectedModel == model.chatGPT.selectedModel,
                       currentEmailInputs() else { throw ActionFailure.message("Source or PA settings changed during discovery; no suggestion delivered.") }
-                guard acknowledgementContext == model.reviewAcknowledgements(use:memoryUse,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady),feedback == model.emailSummaries.dismissalContext(model),completedRevision == EmailNativeEvidence.hash(model.completedReminders) else {throw ActionFailure.message("Review feedback or completion evidence changed; no stale review result saved.")}
+                guard acknowledgementContext == model.reviewAcknowledgements(use:memoryUse,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady),completedRevision == EmailNativeEvidence.hash(model.completedReminders) else {throw ActionFailure.message("Review feedback or completion evidence changed; no stale review result saved.")}
                 guard model.whatsappDependenciesAvailable(earlierWhatsApp,use:memoryUse) else {throw ActionFailure.message("Earlier message context changed during comparison; no stale replacement saved.")}
                 let permittedEarlier=Set(earlier.values.filter{self.sourceEvidenceAvailable($0,model:model)}.map(\.id))
                 let decoded:[PADiscovery]

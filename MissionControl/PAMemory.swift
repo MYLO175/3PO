@@ -103,6 +103,10 @@ struct PAMemory: Codable, Identifiable, Equatable {
     /// Human-reviewed identity only. Never assigned by a source-learning model.
     var commitmentGroup:UUID? = nil
     var commitmentGroupRevision:UUID? = nil
+    /// Explicit words saved by the human in Review feedback. The same canonical memory/history is used everywhere.
+    var reviewPreference:Bool? = nil
+    /// Human-confirmed subject of the feedback, not an assertion copied from the source.
+    var reviewContext:String? = nil
     var allSourceEvidence:[MemorySourceEvidence] { source.map{[$0] + (supportingSources ?? [])} ?? [] }
     static func suppressionKey(_ source:MemorySourceEvidence)->String? {
         let fields=[source.identity.kind.rawValue,source.identity.accountID,source.identity.containerID,source.identity.itemID,source.identity.linkedIdentity ?? "",source.revision]
@@ -177,6 +181,7 @@ enum MemoryRetrieval {
             if let revision=memory.commitmentGroupRevision { value["humanLinkedPlanRevision"]=revision.uuidString }
         }
         value["durability"]=memory.durability?.rawValue ?? "legacy"
+        if memory.reviewPreference == true { value["purpose"]="review preference";value["reviewAbout"]=memory.reviewContext ?? "" }
         if let connections=memory.connections, let data=try? encoder.encode(connections) { value["connections"]=String(data:data,encoding:.utf8) }
         return value
     }
@@ -206,7 +211,7 @@ enum MemoryRetrieval {
             }
         }
         func relevance(_ memory:PAMemory)->Int {
-            let text=memory.text+" "+(memory.connections ?? []).map{$0.subject+" "+$0.relation+" "+$0.object}.joined(separator:" ")
+            let text=memory.text+" "+(memory.reviewPreference == true ? (memory.reviewContext ?? "") : "")+" "+(memory.connections ?? []).map{$0.subject+" "+$0.relation+" "+$0.object}.joined(separator:" ")
             let direct=tokens(text).intersection(terms).reduce(0) { $0+min($1.count,12)*5 }
             let nearby=(connected.contains(memory.id) || planConnected.contains(memory.id)) ? 30 : 0
             let focused=memory.organisation?.areas.contains(where:focus.contains) == true ? 15 : 0
@@ -222,7 +227,7 @@ enum MemoryRetrieval {
             return lhs.id.uuidString < rhs.id.uuidString
         }
         func relevant(_ memory:PAMemory)->Bool {
-            let text=memory.text+" "+(memory.connections ?? []).map{$0.subject+" "+$0.relation+" "+$0.object}.joined(separator:" ")
+            let text=memory.text+" "+(memory.reviewPreference == true ? (memory.reviewContext ?? "") : "")+" "+(memory.connections ?? []).map{$0.subject+" "+$0.relation+" "+$0.object}.joined(separator:" ")
             return !tokens(text).isDisjoint(with:terms) || connected.contains(memory.id) || planConnected.contains(memory.id) ||
                 (terms.isEmpty && memory.organisation?.areas.contains(where:focus.contains) == true)
         }
@@ -238,7 +243,7 @@ enum MemoryRetrieval {
             result.append(value); used += data.count + 1
             var why:[String]=[]
             if pinned.contains(where:{$0.id == memory.id}) { why.append("Core confirmed preference") }
-            let text=memory.text+" "+(memory.connections ?? []).map{$0.subject+" "+$0.relation+" "+$0.object}.joined(separator:" ")
+            let text=memory.text+" "+(memory.reviewPreference == true ? (memory.reviewContext ?? "") : "")+" "+(memory.connections ?? []).map{$0.subject+" "+$0.relation+" "+$0.object}.joined(separator:" ")
             if !tokens(text).isDisjoint(with:terms) { why.append("Words match your question") }
             if connected.contains(memory.id) { why.append("Related recorded connection, within two hops") }
             if workspaceConnected.contains(memory.id) { why.append("Linked to a matching saved project or life item") }
