@@ -1,6 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-xcrun swiftc -module-cache-path /tmp/missioncontrol-test-modules MissionControl/Models.swift MissionControl/ActionModels.swift MissionControl/NativeCreation.swift MissionControl/NativeEditing.swift Tests/NativeEditChecks.swift -o /tmp/missioncontrol-native-edit-checks
-/tmp/missioncontrol-native-edit-checks
+source scripts/test-env.sh
+missioncontrol_test_init native-editing
+xcrun swiftc -module-cache-path "$MISSIONCONTROL_TEST_MODULE_CACHE" MissionControl/Models.swift MissionControl/ActionModels.swift MissionControl/NativeCreation.swift MissionControl/NativeEditing.swift Tests/NativeEditChecks.swift -o "$MISSIONCONTROL_TEST_BIN"
+"$MISSIONCONTROL_TEST_BIN"

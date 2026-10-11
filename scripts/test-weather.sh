@@ -1,6 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-xcrun swiftc -module-cache-path /tmp/missioncontrol-test-modules MissionControl/Weather.swift Tests/WeatherChecks.swift -o /tmp/missioncontrol-weather-checks
-/tmp/missioncontrol-weather-checks
+source scripts/test-env.sh
+missioncontrol_test_init weather
+xcrun swiftc -module-cache-path "$MISSIONCONTROL_TEST_MODULE_CACHE" MissionControl/Weather.swift Tests/WeatherChecks.swift -o "$MISSIONCONTROL_TEST_BIN"
+"$MISSIONCONTROL_TEST_BIN"
