@@ -1,7 +1,7 @@
 import Foundation
 
 /// One foreground turn owns all issued identities and its Mail cursor. Never shared with background jobs.
-@MainActor final class PAToolSession {
+@MainActor final class PAToolSession: AssistantToolSession {
     let model: DashboardModel
     let human: String
     let humanContext: String
@@ -11,6 +11,7 @@ import Foundation
     let turnID: UUID
     let registration: String
     let localMail: MailLookup
+    var mailCursor: any AssistantMailCursor { localMail }
     var calendar = CalendarSnapshot(sources:[],events:[])
     var reminders = ReminderSnapshot(sources:[],reminders:[])
     var emails: [String:MailMessage] = [:]

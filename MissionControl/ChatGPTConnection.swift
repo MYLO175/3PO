@@ -46,7 +46,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
 }
 
-@MainActor @Observable final class ChatGPTConnection {
+@MainActor @Observable final class ChatGPTConnection: PAInferenceConnection {
     var accounts: [ChatGPTAccountLabel] = []
     var activeID: String = UserDefaults.standard.string(forKey: "chatgptActiveClient") ?? ""
     var models: [ChatGPTModel] = []
