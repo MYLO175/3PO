@@ -134,8 +134,8 @@ import SwiftData
         self.clock=clock
         self.deviceState=deviceState
         do {
-            if let record=try container?.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first(where:{$0.key == "paHeartbeat"}) {
-                state = try JSONDecoder().decode(PAHeartbeatState.self,from:record.data)
+            if let record = try LocalRecordRepository.read("paHeartbeat", container: container) {
+                state = try JSONDecoder().decode(PAHeartbeatState.self,from: record)
                 state.accounts = state.accounts.mapValues{PAHeartbeatRules.recovered($0,now:clock(),minutes:intervalMinutes)}
             }
         } catch { readable = false; status = "Saved background-review state unavailable; original record retained." }
@@ -332,10 +332,7 @@ import SwiftData
     }
     private func save() throws {
         guard let container else { throw SummaryFailure.invalid }
-        let context=container.mainContext,data=try JSONEncoder().encode(state)
-        if let record=try context.fetch(FetchDescriptor<CachedDashboard>()).first(where:{$0.key == "paHeartbeat"}) { record.data=data;record.updated = .now }
-        else { context.insert(CachedDashboard(key:"paHeartbeat",data:data)) }
-        do {try context.save()} catch {context.rollback();throw error}
+        try LocalRecordRepository(container: container).save(state, key: "paHeartbeat")
     }
     #if DEBUG
     func seedHistoryPreview(_ registration:String) {
