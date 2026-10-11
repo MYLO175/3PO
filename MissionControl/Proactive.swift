@@ -83,7 +83,7 @@ enum ReviewAcknowledgementRules {
     static func emailVersion(_ message:MailMessage,_ summary:EmailSummary)->String {
         // A regenerated summary, display-name recovery, read flag or draft edit
         // does not create a new request. Changed source content/identity does.
-        DiscoveryNativeTarget.fingerprint([message.id,message.accountID,message.internetMessageID,message.subject,message.received.ISO8601Format(),summary.bodyFingerprint ?? summary.fingerprint])
+        EmailSummary.sourceVersion(message,summary)
     }
     static func emailDismissed(_ summary:EmailSummary,message:MailMessage,registration:String)->Bool {
         guard summary.registration == registration,summary.id == message.id,summary.dismissed == true,summary.fingerprint == EmailSummary.fingerprint(message) else {return false}

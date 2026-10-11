@@ -17,6 +17,7 @@ struct ReviewInboxProjection {
     var emailCards:[ReviewInboxEmailCard]
     var standaloneDiscoveries:[PADiscovery]
     var handled:[(MailMessage,EmailSummary,EmailHandling)]
+    var resolved:[(MailMessage,EmailSummary,EmailResolution)]
     var pending:[PAQueuedRequest]
     var pendingCount:Int
 }
@@ -55,7 +56,7 @@ extension DashboardModel {
         let handled:[(MailMessage,EmailSummary,EmailHandling)]=includeHandled ? highlights.compactMap {message,summary in !cardIDs.contains(message.id) ? emailSummaries.handling(summary,message:message,model:self).map{(message,summary,$0)} : nil} : []
         let pending=PAQueueRules.handoffs(assistant.queue.items,registration:chatGPT.activeID)
         let count=questions.count+learning.count+standalone.filter{!reviewDiscoveryCompleted($0)}.count+emailCards.filter(\.needsReview).count+pending.filter{$0.state == .needsAnswer || $0.state == .interrupted}.count
-        return .init(questions:questions,learningQuestions:learning,discoveries:discoveries,emails:emails,emailCards:emailCards,standaloneDiscoveries:standalone,handled:handled,pending:pending,pendingCount:count)
+        return .init(questions:questions,learningQuestions:learning,discoveries:discoveries,emails:emails,emailCards:emailCards,standaloneDiscoveries:standalone,handled:handled,resolved:includeHandled ? emailSummaries.resolved(self) : [],pending:pending,pendingCount:count)
     }
 }
 struct ReviewInboxBadge:View {
@@ -132,7 +133,7 @@ struct PATasksView: View {
     }
     @State private var showingRelevance=false
     var body: some View {
-        let inbox=model.reviewInbox,questions=inbox.questions,learningQuestions=inbox.learningQuestions,discoveries=inbox.discoveries,emails=inbox.emails,emailCards=inbox.emailCards,standaloneDiscoveries=inbox.standaloneDiscoveries,handled=inbox.handled,pending=inbox.pending
+        let inbox=model.reviewInbox,questions=inbox.questions,learningQuestions=inbox.learningQuestions,discoveries=inbox.discoveries,emails=inbox.emails,emailCards=inbox.emailCards,standaloneDiscoveries=inbox.standaloneDiscoveries,handled=inbox.handled,resolved=inbox.resolved,pending=inbox.pending
         return VStack(alignment:.leading,spacing:12) {
             HStack {
                 Label("Review inbox",systemImage:"tray.full").font(.title3.weight(.semibold))
@@ -186,7 +187,7 @@ struct PATasksView: View {
                                 Text("Inferred connection to “"+handling.native.title+"” · "+handling.reason).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                                 Button("Keep in review") {model.emailSummaries.keepForReview(summary.id,model:model)}.buttonStyle(.borderless).font(.caption)
                             }
-                            if summary.keepInReview == true {HStack {Text("Kept in review by you").font(.caption).foregroundStyle(.secondary);Button("Allow planned status") {model.emailSummaries.keepForReview(summary.id,model:model,keep:false)}.buttonStyle(.borderless).font(.caption)}}
+                            if summary.keepInReview == true {HStack {Text("Kept in review by you").font(.caption).foregroundStyle(.secondary);Button("Use inferred status") {model.emailSummaries.keepForReview(summary.id,model:model,keep:false)}.buttonStyle(.borderless).font(.caption)}}
                             if let reply=summary.replyDraft {
                                 VStack(alignment:.leading,spacing:5) {
                                     Text("Suggested reply").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -235,6 +236,27 @@ struct PATasksView: View {
                             }
                         }
                     }
+                    if !resolved.isEmpty {
+                        DisclosureGroup("Addressed by later email (\(resolved.count))") {
+                            ForEach(resolved,id:\.0.id) {message,summary,value in
+                                VStack(alignment:.leading,spacing:8) {
+                                    Label("Addressed · confirmed by email",systemImage:"checkmark.circle").font(.caption).foregroundStyle(.secondary)
+                                    Text(message.subject).font(.callout.weight(.semibold))
+                                    ReviewSourceLabel(details:.email(message))
+                                    Text(value.reason).font(.callout).textSelection(.enabled)
+                                    DisclosureGroup("Evidence") {
+                                        Text("Earlier request: “"+value.requestQuote+"”").textSelection(.enabled)
+                                        Text("Later confirmation: “"+value.confirmation.quote+"”").textSelection(.enabled)
+                                        if let confirmation=model.emailSummaries.sourceAssessments(model).first(where:{$0.0.id == value.confirmation.messageID})?.0 {
+                                            ReviewSourceLabel(details:.email(confirmation),showsTitle:true)
+                                            Button("Open confirmation") {model.select(confirmation)}.controlSize(.small)
+                                        }
+                                    }
+                                    HStack {Button("Original request") {model.select(message)};Button("Keep in review") {model.emailSummaries.keepForReview(summary.id,model:model)}}.controlSize(.small)
+                                }.taskCard()
+                            }
+                        }
+                    }
                     if !pending.isEmpty { Text("Delegated work").font(.headline) }
                     ForEach(pending) { item in
                         VStack(alignment:.leading,spacing:6) {
@@ -245,7 +267,7 @@ struct PATasksView: View {
                             if item.state != .running { HStack { if item.state == .waiting { Button("Continue queue") { model.assistant.resumeQueue(model:model) }.disabled(model.assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }; Button("Remove") { model.assistant.discardQueued(item.id) } }.controlSize(.small) }
                         }.taskCard()
                     }
-                    if emailCards.isEmpty && standaloneDiscoveries.isEmpty && pending.isEmpty && handled.isEmpty && questions.isEmpty && learningQuestions.isEmpty {
+                    if emailCards.isEmpty && standaloneDiscoveries.isEmpty && pending.isEmpty && handled.isEmpty && resolved.isEmpty && questions.isEmpty && learningQuestions.isEmpty {
                         ContentUnavailableView("Nothing waiting for review",systemImage:"checkmark.circle",description:Text("Proposed changes, useful updates and prepared work appear here when enabled sources reveal something useful."))
                     }
                 }.frame(maxWidth:.infinity,alignment:.leading)

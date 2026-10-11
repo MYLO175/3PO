@@ -42,6 +42,7 @@ import UserNotifications
     }
     func savedMorning(_ model:DashboardModel)->DailyBriefing? { morningAnchor(model) }
     func freshnessNote(_ record:DailyBriefing,model:DashboardModel,checkAcknowledgements:Bool = true)->String? {
+        if record.emailResolutionRevision.map({$0 != model.emailSummaries.resolutionRevision(model)}) ?? !model.emailSummaries.resolutionContext(model).isEmpty {return "An earlier email request or its completion evidence changed. Update the brief for current advice."}
         if checkAcknowledgements && (record.reviewAcknowledgementRevision.map{$0 != model.reviewAcknowledgementRevision} ?? model.hasReviewAcknowledgements) {return "Your Review inbox choices changed. Update the brief for current advice."}
         if checkAcknowledgements,let receipts=record.reviewAcknowledgementReceipts,!receipts.isEmpty {
             let current=model.reviewAcknowledgements(use:.brief).map(ReviewAcknowledgementReceipt.init)
@@ -58,8 +59,8 @@ import UserNotifications
     private func sourceEvidenceAvailable(_ record:DailyBriefing,model:DashboardModel)->Bool {
         changedSourceKinds(record,model:model).isEmpty
     }
-    func currentEmails(_ model:DashboardModel,mailAccounts:Set<String>? = nil,includeAcknowledged:Bool = false)->[(MailMessage,EmailSummary)] {
-        model.emailSummaries.highlights(model).filter { message,summary in
+    func currentEmails(_ model:DashboardModel,mailAccounts:Set<String>? = nil,includeAcknowledged:Bool = false,whatsappReady:Bool = true)->[(MailMessage,EmailSummary)] {
+        model.emailSummaries.highlights(model,use:.brief,mailAccounts:mailAccounts,whatsappReady:whatsappReady).filter { message,summary in
             (mailAccounts?.contains(message.accountID) ?? true) && summary.fingerprint == EmailSummary.fingerprint(message) && (includeAcknowledged || !model.acknowledgedEmail(message,summary))
         }
     }
@@ -67,6 +68,9 @@ import UserNotifications
         let emails=currentEmails(model,includeAcknowledged:true)
         return Set(record.sources.compactMap { source -> String? in
             guard let revision=source.contentRevision else { return nil }
+            if source.kind == "mailResolution" {
+                return model.emailSummaries.resolved(model,use:.brief).contains{$0.2.confirmation.messageID == source.originalID && EmailNativeEvidence.hash($0.2) == revision} ? nil : "mail"
+            }
             if source.kind == "mail" {
                 return emails.contains{$0.0.id == source.originalID && $0.1.adviceRevision(replied:$0.0.replied) == revision} ? nil : "mail"
             }
@@ -229,7 +233,9 @@ import UserNotifications
                 let whatsappIdentity=model.whatsapp.linkedIdentity
                 let whatsappAccess=model.whatsapp.access(for:registration)
                 let acknowledgementRevision=model.reviewAcknowledgementRevision
+                let resolutionRevision=model.emailSummaries.resolutionRevision(model)
                 @MainActor func validatePreparation() throws {
+                    guard resolutionRevision == model.emailSummaries.resolutionRevision(model) else {throw BriefingContextChanged(kinds:["mail"])}
                     guard acknowledgementRevision == model.reviewAcknowledgementRevision else {throw BriefingContextChanged(kinds:["review"])}
                     let checks: [(Bool,String)] = [
                         (registration == model.chatGPT.activeID,"account"),
@@ -303,8 +309,13 @@ import UserNotifications
                     input["localWeather"] = model.weather.context(now:now)
                     if model.weather.enabled, model.weather.allowed, let forecast = model.weather.forecast, forecast.usable(now:now) { sources.append(.init(id:"weather_0",label:"Nearby forecast · Open-Meteo",kind:"weather",date:forecast.fetched,originalID:nil)) }
                 }
-                let emails = model.emailSummaries.enabled && !recovery.omittedKinds.contains("mail") ? currentEmails(model,mailAccounts:mailReview?.accountIDs) : []
+                let emails = model.emailSummaries.enabled && !recovery.omittedKinds.contains("mail") ? currentEmails(model,mailAccounts:mailReview?.accountIDs,whatsappReady:whatsappReady && !recovery.omittedKinds.contains("whatsapp")) : []
                 let staleEmailCount=model.emailSummaries.enabled ? model.emailSummaries.highlights(model).filter{mailReview?.accountIDs.contains($0.0.accountID) ?? true}.filter{$0.1.fingerprint != EmailSummary.fingerprint($0.0)}.count : 0
+                let resolvedEmails=recovery.omittedKinds.contains("mail") ? [] : Array(model.emailSummaries.resolved(model,mailAccounts:mailReview?.accountIDs,use:.brief,whatsappReady:whatsappReady && !recovery.omittedKinds.contains("whatsapp")).prefix(24))
+                input["resolvedEmailRequests"]=resolvedEmails.enumerated().map {index,row in
+                    ["id":"resolved_\(index)","subject":row.0.subject,"requestQuote":row.2.requestQuote,"confirmationQuote":row.2.confirmation.quote,"reason":row.2.reason,"status":"Earlier email request addressed; do not repeat the submission task. Apple items were not changed. Results and later-stage requests remain separate."]
+                }
+                sources += resolvedEmails.enumerated().map {index,row in .init(id:"resolved_\(index)",label:row.0.account+" · Confirmation addressing "+row.0.subject,kind:"mailResolution",date:row.2.created,originalID:row.2.confirmation.messageID,contentRevision:EmailNativeEvidence.hash(row.2))}
                 input["emailSummaries"] = emails.prefix(40).enumerated().map { ["id":"mail_\($0.offset)","received":$0.element.0.received.ISO8601Format(),"summary":$0.element.1.summary,"reason":$0.element.1.reason,"evidence":$0.element.1.evidence,"attention":EmailHighlightRules.needsAction($0.element.1,replied:$0.element.0.replied),"needsReply":$0.element.1.needsReply == true && !$0.element.0.replied,"replied":$0.element.0.replied,"assessmentCategory":EmailHighlightRules.category($0.element.1,replied:$0.element.0.replied),"personalRelevanceReason":$0.element.1.personalRelevance?.reason ?? "","followUpDate":$0.element.1.followUpDate ?? "none","followUpEvidence":$0.element.1.followUpEvidence ?? ""] as [String:Any] }
                 sources += emails.prefix(40).enumerated().map { .init(id: "mail_\($0.offset)", label: $0.element.0.account + " · " + $0.element.0.subject, kind: "mail", date: $0.element.0.received, originalID: $0.element.0.id,contentRevision:$0.element.1.adviceRevision(replied:$0.element.0.replied)) }
                 var whatsappCoverage=""
@@ -381,7 +392,7 @@ import UserNotifications
                 guard BriefingRules.day(.now) == day, !live || morningAnchor(model)?.id == morning?.id else { throw ActionFailure.message("The day or saved morning brief changed during preparation. Update again for the current day.") }
                 try validateMessages()
                 let items = try BriefingRules.decode(response, allowedSources: Set(sources.map(\.id)))
-                let record = DailyBriefing(id: registration + ":" + day + ":" + UUID().uuidString, registration: registration, day: day, created: .now, items: items, sources: sources, coverage: coverage, sourceScope:scope(model), message:try BriefingRules.message(response),morningID:live ? morning?.id : nil,heartbeatID:heartbeatID,widgetOnly:live && morning == nil,memoryDependencies:memoryCapture.dependencies,whatsappDependencies:whatsappDependencies,reviewAcknowledgementRevision:acknowledgementRevision,reviewAcknowledgementReceipts:acknowledgementContext.map(ReviewAcknowledgementReceipt.init))
+                let record = DailyBriefing(id: registration + ":" + day + ":" + UUID().uuidString, registration: registration, day: day, created: .now, items: items, sources: sources, coverage: coverage, sourceScope:scope(model), message:try BriefingRules.message(response),morningID:live ? morning?.id : nil,heartbeatID:heartbeatID,widgetOnly:live && morning == nil,memoryDependencies:memoryCapture.dependencies,whatsappDependencies:whatsappDependencies,reviewAcknowledgementRevision:acknowledgementRevision,reviewAcknowledgementReceipts:acknowledgementContext.map(ReviewAcknowledgementReceipt.init),emailResolutionRevision:resolutionRevision)
                 let question=heartbeat ? try BriefingRules.reviewQuestion(response,snapshot:record) : nil
                 let previous = state
                 if let question,BriefingRules.unreportedQuestion(question,prior:state.reviewQuestions ?? []) {
@@ -413,6 +424,7 @@ import UserNotifications
         return question.sourceIDs.allSatisfy {id in
             guard let source=question.snapshot.sources.first(where:{$0.id == id}) else {return false}
             if source.kind == "whatsapp" {return whatsappReady}
+            if source.kind == "mailResolution",let mailAccounts {return model.emailSummaries.resolved(model,mailAccounts:mailAccounts,use:use,whatsappReady:whatsappReady).contains{$0.2.confirmation.messageID == source.originalID}}
             if source.kind == "mail",let mailAccounts {return currentEmails(model,mailAccounts:mailAccounts,includeAcknowledged:true).contains{$0.0.id == source.originalID}}
             return true
         }

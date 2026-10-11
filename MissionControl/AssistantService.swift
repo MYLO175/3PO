@@ -371,6 +371,7 @@ import Observation
         let lifeFocus=response.focusAreas
         let memoryRevision = memory.revision
         let acknowledgementRevision = model.reviewAcknowledgementRevision
+        let resolutionRevision = model.emailSummaries.resolutionRevision(model)
         let acknowledgementContext = setupMode ? [] : model.reviewAcknowledgements()
         let projectRevision = projects.revision
         let capturedSourceMemoryIDs=memory.permittedRecords.filter{$0.source != nil && MemoryRules.usable($0,registration:registration)}.map(\.id)
@@ -420,11 +421,12 @@ import Observation
             var expectedMemory = memoryRevision
             var expectedProjects = projectRevision
             var expectedAcknowledgements = acknowledgementRevision
+            var expectedResolution = resolutionRevision
             var expectedAcknowledgementContext = acknowledgementContext
             var expectedSourceMemoryIDs=Set(capturedSourceMemoryIDs)
             let expectedWeather = weatherScope
             @MainActor func validOwnership() -> Bool {
-                registration == connection.activeID && (setupMode || expectedAcknowledgements == model.reviewAcknowledgementRevision) && (!setupMode || (setupActive(contextID) && profileSession(contextID) == response.profileSessionID)) && selectedModel == connection.selectedModel && capturedPreferences == preferences && capturedName == displayName && expectedMemory == memory.revision && expectedProjects == projects.revision && expectedSourceMemoryIDs == Set(memory.permittedRecords.filter{$0.source != nil && MemoryRules.usable($0,registration:registration)}.map(\.id)) && expectedWeather == model.weather.scope && whatsappScope == model.whatsapp.scope(for:connection.activeID) && topicFocus == (self.conversation(contextID)?.focus ?? "") && topicAreas == (self.conversation(contextID)?.notebookAreas ?? []) && sourceEnabled == contextEnabled && calendars == excludedCalendars && lists == excludedLists && accounts == excludedAccounts
+                registration == connection.activeID && (setupMode || (expectedAcknowledgements == model.reviewAcknowledgementRevision && expectedResolution == model.emailSummaries.resolutionRevision(model))) && (!setupMode || (setupActive(contextID) && profileSession(contextID) == response.profileSessionID)) && selectedModel == connection.selectedModel && capturedPreferences == preferences && capturedName == displayName && expectedMemory == memory.revision && expectedProjects == projects.revision && expectedSourceMemoryIDs == Set(memory.permittedRecords.filter{$0.source != nil && MemoryRules.usable($0,registration:registration)}.map(\.id)) && expectedWeather == model.weather.scope && whatsappScope == model.whatsapp.scope(for:connection.activeID) && topicFocus == (self.conversation(contextID)?.focus ?? "") && topicAreas == (self.conversation(contextID)?.notebookAreas ?? []) && sourceEnabled == contextEnabled && calendars == excludedCalendars && lists == excludedLists && accounts == excludedAccounts
             }
             @MainActor func valid() -> Bool {validOwnership() && (setupMode || expectedAcknowledgementContext == model.reviewAcknowledgements())}
             @MainActor func setResponse(_ text: String, completed: Bool) {
@@ -496,7 +498,7 @@ import Observation
                             if call.name.contains("memory") || call.name == "remember_context" { expectedMemory = memory.revision;expectedSourceMemoryIDs=Set(memory.permittedRecords.filter{$0.source != nil && MemoryRules.usable($0,registration:registration)}.map(\.id)) }
                             if LifeWorkspaceTools.names.contains(call.name) { expectedProjects = projects.revision }
                             if call.name == "dismiss_suggestion" {expectedAcknowledgements = model.reviewAcknowledgementRevision}
-                            if ["dismiss_suggestion","remember_context","change_memory","organise_memory","change_calendar","change_reminder","undo_apple_change"].contains(call.name) || LifeWorkspaceTools.mutations.contains(call.name) {expectedAcknowledgementContext = model.reviewAcknowledgements()}
+                            if ["dismiss_suggestion","remember_context","change_memory","organise_memory","change_calendar","change_reminder","undo_apple_change"].contains(call.name) || LifeWorkspaceTools.mutations.contains(call.name) {expectedAcknowledgementContext = model.reviewAcknowledgements();expectedResolution = model.emailSummaries.resolutionRevision(model)}
                             if ["search_mail","continue_mail"].contains(call.name) {
                                 toolMail = session.localMail; toolMailRegistration = registration; mailSearchConversationID = id; mailSearchTopicID = contextID; mailSearchTurnID = response.id
                             }
@@ -568,6 +570,7 @@ import Observation
             "recentEmailHeaders":emails.prefix(20).map { ["id":$0.id, "sender":String($0.sender.prefix(500)), "subject":String($0.subject.prefix(500)), "received":$0.received.ISO8601Format(), "account":$0.account] },
             "attentionPreferences":model.emailSummaries.preferences(model.chatGPT.activeID).map{["topic":$0.topic,"attention":$0.direction]},
             "reviewAcknowledgements":(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(model.reviewAcknowledgements()))) ?? [],
+            "resolvedEmailRequests":model.emailSummaries.resolutionContext(model),
             "savedEmailSummaries":Array(summaries.prefix(20)), "emailSummaryCoverage":model.emailSummaries.coverage(model),
             "limits":"At most \(eventLimit) events, 80 reminders, 20 recent email headers and 20 saved summaries. No full email bodies. Excluded sources are omitted."
         ]

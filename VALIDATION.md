@@ -1,5 +1,12 @@
 # Validation
 
+## 11 October — Email completion attention
+
+- Pure strict resolution checks 80/80; current consumer checks 125/125; configured-model 12/12 matching/purpose assertions across two final fictional requests.
+- Focused summary, Review inbox, proactive, briefing and exact advice-dependency suites passed. Persisted observed body drift withdraws stale completion before failed inference; reopening retains history and the unresolved original request.
+- Signed build/signature and installation verified. Fictional native history, exact evidence and Keep/reversal worked; normal launch retained conversation, unsent draft and existing Review proposals.
+- Personal matching awaits the next eligible heartbeat. No personal manual review, source history restart, automatic Apple completion or real completion-quality claim. Broader compound message/provider/stage/attempt ambiguity remains unverified. Reports: /tmp/missioncontrol-advice-context-evaluation.json and /tmp/missioncontrol-email-resolution-evaluation.json.
+
 Review card grouping (11 October): focused Review/proactive suites, isolated signed build and strict signature passed; final actual source-free consumer evaluation passed 104/104 with zero inference, native/settings/personal-store changes. Exact identity/account/source/assessment grouping retains sibling actions, pending/created receipts, planned context and Undo. Native fictional preview confirmed one card/count with removal approval and collapsed update, individual dismissal and whole-email Dismiss/Undo. Installed/reopened at 22:06 with original unsent draft/conversation preserved; normal Review shows Emails to review. Live compound-message/source-change acceptance remains separate. See the dated STATUS evidence for fixture corrections, preview keyboard-router limits and the recoverable prior bundle.
 
 ## Current recorded validation — 11 October 2026

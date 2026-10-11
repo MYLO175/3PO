@@ -56,6 +56,7 @@ struct DailyBriefing: Codable, Identifiable {
     var whatsappDependencies:[WhatsAppWindowDependency]? = nil
     var reviewAcknowledgementRevision:String? = nil
     var reviewAcknowledgementReceipts:[ReviewAcknowledgementReceipt]? = nil
+    var emailResolutionRevision:String? = nil
 }
 struct BriefingState: Codable {
     var records: [DailyBriefing] = []

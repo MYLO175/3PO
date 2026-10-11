@@ -2,5 +2,5 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-xcrun swiftc -module-cache-path /tmp/missioncontrol-test-modules MissionControl/Models.swift MissionControl/Mail/MailService.swift MissionControl/Mail/MailBatching.swift MissionControl/MemoryDependencies.swift MissionControl/EmailSummary.swift Tests/EmailSummaryChecks.swift -o /tmp/missioncontrol-summary-checks
+xcrun swiftc -module-cache-path /tmp/missioncontrol-test-modules MissionControl/Models.swift MissionControl/Mail/MailService.swift MissionControl/Mail/MailBatching.swift MissionControl/MemoryDependencies.swift MissionControl/EmailSummary.swift MissionControl/EmailResolution.swift Tests/EmailSummaryChecks.swift -o /tmp/missioncontrol-summary-checks
 /tmp/missioncontrol-summary-checks

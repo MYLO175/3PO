@@ -29,7 +29,7 @@ struct BriefingView: View {
                                 Text(item.text).textSelection(.enabled)
                                 ForEach(item.sourceIDs, id: \.self) { id in
                                     if let source = record.sources.first(where: { $0.id == id }) {
-                                        if source.kind == "mail", let message = model.mailData.messages.first(where: { $0.id == (source.originalID ?? id) }) ?? model.emailSummaries.memories(model).first(where: { $0.0.id == (source.originalID ?? id) })?.0, !model.assistant.excludedAccounts.contains(message.accountID) {
+                                        if ["mail","mailResolution"].contains(source.kind), let message = model.mailData.messages.first(where: { $0.id == (source.originalID ?? id) }) ?? model.emailSummaries.sourceAssessments(model).first(where: { $0.0.id == (source.originalID ?? id) })?.0, !model.assistant.excludedAccounts.contains(message.accountID) {
                                             Button(source.label) { model.select(message) }.buttonStyle(.link).font(.caption)
                                         } else if source.kind == "whatsapp" { WhatsAppBriefSource(service:model.whatsapp,registration:model.chatGPT.activeID,source:source) }
                                         else { Text(source.label).font(.caption).foregroundStyle(.secondary) }

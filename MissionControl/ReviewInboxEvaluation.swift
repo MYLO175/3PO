@@ -286,6 +286,69 @@ import EventKit
         try model.proactive.seedAdviceFixture([record],model:model)
         return model.proactive.state.records[0]
     }
+    static func seedResolutionPreview(_ model:DashboardModel)throws {
+        let owner=model.chatGPT.activeID,now=Date.now
+        func row(_ id:String,_ subject:String,_ quote:String,_ received:Date,_ attention:Bool)throws->EmailSummary {
+            let raw:[String:Any]=["id":id,"accountID":"fictional-mail","account":"Fictional Mail","messageID":id == "assessment-request" ? 1 : id == "assessment-confirmation" ? 2 : 3,"internetMessageID":id+"@example.invalid","sender":"Orion Labs <no-reply@example.invalid>","subject":subject,"received":received.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
+            let message=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:raw))
+            return .init(id:id,registration:owner,fingerprint:EmailSummary.fingerprint(message),summary:subject,attention:attention,reason:attention ? "A personal assessment is requested." : "",evidence:quote,bodyFingerprint:EmailSummary.fingerprintBody(quote),messageReceived:received,message:message,worthReading:attention,needsReply:false,completionEvidenceChecked:true)
+        }
+        var request=try row("assessment-request","Orion Labs coding assessment invitation","Please complete your Orion Labs graduate coding assessment.",now.addingTimeInterval(-86400),true)
+        let confirmation=try row("assessment-confirmation","Your Orion Labs assessment was submitted","Your Orion Labs graduate coding assessment was successfully submitted.",now.addingTimeInterval(-3600),false)
+        let next=try row("assessment-next-stage","Orion Labs next-stage assessment invitation","Please complete the Orion Labs graduate systems assessment for the next stage.",now,true)
+        let response=#"{"resolved":[{"mailID":"mail_0","confirmationID":"completion_0","requestEvidenceID":"mail_0:primary","confirmationEvidenceID":"completion_0:primary","allActionsAddressed":true,"reason":"The later receipt confirms successful submission of the exact Orion Labs graduate coding assessment."}]}"#
+        request.resolution=try EmailResolutionRules.decode(response,requests:["mail_0":request],confirmations:["completion_0":confirmation],now:now).first!.1
+        model.mailData = .init(messages:[request.message!,confirmation.message!,next.message!],accounts:[.init(id:"fictional-mail",title:"Fictional Mail")],errors:[])
+        try model.emailSummaries.seedAdviceFixture([request,confirmation,next]);try model.proactive.seedAdviceFixture([],model:model)
+    }
+    /// One bounded real subscription comparison with fictional receipts, no native source startup.
+    static func runEmailResolution(_ model:DashboardModel)async throws->[String:Any] {
+        let owner=model.chatGPT.activeID,selected=model.chatGPT.selectedModel,now=Date.now
+        let cases=[
+            ("Atlas Labs", "Please complete the Atlas Labs coding assessment.", "Your Atlas Labs coding assessment was successfully submitted."),
+            ("Beacon Labs", "Please complete the Beacon Labs coding assessment.", "Your Different Labs coding assessment was successfully submitted."),
+            ("Cedar Labs", "Please complete the Cedar Labs coding assessment.", "Your Cedar Labs coding assessment was not submitted. Please try again."),
+            ("Delta Labs", "Please complete the Delta Labs coding assessment and upload your transcript.", "Your Delta Labs coding assessment was submitted. Your transcript is still required."),
+            ("Elm Labs", "Please complete the Elm Labs coding assessment.", "You are invited to the Elm Labs systems assessment, the next application stage."),
+            ("Fir Labs", "Please complete the Fir Labs coding assessment.", "We received your Fir Labs application. This does not confirm your coding assessment was submitted."),
+            ("Grove Labs", "Please complete the Grove Labs coding assessment.", "Your Grove Labs coding assessment was successfully submitted. Please now complete the systems assessment.")
+        ]
+        var requests:[String:EmailSummary]=[:],confirmations:[String:EmailSummary]=[:]
+        for (index,value) in cases.enumerated() {
+            for confirm in [false,true] {
+                let id=(confirm ? "confirmation-" : "request-")+String(index),alias=(confirm ? "completion_" : "mail_")+String(index),quote=confirm ? value.2 : value.1
+                let raw:[String:Any]=["id":id,"accountID":"fictional-mail","account":"Fictional Mail","messageID":index*2+(confirm ? 2 : 1),"internetMessageID":id+"@example.invalid","sender":"Assessment portal <no-reply@example.invalid>","subject":value.0+" assessment","received":now.addingTimeInterval(confirm ? -3600 : -86400).ISO8601Format(),"unread":true,"replied":false,"flagged":false]
+                let message=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:raw))
+                let summary=EmailSummary(id:id,registration:owner,fingerprint:EmailSummary.fingerprint(message),summary:quote,attention:!confirm || index == 6,reason:confirm ? "" : "A coding assessment is requested.",evidence:quote,bodyFingerprint:EmailSummary.fingerprintBody(quote),messageReceived:message.received,message:message,worthReading:!confirm,needsReply:false)
+                if confirm {confirmations[alias]=summary} else {requests[alias]=summary}
+            }
+        }
+        func rows(_ values:[String:EmailSummary])->[[String:Any]] {values.keys.sorted().map {alias in let row=values[alias]!;return ["id":alias,"evidenceID":alias+":primary","account":row.message!.accountID,"received":row.message!.received.ISO8601Format(),"subject":row.message!.subject,"summary":row.summary,"evidence":row.evidence,"needsReply":false,"keepInReview":false]}}
+        let input:[String:Any]=["emails":rows(requests),"completionEmails":rows(confirmations),"events":[],"reminders":[],"whatsapp":[],"paMemory":"{}","deliveredSuggestions":[],"localDay":BriefingRules.day(now),"timezone":TimeZone.current.identifier]
+        let data=try JSONSerialization.data(withJSONObject:input,options:[.sortedKeys])
+        let response=try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:data,as:UTF8.self)]],instructions:ProactiveRules.heartbeatInstructions+" "+ProactiveRules.evidenceInstructions+" "+EmailReviewRules.instructions+" "+EmailResolutionRules.instructions,model:selected,purpose:.diagnostic){_ in}
+        let decoded=try EmailResolutionRules.decode(response,requests:requests,confirmations:confirmations,now:now),ids=Set(decoded.map(\.0))
+        var checks=["exact affirmative confirmation resolves original request":ids.contains("request-0"),"confirmation with a new action resolves only the old stage":ids.contains("request-6"),"different employer does not resolve request":!ids.contains("request-1"),"failed submission does not resolve request":!ids.contains("request-2"),"partial completion preserves sibling action":!ids.contains("request-3"),"next-stage invitation is not proof of earlier submission":!ids.contains("request-4"),"application receipt is not assessment completion":!ids.contains("request-5"),"only exact supported original requests resolved":ids == Set(["request-0","request-6"])]
+        let classifications=[("invitation","Please complete the Atlas Labs coding assessment."),("receipt","Your Atlas Labs coding assessment was successfully submitted. You may optionally create a profile to view results."),("failure","Your Atlas Labs coding assessment was not submitted. Please try submitting it again."),("result","Your Atlas Labs coding assessment results are now ready to read. No reply or action is required.")]
+        let bodies=Dictionary(uniqueKeysWithValues:classifications)
+        let assessmentInput:[String:Any]=["emails":classifications.map{["id":$0.0,"sender":"Portal <no-reply@example.invalid>","subject":$0.0+" Atlas Labs assessment","body":$0.1,"received":now.ISO8601Format(),"replied":false,"bodyTruncated":false,"lifeContext":[:]] as [String:Any]},"timezone":TimeZone.current.identifier]
+        let assessmentData=try JSONSerialization.data(withJSONObject:assessmentInput,options:[.sortedKeys])
+        let assessments=try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:assessmentData,as:UTF8.self)]],instructions:EmailSummary.assessmentInstructions+" For this fictional batch return ONLY {\"assessments\":[{\"id\":the supplied id,\"assessment\":the complete assessment object described above}]}, once per supplied email.",model:selected,purpose:.diagnostic){_ in}
+        guard let array=(try JSONSerialization.jsonObject(with:Data(assessments.utf8)) as? [String:Any])?["assessments"] as? [[String:Any]],array.count == classifications.count else {throw SummaryFailure.invalid}
+        var classified:[String:EmailSummary]=[:]
+        for item in array {
+            guard let id=item["id"] as? String,let body=bodies[id],let output=item["assessment"],classified[id] == nil else {throw SummaryFailure.invalid}
+            var raw=try JSONSerialization.jsonObject(with:JSONEncoder().encode(requests["mail_0"]!.message!)) as! [String:Any];raw["id"]=id;raw["subject"]=id+" Atlas Labs assessment"
+            let message=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:raw))
+            let text=String(decoding:try JSONSerialization.data(withJSONObject:output),as:UTF8.self)
+            classified[id]=try EmailSummary.decode(text,message:message,body:body,registration:owner)
+        }
+        checks["assessment invitation remains important actionable work"]=classified["invitation"]?.attention == true
+        checks["routine receipt is quiet and retains exact completion evidence"]=classified["receipt"]?.attention == false && classified["receipt"]?.worthReading == false && classified["receipt"]?.evidence.isEmpty == false
+        checks["failed submission still requires attention"]=classified["failure"]?.attention == true
+        checks["new result stays worth reading without invented task"]=classified["result"]?.worthReading == true && classified["result"]?.attention == false
+        return ["completed":Date.now.ISO8601Format(),"requests":2,"model":selected,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"storage":"Two fictional subscription requests, production comparison/assessment prompts and strict decoders. No personal sources, native writes or source startup. Seven matching cases and four purpose classifications, not a general quality rate."]
+    }
     static func seedGroupedReviewPreview(_ model:DashboardModel)throws {
         let record=try seedRemoval(model)
         var update=record;update.id=UUID().uuidString;update.kind="update";update.proposedRemoval=nil
@@ -605,7 +668,7 @@ struct ReviewInboxPreview:View {
             .padding(16).frame(width:ProcessInfo.processInfo.arguments.contains("--navigation-preview") ? 1120 : ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 840 : 600,height:ProcessInfo.processInfo.arguments.contains("--navigation-preview") ? 820 : ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 780 : 660)
             .sheet(item:Binding(get:{model.editTarget},set:{model.editTarget=$0})){NativeItemEditor(model:model,target:$0)}
             .sheet(item:Binding(get:{model.calendarRemovalReview},set:{model.calendarRemovalReview=$0})){CalendarRemovalReviewSheet(model:model,session:$0)}
-            .task {guard !ready else {return};if ProcessInfo.processInfo.arguments.contains("--grouped-review-preview") {try? ReviewInboxEvaluation.seedGroupedReviewPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--source-details-preview") {try? ReviewInboxEvaluation.seedSourceDetailsPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--calendar-removal-preview") {_ = try? ReviewInboxEvaluation.seedRemoval(model)} else if ProcessInfo.processInfo.arguments.contains("--email-work-preview") {try? ReviewInboxEvaluation.seedEmailWorkPreview(model);if ProcessInfo.processInfo.arguments.contains("--heartbeat-preview") {try? model.briefings.seedHeartbeatPreview(model)}} else {_ = try? ReviewInboxEvaluation.seed(model)};if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {
+            .task {guard !ready else {return};if ProcessInfo.processInfo.arguments.contains("--email-resolution-preview") {try? ReviewInboxEvaluation.seedResolutionPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--grouped-review-preview") {try? ReviewInboxEvaluation.seedGroupedReviewPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--source-details-preview") {try? ReviewInboxEvaluation.seedSourceDetailsPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--calendar-removal-preview") {_ = try? ReviewInboxEvaluation.seedRemoval(model)} else if ProcessInfo.processInfo.arguments.contains("--email-work-preview") {try? ReviewInboxEvaluation.seedEmailWorkPreview(model);if ProcessInfo.processInfo.arguments.contains("--heartbeat-preview") {try? model.briefings.seedHeartbeatPreview(model)}} else {_ = try? ReviewInboxEvaluation.seed(model)};if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {
                 // Default pages contain native widgets whose mount can independently read sources.
                 let defaults=model.workspace.state.pages.map(\.id)
                 model.workspace.addPage("Navigation fixture")

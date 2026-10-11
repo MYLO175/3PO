@@ -32,6 +32,65 @@ import Synchronization
         checks["targeted UI saves preserve unrelated cache bytes and unique keys"]=records.first{$0.key == "fictional-unrelated-cache"}?.data == unrelated && records.filter{$0.key == "workspace"}.count == 1 && records.filter{$0.key == "assistantDrafts"}.count == 1
         return checks
     }
+    private static func resolutionConsumerChecks(_ model:DashboardModel)throws->[String:Bool] {
+        try ReviewInboxEvaluation.seedResolutionPreview(model)
+        let saved=model.emailSummaries.records,request=saved.first{$0.id == "assessment-request"}!,confirmation=saved.first{$0.id == "assessment-confirmation"}!,original=request.message!,now=Date.now,owner=model.chatGPT.activeID
+        let revision=model.emailSummaries.resolutionRevision(model)
+        var checks:[String:Bool]=[:]
+        checks["later submission removes original assessment from active email/review/brief"] = !model.emailSummaries.highlights(model).contains{$0.0.id == original.id} && !model.reviewInbox.emails.contains{$0.0.id == original.id} && !model.briefings.currentEmails(model).contains{$0.0.id == original.id}
+        checks["new assessment stage stays actionable and counts once"] = model.reviewInbox.pendingCount == 1 && model.reviewInbox.emails.map{$0.0.id} == ["assessment-next-stage"]
+        checks["resolved assessment leaves inspectable exact two-message history"] = model.reviewInbox.resolved.count == 1 && model.reviewInbox.resolved[0].2 == request.resolution
+        let pa: [String:Any] = try model.assistant.snapshot(model).flatMap{try JSONSerialization.jsonObject(with:Data($0.utf8)) as? [String:Any]} ?? [:]
+        checks["PA receives completed communication context without stale request"] = (pa["savedEmailSummaries"] as? [[String:Any]])?.contains{$0["id"] as? String == original.id} == false && (pa["resolvedEmailRequests"] as? [[String:Any]])?.first?["confirmationQuote"] as? String == confirmation.evidence
+        checks["follow-up retention excludes addressed email obligation"] = !model.emailSummaries.memories(model).contains{$0.0.id == original.id}
+        let rawSnapshot=DailyBriefing(id:"fictional-resolution",registration:owner,day:BriefingRules.day(now),created:now,items:[],sources:[.init(id:"resolved_0",label:"Fictional completion",kind:"mailResolution",date:now,originalID:confirmation.id,contentRevision:EmailNativeEvidence.hash(request.resolution!))],coverage:"Fictional",message:"The coding assessment was submitted.",reviewAcknowledgementRevision:model.reviewAcknowledgementRevision,emailResolutionRevision:revision)
+        try model.briefings.seedAdviceFixture(rawSnapshot,model:model)
+        let snapshot=model.briefings.state.records[0]
+        checks["brief exact completion receipt is initially current"] = model.briefings.freshnessNote(snapshot,model:model) == nil
+        model.emailSummaries.dismiss(confirmation.id,model:model,expectedRegistration:owner,expectedVersion:ReviewAcknowledgementRules.emailVersion(confirmation.message!,confirmation))
+        checks["Dismiss of confirmation does not reopen addressed request"] = model.emailSummaries.resolved(model).count == 1 && model.reviewInbox.pendingCount == 1
+        model.emailSummaries.undoDismiss(model)
+        model.emailSummaries.keepForReview(request.id,model:model)
+        checks["Keep in review reopens original and removes inferred history"] = model.reviewInbox.resolved.isEmpty && model.reviewInbox.emails.contains{$0.0.id == original.id} && model.reviewInbox.pendingCount == 2
+        checks["Keep in review invalidates earlier brief completion context"] = model.briefings.freshnessNote(snapshot,model:model) != nil
+        model.emailSummaries.keepForReview(request.id,model:model,keep:false)
+        checks["reversing Keep restores same exact receipt without another inference"] = model.emailSummaries.resolved(model).first?.2 == request.resolution && model.emailSummaries.resolutionRevision(model) == revision
+        var proposal=PADiscovery(id:UUID().uuidString,registration:owner,mailID:request.id,kind:"reminder",message:"Complete the Orion Labs coding assessment.",evidence:request.evidence,created:now,scope:"fictional")
+        proposal.sourceRevision=request.fingerprint;proposal.sourceAssessmentRevision=request.adviceRevision(replied:false)
+        try model.proactive.seedAdviceFixture([proposal],model:model)
+        proposal=model.proactive.state.records[0]
+        checks["obsolete linked proposal is withdrawn along with resolved email"] = !model.proactive.visible(proposal,model:model) && !model.proactive.canReview(proposal.id,model:model)
+        let claim=NativeCreationRequest(id:UUID(uuidString:proposal.id)!,kind:.reminder,registration:owner)
+        try model.nativeCreations.begin(claim)
+        checks["uncertain native creation remains visible with no new approval authority"] = model.proactive.visible(proposal,model:model) && !model.proactive.canReview(proposal.id,model:model) && !model.proactive.reviewEvidenceAvailable(proposal.id,model:model) && model.proactive.sourceDetails(proposal,model:model) != nil
+        var pending=proposal;pending.id=UUID().uuidString;pending.kind="change";pending.reviewState="pending"
+        try model.proactive.seedAdviceFixture([pending],model:model);pending=model.proactive.state.records[0]
+        checks["pending native change remains available for outcome checking"] = model.proactive.visible(pending,model:model) && !model.proactive.canReview(pending.id,model:model)
+        try model.emailSummaries.observeBodyVersion(confirmation.message!,hash:"observed-corrected-confirmation",model:model)
+        checks["observed body correction immediately withdraws completion before failed reassessment"] = model.emailSummaries.resolved(model).isEmpty && model.emailSummaries.highlights(model).contains{$0.0.id == original.id}
+        let reopenedService=try model.emailSummaries.reopenedResolutionFixture()
+        checks["observed drift persists through reopen without new AI output"] = reopenedService.records.first{$0.id == confirmation.id}?.observedBodyFingerprint == "observed-corrected-confirmation" && reopenedService.resolved(model).isEmpty && reopenedService.highlights(model).contains{$0.0.id == original.id} && reopenedService.records.first{$0.id == original.id}?.resolution == request.resolution
+        try model.emailSummaries.observeBodyVersion(confirmation.message!,hash:confirmation.bodyFingerprint!,model:model)
+        checks["verified original body restores the same saved completion receipt"] = model.emailSummaries.resolved(model).count == 1
+        var changed=saved;changed[changed.firstIndex{$0.id == confirmation.id}!].bodyFingerprint="corrected-confirmation-body"
+        try model.emailSummaries.seedAdviceFixture(changed)
+        checks["same-header confirmation body correction invalidates completion receipt"] = model.emailSummaries.resolved(model).isEmpty && model.emailSummaries.highlights(model).contains{$0.0.id == original.id}
+        checks["corrected evidence withdraws old brief without overwriting saved history"] = model.briefings.freshnessNote(snapshot,model:model) != nil && model.emailSummaries.records.first{$0.id == original.id}?.resolution == request.resolution
+        try model.emailSummaries.seedAdviceFixture(saved)
+        let mail=model.mailData;model.mailData = .init(messages:mail.messages,accounts:[],errors:[])
+        checks["unavailable or removed account cannot support resolved communication"] = model.emailSummaries.resolved(model).isEmpty && model.emailSummaries.resolutionContext(model).isEmpty
+        model.mailData=mail
+        let completionPool=model.emailSummaries.completionCandidates([(original,request)],model:model,scope:nil)
+        checks["quiet confirmations participate in bounded comparison evidence"] = completionPool.contains{$0.0.id == confirmation.id} && completionPool.count <= 12
+        var reopened=request;reopened.resolution=nil
+        let task=TaskItem(id:"fictional-planned-assessment",listID:"fixture-list",title:"Complete Orion Labs coding assessment",due:now,hasTime:false,sourceLabel:"Fixture",writable:true,recurring:false,modified:now)
+        model.reminderData = .init(sources:[],reminders:[task]);model.reminderHealth = .init(lastSuccess:now);model.paOrientationHealth = .init(lastSuccess:now)
+        reopened.handling = .init(assessmentRevision:reopened.adviceRevision(replied:false),native:.reminder(task),reason:"Exact assessment is planned.",created:now)
+        try model.emailSummaries.seedAdviceFixture([reopened,confirmation])
+        checks["already planned request can still compare later submission confirmation"] = model.proactive.emailReviewCandidates(model,heartbeat:true,mailReview:nil,whatsappReady:true,now:now).contains{$0.0.id == original.id}
+        try model.emailSummaries.seedAdviceFixture(saved)
+        return checks
+    }
     private static func fingerprintCacheChecks(_ model:DashboardModel)->[String:Bool] {
         let service=model.whatsapp,oldMessages=service.messages,oldIdentity=service.linkedIdentity
         defer {service.messages=oldMessages;service.linkedIdentity=oldIdentity}
@@ -335,6 +394,7 @@ import Synchronization
         let reviewMailData=model.mailData;model.mailData = .init(messages:reviewMailData.messages,accounts:[],errors:[])
         checks["removed account withdraws unsupported review count"] = model.reviewInbox.pendingCount == 0
         model.mailData=reviewMailData
+        checks.merge(try resolutionConsumerChecks(model),uniquingKeysWith:{$1})
         return ["completed":Date.now.ISO8601Format(),"requests":0,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"storage":"Fictional claims, messages and outputs in disposable SwiftData before source startup. No inference, native writes, permission changes or personal store writes. This tests actual consumer projections, not scheduler races or real message delivery."]
     }
 }
