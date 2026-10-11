@@ -1,0 +1,139 @@
+import Foundation
+import SwiftData
+
+/// Fictional production-retrieval scenarios. Contract failures fail the suite; semantic
+/// aspirations are measured separately so lexical success cannot claim paraphrase recall.
+@main struct MemoryQualityChecks {
+    @MainActor static func main() throws {
+        // Process-only defaults prevent a human's memory-off setting changing this
+        // fictional fixture, without writing their preferences or persistent store.
+        UserDefaults.standard.setVolatileDomain(["paMemoryEnabled": true, "paMemoryLearningEnabled": true], forName: UserDefaults.argumentDomain)
+        let now = Date.now
+        var checks = 0, failures: [String] = []
+        func check(_ condition: Bool, _ label: String) {
+            checks += 1
+            if !condition { failures.append(label); print("FAIL: \(label)") }
+        }
+        func fact(_ index: Int, _ text: String, area: LifeArea = .studies, account: String = "owner", kind: MemoryKind = .context) -> PAMemory {
+            PAMemory(id: UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", index))!, registration: account, text: text, kind: kind, provenance: "Fictional quality fixture", created: now, reviewed: now, evidence: text, certainty: .stated, durability: .stable, organisation: .init(areas: [area], connections: []))
+        }
+        func ids(_ selection: MemorySelection) -> Set<UUID> {
+            Set(selection.records.compactMap { $0["id"].flatMap(UUID.init(uuidString:)) })
+        }
+        func contextIDs(_ context: String, field: String = "facts") throws -> Set<String> {
+            let json = try JSONSerialization.jsonObject(with: Data(context.utf8)) as! [String: Any]
+            if field == "anchors" { return Set((json["lifeStructure"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }) }
+            return Set((json["areas"] as? [[String: Any]] ?? []).flatMap { $0["facts"] as? [[String: String]] ?? [] }.compactMap { $0["id"] })
+        }
+
+        let shortFacts = [fact(1, "AI work is my main career priority.", area: .career), fact(2, "ML roles interest me.", area: .career), fact(3, "My CV needs a project section.", area: .career), fact(4, "I prefer UK employers.", area: .career)].map { record in
+            var earlier = record
+            earlier.created = now.addingTimeInterval(-45 * 86400)
+            earlier.reviewed = earlier.created
+            return earlier
+        }
+        let distractors = (100..<170).map { fact($0, "I enjoy fictional unrelated activity \($0).", area: .studies, kind: .preference) }
+        let corpus = shortFacts + distractors
+        for (index, query) in ["AI", "ml", "CV", "uk"].enumerated() {
+            let selected = MemoryRetrieval.select(corpus, registration: "owner", query: query, now: now, focus: [.studies])
+            check(ids(selected) == [shortFacts[index].id], "\(query) finds the older relevant fact under distractors and contrary Focus")
+            check(selected.reasons[shortFacts[index].id]?.contains("Words match your question") == true, "\(query) has the production lexical reason")
+        }
+        check(MemoryRetrieval.tokens("AI, ML; CV / UK") == ["ai", "ml", "cv", "uk"], "Meaningful two-letter terms survive normalisation")
+        check(MemoryRetrieval.tokens("I am at an AI event in the UK").contains("ai"), "Short terms survive in ordinary sentences")
+        check(MemoryRetrieval.tokens("I me my to in on at an of or do it be we us he as so if").isEmpty, "Ordinary short filler remains excluded")
+        for query in ["", "  ", "Please help me with this", "Me", "AI"] {
+            let expected: Set<UUID> = query == "AI" ? [shortFacts[0].id] : []
+            check(ids(MemoryRetrieval.select(corpus, registration: "owner", query: query, now: now, focus: [.studies])) == expected, "Targeted '\(query)' never uses Focus as unrelated filler")
+        }
+        check(!MemoryRetrieval.select(corpus, registration: "owner", query: nil, now: now, focus: [.studies]).records.isEmpty, "Null deliberately requests broad orientation")
+        check(MemoryRetrieval.select(corpus, registration: "owner", query: "Unknown zephyr", now: now).records.isEmpty, "No matching saved fact is a valid answer")
+        check(MemoryRetrieval.select(corpus, registration: "other", query: "AI", now: now).records.isEmpty, "Another account never supplies relevant-looking facts")
+        let forward = MemoryRetrieval.select(corpus, registration: "owner", query: "AI ML CV UK", now: now)
+        check(forward.records == MemoryRetrieval.select(corpus.reversed(), registration: "owner", query: "AI ML CV UK", now: now).records, "Retrieval ordering is independent of storage order")
+        for bytes in [2, 500, 1_000, 20_000] {
+            let selected = MemoryRetrieval.select(corpus, registration: "owner", query: nil, now: now, bytes: bytes)
+            check(try JSONSerialization.data(withJSONObject: selected.records, options: [.sortedKeys]).count <= bytes, "Production record context stays within \(bytes) bytes")
+        }
+
+        var identity = fact(5, "My name is Alex.", area: .about)
+        identity.organisation?.selfName = "Alex"
+        var notebook = LifeNotebook.build(corpus + [identity], registration: "owner", now: now)
+        notebook.anchors = [.init(id: "life:fictional-study", label: "Study folder", kind: "space", parent: nil, areas: [.studies], notes: "", path: [], relations: [])]
+        for query in ["", "Alex", "please help me with this"] {
+            let context = notebook.context(query: query, focus: [.studies])
+            check(try contextIDs(context).isEmpty, "Notebook excludes unrelated facts for targeted '\(query)'")
+            check(try contextIDs(context, field: "anchors").isEmpty, "Notebook excludes Focus-only anchors for targeted '\(query)'")
+        }
+        let aiSelection = MemoryRetrieval.select(corpus + [identity], registration: "owner", query: "AI", now: now, focus: [.studies], notebook: notebook)
+        check(try contextIDs(notebook.context(query: "AI", focus: [.studies], selectedMemoryIDs: ids(aiSelection))) == [shortFacts[0].id.uuidString], "Notebook shares actual selected IDs without an independent refill")
+        check(try contextIDs(notebook.context(query: nil, focus: [.studies]), field: "anchors") == ["life:fictional-study"], "Broad notebook orientation retains exact saved anchors")
+        check(try contextIDs(notebook.context(query: "Study folder"), field: "anchors") == ["life:fictional-study"], "A matching anchor remains available without linked facts")
+
+        // Disposable storage exercises real version, feedback and source-permission paths.
+        let container = try ModelContainer(for: CachedDashboard.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let store = PAMemoryStore(container: container)
+        check(distractors.allSatisfy { store.put($0) }, "Fictional distractor corpus is saved")
+        let old = fact(10, "I am building Lantern for my engineering project.", area: .projects)
+        let renamed = fact(11, "I renamed my engineering project to Beacon.", area: .projects)
+        check(store.put(old) && store.correct(old.id, with: renamed), "Project rename is a real versioned correction")
+        check(ids(store.selection("owner", query: "Beacon engineering")) == [renamed.id], "Renamed current fact wins recall under unrelated preferences")
+        check(store.selection("owner", query: "Lantern").records.isEmpty, "The superseded name cannot resurrect old prose")
+        check(store.records.first(where: { $0.id == old.id })?.evidence == old.evidence, "Correction keeps the original evidence and identity")
+        check(store.retire(renamed.id, retired: true, expectedRevision: store.revision), "Human retirement succeeds")
+        check(store.selection("owner", query: "Beacon").records.isEmpty, "Retirement removes current recall")
+        let reloaded = PAMemoryStore(container: container)
+        check(reloaded.selection("owner", query: "Beacon").records.isEmpty, "Retirement survives reopening")
+        check(reloaded.retire(renamed.id, retired: false, expectedRevision: reloaded.revision), "Human Restore brings retired context back")
+        check(ids(reloaded.selection("owner", query: "Beacon")) == [renamed.id], "Restored current fact keeps its exact identity")
+        check(reloaded.restoreVersion(old.id), "Earlier-version Restore creates a new current version")
+        let restored = reloaded.records.first { $0.registration == "owner" && $0.supersededBy == nil && $0.supersedes == renamed.id }!
+        check(restored.id != old.id && restored.id != renamed.id && restored.evidence == old.evidence, "Version Restore keeps evidence without reusing earlier identities")
+        check(ids(reloaded.selection("owner", query: "Lantern")) == [restored.id], "Restored belief becomes the sole relevant version")
+        let lineage = reloaded.versionFamily(restored.id)
+        check(reloaded.forget(restored.id), "Forget removes the current correction lineage")
+        check(reloaded.selection("owner", query: "Lantern Beacon").records.isEmpty && Set(reloaded.records.map(\.id)).isDisjoint(with: Set(lineage.map(\.id))), "Forgotten versions cannot enter recall")
+        check(reloaded.restoreForgotten(lineage), "Forget Undo restores original stored identities")
+        check(ids(reloaded.selection("owner", query: "Lantern")) == [restored.id], "Forget Undo retains the original current version and evidence")
+
+        let feedback = "These can stay quiet, but new stages and results matter to me."
+        check(reloaded.saveReviewPreference(feedback, registration: "owner", about: "Graduate assessment confirmations"), "Human feedback saves into canonical memory")
+        let preference = reloaded.reviewPreferences("owner")[0]
+        let feedbackResult = reloaded.selection("owner", query: "Graduate assessment receipt")
+        check(ids(feedbackResult) == [preference.id] && feedbackResult.records.first?["text"] == feedback && feedbackResult.records.first?["evidence"] == feedback, "Topic relevance supplies exact conditional feedback and evidence")
+        check(reloaded.selection("owner", query: "Supermarket discounts").records.isEmpty, "Feedback is not pinned to unrelated questions")
+        check(reloaded.selection("other", query: "Graduate assessment").records.isEmpty, "Feedback remains account-owned")
+        check(reloaded.retire(preference.id, retired: true, expectedRevision: reloaded.revision) && reloaded.selection("owner", query: "Graduate assessment").records.isEmpty, "Disabled feedback leaves recall without losing history")
+        check(reloaded.retire(preference.id, retired: false, expectedRevision: reloaded.revision) && ids(reloaded.selection("owner", query: "Graduate assessment")) == [preference.id], "Restored feedback regains its original identity")
+
+        let quote = "The robotics meeting has moved to Friday."
+        let source = MemorySourceEvidence(identity: .init(kind: .mail, accountID: "fictional-mail", containerID: "Inbox", itemID: "message-1"), revision: "version-1", label: "Fictional organiser", quote: quote, observed: now, sourceDate: now)
+        let report = PAMemory(registration: "owner", text: quote, kind: .commitment, explicit: false, provenance: "Fictional source report", reviewed: now, evidence: quote, certainty: .inferred, durability: .situational, source: source, sourceState: .changed)
+        check(reloaded.putSource(report, sourceText: quote, expectedRevision: reloaded.revision), "Exact fictional source evidence saves through the production gate")
+        check(reloaded.selection("owner", query: "Robotics meeting").records.isEmpty, "Absent runtime permission excludes source memory")
+        reloaded.sourceIsPermitted = { $0.source?.revision == "version-1" }
+        check(ids(reloaded.selection("owner", query: "Robotics meeting")) == [report.id], "Current permitted source version is recalled")
+        check(reloaded.selection("owner", query: "Robotics meeting", includeSources: false).records.isEmpty, "Human-only consumers exclude source reports")
+        check(reloaded.selection("owner", query: "Robotics meeting", sourceFilter: { _ in false }).records.isEmpty, "Purpose-specific consent can exclude an otherwise permitted source")
+        reloaded.sourceIsPermitted = { _ in false }
+        check(reloaded.selection("owner", query: "Robotics meeting").records.isEmpty && reloaded.records.contains { $0.id == report.id && $0.resolved == nil }, "Source cache/access loss hides evidence without claiming completion or deleting it")
+        reloaded.sourceIsPermitted = { _ in true }
+        check(reloaded.invalidateSource(source.identity, registration: "owner", previousRevision: "version-1", reason: .changed), "Exact changed source version invalidates")
+        check(reloaded.selection("owner", query: "Robotics meeting").records.isEmpty && reloaded.records.contains { $0.id == report.id }, "Invalidated source history is preserved outside recall")
+
+        // Measure semantic aspirations with desired relevance, without asserting that a
+        // known miss is a passing capability or freezing that limitation into a contract.
+        let semanticFacts = [fact(20, "I want to work in artificial intelligence.", area: .career), fact(21, "I favour employers in Britain.", area: .career)]
+        let exploratory = [("ML careers", semanticFacts[0].id), ("UK roles", semanticFacts[1].id)]
+        var hits = 0, irrelevant = 0
+        for (query, desired) in exploratory {
+            let selected = ids(MemoryRetrieval.select(semanticFacts + distractors, registration: "owner", query: query, now: now))
+            hits += selected.contains(desired) ? 1 : 0
+            irrelevant += selected.subtracting([desired]).count
+            if !selected.contains(desired) { print("QUALITY GAP: '\(query)' missed the semantically relevant fictional fact") }
+        }
+        print("QUALITY MEASURE: paraphrase recall \(hits)/\(exploratory.count); irrelevant selected facts \(irrelevant). This does not measure actual model answers.")
+        print("CONTRACT CHECKS: \(checks - failures.count)/\(checks) passed; \(failures.count) failed. Fictional data; no inference or native source reads.")
+        if !failures.isEmpty { exit(1) }
+    }
+}

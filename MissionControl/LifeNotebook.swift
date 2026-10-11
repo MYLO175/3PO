@@ -128,7 +128,7 @@ struct LifeNotebook {
         let relevantAnchors=anchors.filter { anchor in
             guard query != nil else { return true }
             return !MemoryRetrieval.tokens(anchor.label+" "+anchor.notes+" "+anchor.path.joined(separator:" ")).isDisjoint(with:terms) ||
-                !anchor.memoryIDs.isDisjoint(with:selected!) || (terms.isEmpty && !Set(anchor.areas).isDisjoint(with:focus))
+                !anchor.memoryIDs.isDisjoint(with:selected!)
         }
         let matchingItemFacts=Set(anchors.filter{!MemoryRetrieval.tokens($0.label).isDisjoint(with:terms)}.flatMap(\.memoryIDs))
         func recordScore(_ record:PAMemory)->Int { MemoryRetrieval.tokens(record.text+" "+(record.connections ?? []).map{$0.subject+" "+$0.object}.joined(separator:" ")).intersection(terms).count + (matchingItemFacts.contains(record.id) ? 8 : 0) }

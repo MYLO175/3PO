@@ -156,8 +156,11 @@ struct MemorySelection {
 enum MemoryRetrieval {
     static let byteLimit = 20_000
     private static let ignored = Set("the a an and or of to for in on at with is are was be been i me my you your we it that this what how do does can could should please about from have has need want tell know remember user users their they them not don dont would will when then if but so just here there some more any all help anything things".split(separator:" ").map(String.init))
+    // Keep common task-bearing abbreviations without making ordinary two-letter
+    // words relevance seeds. These remain literal terms, not semantic aliases.
+    private static let meaningfulShortTerms:Set<String> = ["ai","ml","cv","uk"]
     static func tokens(_ text: String) -> Set<String> {
-        Set(text.folding(options:[.caseInsensitive,.diacriticInsensitive],locale:Locale(identifier:"en_GB")).split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 2 && !ignored.contains($0) })
+        Set(text.folding(options:[.caseInsensitive,.diacriticInsensitive],locale:Locale(identifier:"en_GB")).split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { ($0.count > 2 || meaningfulShortTerms.contains($0)) && !ignored.contains($0) })
     }
     static func queryTerms(_ query:String?,selfLabel:String)->Set<String> {
         tokens(query ?? "").subtracting(tokens(selfLabel))
@@ -228,8 +231,7 @@ enum MemoryRetrieval {
         }
         func relevant(_ memory:PAMemory)->Bool {
             let text=memory.text+" "+(memory.reviewPreference == true ? (memory.reviewContext ?? "") : "")+" "+(memory.connections ?? []).map{$0.subject+" "+$0.relation+" "+$0.object}.joined(separator:" ")
-            return !tokens(text).isDisjoint(with:terms) || connected.contains(memory.id) || planConnected.contains(memory.id) ||
-                (terms.isEmpty && memory.organisation?.areas.contains(where:focus.contains) == true)
+            return !tokens(text).isDisjoint(with:terms) || connected.contains(memory.id) || planConnected.contains(memory.id)
         }
         let ranked = eligible.filter{!targeted || relevant($0)}.sorted(by:ordered)
         // Core preferences belong to broad orientation, not every unrelated source assessment.
