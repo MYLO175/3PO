@@ -1,6 +1,6 @@
 import Foundation
 
-struct AssistantTurn: Codable, Identifiable {
+struct AssistantTurn: Codable, Identifiable, Equatable {
     var id = UUID()
     var role: String
     var content: String
@@ -47,7 +47,7 @@ struct PAContextCapture: Codable, Equatable, Identifiable {
         return (Array(Set(ids)).sorted{$0.uuidString < $1.uuidString},(object["lifeStructure"] as? [[String:Any]] ?? []).compactMap{$0["id"] as? String})
     }
 }
-struct AssistantConversation: Codable, Identifiable {
+struct AssistantConversation: Codable, Identifiable, Equatable {
     var id = UUID()
     var accountID: String
     var title: String
