@@ -286,6 +286,12 @@ import EventKit
         try model.proactive.seedAdviceFixture([record],model:model)
         return model.proactive.state.records[0]
     }
+    static func seedGroupedReviewPreview(_ model:DashboardModel)throws {
+        let record=try seedRemoval(model)
+        var update=record;update.id=UUID().uuidString;update.kind="update";update.proposedRemoval=nil
+        update.message="The lecture has been postponed. The old Calendar slot may no longer reflect your plan."
+        try model.proactive.seedAdviceFixture([record,update],model:model)
+    }
     static func seedEmailWorkPreview(_ model:DashboardModel)throws {
         let registration=model.chatGPT.activeID,now=Date.now
         let event=AgendaEvent(id:"fictional-review",calendarID:"fixture-calendar",title:"Orion project review",start:now.addingTimeInterval(86400),end:now.addingTimeInterval(90000),allDay:false,location:"",sourceLabel:"Fixture",modified:now)
@@ -594,12 +600,12 @@ struct ReviewInboxPreview:View {
     var body:some View {
         VStack {Text("Fictional review inbox · disposable storage · no Apple writes").font(.caption);if ready {
             if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {WorkspaceView(model:model)} else {PATasksView(model:model)}
-            if model.briefings.undoQuestionDate(model.chatGPT.activeID) != nil {Button("Undo question dismissal") {model.briefings.undoQuestion(model.chatGPT.activeID)}};if model.proactive.canUndo {Button("Undo dismissed fixture") {model.proactive.undo(model)}}
+            if model.briefings.undoQuestionDate(model.chatGPT.activeID) != nil {Button("Undo question dismissal") {model.briefings.undoQuestion(model.chatGPT.activeID)}};if model.proactive.canUndo {Button("Undo dismissed fixture") {model.proactive.undo(model)}};if model.emailSummaries.canUndoDismiss {Button("Undo email dismissal") {model.emailSummaries.undoDismiss(model)}}
         } }
             .padding(16).frame(width:ProcessInfo.processInfo.arguments.contains("--navigation-preview") ? 1120 : ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 840 : 600,height:ProcessInfo.processInfo.arguments.contains("--navigation-preview") ? 820 : ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 780 : 660)
             .sheet(item:Binding(get:{model.editTarget},set:{model.editTarget=$0})){NativeItemEditor(model:model,target:$0)}
             .sheet(item:Binding(get:{model.calendarRemovalReview},set:{model.calendarRemovalReview=$0})){CalendarRemovalReviewSheet(model:model,session:$0)}
-            .task {guard !ready else {return};if ProcessInfo.processInfo.arguments.contains("--source-details-preview") {try? ReviewInboxEvaluation.seedSourceDetailsPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--calendar-removal-preview") {_ = try? ReviewInboxEvaluation.seedRemoval(model)} else if ProcessInfo.processInfo.arguments.contains("--email-work-preview") {try? ReviewInboxEvaluation.seedEmailWorkPreview(model);if ProcessInfo.processInfo.arguments.contains("--heartbeat-preview") {try? model.briefings.seedHeartbeatPreview(model)}} else {_ = try? ReviewInboxEvaluation.seed(model)};if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {
+            .task {guard !ready else {return};if ProcessInfo.processInfo.arguments.contains("--grouped-review-preview") {try? ReviewInboxEvaluation.seedGroupedReviewPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--source-details-preview") {try? ReviewInboxEvaluation.seedSourceDetailsPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--calendar-removal-preview") {_ = try? ReviewInboxEvaluation.seedRemoval(model)} else if ProcessInfo.processInfo.arguments.contains("--email-work-preview") {try? ReviewInboxEvaluation.seedEmailWorkPreview(model);if ProcessInfo.processInfo.arguments.contains("--heartbeat-preview") {try? model.briefings.seedHeartbeatPreview(model)}} else {_ = try? ReviewInboxEvaluation.seed(model)};if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {
                 // Default pages contain native widgets whose mount can independently read sources.
                 let defaults=model.workspace.state.pages.map(\.id)
                 model.workspace.addPage("Navigation fixture")

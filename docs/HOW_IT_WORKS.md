@@ -6,7 +6,7 @@ Mission Control combines a custom dashboard with a personal assistant. Apple Cal
 
 Pages hold movable, resizable widgets. A page fits the window; content inside a widget can scroll. Pages have selectable icons. Toolbar arrangement is saved separately from widget layouts. Workspace and individual widget colours are customisable; named colour themes can be saved locally.
 
-The Review inbox sidebar icon and widget header show a live number of items needing your attention. It counts current questions, actionable email cards, proposals or updates, and delegated work needing an answer or outcome check. Dismiss, Undo and Keep in review update it immediately. Already planned/addressed emails, approved proposals, verified creations and ordinary queued/running work do not inflate it. Independent cards from the same source remain separate. Zero hides the badge; above 99 displays 99+ with the full accessible count. Viewing it reads existing local projections only.
+The Review inbox sidebar icon and widget header show a live number of items needing your attention. It counts current questions, actionable email cards, proposals or updates, and delegated work needing an answer or outcome check. Dismiss, Undo and Keep in review update it immediately. Already planned/addressed emails, approved proposals, verified creations and ordinary queued/running work do not inflate it. An email assessment and its background suggestions share one card and one count, while each suggestion retains its own approval, dismissal and save receipt. Zero hides the badge; above 99 displays 99+ with the full accessible count. Viewing it reads existing local projections only.
 
 Current widgets include Calendar, Reminders, Mail, Today's brief, Email summary, Your PA, Review inbox, Date & clock and Life map. Adding or viewing a widget does not itself start an AI request.
 
@@ -284,6 +284,12 @@ Remembered commitments can be inspected through **Remembered plan reports** in F
 
 Connected reports participate in bounded, permission-filtered recall and the prepared context for PA/brief/suggestions. The index references only already-selected facts. Group changes invalidate dependent advice through the same saved-memory receipts; metadata classification/review alone does not. See [Memory and context](MEMORY_AND_CONTEXT.md) for limits and the remaining semantic/temporal work.
 
+
+## 11 October — One review card per email
+
+Review inbox groups the current email assessment and all currently supported background suggestions for that exact email under **Emails to review**. The subject, original source and main explanation appear once. Calendar/Reminder approvals, proposed spaces and prepared work remain inside the card. Informational comparison updates are available under **Background context**. Different messages, accounts and WhatsApp sources stay separate; grouping uses original identity and current source/assessment revisions rather than subject similarity.
+
+The badge counts a combined card once when either its email assessment or an attached suggestion still needs review. Completed-only history says Reviewed; existing planned/addressed status and Keep in review remain available when a native proposal shares the card. Each suggestion retains its exact evidence, pending/approved/created state, buttons and conditional Undo. **Dismiss suggestion** acknowledges only that proposal; **Dismiss email** acknowledges the displayed email assessment and clears its combined card. Email Undo restores all still-supported attached work. Grouping does not delete saved assessments, proposals, drafts or operation receipts, and makes no AI or native write.
 
 ## 7 October — Review inbox and proposed deadline changes
 

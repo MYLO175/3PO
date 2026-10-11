@@ -174,6 +174,19 @@ import Foundation
         precondition(!ReviewAcknowledgementRules.matches(ack,message:mail,summary:assessment,registration:"another-account"))
         let newMail=try JSONDecoder().decode(MailMessage.self,from:Data(#"{"id":"new-mail","accountID":"provider","account":"Fictional","messageID":2,"internetMessageID":"new@example.invalid","sender":"Tutor","subject":"Orion report","received":"2026-10-07T10:00:00Z","unread":true,"replied":false,"flagged":false}"#.utf8))
         precondition(!ReviewAcknowledgementRules.matches(ack,message:newMail,summary:assessment,registration:"account"),"Same sender and title do not acknowledge a new message")
+        precondition(ReviewInboxRules.belongs(ack,to:mail,summary:assessment),"Exact current email and its background receipt share a card")
+        var grouping=ack;grouping.registration="another-account"
+        precondition(!ReviewInboxRules.belongs(grouping,to:mail,summary:assessment),"Another registration cannot be grouped into this card")
+        grouping=ack;grouping.sourceKind="whatsapp"
+        precondition(!ReviewInboxRules.belongs(grouping,to:mail,summary:assessment),"WhatsApp and Mail are separate exact sources")
+        grouping=ack;grouping.sourceRevision="stale-source"
+        precondition(!ReviewInboxRules.belongs(grouping,to:mail,summary:assessment))
+        grouping=ack;grouping.sourceAssessmentRevision="stale-assessment"
+        precondition(!ReviewInboxRules.belongs(grouping,to:mail,summary:assessment))
+        var otherAssessment=assessment;otherAssessment.id=newMail.id;otherAssessment.message=newMail;otherAssessment.fingerprint=EmailSummary.fingerprint(newMail)
+        precondition(!ReviewInboxRules.belongs(ack,to:newMail,summary:otherAssessment),"Same subject and sender cannot collapse distinct emails")
+        grouping=ack;grouping.sourceRevision=nil;grouping.sourceAssessmentRevision=nil
+        precondition(ReviewInboxRules.belongs(grouping,to:mail,summary:assessment),"Legacy exact-source records retain their presentation")
         var regeneratedProposal=ack;regeneratedProposal.dismissed=false;regeneratedProposal.sourceAssessmentRevision="regenerated-assessment"
         let acknowledgedVersions=[ProactiveRules.sourceKey("mail",mail.id):ReviewAcknowledgementRules.emailVersion(mail,assessment)]
         precondition(ProactiveRules.unreported([regeneratedProposal],prior:[ack],dismissedVersions:acknowledgedVersions).isEmpty,"Same exact dismissed concern stays acknowledged after prose regeneration")

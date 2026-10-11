@@ -282,14 +282,45 @@ import Synchronization
         model.emailSummaries.keepForReview(handledMail.1.id,model:model)
         checks["Keep in review restores a handled email to the count"] = model.reviewInbox.pendingCount == reviewBase+1
         model.emailSummaries.keepForReview(handledMail.1.id,model:model,keep:false)
-        let proposal=PADiscovery(id:UUID().uuidString,registration:registration,mailID:reviewMail.0.id,kind:"reminder",message:"Review the separate Orion reminder proposal.",evidence:reviewMail.1.evidence,created:now,scope:"fictional",sourceRevision:reviewMail.1.fingerprint,sourceAssessmentRevision:reviewMail.1.adviceRevision(replied:false))
+        var proposal=PADiscovery(id:UUID().uuidString,registration:registration,mailID:reviewMail.0.id,kind:"reminder",message:"Review the separate Orion reminder proposal.",evidence:reviewMail.1.evidence,created:now,scope:"fictional",sourceRevision:reviewMail.1.fingerprint,sourceAssessmentRevision:reviewMail.1.adviceRevision(replied:false))
         try model.proactive.seedAdviceFixture([proposal],model:model)
-        checks["badge counts independent email and proposal cards from one source"] = model.reviewInbox.pendingCount == reviewBase+1
+        proposal=model.proactive.state.records[0]
+        checks["email and proposal share one card and one badge item"] = model.reviewInbox.pendingCount == reviewBase && model.reviewInbox.emailCards.count == 1 && model.reviewInbox.emailCards[0].discoveries == [proposal] && model.reviewInbox.standaloneDiscoveries.isEmpty
+        var groupedUpdate=proposal;groupedUpdate.id=UUID().uuidString;groupedUpdate.kind="update";groupedUpdate.message="The Orion review has additional background context."
+        try model.proactive.seedAdviceFixture([proposal,groupedUpdate],model:model)
+        checks["additional background context retains its receipt inside the same email card"] = model.reviewInbox.pendingCount == reviewBase && model.reviewInbox.emailCards[0].discoveries.count == 2 && model.proactive.state.records.count == 2
+        model.proactive.dismiss(groupedUpdate,model:model)
+        checks["dismissing one attached concern preserves the email and sibling action"] = model.reviewInbox.emailCards.count == 1 && model.reviewInbox.emailCards[0].discoveries == [proposal] && model.reviewInbox.pendingCount == reviewBase
+        model.proactive.undo(model)
+        checks["attached concern Undo restores the original group without another card"] = model.reviewInbox.emailCards[0].discoveries.count == 2 && model.reviewInbox.pendingCount == reviewBase
+        model.emailSummaries.dismiss(reviewMail.0.id,model:model,expectedRegistration:registration,expectedVersion:ReviewAcknowledgementRules.emailVersion(reviewMail.0,reviewMail.1))
+        checks["whole-email dismissal clears the combined card without deleting proposal receipts"] = model.reviewInbox.emailCards.isEmpty && model.reviewInbox.standaloneDiscoveries.isEmpty && model.proactive.state.records.count == 2
+        model.emailSummaries.undoDismiss(model)
+        checks["whole-email Undo restores all attached concerns once"] = model.reviewInbox.emailCards.count == 1 && model.reviewInbox.emailCards[0].discoveries.count == 2 && model.reviewInbox.pendingCount == reviewBase
+        try model.proactive.seedAdviceFixture([proposal],model:model)
         let creationRequest=NativeCreationRequest(id:UUID(uuidString:proposal.id)!,kind:.reminder,registration:registration)
         try model.nativeCreations.begin(creationRequest)
-        checks["uncertain native save remains counted and is recognised for outcome checking"] = model.reviewInbox.pendingCount == reviewBase+1 && model.reviewCreationClaim(proposal)?.receipt == nil && model.reviewCreationClaim(proposal) != nil
+        checks["uncertain native save remains inside the counted card for outcome checking"] = model.reviewInbox.pendingCount == reviewBase && model.reviewCreationClaim(proposal)?.receipt == nil && model.reviewCreationClaim(proposal) != nil && model.reviewInbox.emailCards[0].discoveries == [proposal]
         try model.nativeCreations.complete(creationRequest,receipt:.init(requestID:creationRequest.id,registration:registration,kind:.reminder,itemID:"fictional-saved-reminder",title:"Fictional Orion reminder",destination:"Fixture",created:now,sourceScope:"fictional-list"))
         checks["verified creation leaves history visible without inflating badge"] = model.reviewInbox.pendingCount == reviewBase && model.reviewInbox.discoveries.count == 1
+        let planned=model.reviewInbox.handled.first{$0.0.id == "preview-1"}!
+        var plannedProposal=proposal;plannedProposal.id=UUID().uuidString;plannedProposal.mailID=planned.0.id;plannedProposal.kind="remove";plannedProposal.evidence=planned.1.evidence
+        plannedProposal.sourceRevision=planned.1.fingerprint;plannedProposal.sourceAssessmentRevision=planned.1.adviceRevision(replied:planned.0.replied)
+        plannedProposal.proposedRemoval = .init(target:.event(model.paOrientation!.calendar.events[0],writable:true),connection:"Fictional separate proposal for the same exact review.",timeZoneID:TimeZone.current.identifier)
+        try model.proactive.seedAdviceFixture([proposal,plannedProposal],model:model)
+        checks["grouped native proposal retains planned context without a second history card"] = model.reviewInbox.emailCards.first{$0.id == planned.0.id}?.handling == planned.2 && !model.reviewInbox.handled.contains{$0.0.id == planned.0.id} && model.reviewInbox.pendingCount == reviewBase+1
+        model.emailSummaries.keepForReview(planned.1.id,model:model)
+        checks["Keep in review still overrides planned context on a grouped card"] = model.reviewInbox.emailCards.first{$0.id == planned.0.id}?.handling == nil && model.reviewInbox.emailCards.first{$0.id == planned.0.id}?.needsReview == true
+        model.emailSummaries.keepForReview(planned.1.id,model:model,keep:false)
+        let savedAssessments=model.emailSummaries.records
+        var informational=reviewMail.1;informational.attention=false;informational.needsReply=false;informational.worthReading=true;informational.replyDraft=nil
+        var completedProposal=proposal;completedProposal.id=UUID().uuidString;completedProposal.sourceAssessmentRevision=informational.adviceRevision(replied:false)
+        try model.emailSummaries.seedAdviceFixture([informational]);try model.proactive.seedAdviceFixture([completedProposal],model:model)
+        let completedRequest=NativeCreationRequest(id:UUID(uuidString:completedProposal.id)!,kind:.reminder,registration:registration)
+        try model.nativeCreations.begin(completedRequest)
+        try model.nativeCreations.complete(completedRequest,receipt:.init(requestID:completedRequest.id,registration:registration,kind:.reminder,itemID:"fictional-completed-only",title:"Fictional created reminder",destination:"Fixture",created:now,sourceScope:"fictional-list"))
+        checks["completed-only email group stays visible as reviewed history with no pending badge"] = model.reviewInbox.emailCards.count == 1 && !model.reviewInbox.emailCards[0].needsReview && model.reviewInbox.pendingCount == 0
+        try model.emailSummaries.seedAdviceFixture(savedAssessments);try model.proactive.seedAdviceFixture([proposal],model:model)
         _=model.assistant.queue.add(registration:registration,topicID:nil,prompt:"Fictional delegated work")
         let queued=model.assistant.queue.items.last!
         checks["ordinary queued work does not need human review"] = model.reviewInbox.pendingCount == reviewBase
