@@ -2,7 +2,7 @@
 
 ## Current reliability candidate — 12 October
 
-The full [reliability checklist](docs/RELIABILITY_IMPLEMENTATION.md) remains open. No reliability candidate installation or sustained acceptance is claimed. Final source-free checks pass 59/59; signed build and all three app-memory modes pass. The earlier native fixture 23/24 exposed a constructor preference-write regression, fixed and followed by 24/24; final native passes 24/24 with cleanup and configured-model tier passes 5/5 (61 assertions/nine fictional requests). Heartbeat extraction and exact child completion guards are integrated.
+The full [reliability checklist](docs/RELIABILITY_IMPLEMENTATION.md) remains open. The reliability candidate is installed; sustained acceptance remains unproven. Final source-free checks pass 59/59; signed build and all three app-memory modes pass. The earlier native fixture 23/24 exposed a constructor preference-write regression, fixed and followed by 24/24; final native passes 24/24 with cleanup and configured-model tier passes 5/5 (61 assertions/nine fictional requests). Heartbeat extraction and exact child completion guards are integrated.
 
 | Scope | Current evidence | Remaining requirement |
 | --- | --- | --- |
@@ -14,7 +14,7 @@ The full [reliability checklist](docs/RELIABILITY_IMPLEMENTATION.md) remains ope
 | Source-free app consumers | Final signed candidate modes pass 3/3 (137/137,62/62,11/11), zero AI/native changes | Installed behaviour and sustained source traffic |
 | Candidate launch safety | Pure guard 37/37, including inspect/cleanup prefixes; runner signature/protocol/exact-mode/report/timeout gates; final signed handshake passes | Legacy diagnostic effects remain mode-specific; only audited runner modes are disposable |
 | Configured-model quality | Final model tier 5/5: commitment 8/8, resolution 12/12, native memory 12/12, relevance 14/14, removal 15/15; nine fictional requests | Sustained usefulness; broad semantic quality remains unproven and paraphrase probes remain 0/2 |
-| Installation and sustained use | Existing 11 October installation retained | Backup, signed replacement/readback/relaunch and several days of observed use |
+| Installation and sustained use | Code a63b2da installed after full verified private backup; signature/binary readback, 10/10 protected preservation and native typing/navigation/normal relaunch | At least 72 hours/three local days, physical sleep/lid/wake and normal authorised changed-turn save; see [Live acceptance](docs/LIVE_ACCEPTANCE.md) |
 
 Final source-free report: `/private/tmp/missioncontrol-check-0grobw_d/results.json`; final app-memory: `/private/tmp/missioncontrol-check-6ilz4px7/results.json`; final native: `/private/tmp/missioncontrol-check-sg4lvwcx/results.json`; final model: `/private/tmp/missioncontrol-check-51tuu4bi/results.json`. Initial final app launches aborted in sandboxed AppKit registration before service startup; elevated desktop access passed the same modes. Exact reports and intermediate fixture/runtime failures are in the 12 October STATUS entry. Legacy/native/model evidence below belongs to its named earlier checkpoint.
 

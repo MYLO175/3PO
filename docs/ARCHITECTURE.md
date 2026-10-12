@@ -1,6 +1,6 @@
 # Architecture
 
-Current reliability work is being integrated and validated. This describes component ownership in the candidate source; it does not imply installation or completion of sustained acceptance. [Validation](../VALIDATION.md) and the [implementation checklist](RELIABILITY_IMPLEMENTATION.md) record those separately.
+The reliability checkpoint is installed and its focused/integration/preservation checks pass. This describes current component ownership; sustained acceptance remains open. [Validation](../VALIDATION.md) and the [implementation checklist](RELIABILITY_IMPLEMENTATION.md) record those separately.
 
 ## What makes the PA work
 

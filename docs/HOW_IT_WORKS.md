@@ -2,7 +2,7 @@
 
 For current component ownership and the path from a message to a verified answer, start with [Architecture](ARCHITECTURE.md). The [reliability checklist](RELIABILITY_IMPLEMENTATION.md) distinguishes implementation from completed acceptance.
 
-The reliability candidate separates conversation execution, learning, heartbeat orchestration, source reads and keyed storage from dashboard presentation. Background stages capture an exact heartbeat run; cancellation or changed ownership rejects results before saving, while earlier completed work remains. Construction loads settings without writing fallback defaults. This candidate still needs installed preservation and sustained acceptance; the installed 11 October checkpoint is separately recorded in STATUS.
+The reliability candidate separates conversation execution, learning, heartbeat orchestration, source reads and keyed storage from dashboard presentation. Background stages capture an exact heartbeat run; cancellation or changed ownership rejects results before saving, while earlier completed work remains. Construction loads settings without writing fallback defaults. The installed candidate passes preservation and normal relaunch checks; sustained acceptance remains open in LIVE_ACCEPTANCE and STATUS.
 
 ## 11 October: simpler Review and feedback in memory
 

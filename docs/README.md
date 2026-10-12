@@ -32,3 +32,5 @@ After a meaningful feature changes, update its explanation here and the relevant
 Git is the history and backup mechanism; these Markdown pages are the explanation. They can be read in Codex, a text editor or Obsidian. Obsidian is optional and is not part of Mission Control's runtime. These files document the software, not your personal life: emails, chats, credentials and private memory remain outside the repository.
 
 Current entry points include the 11–12 October reliability work. Candidate implementation, installed behaviour and sustained acceptance are recorded separately. An installed build and a passing test are different from a completed live acceptance check; see STATUS and VALIDATION for those boundaries.
+
+[Installed live acceptance](LIVE_ACCEPTANCE.md) tracks real elapsed use, physical power cycles and preservation separately from fictional regression/model evidence.
