@@ -190,10 +190,10 @@ struct AssistantPanel: View {
                                         Spacer()
                                         Button("Review") { showMemory = true }.controlSize(.small)
                                     }
-                                    Text(turn.content.components(separatedBy:"\n\n").first ?? turn.content).lineLimit(3).textSelection(.enabled)
-                                    DisclosureGroup("Details") { Text(turn.content).textSelection(.enabled) }.font(.caption)
+                                    Text(PAProse.display(turn.content.components(separatedBy:"\n\n").first ?? turn.content)).lineLimit(3).textSelection(.enabled)
+                                    DisclosureGroup("Details") { Text(PAProse.display(turn.content)).textSelection(.enabled) }.font(.caption)
                                 } else if turn.role == "assistant" {
-                                    let content=PAIntentFailure.correctedLegacyReply(turn.content,errors:turn.toolErrors)
+                                    let content=PAProse.display(PAIntentFailure.correctedLegacyReply(turn.content,errors:turn.toolErrors))
                                     Text((try? AttributedString(markdown:content,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(content)).textSelection(.enabled).lineSpacing(3).id(turn.completed)
                                 } else if !turn.content.isEmpty { Text(turn.content).textSelection(.enabled) }
                                 if turn.completed, turn.role == "assistant",turn.id == conversation?.turns.last?.id,let choices=turn.choices {

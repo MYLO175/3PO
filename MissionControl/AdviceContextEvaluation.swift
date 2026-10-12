@@ -160,7 +160,7 @@ import Synchronization
         var checks=fingerprintCacheChecks(model)
         checks.merge(try navigationStorageChecks(),uniquingKeysWith:{$1})
         checks["actual capture includes permitted source and human facts"]=capture.records.count == 2 && capture.dependencies.count == 2
-        let morning=DailyBriefing(id:"fictional-morning",registration:registration,day:BriefingRules.day(now),created:now,items:[.init(text:"Prepare the Orion prototype.",sourceIDs:["memory_0"])],sources:[.init(id:"memory_0",label:"Fictional memory",kind:"memory",date:nil,originalID:fact.id.uuidString)],coverage:"Fictional",message:"Good morning. Prepare the Orion prototype.",memoryDependencies:capture.dependencies)
+        let morning=DailyBriefing(id:"fictional-morning",registration:registration,day:BriefingRules.day(now),created:now,items:[.init(text:"Prepare the Orion prototype.",sourceIDs:["memory_0"])],sources:[.init(id:"memory_0",label:"Fictional memory",kind:"memory",date:nil,originalID:fact.id.uuidString)],coverage:"Fictional",message:"Good morning. Prepare the Orion prototype. [memory_0]",memoryDependencies:capture.dependencies)
         let json:[String:Any]=["id":"fictional-message","accountID":"fictional-mail","account":"Fictional Mail","messageID":1,"internetMessageID":"orion@example.invalid","sender":"Fictional tutor","subject":"Orion preparation","received":now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
         let message=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:json))
         model.mailData = .init(messages:[message],accounts:[.init(id:message.accountID,title:message.account)],errors:[])
@@ -179,6 +179,8 @@ import Synchronization
         let savedAdvice=model.proactive.state.records[0],savedMorning=model.briefings.state.records[0]
         let delivery=ConversationRules.morningKey(registration:registration,day:morning.day)
         checks["actual current brief is initially available"]=model.briefings.current(model)?.id == morning.id
+        checks["saved brief display hides internal aliases without rewriting the original"]=BriefingRules.displayProse(savedMorning) == "Good morning. Prepare the Orion prototype." && savedMorning.message == morning.message && savedMorning.items[0].sourceIDs == ["memory_0"]
+        checks["original cited morning delivery remains valid for exact history guards"]=model.briefings.allowsChatDelivery(delivery,content:BriefingRules.prose(morning),model:model)
         checks["actual Tasks suggestion is initially visible"]=model.proactive.visible(savedAdvice,model:model)
         permitted=false
         checks["revocation rejects captured context before a save"] = !model.memoryDependenciesAvailable(capture.dependencies,use:.brief) && capture != model.automaticMemory(.brief)

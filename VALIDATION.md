@@ -1,5 +1,9 @@
 # Validation
 
+## Readable report sources — 12 October
+
+Final signed update installed at 20:59 London. Five focused source-free suites plus final alias-presentation checks pass; signed app-memory modes pass 144/144, 62/62 and 11/11 with no inference/native writes. Installed readback confirms the existing evening brief has no internal citation labels and its readable source controls remain. Original raw prose/source IDs/morning-delivery identity are preserved, verified by actual consumer checks. Full backup verifies 66 records/13 files; all records remain identical through replacement. Relaunch retains 39 protected records byte-for-byte; workspace layout/filter membership is identical apart from its existing same-day Calendar clock and set encoding order. No personal refresh or model-quality request was issued. Reports and limitations are in STATUS.
+
 ## Background Feedback fix — 12 October
 
 Installed signed at 20:20 London. Submission closes immediately after retaining words; an app-owned serial job survives dashboard/assistant navigation. Failure retains feedback with explicit retry/fallback; reopening does not replay work. Completed typed subscription output replaces the reproduced plain-text format failure. Nine relevant source-free suites pass, plus final queue/typed-output/Stop/unwind checks. Final signed app-memory modes pass 142/142, 62/62 and 11/11 with zero inference/native changes; configured-model quality passes 20/20 across three fictional requests after two retained pre-fix format failures. Native disposable preview verifies submission/navigation/save/original words, and installed Feedback shows the new form without personal submission. All 65 saved records are identical through replacement; 38 protected records survive relaunch. Full evidence and report/backup paths are in STATUS. Sustained personal adaptation and real feedback interruption/reopen remain separate.

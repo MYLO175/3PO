@@ -1,6 +1,7 @@
 import Foundation
 @main struct Checks {
     static func main() throws {
+        presentationChecks()
         precondition(BriefingRequestAvailability().reason == nil)
         precondition(!BriefingRules.requestAllowed(manual:false,heartbeat:false),"Timers, startup and source refresh cannot independently prepare a brief")
         precondition(BriefingRules.requestAllowed(manual:true,heartbeat:false))
@@ -85,6 +86,16 @@ import Foundation
         fallback.created=date(2026,10,2,20)
         precondition(BriefingRules.prose(fallback,calendar:c).hasPrefix("Good evening."))
         precondition(BriefingRules.prose(morning,calendar:c) == "Good morning","Stored message prose remains immutable; the clock does not rewrite history")
+        var cited=morning
+        cited.message="Good evening. **Prototype review at 09:05.** [calendar_4] [weather_0]\n\nPrepare the report. [reminder_0, mail_1]"
+        cited.items=[.init(text:"Prepare the report. [mail_1]",sourceIDs:["mail_1"])]
+        cited.sources=[.init(id:"mail_1",label:"Fictional report email",kind:"mail",date:nil,originalID:"exact-fictional-email")]
+        let presentationEncoder=JSONEncoder();presentationEncoder.outputFormatting = .sortedKeys
+        let stored=try presentationEncoder.encode(cited)
+        precondition(BriefingRules.displayProse(cited,calendar:c) == "Good evening. **Prototype review at 09:05.**\n\nPrepare the report.")
+        precondition(BriefingRules.prose(cited,calendar:c) == cited.message,"Original prose remains available for exact morning-delivery and AI-history identity guards")
+        let afterPresentation=try presentationEncoder.encode(cited)
+        precondition(afterPresentation == stored,"Presentation must not rewrite prose, source aliases, exact IDs or evidence receipts")
         var update = morning; update.id = "update"; update.morningID = morning.id; update.created = date(2026,10,2,12); update.message = "This afternoon"
         let noon = date(2026,10,2,12)
         assert(BriefingRules.current(morning:morning,update:update,now:noon,calendar:c).id == "update")
@@ -173,5 +184,24 @@ import Foundation
         _=nativeRecovery.advance(.init(kinds:["native"]));_=nativeRecovery.advance(.init(kinds:["native"]))
         precondition(nativeRecovery.omittedKinds.isEmpty,"Native source changes never bypass exact validation")
         print("PASS: account-scoped prompt/default persistence and stale captures; local dayparts/timezone/DST, immutable prose, catch-up, delivery claims and source validation")
+    }
+    private static func presentationChecks() {
+        let examples:[(String,String)]=[
+            ("Meeting at 09:05. [calendar_4] [calendar_5]","Meeting at 09:05."),
+            ("Forecast: **20°C**, 63% rain. [weather_0]\n\nReply tomorrow. [mail_1; whatsapp_0]","Forecast: **20°C**, 63% rain.\n\nReply tomorrow."),
+            ("Use memory_2 and workspace_3.","Use Saved memory and Project item."),
+            ("Review `calendar_4`.","Review Calendar event."),
+            ("Plan[reminder_0]tomorrow.","Plan tomorrow."),
+            ("[mail_1]",""),
+            ("Keep [important], [1] and user_calendar_4. Item calendar_4.swift is a filename.","Keep [important], [1] and user_calendar_4. Item calendar_4.swift is a filename."),
+            ("[Guide](https://example.invalid/calendar_4) and https://example.invalid/mail_1","[Guide](https://example.invalid/calendar_4) and https://example.invalid/mail_1"),
+            ("[calendar_4](https://example.invalid/event)","[Calendar event](https://example.invalid/event)"),
+            ("[calendar_4, weather_0](https://example.invalid/event)","[Calendar event, Weather forecast](https://example.invalid/event)"),
+            ("```swift\nlet calendar_4 = 4\n```\n\nA meeting. [calendar_4]","```swift\nlet calendar_4 = 4\n```\n\nA meeting."),
+            ("Keep `print(calendar_4)` as code.","Keep `print(calendar_4)` as code.")
+        ]
+        for (raw,expected) in examples {precondition(PAProse.display(raw) == expected,"Source-reference presentation must preserve readable prose, Markdown, links and code");precondition(PAProse.display(expected) == expected,"Presentation must be idempotent")}
+        for kind in ["calendar","reminder","mail","weather","whatsapp","memory","workspace","resolved"] {precondition(PAProse.display("Readable sentence. ["+kind+"_19]") == "Readable sentence.")}
+        print("PASS source-reference presentation: eight source families, grouped citations, readable bare labels, punctuation, Unicode, Markdown/link/code preservation and idempotence; no stored records changed.")
     }
 }

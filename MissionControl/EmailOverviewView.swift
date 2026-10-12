@@ -43,11 +43,11 @@ struct EmailOverviewView: View {
                                 Button { summaries.dismiss(message.id,model:model,expectedRegistration:summary.registration,expectedVersion:ReviewAcknowledgementRules.emailVersion(message,summary)) } label: { Image(systemName:"xmark") }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary).help("Dismiss suggestion").accessibilityLabel("Dismiss email suggestion")
                             }
                             Text(message.subject).font(.callout.weight(.semibold)).lineLimit(2)
-                            Text(summary.summary).font(.callout).lineSpacing(3).lineLimit(4).textSelection(.enabled)
+                            Text(PAProse.display(summary.summary)).font(.callout).lineSpacing(3).lineLimit(4).textSelection(.enabled)
                             if let date = summary.followUpDate { Label(date,systemImage:"calendar").font(.caption).foregroundStyle(.secondary) }
                             if let relevance=summary.personalRelevance {Label(relevance.reason,systemImage:"person.crop.circle.badge.checkmark").font(.caption).foregroundStyle(.secondary)}
                             DisclosureGroup("Why this matters") {
-                                VStack(alignment:.leading,spacing:6) { Text(summary.summary).textSelection(.enabled); if !summary.reason.isEmpty { Text(summary.reason) }; if !summary.evidence.isEmpty { Text("“" + summary.evidence + "”").foregroundStyle(.secondary).textSelection(.enabled) } }.font(.caption)
+                                VStack(alignment:.leading,spacing:6) { Text(PAProse.display(summary.summary)).textSelection(.enabled); if !summary.reason.isEmpty { Text(PAProse.display(summary.reason)) }; if !summary.evidence.isEmpty { Text("“" + summary.evidence + "”").foregroundStyle(.secondary).textSelection(.enabled) } }.font(.caption)
                             }.font(.caption)
                             HStack { Text(message.account + " · " + message.received.formatted(date:.abbreviated,time:.omitted)).font(.caption2).foregroundStyle(.secondary); Spacer(); Button("Read original") { model.select(message) }.buttonStyle(.link).font(.caption) }
                         }.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(Color.primary.opacity(0.035),in:RoundedRectangle(cornerRadius:12))

@@ -4,6 +4,10 @@ For current component ownership and the path from a message to a verified answer
 
 The reliability candidate separates conversation execution, learning, heartbeat orchestration, source reads and keyed storage from dashboard presentation. Background stages capture an exact heartbeat run; cancellation or changed ownership rejects results before saving, while earlier completed work remains. Construction loads settings without writing fallback defaults. The installed candidate passes preservation and normal relaunch checks; sustained acceptance remains open in LIVE_ACCEPTANCE and STATUS.
 
+## 12 October: readable reports without internal source labels
+
+Briefs, assistant replies, Review explanations and remembered reports hide internal source aliases such as `[calendar_4]` and `[weather_0]`. Saved output gets the same local display treatment immediately, with no AI refresh or data migration. Bare references use readable source-type labels; ordinary links, Markdown, explicit code examples, human messages and original evidence quotes retain their content. **Sources and coverage** still exposes readable labels and links from unchanged structured evidence. Raw saved prose remains available for exact morning-delivery/history checks, alongside the same source IDs and receipts. Future brief/reply instructions keep aliases in structured evidence/tool fields and names in prose.
+
 ## 12 October: reasoned preferences from email feedback
 
 Feedback on an email now uses one explicit, bounded subscription request to reason from your comment, the selected topic, and that exact email's sender, subject and up to 16,000 body characters. The **learned preference is the primary memory**, rather than a verbatim copy of an ambiguous comment. Original human words remain evidence. For example, ‘These emails aren't important’ on a general university broadcast can teach that routine newsletters from that communications team should stay quiet, while a new personal request or obligation still matters. Explicit sender-wide human wording can set a broader scope.

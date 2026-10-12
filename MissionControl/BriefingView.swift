@@ -26,7 +26,7 @@ struct BriefingView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(record.items) { item in
-                                Text(item.text).textSelection(.enabled)
+                                Text(PAProse.display(item.text)).textSelection(.enabled)
                                 ForEach(item.sourceIDs, id: \.self) { id in
                                     if let source = record.sources.first(where: { $0.id == id }) {
                                         if ["mail","mailResolution"].contains(source.kind), let message = model.mailData.messages.first(where: { $0.id == (source.originalID ?? id) }) ?? model.emailSummaries.sourceAssessments(model).first(where: { $0.0.id == (source.originalID ?? id) })?.0, !model.assistant.excludedAccounts.contains(message.accountID) {

@@ -44,13 +44,15 @@ struct TodayBriefView: View {
                     VStack(alignment:.leading,spacing:16) {
                         if showsWeather.wrappedValue {WeatherBriefCard(weather:model.weather)}
                         BriefFreshnessNote(model:model,briefings:briefings,record:record)
-                        Text((try? AttributedString(markdown:BriefingRules.prose(record),options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(BriefingRules.prose(record))).font(.callout).lineSpacing(5).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)
+                        let prose=BriefingRules.displayProse(record)
+                        Text((try? AttributedString(markdown:prose,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(prose)).font(.callout).lineSpacing(5).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)
                         DisclosureGroup("Sources and coverage") {
                             VStack(alignment:.leading,spacing:10) {
                                 Text(record.coverage).font(.caption).foregroundStyle(.secondary)
                                 MemoryAdviceEvidenceView(model:model,registration:record.registration,dependencies:record.memoryDependencies,use:.brief)
                                 ForEach(record.items) { item in
-                                    Text((try? AttributedString(markdown:item.text,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(item.text)).font(.caption)
+                                    let text=PAProse.display(item.text)
+                                    Text((try? AttributedString(markdown:text,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(text)).font(.caption)
                                     ForEach(item.sourceIDs,id:\.self) { id in
                                         if let source = record.sources.first(where: { $0.id == id }) {
                                             if source.kind == "mail", let message = model.emailSummaries.highlights(model).first(where:{ $0.0.id == source.originalID })?.0 { Button(source.label) { model.select(message) }.buttonStyle(.link).font(.caption) }

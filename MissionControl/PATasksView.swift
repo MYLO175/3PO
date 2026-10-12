@@ -111,7 +111,7 @@ struct PATasksView: View {
                 Label(item.kind == "reply" ? "Reply draft" : item.kind == "update" ? "Update" : item.kind == "change" ? "Date change" : item.kind == "remove" ? "Calendar removal" : "Missing plan",systemImage:item.kind == "calendar" ? "calendar.badge.plus" : "checklist").font(.caption).foregroundStyle(.secondary)
             }
             if let title=discoveryTitle(item),!embedded || (title != emailTitle && title != item.nativeTarget?.title) { Text(title).font(.callout.weight(.semibold)) }
-            if !embedded || item.nativeTarget == nil {Text(item.message).textSelection(.enabled)}
+            if !embedded || item.nativeTarget == nil {Text(PAProse.display(item.message)).textSelection(.enabled)}
             if !embedded,let details=model.proactive.sourceDetails(item,model:model) {ReviewSourceLabel(details:details,showsTitle:true)}
             if let reply=item.replyDraft {
                 Text(reply).font(.callout).textSelection(.enabled).padding(10).frame(maxWidth:.infinity,alignment:.leading).background(Color.primary.opacity(0.04),in:RoundedRectangle(cornerRadius:8))
@@ -159,7 +159,7 @@ struct PATasksView: View {
                     ForEach(questions) {item in
                         VStack(alignment:.leading,spacing:8) {
                             Label("Your answer would help",systemImage:"questionmark.bubble").font(.caption).foregroundStyle(.secondary)
-                            Text(item.question).font(.callout).textSelection(.enabled)
+                            Text(PAProse.display(item.question)).font(.callout).textSelection(.enabled)
                             DisclosureGroup("Context") {ForEach(item.sourceIDs,id:\.self) {id in if let source=item.snapshot.sources.first(where:{$0.id == id}) {Text(source.label + (source.date.map{" · " + $0.formatted(date:.abbreviated,time:.shortened)} ?? "")).font(.caption).textSelection(.enabled)}}}
                             HStack {Button("Answer") {answering=item;answer="";answerError=nil};Spacer();Button("Dismiss") {_ = model.briefings.resolveQuestion(item,model:model,answered:false)}}.controlSize(.small)
                         }.taskCard()
@@ -167,7 +167,7 @@ struct PATasksView: View {
                     ForEach(learningQuestions) {item in
                         VStack(alignment:.leading,spacing:8) {
                             Label("Getting to know you",systemImage:"questionmark.bubble").font(.caption).foregroundStyle(.secondary)
-                            Text(item.text).font(.callout)
+                            Text(PAProse.display(item.text)).font(.callout)
                             DisclosureGroup("Why I’m asking") {Text(item.evidence).font(.caption).textSelection(.enabled)}
                             HStack {Button("Answer") {answeringLearning=item;answer="";answerError=nil};Spacer();Button("Dismiss") {model.memoryLearning.dismiss(item)}}.controlSize(.small)
                         }.taskCard()
@@ -183,7 +183,7 @@ struct PATasksView: View {
                             Label(card.handling?.label ?? (!card.needsReview ? "Reviewed" : summary.replyDraft == nil ? (summary.attention ? "Needs attention" : "Update") : "Reply draft ready"),systemImage:card.handling != nil || !card.needsReview ? "checkmark.circle" : summary.replyDraft == nil ? "checklist" : "pencil.line").font(.caption).foregroundStyle(.secondary)
                             Text(message.subject).font(.callout.weight(.semibold)).lineLimit(2)
                             ReviewSourceLabel(details:.email(message))
-                            Text(summary.reason.isEmpty ? summary.summary : summary.reason).font(.callout).textSelection(.enabled)
+                            Text(PAProse.display(summary.reason.isEmpty ? summary.summary : summary.reason)).font(.callout).textSelection(.enabled)
                             if let handling=card.handling {
                                 Text("Inferred connection to “"+handling.native.title+"” · "+handling.reason).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                                 Button("Keep in review") {model.emailSummaries.keepForReview(summary.id,model:model)}.buttonStyle(.borderless).font(.caption)
@@ -301,7 +301,7 @@ struct CalendarRemovalReviewSheet:View {
             Text(session.baseline.title).font(.headline)
             Text(session.baseline.start.formatted(date:.complete,time:session.baseline.allDay ? .omitted : .shortened))
             Text("This event repeats. Approval removes only the occurrence shown above. Other occurrences stay in Calendar.").font(.callout)
-            Text(session.record.message).textSelection(.enabled)
+            Text(PAProse.display(session.record.message)).textSelection(.enabled)
             DisclosureGroup("Source evidence") {Text(session.record.evidence).font(.callout).textSelection(.enabled)}
             Text("Removal cannot be undone in 3PO.").font(.caption).foregroundStyle(.secondary)
             if let error {Text(error).font(.callout).foregroundStyle(.orange).textSelection(.enabled)}
@@ -326,10 +326,10 @@ struct ReviewHistoryView:View {
             VStack(alignment:.leading,spacing:12) {
                 Text("Items with current evidence that the action is planned or addressed. These stay out of your inbox. Keep in review overrides the inferred status.").font(.caption).foregroundStyle(.secondary)
                 ForEach(handled,id:\.0.id) {message,summary,value in
-                    VStack(alignment:.leading,spacing:6) {Text(message.subject).font(.callout.weight(.semibold));Text(value.reason).font(.caption);Text(value.native.title).font(.caption).foregroundStyle(.secondary);HStack {Button("View email") {model.select(message)};Button("Keep in review") {model.emailSummaries.keepForReview(summary.id,model:model)}}.controlSize(.small)}.taskCard()
+                    VStack(alignment:.leading,spacing:6) {Text(message.subject).font(.callout.weight(.semibold));Text(PAProse.display(value.reason)).font(.caption);Text(value.native.title).font(.caption).foregroundStyle(.secondary);HStack {Button("View email") {model.select(message)};Button("Keep in review") {model.emailSummaries.keepForReview(summary.id,model:model)}}.controlSize(.small)}.taskCard()
                 }
                 ForEach(resolved,id:\.0.id) {message,summary,value in
-                    VStack(alignment:.leading,spacing:6) {Text(message.subject).font(.callout.weight(.semibold));Text(value.reason).font(.caption);DisclosureGroup("Evidence") {Text("Earlier request: “"+value.requestQuote+"”");Text("Confirmation: “"+value.confirmation.quote+"”");if let confirmation=model.emailSummaries.sourceAssessments(model).first(where:{$0.0.id == value.confirmation.messageID})?.0 {Button("View confirmation") {model.select(confirmation)}}}.font(.caption);HStack {Button("View email") {model.select(message)};Button("Keep in review") {model.emailSummaries.keepForReview(summary.id,model:model)}}.controlSize(.small)}.taskCard()
+                    VStack(alignment:.leading,spacing:6) {Text(message.subject).font(.callout.weight(.semibold));Text(PAProse.display(value.reason)).font(.caption);DisclosureGroup("Evidence") {Text("Earlier request: “"+value.requestQuote+"”");Text("Confirmation: “"+value.confirmation.quote+"”");if let confirmation=model.emailSummaries.sourceAssessments(model).first(where:{$0.0.id == value.confirmation.messageID})?.0 {Button("View confirmation") {model.select(confirmation)}}}.font(.caption);HStack {Button("View email") {model.select(message)};Button("Keep in review") {model.emailSummaries.keepForReview(summary.id,model:model)}}.controlSize(.small)}.taskCard()
                 }
                 if handled.isEmpty && resolved.isEmpty {Text("No currently supported addressed items.").font(.caption).foregroundStyle(.secondary)}
                 Text("Dismiss acknowledges the displayed concern. Undo restores it. Feedback is saved separately in PA memory.").font(.caption).foregroundStyle(.secondary)

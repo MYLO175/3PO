@@ -23,7 +23,7 @@ struct CommitmentReportsView:View {
                         ForEach(reports) { report in
                             VStack(alignment:.leading,spacing:6) {
                                 Text(report.sourceState.map{"Source reports: " + $0.rawValue} ?? "No source-reported state").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                                Text(report.text).textSelection(.enabled)
+                                Text(PAProse.display(report.text)).textSelection(.enabled)
                                 Text(report.attribution).font(.caption).foregroundStyle(.secondary)
                                 PAMemoryEvidenceView(record:report,sourcePermitted:true)
                                 if report.commitmentGroup != nil { Text("Same plan · connected by you").font(.caption2).foregroundStyle(.secondary) }
@@ -35,7 +35,7 @@ struct CommitmentReportsView:View {
                             Text("Choose a report only if you know it concerns this same plan. Similar wording alone is not enough.").font(.caption).foregroundStyle(.secondary)
                             ForEach(candidates) { item in
                                 Button { candidate=item;capturedRevision=memory.revision } label: {
-                                    VStack(alignment:.leading,spacing:4) { Text(item.text).font(.callout);Text(item.attribution).font(.caption).foregroundStyle(.secondary) }.padding(10).frame(maxWidth:.infinity,alignment:.leading).background(candidate?.id == item.id ? Color.accentColor.opacity(0.1) : Color.primary.opacity(0.03),in:RoundedRectangle(cornerRadius:9))
+                                    VStack(alignment:.leading,spacing:4) { Text(PAProse.display(item.text)).font(.callout);Text(item.attribution).font(.caption).foregroundStyle(.secondary) }.padding(10).frame(maxWidth:.infinity,alignment:.leading).background(candidate?.id == item.id ? Color.accentColor.opacity(0.1) : Color.primary.opacity(0.03),in:RoundedRectangle(cornerRadius:9))
                                 }.buttonStyle(.plain)
                             }
                             if candidates.isEmpty { Text("No other available commitment reports in this scope.").font(.caption).foregroundStyle(.secondary) }

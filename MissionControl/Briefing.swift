@@ -156,6 +156,7 @@ enum BriefingRules {
         return value
     }
     static func prose(_ record: DailyBriefing, calendar: Calendar = .current) -> String { record.message ?? (greeting(record.created,calendar:calendar) + "\n\n" + record.items.map(\.text).joined(separator:"\n\n")) }
+    static func displayProse(_ record:DailyBriefing,calendar:Calendar = .current)->String {PAProse.display(prose(record,calendar:calendar))}
     static func morning(records: [DailyBriefing], registration: String, day: String) -> DailyBriefing? {
         records.filter { $0.registration == registration && $0.day == day && $0.invalidated != true && $0.morningID == nil }
             .min { $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created }
@@ -177,7 +178,7 @@ enum BriefingRules {
     // Editable writing preferences are separate from the fixed clock, evidence and response contract.
     static let writingPromptLimit=8000
     static var defaultWritingPrompt:String { attentionInstructions + "\n\n" + formattingInstructions }
-    static let referenceInstructions = "allowedSourceIDs is the complete citation list. Every sourceIDs entry must copy one of those aliases exactly, once per item. Supplied records use id for that citation alias. memoryID and original identities are bookkeeping, never citation IDs. Do not invent IDs for coverage, earlierBrief, reviewInbox or reviewQuestions; general suggestions can use an empty sourceIDs array. Cite workspace_N only for the supplied human workspace record, never as proof of an Apple change or completed communication."
+    static let referenceInstructions = "allowedSourceIDs is the complete citation list. Keep all evidence aliases exclusively in the structured sourceIDs arrays: never print them, bracketed citations or internal identifiers in message, item text or question prose. Refer to people, events and sources by their readable names. The app supplies source links separately. Every sourceIDs entry must copy one of those aliases exactly, once per item. Supplied records use id for that citation alias. memoryID and original identities are bookkeeping, never citation IDs. Do not invent IDs for coverage, earlierBrief, reviewInbox or reviewQuestions; general suggestions can use an empty sourceIDs array. Cite workspace_N only for the supplied human workspace record, never as proof of an Apple change or completed communication."
     static func memoryInput(_ records:[[String:String]])->[[String:String]] {
         records.enumerated().map { index,record in
             var value=record;value["memoryID"]=record["id"];value["id"]="memory_\(index)";return value
@@ -196,6 +197,49 @@ enum BriefingRules {
         guard value.items.allSatisfy({ Set($0.sourceIDs).count == $0.sourceIDs.count }) else { throw BriefingFailure.duplicateSources }
         guard value.items.allSatisfy({ Set($0.sourceIDs).isSubset(of: allowedSources) }) else { throw BriefingFailure.unknownSources }
         return value.items.map { .init(text: $0.text, sourceIDs: $0.sourceIDs) }
+    }
+}
+/// Presentation only: stored prose, exact source identities and evidence stay unchanged.
+/// Human messages and original source quotations do not use this projection.
+enum PAProse {
+    static let instructions="Use readable names in the human-facing answer, never internal source aliases such as calendar_4, reminder_0, mail_1 or memory_0. Keep exact identifiers in tool arguments and structured evidence fields only; the app supplies source details separately."
+    private static let family="(?:calendar|reminder|mail|weather|whatsapp|memory|workspace|resolved)"
+    private static let alias=family+"_[0-9]+"
+    private static let citation=try! NSRegularExpression(pattern:"[ \\t]*\\[\\s*"+alias+"(?:[\\s,;]+"+alias+")*\\s*\\](?:[ \\t]*(?=\\r?\\n|$))?")
+    private static let bare=try! NSRegularExpression(pattern:"(?<![A-Za-z0-9_./:@-])("+family+")_[0-9]+(?![A-Za-z0-9_]|\\.[A-Za-z0-9])")
+    private static let protected=try! NSRegularExpression(pattern:"(?s)```.*?```|~~~.*?~~~|`[^`\\r\\n]+`|\\[[^\\]\\r\\n]*\\]\\([^\\s)]+\\)|(?:https?://|mailto:)[^\\s<>]+")
+    private static let names=["calendar":"Calendar event","reminder":"Reminder","mail":"Email","weather":"Weather forecast","whatsapp":"WhatsApp message","memory":"Saved memory","workspace":"Project item","resolved":"Email confirmation"]
+    private static func name(_ value:String)->String? {
+        guard let match=bare.firstMatch(in:value,range:NSRange(value.startIndex...,in:value)),match.range.length == (value as NSString).length else {return nil}
+        return names[(value as NSString).substring(with:match.range(at:1))]
+    }
+    static func display(_ text:String)->String {
+        let source=text as NSString
+        var result="",cursor=0
+        for match in protected.matches(in:text,range:NSRange(location:0,length:source.length)) {
+            result += ordinary(source.substring(with:NSRange(location:cursor,length:match.range.location-cursor)))
+            let block=source.substring(with:match.range)
+            if block.hasPrefix("`"),!block.hasPrefix("```"),let label=name(String(block.dropFirst().dropLast())) {result += label}
+            else if block.hasPrefix("["),let separator=block.range(of:"](") {result += "["+ordinary(String(block[block.index(after:block.startIndex)..<separator.lowerBound]))+String(block[separator.lowerBound...])}
+            else {result += block}
+            cursor=NSMaxRange(match.range)
+        }
+        result += ordinary(source.substring(from:cursor))
+        return result.trimmingCharacters(in:.whitespacesAndNewlines)
+    }
+    private static func ordinary(_ text:String)->String {
+        let result=NSMutableString(string:text)
+        for match in citation.matches(in:text,range:NSRange(location:0,length:result.length)).reversed() {
+            let left=result.substring(to:match.range.location).last,right=result.substring(from:NSMaxRange(match.range)).first
+            let separatesWords=(left?.isLetter == true || left?.isNumber == true) && (right?.isLetter == true || right?.isNumber == true)
+            result.replaceCharacters(in:match.range,with:separatesWords ? " " : "")
+        }
+        let withoutCitations=result as String
+        for match in bare.matches(in:withoutCitations,range:NSRange(location:0,length:result.length)).reversed() {
+            let kind=(withoutCitations as NSString).substring(with:match.range(at:1))
+            result.replaceCharacters(in:match.range,with:names[kind] ?? "Source")
+        }
+        return result as String
     }
 }
 enum BriefingFailure: LocalizedError {
