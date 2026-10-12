@@ -75,6 +75,10 @@ import SwiftData
         var value = memory; value.text = String(value.text.prefix(2000)); value.reviewed = .now
         if value.reviewInterpretation?.rule != nil,value.reviewInterpretation?.rule != value.text {value.reviewInterpretation=nil;value.reviewFeedback=value.text}
         let old=records.first{$0.id == value.id}
+        if let old,old.reviewPreference == true,value.kind != .preference {
+            value.id=UUID()
+            return correct(old.id,with:value)
+        }
         value.commitmentGroup=value.kind == .commitment && old?.kind == .commitment && old?.registration == value.registration && old?.conversationID == value.conversationID ? old?.commitmentGroup : nil
         value.commitmentGroupRevision=value.commitmentGroup != nil ? old?.commitmentGroupRevision : nil
         return change { state in if let i = state.records.firstIndex(where:{ $0.id == value.id }) { state.records[i] = value } else { state.records.append(value) } }
@@ -240,6 +244,7 @@ import SwiftData
         guard let old=records.first(where:{$0.id == id}),old.supersededBy == nil,old.registration == replacement.registration,
               replacement.id != id,!records.contains(where:{$0.id == replacement.id}),!replacement.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { error="This is no longer the current memory, or its replacement is invalid.";return false }
         var next=replacement;next.text=String(next.text.prefix(2000));next.supersedes=id;next.supersededBy=nil;next.created = .now;next.reviewed = .now
+        if next.kind != .preference,next.reviewPreference == true {next.reviewPreference=nil;next.reviewInterpretation=nil;next.reviewFeedback=nil;next.reviewContext=nil}
         if next.reviewInterpretation?.rule != nil,next.reviewInterpretation?.rule != next.text {next.reviewInterpretation=nil;next.reviewFeedback=next.text}
         next.commitmentGroup=next.kind == .commitment && next.conversationID == old.conversationID ? old.commitmentGroup : nil
         next.commitmentGroupRevision=next.commitmentGroup != nil ? old.commitmentGroupRevision : nil

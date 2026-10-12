@@ -131,6 +131,12 @@ import SwiftData
         check(reloaded.retire(corrected.id,retired:true,expectedRevision:reloaded.revision) && reloaded.selection("contextual",query:"campus notices").records.isEmpty,"Disabling reasoned preference withdraws recall")
         check(reloaded.retire(corrected.id,retired:false,expectedRevision:reloaded.revision) && ids(reloaded.selection("contextual",query:"campus notices")) == [corrected.id],"Restore retains the preference identity")
         check(reloaded.forget(corrected.id) && reloaded.reviewPreferences("contextual",includeRetired:true).isEmpty,"Forget removes contextual preference lineage")
+        check(reloaded.saveReviewPreference(rawFeedback,registration:"kind-conversion",interpretation:interpretation),"Learned preference is available for explicit kind conversion")
+        let originalKind=reloaded.reviewPreferences("kind-conversion")[0]
+        var newKind=originalKind;newKind.kind = .context
+        check(reloaded.put(newKind),"Generic memory editor can convert a learned preference without changing prose")
+        let converted=reloaded.records.first{$0.registration == "kind-conversion" && $0.supersededBy == nil}!
+        check(converted.id != originalKind.id && converted.supersedes == originalKind.id && converted.kind == .context && converted.reviewPreference == nil && converted.reviewInterpretation == nil && converted.text == originalKind.text && converted.evidence == originalKind.evidence && MemoryRules.usable(converted,registration:"kind-conversion"),"Kind conversion retains history and evidence while clearing incompatible review metadata")
         var malformed=learned;malformed.reviewInterpretation?.rule="A conflicting rule"
         check(!MemoryRules.usable(malformed,registration:"contextual"),"Malformed interpretation is preserved but unavailable for recall")
         check(MemoryRules.needsReview(learned,now:learned.reviewed.addingTimeInterval(91*86400)),"Inferred preference retains the existing 90-day provisional review boundary")
