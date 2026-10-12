@@ -161,7 +161,7 @@ struct LifeNotebook {
             var facts:[[String:String]]=[]
             for record in records.prefix(6) {
                 var fact=["id":record.id.uuidString,"text":String(record.text.prefix(500)),"certainty":record.explicit || record.certainty == .stated ? "stated" : "inferred"]
-                if record.reviewPreference == true {fact["purpose"]="review preference";fact["reviewAbout"]=record.reviewContext ?? ""}
+                if record.reviewPreference == true {fact["purpose"]="review preference";fact["reviewAbout"]=record.reviewContext ?? "";fact["reviewFeedback"]=record.reviewFeedback ?? record.evidence ?? record.text;if let interpretation=record.reviewInterpretation {fact["reviewInterpretation"]=interpretation.rule;fact["reviewExampleSender"]=interpretation.sender}}
                 var candidate=value
                 candidate["areas"]=included+[["area":note.area.rawValue,"title":note.area.title,"facts":facts+[fact],"totalFacts":note.records.count]]
                 if encoded(candidate).utf8.count <= maxBytes { facts.append(fact) }

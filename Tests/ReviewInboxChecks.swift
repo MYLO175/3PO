@@ -1,6 +1,7 @@
 import Foundation
 @main struct ReviewInboxChecks {
-    static func main() throws {
+    @MainActor static func main() async throws {
+        try await ReviewFeedbackChecks.run()
         let now=Date.now,quote="The Orion prototype report deadline has moved to 20 October 2026."
         let targetTask=TaskItem(id:"exact-orion",listID:"studies",title:"Submit Orion prototype report",due:Calendar.current.date(from:DateComponents(year:2026,month:10,day:16)),hasTime:false,sourceLabel:"Studies",writable:true,recurring:false,modified:now)
         let target=DiscoveryNativeTarget.reminder(targetTask)

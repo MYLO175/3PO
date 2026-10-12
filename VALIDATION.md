@@ -1,5 +1,9 @@
 # Validation
 
+## Contextual Feedback update — 12 October
+
+Signed build and strict signature pass; installed at the existing 3PO path at 17:53 London with full verified backup. Ten focused source-free suites pass, including memory-quality 80/80 and contextual body/ownership/cancellation guards. Actual app-memory consumers pass 137/137 with zero inference/native writes. Configured-model evaluation passes 20/20 across three fictional requests: reasoned newsletter preference, future subject recall, quiet routine broadcasts and retained personal/teaching-office obligations. Native preview/installed Feedback verified; original comment survives failed save. All 64 saved records remain identical through replacement and 40 protected records pass post-relaunch preservation. No personal preference/inference/Apple write was submitted. Sustained adaptation, broad paraphrase recall and the existing 90-day inferred review boundary remain separate; full evidence/limitations are in STATUS.
+
 ## Current reliability candidate — 12 October
 
 The full [reliability checklist](docs/RELIABILITY_IMPLEMENTATION.md) remains open. The reliability candidate is installed; sustained acceptance remains unproven. Final source-free checks pass 59/59; signed build and all three app-memory modes pass. The earlier native fixture 23/24 exposed a constructor preference-write regression, fixed and followed by 24/24; final native passes 24/24 with cleanup and configured-model tier passes 5/5 (61 assertions/nine fictional requests). Heartbeat extraction and exact child completion guards are integrated.

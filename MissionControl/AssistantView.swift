@@ -36,6 +36,7 @@ struct AssistantPanel: View {
     private var errorHere: Bool { assistant.errorProfileSessionID == nil && (assistant.errorConversationID == nil || (assistant.errorConversationID == selectedID && assistant.errorTopicID == selectedTopicID)) }
     private var draft: Binding<String> {
         Binding(get:{ if let widgetID { return assistant.drafts.text(registration:model.chatGPT.activeID,widget:widgetID,conversation:draftKey) }; return assistant.draft },set:{ text in
+            model.emailSummaries.cancelReviewFeedback()
             if let widgetID { assistant.drafts.set(text,registration:model.chatGPT.activeID,widget:widgetID,conversation:draftKey) } else { assistant.draft = text }
         })
     }
@@ -57,6 +58,7 @@ struct AssistantPanel: View {
     @State private var imageError:String?
     @State private var composerHeight:CGFloat=22
     private func pasteImage(_ board:NSPasteboard) {
+        model.emailSummaries.cancelReviewFeedback()
         let registration=model.chatGPT.activeID,key=draftKey,widget=imageDraftWidget
         var added:[ChatImageAttachment]=[]
         do {
@@ -73,6 +75,7 @@ struct AssistantPanel: View {
         }
     }
     private func send() {
+        model.emailSummaries.cancelReviewFeedback()
         let attachments=attachedImages
         let value = draft.wrappedValue, contextID = selectedTopicID, key = draftKey, registration = model.chatGPT.activeID
         if assistant.send(model:model,topicID:contextID,prompt:value,focusAreas:focusAreas,images:attachments) {
@@ -83,6 +86,7 @@ struct AssistantPanel: View {
         }
     }
     private func showDraft() {
+        model.emailSummaries.cancelReviewFeedback()
         assistant.drafts.show(registration:model.chatGPT.activeID,widget:imageDraftWidget,conversation:draftKey)
         imageError=nil
         if !composerEmpty { model.memoryLearning.cancel();model.sourceLearning.cancel();model.nativeSourceLearning.cancel();model.memoryMaintenance.cancel(); model.proactive.cancel();model.heartbeat.userStartedTyping() }

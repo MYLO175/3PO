@@ -43,6 +43,29 @@ import SwiftData
     }
     #endif
     private var task: Task<Void, Never>?
+    @ObservationIgnored private var reviewFeedbackTask:Task<ReviewFeedbackInterpretation,Error>?
+    private(set) var reviewFeedbackGeneration=0
+    func cancelReviewFeedback() {reviewFeedbackGeneration += 1;reviewFeedbackTask?.cancel()}
+    /// Explicit foreground feedback. No heartbeat, history replay or automatic source learning.
+    func interpretReviewFeedback(_ source:ReviewFeedbackEmail,words:String,about:String,model:DashboardModel,isCurrent:@escaping ()->Bool)async throws->ReviewFeedbackInterpretation {
+        #if DEBUG
+        guard !ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") else {throw ActionFailure.message("Fictional preview uses no Mail reads or inference. Nothing was saved.")}
+        #endif
+        guard !busy,!model.chatGPT.busy,!model.assistant.busy,!model.writing,!model.heartbeat.busy,!model.proactive.busy,!model.briefings.busy,!model.memoryLearning.busy,!model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy,!model.projectPlacement.busy,!model.lifeOrganisation.busy else {throw ActionFailure.message("Wait for the current PA operation to finish, then save your feedback.")}
+        guard model.chatGPT.inferenceVerified,!model.chatGPT.usagePaused,model.assistant.memory.canSaveReviewPreference else {throw ActionFailure.message("PA interpretation is unavailable right now. Your words are still here; reconnect or save only your words.")}
+        let registration=model.chatGPT.activeID,selected=model.chatGPT.selectedModel,memoryRevision=model.assistant.memory.revision,sourceRevision=model.sourceRevision
+        busy=true
+        defer {busy=false;reviewFeedbackTask=nil}
+        let operation=Task {
+            try await ReviewFeedbackRules.prepare(source,words:words,about:about,model:selected,isCurrent:{
+                !Task.isCancelled && registration == model.chatGPT.activeID && selected == model.chatGPT.selectedModel && memoryRevision == model.assistant.memory.revision && sourceRevision == model.sourceRevision && !model.assistant.busy && !model.writing && model.chatGPT.inferenceVerified && !model.chatGPT.usagePaused && self.feedbackSourceCurrent(source.message,summary:source.summary,model:model) && isCurrent()
+            },readBody:{try await model.mail.body(accountID:source.message.accountID,messageID:source.message.messageID,expectedInternetMessageID:source.message.internetMessageID,mailboxName:source.message.mailboxName)},infer:{input in
+                try await model.chatGPT.streamResponse(input:[["role":"user","content":input]],instructions:ReviewFeedbackRules.instructions,model:selected,purpose:.reviewFeedback){_ in}
+            })
+        }
+        reviewFeedbackTask=operation
+        return try await withTaskCancellationHandler(operation:{try await operation.value},onCancel:{operation.cancel()})
+    }
     init(container: ModelContainer?) {
         self.container = container
         do {
@@ -85,7 +108,11 @@ import SwiftData
     }
     func feedbackSourceCurrent(_ message:MailMessage,summary:EmailSummary,model:DashboardModel)->Bool {
         guard model.assistant.contextEnabled,summary.registration == model.chatGPT.activeID,!model.assistant.excludedAccounts.contains(message.accountID),model.mailData.accounts.contains(where:{$0.id == message.accountID}),let current=model.mailData.messages.first(where:{$0.id == message.id}),current.accountID == message.accountID,let saved=records.first(where:{$0.id == message.id && $0.registration == summary.registration}),saved.fingerprint == EmailSummary.fingerprint(current) else {return false}
-        return ReviewAcknowledgementRules.emailVersion(current,saved) == ReviewAcknowledgementRules.emailVersion(message,summary)
+        return saved.fingerprint == summary.fingerprint && summary.fingerprint == EmailSummary.fingerprint(message) && (saved.observedBodyFingerprint == nil || saved.observedBodyFingerprint == saved.bodyFingerprint) && saved.adviceRevision(replied:current.replied) == summary.adviceRevision(replied:message.replied) && ReviewAcknowledgementRules.emailVersion(current,saved) == ReviewAcknowledgementRules.emailVersion(message,summary)
+    }
+    func feedbackEmail(_ record:PADiscovery,model:DashboardModel)->ReviewFeedbackEmail? {
+        guard record.sourceKind != "whatsapp",model.proactive.sourceEvidenceAvailable(record,model:model),let (message,summary)=sourceAssessments(model).first(where:{$0.0.id == record.mailID}),record.registration == summary.registration,(record.sourceRevision == nil || record.sourceRevision == summary.fingerprint),(record.sourceAssessmentRevision == nil || record.sourceAssessmentRevision == summary.adviceRevision(replied:message.replied)) else {return nil}
+        return .init(message:message,summary:summary)
     }
     func relevanceContext(_ message:MailMessage,model:DashboardModel,body:String="",header:Bool=false)->EmailRelevanceContext {
         guard model.assistant.contextEnabled else {return .init()}
@@ -348,7 +375,7 @@ import SwiftData
         return "PASS fictional header triage: personal future commitment selected, marketing ignored, embedded instruction rejected. No personal source sent or Apple write performed."
     }
     #endif
-    func cancel() { task?.cancel(); paused = true }
+    func cancel() { task?.cancel();cancelReviewFeedback(); paused = true }
     private func save() throws {
         guard let container else { throw SummaryFailure.invalid }
         try LocalRecordRepository(container: container).write([
