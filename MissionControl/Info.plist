@@ -9,6 +9,7 @@
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1</string>
 <key>CFBundleVersion</key><string>1</string>
+<key>3POEvaluationProtocol</key><integer>1</integer>
 <key>LSMinimumSystemVersion</key><string>26.0</string>
 <key>NSCalendarsUsageDescription</key><string>3PO reads your agenda and manages events you explicitly ask it to create or edit.</string>
 <key>NSCalendarsFullAccessUsageDescription</key><string>3PO reads your agenda and manages events you explicitly ask it to create or edit.</string>

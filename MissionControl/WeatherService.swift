@@ -43,8 +43,7 @@ import SwiftData
         manager.delegate = self; manager.desiredAccuracy = kCLLocationAccuracyKilometer
         authorization = manager.authorizationStatus
         if let container {
-            let context = ModelContext(container)
-            if let rows = try? context.fetch(FetchDescriptor<CachedDashboard>()), let row = rows.first(where:{$0.key == "localWeather"}) { forecast = try? JSONDecoder().decode(WeatherForecast.self,from:row.data) }
+            forecast = try? LocalRecordRepository(container: container).decode("localWeather", as: WeatherForecast.self)
         }
     }
     func startRefresh(allowPrompt: Bool = false, force: Bool = false) {
@@ -90,10 +89,7 @@ import SwiftData
             let result = try WeatherRules.decode(data,timezone:timezone)
             forecast = result
             if let container {
-                let context = ModelContext(container), data = try JSONEncoder().encode(result)
-                let rows = try context.fetch(FetchDescriptor<CachedDashboard>())
-                if let row = rows.first(where:{$0.key == "localWeather"}) { row.data = data; row.updated = .now } else { context.insert(CachedDashboard(key:"localWeather",data:data)) }
-                do { try context.save() } catch { self.error = "Forecast loaded, but could not be saved for relaunch." }
+                do { try LocalRecordRepository(container: container).save(result, key: "localWeather") } catch { self.error = "Forecast loaded, but could not be saved for relaunch." }
             }
         } catch is CancellationError { }
         catch { if enabled { self.error = (error as? WeatherFailure)?.localizedDescription ?? WeatherFailure.unavailable.localizedDescription } }

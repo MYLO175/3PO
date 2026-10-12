@@ -408,7 +408,7 @@ struct CalendarDragPreview: View {
         let final=try await snapshot()
         try check(final.events.count == 5,"Undo did not duplicate repeating occurrences")
         let report:[String:Any]=["completed":Date.now.ISO8601Format(),"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"scope":"Isolated UUID-marked native Calendar fixtures; production direct move and Undo, no AI or personal source reads."]
-        try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:"/tmp/missioncontrol-calendar-drag-evaluation.json"),options:.atomic)
+        try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]).write(to:EvaluationOutput.url("/tmp/missioncontrol-calendar-drag-evaluation.json"),options:.atomic)
         return "PASS \(checks.count)/\(checks.count) native Calendar move checks."
     }
 }

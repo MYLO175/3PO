@@ -15,7 +15,7 @@ import SwiftData
         var history: [[String:String]] = [], runs: [[String:Any]] = [], checks: [String:Bool] = [:]
         var trace: [[String:Any]] = []
         func progress() {
-            if let data = try? JSONSerialization.data(withJSONObject:["trace":trace, "runs":runs, "recordCount":projects.state.items.count], options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-project-evaluation-progress.json"),options:.atomic) }
+            if let data = try? JSONSerialization.data(withJSONObject:["trace":trace, "runs":runs, "recordCount":projects.state.items.count], options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-project-evaluation-progress.json"),options:.atomic) }
         }
         func runTurn(_ human: String) async throws -> String {
             let session = PAToolSession(model:model, human:human, humanContext:human, topicID:nil, turnID:UUID(), history:history, evaluationMemory:memory, evaluationProjects:projects, focusAreas:[])

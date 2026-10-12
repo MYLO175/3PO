@@ -26,8 +26,8 @@ import SwiftData
         state = initial
         guard !sample else { return }
         do {
-            if let record = try container?.mainContext.fetch(Self.savedWorkspace()).first {
-                let saved = try JSONDecoder().decode(WorkspaceState.self,from:record.data)
+            if let record = try LocalRecordRepository.read("workspace", container: container) {
+                let saved = try JSONDecoder().decode(WorkspaceState.self,from:record)
                 guard saved.schemaVersion == 1, !saved.pages.isEmpty,
                       saved.pages.allSatisfy({ page in Set(page.widgets.map(\.id)).count == page.widgets.count && page.widgets.allSatisfy { GridRules.valid($0.rect,among:page.widgets,excluding:$0.id) } }),
                       Set(saved.pages.map(\.id)).count == saved.pages.count else { throw WorkspaceFailure.invalid }
@@ -46,10 +46,7 @@ import SwiftData
     private func save() throws {
         guard !sample else { return }
         guard let container else { throw WorkspaceFailure.storage }
-        let context = container.mainContext, data = try JSONEncoder().encode(state)
-        if let record = try context.fetch(Self.savedWorkspace()).first { record.data = data; record.updated = .now }
-        else { context.insert(CachedDashboard(key:"workspace",data:data)) }
-        do { try context.save() } catch { context.rollback(); throw error }
+        try LocalRecordRepository(container: container).save(state, key: "workspace")
     }
     private func change(_ body: (inout WorkspaceState) -> Void, undoable: Bool = true) {
         guard readable else { return }

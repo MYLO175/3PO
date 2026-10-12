@@ -1,5 +1,8 @@
 # Next improvements
 
+Current approved work: the user requested implementation of the full [reliability and architecture plan](RELIABILITY_IMPLEMENTATION.md). Specific defects and source-free regressions precede structural consolidation, fair learning, measured storage/recall improvements, documentation and signed/sustained acceptance. This work is in progress; earlier feature-quality limitations remain. Phone support is deferred.
+
+
 ## 11 October: Review feedback and inbox scope
 
 Implemented: one Dismiss per card as acknowledgement; free-text Feedback saved in the canonical PA memory; current-word inspection, versioned editing and Disable/Restore; relevant conditional preferences in header/body review; meaningful informational reading alongside actions; addressed/planned and completed suggestions outside the main inbox. Activity retains supported email history and Keep in review. Conservative request/native semantic guards reject unrelated assessment matches and preserve uncertain receipts. Older informational judgements wait for a fresh bounded policy assessment before they can refill Review.

@@ -7,11 +7,26 @@ import SwiftData
     var records: [PAMemory] { state.records }
     private(set) var error: String?
     private(set) var revision = UUID()
-    var enabled = UserDefaults.standard.object(forKey:"paMemoryEnabled") as? Bool ?? true { didSet { UserDefaults.standard.set(enabled,forKey:"paMemoryEnabled"); revision = UUID() } }
-    var learningEnabled = UserDefaults.standard.object(forKey:"paMemoryLearningEnabled") as? Bool ?? true { didSet { UserDefaults.standard.set(learningEnabled,forKey:"paMemoryLearningEnabled");revision = UUID() } }
+    var enabled = true { didSet { if !restoringSettings { settings.set(enabled,forKey:"paMemoryEnabled"); revision = UUID() } } }
+    var learningEnabled = true { didSet { if !restoringSettings { settings.set(learningEnabled,forKey:"paMemoryLearningEnabled");revision = UUID() } } }
+    private let settings: UserDefaults
+    @ObservationIgnored private var restoringSettings = true
     private let container: ModelContainer?
     private var writable = true
     @ObservationIgnored var notebookProjection: ((LifeNotebook,String,UUID?,Bool)->LifeNotebook)?
+    @ObservationIgnored var notebookProjectionRevision: (() -> UUID)?
+    @ObservationIgnored private var preparedNotebook: (key: NotebookKey, value: LifeNotebook)?
+    @ObservationIgnored private var preparedLexical: (revision: UUID, value: MemoryLexicalIndex)?
+    @ObservationIgnored private(set) var notebookBuildCount = 0
+    private struct NotebookKey: Equatable {
+        var memory: UUID
+        var workspace: UUID?
+        var registration: String
+        var topic: UUID?
+        var includeTopics: Bool
+        var suppliedIDs: Set<UUID>
+        var currentIDs: Set<UUID>
+    }
     @ObservationIgnored var sourceIsPermitted:(PAMemory)->Bool = { _ in false }
     @ObservationIgnored var sourcePermissionProjection:(()->Set<UUID>)?
     var permittedRecords:[PAMemory] {
@@ -25,14 +40,18 @@ import SwiftData
     }
     #endif
     func sourceAssessmentDate(_ key:String)->Date? { state.sourceAssessmentReceipts?[key] }
-    init(container: ModelContainer?) {
+    init(container: ModelContainer?, settings: UserDefaults = .standard) {
         self.container = container
+        self.settings = settings
+        enabled = settings.object(forKey:"paMemoryEnabled") as? Bool ?? true
+        learningEnabled = settings.object(forKey:"paMemoryLearningEnabled") as? Bool ?? true
         do {
-            if let record = try container?.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first(where:{ $0.key == "paMemory" }) {
-                state = try MemoryEnvelope.decode(record.data)
+            if let record = try LocalRecordRepository.read("paMemory", container: container) {
+                state = try MemoryEnvelope.decode(record)
                 guard Set(records.map(\.id)).count == records.count else { throw MemoryLearningFailure.invalid }
             }
         } catch { writable = false; self.error = "Memory could not be read. The saved record is preserved; changes are disabled." }
+        restoringSettings = false
     }
     func items(_ registration: String) -> [PAMemory] { records.filter { $0.registration == registration }.sorted { $0.reviewed > $1.reviewed } }
     func suppressed(_ registration: String) -> Set<String> { state.suppressed[registration] ?? [] }
@@ -131,7 +150,7 @@ import SwiftData
     }
     /// A source may supersede only an issued, current provisional belief from that same conversation.
     /// Every quotation is checked, and the old/new version links are saved in one transaction.
-    @discardableResult func putSources(_ values:[PAMemory],evidenceTexts:[MemorySourceIdentity:String],expectedRevision:UUID,assessmentIDs:[String]=[],replacementSources:[UUID:MemorySourceEvidence]=[:])->Bool {
+    @discardableResult func putSources(_ values:[PAMemory],evidenceTexts:[MemorySourceIdentity:String],expectedRevision:UUID,assessmentIDs:[String]=[],replacementSources:[UUID:MemorySourceEvidence]=[:],now:Date = .now)->Bool {
         guard revision == expectedRevision,assessmentIDs.count <= 8,Set(assessmentIDs).count == assessmentIDs.count,assessmentIDs.allSatisfy({$0.range(of:"^source-assessment:[a-f0-9]{64}$",options:.regularExpression) != nil}) else { error="Source assessment identity or captured state changed.";return false }
         if !assessmentIDs.isEmpty && assessmentIDs.allSatisfy({state.sourceAssessmentReceipts?[$0] != nil}) { return true }
         guard values.count <= 4,Set(values.map(\.id)).count == values.count,
@@ -143,7 +162,7 @@ import SwiftData
                   (value.supportingSources ?? []).allSatisfy({evidence in guard let date=evidence.sourceDate,let primaryDate=source.sourceDate else { return false };return date <= primaryDate}),
                   value.sourceState == nil || value.kind == .commitment else { return false }
             if let previous=value.supersedes {
-                guard let old=records.first(where:{$0.id == previous}),MemoryRules.usable(old,registration:value.registration),!old.explicit,old.sourceTurnID == nil,old.source != nil,
+                guard let old=records.first(where:{$0.id == previous}),MemoryRules.usable(old,registration:value.registration,now:now),!old.explicit,old.sourceTurnID == nil,old.source != nil,
                       old.organisation?.manual != true,source.identity.kind == old.source?.identity.kind,source.identity.accountID == old.source?.identity.accountID,
                       source.identity.containerID == old.source?.identity.containerID,source.identity.linkedIdentity == old.source?.identity.linkedIdentity else { return false }
                 if source.identity.kind != .whatsapp {
@@ -170,7 +189,6 @@ import SwiftData
                 state.records.append(value)
             }
             if !assessmentIDs.isEmpty {
-                let now=Date.now
                 var receipts=(state.sourceAssessmentReceipts ?? [:]).filter{$0.value >= now.addingTimeInterval(-7*86400)}
                 for id in assessmentIDs { receipts[id]=now }
                 let sorted=receipts.sorted { left,right in
@@ -235,7 +253,7 @@ import SwiftData
         if restored.conversationID != nil { restored.organisation?.selfName=nil }
         return correct(current.id,with:restored)
     }
-    @discardableResult func merge(_ learned: [LearnedMemory], registration: String, sourceDates: [String:Date] = [:], sourceTopics: [String:UUID] = [:]) -> Bool {
+    @discardableResult func merge(_ learned: [LearnedMemory], registration: String, sourceDates: [String:Date] = [:], sourceTopics: [String:UUID] = [:], now: Date = .now) -> Bool {
         change { state in
             for entry in learned where !state.suppressed[registration,default:[]].contains(entry.turnID) {
                 // Revisiting an old human turn must not resurrect its corrected belief under new prose.
@@ -245,7 +263,7 @@ import SwiftData
                     (MemoryLearningRules.normalised(old.text) == MemoryLearningRules.normalised(entry.text) || old.evidence.map{MemoryLearningRules.normalised($0) == MemoryLearningRules.normalised(entry.evidence)} == true)
                 }) else { continue }
                 guard !state.records.contains(where:{  $0.source == nil && $0.registration == registration && $0.conversationID == sourceTopics[entry.turnID] && $0.supersededBy == nil && $0.resolved == nil && MemoryLearningRules.normalised($0.text) == MemoryLearningRules.normalised(entry.text) }) else { continue }
-                state.records.append(PAMemory(registration:registration,text:entry.text,kind:entry.kind,explicit:false,provenance:"Learned from your conversation",sourceTurnID:entry.turnID,evidence:entry.evidence,sourceDate:sourceDates[entry.turnID],conversationID:sourceTopics[entry.turnID],certainty:entry.certainty,durability:entry.durability,connections:entry.connections,organisation:entry.organisation))
+                state.records.append(PAMemory(registration:registration,text:entry.text,kind:entry.kind,explicit:false,provenance:"Learned from your conversation",created:now,reviewed:now,sourceTurnID:entry.turnID,evidence:entry.evidence,sourceDate:sourceDates[entry.turnID],conversationID:sourceTopics[entry.turnID],certainty:entry.certainty,durability:entry.durability,connections:entry.connections,organisation:entry.organisation))
             }
         }
     }
@@ -263,19 +281,31 @@ import SwiftData
         guard let record=records.first(where:{$0.id == id}),value.map({LifeMemoryOrganisation.valid($0,record:record)}) ?? true else { return false }
         return change { state in if let index=state.records.firstIndex(where:{$0.id == id}) { var value=value; value?.manual=true; state.records[index].organisation=value } }
     }
-    func notebook(_ registration:String,topic:UUID? = nil,includeTopics:Bool=false)->LifeNotebook {
-        let base=LifeNotebook.build(enabled ? permittedRecords : [],registration:registration,topic:topic,includeTopics:includeTopics)
-        return notebookProjection?(base,registration,topic,includeTopics) ?? base
+    private func prepareNotebook(_ candidates: [PAMemory], registration: String, topic: UUID?, includeTopics: Bool, now: Date) -> LifeNotebook {
+        let scoped = candidates.filter { $0.registration == registration && MemoryRules.inScope($0,conversationID:topic,includeTopics:includeTopics) }
+        let key = NotebookKey(memory:revision,workspace:notebookProjectionRevision?(),registration:registration,topic:topic,includeTopics:includeTopics,suppliedIDs:Set(scoped.map(\.id)),currentIDs:Set(scoped.filter{MemoryRules.usable($0,registration:registration,now:now)}.map(\.id)))
+        // Recheck permissions and temporal usability before every cache lookup.
+        // Custom projections without a revision provider remain uncached.
+        let cacheable = notebookProjection == nil || notebookProjectionRevision != nil
+        if cacheable, let preparedNotebook, preparedNotebook.key == key { return preparedNotebook.value }
+        let base = LifeNotebook.build(scoped,registration:registration,topic:topic,now:now,includeTopics:includeTopics)
+        let value = notebookProjection?(base,registration,topic,includeTopics) ?? base
+        notebookBuildCount += 1
+        if cacheable { preparedNotebook = (key,value) }
+        return value
     }
-    func selection(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, focus:[LifeArea] = [],includeSources:Bool = true,sourceFilter:((PAMemory)->Bool)? = nil) -> MemorySelection {
+    func notebook(_ registration:String,topic:UUID? = nil,includeTopics:Bool=false,now:Date = .now)->LifeNotebook {
+        prepareNotebook(enabled ? permittedRecords : [],registration:registration,topic:topic,includeTopics:includeTopics,now:now)
+    }
+    func selection(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, focus:[LifeArea] = [],includeSources:Bool = true,sourceFilter:((PAMemory)->Bool)? = nil,now:Date = .now) -> MemorySelection {
         guard enabled else { return MemorySelection(records:[],eligibleCount:0) }
         let candidates=(includeSources ? permittedRecords : records.filter{$0.source == nil}).filter{$0.source == nil || (sourceFilter?($0) ?? true)}
-        let base=LifeNotebook.build(candidates,registration:registration,topic:conversationID,includeTopics:includeTopics)
-        let projected=notebookProjection?(base,registration,conversationID,includeTopics) ?? base
-        return MemoryRetrieval.select(candidates,registration:registration,conversationID:conversationID,includeTopics:includeTopics,query:query,focus:focus,notebook:projected)
+        let projected=prepareNotebook(candidates,registration:registration,topic:conversationID,includeTopics:includeTopics,now:now)
+        if preparedLexical?.revision != revision { preparedLexical = (revision, MemoryLexicalIndex(records)) }
+        return MemoryRetrieval.select(candidates,registration:registration,conversationID:conversationID,includeTopics:includeTopics,query:query,now:now,focus:focus,notebook:projected,lexical:preparedLexical?.value)
     }
-    func context(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil,includeSources:Bool = true) -> [[String:String]] {
-        selection(registration,conversationID:conversationID,includeTopics:includeTopics,query:query,includeSources:includeSources).records
+    func context(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil,includeSources:Bool = true,now:Date = .now) -> [[String:String]] {
+        selection(registration,conversationID:conversationID,includeTopics:includeTopics,query:query,includeSources:includeSources,now:now).records
     }
     private func change(_ mutation: (inout MemoryEnvelope) -> Void) -> Bool {
         guard writable, let container else { error = "Memory storage is unavailable; nothing was changed."; return false }
@@ -286,10 +316,8 @@ import SwiftData
             for index in state.records.indices where state.records[index].supersededBy == nil && CommitmentRules.groupKey(state.records[index]) == key { state.records[index].commitmentGroupRevision=version }
         }
         do {
-            let context = container.mainContext, data = try JSONEncoder().encode(state)
-            if let record = try context.fetch(FetchDescriptor<CachedDashboard>()).first(where:{ $0.key == "paMemory" }) { record.data = data; record.updated = .now }
-            else { context.insert(CachedDashboard(key:"paMemory",data:data)) }
-            try context.save(); revision = UUID(); error = nil; return true
-        } catch { container.mainContext.rollback(); state = old; self.error = "Memory change could not be saved."; return false }
+            try LocalRecordRepository(container: container).save(state, key: "paMemory")
+            revision = UUID(); error = nil; return true
+        } catch { state = old; self.error = "Memory change could not be saved."; return false }
     }
 }

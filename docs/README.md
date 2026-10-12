@@ -2,12 +2,14 @@
 
 This is the readable explanation of the product: what exists, how it works and what we want to improve. It lives beside the code, so Git records changes to both. You do not need to read code or the development log to understand the app.
 
-Start with **[How it works](HOW_IT_WORKS.md)**. Use **[Next improvements](NEXT_IMPROVEMENTS.md)** to review priorities and **[Decisions](DECISIONS.md)** to understand why the app is organised this way.
+Start with **[Architecture](ARCHITECTURE.md)** for ownership and message flow, then **[How it works](HOW_IT_WORKS.md)** for product behaviour. Use **[Next improvements](NEXT_IMPROVEMENTS.md)** to review priorities and **[Decisions](DECISIONS.md)** to understand why the app is organised this way.
 
-The latest broad direction and recommended delivery sequence is **[PA architecture review](PA_ARCHITECTURE_REVIEW.md)**, covering communications, changing commitments, memory, background jobs, project space and future local models. It distinguishes the inspected implementation from proposed changes. The earlier **[Building a useful personal assistant](PA_INTELLIGENCE_PLAN.md)** remains the detailed staged memory acceptance plan.
+The approved current consolidation scope is **[Reliability implementation](RELIABILITY_IMPLEMENTATION.md)**. The earlier broad proposed delivery sequence is **[PA architecture review](PA_ARCHITECTURE_REVIEW.md)**, covering communications, changing commitments, memory, background jobs, project space and future local models. It distinguishes the inspected implementation from proposed changes. The earlier **[Building a useful personal assistant](PA_INTELLIGENCE_PLAN.md)** remains the detailed staged memory acceptance plan.
 
 | Document | Purpose |
 | --- | --- |
+| [Architecture](ARCHITECTURE.md) | Current component ownership, request flow and recovery |
+| [Reliability implementation](RELIABILITY_IMPLEMENTATION.md) | Full approved work and explicit completion gates |
 | [How it works](HOW_IT_WORKS.md) | Current behaviour and the pieces behind it |
 | [Next improvements](NEXT_IMPROVEMENTS.md) | Desired behaviour, gaps and success criteria |
 | [Life and project workspace](PROJECT_WORKSPACE.md) | Shared durable structure, views, PA edits and source relationships |
@@ -29,4 +31,4 @@ After a meaningful feature changes, update its explanation here and the relevant
 
 Git is the history and backup mechanism; these Markdown pages are the explanation. They can be read in Codex, a text editor or Obsidian. Obsidian is optional and is not part of Mission Control's runtime. These files document the software, not your personal life: emails, chats, credentials and private memory remain outside the repository.
 
-Current entry points reconciled with the recorded 8 October application checkpoint. No new app/model/live acceptance is implied by this documentation pass. An installed build and a passing test are different from a completed live acceptance check; see STATUS and VALIDATION for those boundaries.
+Current entry points include the 11–12 October reliability work. Candidate implementation, installed behaviour and sustained acceptance are recorded separately. An installed build and a passing test are different from a completed live acceptance check; see STATUS and VALIDATION for those boundaries.

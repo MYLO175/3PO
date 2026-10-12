@@ -11,8 +11,8 @@ import SwiftData
     init(container: ModelContainer?, now: Date = .now) {
         self.container = container; state.trackingStarted = now
         do {
-            if let record = try container?.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first(where: { $0.key == "paAIUsage" }) {
-                let saved = try JSONDecoder().decode(AIUsageState.self, from: record.data)
+            if let record = try LocalRecordRepository.read("paAIUsage", container: container) {
+                let saved = try JSONDecoder().decode(AIUsageState.self, from: record)
                 guard saved.version == 1, saved.records.count <= AIUsageRules.maximumRecords,
                       Set(saved.records.map(\.id)).count == saved.records.count, saved.records.allSatisfy(AIUsageRules.valid) else { throw CocoaError(.fileReadCorruptFile) }
                 state = saved; state.records = saved.records.map { AIUsageRules.recovered($0, now: now) }
@@ -45,12 +45,9 @@ import SwiftData
         let removed = revised.records.filter { $0.started < cutoff } + Array(revised.records.filter { $0.started >= cutoff }.dropLast(AIUsageRules.maximumRecords))
         revised.records = Array(revised.records.filter { $0.started >= cutoff }.suffix(AIUsageRules.maximumRecords))
         if let last = removed.last { revised.truncatedBefore = max(revised.truncatedBefore ?? .distantPast, last.started) }
-        let context = container.mainContext
         do {
-            let data = try JSONEncoder().encode(revised)
-            if let record = try context.fetch(FetchDescriptor<CachedDashboard>()).first(where: { $0.key == "paAIUsage" }) { record.data = data; record.updated = now }
-            else { context.insert(CachedDashboard(key: "paAIUsage", data: data, updated: now)) }
-            try context.save(); state = revised; error = nil; return true
-        } catch { context.rollback(); self.error = "Usage could not be saved. Counts may be incomplete; AI work is unchanged."; return false }
+            try LocalRecordRepository(container: container).write(["paAIUsage": JSONEncoder().encode(revised)], now: now)
+            state = revised; error = nil; return true
+        } catch { self.error = "Usage could not be saved. Counts may be incomplete; AI work is unchanged."; return false }
     }
 }

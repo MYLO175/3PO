@@ -1,0 +1,7 @@
+#!/bin/zsh
+set -euo pipefail
+cd "$(dirname "$0")/.."
+source scripts/test-env.sh
+missioncontrol_test_init learning-runtime
+xcrun swiftc -module-cache-path "$MISSIONCONTROL_TEST_MODULE_CACHE" -swift-version 5 MissionControl/Models.swift MissionControl/ActionModels.swift MissionControl/AIUsage.swift MissionControl/ChatGPTStream.swift MissionControl/PAToolProtocol.swift MissionControl/PAInferenceConnection.swift MissionControl/Cache.swift MissionControl/LocalRecordRepository.swift MissionControl/PAMemory.swift MissionControl/LifeNotebook.swift MissionControl/LifeOrganisation.swift MissionControl/LifeWorkspace.swift MissionControl/LifeProjectPlacement.swift MissionControl/LifeWorkspaceQuery.swift MissionControl/LifeWorkspaceToolSchema.swift MissionControl/Conversations.swift MissionControl/MemoryLearning.swift MissionControl/PALearningQuestion.swift MissionControl/MemoryDependencies.swift MissionControl/Briefing.swift MissionControl/PAMemoryStore.swift MissionControl/MemoryMaintenance.swift MissionControl/SourceContextLearning.swift MissionControl/NativeSourceLearning.swift MissionControl/WhatsAppModels.swift MissionControl/BackgroundLearningCoordinator.swift MissionControl/LearningBudget.swift MissionControl/LearningRuntime.swift MissionControl/MemoryLearningService.swift MissionControl/NativeSourceLearningService.swift MissionControl/SourceContextLearningService.swift MissionControl/LifeOrganisationService.swift MissionControl/MemoryMaintenanceService.swift Tests/LearningRuntimeChecks.swift -o "$MISSIONCONTROL_TEST_BIN"
+"$MISSIONCONTROL_TEST_BIN"

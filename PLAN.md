@@ -1,5 +1,10 @@
 # Mission Control specification
 
+## Approved reliability and architecture work — 11 October 2026
+
+The user approved implementation of the seven-stage consolidation plan after the other Review/memory-feedback chat completed at `b092562`. The full deliverables, ownership and completion gates are tracked in [Reliability implementation](docs/RELIABILITY_IMPLEMENTATION.md). Fix concrete query/source/persistence issues, create isolated regression tiers, separate application responsibilities, schedule eligible learning fairly, measure and improve storage/recall, reconcile documentation, and finish signed/disposable/native and sustained acceptance. Phone support is outside this work. This approval does not restart historical indexing, change source consent/credentials/selected model, or grant background writes.
+
+
 ## Current approved Review direction — 11 October
 
 Feedback's editable About field is retained as a human-confirmed topic anchor, separate from the exact feedback evidence. It gives context to words such as these/this without turning source text into a human assertion or a blanket sender rule.

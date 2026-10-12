@@ -32,8 +32,8 @@ enum PAQueueRules {
     init(container:ModelContainer?) {
         self.container=container
         do {
-            if let record=try container?.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first(where:{ $0.key == "paRequestQueue" }) {
-                let values=try JSONDecoder().decode([PAQueuedRequest].self,from:record.data)
+            if let record = try LocalRecordRepository.read("paRequestQueue", container: container) {
+                let values=try JSONDecoder().decode([PAQueuedRequest].self,from: record)
                 guard values.count <= 100, Set(values.map(\.id)).count == values.count else { throw CocoaError(.fileReadCorruptFile) }
                 items=PAQueueRules.recover(values)
             }
@@ -55,10 +55,8 @@ enum PAQueueRules {
         guard writable,let container else { error="Request storage is unavailable. Your draft is kept."; return false }
         var revised=items; action(&revised)
         do {
-            let context=container.mainContext,data=try JSONEncoder().encode(revised)
-            if let record=try context.fetch(FetchDescriptor<CachedDashboard>()).first(where:{$0.key == "paRequestQueue"}) { record.data=data; record.updated = .now }
-            else { context.insert(CachedDashboard(key:"paRequestQueue",data:data)) }
-            try context.save(); items=revised; error=nil; return true
-        } catch { container.mainContext.rollback(); self.error="The request queue could not be saved."; return false }
+            try LocalRecordRepository(container: container).save(revised, key: "paRequestQueue")
+            items=revised; error=nil; return true
+        } catch { self.error="The request queue could not be saved."; return false }
     }
 }

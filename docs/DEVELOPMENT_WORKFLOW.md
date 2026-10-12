@@ -36,7 +36,7 @@ An independently opened worker chat stays under the user's control. The integrat
 
 ## Builds and checks have shared resources too
 
-The existing `scripts/build.sh` uses `/tmp/missioncontrol-derived`, and several test runners share `/tmp/missioncontrol-test-modules` and fixed executable paths. Worktrees do not isolate those absolute paths. Give each concurrent build a distinct derived-data directory and log path. Run existing fixed-path checks serially unless their output paths have been deliberately made configurable or an equivalent isolated command is used. Coordinate runtime/icon/project generation and shared dependency caches as applicable.
+`scripts/check.sh` runs the audited source-free inventory serially in a unique private directory with per-suite logs and results. Direct component scripts also use unique directories through `test-env.sh`. Optional performance and integration tiers remain separately identified. `scripts/build.sh` accepts `MISSIONCONTROL_BUILD_ROOT`, `MISSIONCONTROL_DERIVED_DATA` and `MISSIONCONTROL_BUILD_LOG`; set distinct paths for concurrent builds. Worktrees do not isolate shared absolute paths or generated files. Coordinate runtime/icon/project generation and shared dependency caches as applicable.
 
 Use `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`; never change the global developer selection. Verify significant integration changes with the actual signed Xcode build. Documentation-only changes need diff, consistency and link checks, not an app rebuild.
 

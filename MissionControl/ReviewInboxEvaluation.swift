@@ -194,6 +194,8 @@ import EventKit
     }
     static func runCalendarRemoval(_ model:DashboardModel)async throws->[String:Any] {
         let owner=model.chatGPT.activeID,selected=model.chatGPT.selectedModel,preferences=NSDictionary(dictionary:UserDefaults.standard.dictionaryRepresentation())
+        let preferenceDomain=Bundle.main.bundleIdentifier ?? "com.mylomichael.missioncontrol"
+        let savedPreferences=NSDictionary(dictionary:UserDefaults.standard.persistentDomain(forName:preferenceDomain) ?? [:])
         var checks:[String:Bool]=[:],failure="",cleanupError=""
         let record=try seedRemoval(model),calendar=model.calendarData,mail=model.mailData
         checks["removal card visible with exact supported event"]=model.proactive.visible(record,model:model) && model.reviewInbox.discoveries.contains(record)
@@ -266,9 +268,19 @@ import EventKit
             do {let quality=try await runCalendarRemovalModel(model);checks.merge(quality){_,new in new}}
             catch {checks["model comparison decoded supported proposals"]=false;failure=error.localizedDescription}
         }
-        checks["account model and preferences unchanged"]=owner == model.chatGPT.activeID && selected == model.chatGPT.selectedModel && preferences.isEqual(to:UserDefaults.standard.dictionaryRepresentation())
+        let currentPreferences=UserDefaults.standard.dictionaryRepresentation()
+        let changedPreferenceKeys=Set(preferences.allKeys.compactMap{$0 as? String}).union(currentPreferences.keys).filter { key in
+            let before=preferences[key],after=currentPreferences[key]
+            if before == nil && after == nil { return false }
+            guard let before,let after else { return true }
+            return !NSDictionary(dictionary:["value":before]).isEqual(to:["value":after])
+        }.sorted()
+        // Metal can register its DEBUG wrapper default during a native view's first
+        // mount. It is not a saved app preference; still require the entire app
+        // domain to match, and reject every other effective-setting change.
+        checks["account model and preferences unchanged"]=owner == model.chatGPT.activeID && selected == model.chatGPT.selectedModel && changedPreferenceKeys.allSatisfy{$0 == "METAL_DEVICE_WRAPPER_TYPE"} && savedPreferences.isEqual(to:UserDefaults.standard.persistentDomain(forName:preferenceDomain) ?? [:])
         checks["removal creates no normal chat message"]=model.assistant.feed?.turns.isEmpty ?? true
-        return ["checks":checks,"passed":checks.values.filter{$0}.count,"total":checks.count,"error":failure,"cleanupError":cleanupError,"AIRequests":ProcessInfo.processInfo.arguments.contains("--removal-model") ? 1 : 0,"storage":"Disposable SwiftData and fictional Mail; optional exact UUID fixture calendar under existing permission. No normal source startup or personal event mutation."]
+        return ["checks":checks,"passed":checks.values.filter{$0}.count,"total":checks.count,"error":failure,"cleanupError":cleanupError,"changedPreferenceKeys":changedPreferenceKeys,"AIRequests":ProcessInfo.processInfo.arguments.contains("--removal-model") ? 1 : 0,"storage":"Disposable SwiftData and fictional Mail; optional exact UUID fixture calendar under existing permission. No normal source startup or personal event mutation."]
     }
     static func runCalendarRemovalModel(_ model:DashboardModel)async throws->[String:Bool] {
         let record=try seedRemoval(model),event=model.calendarData.events[0],now=Date.now
@@ -427,7 +439,7 @@ import EventKit
         model.whatsapp.seedReviewSourceFixture(message,registration:model.chatGPT.activeID)
         checks["fixture leaves saved preferences unchanged"]=preferences.isEqual(to:UserDefaults.standard.dictionaryRepresentation())
         let report:[String:Any]=["passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"storage":"Disposable in-memory review source fixtures; zero AI, native writes, helper/auth or preference changes."]
-        try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:"/tmp/missioncontrol-review-source-details-evaluation.json"))
+        try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]).write(to:EvaluationOutput.url("/tmp/missioncontrol-review-source-details-evaluation.json"))
     }
     static func previewSession(_ target:NativeEditTarget)->NativeEditSession? {
         guard ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"),case .reviewReminder(let task,_) = target else {return nil}

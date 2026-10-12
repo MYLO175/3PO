@@ -18,8 +18,8 @@ import Observation
     init(container:ModelContainer?) {
         self.container=container
         do {
-            if let saved=try container?.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first(where:{$0.key == "paMemoryReview"}) {
-                state=try JSONDecoder().decode(MemoryReviewState.self,from:saved.data)
+            if let saved = try LocalRecordRepository.read("paMemoryReview", container: container) {
+                state=try JSONDecoder().decode(MemoryReviewState.self,from: saved)
                 guard state.version == 1 else { throw MemoryLearningFailure.invalid }
             }
         } catch { readable=false;self.error="Saved review data is unreadable and has been preserved." }
@@ -44,31 +44,31 @@ import Observation
         do { try save();revision=UUID();undoID=nil;dismissalDate=nil } catch { state=prior;self.error=error.localizedDescription }
     }
     func paused(_ registration:String)->Bool { state.accounts[registration]?.paused == true }
-    func check(_ model:DashboardModel,manual:Bool=false) {
-        let memory=model.assistant.memory,registration=model.chatGPT.activeID,progress=state.accounts[registration] ?? .init()
-        guard readable,!busy,!registration.isEmpty,manual || (progress.automatic && !progress.paused && Date.now.timeIntervalSince(progress.lastAttempt ?? .distantPast) >= 7*86400),
-              memory.enabled,memory.learningEnabled,!model.assistant.busy,!model.assistant.hasDraft,!model.chatGPT.busy,!model.chatGPT.usagePaused,model.chatGPT.inferenceVerified,!model.writing,
-              !model.heartbeat.busy,!model.projectPlacement.busy,!model.briefings.busy,!model.proactive.busy,!model.emailSummaries.busy,!model.memoryLearning.busy,!model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.lifeOrganisation.busy else { return }
-        let now=Date.now,records=MemoryReviewRules.batch(memory.records,registration:registration,progress:progress,manual:manual,now:now)
-        guard !records.isEmpty,let input=try? MemoryReviewRules.input(records,now:now),model.learningBudget.claim(registration,manual:manual) else { return }
+    func check(_ model:LearningRuntime,manual:Bool=false) {
+        let memory=model.assistant.memory,registration=model.inference.activeID,progress=state.accounts[registration] ?? .init()
+        guard !model.otherWorkBusy(excluding:.maintenance),readable,!busy,!registration.isEmpty,manual || (progress.automatic && !progress.paused && model.now().timeIntervalSince(progress.lastAttempt ?? .distantPast) >= 7*86400),
+              memory.enabled,memory.learningEnabled,!model.assistant.busy,!model.assistant.hasDraft,!model.inference.busy,!model.inference.usagePaused,model.inference.inferenceVerified,!model.writing else { return }
+        let now=model.now(),records=MemoryReviewRules.batch(memory.records,registration:registration,progress:progress,manual:manual,now:now)
+        guard !records.isEmpty,let input=try? MemoryReviewRules.input(records,now:now),model.learningBudget.claim(registration,manual:manual,now:model.now(),lane:.maintenance) else { return }
         let prior=state;state.accounts[registration,default:.init()].paused=true;state.accounts[registration]?.lastAttempt=now
         do { try save() } catch { state=prior;self.error=error.localizedDescription;return }
-        let captured=revision,memoryRevision=memory.revision,selectedModel=model.chatGPT.selectedModel
+        let captured=revision,memoryRevision=memory.revision,selectedModel=model.inference.selectedModel
         busy=true;error=nil;status="Reviewing \(records.count) human facts; no edits will be made…"
         task=Task {
             defer { busy=false }
             do {
                 try Task.checkCancellation()
-                guard registration == model.chatGPT.activeID,captured == revision,memoryRevision == memory.revision,selectedModel == model.chatGPT.selectedModel,memory.enabled,memory.learningEnabled,!model.assistant.busy,!model.assistant.hasDraft,!model.writing else { throw MemoryLearningFailure.changed }
-                let output=try await model.chatGPT.streamResponse(input:[["role":"user","content":input]],instructions:MemoryReviewRules.instructions,model:selectedModel,purpose:.organisation) { _ in }
+                guard registration == model.inference.activeID,captured == revision,memoryRevision == memory.revision,selectedModel == model.inference.selectedModel,memory.enabled,memory.learningEnabled,!model.assistant.busy,!model.assistant.hasDraft,!model.writing else { throw MemoryLearningFailure.changed }
+                let output=try await model.inference.streamResponse(input:[["role":"user","content":input]],instructions:MemoryReviewRules.instructions,model:selectedModel,purpose:.organisation) { _ in }
                 try Task.checkCancellation()
-                guard registration == model.chatGPT.activeID,captured == revision,memoryRevision == memory.revision,selectedModel == model.chatGPT.selectedModel,memory.enabled,memory.learningEnabled,!model.assistant.busy,!model.assistant.hasDraft,!model.writing else { throw MemoryLearningFailure.changed }
+                guard registration == model.inference.activeID,captured == revision,memoryRevision == memory.revision,selectedModel == model.inference.selectedModel,memory.enabled,memory.learningEnabled,!model.assistant.busy,!model.assistant.hasDraft,!model.writing else { throw MemoryLearningFailure.changed }
                 guard let proposals=MemoryReviewRules.decode(output,records:records,registration:registration,now:now) else { throw MemoryLearningFailure.invalid }
                 let beforeSave=state
                 for proposal in proposals where !state.proposals.contains(where:{$0.id == proposal.id}) { state.proposals.append(proposal) }
                 for record in records { state.accounts[registration,default:.init()].inspected[record.id]=MemoryReviewRules.fingerprint(record) }
                 let currentIDs=Set(memory.records.filter{$0.registration == registration}.map(\.id))
-                state.accounts[registration]?.inspected=state.accounts[registration]?.inspected.filter{currentIDs.contains($0.key)} ?? [:]
+                let retainedInspection=state.accounts[registration]?.inspected.filter{currentIDs.contains($0.key)} ?? [:]
+                state.accounts[registration]?.inspected=retainedInspection
                 let retained=Array(state.proposals.filter{$0.registration == registration}.sorted{$0.created > $1.created}.prefix(200))
                 state.proposals=state.proposals.filter{$0.registration != registration}+retained
                 state.accounts[registration]?.paused=false
@@ -84,11 +84,8 @@ import Observation
         do { try save() } catch { self.error=error.localizedDescription }
     }
     #endif
-    private func save()throws {
+    private func save() throws {
         guard let container else { throw MemoryLearningFailure.storage }
-        let data=try JSONEncoder().encode(state),context=container.mainContext
-        if let saved=try context.fetch(FetchDescriptor<CachedDashboard>()).first(where:{$0.key == "paMemoryReview"}) { saved.data=data;saved.updated = .now }
-        else { context.insert(CachedDashboard(key:"paMemoryReview",data:data)) }
-        do { try context.save() } catch { context.rollback();throw error }
+        try LocalRecordRepository(container: container).save(state, key: "paMemoryReview")
     }
 }

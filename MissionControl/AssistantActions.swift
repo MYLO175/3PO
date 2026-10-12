@@ -3,32 +3,25 @@ import Observation
 import SwiftData
 
 struct ActionTarget: Identifiable { var id: String; var label: String }
-private struct ActionLedgerEntry: Codable { var result: String?; var attempted = Date.now; var itemID: String?; var fixtureTitle: String?; var undoToken: String?; var undone: Bool?; var fixtureNotes:String?;var clearedMarker:Bool? }
 
 @MainActor @Observable final class AssistantActions {
     var targets: [ActionTarget] = []
     var selectedTarget = ""
-    private var ledger: [String:ActionLedgerEntry] = [:]
-    private let container: ModelContainer?
-    private var storageAvailable = true
-    init(container: ModelContainer?) {
-        self.container = container
-        do { if let record = try container?.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first(where: { $0.key == "assistantActionLedger" }) { ledger = try JSONDecoder().decode([String:ActionLedgerEntry].self, from: record.data) } }
-        catch { storageAvailable = false }
+    private let receipts: ActionReceiptStore
+    private var ledger: [String:ActionLedgerEntry] { get { receipts.entries } set { receipts.entries = newValue } }
+    private var storageAvailable: Bool { receipts.readable }
+    init(container: ModelContainer?, repository: LocalRecordRepository? = nil) {
+        receipts = ActionReceiptStore(container: container, repository: repository)
     }
     private func save() throws {
-        guard storageAvailable, let container else { throw ActionFailure.message("Action storage is unavailable; no write was attempted.") }
-        let context = container.mainContext, data = try JSONEncoder().encode(ledger)
-        if let record = try context.fetch(FetchDescriptor<CachedDashboard>()).first(where: { $0.key == "assistantActionLedger" }) { record.data = data; record.updated = .now }
-        else { context.insert(CachedDashboard(key: "assistantActionLedger", data: data)) }
-        try context.save()
+        try receipts.save()
     }
     /// Executes a completed model tool call using only identities issued in this turn.
     /// The latest human message authorises the operation; imported records never do.
-    func performTool(_ draft: ActionDraft, human: String, authorization: String?, turnID: UUID, model: DashboardModel, calendar: CalendarSnapshot, reminders: ReminderSnapshot, expectedDetails: NativeEditDetails? = nil, valid: NativeWriteValidity? = nil) async throws -> String {
+    func performTool(_ draft: ActionDraft, human: String, authorization: String?, turnID: UUID, model: any NativeActionRuntime, calendar: CalendarSnapshot, reminders: ReminderSnapshot, expectedDetails: NativeEditDetails? = nil, valid: NativeWriteValidity? = nil) async throws -> String {
         try PAToolProtocol.evidence(authorization,human:human)
         try ActionRules.validate(draft)
-        guard model.assistant.contextEnabled, !model.writing, !ProcessInfo.processInfo.arguments.contains("--sample") else { throw ActionFailure.message("Apple writes are unavailable; no change attempted.") }
+        guard model.actionContextEnabled, !model.writing, !ProcessInfo.processInfo.arguments.contains("--sample") else { throw ActionFailure.message("Apple writes are unavailable; no change attempted.") }
         let reminder = reminders.reminders.first { $0.id == draft.target }, event = calendar.events.first { $0.id == draft.target }
         switch draft.kind {
         case .editReminder,.completeReminder,.deleteReminder: guard reminder != nil else { throw ActionFailure.message("Read the reminder's exact identity before changing it.") }
@@ -39,22 +32,21 @@ private struct ActionLedgerEntry: Codable { var result: String?; var attempted =
         // Canonical operation key deduplicates repeated calls even if their call IDs differ.
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         let canonical = String(data:try encoder.encode(draft),encoding:.utf8)!
-        let key = ActionRules.key(registration:model.chatGPT.activeID,request:turnID.uuidString,selectedTarget:canonical)
+        let key = ActionRules.key(registration:model.actionRegistration,request:turnID.uuidString,selectedTarget:canonical)
         if let prior = ledger[key], prior.undone != true {
             if let result = prior.result { return "Already applied: " + result }
             throw ActionFailure.message("This operation already has a pending receipt. Check the original; no repeated save.")
         }
-        let allowedCalendars = Set(calendar.sources.filter { !model.assistant.excludedCalendars.contains($0.id) && $0.writable }.map(\.id))
-        let allowedLists = Set(reminders.sources.filter { !model.assistant.excludedLists.contains($0.id) && $0.writable }.map(\.id))
+        let allowedCalendars = Set(calendar.sources.filter { !model.actionExcludedCalendars.contains($0.id) && $0.writable }.map(\.id))
+        let allowedLists = Set(reminders.sources.filter { !model.actionExcludedLists.contains($0.id) && $0.writable }.map(\.id))
         if let destination = draft.destination {
             let allowed = draft.kind == .createEvent || draft.kind == .editEvent ? allowedCalendars : allowedLists
             guard allowed.contains(destination) else { throw ActionFailure.message("Destination is not an enabled writable source issued by a read tool.") }
         }
         try Task.checkCancellation()
         model.writing = true; defer { model.writing = false }
-        ledger[key] = ActionLedgerEntry()
-        do { try save() } catch { ledger.removeValue(forKey:key); throw error }
-        let result = try await model.eventKit.applyTool(draft,reminder:reminder,event:event,marker:key,allowedCalendars:allowedCalendars,allowedLists:allowedLists,expectedDetails:expectedDetails,valid:valid)
+        try receipts.begin(key)
+        let result = try await model.nativeActionWriter.applyTool(draft,reminder:reminder,event:event,marker:key,allowedCalendars:allowedCalendars,allowedLists:allowedLists,expectedDetails:expectedDetails,valid:valid)
         ledger[key]?.result = result.message; ledger[key]?.itemID = result.itemID; ledger[key]?.undoToken = result.undoToken
         #if DEBUG
         if let title = draft.title, (draft.kind == .createReminder || draft.kind == .createEvent), title.hasPrefix("Mission Control tool validation "), UUID(uuidString:String(title.dropFirst("Mission Control tool validation ".count))) != nil, draft.notes == nil { ledger[key]?.fixtureTitle = title;ledger[key]?.fixtureNotes=NativeRequestNotes.creation(draft.notes) }
@@ -69,12 +61,12 @@ private struct ActionLedgerEntry: Codable { var result: String?; var attempted =
         do { try save() } catch { return result.message + " Apple save verified, but receipt storage failed. Check the original before repeating." }
         return result.message
     }
-    func performNativeDeletion(baseline: NativeEditDetails, scope: NativeChangeScope, requestID: UUID, model: DashboardModel) async throws -> String {
-        let key=ActionRules.key(registration:model.chatGPT.activeID,request:requestID.uuidString,selectedTarget:baseline.occurrenceID + ":delete:" + scope.rawValue)
+    func performNativeDeletion(baseline: NativeEditDetails, scope: NativeChangeScope, requestID: UUID, model: any NativeActionRuntime) async throws -> String {
+        let key=ActionRules.key(registration:model.actionRegistration,request:requestID.uuidString,selectedTarget:baseline.occurrenceID + ":delete:" + scope.rawValue)
         if let prior=ledger[key] { if let result=prior.result {return result};throw ActionFailure.message("A deletion is already recorded as pending. Check Apple Calendar or Reminders; it will not be repeated.") }
         try NativeEditRules.validateDeletion(scope,baseline:baseline)
-        ledger[key]=ActionLedgerEntry();do {try save()} catch {ledger.removeValue(forKey:key);throw error}
-        let result=try await model.eventKit.deleteItem(baseline:baseline,scope:scope)
+        try receipts.begin(key)
+        let result=try await model.nativeActionWriter.deleteItem(baseline:baseline,scope:scope)
         ledger[key]?.result=result;ledger[key]?.itemID=baseline.itemID
         do {try save()} catch {throw ActionFailure.message(result + " Native deletion verified, but receipt storage failed; check the original before repeating.")}
         return result
@@ -85,17 +77,17 @@ private struct ActionLedgerEntry: Codable { var result: String?; var attempted =
     }
     #if DEBUG
     /// Explicit one-off human-requested cleanup; never called by refresh/inference.
-    func cleanupRequestMarkers(_ model:DashboardModel) async -> [String:Int] {
-        let registration=model.chatGPT.activeID
-        guard storageAvailable,!model.assistant.busy,!model.writing else {return ["blocked":1]}
+    func cleanupRequestMarkers(_ model:any NativeActionRuntime) async -> [String:Int] {
+        let registration=model.actionRegistration
+        guard storageAvailable,!model.actionAssistantBusy,!model.writing else {return ["blocked":1]}
         model.writing=true;defer {model.writing=false}
         var report=["reminders":0,"events":0,"unchanged":0,"errors":0]
         let eventScope:NativeChangeScope? = ProcessInfo.processInfo.arguments.contains("--cleanup-marker-future") ? .futureEvents : ProcessInfo.processInfo.arguments.contains("--cleanup-marker-next") ? .occurrence : nil
-        let valid:NativeWriteValidity = {model.chatGPT.activeID == registration}
+        let valid:NativeWriteValidity = {model.actionRegistration == registration}
         for (key,entry) in ledger.sorted(by:{$0.key < $1.key}) where entry.result != nil && entry.itemID != nil && entry.fixtureTitle == nil {
             guard valid() else {report["errors",default:0] += 1;break}
             do {
-                if let kind=try await model.eventKit.clearRequestMarker(id:entry.itemID!,receiptKey:key,eventScope:eventScope,valid:valid) {
+                if let kind=try await model.nativeActionWriter.clearRequestMarker(id:entry.itemID!,receiptKey:key,eventScope:eventScope,valid:valid) {
                     report[kind == .reminder ? "reminders" : "events",default:0] += 1
                     ledger[key]?.clearedMarker=true;try save()
                 } else {report["unchanged",default:0] += 1}
@@ -107,10 +99,10 @@ private struct ActionLedgerEntry: Codable { var result: String?; var attempted =
         }
         return report
     }
-    func cleanupFixtures(_ model: DashboardModel) async throws -> String {
+    func cleanupFixtures(_ model: any NativeActionRuntime) async throws -> String {
         for (key, entry) in ledger where entry.fixtureTitle != nil {
             guard let id = entry.itemID, let title = entry.fixtureTitle else { continue }
-            try await model.eventKit.removeActionFixture(id:id,title:title,marker:key,expectedNotes:entry.fixtureNotes)
+            try await model.nativeActionWriter.removeActionFixture(id:id,title:title,marker:key,expectedNotes:entry.fixtureNotes)
             ledger[key]?.fixtureTitle = nil
             try save()
         }

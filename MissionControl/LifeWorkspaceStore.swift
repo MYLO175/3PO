@@ -32,8 +32,8 @@ struct LifeWorkspaceEditUndo {
     init(container: ModelContainer?) {
         self.container = container
         do {
-            if let record = try container?.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first(where: { $0.key == "lifeWorkspace" }) {
-                let value = try JSONDecoder().decode(LifeWorkspaceState.self, from: record.data)
+            if let record = try LocalRecordRepository.read("lifeWorkspace", container: container) {
+                let value = try JSONDecoder().decode(LifeWorkspaceState.self, from: record)
                 try LifeWorkspaceRules.validate(value); state = value
                 if state.items.contains(where:{$0.placement?.status == "running"}) {
                     var recovered=state
@@ -199,11 +199,9 @@ struct LifeWorkspaceEditUndo {
         guard writable, let container else { throw LifeWorkspaceFailure.message(error ?? "Project storage is unavailable. Your changes have not been saved.") }
         try LifeWorkspaceRules.validate(value)
         do {
-            let context = container.mainContext, data = try JSONEncoder().encode(value)
-            if let record = try context.fetch(FetchDescriptor<CachedDashboard>()).first(where: { $0.key == "lifeWorkspace" }) { record.data = data; record.updated = .now }
-            else { context.insert(CachedDashboard(key: "lifeWorkspace", data: data)) }
-            try context.save(); state = value; revision = UUID(); error = nil
-        } catch { container.mainContext.rollback(); self.error = "Projects could not be saved. Your editing draft is kept."; throw LifeWorkspaceFailure.message(self.error!) }
+            try LocalRecordRepository(container: container).save(value, key: "lifeWorkspace")
+            state = value; revision = UUID(); error = nil
+        } catch { self.error = "Projects could not be saved. Your editing draft is kept."; throw LifeWorkspaceFailure.message(self.error!) }
     }
 }
 

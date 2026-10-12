@@ -402,3 +402,21 @@ Compute transcript visibility/separators once per projection, and observe sugges
 Page selection must not observe the Review projection. Keep the count and its accessibility/help in a stable child label, with selection decoration outside it. Count-only evaluation shares the exact pending-card rules and omits handled-history construction. Separate brief freshness observation from weather/header/layout updates. Preserve time-sensitive validity with local minute evaluation rather than storing a stale visibility result.
 
 Build an ephemeral exact-source acknowledgement index per synchronous projection, preserving candidate order/duplicates and all current matching/permission/evidence checks before the existing final bound. An empty saved receipt list skips only vacuous membership work; human-choice revisions and remaining freshness rules still run. This adds no source fetching or inference. Reduced attributed work is verified; automation/accessibility timing is not a controlled render-latency benchmark.
+
+
+## 11 October — Reliability architecture consolidation
+
+The user approved the complete reliability plan, excluding phone development. Evolve the existing application through small integration checkpoints. Operation-owned SwiftData contexts isolate keyed saves, related source/assessment receipts commit atomically, and an action receipt store owns pending history before native execution. Dashboard presentation remains the owner of navigation, sheets and feedback; ApplicationServices composes the long-lived services. PAConversationEngine owns bounded foreground transport rounds through injected inference/tool callbacks, preserving completed output, encrypted reasoning replay, deduplication, Stop and verified receipts.
+
+Automatic learning retains four daily claims and a thirty-minute cooldown. Persist successful claim timestamps by stable learning lane and offer eligible lanes oldest first. An idle/paused check is not a claim; failed inference retains the existing pause policy, and a failed claim save consumes no new allowance. Foreground work and device availability retain priority.
+
+Measurements justify smaller conversation writes and rebuildable memory preparation metadata. A full database/service rewrite is unnecessary. Any conversation format change must preserve the original legacy bytes, exact identities/optional records and unknown compatible fields, commit its index with records atomically, verify readback and refuse uncertain/corrupt state. Live validation remains separate from fictional timelines and performance measurements.
+
+
+## 12 October — Exact child run ownership and quiet restoration
+
+A heartbeat child receives the original run's durable claim and completion validator. Registration alone cannot authorise a later call or save. Each desktop child validates after inference before saving; parent cancellation is checked directly because its polling loop may not yet have cancelled the separate child task. The same validator rejects device, controls, day, model, account, scope and foreground changes. Prior completed receipts remain recoverable. Source collection, learning pauses/allowances and foreground no-replay policy are unchanged.
+
+Observable service constructors load preferences under a restoration guard. Defaults are not written merely by opening the application or a disposable fixture. Explicit human controls still persist and invalidate owned work, including clamped heartbeat allowances. Repositories isolate each keyed transaction; source-cache restore reports an affected read failure without preventing independent healthy keys from loading.
+
+Native-learning prompts distinguish useful attributed recipient requests/status reports from confirmed human commitments. An unknown recipient stays unknown; general project context is not evidence that a new exact status is already represented. Independent identities, exact source quotes, correction lineage and legitimate empty extraction remain. Model evaluation uses the real retained-Mail adapter and separates output-quality failure from decoder refusal.

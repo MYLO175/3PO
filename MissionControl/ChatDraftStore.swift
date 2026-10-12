@@ -16,8 +16,8 @@ import AppKit
     init(container: ModelContainer?) {
         self.container = container
         do {
-            if let record = try container?.mainContext.fetch(Self.savedDraft()).first {
-                let saved = try JSONDecoder().decode(ChatDraftState.self,from:record.data)
+            if let record = try LocalRecordRepository.read("assistantDrafts", container: container) {
+                let saved = try JSONDecoder().decode(ChatDraftState.self,from:record)
                 guard saved.version == 1 else { throw Failure.unsupported }
                 state = saved
             }
@@ -63,10 +63,8 @@ import AppKit
         guard dirty, writable else { return }
         guard let container else { error = "Draft is kept in this session but could not be saved. Copy it before quitting."; return }
         do {
-            let context = container.mainContext, data = try JSONEncoder().encode(state)
-            if let record = try context.fetch(Self.savedDraft()).first { record.data = data; record.updated = .now }
-            else { context.insert(CachedDashboard(key:"assistantDrafts",data:data)) }
-            try context.save(); dirty = false; error = nil
-        } catch { container.mainContext.rollback(); self.error = "Draft is kept in this session but could not be saved. Copy it before quitting." }
+            try LocalRecordRepository(container: container).save(state, key: "assistantDrafts")
+            dirty = false; error = nil
+        } catch { self.error = "Draft is kept in this session but could not be saved. Copy it before quitting." }
     }
 }

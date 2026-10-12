@@ -627,7 +627,7 @@ struct LifeItemLinkEditor: View {
         Task { [weak self] in
             try? await Task.sleep(for:.milliseconds(250))
             guard let self,let probe,let scroll=probe.enclosingScrollView else {
-                try? Data("{\"error\":\"Project board probe did not attach to a native scroll viewport\"}".utf8).write(to:URL(fileURLWithPath:"/tmp/missioncontrol-board-scroll-evaluation.json"));return
+                try? Data("{\"error\":\"Project board probe did not attach to a native scroll viewport\"}".utf8).write(to:EvaluationOutput.url("/tmp/missioncontrol-board-scroll-evaluation.json"));return
             }
             let clip=scroll.contentView,before=clip.bounds.origin
             let point=probe.convert(CGPoint(x:clip.bounds.midX,y:clip.bounds.maxY-1),from:clip)
@@ -643,7 +643,7 @@ struct LifeItemLinkEditor: View {
             let checks=["probe owns the project viewport":scroll.documentView != nil,"edge tracking advances the real native viewport":after.y > before.y && moves > 0,"drag point remains at the viewport edge during scrolling":pointerValid,"stop prevents another scroll step":clip.bounds.origin == after,"scrolling remains within content bounds":after.y <= max(0,(scroll.documentView?.bounds.height ?? 0)-clip.bounds.height)]
             clip.scroll(to:before);scroll.reflectScrolledClipView(clip)
             let report:[String:Any]=["checks":checks,"passed":checks.values.filter{$0}.count,"total":checks.count,"scrollSteps":moves,"advancedPoints":after.y-before.y,"nativeChanges":0,"storage":"Fictional preview; real project scroll controller/viewport, no task gesture or status save"]
-            if let data=try? JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-board-scroll-evaluation.json"))}
+            if let data=try? JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-board-scroll-evaluation.json"))}
         }
     }
     #endif

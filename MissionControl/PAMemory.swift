@@ -153,6 +153,19 @@ struct MemorySelection {
     /// Local explanations produced by the same ranking pass; never supplied as authority.
     var reasons: [UUID:[String]] = [:]
 }
+/// Rebuildable lexical metadata. It never makes a record eligible or supplies prose.
+struct MemoryLexicalIndex {
+    var text: [UUID: Set<String>]
+    var all: [UUID: Set<String>]
+    init(_ memories: [PAMemory]) {
+        let textTerms = Dictionary(memories.map { ($0.id, MemoryRetrieval.tokens($0.text)) }, uniquingKeysWith: { $0.union($1) })
+        text = textTerms
+        all = Dictionary(memories.map { memory in
+            let extra = (memory.reviewPreference == true ? (memory.reviewContext ?? "") : "") + " " + (memory.connections ?? []).map { $0.subject + " " + $0.relation + " " + $0.object }.joined(separator: " ")
+            return (memory.id, (textTerms[memory.id] ?? []).union(MemoryRetrieval.tokens(extra)))
+        }, uniquingKeysWith: { $0.union($1) })
+    }
+}
 enum MemoryRetrieval {
     static let byteLimit = 20_000
     private static let ignored = Set("the a an and or of to for in on at with is are was be been i me my you your we it that this what how do does can could should please about from have has need want tell know remember user users their they them not don dont would will when then if but so just here there some more any all help anything things".split(separator:" ").map(String.init))
@@ -189,18 +202,22 @@ enum MemoryRetrieval {
         return value
     }
     /// Local relevance retrieval never changes stored facts, certainty or scope.
-    static func select(_ memories: [PAMemory], registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, now: Date = .now, limit: Int = 40, bytes: Int = byteLimit, focus:[LifeArea] = [], notebook suppliedNotebook:LifeNotebook? = nil) -> MemorySelection {
+    static func select(_ memories: [PAMemory], registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, now: Date = .now, limit: Int = 40, bytes: Int = byteLimit, focus:[LifeArea] = [], notebook suppliedNotebook:LifeNotebook? = nil, lexical suppliedLexical: MemoryLexicalIndex? = nil) -> MemorySelection {
         let eligible = memories.filter { MemoryRules.usable($0,registration:registration,now:now) && MemoryRules.inScope($0,conversationID:conversationID,includeTopics:includeTopics) }
         let notebook=suppliedNotebook ?? LifeNotebook.build(eligible,registration:registration,topic:conversationID,now:now,includeTopics:includeTopics)
         // A targeted request may select nothing. The user's name is not a route to every fact about them.
         // A nil query deliberately requests bounded orientation, including confirmed preferences.
         let targeted=query != nil
         let terms = queryTerms(query,selfLabel:notebook.selfLabel)
+        // Tokenise each fact once per selection. Ranking and explanation use the
+        // same cached terms, including human-confirmed Review topic anchors.
+        let lexical = suppliedLexical ?? MemoryLexicalIndex(eligible)
+        let textTerms = lexical.text, recordTerms = lexical.all
         let eligibleIDs=Set(eligible.map(\.id))
         let seedEntities=Array(notebook.entities.filter { $0.id != LifeNotebook.selfID && !$0.memoryIDs.isDisjoint(with:eligibleIDs) && !tokens($0.label).isDisjoint(with:terms) }.prefix(20))
         let seeds=Set(seedEntities.map(\.id))
         let workspaceConnected=Set(seedEntities.filter{$0.id.hasPrefix("life:")}.flatMap(\.memoryIDs)).intersection(eligibleIDs)
-        let matchedPlans=Set(eligible.filter{!tokens($0.text).isDisjoint(with:terms)}.compactMap(\.commitmentGroup))
+        let matchedPlans=Set(eligible.filter{!(textTerms[$0.id] ?? []).isDisjoint(with:terms)}.compactMap(\.commitmentGroup))
         let planConnected=Set(eligible.filter{$0.commitmentGroup.map{matchedPlans.contains($0)} == true}.map(\.id))
         var neighbours=seeds,connected=Set(seedEntities.flatMap(\.memoryIDs)).intersection(eligibleIDs)
         // Two bounded hops. The universal self node is never a bridge to the whole life.
@@ -214,8 +231,8 @@ enum MemoryRetrieval {
             }
         }
         func relevance(_ memory:PAMemory)->Int {
-            let text=memory.text+" "+(memory.reviewPreference == true ? (memory.reviewContext ?? "") : "")+" "+(memory.connections ?? []).map{$0.subject+" "+$0.relation+" "+$0.object}.joined(separator:" ")
-            let direct=tokens(text).intersection(terms).reduce(0) { $0+min($1.count,12)*5 }
+            let words = recordTerms[memory.id] ?? []
+            let direct=words.intersection(terms).reduce(0) { $0+min($1.count,12)*5 }
             let nearby=(connected.contains(memory.id) || planConnected.contains(memory.id)) ? 30 : 0
             let focused=memory.organisation?.areas.contains(where:focus.contains) == true ? 15 : 0
             return direct+nearby+focused
@@ -230,8 +247,8 @@ enum MemoryRetrieval {
             return lhs.id.uuidString < rhs.id.uuidString
         }
         func relevant(_ memory:PAMemory)->Bool {
-            let text=memory.text+" "+(memory.reviewPreference == true ? (memory.reviewContext ?? "") : "")+" "+(memory.connections ?? []).map{$0.subject+" "+$0.relation+" "+$0.object}.joined(separator:" ")
-            return !tokens(text).isDisjoint(with:terms) || connected.contains(memory.id) || planConnected.contains(memory.id)
+            let words = recordTerms[memory.id] ?? []
+            return !words.isDisjoint(with:terms) || connected.contains(memory.id) || planConnected.contains(memory.id)
         }
         let ranked = eligible.filter{!targeted || relevant($0)}.sorted(by:ordered)
         // Core preferences belong to broad orientation, not every unrelated source assessment.
@@ -245,8 +262,8 @@ enum MemoryRetrieval {
             result.append(value); used += data.count + 1
             var why:[String]=[]
             if pinned.contains(where:{$0.id == memory.id}) { why.append("Core confirmed preference") }
-            let text=memory.text+" "+(memory.reviewPreference == true ? (memory.reviewContext ?? "") : "")+" "+(memory.connections ?? []).map{$0.subject+" "+$0.relation+" "+$0.object}.joined(separator:" ")
-            if !tokens(text).isDisjoint(with:terms) { why.append("Words match your question") }
+            let words = recordTerms[memory.id] ?? []
+            if !words.isDisjoint(with:terms) { why.append("Words match your question") }
             if connected.contains(memory.id) { why.append("Related recorded connection, within two hops") }
             if workspaceConnected.contains(memory.id) { why.append("Linked to a matching saved project or life item") }
             if planConnected.contains(memory.id) { why.append("Same plan as another relevant report, connected by you") }

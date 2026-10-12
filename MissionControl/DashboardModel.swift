@@ -12,7 +12,7 @@ struct CalendarRemovalReviewSession:Identifiable {
 }
 
 @MainActor @Observable final class DashboardModel {
-    let whatsapp = WhatsAppService()
+    var whatsapp: WhatsAppService { services.whatsapp }
     var calendarData = CalendarSnapshot(sources: [], events: [])
     var paOrientation: PAOrientation?
     var paOrientationHealth = SourceHealth()
@@ -91,19 +91,20 @@ struct CalendarRemovalReviewSession:Identifiable {
             let result:[String:Any]
             do { result=try await LifeNotebookEvaluation.run(self);validationReport="Life notebook evaluation: \(result["passed"] ?? 0)/\(result["total"] ?? 0) checks passed." }
             catch { result=["completed":Date.now.ISO8601Format(),"error":String(error.localizedDescription.prefix(500))];validationReport=error.localizedDescription }
-            if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-life-notebook-evaluation.json"),options:.atomic) }
+            if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-life-notebook-evaluation.json"),options:.atomic) }
             if ProcessInfo.processInfo.arguments.contains("--validate-life-notebook") { NSApp.terminate(nil) }
         }
     }
     #endif
     var storageError: String?
-    @ObservationIgnored lazy var weather = WeatherService(container:container)
-    let chatGPT = ChatGPTConnection()
-    @ObservationIgnored lazy var aiUsage = AIUsageStore(container: container)
+    @ObservationIgnored private lazy var services = ApplicationServices(container: container, nativeSources: injectedNativeSources)
+    var weather: WeatherService { get { services.weather } set { services.weather = newValue } }
+    var chatGPT: ChatGPTConnection { services.chatGPT }
+    var aiUsage: AIUsageStore { get { services.aiUsage } set { services.aiUsage = newValue } }
     @ObservationIgnored lazy var workspace = WorkspaceStore(container:container,calendars:excludedCalendars,lists:excludedLists,accounts:excludedAccounts,date:selectedDate)
     @ObservationIgnored lazy var widgetCalendars = WidgetCalendarStore(service:eventKit)
     @ObservationIgnored lazy var assistant:AssistantService = {
-        let service=AssistantService(connection:chatGPT,container:container)
+        let service=services.assistant
         service.memory.sourceIsPermitted = { [weak self,weak service] record in
             guard let self,service?.contextEnabled == true else { return false }
             if record.source?.identity.kind == .whatsapp {
@@ -130,24 +131,27 @@ struct CalendarRemovalReviewSession:Identifiable {
         }
         return service
     }()
-    @ObservationIgnored lazy var assistantActions = AssistantActions(container: container)
-    @ObservationIgnored lazy var emailSummaries = EmailSummaryService(container: container)
-    @ObservationIgnored lazy var heartbeat = HeartbeatService(container:container)
+    var assistantActions: AssistantActions { get { services.assistantActions } set { services.assistantActions = newValue } }
+    var emailSummaries: EmailSummaryService { get { services.emailSummaries } set { services.emailSummaries = newValue } }
+    var heartbeat: HeartbeatService { get { services.heartbeat } set { services.heartbeat = newValue } }
     private var briefingPoll: Task<Void, Never>?
-    @ObservationIgnored lazy var memoryLearning = MemoryLearningService(container:container)
-    @ObservationIgnored lazy var sourceLearning = SourceContextLearningService(container:container)
-    @ObservationIgnored lazy var nativeSourceLearning = NativeSourceLearningService(container:container)
-    @ObservationIgnored lazy var memoryMaintenance = MemoryMaintenanceService(container:container)
-    @ObservationIgnored lazy var learningBudget = LearningBudget(container:container)
-    @ObservationIgnored let projectPlacement = LifePlacementService()
-    @ObservationIgnored lazy var lifeOrganisation = LifeOrganisationService(container:container)
-    @ObservationIgnored lazy var nativeCreations = NativeCreationStore(container:container)
-    @ObservationIgnored lazy var proactive = ProactiveService(container:container)
+    var memoryLearning: MemoryLearningService { get { services.memoryLearning } set { services.memoryLearning = newValue } }
+    var sourceLearning: SourceContextLearningService { get { services.sourceLearning } set { services.sourceLearning = newValue } }
+    var nativeSourceLearning: NativeSourceLearningService { get { services.nativeSourceLearning } set { services.nativeSourceLearning = newValue } }
+    var memoryMaintenance: MemoryMaintenanceService { get { services.memoryMaintenance } set { services.memoryMaintenance = newValue } }
+    var learningBudget: LearningBudget { get { services.learningBudget } set { services.learningBudget = newValue } }
+    private var backgroundLearning: BackgroundLearningCoordinator { services.backgroundLearning }
+    var projectPlacement: LifePlacementService { services.projectPlacement }
+    var lifeOrganisation: LifeOrganisationService { get { services.lifeOrganisation } set { services.lifeOrganisation = newValue } }
+    var nativeCreations: NativeCreationStore { get { services.nativeCreations } set { services.nativeCreations = newValue } }
+    var proactive: ProactiveService { get { services.proactive } set { services.proactive = newValue } }
     var sourceRevision = 0
-    @ObservationIgnored lazy var briefings = BriefingService(container: container)
-    let eventKit = EventKitService()
-    let mail = MailService()
-    let mailLookup = MailLookup()
+    var briefings: BriefingService { get { services.briefings } set { services.briefings = newValue } }
+    var eventKit: EventKitService { services.eventKit }
+    private let injectedNativeSources: (any NativeSourceReading)?
+    var nativeSources: any NativeSourceReading { services.nativeSources }
+    var mail: MailService { services.mail }
+    var mailLookup: MailLookup { services.mailLookup }
     private var container: ModelContainer?
     private var observers: [NSObjectProtocol] = []
     private var changes: Task<Void, Never>?
@@ -158,7 +162,8 @@ struct CalendarRemovalReviewSession:Identifiable {
     private var started = false
     private var sample: Bool { ProcessInfo.processInfo.arguments.contains("--sample") }
 
-    init() {
+    init(nativeSources: (any NativeSourceReading)? = nil) {
+        injectedNativeSources = nativeSources
         defer { chatGPT.usageStore = aiUsage }
         // Read all saved filters before observable property setters persist any
         // values; otherwise the first setter erases later filters during init.
@@ -210,7 +215,7 @@ struct CalendarRemovalReviewSession:Identifiable {
                 let proposalTimeline=ProcessInfo.processInfo.arguments.contains("--proposal-timeline-only")
                 do {result=try await (resolutionOnly ? ReviewInboxEvaluation.runEmailResolution(self) : removalOnly ? ReviewInboxEvaluation.runCalendarRemoval(self) : relevanceOnly ? ReviewInboxEvaluation.runRelevance(self) : briefDayparts ? ReviewInboxEvaluation.runBriefDayparts(self) : intentPreparation ? ReviewInboxEvaluation.runIntentPreparation(self) : heartbeatContract ? ReviewInboxEvaluation.runHeartbeatContract(self) : proposalTimeline ? ReviewInboxEvaluation.runProposalTimeline(self) : schedulerOnly ? HeartbeatService.evaluateScheduling(self) : emailWork ? ReviewInboxEvaluation.runEmailWork(self) : evidenceOnly ? ReviewInboxEvaluation.runMailEvidence(self) : mailOnly ? ReviewInboxEvaluation.runMailReview(self) : approvalOnly ? ReviewInboxEvaluation.runApproval(self) : ReviewInboxEvaluation.run(self))} catch {result=["error":error.localizedDescription,"storage":"Fictional disposable source-free startup"]}
                 let path=resolutionOnly ? "/tmp/missioncontrol-email-resolution-evaluation.json" : removalOnly ? "/tmp/missioncontrol-calendar-removal-evaluation.json" : relevanceOnly ? "/tmp/missioncontrol-relevance-evaluation.json" : briefDayparts ? "/tmp/missioncontrol-brief-dayparts-evaluation.json" : intentPreparation ? "/tmp/missioncontrol-intent-preparation-evaluation.json" : heartbeatContract ? "/tmp/missioncontrol-heartbeat-contract-evaluation.json" : proposalTimeline ? "/tmp/missioncontrol-proposal-timeline-evaluation.json" : schedulerOnly ? "/tmp/missioncontrol-review-scheduler-evaluation.json" : emailWork ? "/tmp/missioncontrol-email-work-evaluation.json" : evidenceOnly ? "/tmp/missioncontrol-mail-evidence-evaluation.json" : mailOnly ? "/tmp/missioncontrol-mail-review-evaluation.json" : approvalOnly ? "/tmp/missioncontrol-review-approval-evaluation.json" : "/tmp/missioncontrol-review-inbox-evaluation.json"
-                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:path),options:.atomic)}
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:EvaluationOutput.url(path),options:.atomic)}
                 NSApp.terminate(nil)
             };return
         }
@@ -218,21 +223,21 @@ struct CalendarRemovalReviewSession:Identifiable {
             Task {
                 let result:[String:Any]
                 do { result=try await CommitmentReportEvaluation.run(self) } catch { result=["error":error.localizedDescription,"storage":"Fictional data; disposable storage; sources never started"] }
-                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-commitment-reports-evaluation.json"),options:.atomic) }
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-commitment-reports-evaluation.json"),options:.atomic) }
                 NSApp.terminate(nil)
             };return
         }
         if ProcessInfo.processInfo.arguments.contains("--validate-advice-context") {
             let result:[String:Any]
             do { result=try AdviceContextEvaluation.run(self) } catch { result=["error":error.localizedDescription,"requests":0,"storage":"Disposable storage; sources never started"] }
-            if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-advice-context-evaluation.json"),options:.atomic) }
+            if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-advice-context-evaluation.json"),options:.atomic) }
             NSApp.terminate(nil);return
         }
         if ProcessInfo.processInfo.arguments.contains("--validate-native-memory") {
             Task {
                 let result:[String:Any]
                 do { result=try await NativeMemoryEvaluation.run(self) } catch { result=["error":error.localizedDescription,"storage":"Fictional data; disposable storage; sources never started"] }
-                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-native-memory-evaluation.json"),options:.atomic) }
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-native-memory-evaluation.json"),options:.atomic) }
                 NSApp.terminate(nil)
             };return
         }
@@ -253,7 +258,7 @@ struct CalendarRemovalReviewSession:Identifiable {
                 let result:[String:Any]
                 do { result=try await SourceContextEvaluation.runTimeline(self) }
                 catch { result=["error":error.localizedDescription,"completed":Date.now.ISO8601Format(),"storage":"Fictional data; disposable in-memory storage; sources never started"] }
-                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-source-timeline-evaluation.json"),options:.atomic) }
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-source-timeline-evaluation.json"),options:.atomic) }
                 NSApp.terminate(nil)
             };return
         }
@@ -262,7 +267,7 @@ struct CalendarRemovalReviewSession:Identifiable {
             Task {
                 let result:[String:Any]
                 do { result=try await ChatImageEvaluation.run(self) } catch { result=["error":error.localizedDescription] }
-                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-image-evaluation.json"),options:.atomic) }
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-image-evaluation.json"),options:.atomic) }
                 NSApp.terminate(nil)
             };return
         }
@@ -300,7 +305,7 @@ struct CalendarRemovalReviewSession:Identifiable {
             Task {
                 let result:[String:Any]
                 do { result=try await LifeOwnershipEvaluation.run(self) } catch { result=["error":error.localizedDescription,"completed":Date.now.ISO8601Format()] }
-                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-ownership-evaluation.json"),options:.atomic) }
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-ownership-evaluation.json"),options:.atomic) }
                 NSApp.terminate(nil)
             };return
         }
@@ -308,7 +313,7 @@ struct CalendarRemovalReviewSession:Identifiable {
             Task {
                 let result:[String:Any]
                 do { result=try await LifePlacementEvaluation.run(self) } catch { result=["error":error.localizedDescription,"completed":Date.now.ISO8601Format()] }
-                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-placement-evaluation.json"),options:.atomic) }
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-placement-evaluation.json"),options:.atomic) }
                 NSApp.terminate(nil)
             };return
         }
@@ -321,7 +326,7 @@ struct CalendarRemovalReviewSession:Identifiable {
                 let result: [String:Any]
                 do { result = try await LifeWorkspaceEvaluation.run(self) }
                 catch { result = ["error":error.localizedDescription, "completed":Date.now.ISO8601Format()] }
-                if let data = try? JSONSerialization.data(withJSONObject:result, options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-project-evaluation.json"), options:.atomic) }
+                if let data = try? JSONSerialization.data(withJSONObject:result, options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-project-evaluation.json"), options:.atomic) }
                 NSApp.terminate(nil)
             }; return
         }
@@ -337,7 +342,7 @@ struct CalendarRemovalReviewSession:Identifiable {
             Task { [self] in
                 let result:[String:Any]
                 do {result=try await NativeCapabilitiesEvaluation.run(self)} catch {result=["error":error.localizedDescription]}
-                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-native-capabilities-evaluation.json"),options:.atomic)}
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-native-capabilities-evaluation.json"),options:.atomic)}
                 NSApp.terminate(nil)
             };return
         }
@@ -346,7 +351,7 @@ struct CalendarRemovalReviewSession:Identifiable {
                 let result:[String:Any]
                 do { result=try await WorkflowEvaluation.run(self) }
                 catch { result=["error":error.localizedDescription,"completed":Date.now.ISO8601Format()] }
-                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-workflow-evaluation.json"),options:.atomic) }
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-workflow-evaluation.json"),options:.atomic) }
                 NSApp.terminate(nil)
             };return
         }
@@ -355,7 +360,7 @@ struct CalendarRemovalReviewSession:Identifiable {
                 let result:[String:Any]
                 do { result=try await SourceContextEvaluation.run(self) }
                 catch { result=["error":error.localizedDescription,"completed":Date.now.ISO8601Format()] }
-                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-source-context-evaluation.json"),options:.atomic) }
+                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-source-context-evaluation.json"),options:.atomic) }
                 NSApp.terminate(nil)
             };return
         }
@@ -399,12 +404,8 @@ struct CalendarRemovalReviewSession:Identifiable {
                 if let self {
                     self.heartbeat.check(self)
                     if !self.heartbeat.busy && !self.briefings.busy {
-                        self.projectPlacement.check(self);self.memoryLearning.recoverDelivery(self);self.memoryLearning.check(self);self.proactive.recoverDelivery(self)
-                        if self.nativeSourceLearning.lastAssessment(self.chatGPT.activeID) <= self.sourceLearning.lastAssessment(self) {
-                            self.nativeSourceLearning.check(self);self.sourceLearning.check(self)
-                        } else { self.sourceLearning.check(self);self.nativeSourceLearning.check(self) }
-                        self.lifeOrganisation.check(self)
-                        self.memoryMaintenance.check(self)
+                        self.projectPlacement.check(self);self.memoryLearning.recoverDelivery(self);self.proactive.recoverDelivery(self)
+                        self.checkBackgroundLearning()
                         if Date.now.timeIntervalSince(self.lastOrientationCheck) >= 900 { await self.refreshPAOrientation() }
                     }
                 }
@@ -421,6 +422,22 @@ struct CalendarRemovalReviewSession:Identifiable {
                 await refreshReminders()
             }
         }
+    }
+    private func checkBackgroundLearning() {
+        let registration = chatGPT.activeID
+        backgroundLearning.check(now: .now, receipts: learningBudget.receipts(registration), available: {
+            registration == self.chatGPT.activeID && !self.assistant.busy && !self.assistant.hasDraft && !self.writing && !self.heartbeat.busy && !self.briefings.busy && HeartbeatDeviceState.current().available
+        }, attempt: { lane, _ in
+            let before = self.learningBudget.revision
+            switch lane {
+            case .conversation: self.memoryLearning.check(self)
+            case .nativeSources: self.nativeSourceLearning.check(self)
+            case .whatsapp: self.sourceLearning.check(self)
+            case .organisation: self.lifeOrganisation.check(self)
+            case .maintenance: self.memoryMaintenance.check(self)
+            }
+            return before != self.learningBudget.revision
+        })
     }
     func refresh(retryMail: Bool = true) {
         widgetCalendars.invalidate()
@@ -445,12 +462,13 @@ struct CalendarRemovalReviewSession:Identifiable {
         calendarHealth.loading = true
         let start = selectedDate
         let end = Calendar.current.date(byAdding: .day, value: 7, to: start)!
-        do {
-            let snapshot = try await eventKit.calendar(from: start, to: end)
-            calendarData = snapshot
-            calendarHealth = .init(lastSuccess: .now)
-            persist("calendar", snapshot); persist("calendarHealth", calendarHealth)
-        } catch { calendarHealth.error = error.localizedDescription; calendarHealth.loading = false }
+        let result = await NativeSourceCollection(snapshot: calendarData, health: calendarHealth).collecting {
+            let snapshot = try await nativeSources.calendar(from: start, to: end)
+            guard start == selectedDate else { throw NativeSourceReadError.unavailable("Selected calendar range changed") }
+            return snapshot
+        }
+        calendarData = result.snapshot; calendarHealth = result.health
+        persistCollection("calendar", healthKey: "calendarHealth", snapshot: calendarData, health: calendarHealth)
         if pendingCalendarRefresh { pendingCalendarRefresh = false; await refreshCalendar() }
     }
     func refreshPAOrientation() async {
@@ -461,7 +479,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         lastOrientationCheck = .now; paOrientationHealth.loading = true
         let start = Calendar.current.startOfDay(for:.now), end = Calendar.current.date(byAdding:.day,value:90,to:start)!, revision = sourceRevision
         do {
-            let snapshot = try await eventKit.calendar(from:start,to:end)
+            let snapshot = try await nativeSources.calendar(from:start,to:end)
             guard revision == sourceRevision else { paOrientationHealth.loading = false; paOrientationHealth.error = "Source changed during orientation; refresh pending."; return }
             paOrientation = PAOrientation(start:start,end:end,refreshed:.now,calendar:snapshot)
             paOrientationHealth = .init(lastSuccess:.now)
@@ -477,20 +495,22 @@ struct CalendarRemovalReviewSession:Identifiable {
         if reminderHealth.loading { pendingReminderRefresh = true; return }
         reminderHealth.loading = true
         let collectionRevision=sourceRevision
-        do {
-            let snapshot = try await eventKit.reminders()
-            reminderData = snapshot
-            reminderHealth = .init(lastSuccess: .now)
-            reminderCollectionRevision = collectionRevision == sourceRevision ? collectionRevision : -1
-            persist("reminders", snapshot); persist("reminderHealth", reminderHealth)
-            if assistant.contextEnabled {
-                do {
-                    let completed=try await eventKit.completedReminders(excluded:assistant.excludedLists)
-                    if collectionRevision == sourceRevision {completedReminders=completed;completedReminderHealth = .init(lastSuccess:.now)}
-                    else {completedReminderHealth = .init(error:"Source choices changed; completion evidence pending.")}
-                } catch {completedReminderHealth.error=error.localizedDescription}
-            } else {completedReminders=[];completedReminderHealth = .init()}
-        } catch { reminderHealth.error = error.localizedDescription; reminderHealth.loading = false }
+        let result = await NativeSourceCollection(snapshot: reminderData, health: reminderHealth).collecting {
+            let snapshot = try await nativeSources.reminders()
+            guard collectionRevision == sourceRevision else { throw NativeSourceReadError.unavailable("Reminders source choices changed") }
+            return snapshot
+        }
+        reminderData = result.snapshot; reminderHealth = result.health
+        reminderCollectionRevision = reminderHealth.error == nil ? collectionRevision : -1
+        persistCollection("reminders", healthKey: "reminderHealth", snapshot: reminderData, health: reminderHealth)
+        if reminderHealth.error == nil, assistant.contextEnabled {
+            let completed = await NativeSourceCollection(snapshot: completedReminders, health: completedReminderHealth).collecting {
+                let items = try await nativeSources.completedReminders(excluded: assistant.excludedLists)
+                guard collectionRevision == sourceRevision else { throw NativeSourceReadError.unavailable("Completion source choices changed") }
+                return items
+            }
+            completedReminders = completed.snapshot; completedReminderHealth = completed.health
+        } else if !assistant.contextEnabled { completedReminders=[]; completedReminderHealth = .init() }
         if pendingReminderRefresh { pendingReminderRefresh = false; await refreshReminders() }
     }
     func validateCalendarIntegration() {
@@ -888,43 +908,43 @@ struct CalendarRemovalReviewSession:Identifiable {
         UserDefaults.standard.set(Array(excludedLists), forKey: "excludedLists")
         UserDefaults.standard.set(Array(excludedAccounts), forKey: "excludedAccounts")
     }
+    private func persistCollection<Value: Encodable>(_ key: String, healthKey: String, snapshot: Value, health: SourceHealth) {
+        guard !sample, let container else { return }
+        do { try LocalRecordRepository(container: container).write([key: JSONEncoder().encode(snapshot), healthKey: JSONEncoder().encode(health)]) }
+        catch { storageError = "Source checkpoint could not be saved: " + error.localizedDescription }
+    }
     private func persist<T: Encodable>(_ key: String, _ value: T) {
         guard !sample, let container else { return }
-        do {
-            let data = try JSONEncoder().encode(value)
-            let context = container.mainContext
-            let records = try context.fetch(FetchDescriptor<CachedDashboard>())
-            if let record = records.first(where: { $0.key == key }) { record.data = data; record.updated = .now }
-            else { context.insert(CachedDashboard(key: key, data: data)) }
-            try context.save()
-        } catch { storageError = "Cache could not be saved: " + error.localizedDescription }
+        do { try LocalRecordRepository(container: container).save(value, key: key) }
+        catch { storageError = "Cache could not be saved: " + error.localizedDescription }
     }
     private func restore() {
         guard !sample, let container else { return }
-        do {
-            let records = try container.mainContext.fetch(FetchDescriptor<CachedDashboard>())
-            func read<T: Decodable>(_ key: String, _ type: T.Type) -> T? { records.first { $0.key == key }.flatMap { try? JSONDecoder().decode(type, from: $0.data) } }
-            paOrientation = read("paOrientation",PAOrientation.self)
-            paOrientationHealth = read("paOrientationHealth",SourceHealth.self) ?? paOrientationHealth
-            if paOrientation != nil { paOrientationHealth.error = "Cached data · refresh pending" }
-            calendarData = read("calendar", CalendarSnapshot.self) ?? calendarData
-            reminderData = read("reminders", ReminderSnapshot.self) ?? reminderData
-            mailData = read("mail", MailSnapshot.self) ?? mailData
-            mailIndex = read("mailIndex", MailIndexState.self) ?? mailIndex
-            if let checkpoint = read("mailCheckpoint", MailCheckpoint.self) {
-                mailData = checkpoint.snapshot; mailIndex = checkpoint.index
+        let repository = LocalRecordRepository(container: container)
+        func read<T: Decodable>(_ key: String, _ type: T.Type) -> T? {
+            do { return try repository.decode(key, as: type) }
+            catch { storageError = "Saved source cache could not be read; original record retained: " + error.localizedDescription; return nil }
+        }
+        paOrientation = read("paOrientation",PAOrientation.self)
+        paOrientationHealth = read("paOrientationHealth",SourceHealth.self) ?? paOrientationHealth
+        if paOrientation != nil { paOrientationHealth.error = "Cached data · refresh pending" }
+        calendarData = read("calendar", CalendarSnapshot.self) ?? calendarData
+        reminderData = read("reminders", ReminderSnapshot.self) ?? reminderData
+        mailData = read("mail", MailSnapshot.self) ?? mailData
+        mailIndex = read("mailIndex", MailIndexState.self) ?? mailIndex
+        if let checkpoint = read("mailCheckpoint", MailCheckpoint.self) {
+            mailData = checkpoint.snapshot; mailIndex = checkpoint.index
+        }
+        calendarHealth = read("calendarHealth", SourceHealth.self) ?? calendarHealth
+        reminderHealth = read("reminderHealth", SourceHealth.self) ?? reminderHealth
+        mailHealth = read("mailHealth", SourceHealth.self) ?? mailHealth
+        for key in ["calendar", "reminders", "mail"] {
+            switch key {
+            case "calendar": if calendarHealth.lastSuccess != nil { calendarHealth.error = "Cached data · refresh pending" }
+            case "reminders": if reminderHealth.lastSuccess != nil { reminderHealth.error = "Cached data · refresh pending" }
+            default: if mailHealth.lastSuccess != nil { mailHealth.error = "Cached data · refresh pending" }
             }
-            calendarHealth = read("calendarHealth", SourceHealth.self) ?? calendarHealth
-            reminderHealth = read("reminderHealth", SourceHealth.self) ?? reminderHealth
-            mailHealth = read("mailHealth", SourceHealth.self) ?? mailHealth
-            for key in ["calendar", "reminders", "mail"] {
-                switch key {
-                case "calendar": if calendarHealth.lastSuccess != nil { calendarHealth.error = "Cached data · refresh pending" }
-                case "reminders": if reminderHealth.lastSuccess != nil { reminderHealth.error = "Cached data · refresh pending" }
-                default: if mailHealth.lastSuccess != nil { mailHealth.error = "Cached data · refresh pending" }
-                }
             }
-        } catch { storageError = "Cache could not be read: " + error.localizedDescription }
     }
     private func loadSample() {
         calendarData = SampleCalendarService().snapshot()
@@ -936,4 +956,14 @@ struct CalendarRemovalReviewSession:Identifiable {
 struct AssistantFocusRequest: Equatable {
     let id = UUID()
     let widgetID: UUID
+}
+
+
+extension DashboardModel: NativeActionRuntime {
+    var actionRegistration: String { chatGPT.activeID }
+    var actionContextEnabled: Bool { assistant.contextEnabled }
+    var actionAssistantBusy: Bool { assistant.busy }
+    var actionExcludedCalendars: Set<String> { assistant.excludedCalendars }
+    var actionExcludedLists: Set<String> { assistant.excludedLists }
+    var nativeActionWriter: any NativeActionWriting { eventKit }
 }

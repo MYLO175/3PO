@@ -87,7 +87,7 @@ import SwiftData
             })
         }
 
-        // All-conversation encoding is the current production save format. Text and
+        // All-conversation encoding is the legacy baseline save format. Text and
         // metadata are fictional; image bytes are not embedded in these records.
         for turns in [100, 1_000, 10_000] {
             let text = String(repeating: "A fictional conversation about the next engineering step. ", count: 36)
@@ -103,6 +103,18 @@ import SwiftData
             try measure("conversation_encode_entire_collection", workload: turns, run: { try JSONEncoder().encode(conversations) }, observe: { .init(count: turns, bytes: $0.count) })
             try measure("conversation_encode_one_changed_conversation", workload: turns, run: { try JSONEncoder().encode(conversations[0]) }, observe: { .init(count: conversations[0].turns.count, bytes: $0.count) })
             try measure("conversation_encode_one_changed_turn", workload: turns, run: { try JSONEncoder().encode(conversations[0].turns.last!) }, observe: { .init(count: 1, bytes: $0.count) })
+            var feed = conversations[0]
+            feed.turns = conversations.flatMap(\.turns)
+            var target = conversations.last!
+            let targetCount = target.turns.count
+            target.turns = []
+            try measure("navigation_topic_transcript_projection", workload: turns, run: {
+                let thread = ConversationRules.thread(feed:feed, topic:target)
+                return ConversationRules.transcript(thread, visible: { $0.completed && !$0.content.isEmpty })
+            }, observe: { rows in
+                precondition(rows.count == targetCount)
+                return .init(count:rows.count, bytes:rows.reduce(0) { $0 + $1.turn.content.utf8.count })
+            })
         }
 
         let directory = URL(fileURLWithPath: "/tmp/3po-memory-worker-performance-" + UUID().uuidString, isDirectory: true)

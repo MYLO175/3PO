@@ -1,5 +1,24 @@
 # Validation
 
+## Current reliability candidate — 12 October
+
+The full [reliability checklist](docs/RELIABILITY_IMPLEMENTATION.md) remains open. No reliability candidate installation or sustained acceptance is claimed. Final source-free checks pass 59/59; signed build and all three app-memory modes pass. The earlier native fixture 23/24 exposed a constructor preference-write regression, fixed and followed by 24/24; final native passes 24/24 with cleanup and configured-model tier passes 5/5 (61 assertions/nine fictional requests). Heartbeat extraction and exact child completion guards are integrated.
+
+| Scope | Current evidence | Remaining requirement |
+| --- | --- | --- |
+| Specific correctness and persistence | Short-query quality 64/64, native read 19/19, actual action executor failure/reopen checks, conversation migration/storage 70/70; final inventory 59/59 | Installed preservation and real interaction |
+| Learning fairness and runtime | Actual persisted budget 159/159; all five actual learning services 22 contracts | Broader real interruption/traffic acceptance |
+| Conversation engine | Independent complete-round/reasoning/duplicate/stall/Stop/late-delta tests; actual service 50/50 including constructor preservation | Installed input/navigation acceptance |
+| Heartbeat core and child boundary | Actual injected scheduler 124/124: persisted claims/stages, outage/partial coverage, sleep anchors and separate child tasks; all three desktop children use exact run-bound claims/validators | Physical sleep/lid/wake and sustained real child operation |
+| Runtime scaling | Cached/uncached equivalence and invalidation 642 checks; both optional performance suites pass | Native input/render acceptance; timings are fictional components |
+| Source-free app consumers | Final signed candidate modes pass 3/3 (137/137,62/62,11/11), zero AI/native changes | Installed behaviour and sustained source traffic |
+| Candidate launch safety | Pure guard 37/37, including inspect/cleanup prefixes; runner signature/protocol/exact-mode/report/timeout gates; final signed handshake passes | Legacy diagnostic effects remain mode-specific; only audited runner modes are disposable |
+| Configured-model quality | Final model tier 5/5: commitment 8/8, resolution 12/12, native memory 12/12, relevance 14/14, removal 15/15; nine fictional requests | Sustained usefulness; broad semantic quality remains unproven and paraphrase probes remain 0/2 |
+| Installation and sustained use | Existing 11 October installation retained | Backup, signed replacement/readback/relaunch and several days of observed use |
+
+Final source-free report: `/private/tmp/missioncontrol-check-0grobw_d/results.json`; final app-memory: `/private/tmp/missioncontrol-check-6ilz4px7/results.json`; final native: `/private/tmp/missioncontrol-check-sg4lvwcx/results.json`; final model: `/private/tmp/missioncontrol-check-51tuu4bi/results.json`. Initial final app launches aborted in sandboxed AppKit registration before service startup; elevated desktop access passed the same modes. Exact reports and intermediate fixture/runtime failures are in the 12 October STATUS entry. Legacy/native/model evidence below belongs to its named earlier checkpoint.
+
+
 ## 11 October — Simple Review and feedback memory
 
 - Focused summary, Review, proactive, briefing, advice-dependency, memory-store, PA-memory and inspection suites passed. Final actual-service consumer checks passed 137/137 with zero AI/native/personal-state changes.
@@ -75,7 +94,7 @@ No full-suite, complete-history, semantic-intelligence or full-native-parity cla
 
 ### Checking a future change
 
-Read its relevant focused `scripts/test-*.sh` runners and acceptance mode before execution. `scripts/test.sh` is a baseline, not an aggregate suite. Use fictional in-memory/source-free checks where possible; actual subscription quality, signed build, process launch and live UI/native acceptance are separate evidence. Existing fixed `/tmp` executable/cache paths need isolation or serial execution across worktrees. See [Development workflow](docs/DEVELOPMENT_WORKFLOW.md).
+Use `./scripts/check.sh` for the audited source-free inventory, or select focused `--suite` entries. `scripts/test.sh` alone is a baseline, not the aggregate. Use the explicit signed-candidate tiers only after reading their effects; subscription quality, signed build, native operation and installed acceptance are separate evidence. Each runner uses isolated outputs and runs serially. Builds require distinct derived-data/log paths and coordinated generated resources. See [Development workflow](docs/DEVELOPMENT_WORKFLOW.md).
 
 ## Historical validation log
 

@@ -9,7 +9,7 @@ import SwiftData
     init(container: ModelContainer?) {
         self.container = container
         do {
-            if let record = try container?.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first(where:{ $0.key == "nativeCreationClaims" }) { state = try JSONDecoder().decode(NativeCreationState.self,from:record.data); guard state.version == 1 else { throw IntegrationError.verification } }
+            if let record = try LocalRecordRepository.read("nativeCreationClaims", container: container) { state = try JSONDecoder().decode(NativeCreationState.self,from: record); guard state.version == 1 else { throw IntegrationError.verification } }
         } catch { readable = false }
     }
     func receipt(_ request: NativeCreationRequest) -> NativeCreationReceipt? { state.claims[request.key]?.receipt }
@@ -28,9 +28,6 @@ import SwiftData
     }
     private func save() throws {
         guard let container else { throw IntegrationError.verification }
-        let context = container.mainContext, data = try JSONEncoder().encode(state)
-        if let record = try context.fetch(FetchDescriptor<CachedDashboard>()).first(where:{ $0.key == "nativeCreationClaims" }) { record.data = data; record.updated = .now }
-        else { context.insert(CachedDashboard(key:"nativeCreationClaims",data:data)) }
-        do { try context.save() } catch { context.rollback(); throw error }
+        try LocalRecordRepository(container: container).save(state, key: "nativeCreationClaims")
     }
 }

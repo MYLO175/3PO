@@ -1,7 +1,7 @@
 import Foundation
 import EventKit
 
-struct ActionResult { var message: String; var undoToken: String? = nil; var itemID: String? = nil; var nativeUndo: NativeEditUndo? = nil }
+extension EventKitService: NativeActionWriting { }
 extension EventKitService {
     private func equivalentDue(_ left: DateComponents?, _ right: DateComponents?) -> Bool {
         guard let left, let right else { return left == nil && right == nil }

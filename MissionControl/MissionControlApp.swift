@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UserNotifications
+import Darwin
 
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
@@ -30,11 +31,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @State private var model:DashboardModel
     init() {
+        #if DEBUG
+        let evaluationDebug = true
+        #else
+        let evaluationDebug = false
+        #endif
+        switch EvaluationLaunchGuard.decision(arguments:ProcessInfo.processInfo.arguments, isDebug:evaluationDebug) {
+        case .proceed: break
+        case .exit(let code, let output):
+            (code == 0 ? FileHandle.standardOutput : FileHandle.standardError).write(Data(output.utf8))
+            Darwin.exit(code)
+        }
         let dashboard=DashboardModel()
         _model=State(initialValue:dashboard)
         #if DEBUG
         // This local diagnostic must not depend on a visible window mounting while the Mac is locked.
-        if ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") || ProcessInfo.processInfo.arguments.contains("--validate-advice-context") || ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") {
+        if ProcessInfo.processInfo.arguments.contains("--render-projects") || EvaluationLaunchGuard.modes.contains(where: { mode in mode.first.map(ProcessInfo.processInfo.arguments.contains) ?? false }) {
             DispatchQueue.main.async { dashboard.start() }
         }
         #endif

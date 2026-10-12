@@ -23,11 +23,9 @@ import SwiftData
         let account=SHA256.hash(data:Data(image.registration.utf8)).map{String(format:"%02x",$0)}.joined()
         return "assistantImage:"+account+":"+image.id.uuidString
     }
-    private func record(_ image:ChatImageAttachment)throws->CachedDashboard? {
+    private func record(_ image:ChatImageAttachment)throws->Data? {
         guard let container else { throw ChatImageFailure.storage }
-        let identity=key(image)
-        var query=FetchDescriptor<CachedDashboard>(predicate:#Predicate { $0.key == identity });query.fetchLimit=1
-        return try container.mainContext.fetch(query).first
+        return try LocalRecordRepository(container: container).read(key(image))
     }
     static func digest(_ data:Data)->String { SHA256.hash(data:data).map{String(format:"%02x",$0)}.joined() }
     static func normalise(_ data:Data)throws->(Data,String,Int,Int) {
@@ -69,14 +67,14 @@ import SwiftData
             try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
             try data.write(to:file(image),options:.atomic)
             try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:file(image).path)
-            container.mainContext.insert(CachedDashboard(key:key(image),data:try JSONEncoder().encode(image)));try container.mainContext.save()
-        } catch { container.mainContext.rollback();try? FileManager.default.removeItem(at:file(image));throw ChatImageFailure.storage }
+            try LocalRecordRepository(container: container).save(image, key: key(image))
+        } catch { try? FileManager.default.removeItem(at:file(image));throw ChatImageFailure.storage }
         return image
     }
     func data(_ image:ChatImageAttachment,registration:String)throws->Data {
         guard image.registration == registration,image.byteCount > 0,image.byteCount <= Self.maxBytes,["image/png","image/jpeg"].contains(image.mimeType),
               image.width > 0,image.height > 0,max(image.width,image.height) <= 2400,
-              let metadata=try record(image)?.data,try JSONDecoder().decode(ChatImageAttachment.self,from:metadata) == image else { throw ChatImageFailure.unavailable }
+              let metadata=try record(image),try JSONDecoder().decode(ChatImageAttachment.self,from:metadata) == image else { throw ChatImageFailure.unavailable }
         guard let bytes=try? Data(contentsOf:file(image)) else { throw ChatImageFailure.unavailable }
         guard bytes.count == image.byteCount,Self.digest(bytes) == image.digest else { throw ChatImageFailure.unavailable }
         return bytes
@@ -87,8 +85,8 @@ import SwiftData
         return NSImage(cgImage:cg,size:.zero)
     }
     func discard(_ image:ChatImageAttachment) {
-        guard let container,let value=try? record(image) else { return }
-        container.mainContext.delete(value);do { try container.mainContext.save();try? FileManager.default.removeItem(at:file(image)) } catch { container.mainContext.rollback() }
+        guard let container,(try? record(image)) != nil else { return }
+        do { try LocalRecordRepository(container: container).write([:], removing: [key(image)]);try? FileManager.default.removeItem(at:file(image)) } catch { }
     }
     func validate(_ images:[ChatImageAttachment],registration:String)throws {
         guard images.count <= Self.maxImages,Set(images.map(\.id)).count == images.count else { throw ChatImageFailure.size }

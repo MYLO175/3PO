@@ -71,7 +71,7 @@ struct MemoryInspectionPreview:View {
         write(report)
     }
     private static func write(_ report:[String:Any]) {
-        if let data=try? JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-memory-inspection-evaluation.json"),options:.atomic)}
+        if let data=try? JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-memory-inspection-evaluation.json"),options:.atomic)}
     }
 }
 #endif

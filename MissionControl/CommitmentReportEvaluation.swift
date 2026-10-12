@@ -10,7 +10,15 @@ import SwiftUI
         guard !account.isEmpty,model.chatGPT.inferenceVerified,!model.chatGPT.usagePaused else { throw MemoryLearningFailure.changed }
         let now=Date.now
         let texts=["Alex asks the recipient: Would you be able to prepare the Orion prototype presentation for Friday?", "A different Alex reports: The Orion prototype presentation is cancelled; no presentation is needed.", "Supervisor Jordan reports: The Vega engineering project report you submitted this morning has been received."]
-        let items=texts.enumerated().map{index,text in NativeLearningItem(identity:.init(kind:.mail,accountID:"fictional-mail",containerID:"fictional-inbox",itemID:"fictional-mail-\(index)"),revision:"fictional-v1",label:"Fictional Mail \(index)",text:text,date:now.addingTimeInterval(Double(index)*60-180),changed:now)}
+        let messages=try texts.enumerated().map{index,_ -> MailMessage in
+            let value:[String:Any]=["id":"fictional-mail-\(index)","accountID":"fictional-mail","account":"Fictional Mail","messageID":index+1,"internetMessageID":"fictional-mail-\(index)","sender":["Alex <first-alex@example.invalid>","Alex <different-alex@example.invalid>","Supervisor Jordan <jordan@example.invalid>"][index],"subject":["Orion prototype presentation request","Orion presentation cancellation report","Vega report receipt"][index],"received":now.addingTimeInterval(Double(index)*60-180).ISO8601Format(),"unread":true,"replied":false,"flagged":false]
+            return try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:value))
+        }
+        let summaries=messages.enumerated().map{index,message in
+            EmailSummary(id:message.id,registration:"fictional",fingerprint:EmailSummary.fingerprint(message),summary:texts[index],attention:true,reason:"Fictional engineering responsibility",evidence:texts[index],bodyFingerprint:EmailSummary.fingerprintBody(texts[index]),bodyCheckedAt:now,message:message)
+        }
+        let items=NativeSourceAdapters.mail(messages,summaries:summaries,registration:"fictional",excluded:[],now:now)
+        guard items.count == texts.count else {throw MemoryLearningFailure.invalid}
         let profile=[["text":"My current engineering projects are Orion and Vega. Preparing prototype presentations and writing supervisor reports are significant ongoing responsibilities for me.","certainty":"Directly stated by user"]]
         let input=try NativeLearningRules.input(items:items,candidates:[],existing:profile,coverage:"Three separate fictional Mail excerpts relevant to the stated engineering projects. Matching Orion titles and Alex names do not establish a shared person/plan. No live sources or writes.")
         let output=try await model.chatGPT.streamResponse(input:[["role":"user","content":input]],instructions:NativeLearningRules.instructions,model:selected,purpose:.diagnostic) { _ in }

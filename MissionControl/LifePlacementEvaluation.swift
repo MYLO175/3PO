@@ -25,7 +25,7 @@ import Foundation
             guard !model.projectPlacement.busy,let saved=store.items(registration).first(where:{$0.id == item.id}) else { model.projectPlacement.cancel();throw LifeWorkspaceFailure.message("Placement did not complete within its bound.") }
             checks[title+" content and heading preserved"]=saved.notes == notes && store.items(registration).first(where:{$0.id == heading.id})?.parentID == item.id
             results.append(["title":title,"status":saved.placement?.status ?? "none","reason":saved.placement?.reason ?? "","question":saved.placement?.question as Any? ?? NSNull(),"parent":saved.parentID?.uuidString as Any? ?? NSNull()])
-            if let data=try? JSONSerialization.data(withJSONObject:["results":results],options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-placement-evaluation-progress.json"),options:.atomic) }
+            if let data=try? JSONSerialization.data(withJSONObject:["results":results],options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-placement-evaluation-progress.json"),options:.atomic) }
             return saved
         }
         let clear=try await place("Sensor Garden",notes:"My university Engineering MEng project. Research\nImplementation\nEvaluation. The baseline uses my Signals module.")

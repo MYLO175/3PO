@@ -21,7 +21,7 @@ import SwiftData
         self.container = container
         if UserDefaults.standard.object(forKey:"paProactiveEnabled") != nil { enabled = UserDefaults.standard.bool(forKey:"paProactiveEnabled") }
         do {
-            if let saved = try container?.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first(where:{ $0.key == "paDiscoveries" }) { state = try JSONDecoder().decode(ProactiveState.self,from:saved.data); guard state.version == 1 else { throw SummaryFailure.invalid } }
+            if let saved = try LocalRecordRepository.read("paDiscoveries", container: container) { state = try JSONDecoder().decode(ProactiveState.self,from:saved); guard state.version == 1 else { throw SummaryFailure.invalid } }
         } catch { readable = false; self.error = "Saved PA suggestions could not be read; original data is preserved." }
     }
     func sourceSettingsScope(_ model:DashboardModel)->String {
@@ -161,7 +161,11 @@ import SwiftData
             canCompareEmail(message,summary,model:model,mailReview:mailReview) && model.emailSummaries.reviewPermitted(message,model:model,scope:mailReview) && summary.fingerprint == EmailSummary.fingerprint(message) && EmailReviewRules.eligibleForComparison(summary,message:message,heartbeat:heartbeat,now:now) && !ProactiveRules.assessed(progress,kind:"mail",id:message.id,revision:summary.adviceRevision(replied:message.replied),context:context) && (EmailHighlightRules.needsAction(summary,replied:message.replied) || summary.followUpDate != nil || (heartbeat && summary.worthReading == true)) && !summary.evidence.isEmpty
         }.prefix(12))
     }
-    func check(_ model: DashboardModel, manual: Bool = false, heartbeat: Bool = false, heartbeatWhatsAppReady: Bool = true,mailReview:MailReviewScope? = nil) {
+    func check(_ model: DashboardModel, manual: Bool = false, heartbeat: Bool = false, heartbeatWhatsAppReady: Bool = true,mailReview:MailReviewScope? = nil,heartbeatRequest:HeartbeatChildRequest? = nil) {
+        if heartbeat {
+            guard let heartbeatRequest,heartbeatRequest.registration == model.chatGPT.activeID else {return}
+            do {try heartbeatRequest.validate()} catch {return}
+        }
         sourceReadError=nil
         let assistant = model.assistant, registration = model.chatGPT.activeID, now = Date.now
         guard manual || now.timeIntervalSince(lastCheck) >= 300 else { return }
@@ -213,7 +217,7 @@ import SwiftData
                 let start = Calendar.current.startOfDay(for:now), end = Calendar.current.date(byAdding:.day,value:90,to:start)!
                 // Fresh bounded orientation is independent of the dashboard's selected calendar date.
                 let calendar:CalendarSnapshot,reminders:ReminderSnapshot
-                do {calendar=try await model.eventKit.calendar(from:start,to:end);reminders=try await model.eventKit.reminders()}
+                do {calendar=try await model.nativeSources.calendar(from:start,to:end);reminders=try await model.nativeSources.reminders()}
                 catch is CancellationError {throw CancellationError()}
                 catch {
                     if heartbeat {sourceReadError=error.localizedDescription;return}
@@ -223,7 +227,7 @@ import SwiftData
                 let tasks = DateRules.ordered(reminders.reminders.filter { !assistant.excludedLists.contains($0.listID) })
                 let completed:[CompletedReminder]
                 var completionError:String?
-                do {completed=try await model.eventKit.completedReminders(excluded:assistant.excludedLists)}
+                do {completed=try await model.nativeSources.completedReminders(excluded:assistant.excludedLists)}
                 catch is CancellationError {throw CancellationError()}
                 catch {completed=[];completionError=error.localizedDescription}
                 guard revision == model.sourceRevision,registration == model.chatGPT.activeID else {return}
@@ -280,12 +284,17 @@ import SwiftData
                 guard acknowledgementContext == model.reviewAcknowledgements(use:memoryUse,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady),currentEmailInputs() else { throw ActionFailure.message("A supplied email or its assessment changed before discovery; no request sent.") }
                 guard BriefingRules.day(.now) == day,enabled, (!heartbeat || ((manual || model.heartbeat.enabled) && heartbeatRevision == model.heartbeat.controlsRevision)), revision == model.sourceRevision,projectsRevision == assistant.projects.revision, scope == self.scope(model), waScope == model.whatsapp.scope(for:registration), whatsappWindow.map({$0 == ProactiveRules.whatsappWindow(model.whatsapp.messages,chats:whatsappChats,identity:waScope.linkedIdentity)}) ?? true, whatsapp.allSatisfy({ original in model.whatsapp.messages.contains { $0.id == original.itemID && $0.chat == original.chatID && SourceContextRules.revision($0) == original.revision } }), registration == model.chatGPT.activeID, memoryCapture == model.automaticMemory(memoryUse,query:memoryQuery,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady) && model.memoryDependenciesAvailable(memoryCapture.dependencies,use:memoryUse), preferences == assistant.preferences,context == contextRevision(model,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady), selectedModel == model.chatGPT.selectedModel, (heartbeat ? !model.heartbeat.composerActive : !assistant.hasDraft), !assistant.busy, !model.writing, !model.chatGPT.busy,!model.projectPlacement.busy, !model.briefings.busy, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.memoryLearning.busy, !model.emailSummaries.busy else { return }
                 guard manual || progress.fingerprint != fingerprint else { return }
-                if heartbeat { try model.heartbeat.claimCall(registration) }
+                if heartbeat { try heartbeatRequest!.claim() }
                 let previous = state
                 progress.paused = true; progress.attempts += 1; progress.lastAttempt = now; state.accounts[registration] = progress
                 do { try save() } catch { state = previous; throw error }
                 let response = try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:data,as:UTF8.self)]],instructions:(heartbeat ? ProactiveRules.heartbeatInstructions : ProactiveRules.instructions) + " " + MemoryDependencyRules.instructions + " " + CommitmentRules.instructions + " " + ProactiveRules.changeInstructions + " " + ProactiveRules.removalInstructions + " " + ProactiveRules.evidenceInstructions + " " + ProactiveRules.replacementInstructions + " " + EmailReviewRules.instructions + " " + EmailResolutionRules.instructions + " " + EmailReviewRules.feedbackInstructions + " " + EmailRelevanceRules.instructions + " " + ReviewAcknowledgementRules.instructions + " " + SourceDateGrounding.instructions + " Calendar start/end and timed reminder due values already contain local times and UTC offsets; do not add the timezone offset again.",model:selectedModel,purpose:.suggestions) { _ in }
                 try Task.checkCancellation()
+                if heartbeat {try heartbeatRequest!.validate()}
+                guard (heartbeat ? !model.heartbeat.composerActive : !assistant.hasDraft),!assistant.busy,!model.writing,
+                      !model.chatGPT.busy,!model.projectPlacement.busy,!model.briefings.busy,!model.sourceLearning.busy,
+                      !model.nativeSourceLearning.busy,!model.memoryMaintenance.busy,!model.memoryLearning.busy,
+                      !model.lifeOrganisation.busy,!model.emailSummaries.busy else {throw CancellationError()}
                 guard BriefingRules.day(.now) == day,enabled, (!heartbeat || ((manual || model.heartbeat.enabled) && heartbeatRevision == model.heartbeat.controlsRevision)), revision == model.sourceRevision,projectsRevision == assistant.projects.revision, scope == self.scope(model), waScope == model.whatsapp.scope(for:registration), whatsappWindow.map({$0 == ProactiveRules.whatsappWindow(model.whatsapp.messages,chats:whatsappChats,identity:waScope.linkedIdentity)}) ?? true, whatsapp.allSatisfy({ original in model.whatsapp.messages.contains { $0.id == original.itemID && $0.chat == original.chatID && SourceContextRules.revision($0) == original.revision } }), registration == model.chatGPT.activeID, memoryCapture == model.automaticMemory(memoryUse,query:memoryQuery,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady) && model.memoryDependenciesAvailable(memoryCapture.dependencies,use:memoryUse), preferences == assistant.preferences,context == contextRevision(model,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady), selectedModel == model.chatGPT.selectedModel,
                       currentEmailInputs() else { throw ActionFailure.message("Source or PA settings changed during discovery; no suggestion delivered.") }
                 guard acknowledgementContext == model.reviewAcknowledgements(use:memoryUse,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady),completedRevision == EmailNativeEvidence.hash(model.completedReminders) else {throw ActionFailure.message("Review feedback or completion evidence changed; no stale review result saved.")}
@@ -363,10 +372,7 @@ import SwiftData
     func recoverDelivery(_ model: DashboardModel) {}
     private func save() throws {
         guard let container else { throw SummaryFailure.invalid }
-        let context = container.mainContext, data = try JSONEncoder().encode(state)
-        if let record = try context.fetch(FetchDescriptor<CachedDashboard>()).first(where:{ $0.key == "paDiscoveries" }) { record.data = data; record.updated = .now }
-        else { context.insert(CachedDashboard(key:"paDiscoveries",data:data)) }
-        do { try context.save() } catch { context.rollback(); throw error }
+        try LocalRecordRepository(container: container).save(state, key: "paDiscoveries")
     }
 }
 

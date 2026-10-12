@@ -7,7 +7,12 @@ extension LifeNotebook {
         let itemLinks=itemLinks.filter{edge in items.contains{$0.id == edge.from && $0.registration == edge.registration && $0.conversationID == edge.conversationID}}
         var result = self, mapping: [String:String] = [:]
         let facts=Dictionary(notes.flatMap(\.records).map{($0.id,$0)},uniquingKeysWith:{first,_ in first})
-        func currentFacts(for savedID:UUID)->Set<UUID> { Set(facts.keys.filter{ $0 == savedID || memoryHistory[$0]?.contains(savedID) == true }) }
+        var lineage: [UUID: Set<UUID>] = [:]
+        for id in facts.keys {
+            lineage[id, default: []].insert(id)
+            for earlier in memoryHistory[id] ?? [] { lineage[earlier, default: []].insert(id) }
+        }
+        func currentFacts(for savedID:UUID)->Set<UUID> { lineage[savedID] ?? [] }
         func resolvedKind(_ item: LifeItem) -> LifeEntityKind {
             if item.kind == .space {
                 // Generic folders have no inferred semantic type. An exact human-reviewed

@@ -51,24 +51,28 @@ Optional assistant inference uses Settings → Continue with ChatGPT and the doc
 ## Checks and validation
 
 ```sh
-./scripts/test.sh
-./scripts/test-pa-tools.sh
-./scripts/test-whatsapp.sh
+./scripts/check.sh
+./scripts/check.sh --suite memory-quality --suite action-receipts
+./scripts/check.sh --list
 ```
 
-The first command is a focused baseline check, not an aggregate of every test. Other `scripts/test-*.sh` files cover individual components; inspect each script before running live developer acceptance modes. Disposable native write checks require an appropriate test account and permission to create/clean their fixtures.
+The default command runs the complete source-free inventory serially, with unique private artifacts, per-suite logs, timeouts and a failure report. Direct `scripts/test-*.sh` commands remain available. The WhatsApp check uses prepared bundled runtime/dependencies and makes no connection or download. Performance, signed in-memory app, native fixture and configured-model checks are separate tiers; inspect the listed effects before running them.
 
-[STATUS.md](STATUS.md) begins with the current checkpoint and retains dated engineering evidence below. [VALIDATION.md](VALIDATION.md) summarises current recorded checks and remaining limits before its historical log. Latest application code checkpoint: 8 October 2026, including Space/Task-only Projects, targeted lexical/typed-link memory selection, Review inbox provenance and scheduled heartbeat recovery. Focused fixtures and one recorded full production heartbeat support those bounded scenarios; they do not establish semantic recall, every source/account race or sustained sleep/wake reliability.
+Integration tiers require the exact signed DEBUG candidate executable: `./scripts/check.sh --tier app-memory --candidate-binary /absolute/path/3PO.app/Contents/MacOS/3PO`. Use `--tier native` or `--tier model` only for their documented effects. The signed protocol declaration and early handshake prevent older/Release binaries from entering normal startup during a runner probe. Native runs must report verified fixture cleanup; a timeout is not permission to replay an uncertain operation.
+
+[STATUS.md](STATUS.md) begins with the current checkpoint and retains dated engineering evidence below. [VALIDATION.md](VALIDATION.md) summarises current recorded checks and remaining limits before its historical log. The latest recorded installed behaviour includes the 11 October Review and canonical memory-feedback updates. The approved reliability/architecture work is being integrated separately. Focused checks do not establish broad semantic recall, every source/account race or sustained sleep/wake reliability; installation and candidate evidence remain distinct.
 
 ## Working on the repository
 
-Read [AGENTS.md](AGENTS.md) for Codex's development rules and [Development workflow](docs/DEVELOPMENT_WORKFLOW.md) for parallel worktrees, shared-file contracts, usage and integration. Requested Memory, Projects and Appearance features can develop in isolated chats/worktrees, with one integration owner for combined checks and the installed app. Existing build/test scripts share absolute temporary paths; isolate outputs or run fixed-path checks serially.
+Read [AGENTS.md](AGENTS.md) for Codex's development rules and [Development workflow](docs/DEVELOPMENT_WORKFLOW.md) for parallel worktrees, shared-file contracts, usage and integration. Requested Memory, Projects and Appearance features can develop in isolated chats/worktrees, with one integration owner for combined checks and the installed app. Component checks isolate temporary outputs; concurrent builds also need separate derived-data/log paths and coordinated generated project/runtime/icon files.
 
 AGENTS controls development behaviour; it does not configure the installed PA's runtime prompt. The main agent may choose bounded subagents when useful, while new independent chats require the user's request. Ask and record useful requirements/tradeoff decisions as work progresses. Product direction belongs in approved scope and roadmap/decision docs; validation files describe evidence rather than grant feature or write authority.
 
 ## Implementation notebook
 
-- [How it works](docs/HOW_IT_WORKS.md): current architecture and behaviour.
+- [How it works](docs/HOW_IT_WORKS.md): current behaviour.
+- [Architecture](docs/ARCHITECTURE.md): component ownership, request flow, storage and recovery.
+- [Reliability implementation](docs/RELIABILITY_IMPLEMENTATION.md): approved scope and completion evidence.
 - [Memory and context](docs/MEMORY_AND_CONTEXT.md): saved facts, usable notebook, per-reply context and inspection.
 - [Next improvements](docs/NEXT_IMPROVEMENTS.md): remaining product gaps and acceptance criteria.
 - [Decisions](docs/DECISIONS.md): significant implementation choices.
