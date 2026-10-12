@@ -4,6 +4,8 @@ Projects contains just **spaces and tasks**. A space is a folder: it can hold ot
 
 For example, a study area can contain a university, then Engineering, then modules and a project. The project can contain research, implementation and evaluation sections with their work. This is a flexible shared foundation: a widget displays the same records the PA reads and edits.
 
+[Documentation](README.md) · [Feature tour](FEATURES.md#projects) · [Architecture](ARCHITECTURE.md#memory-projects-and-learning)
+
 ## Using it
 
 Choose **Projects** in the Life map, or add a **Projects** widget. Think of it as folders containing folders, notes and work: **Engineering → Modules → Signals**, or **Engineering → Sensor Garden → Research**. Click any visible part of the path to go there. A narrow widget puts earlier parents in a small path menu. Browsing never changes the widget's saved opening folder.

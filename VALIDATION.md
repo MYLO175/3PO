@@ -1,5 +1,21 @@
 # Validation
 
+**Current evidence is checkpoint-specific.** The latest readable-source-label candidate is recorded first below; older entries retain the checks and limits of their named builds. This documentation refresh performs link, source-consistency and presentation checks only. It does not create new app, native-write or model acceptance evidence.
+
+[Documentation](docs/README.md) · [Check tiers](docs/DEVELOPMENT.md#choose-the-right-checks) · [Latest live acceptance](docs/LIVE_ACCEPTANCE.md) · [Detailed status](STATUS.md)
+
+## Read the evidence at the right level
+
+| Evidence | What it means |
+| --- | --- |
+| Source-free rules/services | Fictional deterministic contracts passed at a named revision |
+| Signed candidate app-memory | The actual compiled DEBUG app passed audited disposable consumer/storage modes |
+| Native fixtures / configured model | Separate real EventKit / subscription-model checks with declared effects |
+| Installation and preservation | Signed replacement/readback and saved-record checks passed |
+| Sustained live acceptance | Ordinary use of the latest installed binary; still open in Live acceptance |
+
+Passing one row does not establish the others. Read [Live acceptance](docs/LIVE_ACCEPTANCE.md) for the latest binary/observation period; the earlier initial-reliability matrix below remains historical evidence where later updates supersede it.
+
 ## Readable report sources — 12 October
 
 Final signed update installed at 20:59 London. Five focused source-free suites plus final alias-presentation checks pass; signed app-memory modes pass 144/144, 62/62 and 11/11 with no inference/native writes. Installed readback confirms the existing evening brief has no internal citation labels and its readable source controls remain. Original raw prose/source IDs/morning-delivery identity are preserved, verified by actual consumer checks. Full backup verifies 66 records/13 files; all records remain identical through replacement. Relaunch retains 39 protected records byte-for-byte; workspace layout/filter membership is identical apart from its existing same-day Calendar clock and set encoding order. No personal refresh or model-quality request was issued. Reports and limitations are in STATUS.

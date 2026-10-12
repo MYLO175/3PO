@@ -1,35 +1,28 @@
-# How Mission Control works
+# How 3PO works: detailed reference
+
+For a simple product tour, start with **[Features](FEATURES.md)**. This reference retains detailed interactions and contracts, including dated refinements. [Architecture](ARCHITECTURE.md) explains the component boundaries; [Validation](../VALIDATION.md) records what has actually been checked.
+
+[Documentation](README.md) · [Getting started](GETTING_STARTED.md) · [Memory](MEMORY_AND_CONTEXT.md) · [Projects](PROJECT_WORKSPACE.md)
+
+## Jump to a topic
+
+| Topic | Detailed sections |
+| --- | --- |
+| Dashboard and appearance | [Dashboard](#the-dashboard) · [Colours and PA name](#appearance-and-pa-name) · [Project pages](#project-pages) |
+| Conversation | [A PA conversation](#a-pa-conversation) · [Focus](#focus) · [Setup](#questions-and-setup) · [Queued work](#queued-work-and-handoffs) · [Screenshots](#pasting-screenshots-into-the-pa) |
+| Memory and projects | [Memory today](#memory-what-exists-today) · [Source memory/review](#7-october--source-memory-and-memory-review) · [Durable projects](#durable-life-and-projects) |
+| Native changes | [Editors and recurrence](#calendar-and-reminder-customisation) · [Dragging events](#moving-calendar-events) · [Uncertain checks](#if-a-requested-change-cannot-be-checked) |
+| Review and feedback | [One email card](#11-october--one-review-card-per-email) · [Date proposals](#7-october--review-inbox-and-proposed-deadline-changes) · [Source details](#finding-the-original-review-inbox-message) · [Reasoned Feedback](#12-october-reasoned-preferences-from-email-feedback) |
+| Sources and brief | [Mail collection](#incremental-mail-monitoring) · [WhatsApp selection/names](#whatsapp-names-and-selected-sources) · [Weather/brief refresh](#local-weather-and-explicit-brief-refresh) · [Selective context](#selective-briefs-and-preparation-checks) |
+| Background and recovery | [Background work](#background-work) · [History](#heartbeat-history) · [Failed cycles](#failed-heartbeats-and-the-next-check) · [Waiting](#when-a-background-review-waits) |
+| Settings and diagnostics | [Settings/Help/usage](#settings-help-and-usage) · [Responsiveness](#typing-and-page-responsiveness) · [Information storage](#where-information-lives) |
+
+Later dated refinements supersede earlier wording. The [feature guide](FEATURES.md) gives the current concise behaviour; a dated description here is not broad model-quality or sustained reliability acceptance.
+
 
 For current component ownership and the path from a message to a verified answer, start with [Architecture](ARCHITECTURE.md). The [reliability checklist](RELIABILITY_IMPLEMENTATION.md) distinguishes implementation from completed acceptance.
 
 The reliability candidate separates conversation execution, learning, heartbeat orchestration, source reads and keyed storage from dashboard presentation. Background stages capture an exact heartbeat run; cancellation or changed ownership rejects results before saving, while earlier completed work remains. Construction loads settings without writing fallback defaults. The installed candidate passes preservation and normal relaunch checks; sustained acceptance remains open in LIVE_ACCEPTANCE and STATUS.
-
-## 12 October: readable reports without internal source labels
-
-Briefs, assistant replies, Review explanations and remembered reports hide internal source aliases such as `[calendar_4]` and `[weather_0]`. Saved output gets the same local display treatment immediately, with no AI refresh or data migration. Bare references use readable source-type labels; ordinary links, Markdown, explicit code examples, human messages and original evidence quotes retain their content. **Sources and coverage** still exposes readable labels and links from unchanged structured evidence. Raw saved prose remains available for exact morning-delivery/history checks, alongside the same source IDs and receipts. Future brief/reply instructions keep aliases in structured evidence/tool fields and names in prose.
-
-## 12 October: reasoned preferences from email feedback
-
-Feedback on an email now uses one explicit, bounded subscription request to reason from your comment, the selected topic, and that exact email's sender, subject and up to 16,000 body characters. The **learned preference is the primary memory**, rather than a verbatim copy of an ambiguous comment. Original human words remain evidence. For example, ‘These emails aren't important’ on a general university broadcast can teach that routine newsletters from that communications team should stay quiet, while a new personal request or obligation still matters. Explicit sender-wide human wording can set a broader scope.
-
-**Submit feedback** retains your words locally and closes the dialog immediately. The app processes explicit submissions serially in the background, waiting for other PA operations to finish. You can switch pages, including opening the assistant, while it learns. The card shows progress and the saved preference; Review preferences retains unfinished feedback even if its card leaves the inbox. A targeted Stop stops only that submission. Foreground typing/sending cancels active feedback and interrupts queued submissions, keeping their words for an explicit retry.
-
-Review preferences and Memory expose the same canonical preference, its original feedback and email-context metadata. You can edit it directly, Disable/Restore it or inspect history. Changing the original comment/topic clears its old interpretation. Opening these panels makes no inference or source request. Interpretation reads the exact email before and after inference and rejects changed content/account/header/assessment/source controls/model/memory or foreground cancellation. Failures offer **Retry learning** and the explicit **Save only my words** fallback; there is no silent downgrade or automatic retry. Reopening retains interrupted submissions without replaying them. Pending feedback is not a recall fact. Exact issued memory IDs prevent duplication if the memory save succeeds but recording its completion fails. Inference requests one completed typed `pa.interpret_review_feedback` result through the existing subscription protocol, with no action execution or extra inference round. A plain-text preference cannot silently become a saved rule. The decoder accepts a complete JSON code fence and otherwise reports a feedback-specific format error without exposing a raw Cocoa decoding error. Dismiss remains acknowledgement only.
-
-The interpretation stores header and exact identity/version receipts, not the email body or model reasoning. It is human-authorised policy with separately labelled inferred scope, not a new source-derived life fact. Future matching uses the reasoned preference and sender/purpose context within existing bounded local retrieval and exact memory dependencies. Sender domain suffixes alone do not seed matching. The policy survives loss of the example email; inferred unconfirmed preferences retain the existing 90-day review boundary. Changing a learned preference to another memory type retains a correction version and its evidence while removing review-only metadata. Existing preferences and histories are preserved without automatic rewriting or consolidation.
-
-## 11 October: simpler Review and feedback in memory
-
-Feedback's editable About field is retained as a human-confirmed topic anchor, separate from the exact feedback evidence. It gives context to words such as these/this without turning source text into a human assertion or a blanket sender rule.
-
-Review shows outstanding actions, genuinely worthwhile reading, proposals needing approval and work needing a human answer or outcome check. An email and its supported suggestions share one card. Each card has one **Dismiss** action: acknowledgement of the displayed concern, with existing Undo. It neither completes work nor teaches disinterest. Completed suggestions and inferred addressed/planned history leave the main inbox; supported email history is inspectable under **Activity → Review history**, with **Keep in review**.
-
-**Feedback** opens a text prompt. The 12 October change above supersedes the original local-only save: new email feedback saves a reasoned preference with the original words as evidence. Feedback without an email context remains a local preference edit and does not dismiss the item. **Review preferences** and **Memory → Overview → Review preferences** inspect the same records; edits retain original evidence and version history, and Disable/Restore controls recall. Earlier explicit topic preferences remain preserved in a separate disclosure. They are not automatically rewritten or merged.
-
-Targeted header/body review prioritises relevant feedback within the existing bounded human-fact selection. The model applies purpose, action, stage, conditions and exceptions: a routine assessment submission receipt can stay quiet while an invitation, new stage or meaningful result from the same sender matters. New policy and changed relevant feedback reconsider already-assessed recent mail in the existing three-body batch, without resetting Mail history or resurrecting acknowledged concerns. Older informational reading judgements wait for that policy recheck before entering Review; outstanding actions, human Keep overrides and pending proposals remain eligible. Opening feedback, preferences or history uses no AI. Selected memory receipts and revision checks reject stale inference. General semantic recall/consolidation remains separate quality work.
-
-Native handled associations require an outstanding action, exact current evidence and distinctive target qualifiers in the saved request quote, plus a model judgement that all actions are covered. Common words such as assessment cannot link coding recruitment work to a risk assessment. The guard also withholds unsupported legacy associations while retaining their stored receipts. An uncertain canonical creation claim remains visible and cannot gain another approval from an inferred match.
-
 
 Mission Control combines a custom dashboard with a personal assistant. Apple Calendar, Reminders and Mail remain the original sources. The assistant can retrieve information, remember useful context, suggest work and carry out supported Calendar/Reminders changes through local tools.
 
@@ -208,7 +201,7 @@ These controls are not complete Apple-app parity. Tags, subtasks, attachments, i
 
 The 3PO macOS app icon uses the selected gold robot artwork in a standard Xcode AppIcon asset catalog. macOS compiles it into its native rounded tile treatment. Xcode generates the bundled ICNS and icon metadata; the Dock uses the system-provided icon without a raw-image override so native corner masking remains intact. Updating the app retains its bundle identity and local data.
 
-PA replies and newly prepared/updated briefs request restrained inline Markdown emphasis: bold key headings/actions/times and occasional italics. The current brief, original morning disclosure and supporting prose render both while preserving paragraphs. Existing saved prose remains unchanged.
+PA replies and newly prepared/updated briefs request restrained inline Markdown emphasis: bold key headings/actions/times and occasional italics. The current brief and supporting prose render both while preserving paragraphs; the original morning record remains saved rather than shown as a second widget disclosure. Existing saved prose remains unchanged.
 
 The app is now named 3PO (`~/Applications/3PO.app`). Bundle ID `com.mylomichael.missioncontrol`, Swift module `MissionControl`, Application Support/Mission Control, account registration, Keychain identities and stored transcripts/layouts remain unchanged. The assistant's separately customisable display name remains its existing preference.
 
@@ -344,7 +337,7 @@ The comparison now saves opaque assessed source-version receipts even after a qu
 | --- | --- | --- |
 | Source collection | Enabled native sources/WhatsApp connection | Local data; no AI |
 | Communication review | Background → review interval, inclusion, notifications; advanced request allowance | Review inbox items; no native writes |
-| Morning brief | Background → Morning brief schedule | One morning record/chat delivery; explicit daytime updates are separate |
+| Current brief | Background → PA heartbeat, brief refresh or explicit PA request | One current widget update; original morning records/chat/notification identity remain saved |
 | Conversation/source learning, organisation, optional weekly memory review | Memory controls and per-source opt-ins | Evidence-backed memory/organisation or review proposals; shared learning allowance |
 | Explicitly delegated PA work | Queue/Continue queue | Captured request, work and handoff in Review inbox; ordinary human write authority still required |
 
@@ -408,7 +401,7 @@ Life map → **Projects** replaces the Structure label. It shares saved records 
 
 ### Regular heartbeat brief and questions
 
-Settings → Background → PA heartbeat defines one AI review cycle, hourly by default, using independently collected Mail. It reviews available enabled sources, prepares selective proposals/replies, then writes a current widget brief, including when there is no new mail. The scheduler runs one due catch-up after launch/wake; it does not replay every missed interval. Source-only cancellation retries locally; other failures start a fresh check at the next configured interval. Typing and foreground work win. Normal Refresh still makes no AI request.
+Settings → Background → PA heartbeat defines one AI review cycle, hourly by default, using independently collected Mail. It reviews available enabled sources, prepares selective proposals/replies, then writes a current widget brief, including when there is no new mail. The scheduler runs one due catch-up after launch/wake; it does not replay every missed interval. Source-only cancellation retries locally; other failures start a fresh check at the next configured interval. Typing and foreground work win. **Refresh sources only** still makes no AI request.
 
 Heartbeat briefs use the latest-update cache and keep the original morning record, chat delivery and notification untouched. A heartbeat can prepare the widget before an optional morning message exists. The newer valid current-day record is displayed; account/day/source/model/weather/memory and native re-read guards reject late results. A check can analyse collected headers while Mail monitoring is retrying or unfinished. Accounts without collected receipts are omitted; collection coverage remains explicit.
 
@@ -487,3 +480,32 @@ Brief freshness is a separate observed view. Acknowledgement projection creates 
 ## 9 October — Mail date precision and independent heartbeat analysis
 
 Apple-event dates have whole-second precision, while saved arrival windows can include fractions of a second. The Mail reader rounds the native query bounds outward, then filters candidates to the exact saved logical range before retaining known identities or issuing page IDs. This prevents a stable boundary message from repeatedly raising “changed or moved”. Persisted pages still reject genuinely changed, unavailable or out-of-range dates. Existing cursors, cache and per-account backoff are preserved; no historical rebuild is required.
+
+
+## Detailed Review and presentation refinements
+
+## 12 October: readable reports without internal source labels
+
+Briefs, assistant replies, Review explanations and remembered reports hide internal source aliases such as `[calendar_4]` and `[weather_0]`. Saved output gets the same local display treatment immediately, with no AI refresh or data migration. Bare references use readable source-type labels; ordinary links, Markdown, explicit code examples, human messages and original evidence quotes retain their content. **Sources and coverage** still exposes readable labels and links from unchanged structured evidence. Raw saved prose remains available for exact morning-delivery/history checks, alongside the same source IDs and receipts. Future brief/reply instructions keep aliases in structured evidence/tool fields and names in prose.
+
+## 12 October: reasoned preferences from email feedback
+
+Feedback on an email now uses one explicit, bounded subscription request to reason from your comment, the selected topic, and that exact email's sender, subject and up to 16,000 body characters. The **learned preference is the primary memory**, rather than a verbatim copy of an ambiguous comment. Original human words remain evidence. For example, ‘These emails aren't important’ on a general university broadcast can teach that routine newsletters from that communications team should stay quiet, while a new personal request or obligation still matters. Explicit sender-wide human wording can set a broader scope.
+
+**Submit feedback** retains your words locally and closes the dialog immediately. The app processes explicit submissions serially in the background, waiting for other PA operations to finish. You can switch pages, including opening the assistant, while it learns. The card shows progress and the saved preference; Review preferences retains unfinished feedback even if its card leaves the inbox. A targeted Stop stops only that submission. Foreground typing/sending cancels active feedback and interrupts queued submissions, keeping their words for an explicit retry.
+
+Review preferences and Memory expose the same canonical preference, its original feedback and email-context metadata. You can edit it directly, Disable/Restore it or inspect history. Changing the original comment/topic clears its old interpretation. Opening these panels makes no inference or source request. Interpretation reads the exact email before and after inference and rejects changed content/account/header/assessment/source controls/model/memory or foreground cancellation. Failures offer **Retry learning** and the explicit **Save only my words** fallback; there is no silent downgrade or automatic retry. Reopening retains interrupted submissions without replaying them. Pending feedback is not a recall fact. Exact issued memory IDs prevent duplication if the memory save succeeds but recording its completion fails. Inference requests one completed typed `pa.interpret_review_feedback` result through the existing subscription protocol, with no action execution or extra inference round. A plain-text preference cannot silently become a saved rule. The decoder accepts a complete JSON code fence and otherwise reports a feedback-specific format error without exposing a raw Cocoa decoding error. Dismiss remains acknowledgement only.
+
+The interpretation stores header and exact identity/version receipts, not the email body or model reasoning. It is human-authorised policy with separately labelled inferred scope, not a new source-derived life fact. Future matching uses the reasoned preference and sender/purpose context within existing bounded local retrieval and exact memory dependencies. Sender domain suffixes alone do not seed matching. The policy survives loss of the example email; inferred unconfirmed preferences retain the existing 90-day review boundary. Changing a learned preference to another memory type retains a correction version and its evidence while removing review-only metadata. Existing preferences and histories are preserved without automatic rewriting or consolidation.
+
+## 11 October: simpler Review and feedback in memory
+
+Feedback's editable About field is retained as a human-confirmed topic anchor, separate from the exact feedback evidence. It gives context to words such as these/this without turning source text into a human assertion or a blanket sender rule.
+
+Review shows outstanding actions, genuinely worthwhile reading, proposals needing approval and work needing a human answer or outcome check. An email and its supported suggestions share one card. Each card has one **Dismiss** action: acknowledgement of the displayed concern, with existing Undo. It neither completes work nor teaches disinterest. Completed suggestions and inferred addressed/planned history leave the main inbox; supported email history is inspectable under **Activity → Review history**, with **Keep in review**.
+
+**Feedback** opens a text prompt. The 12 October change above supersedes the original local-only save: new email feedback saves a reasoned preference with the original words as evidence. Feedback without an email context remains a local preference edit and does not dismiss the item. **Review preferences** and **Memory → Overview → Review preferences** inspect the same records; edits retain original evidence and version history, and Disable/Restore controls recall. Earlier explicit topic preferences remain preserved in a separate disclosure. They are not automatically rewritten or merged.
+
+Targeted header/body review prioritises relevant feedback within the existing bounded human-fact selection. The model applies purpose, action, stage, conditions and exceptions: a routine assessment submission receipt can stay quiet while an invitation, new stage or meaningful result from the same sender matters. New policy and changed relevant feedback reconsider already-assessed recent mail in the existing three-body batch, without resetting Mail history or resurrecting acknowledged concerns. Older informational reading judgements wait for that policy recheck before entering Review; outstanding actions, human Keep overrides and pending proposals remain eligible. Opening feedback, preferences or history uses no AI. Selected memory receipts and revision checks reject stale inference. General semantic recall/consolidation remains separate quality work.
+
+Native handled associations require an outstanding action, exact current evidence and distinctive target qualifiers in the saved request quote, plus a model judgement that all actions are covered. Common words such as assessment cannot link coding recruitment work to a risk assessment. The guard also withholds unsupported legacy associations while retaining their stored receipts. An uncertain canonical creation claim remains visible and cannot gain another approval from an inferred match.

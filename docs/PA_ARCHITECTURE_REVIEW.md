@@ -2,7 +2,7 @@
 
 Architecture review and recommended delivery sequence, 6 October 2026.
 
-This is a dated architecture assessment, not the current delivery summary. Later 7–8 October changes include selective Mail lanes, source-aware advice, Review inbox, targeted memory relevance, Space/Task-only Projects and scheduled heartbeat recovery. Read [STATUS](../STATUS.md), [VALIDATION](../VALIDATION.md) and [Next improvements](NEXT_IMPROVEMENTS.md) before applying its older observations or proposed sequence. Broader shared episodes, semantic recall and offline inference remain future work.
+This is a dated architecture assessment, not the current delivery summary. Later 7–12 October changes include selective Mail lanes, source-aware advice, Review inbox, targeted memory relevance, Space/Task-only Projects, scheduled heartbeat recovery and separated assistant/learning/heartbeat runtimes with atomic keyed storage. Read [STATUS](../STATUS.md), [VALIDATION](../VALIDATION.md) and [Next improvements](NEXT_IMPROVEMENTS.md) before applying its older observations or proposed sequence. Broader shared episodes, semantic recall and offline inference remain future work.
 
 Mission Control should become a personal workspace whose assistant understands ongoing work, follows communications, and produces useful results while you are elsewhere. The native dashboard, project space and PA should share the same records. Your knowledge should remain usable when the inference provider changes. Offline inference is a later goal, not a prerequisite for the next delivery.
 
