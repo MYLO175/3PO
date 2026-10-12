@@ -10,6 +10,7 @@ Candidate code checkpoint: `a63b2da`. Installed 12 October 2026 at approximately
 - Signature and executable/debug-library readback after installation; normal launch and a second clean quit/relaunch.
 - Protected conversation/draft/memory/project/layout/action/creation/queue records and original images pass10/10 preservation checks. Legacy conversation bytes remain unchanged. Calendar returns to today on mount; source-exclusion Sets retain exact membership despite JSON ordering. These two documented normalisations are recorded separately from raw-byte identity. All saved application preferences remain unchanged.
 - Native typing (one temporary space, restored exactly), Project navigation, return to Today and normal relaunch retain the original unsent draft and original conversation identities. No message was sent, Review item approved/dismissed or personal native record edited.
+- First ordinary scheduled run on this build: 12 October 11:34:05–11:35:21 UTC / 12:34–12:35 London. Context, Email review, Suggestions & drafts and Today's brief all finished Done, with six model requests, two checked Mail accounts, no collection issues and no saved failure. More bounded work remains pending; the account returned to idle without a failure retry. The latest widget record references this exact completed run. Original morning records and notification claims remain unchanged; the original draft count and completed queue states remain. There is no current-day morning record, so the existing widget-only path is correct. Private metadata snapshots `20261012-1132.json` and `20261012-1135.json` preserve the comparison. One successful cycle does not establish sustained operation or physical sleep/wake.
 
 The personal legacy conversation has not yet needed a changed-turn save, so these installed checks prove reading/preservation, not a completed personal chunk migration. Fictional migration, changed-chunk, unknown-field and reopen tests remain the migration evidence until normal authorised use exercises a save.
 
@@ -30,6 +31,10 @@ Do not manufacture traffic, change source opt-ins/model/credentials/permissions,
 ## Read-only metadata snapshots
 
 `scripts/observe-runtime.py` reads the explicit SQLite store without changing its records, and reads the installed executable/process and filtered OS power events. It writes only timestamps, counts, hashed identities, states and flags to a new private file outside any Git checkout. It exports no source/memory/conversation prose, reasoning, credentials or exact account IDs. Missing/unreadable records and unavailable process/power observation are not proof of an empty or successful state.
+
+Schema 2 adds metadata and canonical record hashes for all saved morning records, the latest widget briefs, hashed notification claims and per-lane learning claim times. Keep original morning identities/hashes stable across later widget updates; new local days may add their own morning record. `morningRecords` retains its earlier post-install-only meaning. These comparisons verify saved delivery claims, not whether macOS displayed a notification.
+
+When a current-day morning anchor exists, compare its exact owner/day/identity with the widget's `morningID`. When it does not exist, an owned completed heartbeat may save `widgetOnly=true` with no morning link. Do not require a fabricated morning anchor or create a morning delivery to satisfy a check.
 
 ```sh
 python3 scripts/observe-runtime.py \

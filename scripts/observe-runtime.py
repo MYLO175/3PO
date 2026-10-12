@@ -33,6 +33,18 @@ def date(value):
     return parsed.isoformat() if parsed else None
 
 
+def brief_metadata(value):
+    return {
+        'id': identity(value['id']), 'owner': identity(value.get('registration')),
+        'day': value.get('day'), 'created': date(value.get('created')),
+        'morningID': identity(value['morningID']) if value.get('morningID') else None,
+        'heartbeatID': identity(value['heartbeatID']) if value.get('heartbeatID') else None,
+        'widgetOnly': value.get('widgetOnly'), 'invalidated': value.get('invalidated'),
+        'recordSHA256': hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':'),
+                                                  allow_nan=False).encode()).hexdigest(),
+    }
+
+
 def snapshot(store, app, since):
     connection = sqlite3.connect(store.as_uri() + '?mode=ro', uri=True, timeout=5)
     try:
@@ -80,15 +92,21 @@ def snapshot(store, app, since):
     drafts = read('assistantDrafts', {})
     memory = read('paMemory', {})
     result = {
-        'schemaVersion': 1,
+        'schemaVersion': 2,
         'snapshotUTC': datetime.now(timezone.utc).isoformat(), 'sinceUTC': since.isoformat(),
         'applicationSHA256': hashlib.sha256((app / 'Contents/MacOS/3PO').read_bytes()).hexdigest(),
         'recordCount': len(records), 'heartbeat': accounts, 'morningRecords': morning,
+        # Include pre-install delivery identities so subsequent widget updates
+        # can be compared with the original morning record without exporting prose.
+        'morningHistory': [brief_metadata(v) for v in brief.get('records', [])],
+        'widgetBriefs': {identity(k): brief_metadata(v) for k, v in brief.get('updatedBriefs', {}).items()},
+        'notificationClaims': sorted(identity(v) for v in brief.get('notificationClaims', [])),
         'savedDraftCount': len(drafts.get('values', {})),
         'memoryRecordCount': len(memory.get('records', [])),
         'queueStates': dict(Counter(v.get('state', 'unknown') for v in read('paRequestQueue', []))),
         'learningClaims': [{'owner': identity(k), 'day': v.get('day'), 'attempts': v.get('attempts'),
-                            'lastAttempt': date(v.get('lastAttempt')), 'servedLanes': sorted(v.get('lastServed', {}))}
+                            'lastAttempt': date(v.get('lastAttempt')), 'servedLanes': sorted(v.get('lastServed', {})),
+                            'laneClaims': {lane: date(claim) for lane, claim in sorted(v.get('lastServed', {}).items())}}
                            for k, v in read('paCombinedLearningBudget', {}).items()],
         'sourceHealth': {k: {'stored': k in records, 'lastSuccess': date(read(k, {}).get('lastSuccess')),
                              'hasError': bool(read(k, {}).get('error')), 'loading': read(k, {}).get('loading', False)}
