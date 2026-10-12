@@ -436,6 +436,50 @@ import Observation
             }
             var preparations:[String:[PAReadPrerequisite]]=[:]
             if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {allConversations[c].turns[t].unresolvedToolErrors=[]}
+            @MainActor func resolvePreparations(after call:PAFunctionCall) {
+                let readID=(try? PAToolProtocol.arguments(call))?["id"] as? String
+                let prepared = call.name == "read_calendar" ? !session.calendar.sources.isEmpty : call.name == "read_reminders" ? !session.reminders.sources.isEmpty : call.name == "read_item_details" ? readID.flatMap{session.itemDetails[$0]} != nil : false
+                var resolved=Set<String>()
+                for (note,requirements) in preparations {
+                    let remaining=requirements.filter{!prepared || !$0.resolved(by:call.name,id:readID)}
+                    if remaining.isEmpty {resolved.insert(note)} else {preparations[note]=remaining}
+                }
+                if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {
+                    allConversations[c].turns[t].unresolvedToolErrors?.removeAll{resolved.contains($0)}
+                }
+                preparations=preparations.filter{!resolved.contains($0.key)}
+            }
+            @MainActor func executePrepared(_ call:PAFunctionCall) async throws -> String {
+                do {return try await session.execute(call,valid:validOwnership)}
+                catch let requirement as PAReadPrerequisite {
+                    guard let read=try requirement.preparationCall(for:call,calendar:session.calendar,reminders:session.reminders) else {throw requirement}
+                    try Task.checkCancellation()
+                    guard valid() else {throw ActionFailure.message("Configuration changed before source preparation; no operation executed.")}
+                    self.toolStatus=requirement.progressDescription
+                    if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {
+                        var names=allConversations[c].turns[t].contextCapture?.attemptedTools ?? []
+                        if !names.contains(read.name) {names.append(read.name)}
+                        allConversations[c].turns[t].contextCapture?.attemptedTools=names
+                        var notes=allConversations[c].turns[t].contextCapture?.preparationNotes ?? []
+                        notes.append(requirement.reason)
+                        allConversations[c].turns[t].contextCapture?.preparationNotes=Array(notes.suffix(6))
+                    }
+                    do {_=try await session.execute(read,valid:validOwnership)}
+                    catch is CancellationError {throw CancellationError()}
+                    catch let failure as PAIntentFailure {throw failure}
+                    catch {throw PAReadPreparationFailure(readTool:read.name,reason:error.localizedDescription)}
+                    try Task.checkCancellation()
+                    guard valid() else {throw ActionFailure.message("Configuration changed during source preparation; no operation executed.")}
+                    guard requirement.satisfied(calendar:session.calendar,reminders:session.reminders,itemDetailIDs:Set(session.itemDetails.keys)) else {
+                        throw PAReadPreparationFailure(readTool:read.name,reason:read.name == "read_item_details" ? "The exact item's current details were not returned. No change was attempted." : "No enabled " + (read.name == "read_calendar" ? "Calendar destinations" : "reminder lists") + " were returned. No creation was attempted.")
+                    }
+                    resolvePreparations(after:read)
+                    // The first attempt stopped before intent/native execution.
+                    // Retry this exact call once; a second failure is not recovered.
+                    self.toolStatus="Using " + call.name.replacingOccurrences(of:"_",with:" ") + "…"
+                    return try await session.execute(call,valid:validOwnership)
+                }
+            }
             do {
                 let base = try images.input(replayTurns,currentUserID:currentUserID,registration:registration)
                 let result = try await engine.run(
@@ -447,18 +491,8 @@ import Observation
                         var succeeded = false
                         let output: String
                         do {
-                            output = try await session.execute(call,valid:validOwnership);succeeded=true
-                            if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {
-                                let readID=(try? PAToolProtocol.arguments(call))?["id"] as? String
-                                let prepared = call.name == "read_calendar" ? !session.calendar.sources.isEmpty : call.name == "read_reminders" ? !session.reminders.sources.isEmpty : call.name == "read_item_details" ? readID.flatMap{session.itemDetails[$0]} != nil : false
-                                var resolved=Set<String>()
-                                for (note,requirements) in preparations {
-                                    let remaining=requirements.filter{!prepared || !$0.resolved(by:call.name,id:readID)}
-                                    if remaining.isEmpty {resolved.insert(note)} else {preparations[note]=remaining}
-                                }
-                                allConversations[c].turns[t].unresolvedToolErrors?.removeAll{resolved.contains($0)}
-                                preparations=preparations.filter{!resolved.contains($0.key)}
-                            }
+                            output = try await executePrepared(call);succeeded=true
+                            resolvePreparations(after:call)
                             if let (question,options)=session.clarification {
                                 setResponse(([session.receipts.joined(separator:"\n"),question].filter{!$0.isEmpty}).joined(separator:"\n\n"),completed:true)
                                 if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) { allConversations[c].turns[t].choices=options }
@@ -500,11 +534,13 @@ import Observation
                                 return .stopped
                             }
                             if ["save_memory","remember_context","change_memory","organise_memory"].contains(call.name) { session.memoryNotes.append(String(error.localizedDescription.prefix(500))) }
-                            let guidance=(error as? PAIntentFailure) != nil ? PAIntentFailure.guidance : ["save_memory","remember_context"].contains(call.name)
+                            let guidance=error is PAReadPrerequisite ? PAReadPrerequisite.guidance : error is PAReadPreparationFailure ? PAReadPreparationFailure.guidance : (error as? PAIntentFailure) != nil ? PAIntentFailure.guidance : ["save_memory","remember_context"].contains(call.name)
                                 ? "Do not claim success. If evidence/connection validation failed, correct the exact quote from the current human answer or omit unsupported links. Do not rephrase to bypass disabled, paused, suppressed or unavailable storage; report those limitations. Never repeat a possibly attempted storage save."
                                 : "Do not claim success or repeat a possibly attempted save. Clarify missing information if needed."
                             var failure:[String:Any] = ["error":error.localizedDescription,"verified":false,"instruction":guidance]
                             if error is PAIntentFailure { failure["stage"]="human_intent_check";failure["nativeSaveAttempted"]=false }
+                            if let requirement=error as? PAReadPrerequisite {failure["stage"]="read_prerequisite";failure["nativeSaveAttempted"]=false;failure["requiredRead"]=requirement.readTool}
+                            if let preparation=error as? PAReadPreparationFailure {failure["stage"]="read_preparation";failure["nativeSaveAttempted"]=false;failure["requiredRead"]=preparation.readTool}
                             output = String(data:try JSONSerialization.data(withJSONObject:failure),encoding:.utf8)! }
                         return .output(output, succeeded: succeeded)
                     }, progress: { self.toolStatus = $0 },

@@ -187,6 +187,41 @@ struct PAReadPrerequisite: LocalizedError {
     var errorDescription:String? { reason }
     static let destinations="Read the appropriate Calendar or Reminders source first to discover enabled destinations; no creation was attempted."
     static let details="Read the exact item's current details before editing or deleting it."
+    var progressDescription:String {
+        switch readTool {case "read_calendar":return "Checking Calendar destinations…";case "read_reminders":return "Checking reminder lists…";default:return "Checking the item's current details…"}
+    }
+    /// Only a typed pre-operation prerequisite can trigger an internal read.
+    /// The original mutation and its authority/receipt identity stay unchanged.
+    func preparationCall(for call:PAFunctionCall,calendar:CalendarSnapshot,reminders:ReminderSnapshot,dateCalendar:Calendar = .current)throws -> PAFunctionCall? {
+        guard ["change_calendar","change_reminder"].contains(call.name) else {return nil}
+        let args=try PAToolProtocol.arguments(call),operation=args["operation"] as? String
+        var values:[String:Any]=[:]
+        if operation == "create",reason == Self.destinations,target == nil {
+            guard readTool == (call.name == "change_calendar" ? "read_calendar" : "read_reminders") else {return nil}
+            if readTool == "read_calendar" {
+                guard let text=args["start"] as? String,
+                      let date=try? ActionRules.date(text,dateOnly:args["allDay"] as? Bool ?? false,calendar:dateCalendar),
+                      let end=dateCalendar.date(byAdding:.day,value:1,to:dateCalendar.startOfDay(for:date)) else {return nil}
+                values=["start":DateRules.localDate(date,calendar:dateCalendar),"end":DateRules.localDate(end,calendar:dateCalendar)]
+            }
+        } else if ["edit","delete"].contains(operation ?? ""),reason == Self.details,readTool == "read_item_details",let target,target == args["target"] as? String {
+            let issued=call.name == "change_calendar" ? calendar.events.contains{$0.id == target} : reminders.reminders.contains{$0.id == target}
+            guard issued else {return nil}
+            values=["kind":call.name == "change_calendar" ? "event" : "reminder","id":target]
+        } else {return nil}
+        let result=PAFunctionCall(id:UUID().uuidString,name:readTool,namespace:"pa",arguments:String(decoding:try JSONSerialization.data(withJSONObject:values,options:[.sortedKeys]),as:UTF8.self))
+        _=try PAToolProtocol.arguments(result)
+        return result
+    }
+    func satisfied(calendar:CalendarSnapshot,reminders:ReminderSnapshot,itemDetailIDs:Set<String>)->Bool {
+        switch readTool {
+        case "read_calendar":return !calendar.sources.isEmpty
+        case "read_reminders":return !reminders.sources.isEmpty
+        case "read_item_details":return target.map{itemDetailIDs.contains($0)} ?? false
+        default:return false
+        }
+    }
+    static let guidance="This is a local read prerequisite, and no native save was attempted. Continue the same human request after reading the required current source/details; preserve its exact target, dates, destination and authority. Do not ask the human to repeat an already clear request. If the read is unavailable or essential information is genuinely missing, explain that specific limitation or ask one necessary question. Never replay an uncertain native save."
     static func visibleFailures(unresolved:[String]?,history:[String]?)->[String] {unresolved ?? (history ?? []).filter{!legacyPreparation($0)}}
     static func legacyPreparation(_ note:String)->Bool {
         if note == destinations || note == details {return true}
@@ -197,4 +232,12 @@ struct PAReadPrerequisite: LocalizedError {
         return reason == "The request is to create a new reminder, but the proposed operation is change_reminder and has no target." ||
             (reason.hasPrefix("What date and time should ") && reason.hasSuffix(" be added for?"))
     }
+}
+
+/// A failed internal read is known to precede native execution, not an uncertain save.
+struct PAReadPreparationFailure:LocalizedError {
+    var readTool:String
+    var reason:String
+    var errorDescription:String? {reason}
+    static let guidance="The preparatory source/details read did not finish, and no native save was attempted. Preserve the human's original request and any earlier verified receipts. Explain the specific source/availability limitation; do not ask the human to repeat an already clear request or claim completion. Do not substitute a different destination/target or retry an uncertain native save."
 }

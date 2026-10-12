@@ -63,6 +63,31 @@ import Foundation
         let encoded = String(data:try JSONSerialization.data(withJSONObject:fields),encoding:.utf8)!
         let call = PAFunctionCall(id:"call1",name:"change_reminder",namespace:"pa",arguments:encoded)
         let decoded = try PAToolProtocol.arguments(call); assert(decoded["due"] as? String == "undated")
+        let emptyCalendar=CalendarSnapshot(sources:[],events:[]),emptyReminders=ReminderSnapshot(sources:[],reminders:[])
+        let task=TaskItem(id:"issued-id",listID:"issued-list",title:"Fictional task",due:nil,hasTime:false,sourceLabel:"Fictional",writable:true,recurring:true)
+        let detailRequirement=PAReadPrerequisite(readTool:"read_item_details",reason:PAReadPrerequisite.details,target:"issued-id")
+        let detailRead=try detailRequirement.preparationCall(for:call,calendar:emptyCalendar,reminders:.init(sources:[],reminders:[task]))!
+        let detailArguments=try PAToolProtocol.arguments(detailRead)
+        precondition(detailRead.name == "read_item_details" && detailArguments["kind"] as? String == "reminder" && detailArguments["id"] as? String == "issued-id","Preparation reads only the exact issued item and actual kind")
+        let unissuedRead=try detailRequirement.preparationCall(for:call,calendar:emptyCalendar,reminders:emptyReminders)
+        precondition(unissuedRead == nil,"Unissued targets never cause automatic reads or title lookup")
+        precondition(detailRequirement.satisfied(calendar:emptyCalendar,reminders:emptyReminders,itemDetailIDs:["issued-id"]))
+        precondition(!detailRequirement.satisfied(calendar:emptyCalendar,reminders:emptyReminders,itemDetailIDs:["other-occurrence"]))
+        var dateCalendar=Calendar(identifier:.gregorian);dateCalendar.timeZone=TimeZone(identifier:"Europe/London")!
+        var calendarFields:[String:Any]=["operation":"create","target":NSNull(),"destination":NSNull(),"title":"Fictional weekend","notes":NSNull(),"location":NSNull(),"start":"2026-10-25","end":"2027-01-01","allDay":true,"scope":NSNull(),"options":NSNull(),"authorization":"Yes, all weekend"]
+        func calendarCall()->PAFunctionCall {.init(id:"creation",name:"change_calendar",namespace:"pa",arguments:String(decoding:try! JSONSerialization.data(withJSONObject:calendarFields),as:UTF8.self))}
+        let creation=calendarCall(),requirement=PAReadPrerequisite(readTool:"read_calendar",reason:PAReadPrerequisite.destinations)
+        let sourceRead=try requirement.preparationCall(for:creation,calendar:emptyCalendar,reminders:emptyReminders,dateCalendar:dateCalendar)!
+        let readArguments=try PAToolProtocol.arguments(sourceRead)
+        precondition(readArguments["start"] as? String == "2026-10-25" && readArguments["end"] as? String == "2026-10-26","Destination discovery reads one local day including DST, not the whole event span")
+        let unchangedCreation=try PAToolProtocol.arguments(creation)
+        precondition(unchangedCreation["end"] as? String == "2027-01-01","Preparatory range never changes the proposed event")
+        calendarFields["start"]="tomorrow"
+        let invalidDateRead=try requirement.preparationCall(for:calendarCall(),calendar:emptyCalendar,reminders:emptyReminders)
+        precondition(invalidDateRead == nil,"An invalid proposed date is never replaced with an invented date")
+        let wrongRead=PAReadPrerequisite(readTool:"read_email",reason:PAReadPrerequisite.destinations)
+        let wrongPreparation=try wrongRead.preparationCall(for:creation,calendar:emptyCalendar,reminders:emptyReminders)
+        precondition(wrongPreparation == nil,"Only the matching native read prerequisite can recover")
         for invalid in [PAFunctionCall(id:"call2",name:"send_email",namespace:"pa",arguments:"{}"),PAFunctionCall(id:"call2",name:"change_reminder",namespace:nil,arguments:encoded),PAFunctionCall(id:"call2",name:"read_reminders",namespace:"pa",arguments:#"{"unexpected":"value"}"#)] {
             var rejected = false; do { _ = try PAToolProtocol.arguments(invalid) } catch { rejected = true }; assert(rejected)
         }
