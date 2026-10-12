@@ -6,15 +6,19 @@ Code `5459516` installed signed at 23:48 London. A fresh authorised manual heart
 
 Signed build, briefing/stream/heartbeat checks and app-memory modes 144/144, 68/68, 11/11 pass. Configured-model daypart cases pass 14/14 across three fictional requests. This supersedes earlier candidate identity below. Conservative observation start is 12 October 22:50:32 UTC and the earliest 72-hour threshold is 15 October 22:50:32 UTC. One fresh cycle verifies the observed response-format fix; sustained scheduling/provider/source recovery remains open. Existing follow-up and notification policy is unchanged.
 
+The 23:35 UTC read-only observation verifies the installed signature, executable `4320c1d3b51cd0df9aa184c50a6e1e0d18def9a44ec68a4e4543954529aab418` and debug library `8213a46f47d69849ed299cb6ab8660a21c2484cf1c3933c6a6394bae6624cd91` against the exact tested candidate and release report. All 13 conversations/302 turns/17 chunks, drafts, feedback jobs, learning progress and action/creation/queue receipts match the latest quit backup. Original morning records/notification claims remain unchanged; the widget-only brief matches the completed authorised manual run before the conservative start. Current source health has no stored errors. Four saved Feedback jobs retain their canonical account-owned memory receipts; one existing conversation-learning pause remains.
 
-## Latest installed candidate — optional daily limit, 12 October 2026
+The current candidate now has real power evidence: Clamshell Sleep on 13 October at 00:10:31 London, followed by sleep/dark-wake transitions and three DarkWake-to-FullWake transitions. No heartbeat start or new shared learning claim occurs after the observed close. This does not establish that the lid stayed closed throughout, an in-flight cancellation, an overdue wake catch-up or a due review blocked by sleep: the next review was not yet due at the snapshot. Only 0.75 hours have elapsed from the conservative start, with no post-start review; midnight crossing alone does not establish a second normal-use day. Private `20261012-233527.json`, identity and assessment files preserve metadata only. Full acceptance remains open, with no new actionable failure observed.
+
+
+## Earlier checkpoint — optional daily limit, 12 October 2026
 
 Code `83db28d` installed signed at 23:26 London. Settings → Background → Daily AI call limit shows Off. The pending automatic heartbeat resumed and claimed call 65 beyond the old 64-call cap; no manual heartbeat or native/project approval was issued. Source-free heartbeat checks and actual scheduler 68/68 pass. Full backup `/private/tmp/3po-limit-release-xvb8o5ys` verifies 66 records/13 support files; all records unchanged through replacement, 53 exact after resumed source/AI work, protected personal work preserved.
 
 This supersedes the candidate identity below. Use 12 October 22:26:45 UTC as the conservative observation start and 15 October 22:26:45 UTC as its earliest 72-hour threshold. Earlier physical sleep/wake and quality evidence remains historical. Successful completion and quality of the resumed personal heartbeat are not claimed here. Existing follow-up/notification policy is unchanged.
 
 
-## Current candidate: compound email actions
+## Earlier checkpoint — compound email actions
 
 Code checkpoint `075cd75`, installed 12 October 2026 at 23:12 London / 22:12 UTC at the existing 3PO path. Executable SHA-256: `ffd9d77e8df9748b3ec27800e35cfdaa7c32a47260d0dd7c9dfb24aeb036dbe9`; debug library: `b1081e88a5db31f6b4ccf7ab64be7019a9aed705a57c1159dfb01f08070da880`. Verified backup: `/private/tmp/3po-email-actions-release-r1pieb16`. All 66 records survived replacement; 58 stayed byte-identical after relaunch, with only eight normal source/freshness caches changed. Current signed app-memory checks pass 144/144, 62/62 and 11/11. The final fictional compound-email model scenario passes 13/13; this does not establish personal action quality.
 
@@ -45,7 +49,7 @@ The pre-18:14 backup now contains canonical conversation chunks including the hu
 
 Keep the goal open until at least72 real elapsed hours and at least three distinct local days of normal use have produced evidence for the installed candidate. Several snapshots on one day or a simulated clock do not satisfy this.
 
-On 12 October the user confirmed they will use 3PO casually, including periods when the laptop is closed. Observe that ordinary use; no scripted personal requests or required daily test routine. The latest candidate's elapsed-time threshold is 15 October at 19:59:57 UTC / 20:59:57 London at the earliest. Verify installed identity against the latest release evidence; reconcile any later authorised release before counting its observation period. Time passing alone does not satisfy the remaining evidence gates.
+On 12 October the user confirmed they will use 3PO casually, including periods when the laptop is closed. Observe that ordinary use; no scripted personal requests or required daily test routine. The latest candidate's conservative elapsed-time threshold is 15 October at 22:50:32 UTC / 23:50:32 London at the earliest. Verify installed identity against the latest release evidence; reconcile any later authorised release before counting its observation period. Time passing alone does not satisfy the remaining evidence gates.
 
 - Inspect fresh owned heartbeat runs: persistent claims/stages, current brief, independently collected Mail coverage, no same-run retry storm or repeated morning chat/notification delivery.
 - Inspect physical sleep/lid/wake evidence and relevant app receipts. The OS power log can prove an actual transition; it cannot alone prove every app inference/write guard. Compare actual request/run times and sleep interruption/catch-up records, using focused checks for the covered cancellation boundaries.
@@ -67,7 +71,7 @@ When a current-day morning anchor exists, compare its exact owner/day/identity w
 python3 scripts/observe-runtime.py \
   --store "$HOME/Library/Application Support/Mission Control/Dashboard.store" \
   --app "$HOME/Applications/3PO.app" \
-  --since '2026-10-12T19:59:57.456681+00:00' \
+  --since '2026-10-12T22:50:32+00:00' \
   --output "$HOME/Library/Application Support/3PO Development Backups/20261012-171530-prerequisite-recovery/observations/NEW-TIMESTAMP.json"
 ```
 
