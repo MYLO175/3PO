@@ -406,10 +406,10 @@ struct AssistantSourceSettings: View {
                 Section("Other background work") {
                     Text("Heartbeats update Today’s brief. Failed runs try fresh information at the next interval. Memory learning and organisation are controlled in Memory. Your queued requests use Continue queue.").font(.caption).foregroundStyle(.secondary)
                 }
-                DisclosureGroup("Advanced review limits") {
-                    Picker("AI calls for email and communication review",selection:$model.heartbeat.dailyCallLimit) { ForEach([8,16,32,64,96],id:\.self) { Text(String($0)).tag($0) } }
+                Section("Daily AI call limit") {
+                    Picker("Daily limit",selection:$model.heartbeat.dailyCallLimit) { Text("Off").tag(0);ForEach([8,16,32,64,96],id:\.self) { Text("\($0) calls").tag($0) } }
                     Text(model.heartbeat.budgetStatus(model.chatGPT.activeID)).font(.caption).foregroundStyle(.secondary)
-                    Text("One review can use several model calls. This cap applies to email and proactive communication review; it is not a cap for every app job or a measure of your ChatGPT subscription allowance.").font(.caption).foregroundStyle(.secondary)
+                    Text("Off by default. Optionally limit daily heartbeat AI calls, including email review, suggestions and brief updates. One heartbeat can use several calls. ChatGPT account limits still apply.").font(.caption).foregroundStyle(.secondary)
                 }
             case .memory:
                 Section("Saved memory") {

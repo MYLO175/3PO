@@ -7,11 +7,14 @@ import SwiftData
     var notificationsEnabled:Bool {didSet {guard !restoringSettings else {return};settings.set(notificationsEnabled,forKey:"paHeartbeatNotifications");controlsRevision=UUID()}}
     var whatsappEnabled:Bool {didSet {guard !restoringSettings else {return};settings.set(whatsappEnabled,forKey:"paHeartbeatWhatsApp");controlsRevision=UUID();cancel()}}
     var intervalMinutes:Int {didSet {guard !restoringSettings else {return};if ![15,30,60,120].contains(intervalMinutes) {intervalMinutes=60};settings.set(intervalMinutes,forKey:"paHeartbeatMinutes");controlsRevision=UUID();cancel()}}
-    var dailyCallLimit:Int {didSet {guard !restoringSettings else {return};let bounded=min(96,max(8,dailyCallLimit));if bounded != dailyCallLimit {dailyCallLimit=bounded};settings.set(dailyCallLimit,forKey:"paHeartbeatCallLimit");controlsRevision=UUID();cancel()}}
+    var dailyCallLimit:Int {didSet {guard !restoringSettings else {return};let bounded=PAHeartbeatRules.callLimit(dailyCallLimit);if bounded != dailyCallLimit {dailyCallLimit=bounded};settings.set(dailyCallLimit,forKey:"paHeartbeatCallLimit");controlsRevision=UUID();cancel()}}
     @ObservationIgnored private var restoringSettings=true
     @ObservationIgnored private let settings:UserDefaults
     @ObservationIgnored private let repository:LocalRecordRepository?
-    func budgetStatus(_ registration:String)->String { "\(PAHeartbeatRules.callCount(state.accounts[registration] ?? .init(),day:BriefingRules.day(clock()))) of \(dailyCallLimit) heartbeat AI calls today (including brief updates)" }
+    func budgetStatus(_ registration:String)->String {
+        let count=PAHeartbeatRules.callCount(state.accounts[registration] ?? .init(),day:BriefingRules.day(clock()))
+        return dailyCallLimit == 0 ? "\(count) heartbeat AI calls today · Daily limit off" : "\(count) of \(dailyCallLimit) heartbeat AI calls today"
+    }
     func claimCall(_ registration:String) throws {
         let day=BriefingRules.day(clock())
         guard deviceAvailable,capturedPowerRevision == powerRevision,busy,registration == capturedRegistration,state.accounts[registration]?.phase == "assessing",day == capturedDay,controlsRevision == capturedControls,task?.isCancelled != true,!composerActive,capturedEligibility?() != false else { throw ActionFailure.message("Background-review device, account, day, controls or foreground ownership changed before inference.") }
@@ -98,7 +101,7 @@ import SwiftData
         if environment.usagePaused {return "Waiting for AI usage to resume"}
         let next=PAHeartbeatRules.nextReview(account,now:now,minutes:intervalMinutes,day:BriefingRules.day(now),allowance:dailyCallLimit)
         if next <= now {return composerActive ? "Due · waiting until you stop typing" : environment.workBusy ? "Due · waiting for other work to finish" : "Due · checked on the next idle minute"}
-        return (account.retryReason == "allowance" ? "Allowance renews " : account.retryAfter != nil ? "Retry " : "Next review ")+next.formatted(date:Calendar.current.isDate(next,inSameDayAs:now) ? .omitted : .abbreviated,time:.shortened)
+        return (account.retryReason == "allowance" ? "Daily AI call limit reached · Resumes " : account.retryAfter != nil ? "Retry " : "Next review ")+next.formatted(date:Calendar.current.isDate(next,inSameDayAs:now) ? .omitted : .abbreviated,time:.shortened)
     }
     func manualCheckBlockReason(runtime:HeartbeatRuntime)->String? {
         let environment=runtime.environment()
@@ -113,7 +116,7 @@ import SwiftData
         return nil
     }
     func manualCheckHelp(runtime:HeartbeatRuntime)->String {
-        manualCheckBlockReason(runtime:runtime) ?? "Run heartbeat: analyse collected mail and enabled context with AI, then update your brief and Review inbox. Mail collection continues independently. Uses AI allowance."
+        manualCheckBlockReason(runtime:runtime) ?? "Run heartbeat: analyse collected mail and enabled context with AI, then update your brief and Review inbox. Mail collection continues independently. Uses your ChatGPT connection."
     }
     func mailReviewStatus(registration:String,accounts:[MailAccount])->String {
         let lanes=state.accounts[registration]?.mailLanes ?? [:]
@@ -135,7 +138,7 @@ import SwiftData
         whatsappEnabled=settings.object(forKey:"paHeartbeatWhatsApp") == nil || settings.bool(forKey:"paHeartbeatWhatsApp")
         let minutes=settings.object(forKey:"paHeartbeatMinutes") as? Int ?? PAHeartbeatRules.defaultMinutes
         intervalMinutes=[15,30,60,120].contains(minutes) ? minutes : 60
-        dailyCallLimit=min(96,max(8,settings.object(forKey:"paHeartbeatCallLimit") as? Int ?? 64))
+        dailyCallLimit=PAHeartbeatRules.callLimit(settings.object(forKey:"paHeartbeatCallLimit") as? Int)
         self.clock=clock
         self.deviceState=deviceState
         do {
@@ -242,7 +245,7 @@ import SwiftData
                     state.accounts[registration]=account; try save();return
                 }
                 guard !runtime.environment().workBusy,!composerActive else { account=PAHeartbeatRules.deferred(account,now:clock(),reason:.foreground);state.accounts[registration]=account;try save();status="Context prepared; pending AI assessment waits for foreground work.";return }
-                guard PAHeartbeatRules.callCount(account,day:BriefingRules.day(clock())) < dailyCallLimit else { throw HeartbeatBudgetExhausted() }
+                guard PAHeartbeatRules.canClaim(account,day:BriefingRules.day(clock()),limit:dailyCallLimit) else { throw HeartbeatBudgetExhausted() }
                 account.phase="assessing"; state.accounts[registration]=account; try save()
                 status="Reviewing your enabled context…"
                 try step("email",runtime.environment().emailEnabled ? "running" : "skipped")
@@ -258,7 +261,7 @@ import SwiftData
                 account=PAHeartbeatRules.collectingMail(account,enabled:enabledMail,ready:mailReview.accountIDs,issues:mailReview.issues,now:clock())
                 state.accounts[registration]=account;try save()
                 guard (manual || enabled),PAHeartbeatRules.canContinue(owner:registration,currentOwner:runtime.environment().registration,controls:controls,currentControls:controlsRevision,scope:scope,currentScope:runtime.environment().scope,day:day,currentDay:BriefingRules.day(clock()),model:selectedModel,currentModel:runtime.environment().model) else { throw ActionFailure.message("Background-review ownership or source choices changed; completed assessments retained.") }
-                if PAHeartbeatRules.callCount(state.accounts[registration] ?? account,day:BriefingRules.day(clock())) >= dailyCallLimit { throw HeartbeatBudgetExhausted() }
+                if !PAHeartbeatRules.canClaim(state.accounts[registration] ?? account,day:BriefingRules.day(clock()),limit:dailyCallLimit) { throw HeartbeatBudgetExhausted() }
                 if runtime.environment().emailEnabled,let error=email.failure {throw ActionFailure.message(error)}
                 try step("email",runtime.environment().emailEnabled ? "done" : "skipped","Existing assessments reused; new permitted mail reviewed when available.")
                 // Do not compare new inputs with an earlier stage's pre-request cache.
@@ -273,7 +276,7 @@ import SwiftData
                 guard PAHeartbeatRules.canContinue(owner:registration,currentOwner:runtime.environment().registration,controls:controls,currentControls:controlsRevision,scope:scope,currentScope:runtime.environment().scope,day:day,currentDay:BriefingRules.day(clock()),model:selectedModel,currentModel:runtime.environment().model) else { throw ActionFailure.message("Background-review ownership changed; completed source work retained.") }
                 if nativeReady,runtime.environment().proposalsEnabled,let error=suggestions.failure { throw ActionFailure.message(error) }
                 try step("suggestions",!runtime.environment().proposalsEnabled ? "skipped" : nativeReady ? "done" : "waiting","Eligible changes assessed when due; existing results retained.")
-                if PAHeartbeatRules.callCount(state.accounts[registration] ?? account,day:day) >= dailyCallLimit {throw HeartbeatBudgetExhausted()}
+                if !PAHeartbeatRules.canClaim(state.accounts[registration] ?? account,day:day,limit:dailyCallLimit) {throw HeartbeatBudgetExhausted()}
                 status="Updating today’s brief…"
                 mailReview=runtime.availableMail(mailReview)
                 reviewedMail=mailReview
@@ -335,13 +338,24 @@ import SwiftData
     static func evaluateOwnedScheduling() async throws->[String:Any] {
         guard ProcessInfo.processInfo.arguments.contains("--validate-review-inbox"),ProcessInfo.processInfo.arguments.contains("--scheduler-only") else {throw SummaryFailure.invalid}
         let preferences=UserDefaults.standard.dictionaryRepresentation() as NSDictionary
+        let suite="HeartbeatLimitValidation-"+UUID().uuidString
+        let validationSettings=UserDefaults(suiteName:suite)!
+        defer {validationSettings.removePersistentDomain(forName:suite)}
+        var checks:[String:Bool]=[:]
+        let defaultService=HeartbeatService(container:nil,settings:validationSettings)
+        checks["absent daily limit defaults to off"] = defaultService.dailyCallLimit == 0
+        defaultService.dailyCallLimit=32
+        checks["explicit numeric daily limit survives reopening"] = HeartbeatService(container:nil,settings:validationSettings).dailyCallLimit == 32
+        defaultService.dailyCallLimit=0
+        checks["explicit off survives reopening"] = HeartbeatService(container:nil,settings:validationSettings).dailyCallLimit == 0
+        validationSettings.set(64,forKey:"paHeartbeatCallLimit")
+        checks["legacy explicit limit is retained"] = HeartbeatService(container:nil,settings:validationSettings).dailyCallLimit == 64
         let runtime=HeartbeatRuntime.inactive
         let store=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
         var now=ISO8601DateFormatter().date(from:"2026-10-07T12:00:00Z")!
         var device=HeartbeatDeviceState(lidClosed:false,userWake:true)
-        let service=HeartbeatService(container:store,clock:{now},deviceState:{device}),registration="fictional-review-owner"
+        let service=HeartbeatService(container:store,settings:validationSettings,clock:{now},deviceState:{device}),registration="fictional-review-owner"
         let day=BriefingRules.day(now),run=PAReviewRun(id:"fictional-run",started:now,manual:false,phase:"assessing",detail:"Fictional review; no request is sent")
-        var checks:[String:Bool]=[:]
         service.busy=true;service.capturedRegistration=registration;service.capturedDay=day;service.capturedControls=service.controlsRevision;service.capturedPowerRevision=service.powerRevision
         service.state.accounts[registration] = .init(checked:now,phase:"assessing",budgetDay:day,calls:0,pending:true,reviews:[run])
         try service.save();try service.claimCall(registration)
@@ -362,45 +376,56 @@ import SwiftData
         service.lastTyping=now;checks["foreground typing blocks a late request"] = refused();service.lastTyping=nil
         now=now.addingTimeInterval(86400);checks["midnight cannot charge a captured job to a new day"] = refused();now=now.addingTimeInterval(-86400)
         service.busy=false;checks["finished job cannot claim another request"] = refused()
-        let restored=HeartbeatService(container:store,clock:{now},deviceState:{device})
+        let restored=HeartbeatService(container:store,settings:validationSettings,clock:{now},deviceState:{device})
         checks["actual cache recovery schedules fresh assessing work"] = restored.state.accounts[registration]?.phase == "idle" && restored.state.accounts[registration]?.retryAfter == now.addingTimeInterval(Double(restored.intervalMinutes)*60)
         checks["actual cache recovery preserves calls and review identity"] = restored.state.accounts[registration]?.calls == 1 && restored.state.accounts[registration]?.reviews?.first?.id == run.id
         checks["unfinished restored run is not labelled running"] = !restored.reviewInProgress(run,registration:registration)
         var history=run;history.steps=PAHeartbeatRules.stages();history.steps?[0].status="done";history.steps?[1].status="failed";history.failure="Fictional email failure";history.finished=now;history.phase="paused";history.briefUpdated=false
         try service.recordReview(registration,run:history)
-        let historyReopened=HeartbeatService(container:store,clock:{now},deviceState:{device})
+        let historyReopened=HeartbeatService(container:store,settings:validationSettings,clock:{now},deviceState:{device})
         checks["stage history and failure survive actual cache reopening without copying source bodies"] = historyReopened.state.accounts[registration]?.reviews?.last?.steps?[1].status == "failed" && historyReopened.state.accounts[registration]?.reviews?.last?.failure == history.failure
         checks["stage updates preserve one run identity"] = historyReopened.state.accounts[registration]?.reviews?.count == 1
         for index in 0..<22 {var entry=history;entry.id="history-\(index)";try service.recordReview("separate-fictional-owner",run:entry)}
-        let bounded=HeartbeatService(container:store,clock:{now},deviceState:{device})
+        let bounded=HeartbeatService(container:store,settings:validationSettings,clock:{now},deviceState:{device})
         checks["history is capped at twenty runs and isolated by account"] = bounded.state.accounts["separate-fictional-owner"]?.reviews?.count == 20 && bounded.state.accounts[registration]?.reviews?.count == 1 && bounded.state.accounts["separate-fictional-owner"]?.reviews?.first?.id == "history-2"
         service.busy=true;checks["only captured running account owns its activity"] = service.reviewInProgress(run,registration:registration) && !service.reviewInProgress(run,registration:"other")
         service.state.accounts[registration]!.calls=service.dailyCallLimit
         try service.save()
         checks["actual claim rejects an exhausted daily allowance"] = refused()
+        let retainedCalls=service.state.accounts[registration]!.calls
+        service.dailyCallLimit=0;service.capturedControls=service.controlsRevision
+        try service.claimCall(registration)
+        checks["actual uncapped claim retains count beyond former limit"] = service.state.accounts[registration]?.calls == (retainedCalls ?? 0)+1
+        let waiting=PAHeartbeatRules.deferred(service.state.accounts[registration]!,now:now,reason:.allowance)
+        service.state.accounts[registration]=waiting;try service.save()
+        let uncappedReopened=HeartbeatService(container:store,settings:validationSettings,clock:{now},deviceState:{device})
+        checks["reopened uncapped service releases saved allowance wait without losing receipts"] = PAHeartbeatRules.due(uncappedReopened.state.accounts[registration]!,now:now,day:day,allowance:uncappedReopened.dailyCallLimit) && uncappedReopened.state.accounts[registration]?.calls == waiting.calls && uncappedReopened.state.accounts[registration]?.reviews?.first?.id == run.id
+        service.dailyCallLimit=64;service.capturedControls=service.controlsRevision
+        service.state.accounts[registration]!.calls=64;service.state.accounts[registration]!.phase="assessing"
+
         var account=PAHeartbeatRules.interrupted(service.state.accounts[registration]!,now:now,foreground:true)
         checks["typing stops committed assessment and schedules a fresh run"] = account.phase == "idle" && account.retryAfter == now.addingTimeInterval(3600)
         account.phase="refreshing";account=PAHeartbeatRules.interrupted(account,now:now,foreground:true)
         service.state.accounts[registration]=account;try service.save()
-        let idle=HeartbeatService(container:store,clock:{now},deviceState:{device})
+        let idle=HeartbeatService(container:store,settings:validationSettings,clock:{now},deviceState:{device})
         checks["idle retry survives actual cache reopening"] = idle.state.accounts[registration]?.retryAfter == now.addingTimeInterval(60) && idle.state.accounts[registration]?.phase == "idle"
         account.phase="refreshing";service.state.accounts[registration]=account;try service.save()
-        let collection=HeartbeatService(container:store,clock:{now},deviceState:{device})
+        let collection=HeartbeatService(container:store,settings:validationSettings,clock:{now},deviceState:{device})
         checks["crashed source collection recovers without a false AI pause"] = collection.state.accounts[registration]?.phase == "idle" && collection.state.accounts[registration]?.retryReason == "sources"
         checks["recovered collection retains consumed allowance"] = collection.state.accounts[registration]?.calls == service.dailyCallLimit
         account=PAHeartbeatRules.quiet(account,fingerprint:"fictional-quiet",ready:[],pending:false)
         service.state.accounts[registration]=account;try service.save()
-        let quiet=HeartbeatService(container:store,clock:{now},deviceState:{device})
+        let quiet=HeartbeatService(container:store,settings:validationSettings,clock:{now},deviceState:{device})
         checks["quiet completed check clears stale pending state in cache"] = quiet.state.accounts[registration]?.pending == false && quiet.state.accounts[registration]?.retryAfter == nil
         // Virtual wall-clock timeline across actual service receipts, completion and cache reopening.
         // Source/AI stages are represented by fictional metadata, not real source reads or requests.
         let timelineStore=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
         let timelineOwner="fictional-sustained-owner"
-        var timeline=HeartbeatService(container:timelineStore,clock:{now},deviceState:{device}),cycles=0,limits=0,outages=0
+        var timeline=HeartbeatService(container:timelineStore,settings:validationSettings,clock:{now},deviceState:{device}),cycles=0,limits=0,outages=0
         var timelineValid=true
         for hour in 0..<72 {
             now=now.addingTimeInterval(hour == 24 ? 11*3600 : 3600) // a missed block catches up once
-            timeline=HeartbeatService(container:timelineStore,clock:{now},deviceState:{device})
+            timeline=HeartbeatService(container:timelineStore,settings:validationSettings,clock:{now},deviceState:{device})
             var saved=timeline.state.accounts[timelineOwner] ?? .init()
             guard PAHeartbeatRules.due(saved,now:now,minutes:60,day:BriefingRules.day(now),allowance:timeline.dailyCallLimit) else {continue}
             let currentDay=BriefingRules.day(now)
@@ -410,7 +435,7 @@ import SwiftData
                 let before=PAHeartbeatRules.callCount(saved,day:currentDay)
                 saved=PAHeartbeatRules.interrupted(saved,now:now,foreground:false)
                 timeline.state.accounts[timelineOwner]=saved;try timeline.save()
-                let reopened=HeartbeatService(container:timelineStore,clock:{now},deviceState:{device})
+                let reopened=HeartbeatService(container:timelineStore,settings:validationSettings,clock:{now},deviceState:{device})
                 timelineValid = timelineValid && reopened.state.accounts[timelineOwner]?.retryReason == "sources" && PAHeartbeatRules.callCount(reopened.state.accounts[timelineOwner]!,day:currentDay) == before
                 outages+=1;continue
             }
@@ -422,13 +447,13 @@ import SwiftData
                 saved=PAHeartbeatRules.completedMail(saved,fingerprints:["healthy":"fixture-\(hour)"],pending:[],now:now);saved.pending=true
                 try timeline.finishAssessment(timelineOwner,account:saved)
                 timeline.busy=false
-                let reopened=HeartbeatService(container:timelineStore,clock:{now},deviceState:{device}),value=reopened.state.accounts[timelineOwner]!
+                let reopened=HeartbeatService(container:timelineStore,settings:validationSettings,clock:{now},deviceState:{device}),value=reopened.state.accounts[timelineOwner]!
                 timelineValid = timelineValid && value.phase == "idle" && value.assessed == now && value.mailLanes?["healthy"]?.fingerprint == "fixture-\(hour)" && value.mailLanes?["intermittent"]?.pending == true && !PAHeartbeatRules.due(value,now:now.addingTimeInterval(1),minutes:60)
                 cycles+=1
             } catch is HeartbeatBudgetExhausted {
                 saved=PAHeartbeatRules.deferred(timeline.state.accounts[timelineOwner]!,now:now,reason:.allowance)
                 timeline.state.accounts[timelineOwner]=saved;try timeline.save();limits+=1
-                let reopened=HeartbeatService(container:timelineStore,clock:{now},deviceState:{device})
+                let reopened=HeartbeatService(container:timelineStore,settings:validationSettings,clock:{now},deviceState:{device})
                 timelineValid = timelineValid && reopened.state.accounts[timelineOwner]?.pending == true && reopened.state.accounts[timelineOwner]?.retryReason == "allowance"
             }
         }
@@ -438,14 +463,14 @@ import SwiftData
         let recoveryTime=restored.state.accounts[registration]!.checked!
         var legacyPause=restored.state.accounts[registration]!;legacyPause.phase="paused";legacyPause.retryAfter=nil;legacyPause.retryReason=nil
         service.state.accounts[registration]=legacyPause;try service.save()
-        let legacyRecovered=HeartbeatService(container:store,clock:{now},deviceState:{device})
+        let legacyRecovered=HeartbeatService(container:store,settings:validationSettings,clock:{now},deviceState:{device})
         checks["old paused cache migrates without postponing retry or losing receipts"] = legacyRecovered.state.accounts[registration]?.retryAfter == recoveryTime.addingTimeInterval(Double(legacyRecovered.intervalMinutes)*60) && legacyRecovered.state.accounts[registration]?.calls == legacyPause.calls && legacyRecovered.state.accounts[registration]?.reviews?.first?.id == legacyPause.reviews?.first?.id
         let firstRetry=PAHeartbeatRules.failed(legacyPause,now:now,minutes:service.intervalMinutes)
         service.state.accounts[registration]=firstRetry;try service.save()
-        let reopenedFailure=HeartbeatService(container:store,clock:{now.addingTimeInterval(30)})
+        let reopenedFailure=HeartbeatService(container:store,settings:validationSettings,clock:{now.addingTimeInterval(30)})
         checks["failed run cannot retry early after actual reopening"] = !PAHeartbeatRules.due(reopenedFailure.state.accounts[registration]!,now:now.addingTimeInterval(30),minutes:service.intervalMinutes)
         let nextDue=now.addingTimeInterval(Double(service.intervalMinutes)*60)
-        let dueFailure=HeartbeatService(container:store,clock:{nextDue})
+        let dueFailure=HeartbeatService(container:store,settings:validationSettings,clock:{nextDue})
         checks["failed run becomes due at configured interval after actual reopening"] = PAHeartbeatRules.due(dueFailure.state.accounts[registration]!,now:nextDue,minutes:service.intervalMinutes)
         var fresh=dueFailure.state.accounts[registration]!;fresh.phase="assessing";fresh.checked=nextDue
         // A later allowance day keeps prior run history but grants only today's calls.
@@ -454,16 +479,16 @@ import SwiftData
         try service.save();try service.claimCall(registration)
         fresh=service.state.accounts[registration]!;fresh.pending=false;fresh=PAHeartbeatRules.clearWait(fresh)
         try service.finishAssessment(registration,account:fresh);service.busy=false
-        let completedRecovery=HeartbeatService(container:store,clock:{now},deviceState:{device})
+        let completedRecovery=HeartbeatService(container:store,settings:validationSettings,clock:{now},deviceState:{device})
         checks["fresh recovery completion retains earlier history and clears retry"] = completedRecovery.state.accounts[registration]?.retryAfter == nil && completedRecovery.state.accounts[registration]?.assessed == now && completedRecovery.state.accounts[registration]?.reviews?.first?.id == run.id && completedRecovery.state.accounts[registration]?.calls == 1
         let sleepStore=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
-        let sleepService=HeartbeatService(container:sleepStore,clock:{now},deviceState:{device})
+        let sleepService=HeartbeatService(container:sleepStore,settings:validationSettings,clock:{now},deviceState:{device})
         let beforeSleep=PAHeartbeatAccount(checked:now.addingTimeInterval(-7200),phase:"idle",calls:2,assessed:now.addingTimeInterval(-7200))
         var activeSleep=beforeSleep;activeSleep.phase="assessing";activeSleep.checked=now;activeSleep.calls=3
         activeSleep.reviews=[.init(id:"fictional-sleep",started:now,manual:false,phase:"running",detail:"Fictional",calls:1,steps:PAHeartbeatRules.stages())]
         sleepService.state.accounts[registration]=activeSleep;sleepService.busy=true;sleepService.capturedRegistration=registration;sleepService.capturedPrior=beforeSleep
         try sleepService.save();sleepService.willSleep(runtime:runtime)
-        let sleepReopened=HeartbeatService(container:sleepStore,clock:{now},deviceState:{device})
+        let sleepReopened=HeartbeatService(container:sleepStore,settings:validationSettings,clock:{now},deviceState:{device})
         let retainedSleep=sleepReopened.state.accounts[registration]!
         checks["sleep notification persists the overdue anchor before task unwind"] = retainedSleep.checked == beforeSleep.checked && PAHeartbeatRules.due(retainedSleep,now:now,minutes:sleepService.intervalMinutes)
         checks["sleep notification keeps claimed calls and a distinct history outcome"] = retainedSleep.calls == 3 && retainedSleep.reviews?.last?.outcome() == "Paused for sleep"
@@ -471,7 +496,7 @@ import SwiftData
         checks["status from another account is not displayed"] = !service.statusFor("other-fictional-owner").contains("previous owner's")
         let badStore=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true)),badData=Data("not a heartbeat record".utf8)
         badStore.mainContext.insert(CachedDashboard(key:"paHeartbeat",data:badData));try badStore.mainContext.save()
-        let unreadable=HeartbeatService(container:badStore,clock:{now},deviceState:{device})
+        let unreadable=HeartbeatService(container:badStore,settings:validationSettings,clock:{now},deviceState:{device})
         checks["unreadable review state blocks scheduling"] = !unreadable.readable && unreadable.statusFor(registration).contains("unavailable")
         checks["unreadable original cache is preserved"] = try badStore.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first?.data == badData
         let currentPreferences=UserDefaults.standard.dictionaryRepresentation()

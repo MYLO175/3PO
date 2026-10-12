@@ -67,6 +67,8 @@ struct ReviewInboxBadge:View {
 }
 struct PATasksView: View {
     @Bindable var model: DashboardModel
+    @AppStorage("settingsSelectedPage") private var settingsPage="General"
+    @Environment(\.openSettings) private var openSettings
     @State private var refiningSuggestion:PADiscovery?
     @State private var refinement=""
     @State private var reviewingProject:PADiscovery?
@@ -157,6 +159,9 @@ struct PATasksView: View {
                 Text(reviewStatus).font(.caption).foregroundStyle(reviewRetrying ? Color.orange : Color.secondary)
                     .fixedSize(horizontal:false,vertical:true)
                 Spacer(minLength:0)
+                if model.heartbeat.dailyCallLimit > 0,model.heartbeat.state.accounts[model.chatGPT.activeID]?.retryReason == "allowance" {
+                    Button("Limit settings…") {settingsPage="Background";openSettings()}.buttonStyle(.borderless).font(.caption)
+                }
             }
             ScrollView {
                 LazyVStack(alignment:.leading,spacing:12) {

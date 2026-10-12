@@ -1,5 +1,11 @@
 # Validation
 
+## 12 October: optional daily AI call limit
+
+- Heartbeat source-free suite passes, including 120 uncapped calls, retained capped refusal and failure delay.
+- Signed Debug build passes; actual service scheduler passes 68/68 using isolated preferences and fictional storage, zero inference/native changes.
+- Default Off, explicit cap/off persistence, legacy cap retention, persisted call counts and allowance-wait release verified. Installed UI/readback evidence is recorded in STATUS.
+
 ## 12 October: compound email actions
 
 - Six focused suites: summaries, proactive, Review inbox, email resolution, local workspace and native creation pass.

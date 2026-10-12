@@ -1,5 +1,8 @@
 # Next improvements
 
+12 October daily-limit refinement: visible Settings → Background → Daily AI call limit now defaults to Off, preserving explicit numeric choices. Existing allowance waits release when off; the Review inbox links to settings when capped. Focused cap/off/reopening checks and installed acceptance are recorded in STATUS; sustained scheduling remains a separate acceptance item.
+
+
 ## Compound email acceptance
 
 Current requested increment: multiple dates and requirements from one source should produce separate reviewed Calendar and existing-space task suggestions, with language-based adjustment. [Implementation plan](EMAIL_ACTIONS_PLAN.md) records bounds and uncertainty rules. Success requires measured configured-model extraction, both destinations, no fabricated time for unallocated presentation windows, and no hidden sibling obligations. Sustained real-mail usefulness and conversational refinement remain acceptance work beyond deterministic tests.

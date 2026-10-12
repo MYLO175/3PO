@@ -25,6 +25,11 @@ import Foundation
         precondition(!PAHeartbeatRules.due(account,now:now.addingTimeInterval(3599),minutes:60))
         precondition(PAHeartbeatRules.due(account,now:now.addingTimeInterval(3600),minutes:60))
         precondition(PAHeartbeatRules.due(account,now:now.addingTimeInterval(900),minutes:15))
+        precondition(PAHeartbeatRules.callLimit(nil) == 0 && PAHeartbeatRules.callLimit(0) == 0)
+        precondition(PAHeartbeatRules.callLimit(32) == 32 && PAHeartbeatRules.callLimit(64) == 64)
+        var unlimited=PAHeartbeatAccount()
+        for _ in 0..<120 {unlimited=try PAHeartbeatRules.claim(unlimited,day:"2026-10-06",limit:0)}
+        precondition(unlimited.calls == 120,"Off keeps counting without an implicit daily ceiling")
         var budget=PAHeartbeatAccount()
         budget=try PAHeartbeatRules.claim(budget,day:"2026-10-06",limit:2)
         budget=try PAHeartbeatRules.claim(budget,day:"2026-10-06",limit:2)
@@ -80,6 +85,11 @@ import Foundation
         let formatter=ISO8601DateFormatter(),nearMidnight=formatter.date(from:"2026-10-06T22:58:00Z")!,midnight=formatter.date(from:"2026-10-06T23:00:00Z")!
         let exhausted=PAHeartbeatRules.deferred(PAHeartbeatAccount(checked:nearMidnight,budgetDay:"2026-10-06",calls:2),now:nearMidnight,reason:.allowance,calendar:london)
         precondition(exhausted.retryAfter == midnight && exhausted.pending == true)
+        precondition(PAHeartbeatRules.due(exhausted,now:nearMidnight,day:"2026-10-06",allowance:0),"Turning off the cap releases an existing allowance wait")
+        precondition(!PAHeartbeatRules.due(exhausted,now:nearMidnight,day:"2026-10-06",allowance:2))
+        let failedWithLimitOff=PAHeartbeatRules.failed(exhausted,now:nearMidnight)
+        precondition(!PAHeartbeatRules.due(failedWithLimitOff,now:nearMidnight,day:"2026-10-06",allowance:0),"Off does not bypass failed-run backoff")
+
         precondition(!PAHeartbeatRules.due(exhausted,now:midnight.addingTimeInterval(-1),day:"2026-10-06"))
         precondition(PAHeartbeatRules.due(exhausted,now:midnight,day:"2026-10-07"),"Day rollover must release pending allowance work without waiting another hour")
         precondition(PAHeartbeatRules.due(exhausted,now:nearMidnight,day:"2026-10-07"),"A timezone change must follow the current local allowance day")

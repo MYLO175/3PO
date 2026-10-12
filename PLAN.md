@@ -1,5 +1,8 @@
 # Mission Control specification
 
+12 October daily-limit refinement: make Settings → Background → Daily AI call limit visible and default it to Off. Preserve explicit numeric preferences and request receipts; removing the cap releases only allowance waits, with normal ownership, foreground, failure and provider-limit controls retained.
+
+
 ## Current requested work: compound email actions
 
 The 12 October request is to suggest separate Calendar entries and dated tasks inside the existing relevant project, with intuitive approval and natural-language adjustments. Implementation and acceptance are tracked in [Email actions](docs/EMAIL_ACTIONS_PLAN.md). This does not authorise automatic source-driven workspace or Apple writes.

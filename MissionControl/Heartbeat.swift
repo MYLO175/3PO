@@ -83,7 +83,7 @@ enum PAHeartbeatRules {
         if account.phase != "paused",let retry=account.retryAfter {
             if account.retryReason == "failure",let checked=account.checked {return checked.addingTimeInterval(Double(minutes)*60)}
             if account.retryReason == "allowance",let day,account.budgetDay != day {return now}
-            if account.retryReason == "allowance",let day,let allowance,callCount(account,day:day) < allowance {return now}
+            if account.retryReason == "allowance",let day,let allowance,canClaim(account,day:day,limit:allowance) {return now}
             return retry
         }
         return account.checked?.addingTimeInterval(Double(minutes)*60) ?? now
@@ -131,9 +131,12 @@ enum PAHeartbeatRules {
         manual || (account.phase != "paused" && account.phase != "assessing")
     }
     static func callCount(_ account:PAHeartbeatAccount,day:String)->Int { account.budgetDay == day ? account.calls ?? 0 : 0 }
+    // Zero disables only the optional daily cap. Calls are still persisted.
+    static func callLimit(_ stored:Int?)->Int { guard let stored,stored != 0 else {return 0};return min(96,max(8,stored)) }
+    static func canClaim(_ account:PAHeartbeatAccount,day:String,limit:Int)->Bool { limit == 0 || callCount(account,day:day) < limit }
     static func claim(_ account:PAHeartbeatAccount,day:String,limit:Int) throws -> PAHeartbeatAccount {
         let count=callCount(account,day:day)
-        guard count < limit else { throw HeartbeatBudgetExhausted() }
+        guard canClaim(account,day:day,limit:limit) else { throw HeartbeatBudgetExhausted() }
         var value=account;value.budgetDay=day;value.calls=count+1;return value
     }
     static func recovered(_ account: PAHeartbeatAccount,now:Date = .now,minutes:Int = defaultMinutes) -> PAHeartbeatAccount {
@@ -161,4 +164,4 @@ enum PAHeartbeatRules {
     }
 }
 
-struct HeartbeatBudgetExhausted:LocalizedError { var errorDescription:String? { "Daily communication-review call limit reached. Source collection continues; pending assessment is kept for the next day." } }
+struct HeartbeatBudgetExhausted:LocalizedError { var errorDescription:String? { "Daily AI call limit reached. Change it in Settings → Background, or wait until tomorrow. Source collection continues and pending review is kept." } }
