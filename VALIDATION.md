@@ -4,7 +4,7 @@
 
 - Heartbeat source-free suite passes, including 120 uncapped calls, retained capped refusal and failure delay.
 - Signed Debug build passes; actual service scheduler passes 68/68 using isolated preferences and fictional storage, zero inference/native changes.
-- Default Off, explicit cap/off persistence, legacy cap retention, persisted call counts and allowance-wait release verified. Installed UI/readback evidence is recorded in STATUS.
+- Default Off, explicit cap/off persistence, legacy cap retention, persisted call counts and allowance-wait release verified. Installed at 23:26 London; UI shows Off and the automatic review proceeds beyond 64 calls. All 66 records preserved through replacement; protected personal work remains identical after relaunch. Full evidence is recorded in STATUS.
 
 ## 12 October: compound email actions
 

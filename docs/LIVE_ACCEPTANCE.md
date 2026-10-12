@@ -1,5 +1,12 @@
 # Installed reliability acceptance
 
+## Latest installed candidate — optional daily limit, 12 October 2026
+
+Code `83db28d` installed signed at 23:26 London. Settings → Background → Daily AI call limit shows Off. The pending automatic heartbeat resumed and claimed call 65 beyond the old 64-call cap; no manual heartbeat or native/project approval was issued. Source-free heartbeat checks and actual scheduler 68/68 pass. Full backup `/private/tmp/3po-limit-release-xvb8o5ys` verifies 66 records/13 support files; all records unchanged through replacement, 53 exact after resumed source/AI work, protected personal work preserved.
+
+This supersedes the candidate identity below. Use 12 October 22:26:45 UTC as the conservative observation start and 15 October 22:26:45 UTC as its earliest 72-hour threshold. Earlier physical sleep/wake and quality evidence remains historical. Successful completion and quality of the resumed personal heartbeat are not claimed here. Existing follow-up/notification policy is unchanged.
+
+
 ## Current candidate: compound email actions
 
 Code checkpoint `075cd75`, installed 12 October 2026 at 23:12 London / 22:12 UTC at the existing 3PO path. Executable SHA-256: `ffd9d77e8df9748b3ec27800e35cfdaa7c32a47260d0dd7c9dfb24aeb036dbe9`; debug library: `b1081e88a5db31f6b4ccf7ab64be7019a9aed705a57c1159dfb01f08070da880`. Verified backup: `/private/tmp/3po-email-actions-release-r1pieb16`. All 66 records survived replacement; 58 stayed byte-identical after relaunch, with only eight normal source/freshness caches changed. Current signed app-memory checks pass 144/144, 62/62 and 11/11. The final fictional compound-email model scenario passes 13/13; this does not establish personal action quality.
