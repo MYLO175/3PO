@@ -2,7 +2,7 @@ import Foundation
 import CoreFoundation
 
 enum AIRequestPurpose: String, Codable, CaseIterable, Identifiable {
-    case conversation, intentCheck, mailSearch, emailReview, replyDraft, brief, suggestions, learning, organisation, placement, setup, connectionCheck, diagnostic
+    case conversation, intentCheck, mailSearch, emailReview, reviewFeedback, replyDraft, brief, suggestions, learning, organisation, placement, setup, connectionCheck, diagnostic
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -10,6 +10,7 @@ enum AIRequestPurpose: String, Codable, CaseIterable, Identifiable {
         case .intentCheck: "Requested action checks"
         case .mailSearch: "Email search"
         case .emailReview: "Email review"
+        case .reviewFeedback: "Review feedback"
         case .replyDraft: "Reply drafts"
         case .brief: "Today's brief"
         case .suggestions: "Useful suggestions"

@@ -88,7 +88,12 @@ struct PAMemoryEvidenceView:View {
         DisclosureGroup("Evidence and dates") {
             VStack(alignment:.leading,spacing:8) {
                 Text(record.attribution+" · "+record.provenance).font(.caption)
-                if record.reviewPreference == true {Text("Review preference · your exact feedback").font(.caption);if let about=record.reviewContext {Text("About: "+about).font(.caption)}}
+                if record.reviewPreference == true {
+                    Text(record.reviewInterpretation == nil ? "Review preference" : "Review preference · learned from your feedback").font(.caption)
+                    if let about=record.reviewContext {Text("About: "+about).font(.caption)}
+                    if let original=record.reviewFeedback,record.reviewInterpretation != nil {Text("Your feedback: “"+original+"”").textSelection(.enabled)}
+                    if let context=record.reviewInterpretation {Text("Email context: "+context.subject+" · "+context.sender).font(.caption);Text(context.humanEdited ? "Preference edited by you" : "Interpretation by "+context.model).font(.caption)}
+                }
                 if record.source == nil,let evidence=record.evidence { Text("“"+evidence+"”").textSelection(.enabled) }
                 if record.source != nil {
                     if sourcePermitted && record.sourceInvalidation != .forgotten {

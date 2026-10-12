@@ -103,10 +103,14 @@ struct PAMemory: Codable, Identifiable, Equatable {
     /// Human-reviewed identity only. Never assigned by a source-learning model.
     var commitmentGroup:UUID? = nil
     var commitmentGroupRevision:UUID? = nil
-    /// Explicit words saved by the human in Review feedback. The same canonical memory/history is used everywhere.
+    /// Human-authorised Review feedback. The same canonical memory/history is used everywhere.
     var reviewPreference:Bool? = nil
-    /// Human-confirmed subject of the feedback, not an assertion copied from the source.
+    /// Original human feedback; interpreted preference prose belongs in text.
+    var reviewFeedback:String? = nil
+    /// Human-selected subject of the feedback, not an assertion copied from the source.
     var reviewContext:String? = nil
+    /// Separate, editable interpretation of explicitly submitted feedback. Never replaces human evidence.
+    var reviewInterpretation:ReviewFeedbackInterpretation? = nil
     var allSourceEvidence:[MemorySourceEvidence] { source.map{[$0] + (supportingSources ?? [])} ?? [] }
     static func suppressionKey(_ source:MemorySourceEvidence)->String? {
         let fields=[source.identity.kind.rawValue,source.identity.accountID,source.identity.containerID,source.identity.itemID,source.identity.linkedIdentity ?? "",source.revision]
@@ -133,7 +137,7 @@ enum MemoryRules {
         return now.timeIntervalSince(resolved) >= 30 * 86400
     }
     static func usable(_ memory: PAMemory, registration: String, now: Date = .now) -> Bool {
-        memory.registration == registration && memory.sourceInvalidation == nil && memory.resolved == nil && memory.retiredAt == nil && memory.supersededBy == nil && !needsReview(memory,now:now)
+        memory.registration == registration && memory.sourceInvalidation == nil && memory.resolved == nil && memory.retiredAt == nil && memory.supersededBy == nil && !needsReview(memory,now:now) && (memory.reviewInterpretation.map{$0.valid && $0.rule == memory.text && memory.reviewPreference == true && memory.kind == .preference} ?? true)
     }
     static func inScope(_ memory: PAMemory, conversationID: UUID?, includeTopics: Bool = false) -> Bool { includeTopics || memory.conversationID == nil || memory.conversationID == conversationID }
     static func explicitRequest(_ text: String) -> String? {
@@ -145,6 +149,27 @@ enum MemoryRules {
         }
         return nil
     }
+}
+
+/// Context receipt for a human-authorised attention policy, not source-derived life knowledge.
+/// Keep only the header and exact identity/version; the body is request-local.
+struct ReviewFeedbackInterpretation:Codable,Equatable {
+    var rule:String
+    var sender:String
+    var subject:String
+    var accountID:String
+    var messageID:String
+    var internetMessageID:String
+    var headerFingerprint:String
+    var bodyFingerprint:String
+    var model:String
+    var created:Date = .now
+    var humanEdited:Bool = false
+    /// Domain suffixes shared by unrelated senders are not relevance seeds.
+    var senderRecallLabel:String {
+        sender.replacingOccurrences(of:"@[A-Za-z0-9.-]+",with:"",options:.regularExpression)
+    }
+    var valid:Bool {!rule.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && rule.count <= 1200 && sender.count <= 1000 && subject.count <= 1000 && !accountID.isEmpty && !messageID.isEmpty && headerFingerprint.count == 64 && bodyFingerprint.count == 64 && !model.isEmpty}
 }
 
 struct MemorySelection {
@@ -161,7 +186,7 @@ struct MemoryLexicalIndex {
         let textTerms = Dictionary(memories.map { ($0.id, MemoryRetrieval.tokens($0.text)) }, uniquingKeysWith: { $0.union($1) })
         text = textTerms
         all = Dictionary(memories.map { memory in
-            let extra = (memory.reviewPreference == true ? (memory.reviewContext ?? "") : "") + " " + (memory.connections ?? []).map { $0.subject + " " + $0.relation + " " + $0.object }.joined(separator: " ")
+            let extra = (memory.reviewPreference == true ? [memory.reviewContext ?? "",memory.reviewInterpretation?.rule ?? "",memory.reviewInterpretation?.senderRecallLabel ?? ""].joined(separator:" ") : "") + " " + (memory.connections ?? []).map { $0.subject + " " + $0.relation + " " + $0.object }.joined(separator: " ")
             return (memory.id, (textTerms[memory.id] ?? []).union(MemoryRetrieval.tokens(extra)))
         }, uniquingKeysWith: { $0.union($1) })
     }
@@ -197,7 +222,11 @@ enum MemoryRetrieval {
             if let revision=memory.commitmentGroupRevision { value["humanLinkedPlanRevision"]=revision.uuidString }
         }
         value["durability"]=memory.durability?.rawValue ?? "legacy"
-        if memory.reviewPreference == true { value["purpose"]="review preference";value["reviewAbout"]=memory.reviewContext ?? "" }
+        if memory.reviewPreference == true {
+            value["purpose"]="review preference";value["reviewAbout"]=memory.reviewContext ?? ""
+            if let feedback=memory.reviewFeedback {value["reviewFeedback"]=feedback}
+            if let interpretation=memory.reviewInterpretation {value["reviewInterpretation"]=interpretation.rule;value["reviewExampleSender"]=interpretation.sender;value["reviewInterpretationOrigin"]=interpretation.humanEdited ? "Edited by human" : "Inferred from explicitly submitted feedback and one email"}
+        }
         if let connections=memory.connections, let data=try? encoder.encode(connections) { value["connections"]=String(data:data,encoding:.utf8) }
         return value
     }

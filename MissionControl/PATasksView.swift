@@ -118,7 +118,7 @@ struct PATasksView: View {
                 Button("Copy draft") {NSPasteboard.general.clearContents();NSPasteboard.general.setString(reply,forType:.string)}.controlSize(.small)
             }
             if !embedded {
-                ReviewFeedbackButton(model:model,topic:discoveryTitle(item) ?? item.message,isCurrent:{model.proactive.state.records.first(where:{$0.id == item.id}).map{ProactiveRules.reviewProjection($0) == item && model.proactive.visible($0,model:model)} == true})
+                ReviewFeedbackButton(model:model,topic:discoveryTitle(item) ?? item.message,email:model.emailSummaries.feedbackEmail(item,model:model),isCurrent:{model.proactive.state.records.first(where:{$0.id == item.id}).map{ProactiveRules.reviewProjection($0) == item && model.proactive.visible($0,model:model)} == true})
             }
             Button("Source evidence") { sourceDiscovery=item }.buttonStyle(.borderless).font(.caption)
             HStack { if let claim=model.reviewCreationClaim(item) {Label(claim.receipt == nil ? "Check save outcome" : "Created",systemImage:claim.receipt == nil ? "exclamationmark.circle" : "checkmark.circle").font(.caption).foregroundStyle(.secondary)} else if item.kind == "project" { if model.assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) == nil { Button("Review space…") { reviewingProject=item } } else { Label("Created",systemImage:"checkmark.circle") } } else if !["update","reply"].contains(item.kind) {
@@ -213,7 +213,7 @@ struct PATasksView: View {
                                 }
                             }
                             HStack {
-                                ReviewFeedbackButton(model:model,topic:message.subject,isCurrent:{model.emailSummaries.feedbackSourceCurrent(message,summary:summary,model:model)})
+                                ReviewFeedbackButton(model:model,topic:message.subject,email:.init(message:message,summary:summary),isCurrent:{model.emailSummaries.feedbackSourceCurrent(message,summary:summary,model:model)})
                                 if let reply=summary.replyDraft { Button("Review draft") { editing=summary; draft=reply; copied=false; draftSaved=false } }
                                 else if EmailReplyDraftRules.canReply(summary,message:message) {
                                     Button("Prepare now") { model.emailSummaries.prepareReply(message,summary:summary,model:model) }.disabled(model.emailSummaries.busy || model.assistant.busy || model.chatGPT.busy || model.proactive.busy || model.writing)

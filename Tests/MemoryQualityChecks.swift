@@ -106,6 +106,41 @@ import SwiftData
         check(reloaded.retire(preference.id, retired: true, expectedRevision: reloaded.revision) && reloaded.selection("owner", query: "Graduate assessment").records.isEmpty, "Disabled feedback leaves recall without losing history")
         check(reloaded.retire(preference.id, retired: false, expectedRevision: reloaded.revision) && ids(reloaded.selection("owner", query: "Graduate assessment")) == [preference.id], "Restored feedback regains its original identity")
 
+        let rawFeedback="These emails aren't important"
+        let rule="Routine University Internal Communications team newsletters can stay quiet. Personal requests and new obligations still matter."
+        let interpretation=ReviewFeedbackInterpretation(rule:rule,sender:"University Internal Communications team <updates@university.example.invalid>",subject:"Key information for autumn term",accountID:"fictional-mail",messageID:"fictional-newsletter",internetMessageID:"newsletter@example.invalid",headerFingerprint:String(repeating:"a",count:64),bodyFingerprint:String(repeating:"b",count:64),model:"fictional-model")
+        check(reloaded.saveReviewPreference(rawFeedback,registration:"contextual",about:"Key information for autumn term",interpretation:interpretation),"Contextual feedback saves a reasoned preference")
+        let learned=reloaded.reviewPreferences("contextual")[0]
+        check(learned.text == rule && learned.text != rawFeedback && learned.evidence == rawFeedback && learned.reviewFeedback == rawFeedback && learned.certainty == .inferred && !learned.explicit,"Usable memory is the interpretation; exact human words remain evidence")
+        let future=reloaded.selection("contextual",query:"University Internal Communications team <updates@university.example.invalid> Campus travel update")
+        check(ids(future) == [learned.id] && future.records.first?["text"] == rule,"New subject from the same communications sender recalls the reasoned preference")
+        check(reloaded.selection("contextual",query:"Footwear Shop <sales@retail.example.invalid> Discounts").records.isEmpty,"Unrelated shop email does not recall the preference")
+        check(reloaded.selection("other",query:"University Internal Communications team").records.isEmpty,"Contextual preference remains account-owned")
+        let reloadedLearned=PAMemoryStore(container:container).reviewPreferences("contextual")[0]
+        check(reloadedLearned == learned,"Interpretation and exact context receipt survive reload")
+        let receipt=MemoryDependencyRules.capture(future.records)
+        var edited=interpretation;edited.rule="Prioritise University Internal Communications team newsletters.";edited.humanEdited=true
+        check(reloaded.saveReviewPreference(rawFeedback,registration:"contextual",expected:learned,about:"University Internal Communications team",interpretation:edited),"Human edits reasoned preference with version history")
+        let revisedLearned=reloaded.reviewPreferences("contextual")[0]
+        check(revisedLearned.text == edited.rule && revisedLearned.evidence == edited.rule && revisedLearned.reviewFeedback == rawFeedback && revisedLearned.explicit && revisedLearned.supersedes == learned.id,"Edited interpretation is human evidence and original feedback remains inspectable")
+        check(!MemoryDependencyRules.available(receipt,records:reloaded.selection("contextual",query:"University Internal Communications team").records),"Editing the learned preference invalidates old advice receipts")
+        var genericEdit=revisedLearned;genericEdit.id=UUID();genericEdit.text="I only want occasional campus notices.";genericEdit.evidence=genericEdit.text
+        check(reloaded.correct(revisedLearned.id,with:genericEdit),"General memory correction preserves the canonical lineage")
+        let corrected=reloaded.reviewPreferences("contextual")[0]
+        check(corrected.reviewInterpretation == nil && corrected.reviewFeedback == genericEdit.text,"General correction cannot retain a contradictory old interpretation")
+        check(reloaded.retire(corrected.id,retired:true,expectedRevision:reloaded.revision) && reloaded.selection("contextual",query:"campus notices").records.isEmpty,"Disabling reasoned preference withdraws recall")
+        check(reloaded.retire(corrected.id,retired:false,expectedRevision:reloaded.revision) && ids(reloaded.selection("contextual",query:"campus notices")) == [corrected.id],"Restore retains the preference identity")
+        check(reloaded.forget(corrected.id) && reloaded.reviewPreferences("contextual",includeRetired:true).isEmpty,"Forget removes contextual preference lineage")
+        check(reloaded.saveReviewPreference(rawFeedback,registration:"kind-conversion",interpretation:interpretation),"Learned preference is available for explicit kind conversion")
+        let originalKind=reloaded.reviewPreferences("kind-conversion")[0]
+        var newKind=originalKind;newKind.kind = .context
+        check(reloaded.put(newKind),"Generic memory editor can convert a learned preference without changing prose")
+        let converted=reloaded.records.first{$0.registration == "kind-conversion" && $0.supersededBy == nil}!
+        check(converted.id != originalKind.id && converted.supersedes == originalKind.id && converted.kind == .context && converted.reviewPreference == nil && converted.reviewInterpretation == nil && converted.text == originalKind.text && converted.evidence == originalKind.evidence && MemoryRules.usable(converted,registration:"kind-conversion"),"Kind conversion retains history and evidence while clearing incompatible review metadata")
+        var malformed=learned;malformed.reviewInterpretation?.rule="A conflicting rule"
+        check(!MemoryRules.usable(malformed,registration:"contextual"),"Malformed interpretation is preserved but unavailable for recall")
+        check(MemoryRules.needsReview(learned,now:learned.reviewed.addingTimeInterval(91*86400)),"Inferred preference retains the existing 90-day provisional review boundary")
+
         let quote = "The robotics meeting has moved to Friday."
         let source = MemorySourceEvidence(identity: .init(kind: .mail, accountID: "fictional-mail", containerID: "Inbox", itemID: "message-1"), revision: "version-1", label: "Fictional organiser", quote: quote, observed: now, sourceDate: now)
         let report = PAMemory(registration: "owner", text: quote, kind: .commitment, explicit: false, provenance: "Fictional source report", reviewed: now, evidence: quote, certainty: .inferred, durability: .situational, source: source, sourceState: .changed)

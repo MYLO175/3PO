@@ -1,5 +1,11 @@
 # Decisions
 
+## 12 October: save the meaning of feedback, retain the words as evidence
+
+The user clarified that adding memory should reason about what is useful to remember. Email Feedback therefore supplies the exact email and human comment to one bounded subscription inference. Save the learned preference as canonical memory text; retain original human words separately as evidence and label the interpretation provisional. This extends the existing conversation-learning separation between concise facts and their quoted evidence. An editable About topic guides interpretation; the prefilled subject is an example, not a forced one-message scope. Routine ambiguous feedback generalises by sender and purpose with personal-request exceptions; deliberately explicit sender-wide human choices are respected.
+
+Preserve canonical IDs/history, exact source and ownership/revision guards, cancellation before persistence, bounded targeted retrieval, Disable/Restore and Dismiss independence. Store no email body or reasoning in the preference. No automatic rewriting of earlier preferences, source learning, historic indexing, native changes or sending. The existing 90-day inferred-memory review boundary remains.
+
 ## 11 October: one acknowledgement and explicit feedback memory
 
 Feedback's editable About field is retained as a human-confirmed topic anchor, separate from the exact feedback evidence. It gives context to words such as these/this without turning source text into a human assertion or a blanket sender rule.

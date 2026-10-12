@@ -2,7 +2,7 @@ import Foundation
 
 /// Read-only explanations of the existing recall gates. Does not create a parallel memory store.
 enum MemoryAvailability: String, CaseIterable, Identifiable {
-    case available, earlierVersion, retired, resolved, reviewNeeded, sourceUnavailable, otherScope
+    case available, earlierVersion, retired, resolved, reviewNeeded, sourceUnavailable, otherScope, invalidInterpretation
     var id:String { rawValue }
     var title:String { switch self {
     case .available: "Available to PA"
@@ -12,6 +12,7 @@ enum MemoryAvailability: String, CaseIterable, Identifiable {
     case .reviewNeeded: "Needs review"
     case .sourceUnavailable: "Source evidence unavailable"
     case .otherScope: "Outside this thread"
+    case .invalidInterpretation: "Interpretation needs correction"
     } }
     var explanation:String { switch self {
     case .available: "Can be selected when relevant; selection is bounded."
@@ -21,6 +22,7 @@ enum MemoryAvailability: String, CaseIterable, Identifiable {
     case .reviewNeeded: "Provisional context has gone 90 days without review; confirm or correct it when useful."
     case .sourceUnavailable: "One or more quoted versions are changed, forgotten, missing from cache or outside current source access."
     case .otherScope: "This legacy thread cannot read other topic memories. Focus conversations can use this account's earlier topic memories."
+    case .invalidInterpretation: "Saved feedback context is inconsistent. The record is preserved but excluded from recall; edit or clear its interpretation."
     } }
 }
 struct MemoryInspectionRow:Identifiable {
@@ -36,6 +38,7 @@ enum MemoryInspection {
             else if record.sourceInvalidation != nil || !permitted.contains(record.id) { status = .sourceUnavailable }
             else if record.retiredAt != nil { status = .retired }
             else if record.resolved != nil { status = .resolved }
+            else if let interpretation=record.reviewInterpretation,(!interpretation.valid || interpretation.rule != record.text || record.reviewPreference != true || record.kind != .preference) {status = .invalidInterpretation}
             else if MemoryRules.needsReview(record,now:now) { status = .reviewNeeded }
             else if !MemoryRules.inScope(record,conversationID:topic,includeTopics:includeTopics) { status = .otherScope }
             else { status = .available }
