@@ -1,5 +1,10 @@
 # Next improvements
 
+## Compound email acceptance
+
+Current requested increment: multiple dates and requirements from one source should produce separate reviewed Calendar and existing-space task suggestions, with language-based adjustment. [Implementation plan](EMAIL_ACTIONS_PLAN.md) records bounds and uncertainty rules. Success requires measured configured-model extraction, both destinations, no fabricated time for unallocated presentation windows, and no hidden sibling obligations. Sustained real-mail usefulness and conversational refinement remain acceptance work beyond deterministic tests.
+
+
 ## 12 October: source labels stay behind the evidence controls
 
 Implemented local presentation for saved/new brief, reply, Review and remembered-report prose, removing internal citation aliases while retaining structured evidence and readable source controls. Future output instructions request names instead of internal IDs. Focused checks cover grouped markers, bare aliases, punctuation/Unicode, Markdown/links/code, idempotence and unchanged saved prose/IDs. Actual app/native evidence belongs in STATUS and VALIDATION.

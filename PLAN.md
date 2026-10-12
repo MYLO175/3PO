@@ -1,5 +1,10 @@
 # Mission Control specification
 
+## Current requested work: compound email actions
+
+The 12 October request is to suggest separate Calendar entries and dated tasks inside the existing relevant project, with intuitive approval and natural-language adjustments. Implementation and acceptance are tracked in [Email actions](docs/EMAIL_ACTIONS_PLAN.md). This does not authorise automatic source-driven workspace or Apple writes.
+
+
 12 October presentation refinement: ordinary briefs, assistant replies, Review explanations and remembered reports must not expose internal source aliases such as calendar_4. Hide legacy inline markers locally and keep structured evidence IDs, source controls, exact saved prose and morning-delivery bindings unchanged. Future brief/reply prompts request readable names.
 
 12 October foreground recovery: the human should not have to repeat an already clear Calendar/Reminders request because the PA omitted a prerequisite read. Recover a typed, known pre-operation prerequisite inside the captured turn: read enabled destinations or an already issued target's exact details, check ownership/Stop again, then retry the unchanged operation once through ordinary intent/native validation. Keep historical diagnostics, sibling failures and earlier verified receipts. Real unavailable reads, genuine ambiguity and uncertain attempted saves remain explicit; do not automatically replay historical failed turns.

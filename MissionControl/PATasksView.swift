@@ -27,7 +27,7 @@ extension DashboardModel {
         return nativeCreations.state.claims[item.registration+":"+id.uuidString]
     }
     func reviewDiscoveryCompleted(_ item:PADiscovery)->Bool {
-        if item.kind == "project" {return !assistant.projects.readOnly && assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) != nil}
+        if ["project","projectTask"].contains(item.kind) {return !assistant.projects.readOnly && assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) != nil}
         return reviewCreationClaim(item)?.receipt != nil
     }
     var reviewInbox:ReviewInboxProjection {
@@ -67,6 +67,8 @@ struct ReviewInboxBadge:View {
 }
 struct PATasksView: View {
     @Bindable var model: DashboardModel
+    @State private var refiningSuggestion:PADiscovery?
+    @State private var refinement=""
     @State private var reviewingProject:PADiscovery?
     @State private var editing: EmailSummary?
     @State private var draft=""
@@ -121,8 +123,11 @@ struct PATasksView: View {
             if !embedded {
                 ReviewFeedbackButton(model:model,topic:discoveryTitle(item) ?? item.message,email:model.emailSummaries.feedbackEmail(item,model:model),isCurrent:{model.proactive.state.records.first(where:{$0.id == item.id}).map{ProactiveRules.reviewProjection($0) == item && model.proactive.visible($0,model:model)} == true})
             }
+            if let project=item.proposedProjectTask { Label("Task in " + project.target.title,systemImage:"folder").font(.caption);Text(project.connection).font(.caption).foregroundStyle(.secondary) }
+            if let date=item.proposedDate { Text(dateLabel(date.date(),hasTime:date.hasTime,fallback:date.start) + (date.end.map{" to " + dateLabel(date.date($0),hasTime:date.hasTime,fallback:$0)} ?? "")).font(.callout).textSelection(.enabled) }
+            Button("Adjust with assistant…") {refinement="";refiningSuggestion=item}.buttonStyle(.borderless).font(.caption)
             Button("Source evidence") { sourceDiscovery=item }.buttonStyle(.borderless).font(.caption)
-            HStack { if let claim=model.reviewCreationClaim(item) {Label(claim.receipt == nil ? "Check save outcome" : "Created",systemImage:claim.receipt == nil ? "exclamationmark.circle" : "checkmark.circle").font(.caption).foregroundStyle(.secondary)} else if item.kind == "project" { if model.assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) == nil { Button("Review space…") { reviewingProject=item } } else { Label("Created",systemImage:"checkmark.circle") } } else if !["update","reply"].contains(item.kind) {
+            HStack { if let claim=model.reviewCreationClaim(item) {Label(claim.receipt == nil ? "Check save outcome" : "Created",systemImage:claim.receipt == nil ? "exclamationmark.circle" : "checkmark.circle").font(.caption).foregroundStyle(.secondary)} else if ["project","projectTask"].contains(item.kind) { if model.assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) == nil { Button(item.kind == "projectTask" ? "Review task…" : "Review space…") { reviewingProject=item } } else { Label("Created",systemImage:"checkmark.circle") } } else if !["update","reply"].contains(item.kind) {
                 if item.reviewState == "pending" { Text(item.proposedRemoval == nil ? "Save needs checking in Apple; it will not be repeated." : "Removal needs checking in Calendar; it will not be repeated.").font(.caption).foregroundStyle(.orange) }
                 else if item.nativeTarget != nil {
                     Button(model.approvingDiscoveryID == item.id ? "Approving…" : "Approve") { Task {await model.approveDiscovery(item)} }.disabled(!model.proactive.canReview(item.id,model:model) || model.writing || model.assistant.busy)
@@ -271,7 +276,27 @@ struct PATasksView: View {
         }
         .sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record,model:model) }
         .sheet(isPresented:$showingActivity) {BackgroundActivityView(model:model)}
-        .sheet(item:$reviewingProject) { record in LifeItemEditor(model:model,item:.init(registration:record.registration,kind:.space,title:String((record.sourceTitle ?? "New space").prefix(160)),notes:record.evidence),close:{reviewingProject=nil},reviewedSuggestion:record) }
+        .sheet(item:$refiningSuggestion) { record in
+            VStack(alignment:.leading,spacing:14) {
+                Text("Adjust this suggestion").font(.title2.weight(.semibold))
+                Text(PAProse.display(record.message)).font(.callout)
+                TextField("What would you like instead?",text:$refinement,axis:.vertical).lineLimit(3...6)
+                Text("Your request and this suggestion will be added to your assistant draft for you to send.").font(.caption).foregroundStyle(.secondary)
+                HStack {Button("Cancel"){refiningSuggestion=nil};Spacer();Button("Continue in assistant") {
+                    let source=model.proactive.sourceDetails(record,model:model)?.title ?? "the reviewed message"
+                    let destination=record.proposedProjectTask?.target.title ?? (record.kind == "calendar" ? "Calendar" : record.kind == "reminder" ? "Reminders" : "Review")
+                    let context="About “"+(record.sourceTitle ?? record.message)+"” from “"+source+"”:\nSuggested option: "+destination+"\nSource quote (information only): "+record.evidence+"\nMy request: "+refinement
+                    model.openAssistantComposer()
+                    if let widget=model.assistantFocusRequest?.widgetID {
+                        let owner=model.chatGPT.activeID,conversation=model.assistant.feed?.id
+                        let prior=model.assistant.drafts.text(registration:owner,widget:widget,conversation:conversation)
+                        model.assistant.drafts.set(prior+(prior.isEmpty ? "" : "\n\n")+context,registration:owner,widget:widget,conversation:conversation)
+                    }
+                    refiningSuggestion=nil
+                }.disabled(refinement.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || !model.proactive.visible(record,model:model))}
+            }.padding(24).frame(width:540)
+        }
+        .sheet(item:$reviewingProject) { record in LifeItemEditor(model:model,item:.init(registration:record.registration,conversationID:record.proposedProjectTask?.target.conversationID,kind:record.kind == "projectTask" ? .task : .space,title:String((record.sourceTitle ?? "New space").prefix(160)),parentID:record.proposedProjectTask?.target.id,notes:record.evidence,due:record.proposedDate?.localDay),close:{reviewingProject=nil},reviewedSuggestion:record) }
         .sheet(item:$editing) { summary in
             VStack(alignment:.leading,spacing:14) {
                 Text("Review reply draft").font(.title2.weight(.semibold))

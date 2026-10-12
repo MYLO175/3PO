@@ -67,6 +67,10 @@ Updated 12 October 2026. Read the current summary at the top of STATUS.md before
 - Native unified customisable toolbar shares window controls; no extra in-content header/footer. Stable toolbar/item IDs and saved arrangement are independent of widget layouts. Dashboard/View/Edit expose hidden actions. Standard text Undo/Redo and sheet isolation remain; Command-Z routes latest supported app Undo when appropriate. App receipts are one-level per category, no app Redo or creation/deletion/global-preference Undo.
 - Workspace light/dark role palettes and optional widget overlays retain missing-role inheritance, independent modes, validated hex/native wells, mode-only reset and full-preset semantics. Preserve custom overrides/style/accent and installation defaults; 3PO preset is optional. Native sheets, window chrome and semantic source colours retain their own documented appearance. Inspect latest HOW_IT_WORKS/DECISIONS for chrome refinements rather than reintroducing older toolbar/page/date designs.
 
+## Recorded review preference
+
+- 12 October: for source-backed project dates, suggest both Calendar entries and dated tasks inside the existing project. Offer review/approval and an intuitive way to request a variation in ordinary language without re-explaining the source.
+
 ## Documentation and checkpoints
 
 - AGENTS governs Codex development behaviour, not the shipped PA's runtime prompt. README introduces the repo; PLAN holds approved scope; docs/NEXT_IMPROVEMENTS.md holds product gaps/success criteria; STATUS is dated engineering evidence; VALIDATION is a concise current validation index; docs/DECISIONS.md records choices. Current human direction takes precedence over old dated plans. Ask about product priorities rather than inferring them from a documentation tidy-up.

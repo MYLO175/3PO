@@ -10,6 +10,10 @@ struct NativeCreationRequest: Identifiable {
     var discoveryID: String?
     var evidence: String?
     var requiresDateSelection = false
+    var suggestedStart: Date? = nil
+    var suggestedEnd: Date? = nil
+    var suggestedHasTime: Bool? = nil
+    var suggestedTimeZone: String? = nil
     var key: String { registration + ":" + id.uuidString }
 }
 struct NativeCreationReceipt: Codable, Equatable {
@@ -32,6 +36,18 @@ struct NativeCreationState: Codable {
     var claims: [String:NativeCreationClaim] = [:]
 }
 enum NativeCreationRules {
+    static func applyingSuggestion(_ request:NativeCreationRequest,to baseline:NativeEditDetails)->NativeEditDetails {
+        guard let start=request.suggestedStart,let timed=request.suggestedHasTime else {return baseline}
+        var proposed=baseline;proposed.timeZoneID=request.suggestedTimeZone ?? baseline.timeZoneID
+        if proposed.kind == .event {
+            proposed.allDay = !timed;proposed.start=start
+            var calendar=Calendar(identifier:.gregorian);calendar.timeZone=TimeZone(identifier:proposed.timeZoneID) ?? .current
+            proposed.end=request.suggestedEnd ?? (timed ? start.addingTimeInterval(900) : start)
+            if !timed {proposed.end=calendar.date(byAdding:.day,value:1,to:proposed.end)!}
+            if proposed.end <= start {proposed.end=start.addingTimeInterval(900)}
+        } else {proposed.due=start;proposed.hasTime=timed}
+        return proposed
+    }
     static func validate(request: NativeCreationRequest, baseline: NativeEditDetails, edited: NativeEditDetails) throws {
         guard baseline.kind == request.kind, baseline.itemID == request.id.uuidString else { throw IntegrationError.missing }
         try NativeEditRules.validate(edited,baseline:baseline)

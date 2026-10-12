@@ -1,5 +1,15 @@
 # Validation
 
+## 12 October: compound email actions
+
+- Six focused suites: summaries, proactive, Review inbox, email resolution, local workspace and native creation pass.
+- Signed candidate: app-memory 144/144, heartbeat 62/62 and removal contract 11/11; serial final checks avoid saved-window-frame interference.
+- Configured-model fictional compound email: 13/13, two final requests, three Calendar/project pairs, no invented hazard deadline or personal presentation slot. Earlier failures and fixes are recorded in STATUS.
+- Native fictional UI: prefilled Calendar date/time, editable marker duration, existing project folder/date/source notes and natural-language draft handoff verified. No personal/native approval executed.
+- Installed signed at 23:12 London: full private backup verified 66 records/13 support files; all 66 unchanged through replacement, 58 unchanged after relaunch with eight expected source/freshness cache changes.
+- Personal email re-assessment and sustained conversational/action quality remain unverified; the saved daily background allowance is unchanged. [Plan and acceptance](docs/EMAIL_ACTIONS_PLAN.md).
+
+
 ## Readable report sources — 12 October
 
 Final signed update installed at 20:59 London. Five focused source-free suites plus final alias-presentation checks pass; signed app-memory modes pass 144/144, 62/62 and 11/11 with no inference/native writes. Installed readback confirms the existing evening brief has no internal citation labels and its readable source controls remain. Original raw prose/source IDs/morning-delivery identity are preserved, verified by actual consumer checks. Full backup verifies 66 records/13 files; all records remain identical through replacement. Relaunch retains 39 protected records byte-for-byte; workspace layout/filter membership is identical apart from its existing same-day Calendar clock and set encoding order. No personal refresh or model-quality request was issued. Reports and limitations are in STATUS.

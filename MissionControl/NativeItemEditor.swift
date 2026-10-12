@@ -39,6 +39,7 @@ struct NativeItemEditor: View {
             if let error { Text(error).font(.callout).foregroundStyle(.orange).textSelection(.enabled) }
             if let baseline, let edited {
                 if let evidence = creation?.evidence { Text(evidence).font(.callout).foregroundStyle(.secondary).lineLimit(5).textSelection(.enabled) }
+                if creation?.suggestedHasTime == true,creation?.suggestedEnd == nil,isEvent { Text("The source gives a deadline, not a duration. This is a 15-minute calendar marker; adjust it before approving.").font(.caption).foregroundStyle(.secondary) }
                 if !canCreate { Text("Choose the event date and time from the email before creating it. The suggested form is not a confirmed booking.").font(.caption).foregroundStyle(.secondary) }
                 if !baseline.writable { Label("This source is read-only.",systemImage:"lock").font(.callout).foregroundStyle(.secondary) }
                 else if baseline.recurring && isEvent {
@@ -134,6 +135,7 @@ struct NativeItemEditor: View {
             session=try await model.eventKit.editSession(target)
             #endif
             try Task.checkCancellation(); baseline = session.item; edited = session.item; changeScope = session.item.kind == .reminder && session.item.recurring ? .reminderSeries : .occurrence; sources = session.sources
+            if let creation,creation.suggestedStart != nil { edited=NativeCreationRules.applyingSuggestion(creation,to:session.item);dateSelected=true }
             if let proposedMove { edited = try NativeEditRules.moved(session.item,proposal:proposedMove) }
             if let review {
                 guard review.registration == model.chatGPT.activeID,model.proactive.canReview(review.discoveryID,model:model),session.item.modified == review.expectedModified else { throw ActionFailure.message("The proposal, source or Apple item changed. Return to Review inbox for current work.") }

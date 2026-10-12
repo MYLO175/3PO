@@ -102,7 +102,7 @@ import Foundation
         let versions=Dictionary(uniqueKeysWithValues:(0..<8).map{(ProactiveRules.sourceKey("whatsapp",String($0)),"v1")})
         let firstKeys=Set((0..<3).map{ProactiveRules.sourceKey("whatsapp",String($0))})
         let limited=ProactiveRules.completing(many,versions:versions,context:"epoch",limited:true,reportedKeys:firstKeys)
-        precondition(limited.assessedSourceVersions?.count == 3)
+        precondition(limited.assessedSourceVersions?.isEmpty == true,"A saturated compound result leaves all sources eligible for completion")
         precondition(!ProactiveRules.assessed(limited,kind:"whatsapp",id:"7",revision:"v1",context:"epoch"))
         let quiet=ProactiveRules.completing(limited,versions:versions,context:"epoch",limited:false,reportedKeys:[])
         precondition(quiet.assessedSourceVersions?.count == 8)
@@ -150,7 +150,7 @@ import Foundation
             let payload:[String:Any]=["suggestions":candidates.map{["mailID":$0.alias,"kind":"reminder","message":"Review this fictional report submission?","evidence":$0.evidence]}]
             let rows=try ProactiveRules.decode(String(decoding:try JSONSerialization.data(withJSONObject:payload),as:UTF8.self),candidates:candidates,registration:"fixture",scope:"fixture",now:time)
             timeline.records += ProactiveRules.unreported(rows,prior:timeline.records)
-            timeline.accounts["fixture"]=ProactiveRules.completing(progress,versions:mailVersions,context:"stable",limited:batch.count == 3,reportedKeys:Set(batch.map{ProactiveRules.sourceKey("mail","fixture-\($0)")}))
+            timeline.accounts["fixture"]=ProactiveRules.completing(progress,versions:mailVersions.filter{key,_ in batch.contains{key == ProactiveRules.sourceKey("mail","fixture-\($0)")}},context:"stable",limited:batch.count >= 24,reportedKeys:Set(batch.map{ProactiveRules.sourceKey("mail","fixture-\($0)")}))
             review.phase="idle";review.assessed=time;review.pending=timeline.accounts["fixture"]!.assessedSourceVersions?.count != 8
             review=PAHeartbeatRules.clearWait(review)
             timeline=try JSONDecoder().decode(ProactiveState.self,from:JSONEncoder().encode(timeline))

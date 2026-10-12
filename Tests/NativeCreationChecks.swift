@@ -9,6 +9,17 @@ import SwiftData
         var wrong = request; wrong.id = UUID(); rejects { try NativeCreationRules.validate(request:wrong,baseline:base,edited:base) }
         var noTitle = base; noTitle.title = " "; rejects { try NativeCreationRules.validate(request:request,baseline:base,edited:noTitle) }
         var readOnly = base; readOnly.writable = false; rejects { try NativeCreationRules.validate(request:request,baseline:readOnly,edited:base) }
+        let instant=ISO8601DateFormatter().date(from:"2027-01-21T16:00:00Z")!
+        var dated=request;dated.kind = .event;dated.suggestedStart=instant;dated.suggestedHasTime=true;dated.suggestedTimeZone="Europe/London"
+        var event=base;event.kind = .event
+        let deadline=NativeCreationRules.applyingSuggestion(dated,to:event)
+        precondition(deadline.start == instant && deadline.end == instant.addingTimeInterval(900) && !deadline.allDay,"Supported deadline instant prefilled with visible short marker")
+        dated.suggestedStart=ISO8601DateFormatter().date(from:"2027-06-03T23:00:00Z")!;dated.suggestedHasTime=false
+        let day=NativeCreationRules.applyingSuggestion(dated,to:event)
+        precondition(day.allDay && day.end.timeIntervalSince(day.start) == 86400,"Date-only suggestion is one local all-day reference")
+        dated.suggestedEnd=day.start.addingTimeInterval(86400)
+        let range=NativeCreationRules.applyingSuggestion(dated,to:event)
+        precondition(range.end.timeIntervalSince(range.start) == 172800,"Inclusive source end becomes exclusive editor end")
         let container = try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
         let store = NativeCreationStore(container:container)
         precondition(NativeCreationRules.allowed(store.state,key:request.key))

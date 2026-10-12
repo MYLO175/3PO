@@ -1,5 +1,10 @@
 # Decisions
 
+## 12 October 2026: independent email actions and review choices
+
+Preserve multiple exact action quotes instead of allowing one summary to hide sibling obligations. Offer Calendar and existing-project tasks as independent reviewed destinations. The user explicitly requested both, with approval controls and an intuitive way to describe changes then and there. Adjust with assistant appends the human request plus quoted context to the visible widget draft, preserving prior draft/Focus and requiring Send. Existing request allowances stay unchanged. See [delivery plan](EMAIL_ACTIONS_PLAN.md).
+
+
 ## 12 October — Recover known foreground read prerequisites
 
 The observed tentative Calendar creation stopped before any native save because its current tool session had not read enabled destinations. Generic possibly-attempted-save guidance made the PA ask the human to repeat an already confirmed request. AssistantService now handles only typed PAReadPrerequisite failures with one schema-validated permitted read and one retry of the unchanged original call. Creation reads one local day at the requested start (including DST); exact detail recovery requires a same-turn issued target. It never looks up mutation identity by title, selects a different destination, widens scope or bypasses intent/native receipt/readback checks.

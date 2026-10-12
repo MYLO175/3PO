@@ -484,6 +484,7 @@ struct LifeItemEditor: View {
     var close: () -> Void
     var reviewedSuggestion:PADiscovery? = nil
     @State private var error: String?
+    @State private var saving=false
     @State private var dueEnabled = false
     @State private var dueDate = Date.now
     @State private var estimate = ""
@@ -529,11 +530,11 @@ struct LifeItemEditor: View {
                     }
                 } label: { LabeledContent("Life areas", value: item.areas.isEmpty ? "None" : item.areas.map(\.title).joined(separator: ", ")) }
                 TextField("Notes", text: $item.notes, axis: .vertical).lineLimit(4...8)
-            }.formStyle(.grouped)
+            }.formStyle(.grouped).disabled(saving)
             if item.kind.isWork { Text("Project tasks are separate from Apple Reminders.").font(.caption).foregroundStyle(.secondary) }
             if let error { Text(error).foregroundStyle(.orange).font(.callout) }
-            HStack { Button("Cancel", action: close).keyboardShortcut(.cancelAction); Spacer(); Button("Save") { save() }.keyboardShortcut(.defaultAction).disabled(item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || item.registration != model.chatGPT.activeID) }
-        }.padding(24).frame(width: 500).frame(maxHeight: 720)
+            HStack { Button("Cancel", action: close).keyboardShortcut(.cancelAction).disabled(saving); Spacer(); Button(reviewedSuggestion == nil ? "Save" : "Approve and save") { Task {await save()} }.keyboardShortcut(.defaultAction).disabled(saving || item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || item.registration != model.chatGPT.activeID) }
+        }.padding(24).frame(width: 500).frame(maxHeight: 720).interactiveDismissDisabled(saving)
         .onChange(of:item.parentID) { parentChanged=true }
         .onAppear {
             expected = original == nil ? nil : item.revision
@@ -542,7 +543,8 @@ struct LifeItemEditor: View {
             estimate = item.estimateMinutes.map(String.init) ?? ""
         }
     }
-    private func save() {
+    private func save() async {
+        guard !saving else {return};saving=true;defer{saving=false}
         guard item.registration == model.chatGPT.activeID else { error = "Account changed; your draft has not been saved."; return }
         let value = estimate.trimmingCharacters(in: .whitespacesAndNewlines)
         if !value.isEmpty, Int(value).map({ (1...100000).contains($0) }) != true { error = "Enter a positive estimate in minutes, or leave it empty."; return }
@@ -553,12 +555,16 @@ struct LifeItemEditor: View {
         do {
             if let proposal=reviewedSuggestion {
                 guard expected == nil,model.proactive.visible(proposal,model:model),proposal.registration == model.chatGPT.activeID else { throw LifeWorkspaceFailure.message("The source suggestion changed or is no longer permitted. Your draft is kept.") }
-                item.humanEvidence="Accepted a reviewed PA space suggestion."
+                try await model.validateDiscoverySourceForSave(proposal)
+                if let target=proposal.proposedProjectTask?.target {
+                    guard model.assistant.projects.items(item.registration,includeTopics:true).contains(where:{$0.id == target.id && $0.revision == target.revision && !$0.kind.isWork}) else {throw LifeWorkspaceFailure.message("The target space changed; reopen the suggestion.")}
+                }
+                item.humanEvidence="Accepted a reviewed PA " + item.kind.title.lowercased() + " suggestion."
                 let reference:LifeReference
                 if proposal.sourceKind == "whatsapp",let chat=proposal.sourceChatID,let message=proposal.sourceMessageID,let identity=proposal.sourceIdentity,let version=proposal.sourceRevision { reference = .init(kind:.whatsapp,id:message,containerID:chat,linkedIdentity:identity,contentRevision:version) }
                 else if let message=model.emailSummaries.highlights(model).first(where:{$0.0.id == proposal.mailID})?.0 { reference = .init(kind:.mail,id:message.id,containerID:message.accountID,contentRevision:message.internetMessageID) }
                 else { throw LifeWorkspaceFailure.message("The original source is unavailable; no space saved.") }
-                _ = try model.assistant.projects.create([item],receipt:.init(id:"project-suggestion:"+proposal.id,registration:item.registration,result:"Created a human-reviewed space.",itemID:item.id),links:[.init(registration:item.registration,conversationID:item.conversationID,from:item.id,relation:.evidence,target:reference)])
+                _ = try model.assistant.projects.create([item],receipt:.init(id:"project-suggestion:"+proposal.id,registration:item.registration,result:"Created a human-reviewed " + item.kind.title.lowercased() + ".",itemID:item.id),links:[.init(registration:item.registration,conversationID:item.conversationID,from:item.id,relation:.evidence,target:reference)])
             } else { _ = try model.assistant.projects.save(item, expected: expected) }
             model.projectPlacement.check(model);close()
         } catch { self.error = error.localizedDescription }

@@ -19,6 +19,39 @@ import Foundation
         rejected(referenced.replacingOccurrences(of:"mail_0:primary",with:"invented"))
         rejected(#"{"suggestions":[{"mailID":"mail_0","kind":"reminder","message":"Review registration","evidenceID":"mail_0:primary","evidence":"invented quote"}]}"#)
         precondition(ProactiveRules.unreported(records,prior:records,budget:3).isEmpty)
+        let project=DiscoveryProjectTarget(id:UUID(),revision:UUID(),title:"Orion engineering project")
+        let quotes=["Technical report submission: 4:00 pm, Thursday 21 January 2027.","Final report submission: 4:00 pm, Monday 31 May 2027.","Final presentation: Friday 4 June 2027 (Week 5)."]
+        let compound=DiscoveryCandidate(alias:"mail_0",mailID:"compound",evidence:quotes[0],followUpEvidence:"",actionEvidence:quotes)
+        let actions:[[String:Any]]=quotes.enumerated().flatMap { index,quote in
+            ["calendar","projectTask"].map { kind in
+                var row:[String:Any]=["mailID":"mail_0","kind":kind,"message":"Review this supported deadline.","evidenceID":"mail_0:action_"+String(index),"title":"Orion milestone "+String(index),"newDate":["2027-01-21T16:00:00Z","2027-05-31T16:00:00+01:00","2027-06-04"][index],"hasTime":index < 2]
+                if kind == "projectTask" {row["projectID"]=project.id.uuidString;row["connection"]="Existing Orion project."}
+                return row
+            }
+        }
+        func actionDecode(_ rows:[[String:Any]]) throws -> [PADiscovery] {
+            let json=String(decoding:try JSONSerialization.data(withJSONObject:["suggestions":rows]),as:UTF8.self)
+            return try ProactiveRules.decode(json,candidates:[compound],registration:"A",scope:"s",now:.now,projects:[project.id.uuidString:project])
+        }
+        let separate=try actionDecode(actions)
+        precondition(separate.count == 6 && Set(separate.map(\.id)).count == 6,"One email retains three dates and both destinations")
+        precondition(separate[1].proposedProjectTask?.target == project && separate[1].proposedDate?.localDay == "2027-01-21")
+        precondition(separate[4].proposedDate?.hasTime == false && !separate[4].needsDateClarification,"Explicit date with week annotation remains usable")
+        precondition(ProactiveRules.unreported(separate,prior:separate).isEmpty,"Reruns do not duplicate compound actions")
+        var oneDismissed=separate[0];oneDismissed.dismissed=true
+        precondition(ProactiveRules.unreported(separate,prior:[oneDismissed]).count == 5,"Dismiss one destination preserves siblings")
+        func rejectsActions(_ rows:[[String:Any]]) { do {_ = try actionDecode(rows);fatalError("Invalid action accepted")} catch {} }
+        rejectsActions([actions[0],actions[0]])
+        var bad=actions[1];bad["projectID"]=UUID().uuidString;rejectsActions([bad])
+        bad=actions[0];bad["evidenceID"]="mail_0:action_12";rejectsActions([bad])
+        bad=actions[0];bad["newDate"]="2027-02-30";bad["hasTime"]=false;rejectsActions([bad])
+        var dateOnlyTask=actions[1];dateOnlyTask["newDate"]="2027-01-21";dateOnlyTask["message"]=nil
+        let localTask=try actionDecode([dateOnlyTask])[0]
+        precondition(localTask.proposedDate?.hasTime == false && !localTask.message.isEmpty,"Project due date remains date-only and the app supplies an approval question")
+        let restoredActions=try JSONDecoder().decode([PADiscovery].self,from:JSONEncoder().encode(separate))
+        precondition(restoredActions == separate,"Exact dates and project revisions survive reopen")
+        let capped=ProactiveRules.completing(.init(),versions:["compound":"v1"],context:"c",limited:true,reportedKeys:["compound"])
+        precondition(capped.assessedSourceVersions?["compound"] == nil,"A full batch cannot claim all sibling actions assessed")
         var dismissed = records[0]; dismissed.dismissed = true
         precondition(ProactiveRules.unreported(records,prior:[dismissed],budget:3).isEmpty)
         var anotherAccount = dismissed; anotherAccount.registration = "B"

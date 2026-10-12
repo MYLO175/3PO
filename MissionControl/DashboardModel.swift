@@ -620,7 +620,7 @@ struct CalendarRemovalReviewSession:Identifiable {
             label=message.account + " · " + message.subject;title=record.sourceTitle ?? message.subject
         }
         let selectedKind=kind ?? (record.kind == "calendar" ? .event : .reminder)
-        editTarget = .create(NativeCreationRequest(id:id,kind:selectedKind,registration:record.registration,title:String(title.prefix(500)),notes:"Source: " + label + "\n" + record.evidence,discoveryID:record.id,evidence:record.message + "\n\n" + label + ": " + record.evidence,requiresDateSelection:selectedKind == .event))
+        editTarget = .create(NativeCreationRequest(id:id,kind:selectedKind,registration:record.registration,title:String(title.prefix(500)),notes:"Source: " + label + "\n" + record.evidence,discoveryID:record.id,evidence:record.message + "\n\n" + label + ": " + record.evidence,requiresDateSelection:selectedKind == .event,suggestedStart:record.proposedDate?.date(),suggestedEnd:record.proposedDate?.end.flatMap{record.proposedDate?.date($0)},suggestedHasTime:record.proposedDate?.hasTime,suggestedTimeZone:record.proposedDate?.timeZoneID))
     }
     private func dateReviewTarget(_ record:PADiscovery)->NativeEditTarget? {
         guard let change=record.proposedChange,let date=change.date() else {return nil}
@@ -731,18 +731,57 @@ struct CalendarRemovalReviewSession:Identifiable {
             writeError=error.localizedDescription;throw error
         }
     }
+    /// A review click approves a concrete proposal, never stale cached source prose.
+    func validateDiscoverySourceForSave(_ record:PADiscovery) async throws {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {throw ActionFailure.message("This fictional preview never reads Mail or saves native items.")}
+        #endif
+        let registration=chatGPT.activeID,revision=sourceRevision,selectedModel=chatGPT.selectedModel,generation=emailSummaries.reviewFeedbackGeneration
+        func current()->Bool {
+            registration == chatGPT.activeID && selectedModel == chatGPT.selectedModel && revision == sourceRevision &&
+            generation == emailSummaries.reviewFeedbackGeneration && !assistant.busy && record.registration == registration && proactive.state.records.contains(record) && proactive.visible(record,model:self)
+        }
+        guard current() else {throw ActionFailure.message("This suggestion changed. Reopen it from Review inbox.")}
+        if record.sourceKind != "whatsapp" {
+            guard let pair=emailSummaries.highlights(self).first(where:{$0.0.id == record.mailID}),let expected=pair.1.bodyFingerprint else {throw ActionFailure.message("The original email needs checking again before approval.")}
+            let message=pair.0
+            let body=try await mail.body(accountID:message.accountID,messageID:message.messageID,expectedInternetMessageID:message.internetMessageID,mailboxName:message.mailboxName)
+            try Task.checkCancellation()
+            guard current() else {throw ActionFailure.message("The account, source or suggestion changed; nothing saved.")}
+            let hash=EmailSummary.fingerprintBody(body)
+            try emailSummaries.observeBodyVersion(message,hash:hash,model:self)
+            guard hash == expected,EmailSummary.verbatimEvidence(record.evidence,body:body,subject:message.subject) != nil else {throw ActionFailure.message("The email changed. Review its current assessment before saving.")}
+        }
+        try Task.checkCancellation()
+        guard current() else {throw ActionFailure.message("The source or project changed; nothing saved.")}
+    }
     func createNativeItem(_ request: NativeCreationRequest, baseline: NativeEditDetails, edited: NativeEditDetails, dateSelected: Bool) async throws {
         guard !sample, !writing, !assistant.busy, request.registration == chatGPT.activeID else { throw ActionFailure.message("Another change or account switch is in progress; reopen the form when ready.") }
+        let approvalRevision=sourceRevision,approvalModel=chatGPT.selectedModel,approvalGeneration=emailSummaries.reviewFeedbackGeneration
         if request.requiresDateSelection && !dateSelected { throw ActionFailure.message("Choose the event's date and time before creating it.") }
+        var capturedDiscovery:PADiscovery?
         if let discovery = request.discoveryID {
             guard let record = proactive.state.records.first(where:{ $0.id == discovery && $0.registration == request.registration }), proactive.visible(record,model:self),!record.needsDateClarification else { throw ActionFailure.message("This suggestion or its enabled source changed, or its date needs clarification; reopen it before creating anything.") }
+            try await validateDiscoverySourceForSave(record)
+            if edited.kind == .event {
+                // Date-specific read also covers proposed dates beyond the orientation window.
+                let snapshot=try await nativeSources.calendar(from:edited.start.addingTimeInterval(-86400),to:edited.end.addingTimeInterval(86400))
+                try Task.checkCancellation()
+                guard record.registration == chatGPT.activeID,proactive.state.records.contains(record),proactive.visible(record,model:self) else {throw ActionFailure.message("The suggestion changed; nothing saved.")}
+                if snapshot.events.contains(where:{$0.calendarID == edited.sourceID && $0.start == edited.start && $0.allDay == edited.allDay && $0.title.trimmingCharacters(in:.whitespacesAndNewlines).localizedCaseInsensitiveCompare(edited.title.trimmingCharacters(in:.whitespacesAndNewlines)) == .orderedSame}) {
+                    throw ActionFailure.message("An event with this title and start already exists in the selected calendar. Check that event before creating another.")
+                }
+            }
+            capturedDiscovery=record
         }
+        guard !writing,!assistant.busy,request.registration == chatGPT.activeID,approvalRevision == sourceRevision,approvalModel == chatGPT.selectedModel,approvalGeneration == emailSummaries.reviewFeedbackGeneration else {throw ActionFailure.message("Another operation started; nothing saved.")}
+        let sourceScope=proactive.scope(self),selectedModel=chatGPT.selectedModel,ownedDiscovery=capturedDiscovery,generation=emailSummaries.reviewFeedbackGeneration
         try NativeCreationRules.validate(request:request,baseline:baseline,edited:edited)
         try nativeCreations.begin(request)
         writing = true; writeError = nil; nativeWriteNotice = nil
         defer { writing = false }
         do {
-            let receipt = try await eventKit.createItem(request:request,baseline:baseline,edited:edited,scope:proactive.scope(self))
+            let receipt = try await eventKit.createItem(request:request,baseline:baseline,edited:edited,scope:sourceScope,valid:{request.registration == self.chatGPT.activeID && sourceScope == self.proactive.scope(self) && selectedModel == self.chatGPT.selectedModel && generation == self.emailSummaries.reviewFeedbackGeneration && (ownedDiscovery.map{self.proactive.state.records.contains($0) && self.proactive.visible($0,model:self)} ?? true)})
             try nativeCreations.complete(request,receipt:receipt)
             showFeedback("Created " + receipt.title + " · " + receipt.destination)
             widgetCalendars.invalidate(); await refreshCalendar(); await refreshReminders(); await refreshPAOrientation()

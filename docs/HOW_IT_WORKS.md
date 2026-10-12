@@ -1,5 +1,10 @@
 # How Mission Control works
 
+## Compound email suggestions
+
+Email assessment can retain up to twelve separate exact quotes for requirements, deadlines and scheduling windows. Review can show separate Calendar and project-task suggestions on the same email card, using an issued existing space and its revision. Review forms carry supported dates; project tasks retain exact timed wording in notes. Adjust with assistant adds the human variation to the visible assistant draft. Approvals recheck source evidence and use normal saved receipts; reading or suggesting never creates an item. See [implementation and acceptance](EMAIL_ACTIONS_PLAN.md).
+
+
 For current component ownership and the path from a message to a verified answer, start with [Architecture](ARCHITECTURE.md). The [reliability checklist](RELIABILITY_IMPLEMENTATION.md) distinguishes implementation from completed acceptance.
 
 The reliability candidate separates conversation execution, learning, heartbeat orchestration, source reads and keyed storage from dashboard presentation. Background stages capture an exact heartbeat run; cancellation or changed ownership rejects results before saving, while earlier completed work remains. Construction loads settings without writing fallback defaults. The installed candidate passes preservation and normal relaunch checks; sustained acceptance remains open in LIVE_ACCEPTANCE and STATUS.
