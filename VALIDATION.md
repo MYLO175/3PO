@@ -6,11 +6,11 @@ The full [reliability checklist](docs/RELIABILITY_IMPLEMENTATION.md) remains ope
 
 | Scope | Current evidence | Remaining requirement |
 | --- | --- | --- |
-| Specific correctness and persistence | Short-query quality 64/64, native read 19/19, actual action executor failure/reopen checks, conversation migration/storage 70/70; final inventory 59/59 | Installed preservation and real interaction |
+| Specific correctness and persistence | Short-query quality 64/64, native read 19/19, actual action executor failure/reopen checks, conversation migration/storage 70/70; final inventory 59/59; installed preservation 10/10 | Normal authorised conversation save and sustained interaction |
 | Learning fairness and runtime | Actual persisted budget 159/159; all five actual learning services 22 contracts | Broader real interruption/traffic acceptance |
-| Conversation engine | Independent complete-round/reasoning/duplicate/stall/Stop/late-delta tests; actual service 50/50 including constructor preservation | Installed input/navigation acceptance |
+| Conversation engine | Independent complete-round/reasoning/duplicate/stall/Stop/late-delta tests; actual service 50/50 including constructor preservation; installed typing/navigation/relaunch pass | Normal authorised conversation save and sustained interaction |
 | Heartbeat core and child boundary | Actual injected scheduler 124/124: persisted claims/stages, outage/partial coverage, sleep anchors and separate child tasks; all three desktop children use exact run-bound claims/validators | Physical sleep/lid/wake and sustained real child operation |
-| Runtime scaling | Cached/uncached equivalence and invalidation 642 checks; both optional performance suites pass | Native input/render acceptance; timings are fictional components |
+| Runtime scaling | Cached/uncached equivalence and invalidation 642 checks; both optional performance suites pass; installed input/navigation/relaunch pass | Sustained native use; timings are fictional components |
 | Source-free app consumers | Final signed candidate modes pass 3/3 (137/137,62/62,11/11), zero AI/native changes | Installed behaviour and sustained source traffic |
 | Candidate launch safety | Pure guard 37/37, including inspect/cleanup prefixes; runner signature/protocol/exact-mode/report/timeout gates; final signed handshake passes | Legacy diagnostic effects remain mode-specific; only audited runner modes are disposable |
 | Configured-model quality | Final model tier 5/5: commitment 8/8, resolution 12/12, native memory 12/12, relevance 14/14, removal 15/15; nine fictional requests | Sustained usefulness; broad semantic quality remains unproven and paraphrase probes remain 0/2 |

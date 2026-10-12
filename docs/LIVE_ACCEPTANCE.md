@@ -17,6 +17,8 @@ The personal legacy conversation has not yet needed a changed-turn save, so thes
 
 Keep the goal open until at least72 real elapsed hours and at least three distinct local days of normal use have produced evidence for the installed candidate. Several snapshots on one day or a simulated clock do not satisfy this.
 
+On 12 October the user confirmed they will use 3PO casually, including periods when the laptop is closed. Observe that ordinary use; no scripted personal requests or required daily test routine. The elapsed-time threshold is 15 October at 10:40 UTC / 11:40 London at the earliest. Time passing alone does not satisfy the remaining evidence gates.
+
 - Inspect fresh owned heartbeat runs: persistent claims/stages, current brief, independently collected Mail coverage, no same-run retry storm or repeated morning chat/notification delivery.
 - Inspect physical sleep/lid/wake evidence and relevant app receipts. The OS power log can prove an actual transition; it cannot alone prove every app inference/write guard. Compare actual request/run times and sleep interruption/catch-up records, using focused checks for the covered cancellation boundaries.
 - Observe foreground use and normal source/provider changes. Failed/partial work retains its receipts; pending accounts stay pending rather than becoming empty/completed. Explicitly interrupted foreground queues/native claims must not replay automatically.
