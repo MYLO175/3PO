@@ -4,7 +4,7 @@
 
 - Signed build and focused briefing/stream/heartbeat checks pass, including malformed/plain-text/missing-field, duplicate/unrelated call and source-reference rejection.
 - Configured model daypart scenarios: 14/14 over three fictional requests, unchanged preferences, zero native changes.
-- Installed fresh-heartbeat evidence and preserved records are recorded in STATUS; sustained reliability remains open.
+- Signed app-memory modes pass 144/144, 68/68 and 11/11. Installed at 23:48 London; fresh manual heartbeat completes all four stages at 23:49, six calls and a saved brief. Eight private readback checks preserve original delivery/history and 50 protected records. Sustained reliability remains open.
 
 ## 12 October: optional daily AI call limit
 

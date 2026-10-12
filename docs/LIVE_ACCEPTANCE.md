@@ -1,5 +1,12 @@
 # Installed reliability acceptance
 
+## Latest installed candidate — typed brief results, 12 October 2026
+
+Code `5459516` installed signed at 23:48 London. A fresh authorised manual heartbeat completed at 23:49: six calls, all four stages Done, saved brief exactly linked to its run, native history Completed and next review 00:48. An independent Mail collection issue remained honestly reported while collected data from two accounts stayed usable. Full backup `/private/tmp/3po-brief-release-hjzhnyxk` verified all 66 records/13 files; 50 protected records remain exact after the run. Eight preservation/association checks pass, including original daily messages/notification membership and the earlier failed run.
+
+Signed build, briefing/stream/heartbeat checks and app-memory modes 144/144, 68/68, 11/11 pass. Configured-model daypart cases pass 14/14 across three fictional requests. This supersedes earlier candidate identity below. Conservative observation start is 12 October 22:50:32 UTC and the earliest 72-hour threshold is 15 October 22:50:32 UTC. One fresh cycle verifies the observed response-format fix; sustained scheduling/provider/source recovery remains open. Existing follow-up and notification policy is unchanged.
+
+
 ## Latest installed candidate — optional daily limit, 12 October 2026
 
 Code `83db28d` installed signed at 23:26 London. Settings → Background → Daily AI call limit shows Off. The pending automatic heartbeat resumed and claimed call 65 beyond the old 64-call cap; no manual heartbeat or native/project approval was issued. Source-free heartbeat checks and actual scheduler 68/68 pass. Full backup `/private/tmp/3po-limit-release-xvb8o5ys` verifies 66 records/13 support files; all records unchanged through replacement, 53 exact after resumed source/AI work, protected personal work preserved.
