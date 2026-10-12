@@ -86,7 +86,6 @@ struct AssistantPanel: View {
         }
     }
     private func showDraft() {
-        model.emailSummaries.cancelReviewFeedback()
         assistant.drafts.show(registration:model.chatGPT.activeID,widget:imageDraftWidget,conversation:draftKey)
         imageError=nil
         if !composerEmpty { model.memoryLearning.cancel();model.sourceLearning.cancel();model.nativeSourceLearning.cancel();model.memoryMaintenance.cancel(); model.proactive.cancel();model.heartbeat.userStartedTyping() }

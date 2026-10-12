@@ -104,8 +104,9 @@ struct ReviewFeedbackButton:View {
     @State private var savedRule:String?
     var body:some View {
         VStack(alignment:.leading,spacing:6) {
-            Button("Feedback") {showingFeedback=true}.controlSize(.small).help("Let your PA learn what matters from your feedback and this email")
-            if let savedRule {DisclosureGroup("Saved preference") {Text(savedRule).font(.caption).textSelection(.enabled)}.font(.caption)}
+            Button("Feedback") {showingFeedback=true}.controlSize(.small).help("Let your PA learn what matters from your feedback and this email").disabled(email.flatMap{model.emailSummaries.feedback.latest(model.chatGPT.activeID,messageID:$0.message.id)}.map{$0.pending && model.emailSummaries.feedbackMemory($0,model:model) == nil} ?? false)
+            if let email,let job=model.emailSummaries.feedback.latest(model.chatGPT.activeID,messageID:email.message.id) {ReviewFeedbackProgressView(model:model,job:job)}
+            else if let savedRule {DisclosureGroup("Saved preference") {Text(savedRule).font(.caption).textSelection(.enabled)}.font(.caption)}
         }
         .sheet(isPresented:$showingFeedback) {ReviewFeedbackEditor(model:model,topic:topic,email:email,isCurrent:isCurrent,onSaved:{savedRule=$0})}
         .onChange(of:model.chatGPT.activeID) {showingFeedback=false;savedRule=nil}
@@ -124,9 +125,6 @@ struct ReviewFeedbackEditor:View {
     @State private var about:String
     @State private var learnedRule:String
     @State private var error:String?
-    @State private var saving=false
-    @State private var saveTask:Task<Void,Never>?
-    @State private var saveID:UUID?
     init(model:DashboardModel,topic:String="",email:ReviewFeedbackEmail?=nil,expected:PAMemory?=nil,isCurrent:@escaping ()->Bool={true},onSaved:@escaping (String)->Void={_ in}) {
         self.model=model;self.topic=topic;self.email=email;self.expected=expected;self.isCurrent=isCurrent;self.onSaved=onSaved;registration=model.chatGPT.activeID
         _words=State(initialValue:expected?.reviewFeedback ?? expected?.evidence ?? expected?.text ?? "")
@@ -136,57 +134,61 @@ struct ReviewFeedbackEditor:View {
     var body:some View {
         VStack(alignment:.leading,spacing:14) {
             Text(expected == nil ? "Feedback" : "Edit review preference").font(.title2.weight(.semibold))
-            LabeledContent("About") {TextField("Optional topic",text:$about).textFieldStyle(.roundedBorder).accessibilityLabel("Feedback topic")}.disabled(saving)
+            LabeledContent("About") {TextField("Optional topic",text:$about).textFieldStyle(.roundedBorder).accessibilityLabel("Feedback topic")}
             Text("You can keep the email's subject or change this to make the preference broader or more specific.").font(.caption).foregroundStyle(.secondary)
             Text("What should your PA learn about what is worth reviewing?").font(.headline)
-            TextEditor(text:$words).frame(height:110).font(.body).border(Color.secondary.opacity(0.25)).disabled(saving)
+            TextEditor(text:$words).frame(height:110).font(.body).border(Color.secondary.opacity(0.25))
             if expected?.reviewInterpretation != nil {
                 Text("Saved preference").font(.headline)
-                TextEditor(text:$learnedRule).frame(height:90).font(.body).border(Color.secondary.opacity(0.25)).disabled(saving)
+                TextEditor(text:$learnedRule).frame(height:90).font(.body).border(Color.secondary.opacity(0.25))
                 Text("Edit the learned preference directly. Changing your feedback or topic clears the old interpretation; you can write a new preference or keep only your words.").font(.caption).foregroundStyle(.secondary)
             } else if email != nil {
-                Text("Your PA will read this email's sender, subject and content, reason about your feedback, and save the preference it learns. Your original words remain as evidence. You can inspect, edit or disable the saved preference.").font(.caption).foregroundStyle(.secondary)
+                Text("Submit your feedback and carry on using the app. Your PA will learn from this email in the background. Progress and any retry are available on the card and in Review preferences; your original words remain as evidence.").font(.caption).foregroundStyle(.secondary)
             } else {
                 Text("This preference is saved locally. Feedback on an email also lets your PA reason about that email's context.").font(.caption).foregroundStyle(.secondary)
             }
             Text("For example: ‘These emails aren't important’ can mean routine newsletters from this communications team can stay quiet. Dismiss only means acknowledged.").font(.caption).foregroundStyle(.secondary)
             if !model.assistant.memory.enabled {Text("Memory use is paused. The preference will be saved and used when you turn it back on.").font(.caption).foregroundStyle(.secondary)}
-            if saving {ProgressView("Learning your preference…").controlSize(.small)}
             if let error {Text(error).font(.caption).foregroundStyle(.orange)}
             HStack {
-                Button("Cancel") {stop();dismiss()}.keyboardShortcut(.cancelAction)
-                if saving {Button("Stop") {stop();error="Stopped. Your feedback is still here; nothing was saved."}}
+                Button("Cancel") {dismiss()}.keyboardShortcut(.cancelAction)
                 Spacer()
-                if email != nil && error != nil && !saving {Button("Save only my words") {save(interpreting:false)}}
-                Button("Save to memory") {save(interpreting:email != nil && expected == nil)}.keyboardShortcut(.defaultAction).disabled(saving || words.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || words.count > 2000 || about.count > 300 || learnedRule.count > 1200)
+                Button(email != nil && expected == nil ? "Submit feedback" : "Save to memory") {save()}.keyboardShortcut(.defaultAction).disabled(words.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || words.count > 2000 || about.count > 300 || learnedRule.count > 1200)
             }
         }.padding(24).frame(width:560)
-        .onChange(of:model.chatGPT.activeID) {stop();dismiss()}
+        .onChange(of:model.chatGPT.activeID) {dismiss()}
         .onChange(of:words) {if expected?.reviewInterpretation != nil {learnedRule=""}}
         .onChange(of:about) {if expected?.reviewInterpretation != nil {learnedRule=""}}
-        .onDisappear {stop()}
     }
-    private func stop() {saveID=nil;saveTask?.cancel();saveTask=nil;saving=false}
-    private func save(interpreting:Bool) {
+    private func save() {
         guard registration == model.chatGPT.activeID,isCurrent() else {error="The item or account changed. Reopen Feedback before saving.";return}
-        let submittedWords=words,submittedAbout=about,id=UUID(),revision=model.assistant.memory.revision,generation=model.emailSummaries.reviewFeedbackGeneration,sourceRevision=model.sourceRevision,selectedModel=model.chatGPT.selectedModel
-        error=nil;saving=true;saveID=id
-        saveTask=Task { @MainActor in
-            defer {if saveID == id {saving=false;saveTask=nil;saveID=nil}}
-            do {
-                var interpretation:ReviewFeedbackInterpretation?
-                if interpreting,let email {
-                    interpretation=try await model.emailSummaries.interpretReviewFeedback(email,words:submittedWords,about:submittedAbout,model:model,isCurrent:{saveID == id && words == submittedWords && about == submittedAbout && isCurrent()})
-                } else if !learnedRule.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,let previous=expected?.reviewInterpretation {
-                    interpretation=previous;interpretation?.rule=learnedRule.trimmingCharacters(in:.whitespacesAndNewlines);interpretation?.humanEdited=true
-                }
-                try Task.checkCancellation()
-                guard saveID == id,registration == model.chatGPT.activeID,revision == model.assistant.memory.revision,isCurrent(),!interpreting || (generation == model.emailSummaries.reviewFeedbackGeneration && sourceRevision == model.sourceRevision && selectedModel == model.chatGPT.selectedModel && !model.assistant.busy && !model.writing) else {throw ReviewFeedbackFailure.message("The item, account or memory changed; nothing was saved.")}
-                guard model.assistant.memory.saveReviewPreference(submittedWords,registration:registration,expected:expected,about:submittedAbout,interpretation:interpretation) else {throw ReviewFeedbackFailure.message(model.assistant.memory.error ?? "The preference could not be saved.")}
-                onSaved(interpretation?.rule ?? submittedWords);dismiss()
-            } catch is CancellationError {if saveID == id {error="Stopped. Your feedback is still here; nothing was saved."}}
-            catch {if saveID == id {self.error=error.localizedDescription}}
+        if let email,expected == nil {
+            guard model.emailSummaries.submitReviewFeedback(email,words:words,about:about,model:model) else {error=model.emailSummaries.feedback.error;return}
+            dismiss();return
         }
+        var interpretation:ReviewFeedbackInterpretation?
+        if !learnedRule.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,let previous=expected?.reviewInterpretation {interpretation=previous;interpretation?.rule=learnedRule.trimmingCharacters(in:.whitespacesAndNewlines);interpretation?.humanEdited=true}
+        guard model.assistant.memory.saveReviewPreference(words,registration:registration,expected:expected,about:about,interpretation:interpretation) else {error=model.assistant.memory.error;return}
+        onSaved(interpretation?.rule ?? words);dismiss()
+    }
+}
+struct ReviewFeedbackProgressView:View {
+    @Bindable var model:DashboardModel
+    var job:ReviewFeedbackJob
+    var body:some View {
+        VStack(alignment:.leading,spacing:5) {
+            if let saved=model.emailSummaries.feedbackMemory(job,model:model) {
+                DisclosureGroup("Saved preference") {Text(saved.text).textSelection(.enabled)}
+                if job.state != .saved {Button("Update saved status") {_=model.emailSummaries.feedback.markSaved(job.id)}}
+            } else {
+                HStack {if job.pending {ProgressView().controlSize(.mini)};Text(job.state == .stopped && model.emailSummaries.feedback.activeID == job.id ? "Stopping feedback…" : job.status);if job.pending {Button("Stop") {model.emailSummaries.feedback.stop(job.id)}}}
+                if let error=job.error {Text(error).foregroundStyle(.orange).textSelection(.enabled)}
+                if !job.pending && job.state != .saved && model.emailSummaries.feedback.activeID != job.id {
+                    HStack {Button("Retry learning") {_=model.emailSummaries.retryFeedback(job,model:model)};Button("Save only my words") {_=model.emailSummaries.saveFeedbackWords(job,model:model)}}
+                }
+            }
+            if let error=model.emailSummaries.feedback.error {Text(error).foregroundStyle(.orange)}
+        }.font(.caption).controlSize(.small)
     }
 }
 struct ReviewRelevanceEditor:View {
@@ -234,6 +236,9 @@ struct ReviewRelevancePreferencesView:View {
             Text("Your PA saves the preference it learns. Original feedback and edit history remain available as evidence. Dismiss simply clears the item; it does not teach a preference.").font(.callout).foregroundStyle(.secondary)
             ScrollView {
                 VStack(alignment:.leading,spacing:12) {
+                    ForEach(model.emailSummaries.feedback.items(registration).filter{$0.state != .saved && model.emailSummaries.feedbackMemory($0,model:model) == nil}) {job in
+                        VStack(alignment:.leading,spacing:6) {Text(job.about.isEmpty ? "Submitted feedback" : job.about).font(.callout.weight(.semibold));DisclosureGroup("Your feedback") {Text(job.words).textSelection(.enabled)};ReviewFeedbackProgressView(model:model,job:job)}.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(Color.primary.opacity(0.04),in:RoundedRectangle(cornerRadius:10))
+                    }
                     ForEach(model.assistant.memory.reviewPreferences(registration,includeRetired:true)) {value in
                         HStack(alignment:.top) {
                             VStack(alignment:.leading,spacing:5) {if let about=value.reviewContext {Text(about).font(.callout.weight(.semibold))};Text(value.text).textSelection(.enabled);if let original=value.reviewFeedback,value.reviewInterpretation != nil {DisclosureGroup("Your feedback") {Text(original).font(.caption).textSelection(.enabled)}};Text(value.retiredAt == nil ? "Saved in PA memory" : "Disabled").font(.caption).foregroundStyle(.secondary)}

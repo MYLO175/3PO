@@ -30,6 +30,16 @@ import Synchronization
         checks["clearing one saved draft preserves the other account draft"]=clearedDrafts.text(registration:"fixture-one",widget:widget,conversation:conversation).isEmpty && clearedDrafts.text(registration:"fixture-two",widget:other,conversation:conversation) == "Other fictional draft"
         let records=try context.fetch(FetchDescriptor<CachedDashboard>())
         checks["targeted UI saves preserve unrelated cache bytes and unique keys"]=records.first{$0.key == "fictional-unrelated-cache"}?.data == unrelated && records.filter{$0.key == "workspace"}.count == 1 && records.filter{$0.key == "assistantDrafts"}.count == 1
+        let feedback=EmailSummaryService(container:container)
+        let submission=ReviewFeedbackJob(registration:"fixture-one",messageID:"fictional-newsletter",accountID:"fictional-mail",headerFingerprint:"header",bodyFingerprint:"body",assessmentVersion:"assessment",model:"fictional-model",sourceRevision:0,words:"Routine fictional newsletters can stay quiet.",about:"Newsletters")
+        checks["feedback submission persists before any inference"]=feedback.feedback.submit(submission)
+        let reopenedFeedback=EmailSummaryService(container:container)
+        checks["feedback reopen retains exact words and owner without replay"]=reopenedFeedback.feedback.records.first?.state == .interrupted && reopenedFeedback.feedback.records.first?.words == submission.words && reopenedFeedback.feedback.items("fixture-two").isEmpty
+        let memory=PAMemoryStore(container:container)
+        checks["feedback saves its issued exact memory identity"]=memory.saveReviewPreference(submission.words,registration:submission.registration,about:submission.about,id:submission.memoryID)
+        let reopenedMemory=PAMemoryStore(container:container)
+        checks["feedback exact memory target survives storage readback"]=reopenedMemory.records.first{$0.id == submission.memoryID}?.reviewFeedback == submission.words
+        checks["feedback refuses duplicate save at its exact memory identity"] = !reopenedMemory.saveReviewPreference(submission.words,registration:submission.registration,about:submission.about,id:submission.memoryID) && reopenedMemory.records.filter{$0.id == submission.memoryID}.count == 1
         return checks
     }
     private static func resolutionConsumerChecks(_ model:DashboardModel)throws->[String:Bool] {

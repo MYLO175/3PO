@@ -13,6 +13,7 @@ import SwiftData
     private(set) var records: [EmailSummary] = []
     private(set) var relevancePreferences:[ReviewRelevancePreference]=[]
     private(set) var relevanceReadable=true
+    let feedback:ReviewFeedbackJobs
     private var preferenceUndo:([ReviewRelevancePreference],String,String)?
     var relevanceError:String?
     private var dismissedUndo: (String,String)?
@@ -45,22 +46,31 @@ import SwiftData
     private var task: Task<Void, Never>?
     @ObservationIgnored private var reviewFeedbackTask:Task<ReviewFeedbackInterpretation,Error>?
     private(set) var reviewFeedbackGeneration=0
-    func cancelReviewFeedback() {reviewFeedbackGeneration += 1;reviewFeedbackTask?.cancel()}
-    /// Explicit foreground feedback. No heartbeat, history replay or automatic source learning.
+    func cancelReviewFeedback() {reviewFeedbackGeneration += 1;feedback.interruptActive();reviewFeedbackTask?.cancel()}
+    /// Explicit submitted feedback. No heartbeat, history replay or automatic source learning.
     func interpretReviewFeedback(_ source:ReviewFeedbackEmail,words:String,about:String,model:DashboardModel,isCurrent:@escaping ()->Bool)async throws->ReviewFeedbackInterpretation {
         #if DEBUG
-        guard !ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") else {throw ActionFailure.message("Fictional preview uses no Mail reads or inference. Nothing was saved.")}
+        if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {
+            guard ProcessInfo.processInfo.arguments.contains("--feedback-preview") else {throw ActionFailure.message("Fictional preview uses no Mail reads or inference. Nothing was saved.")}
+            let generation=reviewFeedbackGeneration,revision=model.assistant.memory.revision
+            busy=true;defer {busy=false}
+            return try await ReviewFeedbackRules.prepare(source,words:words,about:about,model:"fictional-preview",isCurrent:{generation == self.reviewFeedbackGeneration && revision == model.assistant.memory.revision && self.feedbackSourceCurrent(source.message,summary:source.summary,model:model) && isCurrent()},readBody:{source.summary.evidence},infer:{_ in
+                try await Task.sleep(for:.seconds(15))
+                return "```json\n{\"rule\":\"Routine fictional university newsletters can stay quiet; personal requests and new deadlines still matter.\"}\n```"
+            })
+        }
         #endif
         guard !busy,!model.chatGPT.busy,!model.assistant.busy,!model.writing,!model.heartbeat.busy,!model.proactive.busy,!model.briefings.busy,!model.memoryLearning.busy,!model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy,!model.projectPlacement.busy,!model.lifeOrganisation.busy else {throw ActionFailure.message("Wait for the current PA operation to finish, then save your feedback.")}
-        guard model.chatGPT.inferenceVerified,!model.chatGPT.usagePaused,model.assistant.memory.canSaveReviewPreference else {throw ActionFailure.message("PA interpretation is unavailable right now. Your words are still here; reconnect or save only your words.")}
-        let registration=model.chatGPT.activeID,selected=model.chatGPT.selectedModel,memoryRevision=model.assistant.memory.revision,sourceRevision=model.sourceRevision
+        guard model.heartbeat.deviceAvailable,model.chatGPT.inferenceVerified,!model.chatGPT.usagePaused,model.assistant.memory.canSaveReviewPreference else {throw ActionFailure.message("PA interpretation is unavailable right now. Your feedback is retained; reconnect or save only your words.")}
+        let registration=model.chatGPT.activeID,selected=model.chatGPT.selectedModel,memoryRevision=model.assistant.memory.revision,sourceRevision=model.sourceRevision,generation=reviewFeedbackGeneration
         busy=true
         defer {busy=false;reviewFeedbackTask=nil}
         let operation=Task {
             try await ReviewFeedbackRules.prepare(source,words:words,about:about,model:selected,isCurrent:{
-                !Task.isCancelled && registration == model.chatGPT.activeID && selected == model.chatGPT.selectedModel && memoryRevision == model.assistant.memory.revision && sourceRevision == model.sourceRevision && !model.assistant.busy && !model.writing && model.chatGPT.inferenceVerified && !model.chatGPT.usagePaused && self.feedbackSourceCurrent(source.message,summary:source.summary,model:model) && isCurrent()
+                !Task.isCancelled && generation == self.reviewFeedbackGeneration && registration == model.chatGPT.activeID && selected == model.chatGPT.selectedModel && memoryRevision == model.assistant.memory.revision && sourceRevision == model.sourceRevision && model.heartbeat.deviceAvailable && !model.assistant.busy && !model.writing && model.chatGPT.inferenceVerified && !model.chatGPT.usagePaused && self.feedbackSourceCurrent(source.message,summary:source.summary,model:model) && isCurrent()
             },readBody:{try await model.mail.body(accountID:source.message.accountID,messageID:source.message.messageID,expectedInternetMessageID:source.message.internetMessageID,mailboxName:source.message.mailboxName)},infer:{input in
-                try await model.chatGPT.streamResponse(input:[["role":"user","content":input]],instructions:ReviewFeedbackRules.instructions,model:selected,purpose:.reviewFeedback){_ in}
+                let response=try await model.chatGPT.toolResponse(input:[["role":"user","content":input]],instructions:ReviewFeedbackRules.instructions,tools:ReviewFeedbackRules.tools,model:selected,purpose:.reviewFeedback){_ in}
+                return try ReviewFeedbackRules.completedJSON(response)
             })
         }
         reviewFeedbackTask=operation
@@ -68,6 +78,13 @@ import SwiftData
     }
     init(container: ModelContainer?) {
         self.container = container
+        feedback=ReviewFeedbackJobs(load:{
+            guard let data=try LocalRecordRepository.read("reviewFeedbackJobs",container:container) else {return []}
+            return try JSONDecoder().decode([ReviewFeedbackJob].self,from:data)
+        },persist:{values in
+            guard let container else {throw SummaryFailure.invalid}
+            try LocalRecordRepository(container:container).save(values,key:"reviewFeedbackJobs")
+        })
         do {
             if let saved = try LocalRecordRepository.read("emailSummaries", container: container) { records = try JSONDecoder().decode([EmailSummary].self, from: saved) }
             if let saved = try LocalRecordRepository.read("emailSummaryRejections", container: container) { rejected = try JSONDecoder().decode([EmailSummaryRejection].self, from: saved) }

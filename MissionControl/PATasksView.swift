@@ -87,6 +87,7 @@ struct PATasksView: View {
         model.heartbeat.state.accounts[model.chatGPT.activeID]?.retryReason == "failure"
     }
     private var reviewStatus:String {
+        if model.emailSummaries.feedback.items(model.chatGPT.activeID).contains(where:{$0.pending && model.emailSummaries.feedbackMemory($0,model:self.model) == nil}) {return "Learning your feedback in the background…"}
         if reviewBusy {return "Reviewing your sources…"}
         if !model.heartbeat.readable {return "Review history unavailable. See Activity for details."}
         return model.heartbeat.scheduleStatus(model)

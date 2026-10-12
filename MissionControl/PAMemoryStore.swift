@@ -60,12 +60,14 @@ import SwiftData
         records.filter{$0.registration == registration && $0.source == nil && $0.reviewPreference == true && $0.supersededBy == nil && (includeRetired || MemoryRules.usable($0,registration:registration))}.sorted{$0.created == $1.created ? $0.id.uuidString < $1.id.uuidString : $0.created > $1.created}
     }
     /// Exact human evidence stays separate from optional contextual interpretation.
-    @discardableResult func saveReviewPreference(_ text:String,registration:String,expected:PAMemory? = nil,about:String="",interpretation:ReviewFeedbackInterpretation? = nil)->Bool {
+    @discardableResult func saveReviewPreference(_ text:String,registration:String,expected:PAMemory? = nil,about:String="",interpretation:ReviewFeedbackInterpretation? = nil,id:UUID=UUID())->Bool {
         let words=text.trimmingCharacters(in:.whitespacesAndNewlines)
         guard !registration.isEmpty,!words.isEmpty,words.count <= 2000,about.count <= 300,interpretation?.valid ?? true else {error="Check your feedback and its interpretation before saving.";return false}
         if let expected {guard records.first(where:{$0.id == expected.id}) == expected,expected.registration == registration,expected.reviewPreference == true,expected.source == nil,expected.supersededBy == nil else {error="This memory changed. Reopen it before saving.";return false}}
+        else if records.contains(where:{$0.id == id}) {error="This feedback already has a saved memory. Reopen it before making another change.";return false}
         let inferred=interpretation != nil && interpretation?.humanEdited != true
         var value=PAMemory(registration:registration,text:interpretation?.rule ?? words,kind:.preference,explicit:!inferred,provenance:inferred ? "Interpreted from your Review feedback and email" : expected == nil ? "Your Review feedback" : "Review preference edited by you",evidence:interpretation?.humanEdited == true ? interpretation?.rule : words,sourceDate:.now,certainty:inferred ? .inferred : .stated,durability:.stable)
+        value.id=id
         value.reviewPreference=true;value.reviewContext=about.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty ? nil : about.trimmingCharacters(in:.whitespacesAndNewlines);value.retiredAt=expected?.retiredAt
         value.reviewInterpretation=interpretation;value.reviewFeedback=words
         return expected.map{correct($0.id,with:value)} ?? put(value)

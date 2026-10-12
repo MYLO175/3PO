@@ -22,7 +22,10 @@ import EventKit
         let assessed=EmailSummary(id:newsletter.id,registration:owner,fingerprint:EmailSummary.fingerprint(newsletter),summary:"General university newsletter",attention:false,reason:"",evidence:"General newsletter for all students",bodyFingerprint:EmailSummary.fingerprintBody(newsletterBody),message:newsletter)
         let originalFeedback="These emails aren't important"
         let learned=try await ReviewFeedbackRules.prepare(.init(message:newsletter,summary:assessed),words:originalFeedback,about:newsletterSubject,model:selected,isCurrent:{owner == model.chatGPT.activeID && selected == model.chatGPT.selectedModel},readBody:{newsletterBody},infer:{input in
-            try await model.chatGPT.streamResponse(input:[["role":"user","content":input]],instructions:ReviewFeedbackRules.instructions,model:selected,purpose:.diagnostic){_ in}
+            let response=try await model.chatGPT.toolResponse(input:[["role":"user","content":input]],instructions:ReviewFeedbackRules.instructions,tools:ReviewFeedbackRules.tools,model:selected,purpose:.diagnostic){_ in}
+            let json=try ReviewFeedbackRules.completedJSON(response)
+            try Data(json.utf8).write(to:EvaluationOutput.url("/tmp/3po-review-feedback-fictional-result.txt"),options:.atomic)
+            return json
         })
         guard model.assistant.memory.saveReviewPreference(originalFeedback,registration:owner,about:newsletterSubject,interpretation:learned) else {throw SummaryFailure.invalid}
         let learnedFact=model.assistant.memory.reviewPreferences(owner)[0]
@@ -424,6 +427,14 @@ import EventKit
         model.completedReminders=[.init(item:task,completedAt:now)];model.completedReminderHealth = .init(lastSuccess:now)
         try model.emailSummaries.seedAdviceFixture(summaries)
     }
+    static func seedFeedbackPreview(_ model:DashboardModel)throws {
+        let body="General fictional university newsletter: campus travel tips and optional societies fair. No personal reply or action is requested."
+        let fields:[String:Any]=["id":"fictional-feedback-newsletter","accountID":"fictional-mail","account":"Fictional Mail","messageID":1,"internetMessageID":"fictional-feedback@example.invalid","sender":"University Communications <news@example.invalid>","subject":"Fictional autumn newsletter","received":Date.now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
+        let message=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:fields))
+        let summary=EmailSummary(id:message.id,registration:model.chatGPT.activeID,fingerprint:EmailSummary.fingerprint(message),summary:body,attention:true,reason:"Fictional feedback fixture",evidence:body,bodyFingerprint:EmailSummary.fingerprintBody(body),message:message,worthReading:true,needsReply:false)
+        model.mailData = .init(messages:[message],accounts:[.init(id:message.accountID,title:"Fictional Mail")],errors:[])
+        try model.emailSummaries.seedAdviceFixture([summary]);try model.proactive.seedAdviceFixture([],model:model)
+    }
     static func seedSourceDetailsPreview(_ model:DashboardModel)throws {
         let preferences=UserDefaults.standard.dictionaryRepresentation() as NSDictionary
         let sent=ISO8601DateFormatter().date(from:"2026-10-07T16:25:00Z")!
@@ -722,7 +733,7 @@ struct ReviewInboxPreview:View {
             .padding(16).frame(width:ProcessInfo.processInfo.arguments.contains("--navigation-preview") ? 1120 : ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 840 : 600,height:ProcessInfo.processInfo.arguments.contains("--navigation-preview") ? 820 : ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 780 : 660)
             .sheet(item:Binding(get:{model.editTarget},set:{model.editTarget=$0})){NativeItemEditor(model:model,target:$0)}
             .sheet(item:Binding(get:{model.calendarRemovalReview},set:{model.calendarRemovalReview=$0})){CalendarRemovalReviewSheet(model:model,session:$0)}
-            .task {guard !ready else {return};if ProcessInfo.processInfo.arguments.contains("--email-resolution-preview") {try? ReviewInboxEvaluation.seedResolutionPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--grouped-review-preview") {try? ReviewInboxEvaluation.seedGroupedReviewPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--source-details-preview") {try? ReviewInboxEvaluation.seedSourceDetailsPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--calendar-removal-preview") {_ = try? ReviewInboxEvaluation.seedRemoval(model)} else if ProcessInfo.processInfo.arguments.contains("--email-work-preview") {try? ReviewInboxEvaluation.seedEmailWorkPreview(model);if ProcessInfo.processInfo.arguments.contains("--heartbeat-preview") {try? model.briefings.seedHeartbeatPreview(model)}} else {_ = try? ReviewInboxEvaluation.seed(model)};if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {
+            .task {guard !ready else {return};if ProcessInfo.processInfo.arguments.contains("--feedback-preview") {try? ReviewInboxEvaluation.seedFeedbackPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--email-resolution-preview") {try? ReviewInboxEvaluation.seedResolutionPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--grouped-review-preview") {try? ReviewInboxEvaluation.seedGroupedReviewPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--source-details-preview") {try? ReviewInboxEvaluation.seedSourceDetailsPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--calendar-removal-preview") {_ = try? ReviewInboxEvaluation.seedRemoval(model)} else if ProcessInfo.processInfo.arguments.contains("--email-work-preview") {try? ReviewInboxEvaluation.seedEmailWorkPreview(model);if ProcessInfo.processInfo.arguments.contains("--heartbeat-preview") {try? model.briefings.seedHeartbeatPreview(model)}} else {_ = try? ReviewInboxEvaluation.seed(model)};if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {
                 // Default pages contain native widgets whose mount can independently read sources.
                 let defaults=model.workspace.state.pages.map(\.id)
                 model.workspace.addPage("Navigation fixture")

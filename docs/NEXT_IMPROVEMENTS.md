@@ -9,6 +9,10 @@ This recovery is bounded to known no-save-attempt prerequisites. Provider availa
 Current approved work: the user requested implementation of the full [reliability and architecture plan](RELIABILITY_IMPLEMENTATION.md). Specific defects and source-free regressions precede structural consolidation, fair learning, measured storage/recall improvements, documentation and signed/sustained acceptance. This work is in progress; earlier feature-quality limitations remain. Phone support is deferred.
 
 
+## 12 October: feedback runs outside the dialog
+
+Implemented immediate durable submission and an app-owned serial background worker, with retained words/progress/failure on the card and Review preferences. Page navigation does not cancel inference. Targeted Stop and foreground cancellation remain distinct; interrupted jobs require explicit retry after reopen. One completed typed subscription result replaces the unreliable prompt-only format; complete JSON code fences are accepted under the strict preference schema; malformed output retains a useful error. Focused fixtures cover late results, storage failure and duplicate prevention. Native and configured-model evidence belongs in STATUS/VALIDATION; sustained personal adaptation remains open.
+
 ## 12 October: contextual feedback learns a preference
 
 Implemented: explicit email Feedback reasons from the exact email and human comment, saves the resulting preference as primary memory, and keeps the comment as evidence. Current scope remains editable and versioned. Source/ownership changes and foreground cancellation reject late results. New email subjects can recall the learned sender/purpose preference; generic shared sender-domain suffixes do not select it. Existing preferences are preserved, without automatic inference or consolidation.
