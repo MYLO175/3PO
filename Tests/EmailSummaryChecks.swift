@@ -78,6 +78,44 @@ import Foundation
         assert(oldWeek.followUpDate == "2026-10-02" && groundedWeek.evidence == oldWeek.evidence)
         let groundedData=try JSONEncoder().encode(groundedWeek)
         assert(!String(decoding:groundedData,as:UTF8.self).contains("groundingRevision"),"Presentation metadata is not persisted")
+        // Multiple independent source actions survive the single-summary projection and legacy decoding.
+        let actionQuotes=["Technical milestone report: 4:00 pm, Thursday 21 January 2027.","Final report: 4:00 pm, Monday 31 May 2027.","Presentations scheduled between 26 November and 27 November 2026, 8:30 am to 5:00 pm.","Complete the hazard assessment with your supervisor.",weekQuote]
+        let actionsBody=actionQuotes.joined(separator:"\n")
+        var actionsOutput:[String:Any]=["summary":"Project dates and hazard assessment requirements.","attention":true,"reason":"Record the dates and complete required work.","evidence":weekQuote,"followUpDate":"2027-01-21","followUpEvidence":actionQuotes[0],"actionEvidence":actionQuotes+[actionQuotes[0]],"worthReading":true,"needsReply":false]
+        func decodeActions(_ output:[String:Any],body:String=actionsBody)throws->EmailSummary {
+            try EmailSummary.decode(String(decoding:JSONSerialization.data(withJSONObject:output),as:UTF8.self),message:message,body:body,registration:"a")
+        }
+        let actions=try decodeActions(actionsOutput)
+        assert(actions.actionEvidence == actionQuotes && actions.actionEvidenceVersion == EmailSummary.actionEvidenceVersion)
+        assert(actions.dateClarificationQuote == weekQuote && actions.followUpDate == "2027-01-21")
+        assert(actions.summary == "Project dates and hazard assessment requirements.","A week-only obligation does not erase the independent dated actions")
+        let projectedActions=actions.groundedForReview(replied:false)
+        assert(projectedActions.actionEvidence == actionQuotes && projectedActions.followUpDate == "2027-01-21")
+        assert(projectedActions.adviceRevision(replied:false) == actions.adviceRevision(replied:false))
+        let restoredActions=try JSONDecoder().decode(EmailSummary.self,from:JSONEncoder().encode(actions))
+        assert(restoredActions.actionEvidence == actionQuotes && restoredActions.actionEvidenceVersion == 1)
+        var changedActions=actions;changedActions.actionEvidence?.removeLast()
+        assert(changedActions.adviceRevision(replied:false) != actions.adviceRevision(replied:false),"Exact action evidence participates in advice receipts")
+        assert(legacy.actionEvidence == nil && legacy.actionEvidenceVersion == nil)
+        var emptyActions=legacy;emptyActions.actionEvidence=[];emptyActions.actionEvidenceVersion=1
+        assert(emptyActions.adviceRevision(replied:false) == legacy.adviceRevision(replied:false),"Additive schema markers and empty action arrays preserve legacy receipts")
+        assert(summary.actionEvidence == nil && summary.actionEvidenceVersion == 1 && !summary.needsActionEvidenceRecheck(),"A valid new pass without optional quotes does not loop")
+        var pendingActions=summary;pendingActions.actionEvidenceVersion=nil
+        assert(pendingActions.needsActionEvidenceRecheck())
+        pendingActions.dismissed=true;assert(!pendingActions.needsActionEvidenceRecheck())
+        pendingActions.dismissed=false;pendingActions.attention=false;pendingActions.worthReading=false
+        assert(!pendingActions.needsActionEvidenceRecheck(),"Quiet history is not swept for the schema upgrade")
+        for quotes in [["Invented project deadline"],[" "],Array(repeating:actionQuotes[0],count:13),[String(repeating:"a",count:501)]] {
+            var invalid=actionsOutput;invalid["actionEvidence"]=quotes
+            var rejected=false;do {_ = try decodeActions(invalid)} catch {rejected=true}
+            assert(rejected,"Reject unsupported, empty or over-limit action evidence")
+        }
+        var whitespaceActions=actionsOutput;whitespaceActions["actionEvidence"]=["Please confirm whether you can attend on Monday."]
+        let restoredWhitespace=try decodeActions(whitespaceActions,body:actionsBody+"\n"+sourceWithWhitespace)
+        assert(restoredWhitespace.actionEvidence == [sourceWithWhitespace],"Restored quotes preserve exact source whitespace")
+        actionsOutput["followUpDate"]="2026-10-02";actionsOutput["followUpEvidence"]=weekQuote
+        let unresolvedAction=try decodeActions(actionsOutput)
+        assert(unresolvedAction.followUpDate == nil && unresolvedAction.actionEvidence == actionQuotes && unresolvedAction.summary == actions.summary,"Only the unsupported date is removed")
         let normalRelative=try EmailSummary.decode(weekJSON.replacingOccurrences(of:weekQuote,with:"Submit tomorrow at 16:00.").replacingOccurrences(of:"2026-10-02",with:"2026-10-03"),message:message,body:"Submit tomorrow at 16:00.",registration:"a")
         assert(normalRelative.followUpDate == "2026-10-03","The narrow week guard must not replace ordinary relative-date handling")
         var oldFuture = savedFuture; oldFuture.messageReceived = Date.now.addingTimeInterval(-40*86400)
@@ -132,6 +170,8 @@ import Foundation
             let json="{\"handled\":[{\"mailID\":\"mail_0\",\"targetID\":\"\(target)\",\"requestEvidenceID\":\"mail_0:primary\",\"allActionsAddressed\":true,\"reason\":\"Match\"}]}"
             do {_ = try EmailReviewRules.decodeHandled(json,summaries:["mail_0":value],targets:["done_0":addressed],now:now);fatalError("Invalid handling accepted")} catch {}
         }
+        var severalActions=actionable;severalActions.actionEvidence=[actionable.evidence,"Complete the separate hazard form."]
+        refuseHandling(severalActions,"done_0")
         var quietHandling=actionable;quietHandling.attention=false
         refuseHandling(quietHandling,"done_0")
         var risk=addressed;risk.title="Check whether risk assessment is required and complete it if needed"
