@@ -1,5 +1,11 @@
 # Next improvements
 
+## 12 October: complete requests after missing native reads
+
+Implemented: known pre-operation Calendar/Reminders prerequisites now trigger one permitted internal read and continuation of the exact original call. Actual AssistantService fixtures cover default/explicit destinations, issued and later-issued targets, Stop/ownership changes, missing/read-only destinations, failed reads, uncertain saves, partial batches, retained history and sibling errors. Combined source-free checks pass 7/7, including 140 actual-service contracts; signed build and all three guarded app-memory modes pass.
+
+This recovery is bounded to known no-save-attempt prerequisites. Provider availability and uncertain native outcomes remain separate; opening the app does not replay historical failed requests. The broader reliability acceptance still needs sustained real use.
+
 Current approved work: the user requested implementation of the full [reliability and architecture plan](RELIABILITY_IMPLEMENTATION.md). Specific defects and source-free regressions precede structural consolidation, fair learning, measured storage/recall improvements, documentation and signed/sustained acceptance. This work is in progress; earlier feature-quality limitations remain. Phone support is deferred.
 
 

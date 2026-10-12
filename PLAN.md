@@ -1,5 +1,7 @@
 # Mission Control specification
 
+12 October foreground recovery: the human should not have to repeat an already clear Calendar/Reminders request because the PA omitted a prerequisite read. Recover a typed, known pre-operation prerequisite inside the captured turn: read enabled destinations or an already issued target's exact details, check ownership/Stop again, then retry the unchanged operation once through ordinary intent/native validation. Keep historical diagnostics, sibling failures and earlier verified receipts. Real unavailable reads, genuine ambiguity and uncertain attempted saves remain explicit; do not automatically replay historical failed turns.
+
 ## Approved reliability and architecture work — 11 October 2026
 
 The user approved implementation of the seven-stage consolidation plan after the other Review/memory-feedback chat completed at `b092562`. The full deliverables, ownership and completion gates are tracked in [Reliability implementation](docs/RELIABILITY_IMPLEMENTATION.md). Fix concrete query/source/persistence issues, create isolated regression tiers, separate application responsibilities, schedule eligible learning fairly, measure and improve storage/recall, reconcile documentation, and finish signed/disposable/native and sustained acceptance. Phone support is outside this work. This approval does not restart historical indexing, change source consent/credentials/selected model, or grant background writes.

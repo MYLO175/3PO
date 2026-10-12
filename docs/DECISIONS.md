@@ -1,5 +1,11 @@
 # Decisions
 
+## 12 October — Recover known foreground read prerequisites
+
+The observed tentative Calendar creation stopped before any native save because its current tool session had not read enabled destinations. Generic possibly-attempted-save guidance made the PA ask the human to repeat an already confirmed request. AssistantService now handles only typed PAReadPrerequisite failures with one schema-validated permitted read and one retry of the unchanged original call. Creation reads one local day at the requested start (including DST); exact detail recovery requires a same-turn issued target. It never looks up mutation identity by title, selects a different destination, widens scope or bypasses intent/native receipt/readback checks.
+
+Cancellation and captured ownership are rechecked before and after preparation. A failed preparatory read explicitly reports nativeSaveAttempted=false; unknown/provider/native-save failures do not enter this path. Internal reads are traced without fabricated model transport outputs. Exact preparation resolution is shared with explicit reads so a successful recovery clears its own visible error, preserves diagnostic history and retains sibling failures. No launch-time historical replay is introduced.
+
 ## 12 October: save the meaning of feedback, retain the words as evidence
 
 The user clarified that adding memory should reason about what is useful to remember. Email Feedback therefore supplies the exact email and human comment to one bounded subscription inference. Save the learned preference as canonical memory text; retain original human words separately as evidence and label the interpretation provisional. This extends the existing conversation-learning separation between concise facts and their quoted evidence. An editable About topic guides interpretation; the prefilled subject is an example, not a forced one-message scope. Routine ambiguous feedback generalises by sender and purpose with personal-request exceptions; deliberately explicit sender-wide human choices are respected.
