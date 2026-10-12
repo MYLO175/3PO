@@ -78,6 +78,21 @@ import Foundation
         }
         let proseOutput = #"{"message":"Good morning. A meeting is scheduled today.","items":[{"text":"A meeting is scheduled.","sourceIDs":["known-event"]}]}"#
         let morningMessage = try BriefingRules.message(proseOutput); precondition(morningMessage == "Good morning. A meeting is scheduled today.")
+        let typedOutput=String(proseOutput.dropLast())+",\"question\":null}"
+        let typed=try BriefingRules.completedJSON([(namespace:"pa",name:BriefingRules.resultTool,arguments:typedOutput)])
+        let typedItems=try BriefingRules.decode(typed,allowedSources:["known-event"])
+        precondition(typedItems.count == 1)
+        let qualified=try BriefingRules.completedJSON([(namespace:nil,name:"pa."+BriefingRules.resultTool,arguments:typedOutput)])
+        precondition(qualified == typed)
+        for calls:[(namespace:String?,name:String,arguments:String)] in [[],[("other",BriefingRules.resultTool,proseOutput)],[(nil,BriefingRules.resultTool,proseOutput)],[("pa",BriefingRules.resultTool,proseOutput),("pa",BriefingRules.resultTool,proseOutput)]] {
+            do {_ = try BriefingRules.completedJSON(calls);preconditionFailure("Missing, unrelated and duplicate results must not become a brief")}
+            catch BriefingFailure.resultFormat {}
+        }
+        for invalid in ["Good evening. Your meeting is tomorrow.","```json\n"+proseOutput+"\n```",#"{"message":"Good evening."}"#,#"{"items":[{"text":"Event","sourceIDs":null}]}"#] {
+            do {_ = try BriefingRules.decode(invalid,allowedSources:["known-event"]);preconditionFailure("Unstructured output must be rejected with a useful error")}
+            catch BriefingFailure.resultFormat {}
+        }
+        precondition(BriefingFailure.resultFormat.localizedDescription.contains("previous brief"))
         let legacyMessage = try BriefingRules.message(good); precondition(legacyMessage == nil)
         var blankRejected = false; do { _ = try BriefingRules.message(#"{"message":"  "}"#) } catch { blankRejected = true }; precondition(blankRejected)
         let morning = DailyBriefing(id:"morning",registration:"account",day:"2026-10-02",created:date(2026,10,2,7,30),items:items,sources:[],coverage:"partial",sourceScope:"scope",message:"Good morning")

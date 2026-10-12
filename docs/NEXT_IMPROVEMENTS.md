@@ -1,5 +1,8 @@
 # Next improvements
 
+12 October brief-format refinement: typed `pa.prepare_brief` replaces prompt-only JSON output for heartbeat/manual/first brief preparation. Focused malformed/duplicate/reference checks, signed app checks and configured-model daypart cases are recorded in STATUS. Successful individual runs remain separate from sustained heartbeat reliability and repeated provider/source failures.
+
+
 12 October daily-limit refinement: visible Settings → Background → Daily AI call limit now defaults to Off, preserving explicit numeric choices. Existing allowance waits release when off; the Review inbox links to settings when capped. Focused cap/off/reopening checks and installed acceptance are recorded in STATUS; sustained scheduling remains a separate acceptance item.
 
 

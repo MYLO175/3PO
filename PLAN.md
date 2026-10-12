@@ -1,5 +1,8 @@
 # Mission Control specification
 
+12 October brief reliability refinement: replace free-text JSON brief output with one completed typed preparation result on the existing subscription transport. Preserve all source/ownership checks and atomic saves; report invalid results clearly and retain completed sibling stages. Verify configured-model scenarios and one fresh installed heartbeat before claiming the observed failure is resolved.
+
+
 12 October daily-limit refinement: make Settings → Background → Daily AI call limit visible and default it to Off. Preserve explicit numeric preferences and request receipts; removing the cap releases only allowance waits, with normal ownership, foreground, failure and provider-limit controls retained.
 
 

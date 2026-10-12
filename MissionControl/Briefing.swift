@@ -150,7 +150,7 @@ enum BriefingRules {
     }
     static func message(_ text: String) throws -> String? {
         struct Output: Decodable { var message: String? }
-        let value = try JSONDecoder().decode(Output.self,from:Data(text.utf8)).message
+        let value = try decodeJSON(Output.self,text:text).message
         guard let value else { return nil }
         guard !value.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, value.count <= 6000 else { throw BriefingFailure.itemText }
         return value
@@ -179,6 +179,25 @@ enum BriefingRules {
     static let writingPromptLimit=8000
     static var defaultWritingPrompt:String { attentionInstructions + "\n\n" + formattingInstructions }
     static let referenceInstructions = "allowedSourceIDs is the complete citation list. Keep all evidence aliases exclusively in the structured sourceIDs arrays: never print them, bracketed citations or internal identifiers in message, item text or question prose. Refer to people, events and sources by their readable names. The app supplies source links separately. Every sourceIDs entry must copy one of those aliases exactly, once per item. Supplied records use id for that citation alias. memoryID and original identities are bookkeeping, never citation IDs. Do not invent IDs for coverage, earlierBrief, reviewInbox or reviewQuestions; general suggestions can use an empty sourceIDs array. Cite workspace_N only for the supplied human workspace record, never as proof of an Apple change or completed communication."
+    static let resultTool="prepare_brief"
+    static let resultInstructions="Return the finished brief by calling pa.prepare_brief exactly once. Put the human-facing prose in message, with supporting items and question:null unless one essential source-supported clarification is needed. Do not answer in ordinary text or call other tools. This returns preparation data only; it performs no action, saves no record and sends no message. The app validates current evidence before saving."
+    static func tools(allowedSources:Set<String>)->[[String:Any]] {
+        var source:[String:Any]=["type":"string"]
+        if !allowedSources.isEmpty {source["enum"]=allowedSources.sorted()}
+        let references:[String:Any]=["type":"array","maxItems":12,"items":source]
+        let item:[String:Any]=["type":"object","properties":["text":["type":"string","maxLength":1500],"sourceIDs":references],"required":["text","sourceIDs"],"additionalProperties":false]
+        let question:[String:Any]=["type":["object","null"],"properties":["question":["type":"string","maxLength":500],"sourceIDs":["type":"array","minItems":1,"maxItems":4,"items":source]],"required":["question","sourceIDs"],"additionalProperties":false]
+        return [["type":"namespace","name":"pa","description":"Prepare a brief result only; no source reads or writes.","tools":[["type":"function","name":resultTool,"description":"Return the completed brief with exact supplied evidence references and an optional essential question.","strict":true,"parameters":["type":"object","properties":["message":["type":"string","maxLength":6000],"items":["type":"array","minItems":1,"maxItems":20,"items":item],"question":question],"required":["message","items","question"],"additionalProperties":false]]]]]
+    }
+    static func completedJSON(_ calls:[(namespace:String?,name:String,arguments:String)])throws->String {
+        guard calls.count == 1,let call=calls.first,(call.namespace == "pa" && call.name == resultTool) || (call.namespace == nil && call.name == "pa."+resultTool) else {throw BriefingFailure.resultFormat}
+        guard let value=(try? JSONSerialization.jsonObject(with:Data(call.arguments.utf8))) as? [String:Any],Set(value.keys) == ["message","items","question"],let message=value["message"] as? String,!message.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,message.count <= 6000 else {throw BriefingFailure.resultFormat}
+        return call.arguments
+    }
+    private static func decodeJSON<T:Decodable>(_ type:T.Type,text:String)throws->T {
+        do {return try JSONDecoder().decode(type,from:Data(text.utf8))}
+        catch is DecodingError {throw BriefingFailure.resultFormat}
+    }
     static func memoryInput(_ records:[[String:String]])->[[String:String]] {
         records.enumerated().map { index,record in
             var value=record;value["memoryID"]=record["id"];value["id"]="memory_\(index)";return value
@@ -190,7 +209,7 @@ enum BriefingRules {
     static let morningInstructions = timeInstructions + " Write the first daily message from the user’s PA for the supplied local day. Preparation may have caught up after launch or wake in the afternoon/evening; use the current greeting even for this first message. Focus on what matters TODAY: remaining timed/all-day calendar commitments, overdue/today reminders, relevant undated tasks, and recent worthwhile emails or outstanding requests. Mention later commitments only if preparation or a decision is useful today. Do not dump every source or stale historical obligation. A day without scheduled items is not proof there is nothing to do. No numbered priority score, filler or invented personal familiarity. Mark suggestions as suggestions; an explicit request in email is not proof the user has not already dealt with it. Return a message of at most 6000 characters and up to 12 short factual/source-linked items supporting the message."
     static func decode(_ text: String, allowedSources: Set<String>) throws -> [BriefingItem] {
         struct Output: Decodable { var items: [Item]; struct Item: Decodable { var text: String; var sourceIDs: [String] } }
-        let value = try JSONDecoder().decode(Output.self, from: Data(text.utf8))
+        let value = try decodeJSON(Output.self,text:text)
         guard !value.items.isEmpty, value.items.count <= 20 else { throw BriefingFailure.itemCount }
         guard value.items.allSatisfy({ !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.text.count <= 1500 }) else { throw BriefingFailure.itemText }
         guard value.items.allSatisfy({ $0.sourceIDs.count <= 12 }) else { throw BriefingFailure.excessiveSources }
@@ -243,9 +262,10 @@ enum PAProse {
     }
 }
 enum BriefingFailure: LocalizedError {
-    case itemCount, itemText, sources, question, unknownSources, duplicateSources, excessiveSources
+    case itemCount, itemText, sources, question, unknownSources, duplicateSources, excessiveSources, resultFormat
     var errorDescription: String? {
         switch self {
+        case .resultFormat: return "The PA returned an invalid brief result. The previous brief and completed review work are kept; the next heartbeat prepares a fresh brief."
         case .question: return "The review question or its source references were invalid. The update was not saved."
         case .itemCount: return "Briefing must contain 1–20 items. It was not saved."
         case .itemText: return "Briefing items must have nonempty text up to 1500 characters. It was not saved."
@@ -277,7 +297,7 @@ extension BriefingRules {
     static func reviewQuestion(_ response:String,snapshot:DailyBriefing) throws->BriefingQuestion? {
         struct Question:Decodable {var question:String;var sourceIDs:[String]}
         struct Output:Decodable {var question:Question?}
-        let value=try JSONDecoder().decode(Output.self,from:Data(response.utf8))
+        let value=try decodeJSON(Output.self,text:response)
         guard let question=value.question else {return nil}
         let text=question.question.trimmingCharacters(in:.whitespacesAndNewlines)
         guard !text.isEmpty,text.count <= 500,(1...4).contains(question.sourceIDs.count),Set(question.sourceIDs).count == question.sourceIDs.count,Set(question.sourceIDs).isSubset(of:Set(snapshot.sources.map(\.id))) else {throw BriefingFailure.question}

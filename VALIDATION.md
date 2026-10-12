@@ -1,5 +1,11 @@
 # Validation
 
+## 12 October: typed brief results
+
+- Signed build and focused briefing/stream/heartbeat checks pass, including malformed/plain-text/missing-field, duplicate/unrelated call and source-reference rejection.
+- Configured model daypart scenarios: 14/14 over three fictional requests, unchanged preferences, zero native changes.
+- Installed fresh-heartbeat evidence and preserved records are recorded in STATUS; sustained reliability remains open.
+
 ## 12 October: optional daily AI call limit
 
 - Heartbeat source-free suite passes, including 120 uncapped calls, retained capped refusal and failure delay.
