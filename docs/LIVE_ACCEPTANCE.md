@@ -1,10 +1,12 @@
 # Installed reliability acceptance
 
-Latest candidate code checkpoint: `a1f4946`, including contextual Feedback and foreground prerequisite recovery. Installed 12 October 2026 at 18:14 London / 17:14 UTC, stable path and bundle identity. Signed executable SHA-256: `d56b9b67ab4052da5e969104964ee66e74059948d396ae24f6e0a3936fd4a45f`; debug library: `74c3482c9c901f729432d7e14a2e5038e8fc840ec8c4894171e225a42166be3e`. Full verified backup: `~/Library/Application Support/3PO Development Backups/20261012-171530-prerequisite-recovery`.
+Latest candidate code checkpoint: `a26659e`, including foreground prerequisite recovery, submitted background Feedback and readable report-source labels. Installed 12 October 2026 at 20:59:57 London / 19:59:57 UTC, stable path and bundle identity. Signed executable SHA-256: `e6784c636adac8e197c85c91c6df3e242a643d76db5aeb3c738fe35da9608948`; debug library: `8463c8c8cfcebb84642f0db6bd69d67061b46ef7140b7603640a4f2176629a94`. Latest verified release backup: `/private/tmp/3po-source-labels-final-2ndjg54d`. Durable observation history remains under `~/Library/Application Support/3PO Development Backups/20261012-171530-prerequisite-recovery/observations`.
 
-The original reliability candidate `a63b2da` was installed at 10:40 UTC. Its checks and physical sleep/wake observations below remain useful historical evidence, not 72-hour acceptance of the newer installed binary. The latest combined build passes seven relevant source-free suites, AssistantService 140 and app-memory 137/62/11; installation preserved all 64 records and 12 support files. Subsequent operator continuation preserved all 294 prior canonical conversation turns, seven protected records and earlier action receipts. One already-confirmed London visit was created/read back; unsupported iCloud tentative availability required a labelled title/note representation and its failed claim remains. Operator-assisted work is not normal unassisted use or proof of automatic model recovery.
+The original reliability candidate `a63b2da` was installed at 10:40 UTC; `a1f4946` followed at 17:14 UTC, then background Feedback at 19:20 UTC and readable source labels at 19:59:57 UTC. Earlier checks and physical sleep/wake observations remain useful historical evidence, not 72-hour acceptance of the newer installed binary. The latest release passes five relevant source-free suites and app-memory 144/62/11; installation preserved all 66 records and 13 support files. Relaunch retained protected conversation, feedback, memory and receipt records; documented workspace clock/set-order normalisations preserve layout and filter membership. The earlier operator-assisted London completion is not normal unassisted use or proof of automatic model recovery.
 
-## Already verified
+Read-only observation on 12 October at 20:32 UTC verifies the latest signed executable/debug library against the exact tested candidate. It sees no post-19:59:57 heartbeat yet, current sources without stored errors, unchanged original morning records/notification claims and a widget-only brief bound to its completed 19:35 historical run. The older 18:33 comparison was rejected for an unissued evidence reference; the next fresh 19:34–19:35 cycle completed without saving that rejected comparison. Four background Feedback submissions made at 19:37–19:39 are saved with matching canonical account-owned memory receipts; this proves delivery/preservation, not semantic preference quality. Current 13 conversations/300 turns/17 chunks and all action/creation/queue receipts match the latest release's quit backup. One existing conversation-learning pause remains preserved. No new sleep/lid/wake occurs after the latest install, and prolonged acceptance remains open.
+
+## Historical verification on the initial reliability candidate
 
 - Full isolated inventory59/59; actual assistant50, learning22, heartbeat124 and persisted budget159 contracts.
 - Signed candidate app-memory3/3 (137/137,62/62,11/11), disposable native24/24 with cleanup, configured-model5/5 (61 assertions/nine fictional requests).
@@ -21,7 +23,7 @@ The pre-18:14 backup now contains canonical conversation chunks including the hu
 
 Keep the goal open until at least72 real elapsed hours and at least three distinct local days of normal use have produced evidence for the installed candidate. Several snapshots on one day or a simulated clock do not satisfy this.
 
-On 12 October the user confirmed they will use 3PO casually, including periods when the laptop is closed. Observe that ordinary use; no scripted personal requests or required daily test routine. The latest candidate's elapsed-time threshold is 15 October at 17:14 UTC / 18:14 London at the earliest. Time passing alone does not satisfy the remaining evidence gates.
+On 12 October the user confirmed they will use 3PO casually, including periods when the laptop is closed. Observe that ordinary use; no scripted personal requests or required daily test routine. The latest candidate's elapsed-time threshold is 15 October at 19:59:57 UTC / 20:59:57 London at the earliest. Verify installed identity against the latest release evidence; reconcile any later authorised release before counting its observation period. Time passing alone does not satisfy the remaining evidence gates.
 
 - Inspect fresh owned heartbeat runs: persistent claims/stages, current brief, independently collected Mail coverage, no same-run retry storm or repeated morning chat/notification delivery.
 - Inspect physical sleep/lid/wake evidence and relevant app receipts. The OS power log can prove an actual transition; it cannot alone prove every app inference/write guard. Compare actual request/run times and sleep interruption/catch-up records, using focused checks for the covered cancellation boundaries.
@@ -43,8 +45,8 @@ When a current-day morning anchor exists, compare its exact owner/day/identity w
 python3 scripts/observe-runtime.py \
   --store "$HOME/Library/Application Support/Mission Control/Dashboard.store" \
   --app "$HOME/Applications/3PO.app" \
-  --since '2026-10-12T10:40:00+00:00' \
-  --output "$HOME/Library/Application Support/3PO Development Backups/20261012-113832-reliability/observations/NEW-TIMESTAMP.json"
+  --since '2026-10-12T19:59:57.456681+00:00' \
+  --output "$HOME/Library/Application Support/3PO Development Backups/20261012-171530-prerequisite-recovery/observations/NEW-TIMESTAMP.json"
 ```
 
 Use a fresh timestamped filename; the script refuses overwrite or output in a Git checkout. It never launches the app, calls inference/source helpers, changes settings or performs native writes. Snapshot results are observation evidence, not a standalone completion verifier. Review their actual scope and the full seven-stage checklist before marking the goal complete.
