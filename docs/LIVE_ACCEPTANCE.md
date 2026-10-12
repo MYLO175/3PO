@@ -1,5 +1,13 @@
 # Installed reliability acceptance
 
+## Current candidate: compound email actions
+
+Code checkpoint `075cd75`, installed 12 October 2026 at 23:12 London / 22:12 UTC at the existing 3PO path. Executable SHA-256: `ffd9d77e8df9748b3ec27800e35cfdaa7c32a47260d0dd7c9dfb24aeb036dbe9`; debug library: `b1081e88a5db31f6b4ccf7ab64be7019a9aed705a57c1159dfb01f08070da880`. Verified backup: `/private/tmp/3po-email-actions-release-r1pieb16`. All 66 records survived replacement; 58 stayed byte-identical after relaunch, with only eight normal source/freshness caches changed. Current signed app-memory checks pass 144/144, 62/62 and 11/11. The final fictional compound-email model scenario passes 13/13; this does not establish personal action quality.
+
+This candidate supersedes the earlier installed identity below. Use 12 October 22:12:46 UTC as the conservative observation start, so its 72-hour threshold is 15 October 22:12:46 UTC at the earliest. Preserve earlier physical sleep/wake evidence as history. No manual personal heartbeat, source re-assessment or native/project approval was performed during installation; the existing midnight allowance wait remains. Existing observation history and follow-up notification policy remain unchanged.
+
+## Earlier installed checkpoints
+
 Latest candidate code checkpoint: `a26659e`, including foreground prerequisite recovery, submitted background Feedback and readable report-source labels. Installed 12 October 2026 at 20:59:57 London / 19:59:57 UTC, stable path and bundle identity. Signed executable SHA-256: `e6784c636adac8e197c85c91c6df3e242a643d76db5aeb3c738fe35da9608948`; debug library: `8463c8c8cfcebb84642f0db6bd69d67061b46ef7140b7603640a4f2176629a94`. Latest verified release backup: `/private/tmp/3po-source-labels-final-2ndjg54d`. Durable observation history remains under `~/Library/Application Support/3PO Development Backups/20261012-171530-prerequisite-recovery/observations`.
 
 The original reliability candidate `a63b2da` was installed at 10:40 UTC; `a1f4946` followed at 17:14 UTC, then background Feedback at 19:20 UTC and readable source labels at 19:59:57 UTC. Earlier checks and physical sleep/wake observations remain useful historical evidence, not 72-hour acceptance of the newer installed binary. The latest release passes five relevant source-free suites and app-memory 144/62/11; installation preserved all 66 records and 13 support files. Relaunch retained protected conversation, feedback, memory and receipt records; documented workspace clock/set-order normalisations preserve layout and filter membership. The earlier operator-assisted London completion is not normal unassisted use or proof of automatic model recovery.
