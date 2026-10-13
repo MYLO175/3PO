@@ -487,11 +487,17 @@ import Observation
             var expectedAcknowledgementContext = acknowledgementContext
             var expectedSourceMemoryIDs=Set(capturedSourceMemoryIDs)
             let expectedWeather = weatherScope
-            let validOwnership: NativeWriteValidity = { [self] in
-                guard let current = runtime.state() else { return false }
+            @MainActor func owns(_ current:AssistantRuntimeState)->Bool {
                 return reviewValid?() != false && registration == connection.activeID && (setupMode || (expectedAcknowledgements == current.acknowledgementRevision && expectedResolution == current.resolutionRevision)) && (!setupMode || (setupActive(contextID) && profileSession(contextID) == response.profileSessionID)) && selectedModel == connection.selectedModel && capturedPreferences == preferences && capturedName == displayName && expectedMemory == memory.revision && expectedProjects == projects.revision && expectedSourceMemoryIDs == Set(memory.permittedRecords.filter{$0.source != nil && MemoryRules.usable($0,registration:registration,now:runtime.clock())}.map(\.id)) && expectedWeather == current.weatherScope && whatsappScope == current.whatsappScope && topicFocus == (self.conversation(contextID)?.focus ?? "") && topicAreas == (self.conversation(contextID)?.notebookAreas ?? []) && sourceEnabled == contextEnabled && calendars == excludedCalendars && lists == excludedLists && accounts == excludedAccounts
             }
-            @MainActor func valid() -> Bool {validOwnership() && (setupMode || expectedAcknowledgementContext == runtime.state()?.acknowledgements)}
+            let validOwnership: NativeWriteValidity = {
+                guard let current=runtime.state() else {return false}
+                return owns(current)
+            }
+            @MainActor func valid() -> Bool {
+                guard let current=runtime.state() else {return false}
+                return owns(current) && (setupMode || expectedAcknowledgementContext == current.acknowledgements)
+            }
             @MainActor func setResponse(_ text: String, completed: Bool) {
                 if let c = allConversations.firstIndex(where:{ $0.id == id }), let t = allConversations[c].turns.firstIndex(where:{ $0.id == response.id }) {
                     allConversations[c].turns[t].content = text; allConversations[c].turns[t].completed = completed

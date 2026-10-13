@@ -14,6 +14,8 @@ Use one centred, palette-aware toolbar pill for the current AI job or latest rea
 
 Streaming regression follow-up: Activity must observe stable saved metadata rather than the full changing transcript. Keep source/account withdrawal checks current, but perform one history/visibility projection per toolbar render. Pre-execution progress must not fetch/decode the action ledger just to decide whether to display a status. Fresh receipt verification remains an execution/final-outcome requirement. A source-free 200-delta test verifies the transcript updates while Activity metadata remains unchanged.
 
+The live streaming profile also exposed expensive repeated native-source formatting within memory/acknowledgement validation. Cache only the pure Calendar/Reminders projection after current access/freshness/collection guards, invalidating on collection, filter, timezone, locale and day changes. Use one fresh runtime snapshot per validity decision and skip vacuous memory scans for dependency-free acknowledgements. This preserves current evidence checks rather than relaxing them or treating cached projection as write authority.
+
 The interaction is approved; source-date extraction quality, final integrated validation, installation and live acceptance remain separate. The earlier scripted checkpoint below and [trial guide](REVIEW_CONVERSATION_TRIAL.md) remain historical evidence.
 
 ## 13 October: trial conversational Review before production integration

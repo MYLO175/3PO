@@ -11,6 +11,24 @@ struct NativeLearningItem:Equatable {
     var changed:Date?
     var id:String { NativeLearningRules.hash(identity) }
 }
+
+struct NativeLearningProjectionKey:Equatable {
+    var collectionRevision:Int
+    var excluded:Set<String>
+    var timezone:String
+    var locale:String
+    var day:Date
+}
+
+/// Cache only the pure projection, after the caller's current access/freshness
+/// guards. Source collection and formatting/filter changes invalidate the key.
+@MainActor final class NativeLearningProjectionCache {
+    private var entries:[String:(key:NativeLearningProjectionKey,items:[NativeLearningItem])]=[:]
+    func items(_ kind:MemorySourceKind,key:NativeLearningProjectionKey,build:()->[NativeLearningItem])->[NativeLearningItem] {
+        if let entry=entries[kind.rawValue],entry.key == key {return entry.items}
+        let value=build();entries[kind.rawValue]=(key,value);return value
+    }
+}
 struct NativeLearningProgress:Codable {
     var enabled=false
     var started:Date?

@@ -15,14 +15,16 @@ struct CalendarRemovalReviewSession:Identifiable {
     let preparedReview = PreparedReviewStore()
     var whatsapp: WhatsAppService { services.whatsapp }
     var calendarData = CalendarSnapshot(sources: [], events: [])
-    var paOrientation: PAOrientation?
+    var paOrientation: PAOrientation? {didSet{nativeLearningProjectionRevision &+= 1}}
     var paOrientationHealth = SourceHealth()
     private(set) var orientationCollectionRevision = -1
     private(set) var reminderCollectionRevision = -1
     private(set) var completedReminderCollectionRevision = -1
     private var lastOrientationCheck = Date.distantPast
     private var heartbeatPowerMonitor:HeartbeatPowerMonitor?
-    var reminderData = ReminderSnapshot(sources: [], reminders: [])
+    var reminderData = ReminderSnapshot(sources: [], reminders: []) {didSet{nativeLearningProjectionRevision &+= 1}}
+    @ObservationIgnored var nativeLearningProjectionRevision=0
+    @ObservationIgnored let nativeLearningProjectionCache=NativeLearningProjectionCache()
     var completedReminders:[CompletedReminder] = []
     var completedReminderHealth=SourceHealth()
     var mailData = MailSnapshot(messages: [], accounts: [], errors: [])

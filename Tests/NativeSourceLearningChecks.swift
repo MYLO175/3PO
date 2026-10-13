@@ -8,6 +8,25 @@ import SwiftData
         var event=AgendaEvent(id:"occurrence",calendarID:calendar.id,title:"Orion engineering supervision",start:now.addingTimeInterval(86400),end:now.addingTimeInterval(90000),allDay:false,location:"Private address excluded",sourceLabel:calendar.label,modified:now.addingTimeInterval(-3600),memoryItemID:"stable-occurrence")
         func calendarItem()->NativeLearningItem { NativeSourceAdapters.calendar(.init(start:now,end:now.addingTimeInterval(90*86400),refreshed:now,calendar:.init(sources:[calendar],events:[event])),sources:[],now:now).first! }
         let first=calendarItem()
+        let projection=NativeLearningProjectionCache()
+        var projectionKey=NativeLearningProjectionKey(collectionRevision:1,excluded:[],timezone:"Europe/London",locale:"en_GB:gregorian",day:Calendar.current.startOfDay(for:now))
+        var projectionBuilds=0
+        for _ in 0..<200 {
+            precondition(projection.items(.calendar,key:projectionKey){projectionBuilds += 1;return [first]} == [first])
+        }
+        precondition(projectionBuilds == 1,"Repeated permission checks reuse unchanged source prose rather than recreating date formatters and hashes")
+        projectionKey.collectionRevision += 1
+        _=projection.items(.calendar,key:projectionKey){projectionBuilds += 1;return []}
+        precondition(projectionBuilds == 2,"A collected source change invalidates the projection")
+        projectionKey.excluded=[calendar.id]
+        precondition(projection.items(.calendar,key:projectionKey){projectionBuilds += 1;return []}.isEmpty && projectionBuilds == 3,"Source exclusion cannot reuse earlier permitted items")
+        projectionKey.timezone="UTC";_=projection.items(.calendar,key:projectionKey){projectionBuilds += 1;return []}
+        projectionKey.locale="fr_FR:gregorian";_=projection.items(.calendar,key:projectionKey){projectionBuilds += 1;return []}
+        projectionKey.day=projectionKey.day.addingTimeInterval(86400);_=projection.items(.calendar,key:projectionKey){projectionBuilds += 1;return []}
+        precondition(projectionBuilds == 6,"Timezone, locale and day changes rebuild source formatting")
+        _=projection.items(.reminder,key:projectionKey){projectionBuilds += 1;return []}
+        precondition(projectionBuilds == 7,"Native source kinds keep separate projections")
+        precondition(!NativeSourceAdapters.fresh(.init(lastSuccess:now.addingTimeInterval(-1801)),now:now),"Current freshness gates reject old coverage even when projected items were cached")
         precondition(!first.text.contains(event.location))
         var progress=NativeLearningRules.collecting(.init(enabled:true),items:[first],now:now)
         precondition(NativeLearningRules.batch([first],progress:progress,manual:false).isEmpty,"First opt-in is baseline")

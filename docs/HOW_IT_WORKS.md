@@ -16,6 +16,8 @@ AI Activity records work rather than ordinary conversation. Heartbeats, Review j
 
 Activity uses a small in-memory index of saved conversation/source identities and tool traces, excluding streamed reply text. It publishes metadata only when that metadata changes, resolves visibility once per toolbar render and responds to current account/source permission changes. Text streaming therefore does not rebuild Activity history. Pre-tool progress uses the typed tool name without reading native receipts; execution and final outcomes retain their fresh durable receipt checks.
 
+Streaming validity checks reuse the formatted Calendar/Reminders projection of unchanged collected snapshots. Current access, collection ownership and freshness gates run before cache use. Collection changes, excluded sources, timezone, locale and local day invalidate the projection. A validity check takes one current runtime snapshot rather than reconstructing its acknowledgement context twice. Acknowledgements with no memory dependencies skip the unrelated whole-memory scan; their existing source/permission guards still run.
+
 This describes the connected integration candidate. Installation and native live acceptance are recorded separately in STATUS; complete extraction of every supported source date is still a model-quality question.
 
 ## Separate conversational Review trial

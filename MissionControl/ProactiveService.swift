@@ -505,6 +505,7 @@ struct ProactiveReviewContext {
     func reviewAcknowledgementSupportAvailable(memory:[MemoryDependency]?,whatsapp:[WhatsAppWindowDependency]?,use:AutomaticMemoryUse,mailAccounts:Set<String>?,whatsappReady:Bool)->Bool {
         guard memoryDependenciesAvailable(memory,use:use),whatsappDependenciesAvailable(whatsapp,use:use),whatsappReady || (whatsapp?.isEmpty ?? true) else {return false}
         let dependencies=Set((memory ?? []).map(\.id))
+        guard !dependencies.isEmpty else {return true}
         return assistant.memory.permittedRecords.filter{dependencies.contains($0.id.uuidString)}.allSatisfy{fact in fact.allSourceEvidence.allSatisfy{source in
             if source.identity.kind == .mail {return mailAccounts?.contains(source.identity.accountID) ?? true}
             if source.identity.kind == .whatsapp {return whatsappReady}
