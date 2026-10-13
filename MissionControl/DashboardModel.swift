@@ -160,8 +160,11 @@ struct CalendarRemovalReviewSession:Identifiable {
     private var changes: Task<Void, Never>?
     private var poll: Task<Void, Never>?
     private var previewTask: Task<Void, Never>?
+    @ObservationIgnored private let nativeReconciliation = NativeReconciliation()
+    private var nativeWriteGeneration = 0
     private var pendingCalendarRefresh = false
     private var pendingReminderRefresh = false
+    private var pendingOrientationRefresh = false
     private var started = false
     private var sample: Bool { ProcessInfo.processInfo.arguments.contains("--sample") }
 
@@ -449,6 +452,35 @@ struct CalendarRemovalReviewSession:Identifiable {
         selectedDate = Calendar.current.startOfDay(for: date)
         Task { await refreshCalendar() }
     }
+    private var nativeCollectionScope: NativeCollectionScope {
+        .init(registration:chatGPT.activeID,sourceRevision:sourceRevision,writeGeneration:nativeWriteGeneration,storage:container.map(ObjectIdentifier.init))
+    }
+    /// Only verified writes call this. Receipts are durable before collection begins.
+    private func reconcileVerifiedNativeWrite(_ kind: NativeItemKind, owner: NativeCollectionScope) {
+        nativeWriteGeneration += 1
+        if kind == .event { widgetCalendars.invalidate();orientationCollectionRevision = -1 }
+        else { reminderCollectionRevision = -1;completedReminderCollectionRevision = -1 }
+        nativeReconciliation.schedule(kind == .event ? .calendar : .reminders) { [weak self] kind in
+            guard let self,owner.registration == self.chatGPT.activeID,owner.storage == self.container.map(ObjectIdentifier.init) else { return }
+            switch kind {
+            case .calendar:
+                await self.refreshCalendar()
+                await self.refreshPAOrientation()
+            case .reminders: await self.refreshReminders()
+            }
+        }
+    }
+    #if DEBUG
+    /// Fictional source-reader regression only; this never performs a native write.
+    func reconcileVerifiedNativeWriteFixture(_ kind: NativeItemKind) throws {
+        guard ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") else { throw IntegrationError.verification }
+        reconcileVerifiedNativeWrite(kind,owner:nativeCollectionScope)
+    }
+    func finishNativeReconciliationFixture() async throws {
+        guard ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") else { throw IntegrationError.verification }
+        await nativeReconciliation.waitForPending()
+    }
+    #endif
     func refreshCalendar() async {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") { return }
@@ -456,12 +488,17 @@ struct CalendarRemovalReviewSession:Identifiable {
         guard !sample else { return }
         if calendarHealth.loading { pendingCalendarRefresh = true; return }
         calendarHealth.loading = true
-        let start = selectedDate
+        let start = selectedDate, ownership = nativeCollectionScope
         let end = Calendar.current.date(byAdding: .day, value: 7, to: start)!
         let result = await NativeSourceCollection(snapshot: calendarData, health: calendarHealth).collecting {
             let snapshot = try await nativeSources.calendar(from: start, to: end)
             guard start == selectedDate else { throw NativeSourceReadError.unavailable("Selected calendar range changed") }
             return snapshot
+        }
+        guard ownership == nativeCollectionScope else {
+            calendarHealth.loading=false
+            if pendingCalendarRefresh { pendingCalendarRefresh=false;await refreshCalendar() }
+            return
         }
         calendarData = result.snapshot; calendarHealth = result.health
         persistCollection("calendar", healthKey: "calendarHealth", snapshot: calendarData, health: calendarHealth)
@@ -471,17 +508,24 @@ struct CalendarRemovalReviewSession:Identifiable {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") { return }
         #endif
-        guard !sample, assistant.contextEnabled, !paOrientationHealth.loading else { return }
+        guard !sample, assistant.contextEnabled else { return }
+        if paOrientationHealth.loading { pendingOrientationRefresh=true;return }
         lastOrientationCheck = .now; paOrientationHealth.loading = true
+        let ownership=nativeCollectionScope
         let start = Calendar.current.startOfDay(for:.now), end = Calendar.current.date(byAdding:.day,value:90,to:start)!, revision = sourceRevision
         do {
             let snapshot = try await nativeSources.calendar(from:start,to:end)
-            guard revision == sourceRevision else { paOrientationHealth.loading = false; paOrientationHealth.error = "Source changed during orientation; refresh pending."; return }
+            guard ownership == nativeCollectionScope else {
+                paOrientationHealth.loading=false
+                if pendingOrientationRefresh { pendingOrientationRefresh=false;await refreshPAOrientation() }
+                return
+            }
             paOrientation = PAOrientation(start:start,end:end,refreshed:.now,calendar:snapshot)
             paOrientationHealth = .init(lastSuccess:.now)
             orientationCollectionRevision = revision
             persist("paOrientation",paOrientation); persist("paOrientationHealth",paOrientationHealth)
-        } catch { paOrientationHealth.error = error.localizedDescription; paOrientationHealth.loading = false }
+        } catch { if ownership == nativeCollectionScope { paOrientationHealth.error = error.localizedDescription }; paOrientationHealth.loading = false }
+        if pendingOrientationRefresh { pendingOrientationRefresh=false;await refreshPAOrientation() }
     }
     func refreshReminders() async {
         #if DEBUG
@@ -490,11 +534,16 @@ struct CalendarRemovalReviewSession:Identifiable {
         guard !sample else { return }
         if reminderHealth.loading { pendingReminderRefresh = true; return }
         reminderHealth.loading = true
-        let collectionRevision=sourceRevision
+        let collectionRevision=sourceRevision,ownership=nativeCollectionScope
         let result = await NativeSourceCollection(snapshot: reminderData, health: reminderHealth).collecting {
             let snapshot = try await nativeSources.reminders()
             guard collectionRevision == sourceRevision else { throw NativeSourceReadError.unavailable("Reminders source choices changed") }
             return snapshot
+        }
+        guard ownership == nativeCollectionScope else {
+            reminderHealth.loading=false
+            if pendingReminderRefresh { pendingReminderRefresh=false;await refreshReminders() }
+            return
         }
         reminderData = result.snapshot; reminderHealth = result.health
         if reminderHealth.error == nil {reminderCollectionRevision = collectionRevision}
@@ -504,6 +553,10 @@ struct CalendarRemovalReviewSession:Identifiable {
                 let items = try await nativeSources.completedReminders(excluded: assistant.excludedLists)
                 guard collectionRevision == sourceRevision else { throw NativeSourceReadError.unavailable("Completion source choices changed") }
                 return items
+            }
+            guard ownership == nativeCollectionScope else {
+                if pendingReminderRefresh { pendingReminderRefresh=false;await refreshReminders() }
+                return
             }
             completedReminders = completed.snapshot; completedReminderHealth = completed.health
             if completed.health.error == nil {completedReminderCollectionRevision = collectionRevision}
@@ -772,6 +825,7 @@ struct CalendarRemovalReviewSession:Identifiable {
             capturedDiscovery=record
         }
         guard !writing,!assistant.busy,request.registration == chatGPT.activeID,approvalRevision == sourceRevision,approvalModel == chatGPT.selectedModel,approvalGeneration == emailSummaries.reviewFeedbackGeneration else {throw ActionFailure.message("Another operation started; nothing saved.")}
+        let nativeOwner=nativeCollectionScope
         let sourceScope=proactive.scope(self),selectedModel=chatGPT.selectedModel,ownedDiscovery=capturedDiscovery,generation=emailSummaries.reviewFeedbackGeneration
         try NativeCreationRules.validate(request:request,baseline:baseline,edited:edited)
         try nativeCreations.begin(request)
@@ -781,7 +835,7 @@ struct CalendarRemovalReviewSession:Identifiable {
             let receipt = try await eventKit.createItem(request:request,baseline:baseline,edited:edited,scope:sourceScope,valid:{request.registration == self.chatGPT.activeID && sourceScope == self.proactive.scope(self) && selectedModel == self.chatGPT.selectedModel && generation == self.emailSummaries.reviewFeedbackGeneration && (ownedDiscovery.map{self.proactive.state.records.contains($0) && self.proactive.visible($0,model:self)} ?? true)})
             try nativeCreations.complete(request,receipt:receipt)
             showFeedback("Created " + receipt.title + " · " + receipt.destination)
-            widgetCalendars.invalidate(); await refreshCalendar(); await refreshReminders(); await refreshPAOrientation()
+            reconcileVerifiedNativeWrite(request.kind,owner:nativeOwner)
         } catch {
             let text = error.localizedDescription + " Check Apple Calendar or Reminders before creating another item; this save will not be repeated automatically."
             writeError = text; throw ActionFailure.message(text)
@@ -803,6 +857,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         guard !sample, !writing, !assistant.busy else { throw ActionFailure.message("Another change is in progress; wait before saving.") }
         writing = true; writeError = nil
         defer { writing = false }
+        let nativeOwner=nativeCollectionScope
         var claimedReview=false
         do {
             let valid:NativeWriteValidity = { [self] in
@@ -814,11 +869,11 @@ struct CalendarRemovalReviewSession:Identifiable {
             } }
             let saved = try await eventKit.saveEdit(baseline:baseline,edited:edited,scope:scope,valid:valid,claim:review == nil ? nil : claim)
             editUndo = NativeEditRules.supportsUndo(baseline:baseline,edited:edited,scope:scope) ? NativeEditUndo(original:baseline,saved:saved) : nil
-            widgetCalendars.invalidate()
+            if saved.kind == .event { widgetCalendars.invalidate() }
             do {if let review {try proactive.finishReview(review.discoveryID,registration:review.registration)}}
-            catch {await refreshCalendar();await refreshReminders();throw error}
+            catch {reconcileVerifiedNativeWrite(saved.kind,owner:nativeOwner);throw error}
             showFeedback("Updated: " + saved.title)
-            await refreshCalendar(); await refreshReminders()
+            reconcileVerifiedNativeWrite(saved.kind,owner:nativeOwner)
         } catch {
             if error is NativePreSaveFailure,claimedReview,let review {try? proactive.abortReview(review.discoveryID,registration:review.registration)}
             writeError = error.localizedDescription;throw error
