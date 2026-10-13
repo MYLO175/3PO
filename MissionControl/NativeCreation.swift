@@ -8,6 +8,8 @@ struct NativeCreationRequest: Identifiable {
     var title = ""
     var notes = ""
     var discoveryID: String?
+    /// Exact displayed proposal captured when the form opened; no live source dependency.
+    var discoveryApproval: Data? = nil
     var evidence: String?
     var requiresDateSelection = false
     var suggestedStart: Date? = nil

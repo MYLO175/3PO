@@ -554,17 +554,8 @@ struct LifeItemEditor: View {
         if item.kind == .project,parentChanged { item.placement = .init(status:"placed",reason:"Your chosen home is pinned.",parentPinned:true) }
         do {
             if let proposal=reviewedSuggestion {
-                guard expected == nil,model.proactive.visible(proposal,model:model),proposal.registration == model.chatGPT.activeID else { throw LifeWorkspaceFailure.message("The source suggestion changed or is no longer permitted. Your draft is kept.") }
-                try await model.validateDiscoverySourceForSave(proposal)
-                if let target=proposal.proposedProjectTask?.target {
-                    guard model.assistant.projects.items(item.registration,includeTopics:true).contains(where:{$0.id == target.id && $0.revision == target.revision && !$0.kind.isWork}) else {throw LifeWorkspaceFailure.message("The target space changed; reopen the suggestion.")}
-                }
-                item.humanEvidence="Accepted a reviewed PA " + item.kind.title.lowercased() + " suggestion."
-                let reference:LifeReference
-                if proposal.sourceKind == "whatsapp",let chat=proposal.sourceChatID,let message=proposal.sourceMessageID,let identity=proposal.sourceIdentity,let version=proposal.sourceRevision { reference = .init(kind:.whatsapp,id:message,containerID:chat,linkedIdentity:identity,contentRevision:version) }
-                else if let message=model.emailSummaries.highlights(model).first(where:{$0.0.id == proposal.mailID})?.0 { reference = .init(kind:.mail,id:message.id,containerID:message.accountID,contentRevision:message.internetMessageID) }
-                else { throw LifeWorkspaceFailure.message("The original source is unavailable; no space saved.") }
-                _ = try model.assistant.projects.create([item],receipt:.init(id:"project-suggestion:"+proposal.id,registration:item.registration,result:"Created a human-reviewed " + item.kind.title.lowercased() + ".",itemID:item.id),links:[.init(registration:item.registration,conversationID:item.conversationID,from:item.id,relation:.evidence,target:reference)])
+                guard expected == nil else {throw LifeWorkspaceFailure.message("This task already exists. Reopen it to edit it.")}
+                try model.savePreparedProjectItem(item,proposal:proposal)
             } else { _ = try model.assistant.projects.save(item, expected: expected) }
             model.projectPlacement.check(model);close()
         } catch { self.error = error.localizedDescription }
