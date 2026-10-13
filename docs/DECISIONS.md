@@ -1,5 +1,9 @@
 # Decisions
 
+## 13 October: trial conversational Review before production integration
+
+The user requested a separate worktree comparison of plain-language multi-action plans and a centred chat/status pill. The first checkpoint uses scripted example data and simulated serial jobs. Review turns stay separate from general Chat; accepted action snapshots survive page/sheet navigation; partial/unconfirmed outcomes remain visible. No production queue, toolbar, model prompt or Apple/project operation is changed. Durable Review conversations, joined heartbeat-to-job scheduling and receipt-driven connected execution require the explicit acceptance in [the trial guide](REVIEW_CONVERSATION_TRIAL.md) before merging.
+
 ## 13 October: detailed date rejection diagnostics
 
 Heartbeat history identifies each withheld action and its captured source title, proposed start/end, date-only/timed flag, timezone and exact rejection reason. Bounded account-owned metadata retains canonical source/evidence IDs but no source bodies, model messages or raw response. Details are selectable and snapshotted into the original run; a later skipped comparison cannot repeat the old warning as new work. Historical generic warnings remain unchanged because rejected values were never retained. Cross-entry replacement/handled conflicts now identify the affected row as well.

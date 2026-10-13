@@ -1,5 +1,9 @@
 # Next improvements
 
+## Conversational Review and one AI activity pill
+
+Requested 13 October. An isolated native interaction prototype now demonstrates multi-action plans, Review-scoped replies, heartbeat-to-request handoff and persistent partial-failure details. It is scripted and source-free. Connected reasoning, durable job recovery, account/source/approval guards and truthful receipt-based outcomes remain open before merging. See [trial guide and acceptance](REVIEW_CONVERSATION_TRIAL.md).
+
 ## 13 October: detailed date rejection diagnostics
 
 Heartbeat history identifies each withheld action and its captured source title, proposed start/end, date-only/timed flag, timezone and exact rejection reason. Bounded account-owned metadata retains canonical source/evidence IDs but no source bodies, model messages or raw response. Details are selectable and snapshotted into the original run; a later skipped comparison cannot repeat the old warning as new work. Historical generic warnings remain unchanged because rejected values were never retained. Cross-entry replacement/handled conflicts now identify the affected row as well.

@@ -56,10 +56,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if ProcessInfo.processInfo.arguments.contains("--dark-window") { return .dark }
         switch appearance { case "light": return .light; case "dark": return .dark; default: return nil }
     }
+    private var reviewTrial:Bool {ProcessInfo.processInfo.arguments.contains("--preview-review-conversation")}
     var body: some Scene {
-        Window("3PO", id: ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") ? "reviewInboxPreview" : ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") ? "reviewInboxValidation" : ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") ? "lifePlansPreview" : ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") ? "commitmentValidation" : ProcessInfo.processInfo.arguments.contains("--validate-advice-context") ? "adviceValidation" : ProcessInfo.processInfo.arguments.contains("--preview-memory-review") ? "memoryReviewPreview" : "dashboard") {
+        Window(reviewTrial ? "3PO · Review trial" : "3PO", id: reviewTrial ? "reviewConversationTrial" : ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") ? "reviewInboxPreview" : ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") ? "reviewInboxValidation" : ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") ? "lifePlansPreview" : ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") ? "commitmentValidation" : ProcessInfo.processInfo.arguments.contains("--validate-advice-context") ? "adviceValidation" : ProcessInfo.processInfo.arguments.contains("--preview-memory-review") ? "memoryReviewPreview" : "dashboard") {
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") {
+            if reviewTrial {
+                ReviewConversationTrialView()
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") {
                 CalendarDragPreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {
                 if ProcessInfo.processInfo.arguments.contains("--heartbeat-progress-preview") {HeartbeatProgressPreviewScreen(model:model)}
@@ -89,6 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }.defaultSize(width: ProcessInfo.processInfo.arguments.contains("--small-window") ? 820 : 1200, height: ProcessInfo.processInfo.arguments.contains("--small-window") ? 640 : 780)
         .windowToolbarStyle(.unifiedCompact(showsTitle:false))
         .commands {
+            if !reviewTrial {
             WorkspaceCommands(model:model)
             HelpCommands()
             #if DEBUG
@@ -109,16 +113,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 }
             }
             #endif
+            }
         }
-        MenuBarExtra {
+        MenuBarExtra(isInserted:.constant(!reviewTrial)) {
             MenuContent(model: model)
         } label: {
             Image(nsImage: MenuBarIcon.image)
                 .accessibilityLabel("3PO")
         }
-        Settings { SettingsView(model: model).preferredColorScheme(selectedColorScheme) }
+        Settings { if reviewTrial {Text("Review trial · use the demo controls in the toolbar.").padding()} else {SettingsView(model: model).preferredColorScheme(selectedColorScheme)} }
         Window("3PO Help",id:"help") {
-            PAHelpView(model:model).preferredColorScheme(selectedColorScheme)
+            if reviewTrial {Text("Review trial · scripted example data and simulated jobs.").padding()} else {PAHelpView(model:model).preferredColorScheme(selectedColorScheme)}
         }.defaultSize(width:760,height:650)
     }
 }

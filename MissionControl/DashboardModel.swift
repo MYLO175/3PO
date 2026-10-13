@@ -171,6 +171,13 @@ struct CalendarRemovalReviewSession:Identifiable {
 
     init(nativeSources: (any NativeSourceReading)? = nil) {
         injectedNativeSources = nativeSources
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--preview-review-conversation") {
+            do {container=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))}
+            catch {storageError="Trial storage unavailable"}
+            return
+        }
+        #endif
         defer { chatGPT.usageStore = aiUsage }
         // Read all saved filters before observable property setters persist any
         // values; otherwise the first setter erases later filters during init.
@@ -203,6 +210,7 @@ struct CalendarRemovalReviewSession:Identifiable {
     func start() {
         guard !started else { return }; started = true
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--preview-review-conversation") { return }
         if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") { return }
         if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") || ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") || ProcessInfo.processInfo.arguments.contains("--preview-memory-review") || ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") {return}
         if ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") {

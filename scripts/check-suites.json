@@ -837,6 +837,15 @@
       ]
     },
     {
+      "id": "review-conversation-trial",
+      "tier": "source-free",
+      "script": "scripts/test-review-conversation-trial.sh",
+      "effects": [
+        "scripted in-memory Review actions, serial job outcomes and DEBUG launch guard",
+        "no app launch, source access, inference, personal storage or native writes"
+      ]
+    },
+    {
       "id": "runtime-performance",
       "tier": "performance",
       "script": "scripts/test-runtime-performance.sh",

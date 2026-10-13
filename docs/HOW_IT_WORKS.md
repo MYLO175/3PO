@@ -1,5 +1,9 @@
 # How Mission Control works
 
+## Separate conversational Review trial
+
+A DEBUG [interactive trial](REVIEW_CONVERSATION_TRIAL.md) explores one explanation with several project/Calendar actions and a centred AI activity pill. Its Review replies wait behind a simulated heartbeat, remain outside general Chat and report per-action outcomes. It uses in-memory fictional data and scripted replies; production Review and real jobs still follow the implementation below.
+
 ## 13 October: detailed date rejection diagnostics
 
 Heartbeat history identifies each withheld action and its captured source title, proposed start/end, date-only/timed flag, timezone and exact rejection reason. Bounded account-owned metadata retains canonical source/evidence IDs but no source bodies, model messages or raw response. Details are selectable and snapshotted into the original run; a later skipped comparison cannot repeat the old warning as new work. Historical generic warnings remain unchanged because rejected values were never retained. Cross-entry replacement/handled conflicts now identify the affected row as well.

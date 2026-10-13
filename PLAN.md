@@ -1,5 +1,7 @@
 # Mission Control specification
 
+13 October requested trial: conversational multi-action Review plans, isolated Review replies queued behind heartbeat, and a centred AI activity pill. Explore and compare in a separate worktree before merging. This checkpoint is an interactive source-free DEBUG prototype, not connected production execution. See [trial and production acceptance](docs/REVIEW_CONVERSATION_TRIAL.md).
+
 13 October approved date follow-up: persist bounded rejected-entry diagnostics showing action/source title, proposed start/end, date mode/timezone and exact validation reason; use a fresh owned comparison to diagnose and fix the underlying issue. Preserve prior history, row isolation, current ownership/evidence checks and human approval for all actual operations.
 
 13 October approved follow-up: fix repeated Suggestions & drafts failures and verify that a corrected contact reminder retires the obsolete creation suggestion. Constrain the typed schema by action/source, reconsider historical saved cards separately from current advice, retain exact current target/snapshot guards, and test mixed retirement plus fresh action cases.
