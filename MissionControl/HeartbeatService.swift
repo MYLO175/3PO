@@ -155,6 +155,11 @@ import SwiftData
     var composerActive: Bool { lastTyping.map { clock().timeIntervalSince($0) < 120 } ?? false }
     func userStartedTyping() { lastTyping = clock(); cancel() }
     func cancel() { task?.cancel() }
+    func cancelAndWait() async {
+        let active=task
+        active?.cancel()
+        await active?.value
+    }
     func check(runtime:HeartbeatRuntime,manual:Bool = false) {
         let environment=runtime.environment(),registration=environment.registration
         guard deviceAvailable,readable,(manual || enabled),!busy,!registration.isEmpty,environment.permitted else { return }
@@ -251,6 +256,15 @@ import SwiftData
                 guard PAHeartbeatRules.canClaim(account,day:BriefingRules.day(clock()),limit:dailyCallLimit) else { throw HeartbeatBudgetExhausted() }
                 account.phase="assessing"; state.accounts[registration]=account; try save()
                 status="Reviewing your enabled context…"
+                try step("feedback","running")
+                try requireOwned()
+                let feedback=try await runtime.feedback(.init(registration:registration,manual:manual,runID:runID,mailReview:mailReview,whatsappReady:whatsappReady,claim:{try self.claimCall(registration,runID:runID)},validate:{try requireOwned()}))
+                try requireOwned()
+                if let error=feedback.failure {
+                    stageFailures.append("Feedback: "+String(error.prefix(400)))
+                    try step("feedback","failed",error)
+                } else {try step("feedback",feedback.skipped ? "skipped" : "done",feedback.detail)}
+                if !PAHeartbeatRules.canClaim(state.accounts[registration] ?? account,day:BriefingRules.day(clock()),limit:dailyCallLimit) {throw HeartbeatBudgetExhausted()}
                 try step("email",runtime.environment().emailEnabled ? "running" : "skipped")
                 // Existing classifier is serial, selective and preserves its
                 // original monitoring start/decisions; this is not a new backlog.
@@ -522,7 +536,7 @@ import SwiftData
         checks["unreadable original cache is preserved"] = try badStore.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first?.data == badData
         // Exercise the real orchestration with injected source-free children,
         // including failures which used to prevent the brief from ever running.
-        for scenario in ["email failure","suggestions failure","learning failure","missing sources","foreground stop","successful cycle","capped email failure"] {
+        for scenario in ["email failure","feedback failure","suggestions failure","learning failure","missing sources","foreground stop","successful cycle","capped email failure"] {
             let cycleStore=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
             let cycle=HeartbeatService(container:cycleStore,settings:validationSettings,clock:{now},deviceState:{device})
             cycle.dailyCallLimit=0
@@ -539,6 +553,11 @@ import SwiftData
             ports.prepareSources={request in try request.validate();order.append("snapshots");return snapshots}
             ports.currentSources={_ in snapshots}
             ports.activity={_,_ in .init(briefUpdated:updated)}
+            ports.feedback={request in
+                try request.validate();order.append("feedback")
+                if scenario == "feedback failure" {try request.claim()}
+                return .init(failure:scenario == "feedback failure" ? "fixture feedback failure" : nil,skipped:scenario != "feedback failure")
+            }
             ports.email={request in
                 try request.validate();try request.claim();expired=request;order.append("email")
                 if scenario == "foreground stop" {cycle.userStartedTyping()}
@@ -561,22 +580,22 @@ import SwiftData
             if scenario == "capped email failure" {
                 checks["final allowed call retains its actual email failure before allowance wait"] = history?.steps?.first{$0.id == "email"}?.detail == "fixture transport failure" && history?.steps?.first{$0.id == "email"}?.status == "failed" && !updated && saved?.retryReason == "allowance" && saved?.calls == 8
             } else if scenario == "foreground stop" {
-                checks["orchestration stops all later stages when foreground takes ownership"] = !cycle.busy && !updated && order == ["snapshots","email"] && history?.phase == "interrupted"
+                checks["orchestration stops all later stages when foreground takes ownership"] = !cycle.busy && !updated && order == ["snapshots","feedback","email"] && history?.phase == "interrupted"
             } else {
                 checks["orchestration writes brief after \(scenario)"] = !cycle.busy && updated && order.last == "brief" && history?.briefUpdated == true
                 if scenario.hasSuffix("failure") {
-                    let failedStage=scenario == "email failure" ? "email" : scenario == "learning failure" ? "learning" : "suggestions"
+                    let failedStage=scenario == "feedback failure" ? "feedback" : scenario == "email failure" ? "email" : scenario == "learning failure" ? "learning" : "suggestions"
                     checks["orchestration retains exact failed stage and schedules fresh recovery: \(scenario)"] = history?.steps?.first{$0.id == failedStage}?.status == "failed" && history?.outcome() == "Partly completed" && saved?.retryAfter == now.addingTimeInterval(Double(cycle.intervalMinutes)*60) && saved?.pending == true
                 }
                 if scenario == "missing sources" {checks["missing native cache does not start suggestions or block cached brief"] = !order.contains("suggestions") && history?.steps?.first{$0.id == "sources"}?.status == "waiting"}
-                if scenario == "successful cycle" {checks["full orchestration records all five stages in order"] = order == ["snapshots","email","learning","suggestions","brief"] && history?.outcome() == "Completed"}
+                if scenario == "successful cycle" {checks["full orchestration records all six stages in order"] = order == ["snapshots","feedback","email","learning","suggestions","brief"] && history?.outcome() == "Completed"}
             }
             checks["completed child cannot claim or save after parent ended: \(scenario)"] = {guard let expired else{return false};do{try expired.validate();return false}catch{do{try expired.claim();return false}catch{return true}}}()
         }
         let currentPreferences=UserDefaults.standard.dictionaryRepresentation()
         let changedKeys=Set(preferences.allKeys.compactMap{$0 as? String}).union(currentPreferences.keys).filter{!NSDictionary(dictionary:["value":preferences[$0] ?? NSNull()]).isEqual(to:["value":currentPreferences[$0] ?? NSNull()])}.sorted()
         checks["real settings remain unchanged"] = changedKeys.allSatisfy{$0 == "METAL_DEVICE_WRAPPER_TYPE" || $0 == "NSWindow Frame reviewInboxValidation"}
-        return ["checks":checks,"passed":checks.values.filter{$0}.count,"total":checks.count,"storage":"Fictional in-memory SwiftData; actual HeartbeatService claims, completion and recovery. Virtual 72-slot timeline plus seven actual orchestration scenarios with injected children; not real OS sleep/wake or provider acceptance.","AIRequests":0,"nativeChanges":0,"timelineCompleted":cycles,"timelineAllowanceWaits":limits,"timelineSourceRetries":outages,"changedPreferenceKeys":changedKeys]
+        return ["checks":checks,"passed":checks.values.filter{$0}.count,"total":checks.count,"storage":"Fictional in-memory SwiftData; actual HeartbeatService claims, completion and recovery. Virtual 72-slot timeline plus eight actual orchestration scenarios with injected children; not real OS sleep/wake or provider acceptance.","AIRequests":0,"nativeChanges":0,"timelineCompleted":cycles,"timelineAllowanceWaits":limits,"timelineSourceRetries":outages,"changedPreferenceKeys":changedKeys]
     }
     func withRunningReviewFixture<T>(_ operation:()->T)->T {
         let original=busy;busy=true;defer{busy=original};return operation()

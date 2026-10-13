@@ -7,6 +7,7 @@ import SwiftData
     private(set) var busy=false
     private(set) var error:String?
     private var task:Task<Void,Never>?
+    func cancelAndWait(heartbeatRunID:String) async {guard ownedHeartbeatRunID == heartbeatRunID else {return};let active=task;active?.cancel();await active?.value}
     private var state=SourceContextState()
     private let container:ModelContainer?
     private var readable=true

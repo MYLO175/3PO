@@ -143,7 +143,7 @@ struct ReviewFeedbackEditor:View {
                 TextEditor(text:$learnedRule).frame(height:90).font(.body).border(Color.secondary.opacity(0.25))
                 Text("Edit the learned preference directly. Changing your feedback or topic clears the old interpretation; you can write a new preference or keep only your words.").font(.caption).foregroundStyle(.secondary)
             } else if email != nil {
-                Text("Submit your feedback and carry on using the app. Your PA will learn from this email in the background. Progress and any retry are available on the card and in Review preferences; your original words remain as evidence.").font(.caption).foregroundStyle(.secondary)
+                Text("Your feedback is saved for the next heartbeat. You can dismiss the email and carry on; the feedback remains in Review preferences, where Process now starts it immediately. Your original words remain as evidence.").font(.caption).foregroundStyle(.secondary)
             } else {
                 Text("This preference is saved locally. Feedback on an email also lets your PA reason about that email's context.").font(.caption).foregroundStyle(.secondary)
             }
@@ -181,7 +181,8 @@ struct ReviewFeedbackProgressView:View {
                 DisclosureGroup("Saved preference") {Text(saved.text).textSelection(.enabled)}
                 if job.state != .saved {Button("Update saved status") {_=model.emailSummaries.feedback.markSaved(job.id)}}
             } else {
-                HStack {if job.pending {ProgressView().controlSize(.mini)};Text(job.state == .stopped && model.emailSummaries.feedback.activeID == job.id ? "Stopping feedback…" : job.status);if job.pending {Button("Stop") {model.emailSummaries.feedback.stop(job.id)}}}
+                HStack {if job.state == .learning || job.state == .saving {ProgressView().controlSize(.mini)};Text(job.state == .stopped && model.emailSummaries.feedback.activeID == job.id ? "Stopping feedback…" : job.status);if job.pending {Button("Stop") {model.emailSummaries.feedback.stop(job.id)}}}
+                if job.state == .queued {Button("Process now") {_=model.emailSummaries.processFeedbackNow(job,model:model)}}
                 if let error=job.error {Text(error).foregroundStyle(.orange).textSelection(.enabled)}
                 if !job.pending && job.state != .saved && model.emailSummaries.feedback.activeID != job.id {
                     HStack {Button("Retry learning") {_=model.emailSummaries.retryFeedback(job,model:model)};Button("Save only my words") {_=model.emailSummaries.saveFeedbackWords(job,model:model)}}

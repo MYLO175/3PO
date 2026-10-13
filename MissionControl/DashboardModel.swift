@@ -807,8 +807,11 @@ struct CalendarRemovalReviewSession:Identifiable {
     }
     func createNativeItem(_ request: NativeCreationRequest, baseline: NativeEditDetails, edited: NativeEditDetails, dateSelected: Bool) async throws {
         guard !sample, !writing, !assistant.busy, request.registration == chatGPT.activeID else { throw ActionFailure.message("Another change or account switch is in progress; reopen the form when ready.") }
-        let approvalRevision=sourceRevision,approvalModel=chatGPT.selectedModel,approvalGeneration=emailSummaries.reviewFeedbackGeneration
         if request.requiresDateSelection && !dateSelected { throw ActionFailure.message("Choose the event's date and time before creating it.") }
+        // The explicit save owns the foreground, including its fresh source checks.
+        heartbeat.cancel();emailSummaries.cancelReviewFeedback()
+        writing=true;defer {writing=false}
+        let approvalRevision=sourceRevision,approvalModel=chatGPT.selectedModel,approvalGeneration=emailSummaries.reviewFeedbackGeneration
         var capturedDiscovery:PADiscovery?
         if let discovery = request.discoveryID {
             guard let record = proactive.state.records.first(where:{ $0.id == discovery && $0.registration == request.registration }), proactive.visible(record,model:self),!record.needsDateClarification else { throw ActionFailure.message("This suggestion or its enabled source changed, or its date needs clarification; reopen it before creating anything.") }
@@ -824,13 +827,12 @@ struct CalendarRemovalReviewSession:Identifiable {
             }
             capturedDiscovery=record
         }
-        guard !writing,!assistant.busy,request.registration == chatGPT.activeID,approvalRevision == sourceRevision,approvalModel == chatGPT.selectedModel,approvalGeneration == emailSummaries.reviewFeedbackGeneration else {throw ActionFailure.message("Another operation started; nothing saved.")}
+        guard !assistant.busy,request.registration == chatGPT.activeID,approvalRevision == sourceRevision,approvalModel == chatGPT.selectedModel,approvalGeneration == emailSummaries.reviewFeedbackGeneration else {throw ActionFailure.message("Another operation started; nothing saved.")}
         let nativeOwner=nativeCollectionScope
         let sourceScope=proactive.scope(self),selectedModel=chatGPT.selectedModel,ownedDiscovery=capturedDiscovery,generation=emailSummaries.reviewFeedbackGeneration
         try NativeCreationRules.validate(request:request,baseline:baseline,edited:edited)
         try nativeCreations.begin(request)
-        writing = true; writeError = nil; nativeWriteNotice = nil
-        defer { writing = false }
+        writeError = nil; nativeWriteNotice = nil
         do {
             let receipt = try await eventKit.createItem(request:request,baseline:baseline,edited:edited,scope:sourceScope,valid:{request.registration == self.chatGPT.activeID && sourceScope == self.proactive.scope(self) && selectedModel == self.chatGPT.selectedModel && generation == self.emailSummaries.reviewFeedbackGeneration && (ownedDiscovery.map{self.proactive.state.records.contains($0) && self.proactive.visible($0,model:self)} ?? true)})
             try nativeCreations.complete(request,receipt:receipt)
@@ -855,6 +857,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {throw ActionFailure.message("Fictional preview is read-only; no Apple write.")}
         #endif
         guard !sample, !writing, !assistant.busy else { throw ActionFailure.message("Another change is in progress; wait before saving.") }
+        heartbeat.cancel();emailSummaries.cancelReviewFeedback()
         writing = true; writeError = nil
         defer { writing = false }
         let nativeOwner=nativeCollectionScope

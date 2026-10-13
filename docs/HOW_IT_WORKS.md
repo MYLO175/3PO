@@ -1,5 +1,15 @@
 # How Mission Control works
 
+## 13 October: responsiveness and heartbeat feedback
+
+Review inbox rendering now shares one synchronous permitted-email/context projection across saved suggestions, rather than rebuilding every email highlight for every suggestion. It is not reused across awaits or native authority checks; changing source permissions is visible on the next projection.
+
+A native creation/edit returns after verified Apple readback and a durable receipt. Only the affected source refreshes afterwards; overlapping refreshes coalesce and pre-write snapshots cannot replace newer state. Explicit saves interrupt background heartbeat/feedback and own the foreground during fresh source validation. A failed subsequent collection retains the previous snapshot and does not turn a verified save into an uncertain write.
+
+Submitting email feedback saves the human words immediately for a heartbeat. One queued item is interpreted before email analysis per cycle, within the whole-run allowance. Dismiss acknowledges the email without deleting its submitted feedback; Review preferences retains progress, Stop and Process now. Process now explicitly interrupts the current heartbeat. Never-started queued work may survive reopening; attempted/interrupted or uncertain work requires explicit retry. Stable source choices and exact email/assessment receipts reject changed inputs, without treating an unrelated collection refresh as changed consent.
+
+Acceptance remains separate from implementation: verify the actual projection/coordinator, feedback priority and reopen guards, then compare installed navigation profiles. Accessibility click timings include inspection overhead and are not frame-latency benchmarks. Slow provider reads and sustained larger-data behaviour remain open.
+
 ## Heartbeats: analysis of saved context
 
 Source collection runs independently without AI. A heartbeat reads available saved context, reviews email, offers one eligible bounded memory/organisation pass, prepares useful suggestions and writes today’s brief. A failed review or suggestion stage keeps its details and pending work while the brief can still finish. History distinguishes partial completion from a complete run. Stopping, typing, sleeping, changing account/permissions or reaching an AI limit still prevents later work.

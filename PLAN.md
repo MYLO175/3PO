@@ -1,5 +1,7 @@
 # Mission Control specification
 
+13 October responsiveness refinement: remove repeated Review projection work; end native approval after verified save/receipt with independent relevant-source reconciliation; queue submitted feedback for a heartbeat with Dismiss-independent persistence and explicit Process now. Foreground requests and native saves take priority. See current validation evidence in STATUS.
+
 ## Heartbeat analysis reliability — 13 October 2026
 
 The approved [heartbeat plan](docs/HEARTBEAT_RELIABILITY_PLAN.md) separates source collection from AI analysis, isolates stage failures, strengthens typed suggestion results and brings bounded learning/organisation under heartbeat ownership. The user confirmed learning from sources already allowed for review. Approval and natural-language adjustment remain required for proposed Calendar/project actions. Implementation, test and installation evidence are recorded in STATUS.

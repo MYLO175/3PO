@@ -108,7 +108,7 @@ import SwiftData
         check(world.claims == 3 && world.verifiedPersistedClaims == 3,"Every child claim is durable before fictional inference")
         check(completed.phase == "idle" && completed.assessed == world.now,"Actual completion uses the injected clock")
         check(run.started == world.now && run.finished == world.now && run.calls == 3,"Run timestamps and call delta use the captured clock")
-        check(run.steps?.allSatisfy{$0.status == "done"} == true,"Persisted real stage transitions finish")
+        check(run.steps?.allSatisfy{$0.status == "done" || (["feedback","learning"].contains($0.id) && $0.status == "skipped")} == true,"Persisted real stage transitions finish")
         check(run.preparedItems == 1 && run.drafts == 2 && run.handled == 1 && run.questions == 1,"Activity records use child receipt deltas")
         check(run.briefUpdated == true && run.mailCollectionIndependent == true,"Only the exact heartbeat brief receipt marks completion")
         check(run.checkedAccounts == 1 && run.waitingAccounts == 1 && completed.mailLanes?["unavailable"]?.pending == true,"Unavailable Mail coverage is retained independently of usable collected data")
@@ -134,9 +134,9 @@ import SwiftData
         outage.failureStage="email"
         outageService.check(runtime:outage.runtime());await until{!outageService.busy}
         let failed=outageService.state.accounts[owner]!,failedRun=failed.reviews!.last!
-        check(outage.stages == ["email"] && failed.calls == 1,"A child failure preserves claimed work and stops later stages")
+        check(outage.stages == ["email","suggestions","brief"] && failed.calls == 3,"A failed email stage preserves work while independent suggestions and brief continue")
         check(failed.retryReason == "failure" && failed.retryAfter == outage.now.addingTimeInterval(3600),"Failure waits for a fresh interval")
-        check(failedRun.failure != nil && failedRun.steps?[1].status == "failed","Actual failure history is explicit")
+        check(failedRun.failure != nil && failedRun.steps?.first(where:{$0.id == "email"})?.status == "failed","Actual failure history is explicit")
         outage.now=outage.now.addingTimeInterval(30)
         let outageReopened=make(outage,outageStore)
         outageReopened.check(runtime:outage.runtime());await Task.yield()
@@ -202,11 +202,11 @@ import SwiftData
         unavailableService.check(runtime:unavailable.runtime());await until{!unavailableService.busy}
         let partial=unavailableService.state.accounts[owner]!
         check(unavailable.stages == ["email","brief"] && unavailable.claims == 2,"Native unavailability still allows permitted Mail review and an honest brief")
-        check(partial.pending == true && partial.reviews?.last?.steps?[0].status == "waiting" && partial.reviews?.last?.steps?[2].status == "waiting","Unavailable native and WhatsApp comparisons remain pending")
+        check(partial.pending == true && partial.reviews?.last?.steps?[0].status == "waiting" && partial.reviews?.last?.steps?.first(where:{$0.id == "suggestions"})?.status == "waiting","Unavailable native and WhatsApp comparisons remain pending")
         let lostNative=FictionalHeartbeatWorld(),lostStore=try store(),lostService=make(lostNative,lostStore)
         lostNative.nativeFailure=true
         lostService.check(runtime:lostNative.runtime());await until{!lostService.busy}
-        check(lostService.state.accounts[owner]?.pending == true && lostService.state.accounts[owner]?.reviews?.last?.steps?[2].status == "waiting","A child's late native read failure cannot be labelled a completed comparison")
+        check(lostService.state.accounts[owner]?.pending == true && lostService.state.accounts[owner]?.reviews?.last?.steps?.first(where:{$0.id == "suggestions"})?.status == "waiting","A child's late native read failure cannot be labelled a completed comparison")
 
         for change in ["owner","model","scope","controls","midnight","foreground","context","usage","typing","stop"] {
             let late=FictionalHeartbeatWorld(),lateStore=try store(),lateService=make(late,lateStore)

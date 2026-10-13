@@ -11,6 +11,7 @@ import SwiftData
     private var state=NativeLearningState()
     private var readable=true
     private var task:Task<Void,Never>?
+    func cancelAndWait(heartbeatRunID:String) async {guard ownedHeartbeatRunID == heartbeatRunID else {return};let active=task;active?.cancel();await active?.value}
     private let container:ModelContainer?
     init(container:ModelContainer?) {
         self.container=container

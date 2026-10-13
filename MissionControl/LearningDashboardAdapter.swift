@@ -93,7 +93,13 @@ extension WhatsAppService: WhatsAppLearningReading {}
                 while busy() {try Task.checkCancellation();try await Task.sleep(for:.milliseconds(100))}
                 try request.validate()
             } catch {
-                cancelHeartbeatLearning(runID:request.runID)
+                switch lane {
+                case .conversation:await memoryLearning.cancelAndWait(heartbeatRunID:request.runID)
+                case .nativeSources:await nativeSourceLearning.cancelAndWait(heartbeatRunID:request.runID)
+                case .whatsapp:await sourceLearning.cancelAndWait(heartbeatRunID:request.runID)
+                case .organisation:await lifeOrganisation.cancelAndWait(heartbeatRunID:request.runID)
+                case .maintenance:await memoryMaintenance.cancelAndWait(heartbeatRunID:request.runID)
+                }
                 throw error
             }
             let error:String?

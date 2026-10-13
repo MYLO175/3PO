@@ -73,7 +73,7 @@ struct HeartbeatChildResult {
 }
 
 /// The scheduler owns due dates, receipts, allowance and interruption recovery.
-/// These ports only supply current collected context and run the three child stages.
+/// These ports only supply current collected context and run the bounded child stages.
 /// They expose no Mail collection, native mutation or foreground queue operation.
 @MainActor struct HeartbeatRuntime {
     var environment:()->HeartbeatEnvironment
@@ -88,6 +88,7 @@ struct HeartbeatChildResult {
     var suggestions:(HeartbeatChildRequest) async throws->HeartbeatChildResult
     var brief:(HeartbeatChildRequest) async throws->HeartbeatChildResult
     var cancelChildren:()->Void
+    var feedback:(HeartbeatChildRequest) async throws->HeartbeatChildResult = {_ in .init(skipped:true)}
     var learning:(HeartbeatChildRequest) async throws->HeartbeatChildResult = {_ in .init(skipped:true)}
 
     #if DEBUG

@@ -4,13 +4,25 @@ import CryptoKit
 import Observation
 import SwiftData
 
+/// A synchronous review evaluation shares these reads only within that evaluation.
+/// Never retain this across an await or use it as authority for a later write.
+struct ProactiveReviewContext {
+    let highlights:[(MailMessage,EmailSummary)]
+    let scope:String
+    let legacyMailScope:String
+}
+
 @MainActor @Observable final class ProactiveService {
+    #if DEBUG
+    @ObservationIgnored private(set) var reviewContextBuildCount=0
+    #endif
     var enabled = true { didSet { UserDefaults.standard.set(enabled,forKey:"paProactiveEnabled") } }
     private(set) var busy = false
     private(set) var state = ProactiveState()
     private(set) var error: String?
     private var readable = true
     private var task: Task<Void,Never>?
+    func cancelAndWait() async {let active=task;cancel();await active?.value}
     private(set) var sourceReadError:String?
     private let container: ModelContainer?
     private var lastCheck = Date.distantPast
@@ -38,9 +50,16 @@ import SwiftData
     func record(delivery: String, model: DashboardModel) -> PADiscovery? {
         state.records.first { $0.deliveryID == delivery && $0.registration == model.chatGPT.activeID }.map(ProactiveRules.reviewProjection)
     }
-    func reviewEvidenceAvailable(_ id:String,model:DashboardModel,allowResolved:Bool = false)->Bool {
-        guard let record=state.records.first(where:{$0.id == id}),!record.dismissed,record.supersededBy == nil,sourceEvidenceAvailable(record,model:model,allowResolved:allowResolved) else { return false }
-        guard ProactiveRules.comparisonEvidenceAvailable(record,records:state.records,available:{self.sourceEvidenceAvailable($0,model:model,allowResolved:allowResolved)}) else {return false}
+    func reviewContext(_ model:DashboardModel)->ProactiveReviewContext {
+        #if DEBUG
+        reviewContextBuildCount += 1
+        #endif
+        return .init(highlights:model.emailSummaries.highlights(model),scope:scope(model),legacyMailScope:legacyMailScope(model))
+    }
+    func reviewEvidenceAvailable(_ id:String,model:DashboardModel,allowResolved:Bool = false,context:ProactiveReviewContext? = nil)->Bool {
+        let context=context ?? reviewContext(model)
+        guard let record=state.records.first(where:{$0.id == id}),!record.dismissed,record.supersededBy == nil,sourceEvidenceAvailable(record,model:model,allowResolved:allowResolved,context:context) else { return false }
+        guard ProactiveRules.comparisonEvidenceAvailable(record,records:state.records,available:{self.sourceEvidenceAvailable($0,model:model,allowResolved:allowResolved,context:context)}) else {return false}
         guard model.memoryDependenciesAvailable(record.memoryDependencies,use:record.memoryUse ?? .suggestions),model.whatsappDependenciesAvailable(record.whatsappDependencies,use:record.memoryUse ?? .suggestions) else { return false }
         return true
     }
@@ -56,10 +75,12 @@ import SwiftData
         })
     }
     /// Original communication only, for replacement/history. Old generated advice is not reissued.
-    func sourceEvidenceAvailable(_ record:PADiscovery,model:DashboardModel,allowResolved:Bool = false)->Bool {
-        guard record.registration == model.chatGPT.activeID,model.assistant.contextEnabled,(record.scope == scope(model) || (record.sourceKind == nil && record.scope == legacyMailScope(model))) else {return false}
+    func sourceEvidenceAvailable(_ record:PADiscovery,model:DashboardModel,allowResolved:Bool = false,context:ProactiveReviewContext? = nil)->Bool {
+        guard record.registration == model.chatGPT.activeID,model.assistant.contextEnabled else {return false}
+        let context=context ?? reviewContext(model)
+        guard record.scope == context.scope || (record.sourceKind == nil && record.scope == context.legacyMailScope) else {return false}
         if record.sourceKind == "whatsapp" { return ProactiveRules.permittedWhatsApp(record,access:model.whatsapp.access(for:record.registration),identity:model.whatsapp.linkedIdentity,messages:model.whatsapp.messages) }
-        let sources=allowResolved ? model.emailSummaries.sourceAssessments(model).filter{message,summary in EmailHighlightRules.visible(summary) && (model.emailSummaries.resolution(summary,message:message,model:model) != nil || model.emailSummaries.highlights(model).contains{$0.0.id == message.id})} : model.emailSummaries.highlights(model)
+        let sources=allowResolved ? model.emailSummaries.sourceAssessments(model).filter{message,summary in message.id == record.mailID && EmailHighlightRules.visible(summary) && (model.emailSummaries.resolution(summary,message:message,model:model) != nil || context.highlights.contains{$0.0.id == message.id})} : context.highlights
         return sources.contains { $0.0.id == record.mailID && $0.1.fingerprint == EmailSummary.fingerprint($0.0) && (record.sourceRevision == nil || $0.1.fingerprint == record.sourceRevision) && (record.sourceAssessmentRevision == nil || $0.1.adviceRevision(replied:$0.0.replied) == record.sourceAssessmentRevision) }
     }
     func sourceDetails(_ record:PADiscovery,model:DashboardModel)->ReviewSourceDetails? {
@@ -85,9 +106,11 @@ import SwiftData
         state.records=records;state.accounts[registration]=progress
         do {try save()} catch {state=previous;throw error}
     }
-    func visible(_ record:PADiscovery,model:DashboardModel)->Bool {
-        guard record.reviewState != "approved",reviewEvidenceAvailable(record.id,model:model,allowResolved:record.reviewState == "pending" || model.reviewCreationClaim(record).map{$0.receipt == nil} == true) else { return false }
-        if record.sourceKind == nil,record.nativeTarget == nil,record.reviewState != "pending",model.reviewCreationClaim(record).map{$0.receipt == nil} != true,let pair=model.emailSummaries.highlights(model).first(where:{$0.0.id == record.mailID}),model.emailSummaries.handling(pair.1,message:pair.0,model:model) != nil {return false}
+    func visible(_ record:PADiscovery,model:DashboardModel,context:ProactiveReviewContext? = nil)->Bool {
+        guard record.reviewState != "approved",!record.dismissed,record.supersededBy == nil else {return false}
+        let context=context ?? reviewContext(model)
+        guard reviewEvidenceAvailable(record.id,model:model,allowResolved:record.reviewState == "pending" || model.reviewCreationClaim(record).map{$0.receipt == nil} == true,context:context) else { return false }
+        if record.sourceKind == nil,record.nativeTarget == nil,record.reviewState != "pending",model.reviewCreationClaim(record).map{$0.receipt == nil} != true,let pair=context.highlights.first(where:{$0.0.id == record.mailID}),model.emailSummaries.handling(pair.1,message:pair.0,model:model) != nil {return false}
         if let project=record.proposedProjectTask {
             guard model.assistant.projects.items(record.registration,includeTopics:true).contains(where:{$0.id == project.target.id && $0.revision == project.target.revision && !$0.kind.isWork && $0.status != .archived}) else {return false}
         }
@@ -100,7 +123,7 @@ import SwiftData
         return true
     }
     func canReview(_ id:String,model:DashboardModel)->Bool {
-        state.records.first(where:{$0.id == id}).map{$0.reviewState == nil && model.reviewCreationClaim($0) == nil && !$0.needsDateClarification && reviewEvidenceAvailable(id,model:model) && visible($0,model:model)} ?? false
+        state.records.first(where:{$0.id == id}).map{$0.reviewState == nil && model.reviewCreationClaim($0) == nil && !$0.needsDateClarification && visible($0,model:model)} ?? false
     }
     func beginReview(_ id:String,model:DashboardModel)throws {
         guard canReview(id,model:model),let index=state.records.firstIndex(where:{$0.id == id}) else {throw ActionFailure.message("This proposal changed or a save is already recorded. Check the original Apple item; it will not be repeated.")}

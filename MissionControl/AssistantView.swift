@@ -404,7 +404,7 @@ struct AssistantSourceSettings: View {
 
                 }
                 Section("Other background work") {
-                    Text("Heartbeats analyse saved sources, learn and organise useful context, suggest actions and update Today’s brief. A failed stage keeps completed work and tries fresh information next time. Memory controls apply. Your queued requests use Continue queue.").font(.caption).foregroundStyle(.secondary)
+                    Text("Heartbeats process submitted feedback, analyse saved sources, learn and organise useful context, suggest actions and update Today’s brief. A failed stage keeps completed work and tries fresh information next time. Memory controls apply. Your queued requests use Continue queue.").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Daily AI call limit") {
                     Picker("Daily limit",selection:$model.heartbeat.dailyCallLimit) { Text("Off").tag(0);ForEach([8,16,32,64,96],id:\.self) { Text("\($0) calls").tag($0) } }

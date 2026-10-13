@@ -130,6 +130,7 @@ import UserNotifications
     var notificationStatus = "Notifications have not been checked."
     private let container: ModelContainer?
     private var task: Task<Void, Never>?
+    func cancelAndWait() async {let active=task;cancel();await active?.value}
     init(container: ModelContainer?) {
         self.container = container
         do { if let saved = try LocalRecordRepository.read("dailyBriefings", container: container) { state = try JSONDecoder().decode(BriefingState.self, from: saved) } }

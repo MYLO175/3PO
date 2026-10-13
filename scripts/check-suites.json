@@ -862,6 +862,17 @@
         "actual heartbeat orchestrator with fictional stages, clock and device",
         "private settings/disposable storage; no dashboard or native/model calls"
       ]
+    },
+    {
+      "id": "native-reconciliation",
+      "tier": "source-free",
+      "script": "scripts/test-native-reconciliation.sh",
+      "effects": [
+        "fictional values"
+      ],
+      "requires": [
+        "Xcode"
+      ]
     }
   ]
 }

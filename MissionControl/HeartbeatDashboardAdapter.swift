@@ -21,21 +21,23 @@ import SwiftData
         },pending:{pending(model,mailReview:$0,whatsappReady:$1,nativeReady:$2)},activity:{activity(model,registration:$0,runID:$1)},email:{request in
             try request.validate()
             model.emailSummaries.process(model,resume:true,heartbeat:true,mailReview:request.mailReview,heartbeatRequest:request)
-            while model.emailSummaries.busy {try Task.checkCancellation();try await Task.sleep(for:.milliseconds(100))}
+            do {while model.emailSummaries.busy {try Task.checkCancellation();try await Task.sleep(for:.milliseconds(100))}} catch {await model.emailSummaries.cancelAndWait();throw error}
             return .init(failure:model.emailSummaries.enabled && model.emailSummaries.paused ? model.emailSummaries.error ?? "Email assessment did not finish. Completed summaries are saved." : nil)
         },suggestions:{request in
             try request.validate()
             model.proactive.check(model,manual:request.manual,heartbeat:true,heartbeatWhatsAppReady:request.whatsappReady,mailReview:request.mailReview,heartbeatRequest:request)
-            while model.proactive.busy {try Task.checkCancellation();try await Task.sleep(for:.milliseconds(100))}
+            do {while model.proactive.busy {try Task.checkCancellation();try await Task.sleep(for:.milliseconds(100))}} catch {await model.proactive.cancelAndWait();throw error}
             return .init(failure:model.proactive.error,nativeUnavailable:model.proactive.sourceReadError != nil)
         },brief:{request in
             try request.validate()
             model.briefings.check(model,manual:request.manual,heartbeatID:request.runID,mailReview:request.mailReview,whatsappReady:request.whatsappReady,heartbeatRequest:request)
-            while model.briefings.busy {try Task.checkCancellation();try await Task.sleep(for:.milliseconds(100))}
+            do {while model.briefings.busy {try Task.checkCancellation();try await Task.sleep(for:.milliseconds(100))}} catch {await model.briefings.cancelAndWait();throw error}
             return .init(failure:model.briefings.error)
         },cancelChildren:{
-            model.emailSummaries.cancel();model.proactive.cancel();model.briefings.cancel()
-            if let runID=model.heartbeat.ownedRunID {model.cancelHeartbeatLearning(runID:runID)}
+            model.emailSummaries.cancel(includeFeedback:false);model.proactive.cancel();model.briefings.cancel()
+            if let runID=model.heartbeat.ownedRunID {model.cancelHeartbeatLearning(runID:runID);model.emailSummaries.cancelHeartbeatFeedback(runID:runID)}
+        },feedback:{request in
+            try await model.emailSummaries.runHeartbeatFeedback(request,model:model)
         },learning:{request in
             let result=try await model.runHeartbeatLearning(request:request)
             return .init(failure:result.failure,detail:result.detail,skipped:result.skipped)
@@ -45,7 +47,8 @@ import SwiftData
     private static func environment(_ model:DashboardModel)->HeartbeatEnvironment {
         func otherLearning(_ busy:Bool,_ runID:String?)->Bool {busy && !(runID.map{model.heartbeat.ownsLearningRun($0)} ?? false)}
         let learning=otherLearning(model.sourceLearning.busy,model.sourceLearning.ownedHeartbeatRunID) || otherLearning(model.nativeSourceLearning.busy,model.nativeSourceLearning.ownedHeartbeatRunID) || otherLearning(model.memoryMaintenance.busy,model.memoryMaintenance.ownedHeartbeatRunID) || otherLearning(model.memoryLearning.busy,model.memoryLearning.ownedHeartbeatRunID) || otherLearning(model.lifeOrganisation.busy,model.lifeOrganisation.ownedHeartbeatRunID)
-        let foreground=model.assistant.busy || model.chatGPT.busy || model.projectPlacement.busy || learning || model.writing
+        let feedback=model.emailSummaries.feedback.activeID != nil && !(model.emailSummaries.feedback.ownedHeartbeatRunID.map{model.heartbeat.ownsLearningRun($0)} ?? false)
+        let foreground=feedback || model.assistant.busy || model.chatGPT.busy || model.projectPlacement.busy || learning || model.writing
         let proposals=model.proactive.state.accounts[model.chatGPT.activeID]
         let preview=["--sample","--preview-review-inbox","--preview-settings"].contains{ProcessInfo.processInfo.arguments.contains($0)}
         return .init(registration:model.chatGPT.activeID,model:model.chatGPT.selectedModel,sourceSettings:model.proactive.sourceSettingsScope(model),scope:model.proactive.scope(model),whatsappChoices:model.whatsapp.choicesRevision,whatsappIdentity:model.whatsapp.linkedIdentity,contextEnabled:model.assistant.contextEnabled,inferenceVerified:model.chatGPT.inferenceVerified,usagePaused:model.chatGPT.usagePaused,workBusy:foreground || model.briefings.busy || model.proactive.busy || model.emailSummaries.busy,foregroundBusy:foreground,permitted:!preview,emailEnabled:model.emailSummaries.enabled,proposalsEnabled:model.proactive.enabled,proposalAllowanceReached:proposals?.day == BriefingRules.day(model.heartbeat.currentTime) && (proposals?.attempts ?? 0) >= 96)
@@ -61,7 +64,7 @@ import SwiftData
             var one=mailReview;one.windows=one.windows.filter{$0.key == id}
             return model.emailSummaries.hasPendingIncoming(model,mailReview:one) || !nativeReady || (model.proactive.enabled && model.proactive.hasPendingSources(model,mailReview:mailReview,whatsappReady:whatsappReady,mailAccountID:id))
         })
-        return .init(any:model.emailSummaries.hasPendingIncoming(model,mailReview:mailReview) || (nativeReady && proposals),mailAccounts:accounts,proposals:proposals || (model.proactive.enabled && environment(model).proposalAllowanceReached))
+        return .init(any:model.emailSummaries.feedback.items(model.chatGPT.activeID).contains{$0.state == .queued && $0.heartbeatEligible == true} || model.emailSummaries.hasPendingIncoming(model,mailReview:mailReview) || (nativeReady && proposals),mailAccounts:accounts,proposals:proposals || (model.proactive.enabled && environment(model).proposalAllowanceReached))
     }
     private static func activity(_ model:DashboardModel,registration:String,runID:String)->HeartbeatActivity {
         .init(preparedItems:model.proactive.state.records.filter{$0.registration == registration}.count,emailDrafts:model.emailSummaries.records.filter{$0.registration == registration && $0.replyDraft != nil}.count,whatsappDrafts:model.proactive.state.records.filter{$0.registration == registration && $0.replyDraft != nil}.count,handled:model.emailSummaries.records.filter{$0.registration == registration && $0.handling != nil}.count,briefUpdated:model.briefings.state.updatedBriefs?[registration]?.heartbeatID == runID,questions:model.briefings.state.reviewQuestions?.filter{$0.snapshot.registration == registration && $0.snapshot.heartbeatID == runID}.count ?? 0)
@@ -101,6 +104,7 @@ import SwiftData
         guard ProcessInfo.processInfo.arguments.contains("--validate-review-inbox"),ProcessInfo.processInfo.arguments.contains("--scheduler-only") else {throw SummaryFailure.invalid}
         var result=try await evaluateOwnedScheduling()
         var checks=result["checks"] as! [String:Bool]
+        checks.merge(try await NativeReconciliationEvaluation.run()) {_,new in new}
         let store=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
         let now=ISO8601DateFormatter().date(from:"2026-10-07T12:00:00Z")!
         let joiningBrief=BriefingService(container:store)

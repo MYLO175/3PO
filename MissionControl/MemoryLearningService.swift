@@ -16,6 +16,7 @@ import SwiftData
     private let container: ModelContainer?
     private var readable = true
     private var task: Task<Void,Never>?
+    func cancelAndWait(heartbeatRunID:String) async {guard ownedHeartbeatRunID == heartbeatRunID else {return};let active=task;active?.cancel();await active?.value}
     init(container: ModelContainer?, settings: UserDefaults = .standard) {
         self.container = container
         self.settings = settings

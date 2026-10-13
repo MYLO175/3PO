@@ -8,6 +8,7 @@ import Observation
     private var readable=true
     private let container:ModelContainer?
     private var task:Task<Void,Never>?
+    func cancelAndWait(heartbeatRunID:String) async {guard ownedHeartbeatRunID == heartbeatRunID else {return};let active=task;active?.cancel();await active?.value}
     private(set) var ownedHeartbeatRunID:String?
     private(set) var busy=false
     private(set) var error:String?

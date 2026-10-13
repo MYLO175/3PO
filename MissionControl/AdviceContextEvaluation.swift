@@ -192,6 +192,20 @@ import Synchronization
         checks["saved brief display hides internal aliases without rewriting the original"]=BriefingRules.displayProse(savedMorning) == "Good morning. Prepare the Orion prototype." && savedMorning.message == morning.message && savedMorning.items[0].sourceIDs == ["memory_0"]
         checks["original cited morning delivery remains valid for exact history guards"]=model.briefings.allowsChatDelivery(delivery,content:BriefingRules.prose(morning),model:model)
         checks["actual Tasks suggestion is initially visible"]=model.proactive.visible(savedAdvice,model:model)
+        let repeated=(0..<40).map{index in var value=savedAdvice;value.id="fixture-projection-\(index)";return value}
+        try model.proactive.seedAdviceFixture(repeated,model:model)
+        let repeatedStart=Date.now
+        let expected=Set(model.proactive.state.records.filter{model.proactive.visible($0,model:model)}.map(\.id))
+        let repeatedMilliseconds=Date.now.timeIntervalSince(repeatedStart)*1000
+        let builds=model.proactive.reviewContextBuildCount,projectionStart=Date.now
+        let projected=model.reviewInbox
+        let sharedMilliseconds=Date.now.timeIntervalSince(projectionStart)*1000
+        checks["forty suggestions share one fresh synchronous review context"] = model.proactive.reviewContextBuildCount-builds == 1 && projected.discoveries.count == 40
+        checks["shared review context preserves exact visibility and grouped badge count"] = Set(projected.discoveries.map(\.id)) == expected && projected.emailCards.count == 1 && model.reviewInboxPendingCount == projected.pendingCount
+        permitted=false
+        checks["next projection immediately withdraws revoked memory advice"] = model.reviewInbox.discoveries.isEmpty
+        permitted=true
+        try model.proactive.seedAdviceFixture([savedAdvice],model:model)
         permitted=false
         checks["revocation rejects captured context before a save"] = !model.memoryDependenciesAvailable(capture.dependencies,use:.brief) && capture != model.automaticMemory(.brief)
         checks["revocation removes current advice"]=model.briefings.current(model) == nil && !model.proactive.visible(savedAdvice,model:model)
@@ -456,7 +470,7 @@ import Synchronization
         checks["removed account withdraws unsupported review count"] = model.reviewInbox.pendingCount == 0
         model.mailData=reviewMailData
         checks.merge(try resolutionConsumerChecks(model),uniquingKeysWith:{$1})
-        return ["completed":Date.now.ISO8601Format(),"requests":0,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"storage":"Fictional claims, messages and outputs in disposable SwiftData before source startup. No inference, native writes, permission changes or personal store writes. This tests actual consumer projections, not scheduler races or real message delivery."]
+        return ["projectionPerformance":["suggestions":40,"individualChecksMilliseconds":repeatedMilliseconds,"sharedProjectionMilliseconds":sharedMilliseconds],"completed":Date.now.ISO8601Format(),"requests":0,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"storage":"Fictional claims, messages and outputs in disposable SwiftData before source startup. No inference, native writes, permission changes or personal store writes. This tests actual consumer projections, not scheduler races or real message delivery."]
     }
 }
 #endif

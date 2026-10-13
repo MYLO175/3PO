@@ -44,6 +44,7 @@ import SwiftData
     }
     #endif
     private var task: Task<Void, Never>?
+    func cancelAndWait() async {let active=task;cancel(includeFeedback:false);await active?.value}
     @ObservationIgnored private var reviewFeedbackTask:Task<ReviewFeedbackInterpretation,Error>?
     private(set) var reviewFeedbackGeneration=0
     func cancelReviewFeedback() {reviewFeedbackGeneration += 1;feedback.interruptActive();reviewFeedbackTask?.cancel()}

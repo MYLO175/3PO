@@ -38,8 +38,9 @@ extension DashboardModel {
     }
     private func reviewInboxProjection(includeHandled:Bool)->ReviewInboxProjection {
         let questions=briefings.pendingQuestions(self),learning=(memoryLearning.state.questions ?? []).filter{memoryLearning.visible($0,assistant:assistant)}
-        let discoveries=proactive.state.records.filter{proactive.visible($0,model:self)}.map(ProactiveRules.reviewProjection).filter{!reviewDiscoveryCompleted($0)}
-        let highlights=emailSummaries.highlights(self)
+        let context=proactive.reviewContext(self)
+        let discoveries=proactive.state.records.filter{!reviewDiscoveryCompleted($0) && proactive.visible($0,model:self,context:context)}.map(ProactiveRules.reviewProjection)
+        let highlights=context.highlights
         let emails=highlights.filter{EmailHighlightRules.needsReview($0.1,replied:$0.0.replied) && !acknowledgedEmail($0.0,$0.1) && emailSummaries.handling($0.1,message:$0.0,model:self) == nil}.map {message,summary in
             var value=summary;if message.replied || EmailSummary.fingerprint(message) != summary.fingerprint {value.replyDraft=nil};return (message,value)
         }
@@ -91,7 +92,9 @@ struct PATasksView: View {
         model.heartbeat.state.accounts[model.chatGPT.activeID]?.retryReason == "failure"
     }
     private var reviewStatus:String {
-        if model.emailSummaries.feedback.items(model.chatGPT.activeID).contains(where:{$0.pending && model.emailSummaries.feedbackMemory($0,model:self.model) == nil}) {return "Learning your feedback in the background…"}
+        let feedback=model.emailSummaries.feedback.items(model.chatGPT.activeID).filter{model.emailSummaries.feedbackMemory($0,model:self.model) == nil}
+        if feedback.contains(where:{$0.state == .learning || $0.state == .saving}) {return "Learning your feedback in the background…"}
+        if feedback.contains(where:{$0.state == .queued}) {return "Feedback saved for the next heartbeat"}
         if reviewBusy {return "Reviewing your sources…"}
         if !model.heartbeat.readable {return "Review history unavailable. See Activity for details."}
         return model.heartbeat.scheduleStatus(model)
