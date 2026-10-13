@@ -56,6 +56,20 @@ struct PAHeartbeatStep:Codable,Identifiable {
         switch status {case "done":return "Done";case "running":return "Running";case "failed":return "Failed";case "skipped":return "Skipped";case "waiting":return "Waiting";default:return "Not run"}
     }
 }
+/// Work completed across the captured stages, not an estimate of elapsed time.
+/// Finishing a failed/skipped optional stage still advances the review cycle.
+struct PAHeartbeatProgress:Equatable {
+    var runID:String
+    var percentage:Int
+    var stage:String
+    init(runID:String,steps:[PAHeartbeatStep],finished:Bool = false) {
+        self.runID=runID
+        let resolved=steps.filter{["done","skipped","waiting","failed"].contains($0.status)}.count
+        let fraction=steps.isEmpty ? 0 : Double(resolved)/Double(steps.count)
+        percentage=min(finished ? 100 : 99,Int((fraction*100).rounded()))
+        stage=finished ? "Heartbeat finished" : steps.first{$0.status == "running"}?.title ?? "Preparing review"
+    }
+}
 struct PAHeartbeatMailLane:Codable {
     var checked:Date?
     var assessed:Date?

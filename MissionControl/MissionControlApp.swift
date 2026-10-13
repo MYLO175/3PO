@@ -62,7 +62,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") {
                 CalendarDragPreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {
-                if ProcessInfo.processInfo.arguments.contains("--workspace-colours-preview") {WorkspaceThemePreview()}
+                if ProcessInfo.processInfo.arguments.contains("--heartbeat-progress-preview") {HeartbeatProgressPreviewScreen(model:model)}
+                else if ProcessInfo.processInfo.arguments.contains("--workspace-colours-preview") {WorkspaceThemePreview()}
                 else {ReviewInboxPreview(model:model)}
             } else if ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") {
                 LifeAndPlanPreview(model:model)

@@ -102,6 +102,7 @@ import SwiftData
         service.dailyCallLimit=64
         let runtime=world.runtime()
         service.check(runtime:runtime)
+        check(service.progress?.percentage == 0 && service.progress?.runID == service.ownedRunID,"Owned run starts with zero progress")
         await until{!service.busy}
         let completed=service.state.accounts[owner]!,run=completed.reviews!.last!
         check(world.stages == ["email","suggestions","brief"],"Actual scheduler serially owns the three child stages")
@@ -111,9 +112,11 @@ import SwiftData
         check(run.steps?.allSatisfy{$0.status == "done" || (["feedback","learning"].contains($0.id) && $0.status == "skipped")} == true,"Persisted real stage transitions finish")
         check(run.preparedItems == 1 && run.drafts == 2 && run.handled == 1 && run.questions == 1,"Activity records use child receipt deltas")
         check(run.briefUpdated == true && run.mailCollectionIndependent == true,"Only the exact heartbeat brief receipt marks completion")
+        check(service.progress?.percentage == 100 && service.progress?.runID == run.id,"Final persisted brief and completed stages reach 100 percent")
         check(run.checkedAccounts == 1 && run.waitingAccounts == 1 && completed.mailLanes?["unavailable"]?.pending == true,"Unavailable Mail coverage is retained independently of usable collected data")
         check(completed.mailLanes?["healthy"]?.fingerprint == world.fingerprint,"Successful Mail assessment persists its exact collected fingerprint")
         let reopened=make(world,container)
+        check(reopened.progress == nil,"Reopening does not replay a completed progress indicator")
         check(reopened.state.accounts[owner]?.reviews?.last?.id == run.id && reopened.state.accounts[owner]?.calls == 3,"Actual disk reopening retains run identity and claims")
         reopened.check(runtime:runtime)
         await Task.yield()
@@ -135,6 +138,7 @@ import SwiftData
         outageService.check(runtime:outage.runtime());await until{!outageService.busy}
         let failed=outageService.state.accounts[owner]!,failedRun=failed.reviews!.last!
         check(outage.stages == ["email","suggestions","brief"] && failed.calls == 3,"A failed email stage preserves work while independent suggestions and brief continue")
+        check(outageService.progress?.percentage == 100,"A fully traversed cycle reaches 100 percent even when an optional stage failed")
         check(failed.retryReason == "failure" && failed.retryAfter == outage.now.addingTimeInterval(3600),"Failure waits for a fresh interval")
         check(failedRun.failure != nil && failedRun.steps?.first(where:{$0.id == "email"})?.status == "failed","Actual failure history is explicit")
         outage.now=outage.now.addingTimeInterval(30)
@@ -193,9 +197,11 @@ import SwiftData
         let stopped=FictionalHeartbeatWorld(),stoppedStore=try store(),stoppedService=make(stopped,stoppedStore)
         stopped.holdStage="sources"
         stoppedService.check(runtime:stopped.runtime());await until{stopped.waiting}
+        check(stoppedService.progress?.percentage == 0 && stoppedService.progress?.stage == "Context","Held source preparation shows its actual stage")
         check(stopped.sourceRequest?.registration == owner && stopped.sourceRequest?.clock() == stopped.now,"Source preparation carries the captured owner and clock")
         stoppedService.userStartedTyping();stopped.release();await until{!stoppedService.busy}
         check(stopped.claims == 0 && stopped.stages.isEmpty,"Stop during collection never starts child inference")
+        check(stoppedService.progress == nil,"Stopped work cannot display 100 percent")
         check(stoppedService.state.accounts[owner]?.retryReason == "foreground" && stoppedService.state.accounts[owner]?.retryAfter == stopped.now.addingTimeInterval(60),"A stopped source preparation waits for foreground work without an AI failure interval")
         let unavailable=FictionalHeartbeatWorld(),unavailableStore=try store(),unavailableService=make(unavailable,unavailableStore)
         unavailable.nativeReady=false;unavailable.wantsWhatsApp=true
@@ -303,6 +309,7 @@ import SwiftData
         mismatch.fakeBriefID=true
         mismatchService.check(runtime:mismatch.runtime());await until{!mismatchService.busy}
         check(mismatchService.state.accounts[owner]?.assessed == nil && mismatchService.state.accounts[owner]?.reviews?.last?.briefUpdated == false,"A stale brief receipt cannot satisfy the captured run")
+        check(mismatchService.progress == nil,"A mismatched brief receipt cannot claim 100 percent")
         let corrupt=FictionalHeartbeatWorld(),corruptStore=try store(),original=Data("fictional-invalid-heartbeat".utf8)
         let corruptRepository=LocalRecordRepository(container:corruptStore);try corruptRepository.write(["paHeartbeat":original])
         let corruptService=make(corrupt,corruptStore)

@@ -1,5 +1,7 @@
 # Mission Control specification
 
+13 October user request: show a compact 0–100% heartbeat progress bar in the native top toolbar, matching the workspace appearance. Implement in an isolated worktree, then integrate once the other writer is finished. Stage completion supplies the percentage; timing estimates and additional AI work are outside this change.
+
 13 October approved simplification: saved Review cards and badge share reusable prepared presentation; heartbeats reconsider/retire existing proposals with reasons. Explicit creation approval acts on displayed details without broad source/memory revalidation; preserve exact destination, changed-target, duplicate-operation and verified-save guards. Apply the same saved-output approach to brief and email-summary display and defer collapsed evidence inspection.
 
 13 October responsiveness refinement: remove repeated Review projection work; end native approval after verified save/receipt with independent relevant-source reconciliation; queue submitted feedback for a heartbeat with Dismiss-independent persistence and explicit Process now. Foreground requests and native saves take priority. See current validation evidence in STATUS.

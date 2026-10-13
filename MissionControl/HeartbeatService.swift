@@ -70,6 +70,26 @@ import SwiftData
     var currentTime:Date {clock()}
     private(set) var controlsRevision = UUID()
     private(set) var busy = false
+    private(set) var progress:PAHeartbeatProgress?
+    #if DEBUG
+    /// The caller's dedicated preview has in-memory storage and returns before startup.
+    func previewProgress() async {
+        guard ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"),ProcessInfo.processInfo.arguments.contains("--heartbeat-progress-preview") else {return}
+        while !Task.isCancelled {
+            var steps=PAHeartbeatRules.stages()
+            let runID=UUID().uuidString
+            busy=true
+            for index in steps.indices {
+                steps[index].status="running"
+                progress=PAHeartbeatProgress(runID:runID,steps:steps)
+                do {try await Task.sleep(for:.seconds(2))} catch {busy=false;progress=nil;return}
+                steps[index].status="done"
+            }
+            progress=PAHeartbeatProgress(runID:runID,steps:steps,finished:true);busy=false
+            do {try await Task.sleep(for:.seconds(4))} catch {return}
+        }
+    }
+    #endif
     private(set) var status = "Sources collect without AI. Background reviews run when due while 3PO is running and the Mac is awake."
     private(set) var state = PAHeartbeatState()
     private var statusRegistration:String?
@@ -176,6 +196,7 @@ import SwiftData
         let runID=UUID().uuidString
         capturedRunID=runID
         busy=true;capturedRegistration=registration;capturedDay=day;capturedControls=controls;capturedPowerRevision=power;capturedPrior=prior;statusRegistration=registration;status="Preparing collected context for background review…"
+        progress=PAHeartbeatProgress(runID:runID,steps:PAHeartbeatRules.stages())
         task=Task {
             let began=clock(),callsBefore=PAHeartbeatRules.callCount(prior,day:day)
             let before=runtime.activity(registration,runID)
@@ -186,6 +207,7 @@ import SwiftData
                 guard let index=steps.firstIndex(where:{$0.id == id}) else {return}
                 steps[index].status=state;steps[index].detail=detail
                 try recordReview(registration,run:.init(id:runID,started:began,manual:manual,phase:"running",detail:status,steps:steps))
+                progress=PAHeartbeatProgress(runID:runID,steps:steps)
             }
             defer {
                 let latest=state.accounts[registration] ?? .init()
@@ -196,7 +218,12 @@ import SwiftData
                 let phase=sleepInterrupted ? "suspended" : (failure != nil || !stageFailures.isEmpty) ? (Task.isCancelled ? "interrupted" : "failed") : latest.pending == true ? "waiting" : latest.phase
                 let after=runtime.activity(registration,runID)
                 let run=PAReviewRun(id:runID,started:began,finished:clock(),manual:manual,phase:phase,detail:String(status.prefix(600)),calls:max(0,PAHeartbeatRules.callCount(latest,day:day)-callsBefore),checkedAccounts:ready,waitingAccounts:waiting,preparedItems:max(0,after.preparedItems-before.preparedItems),drafts:max(0,after.emailDrafts-before.emailDrafts)+max(0,after.whatsappDrafts-before.whatsappDrafts),handled:max(0,after.handled-before.handled),briefUpdated:after.briefUpdated,questions:after.questions,steps:steps,failure:failure ?? (stageFailures.isEmpty ? nil : stageFailures.joined(separator:" · ")),mailCollectionIndependent:true)
-                do {try recordReview(registration,run:run)} catch {status="Review finished, but its activity record could not be saved. Existing records are retained."}
+                var recorded=false
+                do {try recordReview(registration,run:run);recorded=true} catch {status="Review finished, but its activity record could not be saved. Existing records are retained."}
+                // Only a fully traversed cycle with a saved brief reaches 100%.
+                // Stops, early exits and interrupted runs disappear at their last stage.
+                let finalProgress=PAHeartbeatProgress(runID:runID,steps:steps,finished:true)
+                progress=recorded && after.briefUpdated && failure == nil && !sleepInterrupted && !Task.isCancelled && finalProgress.percentage == 100 ? finalProgress : nil
                 busy=false;capturedRegistration=nil;capturedDay=nil;capturedControls=nil;capturedPowerRevision=nil;capturedPrior=nil;capturedRunID=nil;capturedEligibility=nil
             }
             var account=PAHeartbeatRules.clearWait(prior)

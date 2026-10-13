@@ -1,5 +1,11 @@
 # Next improvements
 
+## 13 October: heartbeat progress
+
+The native top toolbar shows a slim accent-coloured heartbeat bar with a numeric 0–100% while a review runs. Progress counts the six captured stages (including skipped or unavailable optional work), rather than guessing elapsed AI time. It briefly shows 100% only after all stages, the exact saved brief and the run record finish; Stop, sleep and early failure clear it without claiming completion. Hover and accessibility expose the current stage. Its colours follow the current workspace palette and Reduce Motion disables the fill animation. Progress is transient, with no extra inference, source collection or saved settings.
+
+Native fictional toolbar and light/dark rendering are the acceptance scope for this presentation change. Sustained personal heartbeat scheduling remains tracked separately.
+
 ## 13 October: prepared Review and concrete approvals
 
 Review displays saved assessments, suggestions and questions. A per-model observed presentation cache supplies both cards and sidebar count; it invalidates for changed saved decisions, user actions, account/access choices and relevant source metadata. Opening/remounting does not revalidate supporting memories, native target revisions, completion evidence or source bodies. Dismiss/Undo and explicit access withdrawal remain immediate. Saved planned/addressed decisions stay in Activity until a subsequent analysis or human Keep in review changes them. Email overview shares the same saved presentation.

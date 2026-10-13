@@ -2,6 +2,17 @@ import Foundation
 @main struct HeartbeatChecks {
     static func main() throws {
         let now=Date(timeIntervalSince1970:1_791_280_000)
+        var progressSteps=PAHeartbeatRules.stages()
+        precondition(PAHeartbeatProgress(runID:"first",steps:progressSteps).percentage == 0)
+        progressSteps[0].status="waiting";progressSteps[1].status="skipped";progressSteps[2].status="failed"
+        progressSteps[3].status="running"
+        let half=PAHeartbeatProgress(runID:"first",steps:progressSteps)
+        precondition(half.percentage == 50 && half.stage == "Memory & organisation","Optional unavailable/failed work advances stage progress without estimating request time")
+        for index in progressSteps.indices {progressSteps[index].status="done"}
+        precondition(PAHeartbeatProgress(runID:"first",steps:progressSteps).percentage == 99,"Finishing stages alone cannot claim the final save")
+        precondition(PAHeartbeatProgress(runID:"first",steps:progressSteps,finished:true).percentage == 100)
+        precondition(PAHeartbeatProgress(runID:"second",steps:PAHeartbeatRules.stages()).percentage == 0,"A new run starts at zero")
+        precondition(PAHeartbeatProgress(runID:"empty",steps:[],finished:true).percentage == 0)
         precondition(PAHeartbeatRules.currentCompletion(collectedRevision:4,currentRevision:4,collectedAt:now.addingTimeInterval(-100),now:now))
         precondition(!PAHeartbeatRules.currentCompletion(collectedRevision:3,currentRevision:4,collectedAt:now,now:now),"Reopened reminders cannot use old completed evidence")
         precondition(!PAHeartbeatRules.currentCompletion(collectedRevision:-1,currentRevision:-1,collectedAt:now,now:now))
