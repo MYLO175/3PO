@@ -3,6 +3,7 @@ import Observation
 import SwiftData
 
 @MainActor @Observable final class SourceContextLearningService {
+    private(set) var ownedHeartbeatRunID:String?
     private(set) var busy=false
     private(set) var error:String?
     private var task:Task<Void,Never>?
@@ -22,13 +23,13 @@ import SwiftData
     }
     private func key(_ scope:WhatsAppSourceScope)->String { SourceContextRules.scopeKey(scope.registration+":"+scope.linkedIdentity) }
     func lastAssessment(_ model:LearningRuntime)->Date {
-        let scope=model.whatsapp.scope(for:model.inference.activeID),access=model.whatsapp.access(for:scope.registration)
+        let scope=model.whatsapp.scope(for:model.inference.activeID),access=model.whatsappLearningAccess
         guard access.enabled,access.learnContext == true,state.scopes[key(scope)]?.paused != true else { return .distantFuture }
         return state.scopes[key(scope)]?.coverage?.lastAssessment ?? .distantPast
     }
     func status(_ model:LearningRuntime)->String {
         if busy { return "Learning from a small recent WhatsApp batch…" }
-        let scope=model.whatsapp.scope(for:model.inference.activeID),access=model.whatsapp.access(for:scope.registration)
+        let scope=model.whatsapp.scope(for:model.inference.activeID),access=model.whatsappLearningAccess
         if !access.enabled || access.learnContext != true { return "WhatsApp context learning is off. Enable it separately in WhatsApp → PA chat access." }
         if state.scopes[key(scope)]?.paused == true { return "Source learning paused after an interrupted or failed attempt. Check recent context resumes once." }
         let progress=state.scopes[key(scope)],coverage=progress?.coverage
@@ -41,8 +42,9 @@ import SwiftData
         return text + ". Partial coverage; collection does not mean the AI has read everything. Shared learning budget: 4 automatic passes/day."
     }
     func check(_ model:LearningRuntime,manual:Bool=false) {
+        guard (try? model.validateOwnership()) != nil else {return}
         let assistant=model.assistant,memory=assistant.memory,registration=model.inference.activeID
-        let scope=model.whatsapp.scope(for:registration),access=model.whatsapp.access(for:registration)
+        let scope=model.whatsapp.scope(for:registration),access=model.whatsappLearningAccess
         guard !model.otherWorkBusy(excluding:.whatsapp),readable,!busy,access.enabled,access.learnContext == true,!scope.linkedIdentity.isEmpty,!access.chats.isEmpty,
               memory.enabled,memory.learningEnabled,assistant.contextEnabled,!assistant.busy,!assistant.hasDraft,!model.writing,
               !model.inference.busy,!model.inference.usagePaused,model.inference.inferenceVerified else { return }
@@ -50,6 +52,11 @@ import SwiftData
         guard manual || !savedProgress.paused else { return }
         let recent=SourceContextRules.recent(model.whatsapp.messages,chats:model.whatsapp.chats,allowed:access.chats,now:model.now(),limit:2000)
         var progress=SourceContextRules.collecting(savedProgress,recent:recent,now:model.now())
+        // New inherited review permission starts at today's available cache, never an implicit backfill.
+        if state.scopes[scopeKey] == nil && !manual && model.whatsapp.access(for:registration).learnContext != true {
+            progress.coverage?.baseline=Dictionary(recent.map{($0.id,$0.revision)},uniquingKeysWith:{first,_ in first})
+            progress.coverage?.pending=[]
+        }
         let recovered=recent.filter{memory.sourceAssessmentDate(SourceContextRules.assessmentKey(registration:registration,linkedIdentity:scope.linkedIdentity,message:$0)) != nil && progress.seen[$0.id] != $0.revision}
         if !recovered.isEmpty {
             let date=recovered.compactMap{memory.sourceAssessmentDate(SourceContextRules.assessmentKey(registration:registration,linkedIdentity:scope.linkedIdentity,message:$0))}.max() ?? model.now()
@@ -74,16 +81,17 @@ import SwiftData
             return left == right ? a.reviewed > b.reviewed : left > right
         }
         guard let assessment=SourceContextRules.prepare(batch,recent:recent,existing:existing,candidates:candidates) else { self.error="This source batch exceeded its bounded context window; progress is preserved.";return }
-        busy=true;error=nil
+        ownedHeartbeatRunID=model.ownedHeartbeatRunID;busy=true;error=nil
         task=Task {
-            defer { busy=false }
+            defer { ownedHeartbeatRunID=nil;busy=false }
             do {
-                try Task.checkCancellation()
-                guard scope == model.whatsapp.scope(for:model.inference.activeID),registration == model.inference.activeID,memoryRevision == memory.revision,
+                try model.validateOwnership()
+                guard scope == model.whatsapp.scope(for:model.inference.activeID),access == model.whatsappLearningAccess,registration == model.inference.activeID,memoryRevision == memory.revision,
                       selectedModel == model.inference.selectedModel,memory.enabled,memory.learningEnabled,assistant.contextEnabled,contextRevision == assistant.contextRevision,!assistant.busy,!assistant.hasDraft,!model.writing else { throw MemoryLearningFailure.changed }
-                let output=try await model.inference.streamResponse(input:[["role":"user","content":assessment.input]],instructions:SourceContextRules.instructions,model:selectedModel,purpose:.learning) { _ in }
-                try Task.checkCancellation()
-                guard scope == model.whatsapp.scope(for:model.inference.activeID),registration == model.inference.activeID,
+                try model.claimInference()
+                let output=try await model.inference.streamResponse(input:[["role":"user","content":assessment.input]],instructions:SourceContextRules.instructions+" "+LearningRuntime.inlineSourceOrganisationInstructions,model:selectedModel,purpose:.learning) { _ in }
+                try model.validateOwnership()
+                guard scope == model.whatsapp.scope(for:model.inference.activeID),access == model.whatsappLearningAccess,registration == model.inference.activeID,
                       selectedModel == model.inference.selectedModel,memoryRevision == memory.revision,memory.enabled,memory.learningEnabled,
                       sourcesEnabled == assistant.contextEnabled,assistant.contextEnabled,contextRevision == assistant.contextRevision,!assistant.busy,!assistant.hasDraft,!model.writing else { throw MemoryLearningFailure.changed }
                 let fresh=SourceContextRules.recent(model.whatsapp.messages,chats:model.whatsapp.chats,allowed:access.chats,now:model.now(),limit:2000)

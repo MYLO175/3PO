@@ -136,6 +136,46 @@ import SwiftData
         await wait { conversation.busy }
         check(inference.calls == 9 && conversation.error != nil && memory.records.count == 1, "A foreground request without a draft still rejects late learning output")
         check(MemoryLearningService(container:container, settings:settings).state.accounts["fixture"]?.paused == true, "Foreground interruption keeps the durable failed claim paused after reopen")
+        assistant.busy=false;inference.onCall=nil;inference.activeID="owned-fixture";now.addTimeInterval(86400)
+        var ownerValid=true,permission=true,claims=0,seenRun:String?
+        let owned=LearningRuntime(assistant:assistant,inference:inference,learningBudget:budget,whatsapp:whatsapp,now:{now},activity:{activity},writing:{writing},sourceRevision:{sourceRevision},nativeItems:{kind,_ in kind == .reminder ? native : nil},ownership:.init(runID:"heartbeat-A",validate:{if !ownerValid {throw MemoryLearningFailure.changed}},claim:{claims += 1}),reviewNativePermission:{_ in permission},reviewWhatsAppPermission:{permission})
+        memory.sourceIsPermitted={sources.permits($0,model:owned)}
+        native=[];sources.check(owned,kind:.reminder)
+        check(!sources.enabled(.reminder,registration:inference.activeID) && sources.permittedKind(.reminder,model:owned),"Inherited source permission never rewrites saved opt-ins")
+        check(claims == 0 && !sources.busy,"Inherited source permission establishes a baseline without inference")
+        native=[.init(identity:.init(kind:.reminder,accountID:"fixture",containerID:"list",itemID:"owned-item"),revision:"one",label:"Fictional task",text:"Prepare the optics report",date:now,changed:now)]
+        let itemID=native[0].id
+        inference.answer="{\"facts\":[{\"itemID\":\"\(itemID)\",\"text\":\"The reminder requests preparation of the optics report\",\"quote\":\"Prepare the optics report\",\"kind\":\"commitment\",\"areas\":[\"studies\"],\"state\":\"proposed\"}]}"
+        inference.onCall={seenRun=sources.ownedHeartbeatRunID}
+        sources.check(owned,kind:.reminder);await wait{sources.busy}
+        check(claims == 1 && seenRun == "heartbeat-A" && sources.ownedHeartbeatRunID == nil,"Actual owned learner claims once and clears exact run identity after finishing")
+        check(memory.records.last?.organisation?.areas == [.studies] && memory.records.last?.source != nil,"Source learning saves inline organisation with exact source evidence")
+        let learnedSource=memory.records.last!
+        permission=false
+        check(!sources.permits(learnedSource,model:owned),"Withdrawing inherited review permission immediately withdraws source recall")
+        let callsBeforeBlocked=inference.calls
+        sources.check(owned,kind:.reminder)
+        check(inference.calls == callsBeforeBlocked,"Revoked permission cannot start source inference")
+        permission=true;now.addTimeInterval(1800);native[0].revision="two";native[0].changed=now
+        inference.onCall={ownerValid=false}
+        let factsBefore=memory.records.count
+        sources.check(owned,kind:.reminder);await wait{sources.busy}
+        check(claims == 2 && sources.error != nil && memory.records.count == factsBefore,"Parent ownership loss rejects late child facts before commit")
+        ownerValid=true;inference.onCall=nil;now.addTimeInterval(1800)
+        sources.check(owned,kind:.reminder)
+        check(claims == 2 && !sources.busy,"A fresh heartbeat never resumes a failed learning claim")
+        whatsapp.accessValue.learnContext=false
+        check(owned.whatsappLearningAccess.learnContext == true && whatsapp.accessValue.learnContext == false,"WhatsApp review inheritance is effective access, not a stored opt-in mutation")
+        permission=false
+        check(owned.whatsappLearningAccess.learnContext != true,"WhatsApp learning inheritance is revoked with review permission")
+        permission=true;inference.activeID="owned-whatsapp";inference.answer="{\"facts\":[]}"
+        whatsapp.messages=[.init(id:"older",chat:"chat",sender:"contact",text:"Please prepare the report",sentByMe:false,time:now.timeIntervalSince1970*1000)]
+        messages.check(owned)
+        check(!messages.busy && claims == 2,"A newly inherited WhatsApp scope baselines its current cache")
+        now.addTimeInterval(1)
+        whatsapp.messages.append(.init(id:"new",chat:"chat",sender:"contact",text:"Please prepare a diagram",sentByMe:false,time:now.timeIntervalSince1970*1000))
+        messages.check(owned);await wait{messages.busy}
+        check(claims == 3 && messages.error == nil,"Only new inherited WhatsApp deltas run under a persisted owned claim")
         print("PASS \(count) actual learning-service checks: injected providers/clock, persistence, foreground priority, source/account drift, pauses, explicit recovery; no dashboard, credentials or personal sources.")
     }
 }

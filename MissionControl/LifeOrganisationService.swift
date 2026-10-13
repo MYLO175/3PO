@@ -9,6 +9,7 @@ import SwiftData
     }
     private let settings: UserDefaults
     @ObservationIgnored private var restoringSettings = true
+    private(set) var ownedHeartbeatRunID:String?
     private(set) var busy=false
     private(set) var error:String?
     private(set) var status=""
@@ -36,6 +37,7 @@ import SwiftData
         return "\(organised) of \(records.count) human facts organised · unpinned classifications revisited after 30 days · at most 2 small automatic passes per day"
     }
     func check(_ model:LearningRuntime,manual:Bool=false,topic:UUID?=nil) {
+        guard (try? model.validateOwnership()) != nil else {return}
         let assistant=model.assistant,memory=assistant.memory,registration=model.inference.activeID
         guard !model.otherWorkBusy(excluding:.organisation),readable,!busy,(manual || automatic),memory.enabled,memory.learningEnabled,!assistant.busy,(manual || !assistant.hasDraft),
               !model.inference.busy,!model.inference.usagePaused,model.inference.inferenceVerified,!model.writing,
@@ -60,13 +62,13 @@ import SwiftData
         guard LifeOrganisationBatch.allowed(state.accounts[registration] ?? .init(),now:model.now(),manual:manual) else { return }
         guard requestedScopes.contains(where:{ !batch(memory,registration:registration,topic:$0,now:model.now()).isEmpty }) else { return }
         guard model.learningBudget.claim(registration,manual:manual,now:model.now(),lane:.organisation) else { return }
-        busy=true;error=nil
+        ownedHeartbeatRunID=model.ownedHeartbeatRunID;busy=true;error=nil
         task=Task {
-            defer { busy=false }
+            defer { ownedHeartbeatRunID=nil;busy=false }
             do {
                 var total=0,passes=0
                 for _ in 0..<(manual ? 4 : 1) {
-                    try Task.checkCancellation()
+                    try model.validateOwnership()
                     guard memory.enabled,memory.learningEnabled,registration == model.inference.activeID,selectedModel == model.inference.selectedModel,
                           (manual || automatic == enabledAtStart),Set(assistant.topics.map(\.id)) == capturedTopics,!assistant.busy,!model.writing,(manual || !assistant.hasDraft) else { throw MemoryLearningFailure.changed }
                     guard let scope=requestedScopes.first(where:{ !batch(memory,registration:registration,topic:$0,now:model.now()).isEmpty }) else { break }
@@ -77,8 +79,9 @@ import SwiftData
                     progress.attempts += 1;progress.lastAttempt=now;progress.paused=true;state.accounts[registration]=progress
                     do { try save() } catch { state=old;throw error }
                     status="Organising \(records.count) saved facts…"
+                    try model.claimInference()
                     let output=try await model.inference.streamResponse(input:[["role":"user","content":LifeOrganisationRules.input(records)]],instructions:LifeOrganisationRules.instructions,model:selectedModel,purpose:.organisation) { _ in }
-                    try Task.checkCancellation()
+                    try model.validateOwnership()
                     guard revision == memory.revision,memory.enabled,memory.learningEnabled,registration == model.inference.activeID,selectedModel == model.inference.selectedModel,
                           (manual || automatic == enabledAtStart),Set(assistant.topics.map(\.id)) == capturedTopics,!assistant.busy,!model.writing,(manual || !assistant.hasDraft) else { throw MemoryLearningFailure.changed }
                     guard let entries=LifeOrganisationRules.decode(output,records:records) else { throw MemoryLearningFailure.invalid }

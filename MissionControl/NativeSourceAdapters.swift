@@ -25,15 +25,27 @@ enum NativeSourceAdapters {
             return .init(identity:identity,revision:NativeLearningRules.hash([text,item.modified?.ISO8601Format() ?? ""]),label:String(item.sourceLabel.prefix(300)),text:text,date:item.due,changed:item.modified)
         }
     }
+    /// Use independently collected account lanes. A new failure narrows a captured run;
+    /// an existing partial-page warning does not erase exact cached source evidence.
+    static func collectedMail(_ snapshot:MailSnapshot,index:MailIndexState,summaries:[EmailSummary],registration:String,excluded:Set<String>,now:Date,scope:MailReviewScope? = nil)->[NativeLearningItem] {
+        let captured=scope ?? MailReviewScope.collected(index:index,snapshot:snapshot,excluded:excluded)
+        let permitted=snapshot.messages.filter{captured.permits($0.accountID,index:index,snapshot:snapshot,excluded:excluded)}
+        return mail(permitted,summaries:summaries,registration:registration,excluded:excluded,now:now)
+    }
     static func mail(_ messages:[MailMessage],summaries:[EmailSummary],registration:String,excluded:Set<String>,now:Date)->[NativeLearningItem] {
         let counts=Dictionary(grouping:messages.filter{!excluded.contains($0.accountID)},by:{NativeLearningRules.hash([$0.accountID,$0.internetMessageID])}).mapValues(\.count)
         return Array(messages.filter{!excluded.contains($0.accountID)}.sorted{($0.received,$0.id) > ($1.received,$1.id)}.prefix(200)).compactMap { message in
             guard !message.internetMessageID.isEmpty,counts[NativeLearningRules.hash([message.accountID,message.internetMessageID])] == 1,
                   let summary=summaries.first(where:{$0.registration == registration && $0.id == message.id && $0.fingerprint == EmailSummary.fingerprint(message)}),
-                  let body=summary.bodyFingerprint,!body.isEmpty,let checked=summary.bodyCheckedAt,now.timeIntervalSince(checked) >= 0,now.timeIntervalSince(checked) <= 86400 else { return nil }
-            let quotes=[summary.evidence,summary.followUpEvidence ?? ""].filter{(8...500).contains($0.count)}
-            guard !quotes.isEmpty else { return nil }
-            let text="Email sender: \(message.sender)\nSubject: \(message.subject)\nReceived: \(message.received.ISO8601Format())\nExact retained excerpts:\n" + quotes.joined(separator:"\n")
+                  let body=summary.bodyFingerprint,!body.isEmpty,(summary.observedBodyFingerprint == nil || summary.observedBodyFingerprint == body),let checked=summary.bodyCheckedAt,now.timeIntervalSince(checked) >= 0,now.timeIntervalSince(checked) <= 86400 else { return nil }
+            let header="Email sender: \(message.sender)\nSubject: \(message.subject)\nReceived: \(message.received.ISO8601Format())\nExact retained excerpts:\n"
+            var quotes:[String]=[],bytes=header.utf8.count
+            for quote in [summary.evidence,summary.followUpEvidence ?? ""] + (summary.actionEvidence ?? []) {
+                guard (8...500).contains(quote.count),!quotes.contains(quote),bytes+quote.utf8.count+1 <= 2400 else {continue}
+                quotes.append(quote);bytes += quote.utf8.count+1
+            }
+            guard !quotes.isEmpty else {return nil}
+            let text=header+quotes.joined(separator:"\n")
             let identity=MemorySourceIdentity(kind:.mail,accountID:message.accountID,containerID:message.accountID,itemID:message.internetMessageID)
             guard identity.valid,text.utf8.count <= 2400 else { return nil }
             return .init(identity:identity,revision:NativeLearningRules.hash([text,body]),label:String(("Mail · " + message.account).prefix(300)),text:text,date:message.received,changed:checked)

@@ -72,14 +72,25 @@ import SwiftData
         let reminderB=NativeSourceAdapters.reminders(.init(sources:[list],reminders:[reminder]),excluded:[]).first!
         precondition(reminderA.identity == reminderB.identity && reminderA.revision != reminderB.revision && reminderB.text.contains(DateRules.localDate(reminder.due!)))
         precondition(NativeSourceAdapters.reminders(.init(sources:[list],reminders:[reminder]),excluded:[list.id]).isEmpty)
-        func mail(unread:Bool=true,replied:Bool=false)throws->MailMessage {
-            let value:[String:Any]=["id":"native","accountID":"account","account":"Fictional","messageID":1,"internetMessageID":"internet","sender":"Alex","subject":"Orion draft","received":now.timeIntervalSinceReferenceDate,"unread":unread,"replied":replied,"flagged":false]
+        func mail(unread:Bool=true,replied:Bool=false,subject:String="Orion draft")throws->MailMessage {
+            let value:[String:Any]=["id":"native","accountID":"account","account":"Fictional","messageID":1,"internetMessageID":"internet","sender":"Alex","subject":subject,"received":now.timeIntervalSinceReferenceDate,"unread":unread,"replied":replied,"flagged":false]
             return try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:value))
         }
         let message=try mail()
         var summary=EmailSummary(id:message.id,registration:registration,fingerprint:EmailSummary.fingerprint(message),summary:"Never raw evidence",attention:true,reason:"Never raw evidence",evidence:"The Orion draft is due Monday.",bodyFingerprint:"body-a",bodyCheckedAt:now,message:message)
         func mailItems(_ messages:[MailMessage]=[message],_ excluded:Set<String>=[])->[NativeLearningItem] { NativeSourceAdapters.mail(messages,summaries:[summary],registration:registration,excluded:excluded,now:now) }
         let mailA=mailItems().first!
+        summary.observedBodyFingerprint="changed-body"
+        precondition(mailItems().isEmpty,"Known stale source bodies cannot seed memory")
+        summary.observedBodyFingerprint=nil
+        summary.actionEvidence=[summary.evidence,"The final review is on 16 May 2027."]
+        let compound=mailItems().first!
+        precondition(compound.text.contains("The final review is on 16 May 2027."))
+        precondition(compound.text.components(separatedBy:summary.evidence).count == 2,"Exact duplicate quotes occur once")
+        summary.actionEvidence=(0..<12).map{"Action \($0): "+String(repeating:"é",count:450)}
+        let bounded=mailItems().first!
+        precondition(bounded.text.utf8.count <= 2400 && bounded.text.contains(summary.evidence),"Bounded quote selection retains useful evidence instead of dropping the entire email")
+        summary.actionEvidence=nil
         precondition(!mailA.text.contains(summary.summary))
         let flags=try mail(unread:false,replied:true)
         precondition(mailItems([flags]).first == mailA,"Read/replied flags aren't evidence changes or completion")
@@ -98,6 +109,23 @@ import SwiftData
         mailProgress=NativeLearningRules.collecting(mailProgress,items:[unseenOldMail],now:now)
         precondition(NativeLearningRules.batch([unseenOldMail],progress:mailProgress,manual:false).isEmpty,"A newly assessed old email isn't an automatic history sweep")
         precondition(mailItems([message,message]).isEmpty && mailItems([message],[message.accountID]).isEmpty)
+        var index=MailIndexState()
+        let accounts=[MailAccount(id:message.accountID,title:"Fictional")]
+        index.discovered(now:now);index.prepare(accounts:accounts,now:now)
+        let page=index.monitor(message.accountID)!
+        var snapshot=index.apply(MailBatch(messages:[message],messageIDs:[message.messageID,42],nextOffset:1,complete:false,errors:[]),to:page.id,snapshot:MailSnapshot(messages:[],accounts:accounts,errors:[]),now:now)
+        index.failed(message.accountID,detail:"Fictional partial-page issue",now:now)
+        let captured=MailReviewScope.collected(index:index,snapshot:snapshot,excluded:[])
+        func collected()->[NativeLearningItem] {NativeSourceAdapters.collectedMail(snapshot,index:index,summaries:[summary],registration:registration,excluded:[],now:now,scope:captured)}
+        precondition(collected().count == 1,"Verified partial collected pages survive existing collection errors without another read")
+        index.failed(message.accountID,detail:"New source failure",now:now.addingTimeInterval(1))
+        precondition(collected().isEmpty,"New in-flight account failure withdraws that account's learning evidence")
+        let live=MailReviewScope.collected(index:index,snapshot:snapshot,excluded:[])
+        snapshot=MailSnapshot(messages:snapshot.messages,accounts:[],errors:[])
+        precondition(NativeSourceAdapters.collectedMail(snapshot,index:index,summaries:[summary],registration:registration,excluded:[],now:now,scope:live).isEmpty,"Removed accounts cannot retain source memory support")
+        let changedHeader=try mail(subject:"Changed exact subject")
+        snapshot=MailSnapshot(messages:[changedHeader],accounts:accounts,errors:[])
+        precondition(NativeSourceAdapters.collectedMail(snapshot,index:index,summaries:[summary],registration:registration,excluded:[],now:now,scope:live).isEmpty,"Header changes reject stale exact assessments")
         summary.bodyCheckedAt=now.addingTimeInterval(-86401);precondition(mailItems().isEmpty)
         summary.bodyCheckedAt=now;summary.fingerprint="different";precondition(mailItems().isEmpty)
         precondition(!NativeSourceAdapters.fresh(.init(lastSuccess:now,error:"failed"),now:now) && !NativeSourceAdapters.fresh(.init(lastSuccess:now.addingTimeInterval(-1801)),now:now))

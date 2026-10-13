@@ -13,8 +13,7 @@ extension DashboardModel {
             guard reminderCollectionRevision == sourceRevision,EKEventStore.authorizationStatus(for:.reminder) == .fullAccess,NativeSourceAdapters.fresh(reminderHealth,now:now) else { return nil }
             return NativeSourceAdapters.reminders(reminderData,excluded:assistant.excludedLists)
         case .mail:
-            guard NativeSourceAdapters.fresh(mailHealth,now:now) else { return nil }
-            return NativeSourceAdapters.mail(mailData.messages,summaries:emailSummaries.records,registration:chatGPT.activeID,excluded:assistant.excludedAccounts,now:now)
+            return NativeSourceAdapters.collectedMail(mailData,index:mailIndex,summaries:emailSummaries.records,registration:chatGPT.activeID,excluded:assistant.excludedAccounts,now:now)
         case .whatsapp:return nil
         }
     }

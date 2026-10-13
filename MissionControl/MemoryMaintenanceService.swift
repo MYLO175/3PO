@@ -8,6 +8,7 @@ import Observation
     private var readable=true
     private let container:ModelContainer?
     private var task:Task<Void,Never>?
+    private(set) var ownedHeartbeatRunID:String?
     private(set) var busy=false
     private(set) var error:String?
     private(set) var status="Review useful human facts for possible duplicates, conflicts or obsolete provisional context."
@@ -45,6 +46,7 @@ import Observation
     }
     func paused(_ registration:String)->Bool { state.accounts[registration]?.paused == true }
     func check(_ model:LearningRuntime,manual:Bool=false) {
+        guard (try? model.validateOwnership()) != nil else {return}
         let memory=model.assistant.memory,registration=model.inference.activeID,progress=state.accounts[registration] ?? .init()
         guard !model.otherWorkBusy(excluding:.maintenance),readable,!busy,!registration.isEmpty,manual || (progress.automatic && !progress.paused && model.now().timeIntervalSince(progress.lastAttempt ?? .distantPast) >= 7*86400),
               memory.enabled,memory.learningEnabled,!model.assistant.busy,!model.assistant.hasDraft,!model.inference.busy,!model.inference.usagePaused,model.inference.inferenceVerified,!model.writing else { return }
@@ -53,14 +55,15 @@ import Observation
         let prior=state;state.accounts[registration,default:.init()].paused=true;state.accounts[registration]?.lastAttempt=now
         do { try save() } catch { state=prior;self.error=error.localizedDescription;return }
         let captured=revision,memoryRevision=memory.revision,selectedModel=model.inference.selectedModel
-        busy=true;error=nil;status="Reviewing \(records.count) human facts; no edits will be made…"
+        ownedHeartbeatRunID=model.ownedHeartbeatRunID;busy=true;error=nil;status="Reviewing \(records.count) human facts; no edits will be made…"
         task=Task {
-            defer { busy=false }
+            defer { ownedHeartbeatRunID=nil;busy=false }
             do {
-                try Task.checkCancellation()
+                try model.validateOwnership()
                 guard registration == model.inference.activeID,captured == revision,memoryRevision == memory.revision,selectedModel == model.inference.selectedModel,memory.enabled,memory.learningEnabled,!model.assistant.busy,!model.assistant.hasDraft,!model.writing else { throw MemoryLearningFailure.changed }
+                try model.claimInference()
                 let output=try await model.inference.streamResponse(input:[["role":"user","content":input]],instructions:MemoryReviewRules.instructions,model:selectedModel,purpose:.organisation) { _ in }
-                try Task.checkCancellation()
+                try model.validateOwnership()
                 guard registration == model.inference.activeID,captured == revision,memoryRevision == memory.revision,selectedModel == model.inference.selectedModel,memory.enabled,memory.learningEnabled,!model.assistant.busy,!model.assistant.hasDraft,!model.writing else { throw MemoryLearningFailure.changed }
                 guard let proposals=MemoryReviewRules.decode(output,records:records,registration:registration,now:now) else { throw MemoryLearningFailure.invalid }
                 let beforeSave=state

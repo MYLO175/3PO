@@ -3,6 +3,7 @@ import Observation
 import SwiftData
 
 @MainActor @Observable final class NativeSourceLearningService {
+    private(set) var ownedHeartbeatRunID:String?
     private(set) var busy=false
     private(set) var error:String?
     private(set) var revision=UUID()
@@ -21,6 +22,9 @@ import SwiftData
         } catch { readable=false;self.error="Source-learning settings could not be read. Their saved data is preserved." }
     }
     func enabled(_ kind:MemorySourceKind,registration:String)->Bool { readable && state.scopes[NativeLearningRules.key(registration,kind)]?.enabled == true }
+    func permittedKind(_ kind:MemorySourceKind,model:LearningRuntime)->Bool {
+        readable && (enabled(kind,registration:model.inference.activeID) || model.permitsReviewLearning(kind))
+    }
     func setEnabled(_ value:Bool,kind:MemorySourceKind,model:LearningRuntime) {
         guard readable,NativeLearningRules.kinds.contains(kind),!model.inference.activeID.isEmpty else { return }
         let key=NativeLearningRules.key(model.inference.activeID,kind),prior=state
@@ -42,11 +46,11 @@ import SwiftData
         }.min() ?? .distantFuture
     }
     func permits(_ record:PAMemory,model:LearningRuntime)->Bool {
-        guard record.registration == model.inference.activeID,let kind=record.source?.identity.kind,enabled(kind,registration:record.registration),let items=model.nativeLearningItems(kind) else { return false }
+        guard record.registration == model.inference.activeID,let kind=record.source?.identity.kind,permittedKind(kind,model:model),let items=model.nativeLearningItems(kind) else { return false }
         return NativeLearningRules.permitted(record,items:items)
     }
     func status(_ kind:MemorySourceKind,model:LearningRuntime)->String {
-        guard enabled(kind,registration:model.inference.activeID) else { return "Off · collected data is request context only; it isn't learned into memory." }
+        guard permittedKind(kind,model:model) else { return "Off · collected data is request context only; it isn't learned into memory." }
         if !model.assistant.memory.enabled || !model.assistant.memory.learningEnabled { return "Opt-in saved; memory use/learning is paused. Existing facts and progress remain saved." }
         if busy && activeKind == kind { return "Assessing a small cached batch…" }
         guard let items=model.nativeLearningItems(kind) else { return "Waiting for fresh, permitted source coverage. Cached or failed reads aren't evidence of completion." }
@@ -58,6 +62,7 @@ import SwiftData
         return "\(items.count) currently eligible · \(assessed) assessed versions · \(baseline) baseline · \(pending == 8 ? "8 or more" : String(pending)) waiting · \(progress.unavailable ?? 0) waiting versions became unavailable. Missing items are unknown."
     }
     func check(_ model:LearningRuntime,kind requested:MemorySourceKind? = nil,manual:Bool=false) {
+        guard (try? model.validateOwnership()) != nil else {return}
         let assistant=model.assistant,memory=assistant.memory,registration=model.inference.activeID
         guard !model.otherWorkBusy(excluding:.nativeSources),readable,!busy,memory.enabled,memory.learningEnabled,assistant.contextEnabled,!assistant.busy,!assistant.hasDraft,!model.writing,
               !model.inference.busy,!model.inference.usagePaused,model.inference.inferenceVerified else { return }
@@ -67,7 +72,7 @@ import SwiftData
             return l == r ? left.rawValue < right.rawValue : l < r
         }
         for kind in kinds {
-            guard enabled(kind,registration:registration),let items=model.nativeLearningItems(kind) else { continue }
+            guard permittedKind(kind,model:model),let items=model.nativeLearningItems(kind) else { continue }
             let key=NativeLearningRules.key(registration,kind),original=state.scopes[key] ?? .init()
             guard manual || !original.paused else { continue }
             var progress=NativeLearningRules.collecting(original,items:items,now:model.now())
@@ -88,19 +93,20 @@ import SwiftData
             guard let input=try? NativeLearningRules.input(items:batch,candidates:candidates,existing:existing,coverage:coverage) else { error="The bounded input couldn't be prepared. Review once resumes this paused pass.";return }
             let memoryRevision=memory.revision,permissionRevision=revision,selectedModel=model.inference.selectedModel,contextRevision=assistant.contextRevision,sourceRevision=model.sourceRevision
             let calendars=assistant.excludedCalendars,lists=assistant.excludedLists,accounts=assistant.excludedAccounts
-            busy=true;activeKind=kind;error=nil
+            ownedHeartbeatRunID=model.ownedHeartbeatRunID;busy=true;activeKind=kind;error=nil
             task=Task {
-                defer { busy=false;activeKind=nil }
+                defer { ownedHeartbeatRunID=nil;busy=false;activeKind=nil }
                 @MainActor func valid()->Bool {
-                    registration == model.inference.activeID && permissionRevision == revision && enabled(kind,registration:registration) &&
+                    registration == model.inference.activeID && permissionRevision == revision && permittedKind(kind,model:model) &&
                     selectedModel == model.inference.selectedModel && memoryRevision == memory.revision && memory.enabled && memory.learningEnabled && assistant.contextEnabled && contextRevision == assistant.contextRevision &&
                     calendars == assistant.excludedCalendars && lists == assistant.excludedLists && accounts == assistant.excludedAccounts && sourceRevision == model.sourceRevision &&
                     !assistant.busy && !assistant.hasDraft && !model.writing && model.nativeLearningItems(kind) == items
                 }
                 do {
-                    try Task.checkCancellation();guard valid() else { throw MemoryLearningFailure.changed }
-                    let output=try await model.inference.streamResponse(input:[["role":"user","content":input]],instructions:NativeLearningRules.instructions,model:selectedModel,purpose:.learning) { _ in }
-                    try Task.checkCancellation()
+                    try model.validateOwnership();guard valid() else { throw MemoryLearningFailure.changed }
+                    try model.claimInference()
+                    let output=try await model.inference.streamResponse(input:[["role":"user","content":input]],instructions:NativeLearningRules.instructions+" "+LearningRuntime.inlineSourceOrganisationInstructions,model:selectedModel,purpose:.learning) { _ in }
+                    try model.validateOwnership()
                     guard valid(),let facts=NativeLearningRules.decode(output,items:batch,candidates:candidates,registration:registration,now:model.now()),facts.allSatisfy({permits($0,model:model)}) else { throw MemoryLearningFailure.changed }
                     let texts=Dictionary(batch.map{($0.identity,$0.text)},uniquingKeysWith:{first,_ in first})
                     let replacements=Dictionary(candidates.compactMap{old in old.source.map{(old.id,$0)}},uniquingKeysWith:{first,_ in first})

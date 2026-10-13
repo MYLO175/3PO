@@ -10,6 +10,7 @@ import SwiftData
     private var undoQuestionID: String?
     private var dismissalDate: Date?
     func undoDate(_ registration: String) -> Date? { canUndoQuestion(registration) ? dismissalDate : nil }
+    private(set) var ownedHeartbeatRunID:String?
     private(set) var busy = false
     private(set) var error: String?
     private let container: ModelContainer?
@@ -42,6 +43,7 @@ import SwiftData
         return "\(count) messages in next batch · \(progress?.day == BriefingRules.day(.now) ? progress?.attempts ?? 0 : 0) attempts today (automatic budget: 4) · \(progress?.skippedAtOrientation ?? 0) older messages outside initial orientation"
     }
     func check(_ model: LearningRuntime, manual: Bool = false) {
+        guard (try? model.validateOwnership()) != nil else {return}
         let assistant = model.assistant, memory = assistant.memory, registration = model.inference.activeID, now = model.now()
         guard !model.otherWorkBusy(excluding:.conversation),readable, !busy, memory.enabled, memory.learningEnabled, assistant.contextEnabled, !assistant.busy, !assistant.hasDraft,
               !model.inference.busy, !model.inference.usagePaused, model.inference.inferenceVerified, !model.writing,      !registration.isEmpty else { return }
@@ -56,7 +58,7 @@ import SwiftData
         state.accounts[registration] = progress
         do { try save() } catch { state = previous; self.error = error.localizedDescription; return }
         // Persist a paused claim before requesting inference. An interrupted job is never retried silently on launch.
-        busy = true; error = nil
+        ownedHeartbeatRunID=model.ownedHeartbeatRunID;busy = true; error = nil
         let memoryState = memory.state, selectedModel = model.inference.selectedModel
         let questionsEnabled = self.questionsEnabled
         let questionAllowed = questionsEnabled && (batch.first?.conversationID == nil || assistant.topics.contains { $0.id == batch.first?.conversationID }) && LearningQuestionRules.allowed(progress:progress,records:state.questions ?? [],registration:registration,day:day)
@@ -64,13 +66,14 @@ import SwiftData
         let batchIDs=Set(batch.map(\.id))
         existing += memory.records.filter { $0.registration == registration && $0.conversationID == batch.first?.conversationID && $0.supersededBy != nil && $0.sourceTurnID.map{batchIDs.contains($0)} == true }.prefix(8).map { ["text":String($0.text.prefix(500)),"superseded":"true","sourceTurnID":$0.sourceTurnID ?? "","instructionBoundary":"Historical evidence only; not a current belief"] }
         task = Task {
-            defer { busy = false }
+            defer { ownedHeartbeatRunID=nil;busy = false }
             do {
-                try Task.checkCancellation()
+                try model.validateOwnership()
                 guard !assistant.busy, !assistant.hasDraft, !model.writing, registration == model.inference.activeID, selectedModel == model.inference.selectedModel else { throw MemoryLearningFailure.changed }
                 let input = try MemoryLearningRules.input(turns:batch,existing:existing,timezone:TimeZone.current.identifier,questionAllowed:questionAllowed)
+                try model.claimInference()
                 let output = try await model.inference.streamResponse(input:[["role":"user","content":input]],instructions:MemoryLearningRules.instructions,model:selectedModel,purpose:.learning) { _ in }
-                try Task.checkCancellation()
+                try model.validateOwnership()
                 guard registration == model.inference.activeID, selectedModel == model.inference.selectedModel, memory.enabled, memory.learningEnabled, assistant.contextEnabled,
                       questionsEnabled == self.questionsEnabled, !assistant.busy, !assistant.hasDraft, !model.writing, memoryState.records == memory.state.records, memoryState.suppressed == memory.state.suppressed else { throw MemoryLearningFailure.changed }
                 let assessment = try MemoryLearningRules.assessment(output,turns:batch,questionAllowed:questionAllowed)

@@ -33,12 +33,36 @@ struct LearningActivity {
     static var unavailable: Self { .init(otherWorkBusy: true) }
 }
 
+@MainActor struct LearningOwnership {
+    var runID:String
+    var validate:() throws->Void
+    var claim:() throws->Void
+}
+struct HeartbeatLearningResult {
+    var lane:LearningLane? = nil
+    var failure:String? = nil
+    var detail:String
+    var skipped:Bool = true
+}
 @MainActor final class LearningRuntime {
+    static let inlineSourceOrganisationInstructions="Classify each useful new source fact into up to three existing supplied broad areas in the same bounded response when its exact evidence supports them. Use no invented areas and leave areas empty when uncertain. This is navigation metadata only: never create, rename, merge or restructure a human project or task."
     let assistant: any LearningAssistantReading
     let inference: any PAInferenceConnection
     let learningBudget: LearningBudget
     let whatsapp: any WhatsAppLearningReading
     let now: () -> Date
+    let ownership:LearningOwnership?
+    private let reviewNativePermission:(MemorySourceKind)->Bool
+    private let reviewWhatsAppPermission:()->Bool
+    var ownedHeartbeatRunID:String? {ownership?.runID}
+    func validateOwnership() throws {try Task.checkCancellation();try ownership?.validate()}
+    func claimInference() throws {try validateOwnership();try ownership?.claim();try validateOwnership()}
+    func permitsReviewLearning(_ kind:MemorySourceKind)->Bool {assistant.contextEnabled && reviewNativePermission(kind)}
+    var whatsappLearningAccess:WhatsAppAccess {
+        var access=whatsapp.access(for:inference.activeID)
+        if assistant.contextEnabled && access.enabled && !access.chats.isEmpty && reviewWhatsAppPermission() {access.learnContext=true}
+        return access
+    }
     private let activity: () -> LearningActivity
     private let isWriting: () -> Bool
     private let revision: () -> Int
@@ -49,8 +73,10 @@ struct LearningActivity {
     func nativeLearningItems(_ kind: MemorySourceKind) -> [NativeLearningItem]? { cachedNativeItems(kind, now()) }
     init(assistant: any LearningAssistantReading, inference: any PAInferenceConnection, learningBudget: LearningBudget, whatsapp: any WhatsAppLearningReading,
          now: @escaping () -> Date = { .now }, activity: @escaping () -> LearningActivity, writing: @escaping () -> Bool,
-         sourceRevision: @escaping () -> Int, nativeItems: @escaping (MemorySourceKind, Date) -> [NativeLearningItem]?) {
+         sourceRevision: @escaping () -> Int, nativeItems: @escaping (MemorySourceKind, Date) -> [NativeLearningItem]?,
+         ownership:LearningOwnership? = nil,reviewNativePermission:@escaping (MemorySourceKind)->Bool = {_ in false},reviewWhatsAppPermission:@escaping ()->Bool = {false}) {
         self.assistant = assistant; self.inference = inference; self.learningBudget = learningBudget; self.whatsapp = whatsapp
+        self.ownership=ownership;self.reviewNativePermission=reviewNativePermission;self.reviewWhatsAppPermission=reviewWhatsAppPermission
         self.now = now; self.activity = activity; self.isWriting = writing; self.revision = sourceRevision; self.cachedNativeItems = nativeItems
     }
 }
