@@ -75,6 +75,10 @@ import Foundation
         let issued:[String:PADiscovery]=["review_0":historical]
         let proof=DiscoveryRetirementEvidence(kind:"reminder",id:renamed.id,revision:DiscoveryNativeTarget.reminder(renamed).fingerprint)
         let json=#"{"suggestions":[],"handled":[],"resolved":[],"retirements":[{"reviewID":"review_0","targetID":"reminder_0","reason":"The corrected contact action covers this request."}]}"#
+        let mixed=#"{"suggestions":[],"handled":[{"mailID":"mail_0","targetID":"unissued","reason":"Unsupported association","requestEvidenceID":"mail_0:primary","allActionsAddressed":true}],"resolved":[],"retirements":[{"reviewID":"review_0","targetID":"reminder_0","reason":"The corrected contact action covers this request."}]}"#
+        let rejectedAssociation=try ProactiveResultRules.validatedRows(mixed,section:.handled) {try EmailReviewRules.decodeHandled($0,summaries:[:],targets:[:],now:.now)}
+        let preservedRetirement=try ProactiveResultRules.validatedRows(mixed,section:.retirements) {try ProactiveRules.decodeRetirements($0,earlier:issued,targets:["reminder_0":proof],registration:record.registration)}
+        checks["unsupported handled association preserves verified retirement"] = rejectedAssociation.values.isEmpty && rejectedAssociation.issues.count == 1 && preservedRetirement.values.count == 1
         let retirements=try ProactiveRules.decodeRetirements(json,earlier:issued,targets:["reminder_0":proof],registration:record.registration)
         try model.proactive.commitComparison([],issued:issued,permittedEarlier:[],registration:record.registration,progress:.init(),now:.now,retirements:retirements,permittedRetirements:[historical.id])
         let retired=model.proactive.state.records[0]

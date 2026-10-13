@@ -115,6 +115,31 @@ enum ProactiveResultRules {
         return String(decoding:try JSONSerialization.data(withJSONObject:object,options:.sortedKeys),as:UTF8.self)
     }
 
+    struct ValidatedRows<Value> {
+        var values:[Value]=[]
+        var issues:[String]=[]
+        var rejectedSources=Set<String>()
+        var rejectedReviews=Set<String>()
+    }
+    /// Semantic failure is isolated to a row. Envelope/ownership validation happens
+    /// first; a rejected row is never repaired into a native or project operation.
+    static func validatedRows<Value>(_ response:String,section:ReviewResultDiagnostic.Section,decode:(String)throws->[Value])throws->ValidatedRows<Value> {
+        guard let object=try JSONSerialization.jsonObject(with:Data(response.utf8)) as? [String:Any],let rows=object[section.rawValue] as? [[String:Any]] else {throw ReviewResultDiagnostic(section:section,field:.envelope,reason:.wrongType)}
+        var result=ValidatedRows<Value>()
+        for (index,row) in rows.enumerated() {
+            var one:[String:Any]=["suggestions":[],"handled":[],"resolved":[],"retirements":[]];one[section.rawValue]=[row]
+            do {result.values += try decode(String(decoding:try JSONSerialization.data(withJSONObject:one),as:UTF8.self))}
+            catch {
+                var issue=(error as? ReviewResultDiagnostic) ?? .init(section:section,field:.envelope,reason:.invalidAssociation)
+                issue.section=section;issue.row=index;result.issues.append(issue.localizedDescription)
+                if let source=row["mailID"] as? String {result.rejectedSources.insert(source)}
+                if let review=row["reviewID"] as? String {result.rejectedReviews.insert(review)}
+                result.rejectedReviews.formUnion(row["replaces"] as? [String] ?? [])
+            }
+        }
+        return result
+    }
+
     /// Structural checks diagnose association fields before their semantic validators run.
     /// Unknown keys and values never become diagnostic text or stored model fragments.
     static func validateEnvelope(_ text:String) throws {

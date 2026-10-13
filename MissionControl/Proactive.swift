@@ -203,6 +203,7 @@ struct ProactiveProgress: Codable {
     var sourceContextRevision:String? = nil
     var assessedSourceVersions:[String:String]? = nil
     var reviewedProposalContexts:[String:String]? = nil
+    var validationIssues:[String]? = nil
 }
 struct ProactiveState: Codable {
     var version = 1

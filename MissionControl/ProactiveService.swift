@@ -141,6 +141,10 @@ struct ProactiveReviewContext {
         let previous=state;state.records[index].reviewState="approved";state.records[index].reviewedAt = .now
         do {try save()} catch {state=previous;throw ActionFailure.message("Apple save verified; proposal receipt storage failed. Check the original before repeating.")}
     }
+    func validationNotice(_ registration:String)->String? {
+        guard let issues=state.accounts[registration]?.validationIssues,!issues.isEmpty else {return nil}
+        return "Validated work saved. Withheld unsupported entries: " + issues.joined(separator:" ")
+    }
     func status(_ model: DashboardModel) -> String {
         if let error { return error }
         if busy { return "Comparing recent messages with your calendar and tasks…" }
@@ -393,43 +397,40 @@ struct ProactiveReviewContext {
                 let permittedRetirements=Set(earlierCandidates(model,mailReview:mailReview,whatsappReady:memoryWhatsAppReady).map(\.id))
                 if heartbeat {guard model.heartbeatNativeReady else {throw ActionFailure.message("Saved native evidence changed during review; no stale comparison was saved.")}}
                 let response=try ProactiveResultRules.completedJSON(result.calls.map{($0.namespace,$0.name,$0.arguments)})
-                let decoded:[PADiscovery]
-                let handled:[(String,EmailHandling)]
-                let resolved:[(String,EmailResolution)]
-                let retirements:[DiscoveryRetirement]
-                var section=ReviewResultDiagnostic.Section.suggestions
-                do {
-                    decoded=try ProactiveRules.decode(response,candidates:candidates,registration:registration,scope:scope,now:now,targets:targets,earlier:earlier,projects:issuedProjects)
-                    section = .handled
-                    handled=try EmailReviewRules.decodeHandled(response,summaries:Dictionary(uniqueKeysWithValues:emails.enumerated().map{index,pair in var current=pair.1;current.message=pair.0;return ("mail_\(index)",current)}),targets:handlingTargets,now:now).map {id,value in
-                        var saved=value;saved.memoryDependencies=memoryCapture.dependencies;saved.whatsappDependencies=whatsappDependencies;saved.memoryUse=memoryUse;return (id,saved)
-                    }
-                    let requests=Dictionary(uniqueKeysWithValues:emails.enumerated().map{index,pair in var current=pair.1;current.message=pair.0;return ("mail_\(index)",current)})
-                    var confirmations=requests
-                    for (index,pair) in completionEmails.enumerated() {var current=pair.1;current.message=pair.0;confirmations["completion_\(index)"]=current}
-                    section = .resolved
-                    resolved=try EmailResolutionRules.decode(response,requests:requests,confirmations:confirmations,now:now).map{id,value in
-                        var saved=value;saved.memoryDependencies=memoryCapture.dependencies;saved.whatsappDependencies=whatsappDependencies;saved.memoryUse=memoryUse;return(id,saved)
-                    }
-                    section = .retirements
-                    retirements=try ProactiveRules.decodeRetirements(response,earlier:earlier,targets:retirementTargets,registration:registration)
-                    guard Set(retirements.map{$0.proposal.id}).isDisjoint(with:Set(decoded.flatMap{$0.replaces ?? []})) else {throw ReviewValidationFailure.source}
-                    section = .result
-                    let addressed=Set(handled.map(\.0))
-                    guard Set(resolved.map(\.0)).isDisjoint(with:addressed),Set(decoded.map(\.mailID)).isDisjoint(with:addressed.union(resolved.map(\.0))) else {throw SummaryFailure.invalid}
-                } catch {
-                    let detail=(error as? ReviewResultDiagnostic)?.localizedDescription ?? (error as? ReviewValidationFailure)?.localizedDescription ?? ReviewResultDiagnostic(section:section,field:.envelope,reason:.invalidAssociation).localizedDescription
-                    throw ActionFailure.message(detail+" Nothing from this comparison was saved. The next heartbeat can assess fresh context; you can also review again.")
+                let proposalRows=try ProactiveResultRules.validatedRows(response,section:.suggestions) {try ProactiveRules.decode($0,candidates:candidates,registration:registration,scope:scope,now:now,targets:targets,earlier:earlier,projects:issuedProjects)}
+                let requests=Dictionary(uniqueKeysWithValues:emails.enumerated().map{index,pair in var current=pair.1;current.message=pair.0;return ("mail_\(index)",current)})
+                let handlingRows=try ProactiveResultRules.validatedRows(response,section:.handled) {try EmailReviewRules.decodeHandled($0,summaries:requests,targets:handlingTargets,now:now)}
+                var confirmations=requests
+                for (index,pair) in completionEmails.enumerated() {var current=pair.1;current.message=pair.0;confirmations["completion_\(index)"]=current}
+                let resolutionRows=try ProactiveResultRules.validatedRows(response,section:.resolved) {try EmailResolutionRules.decode($0,requests:requests,confirmations:confirmations,now:now)}
+                let retirementRows=try ProactiveResultRules.validatedRows(response,section:.retirements) {try ProactiveRules.decodeRetirements($0,earlier:earlier,targets:retirementTargets,registration:registration)}
+                var issues=proposalRows.issues+handlingRows.issues+resolutionRows.issues+retirementRows.issues
+                var failedSources=proposalRows.rejectedSources.union(handlingRows.rejectedSources).union(resolutionRows.rejectedSources).union(retirementRows.rejectedSources)
+                let failedReviews=proposalRows.rejectedReviews.union(retirementRows.rejectedReviews)
+                var replacementOwners=Set<String>(),decoded:[PADiscovery]=[]
+                for proposal in proposalRows.values {
+                    let replaces=Set(proposal.replaces ?? [])
+                    guard replacementOwners.isDisjoint(with:replaces) else {issues.append("A conflicting replacement was withheld.");failedSources.formUnion(candidates.filter{$0.mailID == proposal.mailID}.map(\.alias));continue}
+                    replacementOwners.formUnion(replaces);decoded.append(proposal)
                 }
+                let actionSources=Set(decoded.map(\.mailID)),handledSources=Set(handlingRows.values.map(\.0)),resolvedSources=Set(resolutionRows.values.map(\.0))
+                let conflicting=actionSources.intersection(handledSources.union(resolvedSources)).union(handledSources.intersection(resolvedSources))
+                if !conflicting.isEmpty {issues.append("Conflicting handled/completed associations were withheld; actions remain in review.");failedSources.formUnion(candidates.filter{conflicting.contains($0.mailID)}.map(\.alias))}
+                var associationIDs=Set<String>()
+                let handled=handlingRows.values.filter{!conflicting.contains($0.0) && associationIDs.insert($0.0).inserted}.map {id,value in var saved=value;saved.memoryDependencies=memoryCapture.dependencies;saved.whatsappDependencies=whatsappDependencies;saved.memoryUse=memoryUse;return (id,saved)}
+                let resolved=resolutionRows.values.filter{!conflicting.contains($0.0) && associationIDs.insert($0.0).inserted}.map {id,value in var saved=value;saved.memoryDependencies=memoryCapture.dependencies;saved.whatsappDependencies=whatsappDependencies;saved.memoryUse=memoryUse;return (id,saved)}
+                var retiredIDs=Set<String>()
+                let retirements=retirementRows.values.filter{!replacementOwners.contains($0.proposal.id) && retiredIDs.insert($0.proposal.id).inserted}
                 let suggestions = ProactiveRules.unreported(decoded.map { record in var value=record;if value.sourceKind == nil { value.scope=self.legacyMailScope(model) };value.memoryDependencies=memoryCapture.dependencies;value.memoryUse=memoryUse;value.whatsappDependencies=comparisonDependencies;value.comparisonSourceIDs=permittedEarlier.isEmpty ? nil : permittedEarlier.sorted();return value },prior:state.records,dismissedVersions:Dictionary(uniqueKeysWithValues:emails.map{(ProactiveRules.sourceKey("mail",$0.0.id),ReviewAcknowledgementRules.emailVersion($0.0,$0.1))}))
                 let reconciled=try ProactiveRules.reconciled(suggestions,prior:state.records,issued:earlier,now:now,permittedEarlier:permittedEarlier)
                 _=try ProactiveRules.retiring(retirements,from:reconciled,now:now)
                 try model.emailSummaries.saveHandling(handled,resolutions:resolved,model:model)
                 let versions=Dictionary(uniqueKeysWithValues:candidates.map { candidate in (ProactiveRules.sourceKey(candidate.sourceKind ?? "mail",candidate.mailID),candidate.sourceAssessmentRevision ?? candidate.sourceRevision ?? "") })
                 let reported=Set(decoded.map{ProactiveRules.sourceKey($0.sourceKind ?? "mail",$0.mailID)}).union(handled.map{ProactiveRules.sourceKey("mail",$0.0)}).union(resolved.map{ProactiveRules.sourceKey("mail",$0.0)})
-                progress=ProactiveRules.completing(progress,versions:versions,context:context,limited:decoded.count >= 24,reportedKeys:reported)
-                progress=ProactiveRules.recordingReconsideration(progress,reviewed:Array(earlier.values),active:state.records.filter{$0.registration == registration},context:context)
-                progress.delivered += suggestions.count; progress.fingerprint = fingerprint; progress.paused = false
+                progress=ProactiveRules.completing(progress,versions:versions.filter{key,_ in !candidates.contains{failedSources.contains($0.alias) && ProactiveRules.sourceKey($0.sourceKind ?? "mail",$0.mailID) == key}},context:context,limited:decoded.count >= 24,reportedKeys:reported)
+                progress=ProactiveRules.recordingReconsideration(progress,reviewed:earlier.filter{alias,record in !failedReviews.contains(alias) && !candidates.contains{candidate in failedSources.contains(candidate.alias) && candidate.mailID == record.mailID}}.map(\.value),active:state.records.filter{$0.registration == registration},context:context)
+                progress.validationIssues=issues.isEmpty ? nil : Array(issues.prefix(12))
+                progress.delivered += suggestions.count; progress.fingerprint = issues.isEmpty ? fingerprint : nil; progress.paused = false
                 try commitComparison(suggestions,issued:earlier,permittedEarlier:permittedEarlier,registration:registration,progress:progress,now:now,retirements:retirements,permittedRetirements:permittedRetirements)
                 if heartbeat {
                     var notified=Set<String>()

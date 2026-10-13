@@ -27,7 +27,7 @@ import SwiftData
             try request.validate()
             model.proactive.check(model,manual:request.manual,heartbeat:true,heartbeatWhatsAppReady:request.whatsappReady,mailReview:request.mailReview,heartbeatRequest:request)
             do {while model.proactive.busy {try Task.checkCancellation();try await Task.sleep(for:.milliseconds(100))}} catch {await model.proactive.cancelAndWait();throw error}
-            return .init(failure:model.proactive.error,nativeUnavailable:model.proactive.sourceReadError != nil)
+            return .init(failure:model.proactive.error,nativeUnavailable:model.proactive.sourceReadError != nil,detail:model.proactive.validationNotice(request.registration))
         },brief:{request in
             try request.validate()
             model.briefings.check(model,manual:request.manual,heartbeatID:request.runID,mailReview:request.mailReview,whatsappReady:request.whatsappReady,heartbeatRequest:request)

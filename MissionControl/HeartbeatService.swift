@@ -331,7 +331,7 @@ import SwiftData
                 if nativeReady,runtime.environment().proposalsEnabled,let error=suggestions.failure {
                     stageFailures.append("Suggestions: "+String(error.prefix(400)))
                     try step("suggestions","failed",error)
-                } else {try step("suggestions",!runtime.environment().proposalsEnabled ? "skipped" : nativeReady ? "done" : "waiting","Eligible changes assessed when due; existing results retained.")}
+                } else {try step("suggestions",!runtime.environment().proposalsEnabled ? "skipped" : nativeReady ? "done" : "waiting",suggestions.detail ?? "Eligible changes assessed when due; existing results retained.")}
                 if !PAHeartbeatRules.canClaim(state.accounts[registration] ?? account,day:day,limit:dailyCallLimit) {throw HeartbeatBudgetExhausted()}
                 status="Updating today’s brief…"
                 mailReview=runtime.availableMail(mailReview)

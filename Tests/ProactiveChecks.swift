@@ -80,6 +80,10 @@ import CoreFoundation
         let separatedJSON=try completed(separated)
         let separateDestinations=try ProactiveRules.decode(separatedJSON,candidates:[compound],registration:"A",scope:"s",now:.now,projects:[project.id.uuidString:project])
         precondition(separateDestinations.count == 2 && Set(separateDestinations.map(\.kind)) == ["calendar","projectTask"],"Typed project task array retains both independent destinations")
+        var unsupportedSibling=actions[1];unsupportedSibling["projectID"]="unissued"
+        let partlyValid=String(decoding:try JSONSerialization.data(withJSONObject:["suggestions":[actions[0],unsupportedSibling],"handled":[],"resolved":[],"retirements":[]]),as:UTF8.self)
+        let kept=try ProactiveResultRules.validatedRows(partlyValid,section:.suggestions) {try ProactiveRules.decode($0,candidates:[compound],registration:"A",scope:"s",now:.now,projects:[project.id.uuidString:project])}
+        precondition(kept.values.count == 1 && kept.issues.count == 1 && kept.rejectedSources == ["mail_0"],"Unsupported sibling is withheld without discarding a separately validated action")
         let qualified=try completed(envelope,name:"pa.prepare_review",namespace:nil);precondition(qualified == envelope)
         func diagnostic(_ section:ReviewResultDiagnostic.Section = .suggestions,_ row:Int? = 0,_ field:ReviewResultDiagnostic.Field,_ reason:ReviewResultDiagnostic.Reason,_ run:()throws->Void) {
             do {try run();fatalError("Invalid typed result accepted")}
