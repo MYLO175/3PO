@@ -87,6 +87,6 @@ extension DashboardModel {
         }, afterTurn: { [weak self] in
             guard let self else { return }
             if !reviewWork.busy {projectPlacement.check(self)}
-        },started:{ [weak self] in self?.assistantActivityStarted($0) },finished:{ [weak self] in self?.assistantActivityFinished($0) })
+        },started:{ [weak self] in self?.assistantActivityStarted($0) },working:{ [weak self] in self?.assistantActivityStarted($0) },finished:{ [weak self] in self?.assistantActivityFinished($0) })
     }
 }

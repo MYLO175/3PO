@@ -58,6 +58,7 @@ struct AssistantToolRequest {
     var tools: (AssistantToolRequest) -> any AssistantToolSession
     var afterTurn: () -> Void
     var started:(AssistantTurnOutcome)->Void = {_ in}
+    var working:(AssistantTurnOutcome)->Void = {_ in}
     var finished:(AssistantTurnOutcome)->Void = {_ in}
 }
 
@@ -78,4 +79,5 @@ struct AssistantTurnOutcome {
     var errors:[String]
     var confirmedActions:Int = 0
     var unconfirmedActions:Int = 0
+    var attemptedTools:[String] = []
 }

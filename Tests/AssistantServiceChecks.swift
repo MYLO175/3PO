@@ -429,16 +429,24 @@ import SwiftData
         let readOnlyService=service(readOnlyProvider,try open("readonly-receipts-unavailable"))
         var readOnlyOutcomes:[AssistantTurnOutcome]=[]
         var readOnlyRuntime=readOnlyContext.runtime();readOnlyRuntime.finished={readOnlyOutcomes.append($0)}
+        var readOnlyProgress:[AssistantTurnOutcome]=[]
+        readOnlyRuntime.working={readOnlyProgress.append($0)}
         readOnlyContext.configure={session,_ in session.actionReceiptsReadable=false}
         readOnlyProvider.replies=[final("Supported fictional read-only answer")]
         _=readOnlyService.send(runtime:readOnlyRuntime,topicID:nil,prompt:"Explain this fictional project")
         await until{!readOnlyService.busy}
         check(readOnlyOutcomes.last?.phase == "completed" && readOnlyOutcomes.last?.unconfirmedActions == 0,"Unavailable historical action receipts cannot invent uncertainty for a read-only answer")
+        check(readOnlyProgress.isEmpty && readOnlyOutcomes.last?.attemptedTools.isEmpty == true,"A conversation-only answer emits no work progress or invented tool attempts")
 
         let uncertainProvider=FictionalInference(),uncertainContext=FictionalContext()
         let uncertainService=service(uncertainProvider,try open("uncertain-turn"))
         var uncertainOutcomes:[AssistantTurnOutcome]=[]
         var uncertainRuntime=uncertainContext.runtime();uncertainRuntime.finished={uncertainOutcomes.append($0)}
+        var workingOutcomes:[AssistantTurnOutcome]=[]
+        uncertainRuntime.working={outcome in
+            check(uncertainContext.sessions[0].calls.isEmpty,"Work progress is emitted before the tool can attempt a save")
+            workingOutcomes.append(outcome)
+        }
         uncertainContext.configure={session,_ in session.executeBody={_,session in
             session.pendingNativeActionCount=1
             throw PANativeActionUncertainty(operationKey:"fictional-durable-claim",nativeReadbackVerified:true,message:"Fictional save receipt is unconfirmed")
@@ -448,6 +456,7 @@ import SwiftData
         await until{!uncertainService.busy}
         check(uncertainProvider.inputs.count == 1 && uncertainProvider.replies.count == 1,"Native uncertainty stops the real engine before another inference or save")
         check(uncertainOutcomes.count == 1 && uncertainOutcomes[0].phase == "uncertain" && uncertainOutcomes[0].unconfirmedActions == 1,"Fluent output cannot hide an unconfirmed native operation")
+        check(workingOutcomes.count == 1 && workingOutcomes[0].attemptedTools == ["change_calendar"] && uncertainOutcomes[0].attemptedTools == ["change_calendar"],"Running and uncertain outcomes retain the same typed work")
 
         let reviewProvider=FictionalInference(),reviewContext=FictionalContext()
         let reviewContainer=try open("review-handover"),reviewService=service(reviewProvider,reviewContainer)

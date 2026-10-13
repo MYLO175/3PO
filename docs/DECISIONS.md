@@ -10,6 +10,8 @@ Review replies join a durable serial queue after the current heartbeat. Closing 
 
 Use one centred, palette-aware toolbar pill for the current AI job or latest real message. Its circular icon opens chat, and the message opens Activity. Retain failures alongside later work until acknowledged. Acknowledgement has local one-level Undo and changes attention only; it does not complete an underlying task, teach a preference or authorise a retry. Activity navigation returns to the saved relevant conversation or details, subject to current source/account access.
 
+13 October follow-up: Activity shows actions and jobs, with progress and confirmed, failed or uncertain outcomes. General-chat replies such as greetings remain in chat. Typed work begun from chat has its own activity kind and readable operation message; incidental context retrieval alone does not count. Existing chat activity is filtered locally using captured tool traces, preserving its stored record and transcript. Success uses operation receipts rather than the model's ordinary reply prose. Review owns its own progress, so its assistant tools do not create a second chat action event.
+
 The interaction is approved; source-date extraction quality, final integrated validation, installation and live acceptance remain separate. The earlier scripted checkpoint below and [trial guide](REVIEW_CONVERSATION_TRIAL.md) remain historical evidence.
 
 ## 13 October: trial conversational Review before production integration

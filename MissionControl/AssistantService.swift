@@ -454,6 +454,7 @@ import Observation
         let humanContext = history.filter { $0["role"] == "user" }.suffix(8).compactMap { $0["content"] }.joined(separator:"\n")
         let session = runtime.tools(.init(registration:registration,human:prompt,humanContext:humanContext,topicID:contextID,turnID:currentUserID,mail:reusableMail,history:history,focusAreas:lifeFocus))
         var nativeOutcomeUnconfirmed=false
+        var attemptedToolNames:[String]=[]
         runtime.started(.init(registration:registration,conversationID:id,humanTurnID:currentUserID,responseTurnID:response.id,phase:"running",message:"3PO is thinking…",receipts:[],errors:[]))
         task = Task {
             defer {
@@ -461,7 +462,7 @@ import Observation
                 let final=allConversations.first(where:{$0.id == id})?.turns.first(where:{$0.id == response.id})
                 let unresolved=final?.unresolvedToolErrors ?? []
                 let phase=session.pendingNativeActionCount > 0 || nativeOutcomeUnconfirmed ? "uncertain" : Task.isCancelled ? "stopped" : session.clarification != nil ? "needsAnswer" : (error != nil || !unresolved.isEmpty || final?.completed != true) ? (session.receipts.isEmpty ? "failed" : "partial") : "completed"
-                let outcome=AssistantTurnOutcome(registration:registration,conversationID:id,humanTurnID:currentUserID,responseTurnID:response.id,phase:phase,message:final?.content.isEmpty == false ? final!.content : error ?? "Request finished",receipts:session.receipts,errors:unresolved+(error.map{[$0]} ?? []),confirmedActions:session.confirmedActionCount,unconfirmedActions:max(session.pendingNativeActionCount,nativeOutcomeUnconfirmed ? 1 : 0))
+                let outcome=AssistantTurnOutcome(registration:registration,conversationID:id,humanTurnID:currentUserID,responseTurnID:response.id,phase:phase,message:final?.content.isEmpty == false ? final!.content : error ?? "Request finished",receipts:session.receipts,errors:unresolved+(error.map{[$0]} ?? []),confirmedActions:session.confirmedActionCount,unconfirmedActions:max(session.pendingNativeActionCount,nativeOutcomeUnconfirmed ? 1 : 0),attemptedTools:attemptedToolNames)
                 busy = false; toolStatus = ""; save(); if !isReviewTurn {finishQueue(runtime:runtime)}; requestConversationID = nil; requestTopicID = nil; requestTurnID = nil; runtime.finished(outcome);runtime.afterTurn()
             }
             var expectedMemory = memoryRevision
@@ -604,10 +605,12 @@ import Observation
                     partial: { if !setupMode { setResponse($0,completed:false) } },
                     toolRound: { setResponse(session.receipts.joined(separator:"\n"),completed:false) },
                     attempted: { call in
+                        if !attemptedToolNames.contains(call.name) {attemptedToolNames.append(call.name)}
                         if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {
                             var names=allConversations[c].turns[t].contextCapture?.attemptedTools ?? []
                             if !names.contains(call.name) { names.append(call.name);allConversations[c].turns[t].contextCapture?.attemptedTools=names }
                         }
+                        runtime.working(.init(registration:registration,conversationID:id,humanTurnID:currentUserID,responseTurnID:response.id,phase:"running",message:call.name,receipts:session.receipts,errors:[],confirmedActions:session.confirmedActionCount,attemptedTools:attemptedToolNames))
                     }, toolFinished: {
                         if !session.receipts.isEmpty { setResponse(session.receipts.joined(separator:"\n"),completed:false); self.save() }
                     })

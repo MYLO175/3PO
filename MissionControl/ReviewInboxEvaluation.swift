@@ -849,7 +849,7 @@ struct ReviewInboxPreview:View {
                 model.workspace.addPage("Navigation fixture")
                 for id in defaults {model.workspace.removePage(id)}
                 model.workspace.showReviewInbox()
-            };ready=true}
+            };if ProcessInfo.processInfo.arguments.contains("--activity-work-preview") {AIActivityWorkPreview.seed(model)};ready=true}
     }
 }
 #endif

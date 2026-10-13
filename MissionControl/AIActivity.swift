@@ -3,14 +3,46 @@ import Observation
 
 /// Saved output for the human to inspect. These records never authorise or replay work.
 enum AIActivityKind: String, Codable, CaseIterable {
-    case chat, review, heartbeat, feedback
+    case chat, action, review, heartbeat, feedback
     var title: String {
         switch self {
         case .chat: "3PO chat"
+        case .action: "3PO actions"
         case .review: "Review"
         case .heartbeat: "Heartbeat"
         case .feedback: "Feedback"
         }
+    }
+}
+
+/// Activity follows typed work, never a guess from conversational prose.
+enum AIActivityWork {
+    static let descriptions:[String:String] = [
+        "read_calendar":"Checking Calendar…", "read_reminders":"Checking Reminders…",
+        "read_item_details":"Checking item details…", "change_calendar":"Updating Calendar…",
+        "change_reminder":"Updating Reminders…", "search_mail":"Searching email…",
+        "continue_mail":"Searching email…", "read_email":"Reading an email…",
+        "search_whatsapp":"Searching WhatsApp…", "read_weather":"Checking the weather…",
+        "dismiss_suggestion":"Acknowledging a suggestion…", "undo_apple_change":"Undoing a change…",
+        "organise_memory":"Organising memory…", "save_memory":"Saving a memory…",
+        "remember_context":"Saving a memory…", "change_memory":"Updating memory…",
+        "read_life_items":"Checking project items…", "create_life_items":"Adding project items…",
+        "change_life_item":"Updating a project item…", "link_life_item":"Linking project items…",
+        "unlink_life_item":"Unlinking project items…", "show_project_view":"Opening a project…",
+        "undo_life_edit":"Undoing a project change…", "delete_life_item":"Removing a project item…",
+        "restore_life_item":"Restoring a project item…", "reorder_life_item":"Reordering project items…"
+    ]
+    static func includes(_ tools:[String],confirmed:Int=0,unconfirmed:Int=0)->Bool {
+        confirmed > 0 || unconfirmed > 0 || tools.contains{descriptions[$0] != nil}
+    }
+    static func running(_ tools:[String])->String {
+        tools.reversed().compactMap{descriptions[$0]}.first ?? "Working on your actions…"
+    }
+    static func completed(_ tools:[String],receipts:[String],confirmed:Int)->String {
+        if !receipts.isEmpty {return receipts.joined(separator:" · ")}
+        if confirmed > 0 {return "\(confirmed) action\(confirmed == 1 ? "" : "s") completed"}
+        let checked:[String:String] = ["read_calendar":"Checked Calendar", "read_reminders":"Checked Reminders", "read_item_details":"Checked item details", "search_mail":"Searched email", "continue_mail":"Searched email", "read_email":"Read the email", "search_whatsapp":"Searched WhatsApp", "read_weather":"Checked the weather", "read_life_items":"Checked project items"]
+        return tools.reversed().compactMap{checked[$0]}.first ?? "No new changes were confirmed."
     }
 }
 

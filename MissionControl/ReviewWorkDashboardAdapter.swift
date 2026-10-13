@@ -165,6 +165,7 @@ struct ReviewPreparedRow:Identifiable {
             await withCheckedContinuation {continuation in
                 var runtime=self.assistantRuntime()
                 runtime.started={_ in}
+                runtime.working={_ in}
                 runtime.finished={outcome in
                     let classification=self.classifyAssistantOutcome(outcome)
                     continuation.resume(returning:.init(phase:classification.phase,message:classification.message,confirmedActions:classification.actions,error:classification.error))

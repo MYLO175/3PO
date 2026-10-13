@@ -12,6 +12,8 @@ Completed cards show a tick and a receipt-based action count, with View actions 
 
 The centred toolbar pill uses the workspace palette. Its circular icon opens general chat; its message opens AI Activity. While work runs it shows the current message and available progress, including heartbeat progress. Afterwards it shows the latest saved real message or 3PO is ready when no output exists. Failed, partial, interrupted, unanswered and uncertain outcomes stay inspectable, with an attention marker until acknowledged. Activity provides the saved destination's navigation and one-level Undo for acknowledgement. Acknowledgement changes only local attention, not task completion, saved results, preferences or permission to retry. Source/account access withdrawal withholds the associated Review transcript and activity output.
 
+AI Activity records work rather than ordinary conversation. Heartbeats, Review jobs and feedback retain their outcomes. Work started in general chat appears when a typed operation begins, such as a Calendar change, project save or email search; verified receipts supply its completion message. Greetings, conversation-only answers and incidental memory-context lookup do not create activity or replace the pill's latest work. Previously saved chat entries are filtered using their exact saved tool trace without deleting transcripts or history. A failed or uncertain action remains visible and can open its originating chat.
+
 This describes the connected integration candidate. Installation and native live acceptance are recorded separately in STATUS; complete extraction of every supported source date is still a model-quality question.
 
 ## Separate conversational Review trial

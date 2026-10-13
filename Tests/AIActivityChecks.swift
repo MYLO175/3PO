@@ -7,6 +7,16 @@ import Foundation
             precondition(condition(), label); checks += 1
         }
         enum FixtureFailure: Error { case unavailable }
+        check(!AIActivityWork.includes([]),"Conversation-only replies never become activity")
+        check(!AIActivityWork.includes(["read_memory","read_life_notebook","ask_clarification"]),"Context lookup and ordinary clarification do not turn conversation into work")
+        check(!AIActivityWork.includes(["unknown_tool"]),"Unknown tool names cannot invent work")
+        check(AIActivityWork.includes(["change_calendar"]),"An attempted Calendar change stays visible even before a save succeeds")
+        check(AIActivityWork.includes(["search_mail"]),"An explicit source search is work")
+        check(AIActivityWork.includes([],confirmed:3) && AIActivityWork.includes([],unconfirmed:1),"Verified or uncertain operation receipts keep actual actions visible")
+        check(AIActivityWork.running(["read_memory","change_reminder"]) == "Updating Reminders…","Live activity describes the typed operation")
+        check(AIActivityWork.completed(["change_calendar"],receipts:["Added the reviewed event"],confirmed:1) == "Added the reviewed event","Completed activity uses verified receipts instead of chat prose")
+        check(AIActivityWork.completed(["read_calendar"],receipts:[],confirmed:0) == "Checked Calendar","Read-only work does not claim a saved change")
+        check(AIActivityWork.completed(["change_calendar"],receipts:[],confirmed:0) == "No new changes were confirmed.","A mutation tool name alone cannot claim completion")
         let date = Date(timeIntervalSince1970: 1_790_000_000)
         func record(_ id: String, registration: String = "account-a", state: AIActivityStatus = .queued,
                     kind: AIActivityKind = .review, offset: Double = 0,
@@ -73,6 +83,9 @@ import Foundation
         let reloaded = AIActivityStore(load: { successBytes })
         check(reloaded.latest("account-a")?.acknowledged == true, "Acknowledgement persists across reopening")
         check(reloaded.undoDate("account-a") == nil, "Undo is a session receipt rather than persisted execution authority")
+        let action=record("action-from-chat",state:.succeeded,kind:.action,destination:.assistant(targetID:"chat-exact"))
+        check(AIActivityStore().upsert(action),"Actions started from chat have a distinct work kind")
+        check(try! JSONDecoder().decode(AIActivityRecord.self,from:JSONEncoder().encode(action)).kind == .action,"The work kind survives storage")
 
         let other = record(review.id, registration: "account-b", state: .failed, offset: 35)
         check(store.upsert(other), "Independent accounts may retain the same upstream request id")
