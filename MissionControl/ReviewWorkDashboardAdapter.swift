@@ -189,7 +189,7 @@ struct ReviewPreparedRow:Identifiable {
     }
     var reviewWorkReady:Bool {
         let needsInference=reviewWork.jobs(chatGPT.activeID).first(where:{$0.phase == .queued})?.mode != .approval
-        return !heartbeat.busy && !assistant.busy && !chatGPT.busy && (!needsInference || (!chatGPT.usagePaused && chatGPT.inferenceVerified)) && !writing && !proactive.busy && !emailSummaries.busy && emailSummaries.feedback.activeID == nil && !briefings.busy && !memoryLearning.busy && !sourceLearning.busy && !nativeSourceLearning.busy && !memoryMaintenance.busy && !lifeOrganisation.busy && !projectPlacement.busy && heartbeat.deviceAvailable && !heartbeat.composerActive
+        return !heartbeat.busy && !assistant.busy && !chatGPT.busy && (!needsInference || (!chatGPT.usagePaused && chatGPT.inferenceVerified)) && !writing && !proactive.busy && !emailSummaries.busy && emailSummaries.feedback.activeID == nil && !briefings.busy && !memoryLearning.busy && !sourceLearning.busy && !nativeSourceLearning.busy && !memoryMaintenance.busy && !lifeOrganisation.busy && !projectPlacement.busy && heartbeat.deviceAvailable && !heartbeat.reviewComposerActive
     }
     func scheduleReviewWork() {
         guard reviewQueuePump == nil,reviewWork.readable else {return}
@@ -197,7 +197,6 @@ struct ReviewPreparedRow:Identifiable {
             guard let self else {return}
             defer {self.reviewQueuePump=nil}
             while !Task.isCancelled,self.reviewWork.readable,(self.reviewWork.waiting(self.chatGPT.activeID)>0 || self.reviewWork.busy) {
-                if self.reviewWork.isPaused(self.chatGPT.activeID),!self.reviewWork.busy {return}
                 self.reviewWork.drive(self.reviewWorkRuntime())
                 do {try await Task.sleep(for:.milliseconds(250))} catch {return}
             }
@@ -215,7 +214,6 @@ struct ReviewPreparedRow:Identifiable {
         let json=(try? encoder.encode(selected)).map{String(decoding:$0,as:UTF8.self)} ?? "[]"
         return "Captured UI context: the human selected only these historical prepared proposals. Unselected earlier proposals are not included in an acknowledgement. This is the plan actually shown for this reply; selection alone never authorises a save. Resolve the current human request against it, checking current support before new advice. Selected proposals: "+json
     }
-    private func jobsAwaitingAnswer(_ id:UUID)->Bool {reviewWork.jobs(chatGPT.activeID,conversation:id).dropLast().last?.phase == .needsAnswer && reviewWork.waiting(chatGPT.activeID) == 1}
     func submitReview(_ text:String,conversationID:UUID,actions:[ReviewWorkAction],focus:[LifeArea],humanControl:Bool=false,selectionActive:Bool=false)->Bool {
         guard let conversation=assistant.conversation(conversationID),let source=reviewSource(conversation),reviewPermits(source),ConversationRules.acceptsPrompt(text) else {return false}
         let approval=["yes","yes please","yep","go ahead","do that","ok","okay","add these","approve"].contains(text.trimmingCharacters(in:.whitespacesAndNewlines).lowercased().trimmingCharacters(in:CharacterSet(charactersIn:".! "))) || text.trimmingCharacters(in:.whitespacesAndNewlines) == "👍"
@@ -225,7 +223,6 @@ struct ReviewPreparedRow:Identifiable {
         }
         let job=ReviewWorkJob(conversationID:conversationID,scope:reviewWorkScope(),source:source,mode:concreteApproval ? .approval : .conversation,human:text,humanControl:humanControl ? true : nil,selectionActive:selectionActive ? true : nil,focusAreas:focus.map(\.rawValue),actions:actions)
         guard reviewWork.submit(job) else {return false}
-        if jobsAwaitingAnswer(conversationID) {reviewWork.continueWaiting(chatGPT.activeID)}
         reviewJobChanged(job);scheduleReviewWork();return true
     }
 }

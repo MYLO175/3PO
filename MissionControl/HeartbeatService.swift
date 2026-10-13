@@ -174,6 +174,8 @@ import SwiftData
     }
     private var lastTyping: Date?
     var composerActive: Bool { lastTyping.map { clock().timeIntervalSince($0) < 120 } ?? false }
+    // Accepted Review jobs need a short typing grace, not the automatic heartbeat's two-minute quiet window.
+    var reviewComposerActive: Bool { lastTyping.map { clock().timeIntervalSince($0) < 2 } ?? false }
     func userStartedTyping() { lastTyping = clock(); cancel() }
     func cancel() { task?.cancel() }
     func cancelAndWait() async {

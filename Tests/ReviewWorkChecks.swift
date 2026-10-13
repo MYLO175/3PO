@@ -71,7 +71,7 @@ import Foundation
             s.drive(w.runtime());check(!s.busy && w.calls.isEmpty && s.waiting(w.scope.registration)==2,"Heartbeat ready gate prevents starts")
             let bytes=w.bytes!
             let reopened=ReviewWorkService(load:{bytes},persist:{try w.persist($0)})
-            check(reopened.job(one.id)?.phase == .queued && !reopened.isPaused(w.scope.registration),"Never-started work survives reopen without becoming interrupted")
+            check(reopened.job(one.id)?.phase == .queued,"Never-started work survives reopen without becoming interrupted")
             w.ready=true;w.hold=true;s.drive(w.runtime());await until{w.held != nil}
             s.drive(w.runtime());check(w.calls == ["one"],"One active operation serialises independent drive calls")
             w.release();await until{!s.busy};check(s.job(one.id)?.phase == .completed && s.job(two.id)?.phase == .queued,"First completion retains later queued work")
@@ -87,7 +87,7 @@ import Foundation
             let w=ReviewWorkFixture(),s=w.make(),job=w.job();w.hold=true;_=s.submit(job);s.drive(w.runtime());await until{w.held != nil}
             let runningBytes=w.bytes!
             let reopened=ReviewWorkService(load:{runningBytes},persist:{_ in})
-            check(reopened.job(job.id)?.phase == .interrupted && reopened.isPaused(w.scope.registration),"Reopen interrupts attempted work and pauses its account")
+            check(reopened.job(job.id)?.phase == .interrupted,"Reopen interrupts attempted work without requeuing it")
             check(reopened.job(job.id)?.actions[0].phase == .uncertain,"Working action recovers conservatively as uncertain")
             reopened.drive(w.runtime());check(w.calls.count==1,"Reopened attempted work never replays")
             check(!reopened.retry(job.id),"Explicit retry cannot repeat an uncertain operation")
@@ -104,7 +104,7 @@ import Foundation
         do {
             let w=ReviewWorkFixture(),s=w.make(),job=w.job();w.canonical["a"] = .init(phase:.uncertain,message:"Pending native receipt")
             _=s.submit(job);s.drive(w.runtime());await until{!s.busy}
-            check(w.calls.isEmpty && s.job(job.id)?.phase == .uncertain && s.isPaused(w.scope.registration),"Canonical pending receipt blocks execution and exposes uncertain result")
+            check(w.calls.isEmpty && s.job(job.id)?.phase == .uncertain,"Canonical pending receipt blocks that operation and exposes uncertain result")
         }
         for mode in [ReviewWorkMode.approval,.conversation] {
             for change in ["registration","model","sourceChoices","storage","permission"] {
@@ -130,7 +130,7 @@ import Foundation
             let w=ReviewWorkFixture(),s=w.make(),job=w.job();w.hold=true;w.canonicalOnReturn=true
             _=s.submit(job);s.drive(w.runtime());await until{w.held != nil};s.stop(job.id);w.release();await until{!s.busy}
             check(s.job(job.id)?.phase == .stopped && s.job(job.id)?.savedCount == 1,"Stop keeps confirmed already-issued save while stopping overall request")
-            check(s.isPaused(w.scope.registration),"Stop leaves later work paused")
+            s.drive(w.runtime());check(w.calls.count==1,"Stop never requeues its attempted operation")
         }
         do {
             let w=ReviewWorkFixture(),s=w.make();var job=w.job();job.actions.append(w.action("b"));w.performResult = .init(phase:.failed,message:"Known pre-save failure")
@@ -189,12 +189,51 @@ import Foundation
             }
             s.drive(w.runtime())
             await until{!s.busy}
-            check(["model","sourceChoices"].contains(change) ? s.job(job.id)?.phase == .completed : w.calls.isEmpty && s.job(job.id)?.phase == .failed && s.isPaused(w.scope.registration),"Queued \(change) change rejects before action and pauses later work")
+            check(["model","sourceChoices"].contains(change) ? s.job(job.id)?.phase == .completed : w.calls.isEmpty && s.job(job.id)?.phase == .failed,"Queued \(change) change rejects that request before action")
         }
         do {
             let w=ReviewWorkFixture(),s=w.make(),job=w.job(mode:.conversation);_=s.submit(job);w.conversationResult = .init(phase:.needsAnswer,message:"Which deadline?")
             s.drive(w.runtime());await until{!s.busy}
-            check(s.job(job.id)?.phase == .needsAnswer && s.isPaused(w.scope.registration),"Needs-answer retains question and pauses subsequent jobs")
+            check(s.job(job.id)?.phase == .needsAnswer,"Needs-answer retains the question without requeuing it")
+        }
+        // The production idle pump repeatedly calls drive; terminal jobs must not block unrelated accepted work.
+        for phase in [ReviewWorkPhase.failed,.partial,.uncertain,.needsAnswer,.stopped,.interrupted] {
+            let w=ReviewWorkFixture(),s=w.make();w.driveOnChange=true
+            let first=w.job(mode:.conversation),second=w.job("next")
+            w.conversationResult = .init(phase:phase,message:"Retained outcome",confirmedActions:phase == .partial ? 1 : 0)
+            _=s.submit(first);_=s.submit(second);s.drive(w.runtime());await until{s.job(second.id)?.phase == .completed && !s.busy}
+            check(s.job(first.id)?.phase == phase && w.converseCalls==1 && w.calls == ["next"],"\(phase.rawValue) stays terminal while later accepted work runs automatically exactly once")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make();let first=w.job(),second=w.job("next")
+            _=s.submit(first);_=s.submit(second);w.hold=true;s.drive(w.runtime());await until{w.held != nil}
+            w.ready=false;s.interruptForForeground(w.scope.registration);s.drive(w.runtime())
+            check(s.job(first.id)?.phase == .stopped && s.job(second.id)?.phase == .queued && w.calls == ["a"],"Foreground handover retains later work and waits for the active callback to unwind")
+            w.release();await until{!s.busy};s.drive(w.runtime())
+            check(s.job(second.id)?.phase == .queued,"Foreground typing or chat readiness temporarily defers accepted work")
+            w.ready=true;s.drive(w.runtime());await until{!s.busy}
+            check(w.calls == ["a","next"] && s.job(second.id)?.phase == .completed,"Accepted work starts once foreground readiness returns without Continue")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make();let stopped=w.job("stopped"),next=w.job("next")
+            _=s.submit(stopped);_=s.submit(next);s.stop(stopped.id);s.drive(w.runtime());await until{!s.busy}
+            check(s.job(stopped.id)?.phase == .stopped && w.calls == ["next"],"Targeted Stop cancels only the selected unstarted job")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make();let attempted=w.job(),next=w.job("next")
+            _=s.submit(attempted);_=s.submit(next);w.hold=true;s.drive(w.runtime());await until{w.held != nil}
+            var saved=try JSONDecoder().decode(ReviewWorkState.self,from:w.bytes!);saved.paused[w.scope.registration]=true
+            let legacy=try JSONEncoder().encode(saved)
+            let reopened=ReviewWorkService(load:{legacy},persist:{try w.persist($0)})
+            w.release();await until{!s.busy};w.calls=[];reopened.drive(w.runtime());await until{!reopened.busy}
+            check(reopened.job(attempted.id)?.phase == .interrupted && reopened.job(attempted.id)?.actions[0].phase == .uncertain && w.calls == ["next"],"Legacy paused queues resume only unstarted work after reopen; uncertain attempted saves never replay")
+            check(reopened.state.paused[w.scope.registration] == true && reopened.job(next.id)?.phase == .completed,"Legacy pause metadata and original job identities survive without blocking idle execution")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make();let failed=w.job(),next=w.job("next")
+            w.canonical["a"] = .init(phase:.uncertain,message:"Unconfirmed original save")
+            _=s.submit(failed);_=s.submit(next);w.driveOnChange=true;s.drive(w.runtime());await until{!s.busy && s.waiting(w.scope.registration)==0}
+            check(w.calls == ["next"] && s.job(failed.id)?.phase == .uncertain && !s.retry(failed.id),"Uncertain canonical save does not replay or withhold the next independent approved action")
         }
         do {
             let bytes=Data("corrupt".utf8);var persisted=false

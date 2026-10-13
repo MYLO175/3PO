@@ -57,6 +57,7 @@ struct ReviewWorkJob:Codable,Identifiable,Equatable {
 struct ReviewWorkState:Codable,Equatable {
     var version=1
     var jobs:[ReviewWorkJob]=[]
+    // Retain legacy saved flags without using them to block accepted, unstarted work.
     var paused:[String:Bool]=[:]
     var drafts:[String:String]=[:]
 }
@@ -104,7 +105,6 @@ struct ReviewWorkConversationResult {
             for index in value.jobs.indices where value.jobs[index].phase == .running {
                 value.jobs[index].phase = .interrupted
                 value.jobs[index].error="The app closed during this request. Completed receipts are kept; it will not run again automatically."
-                value.paused[value.jobs[index].scope.registration]=true
                 for action in value.jobs[index].actions.indices where value.jobs[index].actions[action].phase == .working {
                     value.jobs[index].actions[action].phase = .uncertain
                 }
@@ -124,7 +124,6 @@ struct ReviewWorkConversationResult {
     func jobs(_ registration:String,conversation:UUID?=nil)->[ReviewWorkJob] {state.jobs.filter{$0.scope.registration == registration && (conversation == nil || $0.conversationID == conversation)}.sorted{$0.created < $1.created}}
     func job(_ id:UUID)->ReviewWorkJob? {state.jobs.first{$0.id == id}}
     func waiting(_ registration:String)->Int {state.jobs.filter{$0.scope.registration == registration && $0.phase == .queued}.count}
-    func isPaused(_ registration:String)->Bool {state.paused[registration] == true}
     func draft(_ registration:String,conversation:UUID)->String {state.drafts[registration+":"+conversation.uuidString] ?? ""}
     func setDraft(_ text:String,registration:String,conversation:UUID) {_=change{$0.drafts[registration+":"+conversation.uuidString]=String(text.prefix(24_000))}}
     @discardableResult func submit(_ job:ReviewWorkJob)->Bool {
@@ -142,10 +141,10 @@ struct ReviewWorkConversationResult {
     func drive(_ runtime:ReviewWorkRuntime) {
         guard readable,task == nil,activeID == nil,runtime.ready() else {return}
         let scope=runtime.scope()
-        guard !isPaused(scope.registration),let job=state.jobs.first(where:{$0.scope.registration == scope.registration && $0.phase == .queued}) else {return}
+        guard let job=state.jobs.first(where:{$0.scope.registration == scope.registration && $0.phase == .queued}) else {return}
         guard matchesScope(job,scope),runtime.permits(job.source) else {
             _=update(job.id){$0.phase = .failed;$0.error="The account, model, source choices or storage changed. Reopen this Review conversation before continuing.";$0.finished = .now}
-            pause(scope.registration);if let value=self.job(job.id) {runtime.changed(value)};return
+            if let value=self.job(job.id) {runtime.changed(value)};return
         }
         guard update(job.id,{$0.phase = .running;$0.error=nil;$0.finished=nil}) else {return}
         activeID=job.id;activeRuntime=runtime
@@ -170,7 +169,7 @@ struct ReviewWorkConversationResult {
                     _=self.update(job.id){$0.conversationActionCount=result.confirmedActions};return
                 }
                 guard valid() else {
-                    _=self.update(job.id){$0.phase = .failed;$0.message="The request stopped because its account, settings or source access changed.";$0.error=$0.message;$0.conversationActionCount=result.confirmedActions;$0.finished = .now};self.pause(job.scope.registration);return
+                    _=self.update(job.id){$0.phase = .failed;$0.message="The request stopped because its account, settings or source access changed.";$0.error=$0.message;$0.conversationActionCount=result.confirmedActions;$0.finished = .now};return
                 }
                 let terminal:ReviewWorkPhase = [.completed,.partial,.failed,.uncertain,.needsAnswer,.stopped,.interrupted].contains(result.phase) ? result.phase : .failed
                 _=self.update(job.id){$0.phase=terminal;$0.message=terminal == result.phase ? result.message : "The assistant returned an invalid completion state. It will not be replayed.";$0.error=result.error;$0.conversationActionCount=result.confirmedActions;$0.finished = .now}
@@ -207,9 +206,6 @@ struct ReviewWorkConversationResult {
                     _=self.update(job.id){$0.phase=result;$0.message=all ? "\($0.savedCount) actions completed" : "\($0.savedCount) of \($0.actions.count) actions confirmed";$0.error=all ? nil : detail ?? "Remaining work stopped. Reopen this plan before continuing.";$0.finished = .now}
                 }
             }
-            if let final=self.job(job.id) {
-                if final.phase != .completed {self.pause(final.scope.registration)}
-            }
         }
     }
     private func record(_ job:UUID,action:String,result:ReviewWorkActionResult) {
@@ -218,15 +214,12 @@ struct ReviewWorkConversationResult {
     func stop(_ id:UUID) {
         guard let job=job(id),job.pending else {return}
         if activeID == id {task?.cancel();if job.mode == .conversation {activeRuntime?.cancelConversation()}}
-        _=update(id){$0.phase = .stopped;$0.error="Stopped. Confirmed actions are retained; remaining work is paused.";$0.finished = .now}
-        pause(job.scope.registration)
+        _=update(id){$0.phase = .stopped;$0.error="Stopped. Confirmed actions are retained; this request will not run again automatically.";$0.finished = .now}
         if let value=self.job(id) {activeRuntime?.changed(value)}
     }
     func interruptForForeground(_ registration:String) {
-        guard waiting(registration)>0 || activeID.flatMap(job).map({$0.scope.registration == registration}) == true else {return}
-        pause(registration);if let id=activeID,job(id)?.scope.registration == registration {stop(id)}
+        if let id=activeID,job(id)?.scope.registration == registration {stop(id)}
     }
-    func continueWaiting(_ registration:String) {_=change{$0.paused[registration]=false}}
     /// Explicit inspection reconciles canonical local receipts; it never performs an operation.
     @discardableResult func reconcile(_ id:UUID,runtime:ReviewWorkRuntime)->Bool {
         guard let original=job(id),!original.pending,original.mode == .approval,original.scope.registration == runtime.scope().registration,original.scope.storage == runtime.scope().storage,runtime.permits(original.source) else {return false}
@@ -247,10 +240,8 @@ struct ReviewWorkConversationResult {
             value.jobs[index].phase = .queued;value.jobs[index].error=nil;value.jobs[index].finished=nil
             value.jobs[index].responseTurnID=UUID()
             for action in value.jobs[index].actions.indices where value.jobs[index].actions[action].phase != .saved {value.jobs[index].actions[action].phase = .waiting}
-            value.paused[job.scope.registration]=false
         }
     }
-    private func pause(_ registration:String) {_=change{$0.paused[registration]=true}}
     @discardableResult private func update(_ id:UUID,_ mutation:(inout ReviewWorkJob)->Void)->Bool {change {value in if let index=value.jobs.firstIndex(where:{$0.id == id}) {mutation(&value.jobs[index])}}}
     @discardableResult private func updateAction(_ id:UUID,_ action:String,_ mutation:(inout ReviewWorkAction)->Void)->Bool {update(id){job in if let index=job.actions.firstIndex(where:{$0.id == action}) {mutation(&job.actions[index])}}}
     private func change(_ mutation:(inout ReviewWorkState)->Void)->Bool {

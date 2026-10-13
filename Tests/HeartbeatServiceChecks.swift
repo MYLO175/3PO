@@ -191,6 +191,11 @@ import SwiftData
         let typing=FictionalHeartbeatWorld(),typingStore=try store(),typingService=make(typing,typingStore)
         typingService.userStartedTyping();typingService.check(runtime:typing.runtime());await Task.yield()
         check(typing.prepareCount == 0,"Foreground typing wins before source preparation")
+        check(typingService.reviewComposerActive,"Accepted Review work also defers during current foreground typing")
+        typing.now=typing.now.addingTimeInterval(3)
+        check(!typingService.reviewComposerActive && typingService.composerActive,"Accepted Review work resumes promptly without weakening the automatic heartbeat quiet period")
+        typingService.userStartedTyping()
+        check(typingService.reviewComposerActive,"Another keystroke renews the short Review typing grace")
         typing.now=typing.now.addingTimeInterval(121)
         typingService.check(runtime:typing.runtime());await until{!typingService.busy}
         check(typing.prepareCount == 1,"Idle typing expiry allows a due heartbeat")

@@ -127,7 +127,6 @@ struct ProductionReviewConversationView:View {
                         Button("Retry remaining work") {if model.reviewWork.retry(job.id) {model.scheduleReviewWork()}}
                     }
                 }
-                if model.reviewWork.isPaused(model.chatGPT.activeID),model.reviewWork.waiting(model.chatGPT.activeID)>0 {Button("Continue queue") {model.reviewWork.continueWaiting(model.chatGPT.activeID);model.scheduleReviewWork()}}
                 Spacer()
             }.controlSize(.small)
         }.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(Color.orange.opacity(job.pending ? 0.04 : 0.08),in:RoundedRectangle(cornerRadius:11))

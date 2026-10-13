@@ -37,6 +37,8 @@ struct AssistantPanel: View {
     private var draft: Binding<String> {
         Binding(get:{ if let widgetID { return assistant.drafts.text(registration:model.chatGPT.activeID,widget:widgetID,conversation:draftKey) }; return assistant.draft },set:{ text in
             model.emailSummaries.cancelReviewFeedback()
+            model.reviewWork.interruptForForeground(model.chatGPT.activeID)
+            model.heartbeat.userStartedTyping()
             if let widgetID { assistant.drafts.set(text,registration:model.chatGPT.activeID,widget:widgetID,conversation:draftKey) } else { assistant.draft = text }
         })
     }
