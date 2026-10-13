@@ -6,6 +6,17 @@ import CoreFoundation
         precondition(ProactiveRules.nativeChangeCue("The Orion report deadline is now 22 October.",removal:false))
         precondition(!ProactiveRules.nativeChangeCue("The Orion review is booked for 21 October.",removal:true))
         precondition(!ProactiveRules.nativeChangeCue("The Orion review is not cancelled.",removal:true))
+        precondition(!ProactiveRules.whatsappReviewEnabled(manual:true,heartbeat:true,suggestions:false,heartbeatSource:false),"Manual heartbeat cannot expand brief-only WhatsApp access")
+        precondition(ProactiveRules.whatsappReviewEnabled(manual:true,heartbeat:true,suggestions:true,heartbeatSource:false))
+        precondition(ProactiveRules.whatsappReviewEnabled(manual:false,heartbeat:true,suggestions:false,heartbeatSource:true))
+        let sourceText=String(repeating:"Fictional exact text. ",count:60)
+        let exactQuotes=ProactiveRules.whatsappQuotes(sourceText)
+        precondition(!exactQuotes.isEmpty && exactQuotes.allSatisfy{(8...500).contains($0.count) && sourceText.contains($0)})
+        let sourceCandidate=DiscoveryCandidate(alias:"wa_0",mailID:"wa-source",evidence:"",followUpEvidence:"",actionEvidence:exactQuotes,sourceKind:"whatsapp",sourceText:sourceText)
+        let quoteReference=#"{"suggestions":[{"mailID":"wa_0","kind":"update","message":"Fictional update","evidenceID":"wa_0:action_0","evidence":null}]}"#
+        let boundQuote=try ProactiveRules.decode(quoteReference,candidates:[sourceCandidate],registration:"A",scope:"s",now:.now)
+        precondition(boundQuote[0].evidence == exactQuotes[0],"The app attaches exact WhatsApp text; no model copying")
+        do {_ = try ProactiveRules.decode(quoteReference.replacingOccurrences(of:"wa_0:action_0",with:"wa_1:action_0"),candidates:[sourceCandidate],registration:"A",scope:"s",now:.now);fatalError("Foreign quote accepted")} catch {}
         let candidates = [DiscoveryCandidate(alias:"mail_0",mailID:"real-A",evidence:"Please register by 10 October.",followUpEvidence:"10 October")]
         let good = #"{"suggestions":[{"mailID":"mail_0","kind":"reminder","message":"I could not spot a registration reminder. Shall I add one?","evidence":"Please register by 10 October."}]}"#
         let records = try ProactiveRules.decode(good,candidates:candidates,registration:"A",scope:"s",now:.now)

@@ -57,7 +57,11 @@ enum ProactiveResultRules {
                     let aliases=Set(groups[key]!),first=aliases.sorted()[0],allowed=permitted(first)
                     var row=common;row["mailID"]=reference("source_"+first,aliases)
                     if mail {row["evidence"]=["type":"null"];row["evidenceID"]=reference("evidence_"+first,Set(evidenceAliases.filter{reference in aliases.contains{reference.hasPrefix($0+":")}}))}
-                    else {row["evidenceID"]=["type":"null"];var quote=text(500);quote["minLength"]=8;row["evidence"]=quote}
+                    else {
+                        let references=Set(evidenceAliases.filter{reference in aliases.contains{reference.hasPrefix($0+":action_")}})
+                        if !references.isEmpty {row["evidenceID"]=reference("waEvidence_"+first,references);row["evidence"]=["type":"null"]}
+                        else {row["evidenceID"]=["type":"null"];var quote=text(500);quote["minLength"]=8;row["evidence"]=quote}
+                    }
                     if replaces,replacementAliasesBySource != nil {
                         row["replaces"]=["type":["array","null"],"maxItems":allowed.isEmpty ? 0 : 3,"items":reference("replacements_"+first,allowed)]
                         row["replacementReason"]=allowed.isEmpty ? ["type":"null"] : text(500,nullable:true)
