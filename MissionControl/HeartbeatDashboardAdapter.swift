@@ -105,6 +105,7 @@ import SwiftData
         var result=try await evaluateOwnedScheduling()
         var checks=result["checks"] as! [String:Bool]
         checks.merge(try await NativeReconciliationEvaluation.run()) {_,new in new}
+        checks.merge(try PreparedApprovalEvaluation.run()) {_,new in new}
         let store=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
         let now=ISO8601DateFormatter().date(from:"2026-10-07T12:00:00Z")!
         let joiningBrief=BriefingService(container:store)

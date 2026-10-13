@@ -2,6 +2,10 @@
 
 Updated 12 October 2026. Read the current summary at the top of STATUS.md before work; dated sections below it retain engineering evidence. Stage 1 review and subscription inference already have checkpoints: do not restart stages or historical Mail indexing. Check actual implementation and acceptance before claiming a feature is complete.
 
+## Current Review policy — 13 October 2026
+
+The human explicitly approved prepared persistent suggestions and concrete-action approvals. This supersedes older requirements below that gate saved Review display or explicit approvals on current supporting memory/source versions. Render saved inbox cards/counts without AI/evidence reconstruction; heartbeats reconsider/retire them with reason and preserve Activity history. Explicit source/account access withdrawal still gates display. Human approval of the displayed creation is authority: validate its captured concrete payload, account, destination, duplicate/uncertain-operation receipts and native save readback, without Mail reread, broad model/memory/source revision checks or general title duplicate queries. Existing-item edits/removals retain exact target/occurrence/current-field checks. A parent description change alone cannot block project task creation. Strict evidence checks remain for new AI input/advice and learning. Saved brief display is dated output; inspect detailed evidence only on request.
+
 ## Working agreement
 
 - The user upgraded their plan and wants independent Memory, Projects and Appearance workstreams. This replaces the original single-main/one-Luna restriction. Use one owning chat per requested stream, isolated worktrees for concurrent writers, and one local integration owner for shared contracts, combined validation and installation. Default small work stays single-agent; this permission is not a request to start extra chats or unrelated features automatically.

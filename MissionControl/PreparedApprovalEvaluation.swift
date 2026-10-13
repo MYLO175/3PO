@@ -5,10 +5,10 @@ import Foundation
 @MainActor enum PreparedApprovalEvaluation {
     static func run() throws -> [String:Bool] {
         guard ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") else {throw IntegrationError.verification}
-        let arguments=UserDefaults.standard.volatileDomain(forName:NSArgumentDomain)
+        let arguments=UserDefaults.standard.volatileDomain(forName:UserDefaults.argumentDomain)
         var fixtureArguments=arguments;fixtureArguments["assistantContextEnabled"]=true;fixtureArguments["automaticEmailSummaries"]=true
-        UserDefaults.standard.setVolatileDomain(fixtureArguments,forName:NSArgumentDomain)
-        defer {UserDefaults.standard.setVolatileDomain(arguments,forName:NSArgumentDomain)}
+        UserDefaults.standard.setVolatileDomain(fixtureArguments,forName:UserDefaults.argumentDomain)
+        defer {UserDefaults.standard.setVolatileDomain(arguments,forName:UserDefaults.argumentDomain)}
         let model=DashboardModel(),original=try ReviewInboxEvaluation.seed(model)
         var record=original;record.kind="reminder";record.proposedChange=nil;record.sourceTitle="Submit Orion report"
         try model.proactive.seedAdviceFixture([record],model:model)
@@ -23,7 +23,7 @@ import Foundation
         guard model.assistant.memory.put(fact) else {throw SummaryFailure.invalid}
         var summary=model.emailSummaries.records[0];summary.bodyFingerprint="changed-after-preparation"
         try model.emailSummaries.seedAdviceFixture([summary])
-        model.mailData.messages=[]
+        model.mailData = .init(messages:[],accounts:model.mailData.accounts,errors:[])
         try model.validatePreparedApproval(record)
         checks["changed memory and source body do not block a concrete approval"]=model.preparedApprovalSnapshot(record) == snapshot && model.currentPreparedApproval(record)
         var changed=record;changed.sourceTitle="Different action"

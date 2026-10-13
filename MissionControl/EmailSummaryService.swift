@@ -338,7 +338,7 @@ import SwiftData
         guard expectedRegistration == model.chatGPT.activeID else {self.error="The account changed before dismissal. The item has not been acknowledged.";return}
         let previous = records
         for index in records.indices where records[index].id == id && records[index].registration == model.chatGPT.activeID {
-            let message=model.mailData.messages.first{$0.id == id} ?? records[index].message
+            let message=records[index].message ?? model.mailData.messages.first{$0.id == id}
             guard let message,records[index].fingerprint == EmailSummary.fingerprint(message),expectedVersion == ReviewAcknowledgementRules.emailVersion(message,records[index]) else {self.error="This email changed before dismissal. Review its current details; the newer item has not been acknowledged.";return}
             records[index].dismissedSourceVersion=expectedVersion
             records[index].dismissed = true;records[index].dismissedAt = .now

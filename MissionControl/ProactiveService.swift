@@ -124,7 +124,7 @@ struct ProactiveReviewContext {
         return true
     }
     func canReview(_ id:String,model:DashboardModel)->Bool {
-        state.records.first(where:{$0.id == id}).map{$0.reviewState == nil && model.reviewCreationClaim($0) == nil && !$0.needsDateClarification && preparedReviewAvailable($0,model:model)} ?? false
+        state.records.first(where:{$0.id == id}).map{$0.reviewState == nil && model.reviewCreationClaim($0) == nil && !$0.needsDateClarification && model.reviewInbox.discoveries.contains(where:{$0.id == id})} ?? false
     }
     func beginReview(_ id:String,model:DashboardModel)throws {
         guard canReview(id,model:model),let index=state.records.firstIndex(where:{$0.id == id}) else {throw ActionFailure.message("This proposal changed or a save is already recorded. Check the original Apple item; it will not be repeated.")}
@@ -148,6 +148,12 @@ struct ProactiveReviewContext {
         if state.accounts[model.chatGPT.activeID]?.paused == true { return "Suggestions paused after an interrupted or failed check. Check once when ready." }
         let p = state.accounts[model.chatGPT.activeID]
         return "Review inbox · \(p?.day == BriefingRules.day(.now) ? p?.delivered ?? 0 : 0) prepared today. No daily output cap; Apple changes wait for your approval."
+    }
+    func restoreRetired(_ record:PADiscovery,model:DashboardModel) {
+        guard record.registration == model.chatGPT.activeID,let index=state.records.firstIndex(where:{$0 == record}),record.retiredAt != nil else {return}
+        let previous=state
+        state.records[index].retiredAt=nil;state.records[index].retirementReason=nil;state.records[index].retirementEvidence=nil
+        do {try save()} catch {state=previous;self.error="The suggestion could not be restored."}
     }
     func dismiss(_ record: PADiscovery,model:DashboardModel) {
         let previous = state

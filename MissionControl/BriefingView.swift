@@ -20,7 +20,7 @@ struct BriefingView: View {
                 }
                 if let record = records.first(where: { $0.id == selectedRecord }) ?? records.first {
                     Text(record.day).font(.headline)
-                    if let note=briefings.freshnessNote(record,model:model) { Text(note).font(.caption).foregroundStyle(.secondary) }
+                    if let note=briefings.displayNote(record,model:model) { Text(note).font(.caption).foregroundStyle(.secondary) }
                     Text(record.coverage).font(.caption).foregroundStyle(.secondary)
                     MemoryAdviceEvidenceView(model:model,registration:record.registration,dependencies:record.memoryDependencies,use:.brief)
                     ScrollView {

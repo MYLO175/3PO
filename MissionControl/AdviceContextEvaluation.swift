@@ -69,7 +69,7 @@ import Synchronization
         proposal.sourceRevision=request.fingerprint;proposal.sourceAssessmentRevision=request.adviceRevision(replied:false)
         try model.proactive.seedAdviceFixture([proposal],model:model)
         proposal=model.proactive.state.records[0]
-        checks["obsolete linked proposal is withdrawn along with resolved email"] = !model.proactive.visible(proposal,model:model) && !model.proactive.canReview(proposal.id,model:model)
+        checks["resolved context leaves saved proposal reviewable until heartbeat retirement"] = !model.proactive.visible(proposal,model:model) && model.proactive.canReview(proposal.id,model:model)
         let claim=NativeCreationRequest(id:UUID(uuidString:proposal.id)!,kind:.reminder,registration:owner)
         try model.nativeCreations.begin(claim)
         checks["uncertain native creation remains visible with no new approval authority"] = model.proactive.visible(proposal,model:model) && !model.proactive.canReview(proposal.id,model:model) && !model.proactive.reviewEvidenceAvailable(proposal.id,model:model) && model.proactive.sourceDetails(proposal,model:model) != nil
@@ -200,10 +200,22 @@ import Synchronization
         let builds=model.proactive.reviewContextBuildCount,projectionStart=Date.now
         let projected=model.reviewInbox
         let sharedMilliseconds=Date.now.timeIntervalSince(projectionStart)*1000
-        checks["forty suggestions share one fresh synchronous review context"] = model.proactive.reviewContextBuildCount-builds == 1 && projected.discoveries.count == 40
+        checks["forty saved suggestions display without constructing AI evidence context"] = model.proactive.reviewContextBuildCount == builds && projected.discoveries.count == 40
         checks["shared review context preserves exact visibility and grouped badge count"] = Set(projected.discoveries.map(\.id)) == expected && projected.emailCards.count == 1 && model.reviewInboxPendingCount == projected.pendingCount
         permitted=false
-        checks["next projection immediately withdraws revoked memory advice"] = model.reviewInbox.discoveries.isEmpty
+        checks["supporting memory changes do not erase prepared suggestions"] = model.reviewInbox.discoveries.count == 40
+        let presentationBuilds=model.preparedReview.builds
+        for _ in 0..<100 {_ = model.reviewInboxPendingCount;_ = model.reviewInbox}
+        checks["badge and repeated navigation reuse the same prepared inbox"] = model.preparedReview.builds == presentationBuilds
+        let healthBefore=model.reminderHealth
+        model.reminderHealth = .init(lastSuccess:now.addingTimeInterval(-7200))
+        checks["native freshness does not invalidate prepared presentation"] = model.reviewInbox.discoveries.count == 40 && model.preparedReview.builds == presentationBuilds
+        model.reminderHealth=healthBefore
+        let excludedBefore=model.assistant.excludedAccounts
+        model.assistant.excludedAccounts.insert(message.accountID)
+        checks["explicit source withdrawal immediately hides prepared cards"] = model.reviewInbox.discoveries.isEmpty && model.reviewInbox.emailCards.isEmpty
+        model.assistant.excludedAccounts=excludedBefore
+        checks["restored source access exposes the same saved cards"] = model.reviewInbox.discoveries.count == 40
         permitted=true
         try model.proactive.seedAdviceFixture([savedAdvice],model:model)
         permitted=false
@@ -212,7 +224,8 @@ import Synchronization
         checks["dated morning stays inspectable"]=model.briefings.savedToday(model)?.id == morning.id && model.briefings.savedToday(model)?.message == morning.message
         checks["stale morning leaves future AI history"] = !model.briefings.allowsChatDelivery(delivery,content:BriefingRules.prose(morning),model:model)
         model.reviewDiscovery(savedAdvice)
-        checks["stale suggestion cannot open a creation review"]=model.editTarget == nil
+        checks["saved suggestion remains reviewable after supporting memory changed"]=model.editTarget != nil
+        model.editTarget=nil
         checks["morning completion and notification claims survive"]=BriefingRules.completedDays(records:model.briefings.state.records,registration:registration) == [morning.day] && model.briefings.state.notificationClaims == [morning.day]
         permitted=true
         checks["matching evidence can become usable again"]=model.briefings.current(model)?.id == morning.id && model.proactive.visible(savedAdvice,model:model)
@@ -388,7 +401,7 @@ import Synchronization
         checks["sidebar count-only path agrees with the full Review projection"] = model.reviewInboxPendingCount == model.reviewInbox.pendingCount
         let orientationHealth=model.paOrientationHealth,reminderHealth=model.reminderHealth
         model.paOrientationHealth = .init(lastSuccess:now.addingTimeInterval(-601));model.reminderHealth = .init(lastSuccess:now.addingTimeInterval(-601))
-        checks["count-only badge rechecks aged native evidence instead of retaining handled state"] = model.reviewInboxPendingCount == 3 && model.reviewInboxPendingCount == model.reviewInbox.pendingCount
+        checks["aged native caches retain saved heartbeat handling decisions"] = model.reviewInboxPendingCount == reviewBase && model.reviewInboxPendingCount == model.reviewInbox.pendingCount
         model.paOrientationHealth=orientationHealth;model.reminderHealth=reminderHealth
         checks["refreshed native evidence restores the current badge count"] = model.reviewInboxPendingCount == reviewBase
         let reviewMail=model.reviewInbox.emails[0]

@@ -7,7 +7,7 @@ struct EmailOverviewView: View {
     @State private var limit = 6
     @State private var showRelevance=false
     private var available: [(MailMessage,EmailSummary)] {
-        summaries.highlights(model).filter { message,summary in
+        model.reviewInbox.highlights.filter { message,summary in
             !(configuration?.wrappedValue.sourceExclusions.contains(message.accountID) ?? false) && (filter == "All" || (filter == "Needs action" ? EmailHighlightRules.needsAction(summary,replied:message.replied) : filter == "Worth reading" ? summary.worthReading == true && !EmailHighlightRules.needsAction(summary,replied:message.replied) : summary.followUpDate != nil))
         }
     }

@@ -1,5 +1,15 @@
 # Next improvements
 
+## 13 October: prepared Review and concrete approvals
+
+Review displays saved assessments, suggestions and questions. A per-model observed presentation cache supplies both cards and sidebar count; it invalidates for changed saved decisions, user actions, account/access choices and relevant source metadata. Opening/remounting does not revalidate supporting memories, native target revisions, completion evidence or source bodies. Dismiss/Undo and explicit access withdrawal remain immediate. Saved planned/addressed decisions stay in Activity until a subsequent analysis or human Keep in review changes them. Email overview shares the same saved presentation.
+
+Approving creation is a current human instruction to execute the displayed action. Capture the concrete proposal when opening the form; account, access, exact displayed payload, destination existence/writability, persistent operation receipts and verified native readback remain. Creation does not reread Mail, compare broad memory/model/source revisions or search Calendar for matching titles. Edits/removals still fetch and verify the exact existing target/occurrence and expected fields, preventing silent overwrite. Project destination identity/type/liveness matters; a changed parent description alone does not block adding a task. Uncertain saves never replay.
+
+Heartbeats reconsider at most twelve pending proposals per comparison and remember the context assessed, continuing bounded batches without repeating unchanged comparisons. Exact issued Calendar/Reminder/project-task evidence can retire an already-covered creation proposal with a saved reason and evidence receipt. Newer-source corrections/cancellations use the existing replacement mechanism. Missing sources or elapsed time alone cannot retire a suggestion. Activity preserves retired records and provides Keep in review. Automatic AI input, new advice generation and source-memory learning retain current-evidence checks; saved display is a different use.
+
+Saved brief display no longer runs recurring evidence-freshness checks. It retains its preparation timestamp and source-choice notice; new inference still checks usable context. Collapsed Sources and coverage and Memory supplied panels defer their inspection work until expanded. No personal AI request, changed source permission or native write is implied by navigation.
+
 ## 13 October: responsiveness and heartbeat feedback
 
 Review inbox rendering now shares one synchronous permitted-email/context projection across saved suggestions, rather than rebuilding every email highlight for every suggestion. It is not reused across awaits or native authority checks; changing source permissions is visible on the next projection.

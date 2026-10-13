@@ -1,5 +1,9 @@
 # Memory and context in 3PO
 
+## Saved output and current reasoning — 13 October 2026
+
+Review cards and saved briefs display the prepared result without rerunning supporting-memory, source-content or native-item freshness checks. Explicit account/source access changes still apply immediately. Evidence inspection happens on demand. A later heartbeat can reassess and retire a suggestion with a saved reason; approving a concrete displayed creation authorises that action without another memory analysis. Exact target checks remain for edits/removals. New AI reasoning, automatic advice and source learning still use current permitted evidence.
+
 ## Current heartbeat learning policy — 13 October 2026
 
 The user confirmed that sources already allowed for review may teach memory. Current review permissions or an existing explicit learning opt-in permit bounded source deltas; global saved-memory and learning controls still apply. A new inherited source scope baselines existing content. Learning and recall use the same exact current source permission/evidence projection, including collected Mail account/header versions and observed body changes. Revoking review permission removes inherited access unless a separate explicit learning choice still permits it.

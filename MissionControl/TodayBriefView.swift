@@ -5,6 +5,7 @@ struct TodayBriefView: View {
     @Bindable var briefings: BriefingService
     var configuration:Binding<WidgetConfiguration>? = nil
     @State private var showMemory=false
+    @State private var showSources=false
     @State private var legacyShowsWeather=true
     @State private var editingPrompt:BriefPromptEdit?
     private var record:DailyBriefing? {briefings.savedToday(model) ?? briefings.current(model)}
@@ -46,8 +47,8 @@ struct TodayBriefView: View {
                         BriefFreshnessNote(model:model,briefings:briefings,record:record)
                         let prose=BriefingRules.displayProse(record)
                         Text((try? AttributedString(markdown:prose,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(prose)).font(.callout).lineSpacing(5).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)
-                        DisclosureGroup("Sources and coverage") {
-                            VStack(alignment:.leading,spacing:10) {
+                        DisclosureGroup("Sources and coverage",isExpanded:$showSources) {
+                            if showSources {VStack(alignment:.leading,spacing:10) {
                                 Text(record.coverage).font(.caption).foregroundStyle(.secondary)
                                 MemoryAdviceEvidenceView(model:model,registration:record.registration,dependencies:record.memoryDependencies,use:.brief)
                                 ForEach(record.items) { item in
@@ -55,7 +56,7 @@ struct TodayBriefView: View {
                                     Text((try? AttributedString(markdown:text,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(text)).font(.caption)
                                     ForEach(item.sourceIDs,id:\.self) { id in
                                         if let source = record.sources.first(where: { $0.id == id }) {
-                                            if source.kind == "mail", let message = model.emailSummaries.highlights(model).first(where:{ $0.0.id == source.originalID })?.0 { Button(source.label) { model.select(message) }.buttonStyle(.link).font(.caption) }
+                                            if source.kind == "mail", let message = model.reviewInbox.highlights.first(where:{ $0.0.id == source.originalID })?.0 { Button(source.label) { model.select(message) }.buttonStyle(.link).font(.caption) }
                                             else if source.kind == "weather" { Link(source.label,destination:WeatherRules.provider).font(.caption) }
                                             else if source.kind == "whatsapp" { WhatsAppBriefSource(service:model.whatsapp,registration:model.chatGPT.activeID,source:source) }
                                             else if source.kind == "memory" { Button(source.label) { showMemory=true }.buttonStyle(.link).font(.caption) }
@@ -63,7 +64,7 @@ struct TodayBriefView: View {
                                         }
                                     }
                                 }
-                            }.padding(.top,8)
+                            }.padding(.top,8)}
                         }.font(.caption)
                     }.frame(maxWidth:.infinity,alignment:.leading)
                 }
@@ -80,17 +81,14 @@ struct TodayBriefView: View {
     }
 }
 
-/// Independent observed inputs keep weather/header/layout updates from repeating
-/// the evidence projection. A remounted page still checks current evidence once.
+/// Dated display only. Current evidence checks belong to new AI requests.
 private struct BriefFreshnessNote:View {
     var model:DashboardModel
     var briefings:BriefingService
     var record:DailyBriefing
     var body:some View {
-        TimelineView(.periodic(from:.now,by:60)) {_ in
-            if let note=briefings.freshnessNote(record,model:model) {
+        if let note=briefings.displayNote(record,model:model) {
                 Label(note,systemImage:"clock.arrow.circlepath").font(.caption).foregroundStyle(.secondary).padding(10).frame(maxWidth:.infinity,alignment:.leading).background(Color.primary.opacity(0.04),in:RoundedRectangle(cornerRadius:8))
-            }
         }
     }
 }

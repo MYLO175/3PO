@@ -14,6 +14,7 @@ struct ReviewInboxProjection {
     var learningQuestions:[PALearningQuestion]
     var discoveries:[PADiscovery]
     var emails:[(MailMessage,EmailSummary)]
+    var highlights:[(MailMessage,EmailSummary)]
     var emailCards:[ReviewInboxEmailCard]
     var standaloneDiscoveries:[PADiscovery]
     var handled:[(MailMessage,EmailSummary,EmailHandling)]
@@ -30,35 +31,9 @@ extension DashboardModel {
         if ["project","projectTask"].contains(item.kind) {return !assistant.projects.readOnly && assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) != nil}
         return reviewCreationClaim(item)?.receipt != nil
     }
-    var reviewInbox:ReviewInboxProjection {
-        reviewInboxProjection(includeHandled:true)
-    }
-    var reviewInboxPendingCount:Int {
-        reviewInboxProjection(includeHandled:false).pendingCount
-    }
-    private func reviewInboxProjection(includeHandled:Bool)->ReviewInboxProjection {
-        let questions=briefings.pendingQuestions(self),learning=(memoryLearning.state.questions ?? []).filter{memoryLearning.visible($0,assistant:assistant)}
-        let context=proactive.reviewContext(self)
-        let discoveries=proactive.state.records.filter{!reviewDiscoveryCompleted($0) && proactive.visible($0,model:self,context:context)}.map(ProactiveRules.reviewProjection)
-        let highlights=context.highlights
-        let emails=highlights.filter{EmailHighlightRules.needsReview($0.1,replied:$0.0.replied) && !acknowledgedEmail($0.0,$0.1) && emailSummaries.handling($0.1,message:$0.0,model:self) == nil}.map {message,summary in
-            var value=summary;if message.replied || EmailSummary.fingerprint(message) != summary.fingerprint {value.replyDraft=nil};return (message,value)
-        }
-        let actionableIDs=Set(emails.map{$0.0.id})
-        var groupedIDs=Set<String>()
-        let emailCards=highlights.compactMap {message,summary -> ReviewInboxEmailCard? in
-            let attached=discoveries.filter{ReviewInboxRules.belongs($0,to:message,summary:summary)}
-            guard actionableIDs.contains(message.id) || !attached.isEmpty else {return nil}
-            groupedIDs.formUnion(attached.map(\.id))
-            var value=summary;if message.replied || EmailSummary.fingerprint(message) != summary.fingerprint {value.replyDraft=nil}
-            return .init(message:message,summary:value,discoveries:attached,handling:includeHandled ? emailSummaries.handling(summary,message:message,model:self) : nil,needsReview:actionableIDs.contains(message.id) || attached.contains{!reviewDiscoveryCompleted($0)})
-        }
-        let standalone=discoveries.filter{!groupedIDs.contains($0.id)},cardIDs=Set(emailCards.map(\.id))
-        let handled:[(MailMessage,EmailSummary,EmailHandling)]=includeHandled ? highlights.compactMap {message,summary in !cardIDs.contains(message.id) ? emailSummaries.handling(summary,message:message,model:self).map{(message,summary,$0)} : nil} : []
-        let pending=PAQueueRules.handoffs(assistant.queue.items,registration:chatGPT.activeID)
-        let count=questions.count+learning.count+standalone.filter{!reviewDiscoveryCompleted($0)}.count+emailCards.filter(\.needsReview).count+pending.filter{$0.state == .needsAnswer || $0.state == .interrupted}.count
-        return .init(questions:questions,learningQuestions:learning,discoveries:discoveries,emails:emails,emailCards:emailCards,standaloneDiscoveries:standalone,handled:handled,resolved:includeHandled ? emailSummaries.resolved(self) : [],pending:pending,pendingCount:count)
-    }
+    var reviewInbox:ReviewInboxProjection {preparedReview.value(self)}
+    var reviewInboxPendingCount:Int {preparedReview.value(self).pendingCount}
+
 }
 struct ReviewInboxBadge:View {
     var count:Int
@@ -84,7 +59,7 @@ struct PATasksView: View {
     @State private var answerError:String?
     @State private var answeringLearning:PALearningQuestion?
     private func discoveryTitle(_ item:PADiscovery)->String? {
-        item.sourceTitle ?? (item.needsDateClarification && item.sourceKind != "whatsapp" ? model.emailSummaries.highlights(model).first{$0.0.id == item.mailID}?.0.subject : nil)
+        item.sourceTitle ?? (item.needsDateClarification && item.sourceKind != "whatsapp" ? model.emailSummaries.records.first{$0.id == item.mailID && $0.registration == item.registration}?.message?.subject : nil)
     }
     private func dateLabel(_ date:Date?,hasTime:Bool,fallback:String)->String {date?.formatted(date:.abbreviated,time:hasTime ? .shortened : .omitted) ?? fallback}
     private var reviewBusy:Bool {model.heartbeat.busy || model.proactive.busy || model.emailSummaries.busy}
@@ -119,14 +94,14 @@ struct PATasksView: View {
             }
             if let title=discoveryTitle(item),!embedded || (title != emailTitle && title != item.nativeTarget?.title) { Text(title).font(.callout.weight(.semibold)) }
             if !embedded || item.nativeTarget == nil {Text(PAProse.display(item.message)).textSelection(.enabled)}
-            if !embedded,let details=model.proactive.sourceDetails(item,model:model) {ReviewSourceLabel(details:details,showsTitle:true)}
+            if !embedded,let details=model.preparedSourceDetails(item) {ReviewSourceLabel(details:details,showsTitle:true)}
             if let reply=item.replyDraft {
                 Text(reply).font(.callout).textSelection(.enabled).padding(10).frame(maxWidth:.infinity,alignment:.leading).background(Color.primary.opacity(0.04),in:RoundedRectangle(cornerRadius:8))
                 Text("Check the details before using this draft.").font(.caption2).foregroundStyle(.secondary)
                 Button("Copy draft") {NSPasteboard.general.clearContents();NSPasteboard.general.setString(reply,forType:.string)}.controlSize(.small)
             }
             if !embedded {
-                ReviewFeedbackButton(model:model,topic:discoveryTitle(item) ?? item.message,email:model.emailSummaries.feedbackEmail(item,model:model),isCurrent:{model.proactive.state.records.first(where:{$0.id == item.id}).map{ProactiveRules.reviewProjection($0) == item && model.proactive.visible($0,model:model)} == true})
+                ReviewFeedbackButton(model:model,topic:discoveryTitle(item) ?? item.message,email:model.preparedFeedbackEmail(item),isCurrent:{model.proactive.state.records.first(where:{$0.id == item.id}).map{ProactiveRules.reviewProjection($0) == item && model.proactive.preparedReviewAvailable($0,model:model)} == true})
             }
             if let project=item.proposedProjectTask { Label("Task in " + project.target.title,systemImage:"folder").font(.caption);Text(project.connection).font(.caption).foregroundStyle(.secondary) }
             if let date=item.proposedDate { Text(dateLabel(date.date(),hasTime:date.hasTime,fallback:date.start) + (date.end.map{" to " + dateLabel(date.date($0),hasTime:date.hasTime,fallback:$0)} ?? "")).font(.callout).textSelection(.enabled) }
@@ -355,16 +330,20 @@ struct ReviewHistoryView:View {
     @Bindable var model:DashboardModel
     var body:some View {
         let handled=model.reviewInbox.handled,resolved=model.reviewInbox.resolved
+        let retired=model.proactive.state.records.filter{$0.registration == model.chatGPT.activeID && $0.retiredAt != nil}
         DisclosureGroup("Review history") {
             VStack(alignment:.leading,spacing:12) {
-                Text("Items with current evidence that the action is planned or addressed. These stay out of your inbox. Keep in review overrides the inferred status.").font(.caption).foregroundStyle(.secondary)
+                Text("Saved background decisions that an action was planned or addressed. A later heartbeat can reconsider them. Keep in review restores the email.").font(.caption).foregroundStyle(.secondary)
                 ForEach(handled,id:\.0.id) {message,summary,value in
                     VStack(alignment:.leading,spacing:6) {Text(message.subject).font(.callout.weight(.semibold));Text(PAProse.display(value.reason)).font(.caption);Text(value.native.title).font(.caption).foregroundStyle(.secondary);HStack {Button("View email") {model.select(message)};Button("Keep in review") {model.emailSummaries.keepForReview(summary.id,model:model)}}.controlSize(.small)}.taskCard()
                 }
                 ForEach(resolved,id:\.0.id) {message,summary,value in
                     VStack(alignment:.leading,spacing:6) {Text(message.subject).font(.callout.weight(.semibold));Text(PAProse.display(value.reason)).font(.caption);DisclosureGroup("Evidence") {Text("Earlier request: “"+value.requestQuote+"”");Text("Confirmation: “"+value.confirmation.quote+"”");if let confirmation=model.emailSummaries.sourceAssessments(model).first(where:{$0.0.id == value.confirmation.messageID})?.0 {Button("View confirmation") {model.select(confirmation)}}}.font(.caption);HStack {Button("View email") {model.select(message)};Button("Keep in review") {model.emailSummaries.keepForReview(summary.id,model:model)}}.controlSize(.small)}.taskCard()
                 }
-                if handled.isEmpty && resolved.isEmpty {Text("No currently supported addressed items.").font(.caption).foregroundStyle(.secondary)}
+                ForEach(retired) {item in
+                    VStack(alignment:.leading,spacing:6) {Text(item.sourceTitle ?? item.message).font(.callout.weight(.semibold));Text(item.retirementReason ?? "Retired during a heartbeat.").font(.caption);Button("Keep in review") {model.proactive.restoreRetired(item,model:model)}.controlSize(.small);if let date=item.retiredAt {Text("Reviewed " + date.formatted(date:.abbreviated,time:.shortened)).font(.caption).foregroundStyle(.secondary)}}.taskCard()
+                }
+                if handled.isEmpty && resolved.isEmpty && retired.isEmpty {Text("No saved addressed items.").font(.caption).foregroundStyle(.secondary)}
                 Text("Dismiss acknowledges the displayed concern. Undo restores it. Feedback is saved separately in PA memory.").font(.caption).foregroundStyle(.secondary)
             }.padding(.top,8)
         }.padding(12)

@@ -41,6 +41,15 @@ import UserNotifications
         return BriefingRules.latest(morning:morningAnchor(model),update:state.updatedBriefs?[model.chatGPT.activeID],registration:model.chatGPT.activeID,day:BriefingRules.day(.now))
     }
     func savedMorning(_ model:DashboardModel)->DailyBriefing? { morningAnchor(model) }
+    /// Displaying a saved brief does not re-evaluate the reasoning that produced it.
+    func displayNote(_ record:DailyBriefing,model:DashboardModel)->String? {
+        !model.assistant.contextEnabled || record.sourceScope != scope(model) ? "Saved earlier with different source choices. A new heartbeat uses your current context." : nil
+    }
+    func preparedQuestions(_ model:DashboardModel)->[BriefingQuestion] {
+        guard model.assistant.contextEnabled else {return []}
+        let currentScope=scope(model)
+        return (state.reviewQuestions ?? []).filter{!$0.dismissed && !$0.answered && $0.snapshot.registration == model.chatGPT.activeID && $0.snapshot.invalidated != true && $0.snapshot.sourceScope == currentScope}
+    }
     func freshnessNote(_ record:DailyBriefing,model:DashboardModel,checkAcknowledgements:Bool = true)->String? {
         if record.emailResolutionRevision.map({$0 != model.emailSummaries.resolutionRevision(model)}) ?? !model.emailSummaries.resolutionContext(model).isEmpty {return "An earlier email request or its completion evidence changed. Update the brief for current advice."}
         if checkAcknowledgements && (record.reviewAcknowledgementRevision.map{$0 != model.reviewAcknowledgementRevision} ?? model.hasReviewAcknowledgements) {return "Your Review inbox choices changed. Update the brief for current advice."}
@@ -448,7 +457,7 @@ import UserNotifications
         do {try save();questionUndoID=nil;questionUndoDate=nil} catch {state=before;self.error="The question dismissal could not be undone."}
     }
     @discardableResult func resolveQuestion(_ question:BriefingQuestion,model:DashboardModel,answered:Bool)->Bool {
-        guard pendingQuestions(model).contains(where:{$0.id == question.id}),let index=state.reviewQuestions?.firstIndex(where:{$0.id == question.id}) else {return false}
+        guard preparedQuestions(model).contains(where:{$0.id == question.id && $0.question == question.question}),let index=state.reviewQuestions?.firstIndex(where:{$0.id == question.id}) else {return false}
         let before=state
         state.reviewQuestions?[index].answered=answered;state.reviewQuestions?[index].dismissed = !answered
         do {try save();if !answered {questionUndoID=question.id;questionUndoDate = .now};return true} catch {state=before;self.error="The question could not be saved; it remains waiting.";return false}
