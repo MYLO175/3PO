@@ -1,6 +1,14 @@
 # Mission Control specification
 
-13 October requested trial: conversational multi-action Review plans, isolated Review replies queued behind heartbeat, and a centred AI activity pill. Explore and compare in a separate worktree before merging. This checkpoint is an interactive source-free DEBUG prototype, not connected production execution. See [trial and production acceptance](docs/REVIEW_CONVERSATION_TRIAL.md).
+## 13 October: approved conversational Review and AI activity
+
+The user approved merging the interaction trial into the normal app, with one refinement: completed suggestions show a tick and the number of confirmed actions, with View actions for their saved details. The centred toolbar pill keeps the circular chat shortcut and shows the current job or latest real message, including AI failures. AI Activity retains outcomes, reversible acknowledgement and navigation back to the relevant conversation or details.
+
+The connected candidate saves a separate account/source-scoped Review transcript and durable serial queue. Opening Review displays saved output; native creation rows may prepare enabled writable destination defaults without AI. Approving selected prepared actions captures their exact payloads. Asking for a fuller or revised plan explicitly invokes the existing typed assistant engine; a subsequent ordinary approval is resolved in that Review conversation. Replies submitted during a heartbeat wait for it, and closing Review does not cancel them. Native uncertainty, attempted work after reopening and failed/interrupted jobs never replay automatically. Mail and WhatsApp remain read-only.
+
+Implementation, focused checks, signed integration, installation and live acceptance are separate checkpoints. Complete the latter checks before claiming this candidate is installed or accepted. Improving the model's coverage of every supported Calendar date and project deadline remains open. The earlier [scripted trial](docs/REVIEW_CONVERSATION_TRIAL.md) remains comparison history.
+
+Earlier 13 October requested trial: conversational multi-action Review plans, isolated Review replies queued behind heartbeat, and a centred AI activity pill. Explore and compare in a separate worktree before merging. That checkpoint was an interactive source-free DEBUG prototype, not connected production execution. See [trial and production acceptance](docs/REVIEW_CONVERSATION_TRIAL.md).
 
 13 October approved date follow-up: persist bounded rejected-entry diagnostics showing action/source title, proposed start/end, date mode/timezone and exact validation reason; use a fresh owned comparison to diagnose and fix the underlying issue. Preserve prior history, row isolation, current ownership/evidence checks and human approval for all actual operations.
 

@@ -2,7 +2,16 @@
 
 ## Conversational Review and one AI activity pill
 
-Requested 13 October. An isolated native interaction prototype now demonstrates multi-action plans, Review-scoped replies, heartbeat-to-request handoff and persistent partial-failure details. It is scripted and source-free. Connected reasoning, durable job recovery, account/source/approval guards and truthful receipt-based outcomes remain open before merging. See [trial guide and acceptance](REVIEW_CONVERSATION_TRIAL.md).
+Approved for integration on 13 October after the user compared the [scripted trial](REVIEW_CONVERSATION_TRIAL.md). The connected candidate now contains saved source/account-scoped conversations, explicit real-assistant planning, exact selected-action approval, durable heartbeat-to-Review scheduling, receipt-based completion counts and a centred palette-aware status pill. AI Activity retains failure details, acknowledgement with Undo and navigation. This is implementation status; installation and live acceptance are not yet claimed here.
+
+Remaining acceptance and product gaps:
+
+- Check the normal app in light/dark palettes and compact windows: the latest message, heartbeat progress, completed tick/count and failure details must remain clear.
+- Verify the real flow of submitting during heartbeat, leaving Review, serial execution, source withdrawal, Stop and reopening. Confirm attempted/uncertain jobs stay paused and canonical receipts prevent repeated saves.
+- Verify a natural-language variation and subsequent yes through the configured model, with disposable native/project fixtures and honest partial outcomes. Opening must remain local/no-AI; a fuller plan must require an explicit request.
+- Improve source-to-plan coverage: an IIB-style email should yield all independently supported project deadlines and useful Calendar entries, preserve provisional windows and leave missing deadlines unresolved. Connected execution does not establish that the model consistently extracts every date or chooses the right existing project.
+
+The earlier simulated interaction remains comparison history; it is not evidence of real inference, native writes or installed acceptance.
 
 ## 13 October: detailed date rejection diagnostics
 

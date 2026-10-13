@@ -1,8 +1,22 @@
 # How Mission Control works
 
+## 13 October: connected Review conversations and AI activity
+
+Exploring a Review suggestion opens a conversation saved with that exact source and account. It shows the prepared explanation and actions, and keeps its replies separate from general 3PO chat. Opening makes no AI request or source-body reread. Calendar/Reminders creation rows may prepare enabled writable destination defaults so the displayed action has a concrete destination. Missing dates or existing-item edits still need their specific clarification or occurrence review.
+
+Select the prepared actions and reply yes to approve their captured details. Their account, source access, exact payload, writable destination, duplicate/pending receipts and save readback still govern execution. Suggest a fuller plan or type a variation to ask the real assistant to reason in this Review conversation. It can find the relevant existing project and propose several project tasks and Calendar entries through the existing typed tools. A later yes refers to that revised conversation; it is not limited to the original checkbox selection. This explicit request is separate from opening saved suggestions. Mail and WhatsApp tools cannot send messages.
+
+Replies enter a durable serial queue. A running heartbeat finishes before Review work starts; leaving the sheet or page does not cancel the captured request. Foreground input and Stop retain priority. Requests keep their original account, model, source choices, storage and operation identities. Never-started queued work can survive reopening, while attempted work becomes interrupted and pauses the queue. Failed, partial, uncertain and unanswered work requires the appropriate explicit continuation. Check saved receipts reconciles known local outcomes without inference or another save; uncertain native saves never replay.
+
+Completed cards show a tick and a receipt-based action count, with View actions for the history. A batch of four saved project tasks counts as four actions; duplicate/already-saved tool results cannot inflate the total. Unconfirmed saves remain visibly unconfirmed even if the model's prose sounds finished.
+
+The centred toolbar pill uses the workspace palette. Its circular icon opens general chat; its message opens AI Activity. While work runs it shows the current message and available progress, including heartbeat progress. Afterwards it shows the latest saved real message or 3PO is ready when no output exists. Failed, partial, interrupted, unanswered and uncertain outcomes stay inspectable, with an attention marker until acknowledged. Activity provides the saved destination's navigation and one-level Undo for acknowledgement. Acknowledgement changes only local attention, not task completion, saved results, preferences or permission to retry. Source/account access withdrawal withholds the associated Review transcript and activity output.
+
+This describes the connected integration candidate. Installation and native live acceptance are recorded separately in STATUS; complete extraction of every supported source date is still a model-quality question.
+
 ## Separate conversational Review trial
 
-A DEBUG [interactive trial](REVIEW_CONVERSATION_TRIAL.md) explores one explanation with several project/Calendar actions and a centred AI activity pill. Its Review replies wait behind a simulated heartbeat, remain outside general Chat and report per-action outcomes. It uses in-memory fictional data and scripted replies; production Review and real jobs still follow the implementation below.
+A DEBUG [interactive trial](REVIEW_CONVERSATION_TRIAL.md) explores one explanation with several project/Calendar actions and a centred AI activity pill. Its Review replies wait behind a simulated heartbeat, remain outside general Chat and report per-action outcomes. It uses in-memory fictional data and scripted replies and remains a historical comparison for the connected candidate above.
 
 ## 13 October: detailed date rejection diagnostics
 

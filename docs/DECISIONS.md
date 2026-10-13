@@ -1,8 +1,20 @@
 # Decisions
 
+## 13 October: approve connected Review and a shared activity pill
+
+The user approved the trial for the normal app. Review becomes a source/account-scoped saved conversation, separate from general chat, so a person can discuss several related actions without leaving that source's context. Opening shows saved text without AI; preparing native destination defaults is distinct from the explicit Suggest a fuller plan request.
+
+Keep two authority paths. Yes to selected prepared actions approves their exact captured payloads through existing destination/duplicate/readback guards. A variation uses the real typed assistant engine, with ordinary follow-up approval resolved in the same Review transcript. Imported source text and the earlier assistant plan never independently authorise a save. Mail and WhatsApp remain read-only.
+
+Review replies join a durable serial queue after the current heartbeat. Closing the sheet is navigation, not cancellation. Foreground input and Stop still interrupt; interrupted, uncertain or previously attempted work never automatically replays on reopening. Completion is determined by confirmed operation receipts, including each saved item in a project batch, rather than by a finished-looking model reply. Completed suggestions replace Explore suggested actions with a tick/count and View actions; partial and uncertain work remains inspectable.
+
+Use one centred, palette-aware toolbar pill for the current AI job or latest real message. Its circular icon opens chat, and the message opens Activity. Retain failures alongside later work until acknowledged. Acknowledgement has local one-level Undo and changes attention only; it does not complete an underlying task, teach a preference or authorise a retry. Activity navigation returns to the saved relevant conversation or details, subject to current source/account access.
+
+The interaction is approved; source-date extraction quality, final integrated validation, installation and live acceptance remain separate. The earlier scripted checkpoint below and [trial guide](REVIEW_CONVERSATION_TRIAL.md) remain historical evidence.
+
 ## 13 October: trial conversational Review before production integration
 
-The user requested a separate worktree comparison of plain-language multi-action plans and a centred chat/status pill. The first checkpoint uses scripted example data and simulated serial jobs. Review turns stay separate from general Chat; accepted action snapshots survive page/sheet navigation; partial/unconfirmed outcomes remain visible. No production queue, toolbar, model prompt or Apple/project operation is changed. Durable Review conversations, joined heartbeat-to-job scheduling and receipt-driven connected execution require the explicit acceptance in [the trial guide](REVIEW_CONVERSATION_TRIAL.md) before merging.
+Earlier on 13 October, the user requested a separate worktree comparison of plain-language multi-action plans and a centred chat/status pill. The first checkpoint uses scripted example data and simulated serial jobs. Review turns stay separate from general Chat; accepted action snapshots survive page/sheet navigation; partial/unconfirmed outcomes remain visible. That checkpoint did not change the production queue, toolbar, model prompt or Apple/project operations. Durable Review conversations, joined heartbeat-to-job scheduling and receipt-driven connected execution were then deferred pending the explicit acceptance described in [the trial guide](REVIEW_CONVERSATION_TRIAL.md); the later decision above records that approval.
 
 ## 13 October: detailed date rejection diagnostics
 
