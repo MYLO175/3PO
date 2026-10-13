@@ -11,7 +11,7 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
     }
     func assistantActivityStarted(_ outcome:AssistantTurnOutcome) {
         guard AIActivityWork.includes(outcome.attemptedTools,confirmed:outcome.confirmedActions,unconfirmed:outcome.unconfirmedActions) else {return}
-        let created=assistant.conversation(outcome.conversationID)?.turns.first{$0.id == outcome.humanTurnID}?.created ?? .now
+        let created=assistant.activityContext(outcome.conversationID)?.turnDates[outcome.humanTurnID] ?? .now
         _=aiActivity.upsert(.init(id:"action:"+outcome.responseTurnID.uuidString,registration:outcome.registration,kind:.action,state:.running,title:"3PO actions",message:AIActivityWork.running(AIActivityWork.descriptions[outcome.message] == nil ? outcome.attemptedTools : [outcome.message]),created:created,destination:.assistant(targetID:outcome.conversationID.uuidString)))
     }
     func heartbeatActivityStarted(_ registration:String,_ id:String,_ date:Date) {
@@ -21,8 +21,7 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
         guard AIActivityWork.includes(outcome.attemptedTools,confirmed:outcome.confirmedActions,unconfirmed:outcome.unconfirmedActions) else {return}
         let result=classifyAssistantOutcome(outcome)
         let state=AIActivityStatus(rawValue:result.phase.rawValue) ?? (result.phase == .completed ? .succeeded : .failed)
-        let conversation=assistant.conversation(outcome.conversationID)
-        let created=conversation?.turns.first{$0.id == outcome.humanTurnID}?.created ?? .now
+        let created=assistant.activityContext(outcome.conversationID)?.turnDates[outcome.humanTurnID] ?? .now
         let message=state == .succeeded ? AIActivityWork.completed(outcome.attemptedTools,receipts:outcome.receipts,confirmed:outcome.confirmedActions) : state == .uncertain ? "A save needs checking. "+(result.error ?? "Confirmed actions are retained; the unconfirmed action will not be repeated.") : result.message
         _=aiActivity.upsert(.init(id:"action:"+outcome.responseTurnID.uuidString,registration:outcome.registration,kind:.action,state:state,title:"3PO actions",message:message,created:created,finished:.now,destination:.assistant(targetID:outcome.conversationID.uuidString)))
     }
@@ -52,7 +51,7 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
         if heartbeat.busy,heartbeat.activeRegistration == registration,let run=heartbeat.state.accounts[registration]?.reviews?.last,let id=heartbeat.ownedRunID {
             return .init(id:"heartbeat:"+id,registration:registration,kind:.heartbeat,state:.running,title:"Heartbeat",message:heartbeat.progress?.stage ?? heartbeat.status,progress:heartbeat.progress.map{Double($0.percentage)/100},created:run.started,destination:.heartbeat(targetID:id))
         }
-        if assistant.busy,let id=assistant.requestConversationID,let turn=assistant.requestTurnID,assistant.conversation(id)?.reviewKey == nil,let active=aiActivity.records(registration).first(where:{$0.id == "action:"+turn.uuidString && $0.state == .running}) {
+        if assistant.busy,let id=assistant.requestConversationID,let turn=assistant.requestTurnID,let context=assistant.activityContext(id),context.reviewKey == nil,let active=aiActivity.records(registration).first(where:{$0.id == "action:"+turn.uuidString && $0.state == .running}) {
             return active
         }
         if let job=emailSummaries.feedback.items(registration).first(where:{$0.state == .learning || $0.state == .saving}),reviewPermits(.init(key:"mail:"+job.messageID,title:job.about,kind:"mail",accountID:job.accountID,messageID:job.messageID)) {
@@ -81,10 +80,13 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
     func activityVisible(_ record:AIActivityRecord)->Bool {
         guard record.registration == chatGPT.activeID else {return false}
         if record.kind == .chat {
-            guard record.id.hasPrefix("chat:"),let turn=UUID(uuidString:String(record.id.dropFirst(5))),case let .assistant(id)=record.destination,let id,let conversation=UUID(uuidString:id),let response=assistant.conversation(conversation)?.turns.first(where:{$0.id == turn}) else {return false}
-            return AIActivityWork.includes(response.contextCapture?.attemptedTools ?? [])
+            guard record.id.hasPrefix("chat:"),let turn=UUID(uuidString:String(record.id.dropFirst(5))),case let .assistant(id)=record.destination,let id,let conversation=UUID(uuidString:id),let context=assistant.activityContext(conversation) else {return false}
+            return AIActivityWork.includes(context.attemptedTools[turn] ?? [])
         }
-        if case let .review(id)=record.destination,let id,let uuid=UUID(uuidString:id) {return reviewConversationAvailable(uuid)}
+        if case let .review(id)=record.destination,let id,let uuid=UUID(uuidString:id) {
+            guard let context=assistant.activityContext(uuid),let key=context.reviewKey else {return false}
+            return reviewPermits(.init(key:key,title:context.title,kind:context.reviewSourceKind ?? "mail",accountID:context.reviewAccountID,messageID:context.reviewMessageID,identity:context.reviewSourceIdentity,chatID:context.reviewSourceChatID))
+        }
         if case let .feedback(id)=record.destination,let id,let uuid=UUID(uuidString:id),let job=emailSummaries.feedback.records.first(where:{$0.id == uuid && $0.registration == chatGPT.activeID}) {return reviewPermits(.init(key:"mail:"+job.messageID,title:job.about,kind:"mail",accountID:job.accountID,messageID:job.messageID))}
         return record.registration == chatGPT.activeID
     }

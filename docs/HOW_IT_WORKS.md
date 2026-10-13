@@ -14,6 +14,8 @@ The centred toolbar pill uses the workspace palette. Its circular icon opens gen
 
 AI Activity records work rather than ordinary conversation. Heartbeats, Review jobs and feedback retain their outcomes. Work started in general chat appears when a typed operation begins, such as a Calendar change, project save or email search; verified receipts supply its completion message. Greetings, conversation-only answers and incidental memory-context lookup do not create activity or replace the pill's latest work. Previously saved chat entries are filtered using their exact saved tool trace without deleting transcripts or history. A failed or uncertain action remains visible and can open its originating chat.
 
+Activity uses a small in-memory index of saved conversation/source identities and tool traces, excluding streamed reply text. It publishes metadata only when that metadata changes, resolves visibility once per toolbar render and responds to current account/source permission changes. Text streaming therefore does not rebuild Activity history. Pre-tool progress uses the typed tool name without reading native receipts; execution and final outcomes retain their fresh durable receipt checks.
+
 This describes the connected integration candidate. Installation and native live acceptance are recorded separately in STATUS; complete extraction of every supported source date is still a model-quality question.
 
 ## Separate conversational Review trial

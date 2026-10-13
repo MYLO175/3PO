@@ -12,6 +12,8 @@ Use one centred, palette-aware toolbar pill for the current AI job or latest rea
 
 13 October follow-up: Activity shows actions and jobs, with progress and confirmed, failed or uncertain outcomes. General-chat replies such as greetings remain in chat. Typed work begun from chat has its own activity kind and readable operation message; incidental context retrieval alone does not count. Existing chat activity is filtered locally using captured tool traces, preserving its stored record and transcript. Success uses operation receipts rather than the model's ordinary reply prose. Review owns its own progress, so its assistant tools do not create a second chat action event.
 
+Streaming regression follow-up: Activity must observe stable saved metadata rather than the full changing transcript. Keep source/account withdrawal checks current, but perform one history/visibility projection per toolbar render. Pre-execution progress must not fetch/decode the action ledger just to decide whether to display a status. Fresh receipt verification remains an execution/final-outcome requirement. A source-free 200-delta test verifies the transcript updates while Activity metadata remains unchanged.
+
 The interaction is approved; source-date extraction quality, final integrated validation, installation and live acceptance remain separate. The earlier scripted checkpoint below and [trial guide](REVIEW_CONVERSATION_TRIAL.md) remain historical evidence.
 
 ## 13 October: trial conversational Review before production integration

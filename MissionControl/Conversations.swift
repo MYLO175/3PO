@@ -47,6 +47,29 @@ struct PAContextCapture: Codable, Equatable, Identifiable {
         return (Array(Set(ids)).sorted{$0.uuidString < $1.uuidString},(object["lifeStructure"] as? [[String:Any]] ?? []).compactMap{$0["id"] as? String})
     }
 }
+/// Stable Activity metadata, excluding prose that changes for every streamed delta.
+struct AssistantActivityContext:Equatable {
+    var accountID:String
+    var title:String
+    var reviewKey:String?
+    var reviewSourceKind:String?
+    var reviewAccountID:String?
+    var reviewMessageID:String?
+    var reviewSourceIdentity:String?
+    var reviewSourceChatID:String?
+    var turnDates:[UUID:Date]=[:]
+    var attemptedTools:[UUID:[String]]=[:]
+    init(_ conversation:AssistantConversation) {
+        accountID=conversation.accountID;title=conversation.title;reviewKey=conversation.reviewKey
+        reviewSourceKind=conversation.reviewSourceKind;reviewAccountID=conversation.reviewAccountID
+        reviewMessageID=conversation.reviewMessageID;reviewSourceIdentity=conversation.reviewSourceIdentity;reviewSourceChatID=conversation.reviewSourceChatID
+        for turn in conversation.turns {
+            if turnDates[turn.id] == nil,let created=turn.created {turnDates[turn.id]=created}
+            if attemptedTools[turn.id] == nil,let names=turn.contextCapture?.attemptedTools,!names.isEmpty {attemptedTools[turn.id]=names}
+        }
+    }
+}
+
 struct AssistantConversation: Codable, Identifiable, Equatable {
     var id = UUID()
     var accountID: String

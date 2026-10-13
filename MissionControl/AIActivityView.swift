@@ -13,23 +13,20 @@ struct AIActivityPill: View {
     @State private var activityOpen = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var active: AIActivityRecord? {
-        guard var current, current.registration == registration,isVisible(current) else { return nil }
-        if let saved = saved.first(where: { $0.id == current.id }) { current.acknowledged = saved.acknowledged }
-        return current
-    }
-    private var saved: [AIActivityRecord] { store.records(registration).filter(isVisible) }
-    private var displayed: AIActivityRecord? { active ?? saved.first }
-    private var attention: Bool { saved.contains(where: \.needsAttention) || active?.needsAttention == true || store.error != nil }
-    private var message: String { displayed.map(AIActivityPresentation.message) ?? "3PO is ready" }
-    private var accessibilityStatus: String {
-        message + (progress.map { ". \(Int($0 * 100)) percent progress." } ?? "") + (attention ? ". An outcome needs attention." : "")
-    }
-    private var progress: Double? {
-        guard active?.state == .running, let progress = active?.progress, progress.isFinite else { return nil }
-        return min(1, max(0, progress))
-    }
     var body: some View {
+        // Resolve history/visibility once, rather than once for every label,
+        // progress and accessibility property in this toolbar render.
+        let saved=store.records(registration).filter(isVisible)
+        let active:AIActivityRecord? = {
+            guard var current,current.registration == registration,isVisible(current) else {return nil}
+            if let saved=saved.first(where:{$0.id == current.id}) {current.acknowledged=saved.acknowledged}
+            return current
+        }()
+        let displayed=active ?? saved.first
+        let attention=saved.contains(where:\.needsAttention) || active?.needsAttention == true || store.error != nil
+        let progress:Double?=active?.state == .running ? active?.progress.flatMap{$0.isFinite ? min(1,max(0,$0)) : nil} : nil
+        let message=displayed.map(AIActivityPresentation.message) ?? "3PO is ready"
+        let accessibilityStatus=message+(progress.map{". \(Int($0*100)) percent progress."} ?? "")+(attention ? ". An outcome needs attention." : "")
         HStack(spacing: 0) {
             Button(action: openChat) {
                 ZStack {
@@ -103,6 +100,7 @@ struct AIActivityView: View {
         return merged
     }
     var body: some View {
+        let shown=records
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("AI activity").font(.title3.weight(.semibold))
@@ -114,12 +112,12 @@ struct AIActivityView: View {
                 Label(PAProse.display(error), systemImage: "exclamationmark.circle")
                     .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             }
-            if records.isEmpty {
+            if shown.isEmpty {
                 Text("3PO is ready").font(.callout).foregroundStyle(palette[.text].opacity(0.66)).padding(.vertical, 14)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(records) { record in activity(record) }
+                        ForEach(shown) { record in activity(record) }
                     }.padding(.vertical, 1)
                 }.frame(maxHeight: 380)
             }

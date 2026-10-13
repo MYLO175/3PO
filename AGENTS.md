@@ -80,6 +80,7 @@ Heartbeat reconsideration may inspect pending proposals as labelled historical d
 - 12 October: for source-backed project dates, suggest both Calendar entries and dated tasks inside the existing project. Offer review/approval and an intuitive way to request a variation in ordinary language without re-explaining the source.
 - 13 October: prepared Review actions support checkbox selection and a direct tick to approve, alongside the conversation box for ordinary replies or changes. Preserve an unsent conversation draft when the tick is used.
 - 13 October: AI Activity shows work and action outcomes, excluding general-chat replies. Typed actions started from chat still show progress/results/failures and can open the relevant chat; incidental context lookup alone does not count as work.
+- Streaming acceptance must exercise partial text updates, not only final replies. Activity visibility/current-work lookup must not observe streamed transcript prose or fetch native receipts for display-only progress; preserve current permission and final receipt guards.
 
 ## Documentation and checkpoints
 

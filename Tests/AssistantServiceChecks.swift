@@ -1,5 +1,13 @@
 import Foundation
 import SwiftData
+import Observation
+
+private final class ObservationCounter:@unchecked Sendable {
+    private let lock=NSLock()
+    private var count=0
+    var value:Int {lock.withLock{count}}
+    func increment() {lock.withLock{count += 1}}
+}
 
 @MainActor private final class FictionalInference: PAInferenceConnection {
     var activeID = "fictional-owner"
@@ -10,6 +18,8 @@ import SwiftData
     var hasSession = true
     var replies: [PAResponse] = []
     var holdNext = false
+    var deltas=["Fictional partial"]
+    var afterDelta:(@MainActor ()->Void)?
     private var held: CheckedContinuation<Void, Never>?
     private(set) var inputs: [[[String: Any]]] = []
     private(set) var instructions: [String] = []
@@ -21,7 +31,7 @@ import SwiftData
     }
     func toolResponse(input: [[String: Any]], instructions: String, tools: [[String: Any]], model: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> PAResponse {
         inputs.append(input); self.instructions.append(instructions); purposes.append(purpose)
-        onDelta("Fictional partial")
+        for text in deltas {onDelta(text);afterDelta?()}
         if holdNext {
             holdNext = false
             await withCheckedContinuation { held = $0 }
@@ -45,6 +55,8 @@ import SwiftData
     var itemDetails: [String: NativeEditDetails] = [:]
     var consultedMemory: Set<UUID> = []
     var receipts: [String] = []
+    private(set) var actionCountReads=0
+    var confirmedActionCount:Int {actionCountReads += 1;return receipts.count}
     var pendingNativeActionCount=0
     var actionReceiptsReadable=true
     var memoryNotes: [String] = []
@@ -107,6 +119,26 @@ import SwiftData
         func service(_ provider: FictionalInference, _ container: ModelContainer) -> AssistantService {
             AssistantService(connection: provider, container: container, settings: settings, imageDirectory: directory.appendingPathComponent("images"))
         }
+
+        let streamProvider=FictionalInference(),streamContext=FictionalContext()
+        let streamService=service(streamProvider,try open("stream-observation"))
+        let streamID=streamService.openPA()!
+        streamProvider.deltas=(1...200).map{"Fictional streamed response \($0)"}
+        streamProvider.replies=[final("Completed fictional streaming response")]
+        check(streamService.send(runtime:streamContext.runtime(),topicID:nil,prompt:"Fictional streaming request"),"Streaming fixture starts the actual assistant service")
+        let transcriptChanges=ObservationCounter(),activityChanges=ObservationCounter()
+        @MainActor func observeStreaming() {
+            withObservationTracking({_ = streamService.conversation(streamID)},onChange:{transcriptChanges.increment()})
+            withObservationTracking({_ = streamService.activityContext(streamID)},onChange:{activityChanges.increment()})
+        }
+        observeStreaming();streamProvider.afterDelta=observeStreaming
+        await until{!streamService.busy}
+        check(transcriptChanges.value >= 200,"Each real streamed delta updates the displayed transcript")
+        check(activityChanges.value == 0,"Streamed prose never invalidates Activity metadata")
+        check(streamService.feed?.turns.last?.content == "Completed fictional streaming response","Removing Activity observation retains the full final response")
+        streamProvider.activeID="different-fictional-account"
+        check(streamService.activityContext(streamID) == nil && streamService.conversation(streamID) == nil,"Exact context lookup still excludes other accounts")
+        print("Streaming observation:200 deltas; transcript invalidations \(transcriptChanges.value); Activity invalidations \(activityChanges.value)")
 
         let provider = FictionalInference(), context = FictionalContext(), container = try open("normal")
         let preferencesBeforeConstruction = NSDictionary(dictionary:settings.persistentDomain(forName:suite) ?? [:])
@@ -445,6 +477,7 @@ import SwiftData
         var workingOutcomes:[AssistantTurnOutcome]=[]
         uncertainRuntime.working={outcome in
             check(uncertainContext.sessions[0].calls.isEmpty,"Work progress is emitted before the tool can attempt a save")
+            check(uncertainContext.sessions[0].actionCountReads == 0,"Progress metadata never reads the durable action ledger")
             workingOutcomes.append(outcome)
         }
         uncertainContext.configure={session,_ in session.executeBody={_,session in
@@ -457,11 +490,13 @@ import SwiftData
         check(uncertainProvider.inputs.count == 1 && uncertainProvider.replies.count == 1,"Native uncertainty stops the real engine before another inference or save")
         check(uncertainOutcomes.count == 1 && uncertainOutcomes[0].phase == "uncertain" && uncertainOutcomes[0].unconfirmedActions == 1,"Fluent output cannot hide an unconfirmed native operation")
         check(workingOutcomes.count == 1 && workingOutcomes[0].attemptedTools == ["change_calendar"] && uncertainOutcomes[0].attemptedTools == ["change_calendar"],"Running and uncertain outcomes retain the same typed work")
+        check(uncertainService.activityContext(uncertainOutcomes[0].conversationID)?.attemptedTools[uncertainOutcomes[0].responseTurnID] == ["change_calendar"],"Activity metadata publishes completed tool traces while retaining uncertain outcomes")
 
         let reviewProvider=FictionalInference(),reviewContext=FictionalContext()
         let reviewContainer=try open("review-handover"),reviewService=service(reviewProvider,reviewContainer)
         let primaryID=reviewService.openPA()!,humanID=UUID(),responseID=UUID()
         let reviewID=reviewService.openReview(key:"mail:fictional-source",title:"Fictional engineering milestones",sourceKind:"mail",accountID:"fictional-mail",messageID:"fictional-source",identity:nil,chatID:nil,seeds:[.init(role:"assistant",content:"Fictional source plan only",completed:true)])!
+        check(reviewService.activityContext(reviewID)?.reviewMessageID == "fictional-source","Stable Activity context retains exact Review source ownership")
         check(reviewService.activeID == primaryID && reviewService.feed?.turns.isEmpty == true,"Opening Review retains general feed and selection without inference")
         check(reviewService.topics.isEmpty,"Dedicated Review is excluded from legacy topics")
         reviewService.draft="Retained general draft"

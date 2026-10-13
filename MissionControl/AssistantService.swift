@@ -85,6 +85,7 @@ import Observation
     var error: String?
     var activeID: UUID?
     private var allConversations: [AssistantConversation] = []
+    private(set) var activityContexts:[UUID:AssistantActivityContext]=[:]
     private var conversationsWritable = true
     private let container: ModelContainer?
     private let settings: UserDefaults
@@ -125,10 +126,23 @@ import Observation
         do {
             allConversations = try conversationRepository.load()
         } catch { conversationsWritable = false; self.error = "Saved conversations could not be read; their record is preserved and changes are disabled." }
+        refreshActivityContexts()
         activeID = feed?.id
         restoringSettings = false
     }
-    func conversation(_ id: UUID?) -> AssistantConversation? { conversations.first { $0.id == id } }
+    func conversation(_ id: UUID?) -> AssistantConversation? {
+        guard let id else {return nil}
+        return allConversations.first{$0.id == id && $0.accountID == connection.activeID}
+    }
+    func activityContext(_ id:UUID)->AssistantActivityContext? {
+        guard let value=activityContexts[id],value.accountID == connection.activeID else {return nil}
+        return value
+    }
+    private func refreshActivityContexts() {
+        var next:[UUID:AssistantActivityContext]=[:]
+        for conversation in allConversations where next[conversation.id] == nil {next[conversation.id]=AssistantActivityContext(conversation)}
+        if next != activityContexts {activityContexts=next}
+    }
     @discardableResult func createTopic(title: String, focus: String, areas:[LifeArea]? = nil) -> UUID? {
         guard !busy, !connection.activeID.isEmpty, !title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { return nil }
         let previous = allConversations
@@ -368,6 +382,7 @@ import Observation
         guard conversationsWritable, container != nil else { error = "Conversation storage is unavailable; nothing was saved."; return false }
         do {
             try conversationRepository.save(allConversations)
+            refreshActivityContexts()
             return true
         } catch { self.error = "Conversation could not be saved: " + error.localizedDescription; return false }
     }
@@ -610,7 +625,7 @@ import Observation
                             var names=allConversations[c].turns[t].contextCapture?.attemptedTools ?? []
                             if !names.contains(call.name) { names.append(call.name);allConversations[c].turns[t].contextCapture?.attemptedTools=names }
                         }
-                        runtime.working(.init(registration:registration,conversationID:id,humanTurnID:currentUserID,responseTurnID:response.id,phase:"running",message:call.name,receipts:session.receipts,errors:[],confirmedActions:session.confirmedActionCount,attemptedTools:attemptedToolNames))
+                        runtime.working(.init(registration:registration,conversationID:id,humanTurnID:currentUserID,responseTurnID:response.id,phase:"running",message:call.name,receipts:[],errors:[],attemptedTools:attemptedToolNames))
                     }, toolFinished: {
                         if !session.receipts.isEmpty { setResponse(session.receipts.joined(separator:"\n"),completed:false); self.save() }
                     })
