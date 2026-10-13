@@ -7,6 +7,15 @@ enum ReviewFeedbackChecks {
         let message=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:fields))
         let summary=EmailSummary(id:message.id,registration:"fictional-owner",fingerprint:EmailSummary.fingerprint(message),summary:"University newsletter",attention:false,reason:"",evidence:"A general university newsletter",bodyFingerprint:EmailSummary.fingerprintBody(body),message:message)
         let source=ReviewFeedbackEmail(message:message,summary:summary)
+        let captured=ReviewFeedbackJob(registration:summary.registration,messageID:message.id,accountID:message.accountID,headerFingerprint:summary.fingerprint,bodyFingerprint:summary.bodyFingerprint!,assessmentVersion:ReviewAcknowledgementRules.emailVersion(message,summary),model:"model",sourceRevision:1,words:"Quiet",about:"Newsletters",heartbeatEligible:true,sourceSettings:"allowed",adviceRevision:summary.adviceRevision(replied:message.replied))
+        func matches(_ summary:EmailSummary,settings:String="allowed",model:String="model")->Bool {captured.matches(message:message,summary:summary,registration:source.summary.registration,model:model,sourceRevision:99,sourceSettings:settings)}
+        var dismissed=summary;dismissed.dismissed=true;dismissed.dismissedAt = .now
+        precondition(matches(dismissed),"Dismiss and unrelated collection revision changes preserve accepted feedback")
+        precondition(!matches(dismissed,settings:"revoked") && !matches(dismissed,model:"other"),"Captured source choices and model remain exact")
+        var changed=summary;changed.bodyFingerprint="changed"
+        precondition(!matches(changed),"Changed source body rejects queued feedback")
+        changed=summary;changed.summary="A different assessment"
+        precondition(!matches(changed),"Changed assessment rejects queued feedback")
         let words="These emails aren't important",rule="Routine University Internal Communications newsletters can stay quiet; personal requests still matter."
         var reads=0,requests=0
         let result=try await ReviewFeedbackRules.prepare(source,words:words,about:message.subject,model:"fictional-model",isCurrent:{true},readBody:{reads += 1;return body},infer:{input in
@@ -62,75 +71,64 @@ enum ReviewFeedbackChecks {
     @MainActor private static func queueChecks(_ interpretation:ReviewFeedbackInterpretation)async throws {
         func job(_ id:String="fictional-email")->ReviewFeedbackJob {.init(registration:"fictional-owner",messageID:id,accountID:"fictional-mail",headerFingerprint:"header",bodyFingerprint:"body",assessmentVersion:"assessment",model:"fictional-model",sourceRevision:0,words:"Routine newsletters can stay quiet.",about:"Newsletters")}
         func settle(_ condition:()->Bool)async {for _ in 0..<10000 {if condition() {return};await Task.yield()};preconditionFailure("Feedback job did not settle")}
-        var disk:[ReviewFeedbackJob]=[],committed:[UUID]=[],requests=0,release:CheckedContinuation<Void,Never>?
-        let owner=ReviewFeedbackJobs(load:{disk},persist:{disk=$0}),first=job(),second=job("second-email")
-        precondition(owner.submit(first) && owner.submit(second) && disk.count == 2 && requests == 0,"Submission is persisted without waiting for inference")
+        var disk:[ReviewFeedbackJob]=[],committed:[UUID]=[],requests=0
+        let owner=ReviewFeedbackJobs(load:{disk},persist:{disk=$0})
+        var first=job(),second=job("second-email");first.heartbeatEligible=true;second.heartbeatEligible=true
+        precondition(owner.submit(first) && owner.submit(second) && disk.count == 2 && requests == 0,"Submission persists and makes no inference")
         precondition(!owner.submit(job()),"Duplicate pending source submission is refused")
-        owner.start(validate:{_ in true},ready:{true},prepare:{_ in requests += 1;if requests == 1 {await withCheckedContinuation {release=$0}};return interpretation},commit:{value,_ in
-            precondition(disk.first{$0.id == value.id}?.state == .saving,"Durable exact target exists before memory save")
-            committed.append(value.memoryID)
-        },alreadySaved:{_ in false})
-        await settle {release != nil}
-        precondition(requests == 1 && committed.isEmpty && owner.records[1].state == .queued,"Jobs remain serial while the submitting UI is absent")
-        release?.resume();await settle {owner.records.allSatisfy{$0.state == .saved}}
-        precondition(requests == 2 && committed == [first.memoryID,second.memoryID] && owner.items("other-owner").isEmpty)
-        owner.start(validate:{_ in true},ready:{true},prepare:{_ in preconditionFailure("Completed jobs cannot replay")},commit:{_,_ in},alreadySaved:{_ in false})
-
+        let reopened=ReviewFeedbackJobs(load:{disk},persist:{disk=$0})
+        precondition(reopened.records.allSatisfy{$0.state == .queued},"Never-started heartbeat jobs survive reopening")
+        func run(_ queue:ReviewFeedbackJobs)async ->ReviewFeedbackJob? {
+            await queue.runOne(registration:"fictional-owner",heartbeatRunID:"cycle",validate:{_ in true},ready:{true},prepare:{_ in requests += 1;return interpretation},commit:{value,_ in
+                precondition(disk.first{$0.id == value.id}?.state == .saving,"Durable identity is persisted before memory save")
+                committed.append(value.memoryID)
+            },alreadySaved:{_ in false})
+        }
+        _=await run(reopened)
+        precondition(requests == 1 && committed == [first.memoryID] && reopened.records[1].state == .queued,"Heartbeat processes one job, leaving siblings queued")
+        reopened.interruptActive()
+        precondition(reopened.records[1].state == .queued,"Foreground work leaves unstarted jobs queued")
+        _=await run(reopened)
+        precondition(requests == 2 && committed == [first.memoryID,second.memoryID])
+        var legacy=job("legacy"),attempted=first,saving=second;attempted.state = .learning;saving.state = .saving
+        legacy.heartbeatEligible=nil
+        var oldDisk=[legacy,attempted,saving]
+        let old=ReviewFeedbackJobs(load:{oldDisk},persist:{oldDisk=$0})
+        precondition(old.records.allSatisfy{$0.state == .interrupted},"Legacy queue and attempted or uncertain jobs cannot silently replay")
+        _=await old.runOne(validate:{_ in true},ready:{true},prepare:{_ in preconditionFailure("Attempted jobs must not replay")},commit:{_,_ in},alreadySaved:{_ in false})
         for lateChange in [true,false] {
             var storage:[ReviewFeedbackJob]=[],current=true,continuation:CheckedContinuation<Void,Never>?,writes=0
-            let queue=ReviewFeedbackJobs(load:{storage},persist:{storage=$0}),value=job()
-            precondition(queue.submit(value))
-            queue.start(validate:{_ in current},ready:{true},prepare:{_ in await withCheckedContinuation {continuation=$0};return interpretation},commit:{_,_ in writes += 1},alreadySaved:{_ in false})
+            let queue=ReviewFeedbackJobs(load:{storage},persist:{storage=$0})
+            precondition(queue.submit(first) && queue.submit(second))
+            let work=Task { @MainActor in
+                await queue.runOne(heartbeatRunID:"owned",validate:{_ in current},ready:{true},prepare:{_ in await withCheckedContinuation {continuation=$0};return interpretation},commit:{_,_ in writes += 1},alreadySaved:{_ in false})
+            }
             await settle {continuation != nil}
-            if lateChange {current=false} else {queue.stop(value.id)}
-            continuation?.resume();await settle {queue.activeID == nil}
-            precondition(writes == 0 && queue.records[0].words == value.words && queue.records[0].state == (lateChange ? .failed : .stopped),"Late changes and ignored cancellation retain feedback without saving")
+            queue.cancelHeartbeat("different-run")
+            precondition(queue.records[0].state == .learning,"Only the owning heartbeat may cancel its feedback")
+            if lateChange {current=false} else {queue.interruptActive()}
+            continuation?.resume();_=await work.value
+            precondition(writes == 0 && queue.records[0].words == first.words && queue.records[0].state == (lateChange ? .failed : .stopped) && queue.records[1].state == .queued,"Late drift or foreground cancellation retains exact words and unstarted work")
         }
-        var interruptedDisk=[first]
-        let reopened=ReviewFeedbackJobs(load:{interruptedDisk},persist:{interruptedDisk=$0})
-        precondition(reopened.records[0].state == .interrupted && interruptedDisk[0].words == first.words)
-        reopened.start(validate:{_ in true},ready:{true},prepare:{_ in preconditionFailure("Reopen must not replay")},commit:{_,_ in},alreadySaved:{_ in false})
+        var waitingDisk:[ReviewFeedbackJob]=[]
+        let waiting=ReviewFeedbackJobs(load:{waitingDisk},persist:{waitingDisk=$0})
+        precondition(waiting.submit(first))
+        _=await waiting.runOne(validate:{_ in true},ready:{false},prepare:{_ in preconditionFailure("Busy foreground cannot start feedback")},commit:{_,_ in},alreadySaved:{_ in false})
+        precondition(waiting.records[0].state == .queued && waiting.activeID == nil,"No polling or claimed feedback while foreground is busy")
         let unavailable=ReviewFeedbackJobs(load:{[]},persist:{_ in throw CocoaError(.fileWriteUnknown)})
-        precondition(!unavailable.submit(first) && unavailable.records.isEmpty,"Failed durable submission keeps editor open and issues no inference")
-
+        precondition(!unavailable.submit(first) && unavailable.records.isEmpty)
         var uncertainDisk:[ReviewFeedbackJob]=[],savedIDs=Set<UUID>(),rejectCompletion=true,uncertainRequests=0
         let uncertain=ReviewFeedbackJobs(load:{uncertainDisk},persist:{values in if rejectCompletion && values.contains(where:{$0.state == .saved}) {throw CocoaError(.fileWriteUnknown)};uncertainDisk=values})
         precondition(uncertain.submit(first))
-        uncertain.start(validate:{_ in true},ready:{true},prepare:{_ in uncertainRequests += 1;return interpretation},commit:{value,_ in savedIDs.insert(value.memoryID)},alreadySaved:{savedIDs.contains($0.memoryID)})
-        await settle {uncertain.activeID == nil && !savedIDs.isEmpty}
+        _=await uncertain.runOne(validate:{_ in true},ready:{true},prepare:{_ in uncertainRequests += 1;return interpretation},commit:{value,_ in savedIDs.insert(value.memoryID)},alreadySaved:{savedIDs.contains($0.memoryID)})
         precondition(uncertain.records[0].state == .saving && uncertainDisk[0].state == .saving)
         rejectCompletion=false
         let recovery=ReviewFeedbackJobs(load:{uncertainDisk},persist:{uncertainDisk=$0})
+        precondition(recovery.records[0].state == .interrupted)
         var retry=recovery.records[0];retry.state = .queued;retry.error=nil
         precondition(recovery.replaceForRetry(retry))
-        recovery.start(validate:{_ in true},ready:{true},prepare:{_ in preconditionFailure("An uncertain completed save cannot infer twice")},commit:{_,_ in preconditionFailure("An uncertain completed save cannot create twice")},alreadySaved:{savedIDs.contains($0.memoryID)})
-        await settle {recovery.records[0].state == .saved}
-        precondition(uncertainRequests == 1 && savedIDs == [first.memoryID])
-        var stopDisk:[ReviewFeedbackJob]=[],stopRelease:CheckedContinuation<Void,Never>?,stopRequests=0,stopWrites:[UUID]=[]
-        let targeted=ReviewFeedbackJobs(load:{stopDisk},persist:{stopDisk=$0})
-        precondition(targeted.submit(first) && targeted.submit(second))
-        targeted.start(validate:{_ in true},ready:{true},prepare:{_ in stopRequests += 1;if stopRequests == 1 {await withCheckedContinuation {stopRelease=$0}};return interpretation},commit:{value,_ in stopWrites.append(value.memoryID)},alreadySaved:{_ in false})
-        await settle {stopRelease != nil};targeted.stop(first.id)
-        var earlyRetry=targeted.records[0];earlyRetry.state = .queued
-        precondition(!targeted.replaceForRetry(earlyRetry),"Retry waits until the cancelled attempt has relinquished its exact identity")
-        stopRelease?.resume()
-        await settle {targeted.records[1].state == .saved}
-        precondition(targeted.records[0].state == .stopped && stopWrites == [second.memoryID],"Stop applies only to the selected job; other submissions still finish")
-        var foregroundDisk:[ReviewFeedbackJob]=[],foregroundRequests=0
-        let foreground=ReviewFeedbackJobs(load:{foregroundDisk},persist:{foregroundDisk=$0})
-        precondition(foreground.submit(first) && foreground.submit(second))
-        foreground.start(validate:{_ in true},ready:{false},prepare:{_ in foregroundRequests += 1;return interpretation},commit:{_,_ in preconditionFailure("Foreground-interrupted jobs cannot save")},alreadySaved:{_ in false})
-        await settle {foreground.activeID != nil};foreground.interruptActive();await settle {foreground.activeID == nil}
-        precondition(foregroundRequests == 0 && foreground.records[0].state == .stopped && foreground.records[1].state == .interrupted,"Foreground typing cancels queued work before any inference")
-        var freshDisk:[ReviewFeedbackJob]=[],oldRelease:CheckedContinuation<Void,Never>?,freshWrites:[UUID]=[]
-        let fresh=ReviewFeedbackJobs(load:{freshDisk},persist:{freshDisk=$0}),third=job("new-human-submission")
-        func startFresh() {
-            fresh.start(validate:{_ in true},ready:{true},prepare:{value in if value.id == first.id {await withCheckedContinuation {oldRelease=$0}};return interpretation},commit:{value,_ in freshWrites.append(value.memoryID)},alreadySaved:{_ in false})
-        }
-        precondition(fresh.submit(first));startFresh();await settle {oldRelease != nil}
-        fresh.interruptActive();precondition(fresh.submit(third));startFresh();oldRelease?.resume()
-        await settle {fresh.records.last?.state == .saved}
-        precondition(fresh.records[0].state == .stopped && freshWrites == [third.memoryID],"An old cancellation cannot interrupt newly accepted human work")
-        print("PASS feedback jobs: durable immediate submission, serial app ownership, account separation, pending duplicate refusal, late source drift/cancellation, no reopen replay, persistence failure and uncertain-save identity recovery. No AI/native operations.")
+        _=await recovery.runOne(validate:{_ in true},ready:{true},prepare:{_ in preconditionFailure("Uncertain completed save cannot infer twice")},commit:{_,_ in preconditionFailure("Uncertain completed save cannot create twice")},alreadySaved:{savedIDs.contains($0.memoryID)})
+        precondition(recovery.records[0].state == .saved && uncertainRequests == 1 && savedIDs == [first.memoryID])
+        print("PASS feedback queue: durable deferred submission, one job per heartbeat, owned cancellation, unstarted reopen and foreground preservation, no attempted replay, persistence failure and exact uncertain-save recovery.")
     }
 }

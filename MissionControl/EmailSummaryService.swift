@@ -47,8 +47,8 @@ import SwiftData
     @ObservationIgnored private var reviewFeedbackTask:Task<ReviewFeedbackInterpretation,Error>?
     private(set) var reviewFeedbackGeneration=0
     func cancelReviewFeedback() {reviewFeedbackGeneration += 1;feedback.interruptActive();reviewFeedbackTask?.cancel()}
-    /// Explicit submitted feedback. No heartbeat, history replay or automatic source learning.
-    func interpretReviewFeedback(_ source:ReviewFeedbackEmail,words:String,about:String,model:DashboardModel,isCurrent:@escaping ()->Bool)async throws->ReviewFeedbackInterpretation {
+    /// Explicitly submitted feedback; a heartbeat may own one deferred interpretation.
+    func interpretReviewFeedback(_ source:ReviewFeedbackEmail,words:String,about:String,model:DashboardModel,heartbeatRequest:HeartbeatChildRequest?=nil,isCurrent:@escaping ()->Bool)async throws->ReviewFeedbackInterpretation {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {
             guard ProcessInfo.processInfo.arguments.contains("--feedback-preview") else {throw ActionFailure.message("Fictional preview uses no Mail reads or inference. Nothing was saved.")}
@@ -60,15 +60,18 @@ import SwiftData
             })
         }
         #endif
-        guard !busy,!model.chatGPT.busy,!model.assistant.busy,!model.writing,!model.heartbeat.busy,!model.proactive.busy,!model.briefings.busy,!model.memoryLearning.busy,!model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy,!model.projectPlacement.busy,!model.lifeOrganisation.busy else {throw ActionFailure.message("Wait for the current PA operation to finish, then save your feedback.")}
+        guard !busy,!model.chatGPT.busy,!model.assistant.busy,!model.writing,(!model.heartbeat.busy || (heartbeatRequest?.runID == model.heartbeat.ownedRunID && feedback.ownedHeartbeatRunID == heartbeatRequest?.runID)),!model.proactive.busy,!model.briefings.busy,!model.memoryLearning.busy,!model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy,!model.projectPlacement.busy,!model.lifeOrganisation.busy else {throw ActionFailure.message("Wait for the current PA operation to finish, then save your feedback.")}
         guard model.heartbeat.deviceAvailable,model.chatGPT.inferenceVerified,!model.chatGPT.usagePaused,model.assistant.memory.canSaveReviewPreference else {throw ActionFailure.message("PA interpretation is unavailable right now. Your feedback is retained; reconnect or save only your words.")}
+        try heartbeatRequest?.validate()
         let registration=model.chatGPT.activeID,selected=model.chatGPT.selectedModel,memoryRevision=model.assistant.memory.revision,sourceRevision=model.sourceRevision,generation=reviewFeedbackGeneration
         busy=true
         defer {busy=false;reviewFeedbackTask=nil}
         let operation=Task {
             try await ReviewFeedbackRules.prepare(source,words:words,about:about,model:selected,isCurrent:{
                 !Task.isCancelled && generation == self.reviewFeedbackGeneration && registration == model.chatGPT.activeID && selected == model.chatGPT.selectedModel && memoryRevision == model.assistant.memory.revision && sourceRevision == model.sourceRevision && model.heartbeat.deviceAvailable && !model.assistant.busy && !model.writing && model.chatGPT.inferenceVerified && !model.chatGPT.usagePaused && self.feedbackSourceCurrent(source.message,summary:source.summary,model:model) && isCurrent()
-            },readBody:{try await model.mail.body(accountID:source.message.accountID,messageID:source.message.messageID,expectedInternetMessageID:source.message.internetMessageID,mailboxName:source.message.mailboxName)},infer:{input in
+            },readBody:{try heartbeatRequest?.validate();return try await model.mail.body(accountID:source.message.accountID,messageID:source.message.messageID,expectedInternetMessageID:source.message.internetMessageID,mailboxName:source.message.mailboxName)},infer:{input in
+                try heartbeatRequest?.validate()
+                try heartbeatRequest?.claim()
                 let response=try await model.chatGPT.toolResponse(input:[["role":"user","content":input]],instructions:ReviewFeedbackRules.instructions,tools:ReviewFeedbackRules.tools,model:selected,purpose:.reviewFeedback){_ in}
                 return try ReviewFeedbackRules.completedJSON(response)
             })
@@ -398,7 +401,7 @@ import SwiftData
         return "PASS fictional header triage: personal future commitment selected, marketing ignored, embedded instruction rejected. No personal source sent or Apple write performed."
     }
     #endif
-    func cancel() { task?.cancel();cancelReviewFeedback(); paused = true }
+    func cancel(includeFeedback:Bool=true) { task?.cancel();if includeFeedback {cancelReviewFeedback()}; paused = true }
     private func save() throws {
         guard let container else { throw SummaryFailure.invalid }
         try LocalRecordRepository(container: container).write([
