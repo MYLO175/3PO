@@ -310,6 +310,12 @@ import CoreFoundation
         retirementRejected {_ = try ProactiveRules.retiring(retirements+retirements,from:[covered],now:hbNow)}
         retirementRejected {_ = try ProactiveRules.retiring(retirements,from:[],now:hbNow)}
         diagnostic(.retirements,0,.reason,.missingField) {_ = try completed(#"{"suggestions":[],"handled":[],"resolved":[],"retirements":[{"reviewID":"review_0","targetID":"reminder_0"}]}"#)}
+        var unchangedCandidate=compound;unchangedCandidate.mailID=covered.mailID;unchangedCandidate.sourceRevision=covered.sourceRevision;unchangedCandidate.sourceDate=covered.sourceDate ?? covered.created
+        precondition(ProactiveRules.replacementAliases(unchangedCandidate,earlier:["review_0":covered],permitted:[covered.id]).isEmpty,"Unchanged source may reconsider/retire but cannot author a newer-source replacement")
+        unchangedCandidate.sourceDate=covered.created.addingTimeInterval(60)
+        precondition(ProactiveRules.replacementAliases(unchangedCandidate,earlier:["review_0":covered],permitted:[covered.id]) == ["review_0"])
+        var localProject=covered;localProject.kind="projectTask"
+        precondition(ProactiveRules.replacementAliases(unchangedCandidate,earlier:["review_0":localProject],permitted:[localProject.id]).isEmpty,"Unsupported predecessor kinds cannot enter replacement schema")
         let queuedProposals=(0..<25).map {number -> PADiscovery in var item=covered;item.id="proposal-\(number)";return item}
         let firstBatch=ProactiveRules.reconsiderationBatch(queuedProposals,progress:.init(),context:"c1")
         precondition(firstBatch.count == 12)

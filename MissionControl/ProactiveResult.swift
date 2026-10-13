@@ -7,7 +7,7 @@ enum ProactiveResultRules {
     static let maximumArgumentBytes = 32_000
     static let instructions = "Return the finished comparison by calling pa.prepare_review exactly once. Do not answer in ordinary text or call any other tool. Return suggestions, projectTasks, handled, resolved and retirements arrays, using empty arrays when there is no supported result. Put local tasks inside existing projects in projectTasks; put Calendar and Apple Reminder proposals in suggestions. For a dated project milestone include its Calendar proposal and its local project task in their separate arrays. The combined suggestions/projectTasks limit is 24. This tool returns preparation data only: it does not create, change, complete, dismiss or send anything. Choose the suggestion schema for its action kind. Return null for each inapplicable field; each action variant constrains those fields to null. In suggestions, targetID belongs only to change/remove, connection only to projectTask/change/remove, scope only to remove, draft only to WhatsApp reply and projectID only to projectTask. Existing coverage belongs in handled or retirements, never a creation suggestion with targetID. New calendar/reminder suggestions do not require an existing native target or a listed destination: the human chooses a writable Calendar or Reminder list in the review form. Missing destination metadata is not a reason to omit a supported creation proposal. Only projectTask requires an exact existing projectID. A local task inside a human project must use kind projectTask and that projectID, never kind reminder; reminder is an Apple Reminder. For a supported project milestone return the Calendar proposal and the projectTask proposal separately. The handled and retirements sections each require their own issued targetID. Use null only for optional fields present in the selected schema. If there is no definite supported date, newDate, hasTime and endDate must all be null; never return an empty date string. Preserve all exact evidence, action, date and ownership rules. Keep the entire result below 32000 UTF-8 bytes by using concise messages and evidence IDs instead of repeating Mail quotes. Return at most 24 suggestions, 12 handled and 12 resolved associations and 12 retirements; do not repeat proposals. Local validation remains authoritative. Review each source separately: dates and facts from one email cannot change an action in another. A booking confirmation is existing coverage, never cancellation. Preserve every distinct supported milestone before returning the result."
 
-    static func tools(sourceAliases:Set<String>, evidenceAliases:Set<String>, nativeAliases:Set<String>, projectAliases:Set<String>, earlierAliases:Set<String>, confirmationAliases:Set<String>,retirementAliases:Set<String> = [],replacementAliases:Set<String>? = nil,changeSourceAliases:Set<String>? = nil,removalSourceAliases:Set<String>? = nil,writableNativeAliases:Set<String>? = nil) -> [[String:Any]] {
+    static func tools(sourceAliases:Set<String>, evidenceAliases:Set<String>, nativeAliases:Set<String>, projectAliases:Set<String>, earlierAliases:Set<String>, confirmationAliases:Set<String>,retirementAliases:Set<String> = [],replacementAliases:Set<String>? = nil,changeSourceAliases:Set<String>? = nil,removalSourceAliases:Set<String>? = nil,writableNativeAliases:Set<String>? = nil,replacementAliasesBySource:[String:Set<String>]? = nil,removalUpgradeAliasesBySource:[String:Set<String>]? = nil) -> [[String:Any]] {
         func text(_ limit:Int,nullable:Bool = false)->[String:Any] { ["type":nullable ? ["string","null"] : ["string"],"maxLength":limit] }
         func aliases(_ values:Set<String>,nullable:Bool = false)->[String:Any] {
             var choices:[Any]=values.sorted()
@@ -24,7 +24,7 @@ enum ProactiveResultRules {
         var definitions:[String:[String:Any]]=[:]
         func reference(_ name:String,_ values:Set<String>,nullable:Bool = false)->[String:Any] {
             let existing=definitions.keys.sorted().first {definitions[$0]?["enum"] as? [String] == (values.isEmpty ? [""] : values.sorted())}
-            let key=existing ?? name
+            let key=existing ?? (definitions[name] == nil ? name : name+"_"+String(definitions.count))
             if existing == nil {definitions[key]=aliases(values)}
             let ref:[String:Any]=["$ref":"#/$defs/"+key]
             return nullable ? ["anyOf":[ref,["type":"null"]]] : ref
@@ -47,15 +47,26 @@ enum ProactiveResultRules {
             if replaces {common.merge(replacement){_,new in new}}
             let mailSources=mail.intersection(allowedSources ?? sourceAliases),waSources=whatsapp.intersection(allowedSources ?? sourceAliases)
             var origins:[[String:Any]]=[]
-            if !mailSources.isEmpty && kinds != ["reply"] {
-                var row=common;row["mailID"]=reference("mailSuggestion",mailSources);row["evidence"]=["type":"null"];row["evidenceID"]=reference("evidence",evidenceAliases)
-                origins.append(object(row))
+            func sourceRows(_ values:Set<String>,mail:Bool) {
+                func permitted(_ alias:String)->Set<String> {
+                    guard replaces,let allowed=replacementAliasesBySource?[alias] else {return replacementIDs}
+                    return allowed.union(kinds == ["remove"] ? removalUpgradeAliasesBySource?[alias] ?? [] : [])
+                }
+                let groups=Dictionary(grouping:values.sorted(),by:{permitted($0).sorted().joined(separator:"\n")})
+                for key in groups.keys.sorted() {
+                    let aliases=Set(groups[key]!),first=aliases.sorted()[0],allowed=permitted(first)
+                    var row=common;row["mailID"]=reference("source_"+first,aliases)
+                    if mail {row["evidence"]=["type":"null"];row["evidenceID"]=reference("evidence_"+first,Set(evidenceAliases.filter{reference in aliases.contains{reference.hasPrefix($0+":")}}))}
+                    else {row["evidenceID"]=["type":"null"];var quote=text(500);quote["minLength"]=8;row["evidence"]=quote}
+                    if replaces,replacementAliasesBySource != nil {
+                        row["replaces"]=["type":["array","null"],"maxItems":allowed.isEmpty ? 0 : 3,"items":reference("replacements_"+first,allowed)]
+                        row["replacementReason"]=allowed.isEmpty ? ["type":"null"] : text(500,nullable:true)
+                    }
+                    origins.append(object(row))
+                }
             }
-            if !waSources.isEmpty {
-                var row=common;row["mailID"]=reference("waSuggestion",waSources);row["evidenceID"]=["type":"null"]
-                var quote=text(500);quote["minLength"]=8;row["evidence"]=quote
-                origins.append(object(row))
-            }
+            if kinds != ["reply"] {sourceRows(mailSources,mail:true)}
+            sourceRows(waSources,mail:false)
             // With no sources, the containing array has maxItems=0 but still
             // requires a valid schema for items.
             if origins.isEmpty {common["mailID"]=source;common["evidence"]=["type":"null"];common["evidenceID"]=evidence;return object(common)}
