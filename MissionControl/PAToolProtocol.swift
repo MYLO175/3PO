@@ -241,3 +241,24 @@ struct PAReadPreparationFailure:LocalizedError {
     var errorDescription:String? {reason}
     static let guidance="The preparatory source/details read did not finish, and no native save was attempted. Preserve the human's original request and any earlier verified receipts. Explain the specific source/availability limitation; do not ask the human to repeat an already clear request or claim completion. Do not substitute a different destination/target or retry an uncertain native save."
 }
+
+/// Counts saved local changes by their concrete result, preserving duplicate-operation identity.
+struct PAConfirmedLocalActionCounter {
+    private var operations: [String: Int] = [:]
+    var count: Int { operations.values.reduce(0, +) }
+    mutating func record(name: String, arguments: [String: Any], output: String) {
+        guard LifeWorkspaceTools.mutations.contains(name),
+              let result = try? JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any],
+              result["saved"] as? Bool == true, result["alreadySaved"] as? Bool != true,
+              let canonical = try? JSONSerialization.data(withJSONObject: ["name": name, "arguments": arguments], options: [.sortedKeys])
+        else { return }
+        let key = String(decoding: canonical, as: UTF8.self)
+        guard operations[key] == nil else { return }
+        if name == "create_life_items" {
+            guard let items = result["items"] as? [[String: Any]], !items.isEmpty else { return }
+            let ids = items.compactMap { $0["id"] as? String }
+            guard ids.count == items.count, ids.allSatisfy({ UUID(uuidString: $0) != nil }), Set(ids).count == ids.count else { return }
+            operations[key] = items.count
+        } else { operations[key] = 1 }
+    }
+}

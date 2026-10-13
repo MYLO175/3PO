@@ -4,10 +4,13 @@ import SwiftData
 @MainActor private final class FictionalWriter: NativeActionWriting {
     var attempts = 0
     var fail = false
+    var afterApply: (() -> Void)?
+    var resultUndoToken: String?
     func applyTool(_ draft: ActionDraft, reminder: TaskItem?, event: AgendaEvent?, marker: String, allowedCalendars: Set<String>, allowedLists: Set<String>, expectedDetails: NativeEditDetails?, valid: NativeWriteValidity?) async throws -> ActionResult {
         attempts += 1
         if fail { throw ActionFailure.message("Fictional uncertain native outcome") }
-        return .init(message:"Fictional verified action",itemID:"fictional-native-item")
+        afterApply?()
+        return .init(message:"Fictional verified action",undoToken:resultUndoToken,itemID:"fictional-native-item")
     }
     func deleteItem(baseline: NativeEditDetails, scope: NativeChangeScope, valid: NativeWriteValidity?, claim: NativeWriteClaim?) async throws -> String { attempts += 1;return "Fictional deletion" }
 }
@@ -23,9 +26,10 @@ import SwiftData
     var undoToken: String?
     var undoTitle = ""
     var refreshes = 0
+    var feedbacks = 0
     func clearNativeEditUndo() {}
     func recordAssistantEditUndo(_ receipt: NativeEditUndo) {}
-    func showFeedback(_ text: String) {}
+    func showFeedback(_ text: String) { feedbacks += 1 }
     func refresh(retryMail: Bool) { refreshes += 1 }
 }
 @main struct ActionReceiptChecks {
@@ -59,12 +63,27 @@ import SwiftData
         fail = false; try ledger.save()
         let completed = ActionReceiptStore(container: container)
         check(completed.entries["fictional-request"]?.result == "Native save verified")
+        let ownedTurn = UUID()
+        try completed.begin("owned-request", turnID: ownedTurn, registration: "owner-a")
+        check(completed.entries["owned-request"]?.turnID == ownedTurn && completed.entries["owned-request"]?.registration == "owner-a")
+        check(completed.summary(registration:"owner-a",turnID:ownedTurn).pending == 1)
+        check(completed.summary(registration:"owner-b",turnID:ownedTurn).pending == 0)
+        check(completed.summary(registration:"owner-a",turnID:UUID()).pending == 0)
+        completed.entries["owned-request"]?.result = "Dirty unsaved result"
+        check(completed.summary(registration:"owner-a",turnID:ownedTurn).confirmed == 0 && completed.summary(registration:"owner-a",turnID:ownedTurn).pending == 1)
+        completed.entries["owned-request"]?.result = nil
+        try completed.complete("owned-request", result:"Confirmed owned save",itemID:"owned-exact-item")
+        check(completed.summary(registration:"owner-a",turnID:ownedTurn).confirmed == 1 && completed.summary(registration:"owner-a",turnID:ownedTurn).pending == 0)
+        check(completed.entries["fictional-request"]?.turnID == nil && completed.entries["fictional-request"]?.registration == nil)
+        completed.entries["owned-request"]?.undone = true; try completed.save()
+        check(completed.summary(registration:"owner-a",turnID:ownedTurn).confirmed == 0)
         completed.entries["fictional-request"]?.undone = true; try completed.save()
         try completed.begin("fictional-request")
         check(completed.entries["fictional-request"]?.undone == nil)
         try repository.write(["assistantActionLedger": Data("unreadable original".utf8)])
         let bad = ActionReceiptStore(container: container)
         check(!bad.readable)
+        check(!bad.summary(registration:"owner-a",turnID:ownedTurn).readable)
         do { try bad.begin("new"); check(false) } catch { }
         try check(repository.read("assistantActionLedger") == Data("unreadable original".utf8))
         let actionContainer = try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
@@ -82,8 +101,10 @@ import SwiftData
         try actionRepository.save("Later save",key:"unrelated")
         check(ActionReceiptStore(container:actionContainer).entries.isEmpty)
         failActionSave = false;runtime.writer.fail = true
-        do { _ = try await actions.performTool(draft,human:human,authorization:human,turnID:request,model:runtime,calendar:calendars,reminders:reminders);check(false) } catch { }
+        do { _ = try await actions.performTool(draft,human:human,authorization:human,turnID:request,model:runtime,calendar:calendars,reminders:reminders);check(false) }
+        catch let failure as PANativeActionUncertainty { check(!failure.nativeReadbackVerified) }
         check(runtime.writer.attempts == 1 && ActionReceiptStore(container:actionContainer).entries.count == 1)
+        check(actions.receiptSummary(registration:"fixture",turnID:request).pending == 1 && actions.receiptSummary(registration:"fixture",turnID:request).confirmed == 0)
         let reopenedActions = AssistantActions(container:actionContainer)
         do { _ = try await reopenedActions.performTool(draft,human:human,authorization:human,turnID:request,model:runtime,calendar:calendars,reminders:reminders);check(false) } catch { }
         check(runtime.writer.attempts == 1)
@@ -93,6 +114,50 @@ import SwiftData
         check(output == "Fictional verified action" && runtime.writer.attempts == 2 && runtime.refreshes == 1)
         let duplicate = try await reopenedActions.performTool(draft,human:human,authorization:human,turnID:successRequest,model:runtime,calendar:calendars,reminders:reminders)
         check(duplicate.hasPrefix("Already applied:") && runtime.writer.attempts == 2)
+        check(reopenedActions.receiptSummary(registration:"fixture",turnID:successRequest).confirmed == 1)
+        check(reopenedActions.receiptSummary(registration:"other-owner",turnID:successRequest).confirmed == 0)
+        let failedCompletion = AssistantActions(container:actionContainer,repository:actionFailure)
+        let completionRequest = UUID()
+        runtime.writer.afterApply = { failActionSave = true }
+        let feedbacksBefore = runtime.feedbacks
+        do {
+            _ = try await failedCompletion.performTool(draft,human:human,authorization:human,turnID:completionRequest,model:runtime,calendar:calendars,reminders:reminders)
+            check(false)
+        } catch let failure as PANativeActionUncertainty {
+            check(failure.nativeReadbackVerified && !failure.operationKey.isEmpty)
+            check(failure.stoppedReply(receipts:["Earlier confirmed action"]).contains("Earlier confirmed action"))
+        }
+        check(runtime.writer.attempts == 3 && runtime.feedbacks == feedbacksBefore && !runtime.writing)
+        check(failedCompletion.receiptSummary(registration:"fixture",turnID:completionRequest).pending == 1 && failedCompletion.receiptSummary(registration:"fixture",turnID:completionRequest).confirmed == 0)
+        failActionSave = false; runtime.writer.afterApply = nil
+        do {
+            _ = try await failedCompletion.performTool(draft,human:human,authorization:human,turnID:completionRequest,model:runtime,calendar:calendars,reminders:reminders)
+            check(false)
+        } catch is PANativeActionUncertainty { }
+        check(runtime.writer.attempts == 3)
+        let durablePending = AssistantActions(container:actionContainer)
+        do {
+            _ = try await durablePending.performTool(draft,human:human,authorization:human,turnID:completionRequest,model:runtime,calendar:calendars,reminders:reminders)
+            check(false)
+        } catch is PANativeActionUncertainty { }
+        check(runtime.writer.attempts == 3 && durablePending.receiptSummary(registration:"fixture",turnID:completionRequest).pending == 1)
+        let batchTurn = UUID()
+        for index in 0..<3 {
+            var next = draft; next.title = "Different fictional action \(index)"
+            _ = try await durablePending.performTool(next,human:human,authorization:human,turnID:batchTurn,model:runtime,calendar:calendars,reminders:reminders)
+        }
+        check(durablePending.receiptSummary(registration:"fixture",turnID:batchTurn).confirmed == 3)
+        let undoTurn = UUID()
+        runtime.writer.resultUndoToken = "fictional-undo-token"
+        _ = try await failedCompletion.performTool(draft,human:human,authorization:human,turnID:undoTurn,model:runtime,calendar:calendars,reminders:reminders)
+        let attemptsBeforeUndoReceipt = runtime.writer.attempts
+        failActionSave = true
+        do { try failedCompletion.recordUndo(token:"fictional-undo-token");check(false) }
+        catch let failure as PANativeActionUncertainty { check(failure.nativeReadbackVerified) }
+        failActionSave = false
+        let originalAfterFailedUndo = try await failedCompletion.performTool(draft,human:human,authorization:human,turnID:undoTurn,model:runtime,calendar:calendars,reminders:reminders)
+        check(originalAfterFailedUndo.hasPrefix("Already applied:") && runtime.writer.attempts == attemptsBeforeUndoReceipt)
+        check(failedCompletion.receiptSummary(registration:"fixture",turnID:undoTurn).confirmed == 1)
         print("Action receipt checks passed: actual begin failure, no native attempt, later save/reopen, persistent uncertain outcome, completion failure, Undo and corrupt-original preservation.")
     }
 }

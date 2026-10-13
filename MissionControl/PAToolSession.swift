@@ -20,6 +20,11 @@ import Foundation
     /// Successful read outputs only; separate from identities issued by memory saves/edits.
     var consultedMemory: Set<UUID> = []
     var receipts: [String] = []
+    private var localActionCounter = PAConfirmedLocalActionCounter()
+    private var nativeReceiptSummary: ActionTurnReceiptSummary { model.assistantActions.receiptSummary(registration: registration, turnID: turnID) }
+    var confirmedActionCount: Int { localActionCounter.count + nativeReceiptSummary.confirmed }
+    var pendingNativeActionCount: Int { nativeReceiptSummary.pending }
+    var actionReceiptsReadable: Bool { nativeReceiptSummary.readable }
     var memoryNotes: [String] = []
     var clarification: (String,[String])?
     var issuedSuggestions: Set<String> = []
@@ -117,6 +122,7 @@ import Foundation
             }
             let result = try life.execute(call, args:args, reference:reference)
             if LifeWorkspaceTools.mutations.contains(call.name) {
+                localActionCounter.record(name: call.name, arguments: args, output: result)
                 let value = try JSONSerialization.jsonObject(with:Data(result.utf8)) as? [String:Any]
                 if let summary = value?["result"] as? String { receipts.append(summary) }
             }

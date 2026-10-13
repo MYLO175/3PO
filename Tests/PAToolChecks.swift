@@ -143,6 +143,25 @@ import Foundation
         var unrelatedOversize=false
         do { try PAToolProtocol.boundedInput([["role":"user","content":[["type":"input_text","text":String(repeating:"a",count:PAToolProtocol.maxInputBytes)],["type":"input_image","image_url":screenshot]]]]) } catch { unrelatedOversize=true };assert(unrelatedOversize)
         var oversizedRejected = false; do { try PAToolProtocol.boundedInput([["role":"user","content":String(repeating:"a",count:PAToolProtocol.maxInputBytes)]]) } catch { oversizedRejected = true }; assert(oversizedRejected)
+        var localCount = PAConfirmedLocalActionCounter()
+        let localArguments: [String:Any] = ["authorization":"Add the milestones", "items":["a","b","c","d"]]
+        let localItems = (0..<4).map { _ in ["id":UUID().uuidString] }
+        let localOutput = String(decoding:try JSONSerialization.data(withJSONObject:["saved":true,"items":localItems]),as:UTF8.self)
+        localCount.record(name:"create_life_items",arguments:localArguments,output:localOutput)
+        precondition(localCount.count == 4,"Four confirmed local items count as four actions")
+        localCount.record(name:"create_life_items",arguments:localArguments,output:localOutput)
+        precondition(localCount.count == 4,"Duplicate results do not inflate action counts")
+        localCount.record(name:"create_life_items",arguments:["different":true],output:#"{"saved":true,"alreadySaved":true}"#)
+        localCount.record(name:"read_life_items",arguments:[:],output:localOutput)
+        localCount.record(name:"create_life_items",arguments:["failed":true],output:#"{"saved":false,"items":[]}"#)
+        precondition(localCount.count == 4,"Previously saved, read-only and failed calls do not add actions")
+        let ambiguousOutput = String(decoding:try JSONSerialization.data(withJSONObject:["saved":true,"items":[localItems[0],localItems[0]]]),as:UTF8.self)
+        localCount.record(name:"create_life_items",arguments:["ambiguous":true],output:ambiguousOutput)
+        precondition(localCount.count == 4,"Duplicate item identities cannot claim two created actions")
+        for index in 0..<20 {
+            localCount.record(name:"change_life_item",arguments:["id":"exact-\(index)"],output:#"{"saved":true}"#)
+        }
+        precondition(localCount.count == 24,"Confirmed local changes are not capped at eight operations")
         let base: [[String:Any]] = [["role":"user","content":"Complete all 25 fictional changes"]]
         var longRun=PAForegroundRun()
         for index in 0..<25 {

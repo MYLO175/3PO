@@ -13,6 +13,9 @@ struct ActionTarget: Identifiable { var id: String; var label: String }
     init(container: ModelContainer?, repository: LocalRecordRepository? = nil) {
         receipts = ActionReceiptStore(container: container, repository: repository)
     }
+    func receiptSummary(registration: String, turnID: UUID) -> ActionTurnReceiptSummary {
+        receipts.summary(registration: registration, turnID: turnID)
+    }
     private func save() throws {
         try receipts.save()
     }
@@ -35,7 +38,7 @@ struct ActionTarget: Identifiable { var id: String; var label: String }
         let key = ActionRules.key(registration:model.actionRegistration,request:turnID.uuidString,selectedTarget:canonical)
         if let prior = ledger[key], prior.undone != true {
             if let result = prior.result { return "Already applied: " + result }
-            throw ActionFailure.message("This operation already has a pending receipt. Check the original; no repeated save.")
+            throw PANativeActionUncertainty(operationKey: key, message: "This operation already has a pending receipt. Check the original before continuing; no save was repeated.")
         }
         let allowedCalendars = Set(calendar.sources.filter { !model.actionExcludedCalendars.contains($0.id) && $0.writable }.map(\.id))
         let allowedLists = Set(reminders.sources.filter { !model.actionExcludedLists.contains($0.id) && $0.writable }.map(\.id))
@@ -45,11 +48,16 @@ struct ActionTarget: Identifiable { var id: String; var label: String }
         }
         try Task.checkCancellation()
         model.writing = true; defer { model.writing = false }
-        try receipts.begin(key)
-        let result = try await model.nativeActionWriter.applyTool(draft,reminder:reminder,event:event,marker:key,allowedCalendars:allowedCalendars,allowedLists:allowedLists,expectedDetails:expectedDetails,valid:valid)
-        ledger[key]?.result = result.message; ledger[key]?.itemID = result.itemID; ledger[key]?.undoToken = result.undoToken
+        try receipts.begin(key, turnID: turnID, registration: model.actionRegistration)
+        let result: ActionResult
+        do {
+            result = try await model.nativeActionWriter.applyTool(draft,reminder:reminder,event:event,marker:key,allowedCalendars:allowedCalendars,allowedLists:allowedLists,expectedDetails:expectedDetails,valid:valid)
+        } catch {
+            throw PANativeActionUncertainty(operationKey: key, message: "The Apple operation's outcome is unconfirmed. Its pending receipt is retained; check the original before continuing. " + String(error.localizedDescription.prefix(500)))
+        }
+        var fixtureTitle: String?, fixtureNotes: String?
         #if DEBUG
-        if let title = draft.title, (draft.kind == .createReminder || draft.kind == .createEvent), title.hasPrefix("Mission Control tool validation "), UUID(uuidString:String(title.dropFirst("Mission Control tool validation ".count))) != nil, draft.notes == nil { ledger[key]?.fixtureTitle = title;ledger[key]?.fixtureNotes=NativeRequestNotes.creation(draft.notes) }
+        if let title = draft.title, (draft.kind == .createReminder || draft.kind == .createEvent), title.hasPrefix("Mission Control tool validation "), UUID(uuidString:String(title.dropFirst("Mission Control tool validation ".count))) != nil, draft.notes == nil { fixtureTitle = title;fixtureNotes = NativeRequestNotes.creation(draft.notes) }
         if let itemID = result.itemID, let title = draft.title {
             for (originalKey, original) in ledger where original.itemID == itemID && original.fixtureTitle != nil { ledger[originalKey]?.fixtureTitle = title }
         }
@@ -57,23 +65,39 @@ struct ActionTarget: Identifiable { var id: String; var label: String }
         if let token = result.undoToken { model.undoToken = token; model.undoTitle = reminder?.title ?? "Reminder" }
         if draft.scope == "futureEvents" || draft.scope == "reminderSeries" || draft.kind == .deleteEvent || draft.kind == .deleteReminder || (draft.kind == .editEvent || draft.kind == .editReminder) && result.nativeUndo == nil { model.clearNativeEditUndo() }
         if let undo = result.nativeUndo { model.recordAssistantEditUndo(undo) }
+        do {
+            try receipts.complete(key, result: result.message, itemID: result.itemID, undoToken: result.undoToken,
+                                  fixtureTitle: fixtureTitle, fixtureNotes: fixtureNotes)
+        } catch {
+            model.refresh(retryMail:false)
+            throw PANativeActionUncertainty(operationKey: key, nativeReadbackVerified: true,
+                message: "Apple readback confirmed the change, but its completion receipt could not be saved. The pending receipt is retained; check the original before continuing. " + String(error.localizedDescription.prefix(400)))
+        }
         model.showFeedback(result.message); selectedTarget = ""; model.refresh(retryMail:false)
-        do { try save() } catch { return result.message + " Apple save verified, but receipt storage failed. Check the original before repeating." }
         return result.message
     }
     func performNativeDeletion(baseline: NativeEditDetails, scope: NativeChangeScope, requestID: UUID, model: any NativeActionRuntime) async throws -> String {
         let key=ActionRules.key(registration:model.actionRegistration,request:requestID.uuidString,selectedTarget:baseline.occurrenceID + ":delete:" + scope.rawValue)
-        if let prior=ledger[key] { if let result=prior.result {return result};throw ActionFailure.message("A deletion is already recorded as pending. Check Apple Calendar or Reminders; it will not be repeated.") }
+        if let prior=ledger[key] { if let result=prior.result {return result};throw PANativeActionUncertainty(operationKey:key,message:"A deletion is already recorded as pending. Check Apple Calendar or Reminders before continuing; it was not repeated.") }
         try NativeEditRules.validateDeletion(scope,baseline:baseline)
-        try receipts.begin(key)
-        let result=try await model.nativeActionWriter.deleteItem(baseline:baseline,scope:scope)
-        ledger[key]?.result=result;ledger[key]?.itemID=baseline.itemID
-        do {try save()} catch {throw ActionFailure.message(result + " Native deletion verified, but receipt storage failed; check the original before repeating.")}
+        try receipts.begin(key, turnID: requestID, registration: model.actionRegistration)
+        let result: String
+        do { result=try await model.nativeActionWriter.deleteItem(baseline:baseline,scope:scope) }
+        catch { throw PANativeActionUncertainty(operationKey:key,message:"The native deletion's outcome is unconfirmed. Its pending receipt is retained; check the original before continuing. " + String(error.localizedDescription.prefix(500))) }
+        do { try receipts.complete(key, result: result, itemID: baseline.itemID) }
+        catch { throw PANativeActionUncertainty(operationKey:key,nativeReadbackVerified:true,message:"Native deletion readback was confirmed, but its completion receipt could not be saved. The pending receipt is retained; check the original before continuing.") }
         return result
     }
     func recordUndo(token: String) throws {
-        for (key, entry) in ledger where entry.undoToken == token { ledger[key]?.undone = true }
-        try save()
+        let before = ledger
+        let keys = ledger.filter { $0.value.undoToken == token }.map(\.key).sorted()
+        for key in keys { ledger[key]?.undone = true }
+        do { try save() }
+        catch {
+            ledger = before
+            throw PANativeActionUncertainty(operationKey: keys.first ?? token, nativeReadbackVerified: true,
+                message: "Native Undo readback was confirmed, but its action receipt could not be updated. The previous receipt is retained; check the original before continuing.")
+        }
     }
     #if DEBUG
     /// Explicit one-off human-requested cleanup; never called by refresh/inference.

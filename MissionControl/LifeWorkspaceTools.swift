@@ -11,7 +11,6 @@ import CryptoKit
     private(set) var issued: [UUID:LifeItem] = [:]
     private var issuedLinks: [UUID:UUID] = [:]
     private var issuedWidgets: [UUID:WidgetPlacement] = [:]
-    private var changes = 0
     private let evaluationStore: LifeWorkspaceStore?
     private var store: LifeWorkspaceStore { evaluationStore ?? model.assistant.projects }
     init(model: DashboardModel, registration: String, topic: UUID?, includeTopics: Bool, turnID: UUID, evaluationStore: LifeWorkspaceStore? = nil) {
@@ -67,12 +66,11 @@ import CryptoKit
         if LifeWorkspaceTools.mutations.contains(call.name), let receipt = store.receipt(operationKey, registration: registration) {
             return try json(["saved":true, "alreadySaved":true, "result":receipt.result, "instruction":"This operation already has a durable receipt. Read current records before doing anything else."])
         }
-        guard !LifeWorkspaceTools.mutations.contains(call.name) || changes < 8 else { throw LifeWorkspaceFailure.message("Eight local project operations reached this turn's bound. Completed work is retained.") }
         switch call.name {
         case "undo_life_edit":
             let summary = "Local project edit undone. Linked sources are unchanged."
             let itemID = store.undoEdit(registration)?.before.id
-            try store.undo(registration, receipt:.init(id:operationKey, registration:registration, result:summary, itemID:itemID)); changes += 1
+            try store.undo(registration, receipt:.init(id:operationKey, registration:registration, result:summary, itemID:itemID))
             if let itemID { issued.removeValue(forKey:itemID) }
             return try json(["saved":true, "result":summary])
         case "read_life_items":
@@ -99,17 +97,17 @@ import CryptoKit
             return try json(["items":returned.map(object), "relationships":relationships, "widgets":widgets.map { ["id":$0.id.uuidString, "view":$0.configuration.projectView ?? "Overview"] }, "coverage":"\(min(60,found.count)) of \(found.count) matching local records, plus issued ancestors. Relationships capped at120; unavailable source identities/content withheld. Local task state is not native completion. Missing records/links are not proof of absence."])
         case "delete_life_item":
             let item=try current(text("id")),summary="Moved “\(item.title)” to Recently deleted. Memory and external sources are retained."
-            try store.trash(item.id,registration:registration,keepChildren:args["keepChildren"] as? Bool == true,expectedRevision:store.revision,receipt:.init(id:operationKey,registration:registration,result:summary,itemID:item.id));changes+=1;issued.removeValue(forKey:item.id)
+            try store.trash(item.id,registration:registration,keepChildren:args["keepChildren"] as? Bool == true,expectedRevision:store.revision,receipt:.init(id:operationKey,registration:registration,result:summary,itemID:item.id));issued.removeValue(forKey:item.id)
             return try json(["saved":true,"result":summary])
         case "restore_life_item":
             guard let id=text("id").flatMap(UUID.init(uuidString:)),let prior=issued[id],store.state.items.contains(where:{$0.id == id && $0.registration == registration && $0.revision == prior.revision && $0.deletedAt != nil}) else { throw LifeWorkspaceFailure.message("Read the exact Recently deleted item before restoring.") }
             let summary="Restored “\(prior.title)” with its saved identities and links."
-            try store.restore(id,registration:registration,expectedRevision:store.revision,receipt:.init(id:operationKey,registration:registration,result:summary,itemID:id));changes+=1
+            try store.restore(id,registration:registration,expectedRevision:store.revision,receipt:.init(id:operationKey,registration:registration,result:summary,itemID:id))
             return try json(["saved":true,"result":summary])
         case "reorder_life_item":
             let item=try current(text("id")),parent=try text("parent").map{try current($0).id},before=try text("before").map{try current($0).id}
             let summary="Rearranged “\(item.title)” and preserved its contents."
-            try store.move(item.id,registration:registration,parent:parent,before:before,expectedRevision:store.revision,receipt:.init(id:operationKey,registration:registration,result:summary,itemID:item.id));changes+=1
+            try store.move(item.id,registration:registration,parent:parent,before:before,expectedRevision:store.revision,receipt:.init(id:operationKey,registration:registration,result:summary,itemID:item.id))
             issued[item.id]=store.items(registration,topic:topic,includeTopics:includeTopics).first{$0.id == item.id}
             return try json(["saved":true,"result":summary])
         case "create_life_items":
@@ -131,7 +129,7 @@ import CryptoKit
             }
             let summary = "Created \(values.count) local workspace items."
             let saved = try store.create(values, receipt:.init(id:operationKey, registration:registration, result:summary, itemID:values.first?.id))
-            for item in saved { issued[item.id] = item }; changes += 1
+            for item in saved { issued[item.id] = item }
             return try json(["saved":true, "result":summary, "items":saved.map(object)])
         case "change_life_item":
             var item = try current(text("id")); let expected = item.revision
@@ -146,7 +144,7 @@ import CryptoKit
             }
             let summary = "Updated “\(item.title)” locally. Linked sources are unchanged."
             let saved = try store.save(item, expected:expected, receipt:.init(id:operationKey, registration:registration, result:summary, itemID:item.id))
-            issued[item.id] = saved; changes += 1
+            issued[item.id] = saved
             return try json(["saved":true, "result":summary, "item":object(saved)])
         case "link_life_item":
             let owner = try current(text("from")), kind = LifeReferenceKind(rawValue:text("kind")!)!
@@ -158,12 +156,12 @@ import CryptoKit
             }
             let summary = "Linked “\(owner.title)” without changing its source."
             let link = try store.link(.init(registration:registration, conversationID:owner.conversationID, from:owner.id, relation:LifeRelation(rawValue:text("relation")!)!, target:target), expected:owner.revision, receipt:.init(id:operationKey, registration:registration, result:summary, itemID:owner.id))
-            changes += 1; issuedLinks[link.id] = store.revision
+            issuedLinks[link.id] = store.revision
             return try json(["saved":true, "result":summary, "relationshipID":link.id.uuidString])
         case "unlink_life_item":
             guard let id = text("id").flatMap(UUID.init(uuidString:)), let expected = issuedLinks[id] else { throw LifeWorkspaceFailure.message("Read the exact current relationship before removing it.") }
             let summary = "Removed the relationship. Both endpoints are retained."
-            try store.unlink(id, registration:registration, expectedRevision:expected, receipt:.init(id:operationKey, registration:registration, result:summary, itemID:nil)); changes += 1
+            try store.unlink(id, registration:registration, expectedRevision:expected, receipt:.init(id:operationKey, registration:registration, result:summary, itemID:nil))
             return try json(["saved":true, "result":summary])
         case "show_project_view":
             guard evaluationStore == nil else { throw LifeWorkspaceFailure.message("Disposable evaluations cannot change your dashboard.") }
@@ -174,7 +172,6 @@ import CryptoKit
             model.workspace.update(widget)
             guard model.workspace.error == nil, model.workspace.selected.widgets.contains(widget) else { throw LifeWorkspaceFailure.message(model.workspace.error ?? "The project view could not be saved.") }
             issuedWidgets[id] = widget
-            changes += 1
             return try json(["saved":true, "result":"Project view updated. Dashboard Undo is available."])
         default: throw LifeWorkspaceFailure.message("Unknown local project operation.")
         }
