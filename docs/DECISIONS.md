@@ -1,5 +1,14 @@
 # Decisions
 
+## 13 October 2026: independent collection and resilient analysis
+
+Heartbeats consume saved permitted source snapshots. Mail retains its five-minute collection lane; native orientation and reminders refresh independently every fifteen minutes and on native changes/wake; WhatsApp pushes received messages; weather keeps its own collection. Known native invalidation is withheld until recollected. Completion evidence has its own revision and thirty-minute freshness bound.
+
+Email, bounded memory/organisation, suggestions and brief have separate persisted outcomes. A recoverable stage failure leaves work pending and permits a brief from remaining valid context. Ownership changes, sleep, foreground interruption and usage controls still stop the run. Typed `pa.prepare_review` accepts one completed bounded result with exact issued aliases, semantic evidence guards and safe section/row/field diagnostics. An invalid comparison saves no sibling associations.
+
+The user explicitly answered “Learn from sources already allowed for review”. Review consent therefore permits source learning inside the same current source scope, without rewriting saved opt-ins. New inherited scopes baseline existing material. Existing learning enablement, budgets and failed-claim pauses remain. The five fair learning lanes run under heartbeat ownership; new source facts receive bounded area metadata inline, without restructuring human projects. See [plan](HEARTBEAT_RELIABILITY_PLAN.md).
+
+
 ## 12 October 2026: independent email actions and review choices
 
 Preserve multiple exact action quotes instead of allowing one summary to hide sibling obligations. Offer Calendar and existing-project tasks as independent reviewed destinations. The user explicitly requested both, with approval controls and an intuitive way to describe changes then and there. Adjust with assistant appends the human request plus quoted context to the visible widget draft, preserving prior draft/Focus and requiring Send. Existing request allowances stay unchanged. See [delivery plan](EMAIL_ACTIONS_PLAN.md).

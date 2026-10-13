@@ -7,23 +7,12 @@ import SwiftData
 @MainActor enum HeartbeatDashboardAdapter {
     static func runtime(_ model:DashboardModel)->HeartbeatRuntime {
         .init(environment:{environment(model)},prepareSources:{request in
-            let deadline=request.clock().addingTimeInterval(180)
-            while model.calendarHealth.loading || model.reminderHealth.loading {
-                try request.validate()
-                guard request.clock() < deadline else {throw ActionFailure.message("Sources are still busy; background review retained for the next check.")}
-                try await Task.sleep(for:.milliseconds(100))
-            }
             try request.validate()
-            await model.refreshCalendar();try request.validate()
-            await model.refreshReminders();try request.validate()
-            await model.refreshPAOrientation();try request.validate()
-            model.weather.startRefresh()
-            // Mail collection owns arrivals, cursors and backoff. This adapter
-            // only projects already collected data; it does not poll or wait.
             let access=model.whatsapp.access(for:request.registration)
             let wants=(request.whatsappEnabled || access.briefEnabled) && access.enabled && !access.chats.isEmpty
-            let ready=wants ? await model.whatsapp.refreshSnapshot() : false
-            try request.validate()
+            // The helper continuously publishes received messages. Analysis uses
+            // that cache and never waits for a new snapshot or reconnect.
+            let ready=wants && model.whatsapp.connected && !model.whatsapp.linkedIdentity.isEmpty
             var value=sources(model,whatsappReady:ready)
             value.wantsWhatsApp=wants
             return value
@@ -44,11 +33,19 @@ import SwiftData
             model.briefings.check(model,manual:request.manual,heartbeatID:request.runID,mailReview:request.mailReview,whatsappReady:request.whatsappReady,heartbeatRequest:request)
             while model.briefings.busy {try Task.checkCancellation();try await Task.sleep(for:.milliseconds(100))}
             return .init(failure:model.briefings.error)
-        },cancelChildren:{model.emailSummaries.cancel();model.proactive.cancel();model.briefings.cancel()})
+        },cancelChildren:{
+            model.emailSummaries.cancel();model.proactive.cancel();model.briefings.cancel()
+            if let runID=model.heartbeat.ownedRunID {model.cancelHeartbeatLearning(runID:runID)}
+        },learning:{request in
+            let result=try await model.runHeartbeatLearning(request:request)
+            return .init(failure:result.failure,detail:result.detail,skipped:result.skipped)
+        })
     }
 
     private static func environment(_ model:DashboardModel)->HeartbeatEnvironment {
-        let foreground=model.assistant.busy || model.chatGPT.busy || model.projectPlacement.busy || model.sourceLearning.busy || model.nativeSourceLearning.busy || model.memoryMaintenance.busy || model.memoryLearning.busy || model.lifeOrganisation.busy || model.writing
+        func otherLearning(_ busy:Bool,_ runID:String?)->Bool {busy && !(runID.map{model.heartbeat.ownsLearningRun($0)} ?? false)}
+        let learning=otherLearning(model.sourceLearning.busy,model.sourceLearning.ownedHeartbeatRunID) || otherLearning(model.nativeSourceLearning.busy,model.nativeSourceLearning.ownedHeartbeatRunID) || otherLearning(model.memoryMaintenance.busy,model.memoryMaintenance.ownedHeartbeatRunID) || otherLearning(model.memoryLearning.busy,model.memoryLearning.ownedHeartbeatRunID) || otherLearning(model.lifeOrganisation.busy,model.lifeOrganisation.ownedHeartbeatRunID)
+        let foreground=model.assistant.busy || model.chatGPT.busy || model.projectPlacement.busy || learning || model.writing
         let proposals=model.proactive.state.accounts[model.chatGPT.activeID]
         let preview=["--sample","--preview-review-inbox","--preview-settings"].contains{ProcessInfo.processInfo.arguments.contains($0)}
         return .init(registration:model.chatGPT.activeID,model:model.chatGPT.selectedModel,sourceSettings:model.proactive.sourceSettingsScope(model),scope:model.proactive.scope(model),whatsappChoices:model.whatsapp.choicesRevision,whatsappIdentity:model.whatsapp.linkedIdentity,contextEnabled:model.assistant.contextEnabled,inferenceVerified:model.chatGPT.inferenceVerified,usagePaused:model.chatGPT.usagePaused,workBusy:foreground || model.briefings.busy || model.proactive.busy || model.emailSummaries.busy,foregroundBusy:foreground,permitted:!preview,emailEnabled:model.emailSummaries.enabled,proposalsEnabled:model.proactive.enabled,proposalAllowanceReached:proposals?.day == BriefingRules.day(model.heartbeat.currentTime) && (proposals?.attempts ?? 0) >= 96)
@@ -56,7 +53,7 @@ import SwiftData
     private static func sources(_ model:DashboardModel,whatsappReady:Bool)->HeartbeatSources {
         let registration=model.chatGPT.activeID,access=model.whatsapp.access(for:registration)
         let accounts=model.mailData.accounts.filter{!model.assistant.excludedAccounts.contains($0.id)}
-        return .init(mailReview:.collected(index:model.mailIndex,snapshot:model.mailData,excluded:model.assistant.excludedAccounts),accounts:accounts,enabledMail:Set(accounts.map(\.id)),nativeReady:model.calendarHealth.error == nil && model.reminderHealth.error == nil && model.paOrientationHealth.error == nil,wantsWhatsApp:(model.heartbeat.whatsappEnabled || access.briefEnabled) && access.enabled && !access.chats.isEmpty,whatsappReady:whatsappReady)
+        return .init(mailReview:.collected(index:model.mailIndex,snapshot:model.mailData,excluded:model.assistant.excludedAccounts),accounts:accounts,enabledMail:Set(accounts.map(\.id)),nativeReady:model.heartbeatNativeReady,wantsWhatsApp:(model.heartbeat.whatsappEnabled || access.briefEnabled) && access.enabled && !access.chats.isEmpty,whatsappReady:whatsappReady)
     }
     private static func pending(_ model:DashboardModel,mailReview:MailReviewScope,whatsappReady:Bool,nativeReady:Bool)->HeartbeatPending {
         let proposals=model.proactive.enabled && model.proactive.hasPendingSources(model,mailReview:mailReview,whatsappReady:whatsappReady)

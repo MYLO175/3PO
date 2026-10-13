@@ -184,6 +184,7 @@ private final class WhatsAppOutputReader: @unchecked Sendable {
 struct WhatsAppSettings: View {
     @Bindable var service: WhatsAppService
     let registration: String
+    var heartbeatReviewEnabled=false
     @State private var showMessages=false
     @State private var showSources=false
     @State private var viewerChat=""
@@ -196,11 +197,11 @@ struct WhatsAppSettings: View {
             if let qr=service.qr { Image(nsImage:qr).resizable().interpolation(.none).frame(width:240,height:240); Text("On your phone: WhatsApp → Settings → Linked devices → Link a device. Scan this code only if you want 3PO to receive your chats.").font(.caption) }
             HStack { Button("Connect / show QR") { service.connect() }; Button("Pause") { service.stop() }; Button("Disconnect") { service.disconnect() }; Button("Received text (\(service.messages.count))") { showMessages=true } }
             Button("PA chat access…") { showSources=true }.disabled(service.linkedIdentity.isEmpty)
-            Text("Receiving chats is separate from including selected chats in a brief, task suggestions, or optional context learning. Choose each use in PA chat access.").font(.caption).foregroundStyle(.secondary)
-            WhatsAppSourceSummary(service:service,registration:registration)
+            Text("Only selected chats with PA access can be reviewed. Review access also permits useful memory learning, controlled by Allow memory learning in Memory settings.").font(.caption).foregroundStyle(.secondary)
+            WhatsAppSourceSummary(service:service,registration:registration,heartbeatReviewEnabled:heartbeatReviewEnabled)
             Text(service.coverage).font(.caption).foregroundStyle(.secondary)
         }.sheet(isPresented:$showSources) {
-            WhatsAppSourcePicker(service:service,registration:registration)
+            WhatsAppSourcePicker(service:service,registration:registration,heartbeatReviewEnabled:heartbeatReviewEnabled)
         }.sheet(isPresented:$showMessages) {
             VStack(alignment:.leading) {
                 HStack { Text("WhatsApp received text").font(.title2); Spacer(); Button("Done") { showMessages=false } }

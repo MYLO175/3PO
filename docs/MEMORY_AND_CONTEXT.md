@@ -1,5 +1,12 @@
 # Memory and context in 3PO
 
+## Current heartbeat learning policy — 13 October 2026
+
+The user confirmed that sources already allowed for review may teach memory. Current review permissions or an existing explicit learning opt-in permit bounded source deltas; global saved-memory and learning controls still apply. A new inherited source scope baselines existing content. Learning and recall use the same exact current source permission/evidence projection, including collected Mail account/header versions and observed body changes. Revoking review permission removes inherited access unless a separate explicit learning choice still permits it.
+
+One fair automatic learning lane is offered within an owned heartbeat after email review. Existing shared budgets and failed-claim pauses are preserved. Source learning attaches supported existing area metadata inline; organisation never creates or restructures human projects. Reception/collection remains no-AI. Older dated descriptions of entirely separate review/learning consent are superseded by this explicit direction.
+
+
 The PA has a saved notebook and builds a smaller working context for each request. The Life map shows the usable notebook and your workspace. It does not show every cached message, saved transcript or input used by an AI request.
 
 ## The short explanation

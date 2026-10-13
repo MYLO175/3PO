@@ -1,5 +1,10 @@
 # Mission Control specification
 
+## Heartbeat analysis reliability — 13 October 2026
+
+The approved [heartbeat plan](docs/HEARTBEAT_RELIABILITY_PLAN.md) separates source collection from AI analysis, isolates stage failures, strengthens typed suggestion results and brings bounded learning/organisation under heartbeat ownership. The user confirmed learning from sources already allowed for review. Approval and natural-language adjustment remain required for proposed Calendar/project actions. Implementation, test and installation evidence are recorded in STATUS.
+
+
 12 October brief reliability refinement: replace free-text JSON brief output with one completed typed preparation result on the existing subscription transport. Preserve all source/ownership checks and atomic saves; report invalid results clearly and retain completed sibling stages. Verify configured-model scenarios and one fresh installed heartbeat before claiming the observed failure is resolved.
 
 

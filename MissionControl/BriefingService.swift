@@ -275,14 +275,14 @@ import UserNotifications
                         if contextWasEnabled {
                             let start = Calendar.current.startOfDay(for: now), end = Calendar.current.date(byAdding: .day, value: 7, to: start)!
                             do {
-                                let calendar = try await model.nativeSources.calendar(from: start, to: end)
-                                let events = calendar.events.filter { !calendars.contains($0.calendarID) }
+                                let calendar = heartbeat ? try model.heartbeatCalendar() : try await model.nativeSources.calendar(from: start, to: end)
+                                let events = calendar.events.filter { !calendars.contains($0.calendarID) && $0.start < end && $0.end >= start }
                                 nativeInput["calendar"] = events.prefix(60).enumerated().map { ["id":"calendar_\($0.offset)","title":$0.element.title,"start":$0.element.allDay ? DateRules.localDate($0.element.start) : DateRules.localTimestamp($0.element.start),"end":$0.element.allDay ? DateRules.localDate($0.element.end) : DateRules.localTimestamp($0.element.end),"allDay":$0.element.allDay,"source":$0.element.sourceLabel] as [String:Any] }
                                 nativeSources += events.prefix(60).enumerated().map { .init(id: "calendar_\($0.offset)", label: $0.element.title + " · " + $0.element.sourceLabel, kind: "calendar", date: $0.element.start, originalID: $0.element.id,contentRevision:DiscoveryNativeTarget.fingerprint($0.element)) }
                                 nativeInput["calendarCoverage"] = "Next seven days, at most 60 events."
                             } catch { nativeInput["calendarError"] = error.localizedDescription }
                             do {
-                                let snapshot = try await model.nativeSources.reminders()
+                                let snapshot = heartbeat ? try model.heartbeatReminders() : try await model.nativeSources.reminders()
                                 let reminders = snapshot.reminders.filter { !lists.contains($0.listID) }
                                 nativeInput["reminders"] = reminders.prefix(80).enumerated().map { ["id":"reminder_\($0.offset)","title":$0.element.title,"due":DateRules.reminderDue($0.element),"hasTime":$0.element.hasTime,"source":$0.element.sourceLabel] }
                                 nativeSources += reminders.prefix(80).enumerated().map { .init(id: "reminder_\($0.offset)", label: $0.element.title + " · " + $0.element.sourceLabel, kind: "reminder", date: $0.element.due, originalID: $0.element.id,contentRevision:DiscoveryNativeTarget.fingerprint($0.element)) }
@@ -296,10 +296,11 @@ import UserNotifications
                     }
                     throw CancellationError()
                 }
+                if heartbeat {input["sourceCollectionCoverage"]=model.heartbeatSourceCoverage}
                 var native=try await readNative()
                 input.merge(native.input) { _,new in new };sources += native.sources
                 @MainActor func validateNative() async throws {
-                    guard native.revision != model.sourceRevision else { return }
+                    guard heartbeat || native.revision != model.sourceRevision else { return }
                     let fresh=try await readNative()
                     guard try BriefingRules.sourceSnapshot(native.input,sources:native.sources) == BriefingRules.sourceSnapshot(fresh.input,sources:fresh.sources) else {
                         throw BriefingContextChanged(kinds:["native"])
@@ -307,7 +308,7 @@ import UserNotifications
                     native=fresh
                 }
                 if contextWasEnabled {
-                    await model.weather.prepareForBrief()
+                    if !heartbeat {await model.weather.prepareForBrief()}
                     input["localWeather"] = model.weather.context(now:now)
                     if model.weather.enabled, model.weather.allowed, let forecast = model.weather.forecast, forecast.usable(now:now) { sources.append(.init(id:"weather_0",label:"Nearby forecast · Open-Meteo",kind:"weather",date:forecast.fetched,originalID:nil)) }
                 }

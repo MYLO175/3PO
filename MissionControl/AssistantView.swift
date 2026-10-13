@@ -404,12 +404,12 @@ struct AssistantSourceSettings: View {
 
                 }
                 Section("Other background work") {
-                    Text("Heartbeats update Today’s brief. Failed runs try fresh information at the next interval. Memory learning and organisation are controlled in Memory. Your queued requests use Continue queue.").font(.caption).foregroundStyle(.secondary)
+                    Text("Heartbeats analyse saved sources, learn and organise useful context, suggest actions and update Today’s brief. A failed stage keeps completed work and tries fresh information next time. Memory controls apply. Your queued requests use Continue queue.").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Daily AI call limit") {
                     Picker("Daily limit",selection:$model.heartbeat.dailyCallLimit) { Text("Off").tag(0);ForEach([8,16,32,64,96],id:\.self) { Text("\($0) calls").tag($0) } }
                     Text(model.heartbeat.budgetStatus(model.chatGPT.activeID)).font(.caption).foregroundStyle(.secondary)
-                    Text("Off by default. Optionally limit daily heartbeat AI calls, including email review, suggestions and brief updates. One heartbeat can use several calls. ChatGPT account limits still apply.").font(.caption).foregroundStyle(.secondary)
+                    Text("Off by default. Optionally limit daily heartbeat AI calls, including email review, memory learning, suggestions and brief updates. One heartbeat can use several calls. ChatGPT account limits still apply.").font(.caption).foregroundStyle(.secondary)
                 }
             case .memory:
                 Section("Saved memory") {
@@ -417,24 +417,28 @@ struct AssistantSourceSettings: View {
                     Toggle("Allow memory learning",isOn:Binding(get:{assistant.memory.learningEnabled},set:{assistant.memory.learningEnabled=$0})).disabled(!assistant.memory.enabled)
                     Text("Human memories keep their evidence and correction history. Imported messages are attributed to their source and remain provisional. Forgetting a saved memory prevents the same evidence from being learned again.").font(.caption).foregroundStyle(.secondary)
                 }
-                Section("Optional WhatsApp context learning") {
+                Section("WhatsApp context learning") {
                     Text(model.sourceLearning.status(model)).font(.caption).foregroundStyle(.secondary)
-                    Text("This is separate from receiving chats, including them in a brief, task suggestions, and ordinary PA source context. It runs only for chats and linked identity you enabled in WhatsApp → PA chat access.").font(.caption).foregroundStyle(.secondary)
+                    Text("Selected chats allowed for review may also teach useful context. Receiving messages alone never learns. Manage selected chats in WhatsApp → PA chat access.").font(.caption).foregroundStyle(.secondary)
                     HStack {
-                        Button("Review recent WhatsApp context") { model.sourceLearning.check(model,manual:true) }.disabled(model.chatGPT.busy || model.sourceLearning.busy || model.chatGPT.usagePaused || model.whatsapp.access(for:model.chatGPT.activeID).learnContext != true)
+                        Button("Review recent WhatsApp context") { model.sourceLearning.check(model,manual:true) }.disabled(model.chatGPT.busy || model.sourceLearning.busy || model.chatGPT.usagePaused || model.learningRuntime().whatsappLearningAccess.learnContext != true)
                         if model.sourceLearning.busy { Button("Stop learning") { model.sourceLearning.cancel() } }
                     }
                     if let error=model.sourceLearning.error { Text(error).font(.caption).foregroundStyle(.orange) }
                 }
-                Section("Optional source memory") {
-                    Text("Learning is separate from source access and Refresh. New opt-ins keep existing content as a baseline; Review once can assess a small existing batch. All source memories stay attributed and provisional. These controls belong to the signed-in account.").font(.caption).foregroundStyle(.secondary)
+                Section("Source memory") {
+                    Text("Sources allowed for review can also teach memory during a heartbeat. Refresh only collects data. Newly included sources baseline existing content; Review once can assess a small existing batch. Facts retain exact evidence and remain editable. Turn off Allow memory learning above to pause learning.").font(.caption).foregroundStyle(.secondary)
                     ForEach(NativeLearningRules.kinds,id:\.rawValue) { kind in
                         VStack(alignment:.leading,spacing:6) {
-                            Toggle("Learn from " + NativeSourceLearningService.title(kind),isOn:Binding(get:{model.nativeSourceLearning.enabled(kind,registration:model.chatGPT.activeID)},set:{model.nativeSourceLearning.setEnabled($0,kind:kind,model:model)}))
+                            if model.learningRuntime().permitsReviewLearning(kind) {
+                                Label(NativeSourceLearningService.title(kind)+" · included through review access",systemImage:"checkmark.circle")
+                            } else {
+                                Toggle("Learn from " + NativeSourceLearningService.title(kind),isOn:Binding(get:{model.nativeSourceLearning.enabled(kind,registration:model.chatGPT.activeID)},set:{model.nativeSourceLearning.setEnabled($0,kind:kind,model:model)}))
+                            }
                             Text(model.nativeSourceLearning.status(kind,model:model)).font(.caption).foregroundStyle(.secondary)
                             Text(NativeSourceLearningService.coverage(kind)).font(.caption).foregroundStyle(.secondary)
                             Button("Review " + NativeSourceLearningService.title(kind) + " once") { model.nativeSourceLearning.check(model,kind:kind,manual:true) }
-                                .disabled(!model.nativeSourceLearning.enabled(kind,registration:model.chatGPT.activeID) || !assistant.memory.enabled || !assistant.memory.learningEnabled || !assistant.contextEnabled || model.chatGPT.busy || model.nativeSourceLearning.busy || model.sourceLearning.busy || model.chatGPT.usagePaused)
+                                .disabled(!model.nativeSourceLearning.permittedKind(kind,model:model.learningRuntime()) || !assistant.memory.enabled || !assistant.memory.learningEnabled || !assistant.contextEnabled || model.chatGPT.busy || model.nativeSourceLearning.busy || model.sourceLearning.busy || model.chatGPT.usagePaused)
                         }
                     }
                     Text("At most 8 items and 4 facts per pass. Conversation, source learning and organisation share 4 automatic passes/day with a 30-minute gap. Review once is an explicit extra assessment, not a permission to edit Apple apps.").font(.caption).foregroundStyle(.secondary)

@@ -420,7 +420,7 @@ struct SettingsView: View {
                     }
                 case "Connections":
                     ChatGPTConnectionView(connection:model.chatGPT)
-                    WhatsAppSettings(service:model.whatsapp,registration:model.chatGPT.activeID)
+                    WhatsAppSettings(service:model.whatsapp,registration:model.chatGPT.activeID,heartbeatReviewEnabled:model.heartbeat.whatsappEnabled)
                     WeatherSettings(weather:model.weather)
                 case "Assistant":
                     AssistantSourceSettings(model:model,assistant:model.assistant,page:.assistant)

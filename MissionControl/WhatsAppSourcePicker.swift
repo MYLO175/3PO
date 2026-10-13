@@ -3,6 +3,7 @@ import SwiftUI
 struct WhatsAppSourceSummary:View {
     @Bindable var service:WhatsAppService
     let registration:String
+    var heartbeatReviewEnabled=false
     private var access:WhatsAppAccess { service.access(for:registration) }
     private var selected:[WhatsAppChat] { WhatsAppReadRules.selectedChats(service.chats,selected:access.chats) }
     var body:some View {
@@ -13,7 +14,7 @@ struct WhatsAppSourceSummary:View {
             HStack(spacing:12) {
                 Label("Brief",systemImage:access.briefEnabled ? "checkmark.circle.fill" : "minus.circle")
                 Label("Tasks",systemImage:access.enabled && access.includeInSuggestions == true ? "checkmark.circle.fill" : "minus.circle")
-                Label("Learning",systemImage:access.enabled && access.learnContext == true ? "checkmark.circle.fill" : "minus.circle")
+                Label("Learning",systemImage:access.enabled && (access.learnContext == true || access.briefEnabled || access.includeInSuggestions == true || heartbeatReviewEnabled) ? "checkmark.circle.fill" : "minus.circle")
             }.foregroundStyle(.secondary)
         }.font(.caption).padding(10).frame(maxWidth:.infinity,alignment:.leading).background(.quaternary,in:RoundedRectangle(cornerRadius:10))
     }
@@ -22,6 +23,7 @@ struct WhatsAppSourceSummary:View {
 struct WhatsAppSourcePicker: View {
     @Bindable var service: WhatsAppService
     let registration: String
+    var heartbeatReviewEnabled=false
     @Environment(\.dismiss) private var dismiss
     @State private var search=""
     @State private var selectedOnly=false
@@ -42,12 +44,14 @@ struct WhatsAppSourcePicker: View {
             HStack(spacing:20) {
                 Toggle("Today’s brief",isOn:Binding(get:{access.includeInBrief == true},set:{value in change { $0.includeInBrief=value } }))
                 Toggle("Task suggestions",isOn:Binding(get:{access.includeInSuggestions == true},set:{value in change { $0.includeInSuggestions=value } }))
-                Toggle("Learn context",isOn:Binding(get:{access.learnContext == true},set:{value in change { $0.learnContext=value } }))
+                if access.briefEnabled || access.includeInSuggestions == true || heartbeatReviewEnabled {
+                    Label("Learning included",systemImage:"checkmark.circle").help("Review access includes learning from selected chats. Allow memory learning in Memory settings controls whether learning runs.")
+                } else {Toggle("Learn context",isOn:Binding(get:{access.learnContext == true},set:{value in change { $0.learnContext=value } }))}
             }.disabled(!access.enabled)
             DisclosureGroup("How these sources are used",isExpanded:$details) {
-                ScrollView { Text("Brief: includes up to 40 cached messages from the last 48 hours, shortened to 800 characters each, in your existing morning preparation or explicit update. Tasks: optional idle checks compare up to eight recent messages with Calendar and Reminders; suggestions are reviewed before anything is created. Learning: separate opt-in for small recent batches; useful conclusions stay provisional with evidence. Turning learning off excludes those source beliefs from recall while preserving them locally. Reception makes no AI requests. Messages never authorise Calendar/Reminders changes. No sending, read receipts or full-history guarantee.").font(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading) }.frame(maxHeight:100)
+                ScrollView { Text("Brief: includes up to 40 cached messages from the last 48 hours, shortened to 800 characters each, in your existing morning preparation or explicit update. Tasks: optional idle checks compare up to eight recent messages with Calendar and Reminders; suggestions are reviewed before anything is created. Learning: review access includes small recent batches; useful conclusions retain evidence and remain provisional and editable. Allow memory learning in Memory settings controls automatic learning. Revoking source access excludes dependent beliefs from recall while preserving them locally. Reception makes no AI requests. Messages never authorise Calendar/Reminders changes. No sending, read receipts or full-history guarantee.").font(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading) }.frame(maxHeight:100)
             }.font(.caption)
-            WhatsAppSourceSummary(service:service,registration:registration)
+            WhatsAppSourceSummary(service:service,registration:registration,heartbeatReviewEnabled:heartbeatReviewEnabled)
             HStack {
                 TextField("Find a name or chat",text:$search)
                 Picker("Show chats",selection:$selectedOnly) { Text("All chats").tag(false);Text("Selected (\(selected.count))").tag(true) }.pickerStyle(.segmented).labelsHidden().accessibilityLabel("Show chats").frame(width:230)

@@ -41,7 +41,7 @@ struct PAMemoryOverviewView:View {
                         ForEach(NativeLearningRules.kinds,id:\.rawValue) { kind in
                             Text(NativeSourceLearningService.title(kind) + " memory: " + model.nativeSourceLearning.status(kind,model:model))
                         }
-                        let access=model.whatsapp.access(for:registration)
+                        let access=model.learningRuntime().whatsappLearningAccess
                         Text("WhatsApp: \(access.enabled ? access.chats.count : 0) selected chats · PA reads \(access.enabled ? "on" : "off") · learning \(access.enabled && access.learnContext == true ? "on" : "off")").font(.caption)
                         Text("These are current controls and cached coverage. Receiving content does not mean it has been assessed or remembered. No sources are refreshed by this view.").font(.caption).foregroundStyle(.secondary)
                     }.font(.callout).frame(maxWidth:.infinity,alignment:.leading)

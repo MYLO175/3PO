@@ -1,5 +1,14 @@
 # Validation
 
+## 13 October heartbeat analysis candidate
+
+- Signed build passes. Ten focused suites pass; additional completion-cache checks pass.
+- Actual learning runtime34/34; shared learning budget159/159.
+- Signed app-memory: advice144/144, scheduler87/87, removal11/11. Scheduler includes seven injected full-cycle scenarios.
+- Configured gpt-6-luna: compound actions13/13 and typed brief/WhatsApp7/7, four fictional requests, no native writes.
+- Installation/live-cycle evidence follows in STATUS; sustained unattended and physical sleep/wake acceptance remain separate.
+
+
 ## 12 October: typed brief results
 
 - Signed build and focused briefing/stream/heartbeat checks pass, including malformed/plain-text/missing-field, duplicate/unrelated call and source-reference rejection.

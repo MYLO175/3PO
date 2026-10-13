@@ -32,6 +32,8 @@ import SwiftData
     private var capturedPowerRevision:Int?
     private var capturedPrior:PAHeartbeatAccount?
     private var capturedRunID:String?
+    var ownedRunID:String? {busy ? capturedRunID : nil}
+    func ownsLearningRun(_ runID:String)->Bool {busy && capturedRunID == runID && task?.isCancelled != true}
     @ObservationIgnored private var capturedEligibility:(()->Bool)?
     private var powerRevision=0
     private var systemSleeping=false
@@ -83,7 +85,7 @@ import SwiftData
     }
     func statusFor(_ registration:String)->String {
         if readable,!busy,state.accounts[registration]?.retryReason == "failure" {
-            return "The last heartbeat did not finish. Saved work is kept; the next scheduled heartbeat checks fresh information."
+            return state.accounts[registration]?.reviews?.last?.briefUpdated == true ? "Today’s brief updated; some analysis did not finish. See the stage details below. The next scheduled heartbeat checks fresh information." : "The last heartbeat did not finish. Saved work is kept; the next scheduled heartbeat checks fresh information."
         }
         if readable,!busy,statusRegistration != registration,state.accounts[registration]?.mailLanes?.values.contains(where:{$0.issue != nil}) == true {return "The last review used available sources. Unavailable Mail accounts remain pending; source checks continue independently."}
         if let statusRegistration,statusRegistration != registration {return "Sources collect without AI. This account's review runs when due and idle."}
@@ -173,6 +175,7 @@ import SwiftData
             let began=clock(),callsBefore=PAHeartbeatRules.callCount(prior,day:day)
             let before=runtime.activity(registration,runID)
             var steps=PAHeartbeatRules.stages(),failure:String?,sleepInterrupted=false
+            var stageFailures:[String]=[]
             var reviewedMail:MailReviewScope?
             @MainActor func step(_ id:String,_ state:String,_ detail:String? = nil) throws {
                 guard let index=steps.firstIndex(where:{$0.id == id}) else {return}
@@ -185,9 +188,9 @@ import SwiftData
                     steps[index].status=failure != nil && !sleepInterrupted ? "failed" : "waiting"
                 }
                 let ready=reviewedMail?.accountIDs.count ?? 0,waiting=reviewedMail?.issues.count ?? 0
-                let phase=sleepInterrupted ? "suspended" : failure != nil ? (Task.isCancelled ? "interrupted" : "failed") : latest.pending == true ? "waiting" : latest.phase
+                let phase=sleepInterrupted ? "suspended" : (failure != nil || !stageFailures.isEmpty) ? (Task.isCancelled ? "interrupted" : "failed") : latest.pending == true ? "waiting" : latest.phase
                 let after=runtime.activity(registration,runID)
-                let run=PAReviewRun(id:runID,started:began,finished:clock(),manual:manual,phase:phase,detail:String(status.prefix(600)),calls:max(0,PAHeartbeatRules.callCount(latest,day:day)-callsBefore),checkedAccounts:ready,waitingAccounts:waiting,preparedItems:max(0,after.preparedItems-before.preparedItems),drafts:max(0,after.emailDrafts-before.emailDrafts)+max(0,after.whatsappDrafts-before.whatsappDrafts),handled:max(0,after.handled-before.handled),briefUpdated:after.briefUpdated,questions:after.questions,steps:steps,failure:failure,mailCollectionIndependent:true)
+                let run=PAReviewRun(id:runID,started:began,finished:clock(),manual:manual,phase:phase,detail:String(status.prefix(600)),calls:max(0,PAHeartbeatRules.callCount(latest,day:day)-callsBefore),checkedAccounts:ready,waitingAccounts:waiting,preparedItems:max(0,after.preparedItems-before.preparedItems),drafts:max(0,after.emailDrafts-before.emailDrafts)+max(0,after.whatsappDrafts-before.whatsappDrafts),handled:max(0,after.handled-before.handled),briefUpdated:after.briefUpdated,questions:after.questions,steps:steps,failure:failure ?? (stageFailures.isEmpty ? nil : stageFailures.joined(separator:" · ")),mailCollectionIndependent:true)
                 do {try recordReview(registration,run:run)} catch {status="Review finished, but its activity record could not be saved. Existing records are retained."}
                 busy=false;capturedRegistration=nil;capturedDay=nil;capturedControls=nil;capturedPowerRevision=nil;capturedPrior=nil;capturedRunID=nil;capturedEligibility=nil
             }
@@ -229,9 +232,9 @@ import SwiftData
                 let enabledMail=sources.enabledMail
                 account.checked = clock()
                 account=PAHeartbeatRules.collectingMail(account,enabled:enabledMail,ready:mailReview.accountIDs,issues:mailReview.issues,now:clock())
-                account.pending=mailReview.pending || !nativeReady || (wantsWhatsApp && !whatsappReady) || account.pending == true
+                account.pending = !stageFailures.isEmpty || mailReview.pending || !nativeReady || (wantsWhatsApp && !whatsappReady) || account.pending == true
                 state.accounts[registration]=account;try save()
-                let sourceDetail="Calendar & Reminders: \(nativeReady ? "checked" : "waiting") · Mail: collected data from \(mailReview.accountIDs.count) accounts; \(mailReview.issues.count) background collection issues · WhatsApp: \(wantsWhatsApp ? (whatsappReady ? "checked" : "waiting") : "off"). Mail refresh runs independently."
+                let sourceDetail="Saved Calendar & Reminders: \(nativeReady ? "available" : "waiting for background collection") · Mail: saved data from \(mailReview.accountIDs.count) accounts; \(mailReview.issues.count) collection issues · WhatsApp: \(wantsWhatsApp ? (whatsappReady ? "saved context available" : "unavailable") : "off"). All source collection runs independently."
                 try step("sources",nativeReady && (!wantsWhatsApp || whatsappReady) ? "done" : "waiting",sourceDetail)
                 let fingerprint=runtime.sourceFingerprint(mailReview,whatsappReady,whatsappEnabled)
                 let pendingSources=runtime.pending(mailReview,whatsappReady,nativeReady).any
@@ -261,9 +264,19 @@ import SwiftData
                 account=PAHeartbeatRules.collectingMail(account,enabled:enabledMail,ready:mailReview.accountIDs,issues:mailReview.issues,now:clock())
                 state.accounts[registration]=account;try save()
                 guard (manual || enabled),PAHeartbeatRules.canContinue(owner:registration,currentOwner:runtime.environment().registration,controls:controls,currentControls:controlsRevision,scope:scope,currentScope:runtime.environment().scope,day:day,currentDay:BriefingRules.day(clock()),model:selectedModel,currentModel:runtime.environment().model) else { throw ActionFailure.message("Background-review ownership or source choices changed; completed assessments retained.") }
+                if runtime.environment().emailEnabled,let error=email.failure {
+                    stageFailures.append("Email review: "+String(error.prefix(400)))
+                    try step("email","failed",error)
+                } else {try step("email",runtime.environment().emailEnabled ? "done" : "skipped","Existing assessments reused; new permitted mail reviewed when available.")}
                 if !PAHeartbeatRules.canClaim(state.accounts[registration] ?? account,day:BriefingRules.day(clock()),limit:dailyCallLimit) { throw HeartbeatBudgetExhausted() }
-                if runtime.environment().emailEnabled,let error=email.failure {throw ActionFailure.message(error)}
-                try step("email",runtime.environment().emailEnabled ? "done" : "skipped","Existing assessments reused; new permitted mail reviewed when available.")
+                try step("learning","running")
+                try requireOwned()
+                let learning=try await runtime.learning(.init(registration:registration,manual:manual,runID:runID,mailReview:mailReview,whatsappReady:whatsappReady,claim:{try self.claimCall(registration,runID:runID)},validate:{try requireOwned()}))
+                try requireOwned()
+                if let error=learning.failure {
+                    stageFailures.append("Memory: "+String(error.prefix(400)))
+                    try step("learning","failed",error)
+                } else {try step("learning",learning.skipped ? "skipped" : "done",learning.detail)}
                 // Do not compare new inputs with an earlier stage's pre-request cache.
                 // Proactive and briefing jobs capture and validate their own fresh inputs.
                 nativeReady=runtime.currentSources(whatsappReady).nativeReady
@@ -274,8 +287,10 @@ import SwiftData
                 if nativeReady,suggestions.nativeUnavailable {nativeReady=false}
                 try requireOwned()
                 guard PAHeartbeatRules.canContinue(owner:registration,currentOwner:runtime.environment().registration,controls:controls,currentControls:controlsRevision,scope:scope,currentScope:runtime.environment().scope,day:day,currentDay:BriefingRules.day(clock()),model:selectedModel,currentModel:runtime.environment().model) else { throw ActionFailure.message("Background-review ownership changed; completed source work retained.") }
-                if nativeReady,runtime.environment().proposalsEnabled,let error=suggestions.failure { throw ActionFailure.message(error) }
-                try step("suggestions",!runtime.environment().proposalsEnabled ? "skipped" : nativeReady ? "done" : "waiting","Eligible changes assessed when due; existing results retained.")
+                if nativeReady,runtime.environment().proposalsEnabled,let error=suggestions.failure {
+                    stageFailures.append("Suggestions: "+String(error.prefix(400)))
+                    try step("suggestions","failed",error)
+                } else {try step("suggestions",!runtime.environment().proposalsEnabled ? "skipped" : nativeReady ? "done" : "waiting","Eligible changes assessed when due; existing results retained.")}
                 if !PAHeartbeatRules.canClaim(state.accounts[registration] ?? account,day:day,limit:dailyCallLimit) {throw HeartbeatBudgetExhausted()}
                 status="Updating today’s brief…"
                 mailReview=runtime.availableMail(mailReview)
@@ -292,10 +307,16 @@ import SwiftData
                 let pending=runtime.pending(mailReview,whatsappReady,nativeReady),pendingAccounts=pending.mailAccounts
                 account=PAHeartbeatRules.clearWait(state.accounts[registration] ?? account);account.phase="idle";account.assessed = clock()
                 account=PAHeartbeatRules.collectingMail(account,enabled:enabledMail,ready:mailReview.accountIDs,issues:mailReview.issues,now:clock())
-                account=PAHeartbeatRules.completedMail(account,fingerprints:mailFingerprints.filter{mailReview.accountIDs.contains($0.key)},pending:pendingAccounts,now:clock(),issues:mailReview.issues)
-                account.pending=mailReview.pending || !nativeReady || (wantsWhatsApp && !whatsappReady) || !pendingAccounts.isEmpty || pending.proposals
+                account=PAHeartbeatRules.completedMail(account,fingerprints:mailFingerprints.filter{mailReview.accountIDs.contains($0.key)},pending:stageFailures.isEmpty ? pendingAccounts : pendingAccounts.union(mailReview.accountIDs),now:clock(),issues:mailReview.issues)
+                account.pending = !stageFailures.isEmpty || mailReview.pending || !nativeReady || (wantsWhatsApp && !whatsappReady) || !pendingAccounts.isEmpty || pending.proposals
                 account.fingerprint=runtime.sourceFingerprint(mailReview,whatsappReady,whatsappEnabled);try finishAssessment(registration,account:account)
                 status="Heartbeat completed at " + clock().formatted(date:.omitted,time:.shortened) + ". Today’s brief updated; useful items are in Review inbox. " + waitingStatus(accounts:runtime.currentSources(whatsappReady).accounts,mailReview:mailReview,nativeReady:nativeReady,whatsappWaiting:wantsWhatsApp && !whatsappReady)
+                if !stageFailures.isEmpty {
+                    var retained=state.accounts[registration] ?? account
+                    retained=PAHeartbeatRules.failed(retained,now:clock(),minutes:intervalMinutes)
+                    state.accounts[registration]=retained;try save()
+                    status="Today’s brief updated. Some analysis did not finish; completed work is saved. See the stage details in Heartbeat history. The next scheduled heartbeat checks fresh information."
+                }
                 if !runtime.environment().proposalsEnabled { status += " Review proposals are disabled." }
                 else if runtime.environment().proposalAllowanceReached { status += " Daily comparison allowance reached; source checks continue." }
             } catch is HeartbeatBudgetExhausted {
@@ -499,10 +520,63 @@ import SwiftData
         let unreadable=HeartbeatService(container:badStore,settings:validationSettings,clock:{now},deviceState:{device})
         checks["unreadable review state blocks scheduling"] = !unreadable.readable && unreadable.statusFor(registration).contains("unavailable")
         checks["unreadable original cache is preserved"] = try badStore.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first?.data == badData
+        // Exercise the real orchestration with injected source-free children,
+        // including failures which used to prevent the brief from ever running.
+        for scenario in ["email failure","suggestions failure","learning failure","missing sources","foreground stop","successful cycle","capped email failure"] {
+            let cycleStore=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+            let cycle=HeartbeatService(container:cycleStore,settings:validationSettings,clock:{now},deviceState:{device})
+            cycle.dailyCallLimit=0
+            if scenario == "capped email failure" {
+                cycle.dailyCallLimit=8
+                cycle.state.accounts["fixture-cycle"] = .init(budgetDay:BriefingRules.day(now),calls:7)
+            }
+            var ports=HeartbeatRuntime.inactive,order:[String]=[],updated=false,expired:HeartbeatChildRequest?
+            var env=ports.environment()
+            env.registration="fixture-cycle";env.contextEnabled=true;env.inferenceVerified=true;env.permitted=true;env.emailEnabled=true;env.proposalsEnabled=true
+            ports.environment={env}
+            var snapshots=ports.currentSources(false)
+            snapshots.nativeReady=scenario != "missing sources"
+            ports.prepareSources={request in try request.validate();order.append("snapshots");return snapshots}
+            ports.currentSources={_ in snapshots}
+            ports.activity={_,_ in .init(briefUpdated:updated)}
+            ports.email={request in
+                try request.validate();try request.claim();expired=request;order.append("email")
+                if scenario == "foreground stop" {cycle.userStartedTyping()}
+                return .init(failure:scenario == "email failure" || scenario == "capped email failure" ? "fixture transport failure" : nil)
+            }
+            ports.learning={request in
+                try request.validate();order.append("learning")
+                return .init(failure:scenario == "learning failure" ? "fixture learning failure" : nil,detail:"No pending learning",skipped:scenario != "learning failure")
+            }
+            ports.suggestions={request in
+                try request.validate();try request.claim();order.append("suggestions")
+                return .init(failure:scenario == "suggestions failure" ? "result.suggestions[0].kind: unsupported" : nil)
+            }
+            ports.brief={request in
+                try request.validate();try request.claim();order.append("brief");updated=true;return .init()
+            }
+            cycle.check(runtime:ports,manual:true)
+            for _ in 0..<100 where cycle.busy {try await Task.sleep(for:.milliseconds(10))}
+            let saved=cycle.state.accounts[env.registration],history=saved?.reviews?.last
+            if scenario == "capped email failure" {
+                checks["final allowed call retains its actual email failure before allowance wait"] = history?.steps?.first{$0.id == "email"}?.detail == "fixture transport failure" && history?.steps?.first{$0.id == "email"}?.status == "failed" && !updated && saved?.retryReason == "allowance" && saved?.calls == 8
+            } else if scenario == "foreground stop" {
+                checks["orchestration stops all later stages when foreground takes ownership"] = !cycle.busy && !updated && order == ["snapshots","email"] && history?.phase == "interrupted"
+            } else {
+                checks["orchestration writes brief after \(scenario)"] = !cycle.busy && updated && order.last == "brief" && history?.briefUpdated == true
+                if scenario.hasSuffix("failure") {
+                    let failedStage=scenario == "email failure" ? "email" : scenario == "learning failure" ? "learning" : "suggestions"
+                    checks["orchestration retains exact failed stage and schedules fresh recovery: \(scenario)"] = history?.steps?.first{$0.id == failedStage}?.status == "failed" && history?.outcome() == "Partly completed" && saved?.retryAfter == now.addingTimeInterval(Double(cycle.intervalMinutes)*60) && saved?.pending == true
+                }
+                if scenario == "missing sources" {checks["missing native cache does not start suggestions or block cached brief"] = !order.contains("suggestions") && history?.steps?.first{$0.id == "sources"}?.status == "waiting"}
+                if scenario == "successful cycle" {checks["full orchestration records all five stages in order"] = order == ["snapshots","email","learning","suggestions","brief"] && history?.outcome() == "Completed"}
+            }
+            checks["completed child cannot claim or save after parent ended: \(scenario)"] = {guard let expired else{return false};do{try expired.validate();return false}catch{do{try expired.claim();return false}catch{return true}}}()
+        }
         let currentPreferences=UserDefaults.standard.dictionaryRepresentation()
         let changedKeys=Set(preferences.allKeys.compactMap{$0 as? String}).union(currentPreferences.keys).filter{!NSDictionary(dictionary:["value":preferences[$0] ?? NSNull()]).isEqual(to:["value":currentPreferences[$0] ?? NSNull()])}.sorted()
-        checks["real settings remain unchanged"] = changedKeys.allSatisfy{$0 == "METAL_DEVICE_WRAPPER_TYPE"}
-        return ["checks":checks,"passed":checks.values.filter{$0}.count,"total":checks.count,"storage":"Fictional in-memory SwiftData; actual HeartbeatService claims, completion and recovery. Virtual 72-slot timeline; not real OS sleep/wake or full source/AI orchestration.","AIRequests":0,"nativeChanges":0,"timelineCompleted":cycles,"timelineAllowanceWaits":limits,"timelineSourceRetries":outages,"changedPreferenceKeys":changedKeys]
+        checks["real settings remain unchanged"] = changedKeys.allSatisfy{$0 == "METAL_DEVICE_WRAPPER_TYPE" || $0 == "NSWindow Frame reviewInboxValidation"}
+        return ["checks":checks,"passed":checks.values.filter{$0}.count,"total":checks.count,"storage":"Fictional in-memory SwiftData; actual HeartbeatService claims, completion and recovery. Virtual 72-slot timeline plus seven actual orchestration scenarios with injected children; not real OS sleep/wake or provider acceptance.","AIRequests":0,"nativeChanges":0,"timelineCompleted":cycles,"timelineAllowanceWaits":limits,"timelineSourceRetries":outages,"changedPreferenceKeys":changedKeys]
     }
     func withRunningReviewFixture<T>(_ operation:()->T)->T {
         let original=busy;busy=true;defer{busy=original};return operation()

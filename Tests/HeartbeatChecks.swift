@@ -2,6 +2,11 @@ import Foundation
 @main struct HeartbeatChecks {
     static func main() throws {
         let now=Date(timeIntervalSince1970:1_791_280_000)
+        precondition(PAHeartbeatRules.currentCompletion(collectedRevision:4,currentRevision:4,collectedAt:now.addingTimeInterval(-100),now:now))
+        precondition(!PAHeartbeatRules.currentCompletion(collectedRevision:3,currentRevision:4,collectedAt:now,now:now),"Reopened reminders cannot use old completed evidence")
+        precondition(!PAHeartbeatRules.currentCompletion(collectedRevision:-1,currentRevision:-1,collectedAt:now,now:now))
+        precondition(!PAHeartbeatRules.currentCompletion(collectedRevision:4,currentRevision:4,collectedAt:now.addingTimeInterval(-1800),now:now))
+        precondition(!PAHeartbeatRules.currentCompletion(collectedRevision:4,currentRevision:4,collectedAt:nil,now:now))
         var account=PAHeartbeatAccount()
         precondition(PAHeartbeatRules.due(account,now:now))
         account.checked=now

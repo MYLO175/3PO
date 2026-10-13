@@ -18,6 +18,7 @@ struct CalendarRemovalReviewSession:Identifiable {
     var paOrientationHealth = SourceHealth()
     private(set) var orientationCollectionRevision = -1
     private(set) var reminderCollectionRevision = -1
+    private(set) var completedReminderCollectionRevision = -1
     private var lastOrientationCheck = Date.distantPast
     private var heartbeatPowerMonitor:HeartbeatPowerMonitor?
     var reminderData = ReminderSnapshot(sources: [], reminders: [])
@@ -108,7 +109,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         service.memory.sourceIsPermitted = { [weak self,weak service] record in
             guard let self,service?.contextEnabled == true else { return false }
             if record.source?.identity.kind == .whatsapp {
-                return SourceContextRules.permitted(record,access:self.whatsapp.access(for:record.registration),linkedIdentity:self.whatsapp.linkedIdentity,messages:self.whatsapp.messages)
+                return SourceContextRules.permitted(record,access:self.learningRuntime().whatsappLearningAccess,linkedIdentity:self.whatsapp.linkedIdentity,messages:self.whatsapp.messages)
             }
             return self.nativeSourceLearning.permits(record,model:self)
         }
@@ -117,7 +118,7 @@ struct CalendarRemovalReviewSession:Identifiable {
             let registration=self.chatGPT.activeID
             var result=Set<UUID>()
             // Hash each native snapshot once per projection, rather than once per saved fact.
-            for kind in NativeLearningRules.kinds where self.nativeSourceLearning.enabled(kind,registration:registration) {
+            for kind in NativeLearningRules.kinds where self.nativeSourceLearning.permittedKind(kind,model:self.learningRuntime()) {
                 if let items=self.nativeLearningItems(kind) {
                     for record in service.memory.records where record.registration == registration && record.source?.identity.kind == kind {
                         if NativeLearningRules.permitted(record,items:items) { result.insert(record.id) }
@@ -135,6 +136,7 @@ struct CalendarRemovalReviewSession:Identifiable {
     var emailSummaries: EmailSummaryService { get { services.emailSummaries } set { services.emailSummaries = newValue } }
     var heartbeat: HeartbeatService { get { services.heartbeat } set { services.heartbeat = newValue } }
     private var briefingPoll: Task<Void, Never>?
+    private var nativePoll: Task<Void, Never>?
     var memoryLearning: MemoryLearningService { get { services.memoryLearning } set { services.memoryLearning = newValue } }
     var sourceLearning: SourceContextLearningService { get { services.sourceLearning } set { services.sourceLearning = newValue } }
     var nativeSourceLearning: NativeSourceLearningService { get { services.nativeSourceLearning } set { services.nativeSourceLearning = newValue } }
@@ -395,8 +397,19 @@ struct CalendarRemovalReviewSession:Identifiable {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(300))
                 guard !Task.isCancelled else { return }
-                if let self { await self.refreshMail() }
                 self?.weather.startRefresh()
+                if let self {await self.refreshMail()}
+            }
+        }
+        nativePoll = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for:.seconds(900))
+                guard !Task.isCancelled else {return}
+                if let self {
+                    async let orientation:Void=self.refreshPAOrientation()
+                    async let reminders:Void=self.refreshReminders()
+                    _ = await (orientation,reminders)
+                }
             }
         }
         briefingPoll = Task { [weak self] in
@@ -405,8 +418,6 @@ struct CalendarRemovalReviewSession:Identifiable {
                     self.heartbeat.check(self)
                     if !self.heartbeat.busy && !self.briefings.busy {
                         self.projectPlacement.check(self);self.memoryLearning.recoverDelivery(self);self.proactive.recoverDelivery(self)
-                        self.checkBackgroundLearning()
-                        if Date.now.timeIntervalSince(self.lastOrientationCheck) >= 900 { await self.refreshPAOrientation() }
                     }
                 }
                 try? await Task.sleep(for: .seconds(60))
@@ -422,22 +433,6 @@ struct CalendarRemovalReviewSession:Identifiable {
                 await refreshReminders()
             }
         }
-    }
-    private func checkBackgroundLearning() {
-        let registration = chatGPT.activeID
-        backgroundLearning.check(now: .now, receipts: learningBudget.receipts(registration), available: {
-            registration == self.chatGPT.activeID && !self.assistant.busy && !self.assistant.hasDraft && !self.writing && !self.heartbeat.busy && !self.briefings.busy && HeartbeatDeviceState.current().available
-        }, attempt: { lane, _ in
-            let before = self.learningBudget.revision
-            switch lane {
-            case .conversation: self.memoryLearning.check(self)
-            case .nativeSources: self.nativeSourceLearning.check(self)
-            case .whatsapp: self.sourceLearning.check(self)
-            case .organisation: self.lifeOrganisation.check(self)
-            case .maintenance: self.memoryMaintenance.check(self)
-            }
-            return before != self.learningBudget.revision
-        })
     }
     func refresh(retryMail: Bool = true) {
         widgetCalendars.invalidate()
@@ -501,7 +496,7 @@ struct CalendarRemovalReviewSession:Identifiable {
             return snapshot
         }
         reminderData = result.snapshot; reminderHealth = result.health
-        reminderCollectionRevision = reminderHealth.error == nil ? collectionRevision : -1
+        if reminderHealth.error == nil {reminderCollectionRevision = collectionRevision}
         persistCollection("reminders", healthKey: "reminderHealth", snapshot: reminderData, health: reminderHealth)
         if reminderHealth.error == nil, assistant.contextEnabled {
             let completed = await NativeSourceCollection(snapshot: completedReminders, health: completedReminderHealth).collecting {
@@ -510,6 +505,7 @@ struct CalendarRemovalReviewSession:Identifiable {
                 return items
             }
             completedReminders = completed.snapshot; completedReminderHealth = completed.health
+            if completed.health.error == nil {completedReminderCollectionRevision = collectionRevision}
         } else if !assistant.contextEnabled { completedReminders=[]; completedReminderHealth = .init() }
         if pendingReminderRefresh { pendingReminderRefresh = false; await refreshReminders() }
     }

@@ -1,5 +1,10 @@
 # Next improvements
 
+## Heartbeat reliability acceptance — 13 October 2026
+
+[Current implementation plan](HEARTBEAT_RELIABILITY_PLAN.md): independent cached-source analysis, isolated stage failures, typed review results with precise diagnostics, review-consented source learning and incremental organisation. Acceptance requires a supported brief despite a failed email/suggestion stage, no source refresh prerequisite, correct partial-coverage disclosure, preserved failed learning pauses and exact action evidence. Several days of unattended success, real sleep/wake and everyday model quality remain open after focused tests and one installed cycle.
+
+
 12 October brief-format refinement: typed `pa.prepare_brief` replaces prompt-only JSON output for heartbeat/manual/first brief preparation. Focused malformed/duplicate/reference checks, signed app checks and configured-model daypart cases are recorded in STATUS. Successful individual runs remain separate from sustained heartbeat reliability and repeated provider/source failures.
 
 

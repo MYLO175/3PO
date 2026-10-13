@@ -1,5 +1,12 @@
 # How Mission Control works
 
+## Heartbeats: analysis of saved context
+
+Source collection runs independently without AI. A heartbeat reads available saved context, reviews email, offers one eligible bounded memory/organisation pass, prepares useful suggestions and writes today’s brief. A failed review or suggestion stage keeps its details and pending work while the brief can still finish. History distinguishes partial completion from a complete run. Stopping, typing, sleeping, changing account/permissions or reaching an AI limit still prevents later work.
+
+Sources allowed for review can also teach memory when memory learning is enabled. Facts keep source evidence and are editable; newly included sources baseline existing content, and failed learning stays paused. New facts attach to existing life areas rather than rebuilding the whole structure. Source refresh itself never learns. Memory settings show inherited review access. The optional daily heartbeat AI limit remains Off by default in Settings → Background.
+
+
 ## Compound email suggestions
 
 Email assessment can retain up to twelve separate exact quotes for requirements, deadlines and scheduling windows. Review can show separate Calendar and project-task suggestions on the same email card, using an issued existing space and its revision. Review forms carry supported dates; project tasks retain exact timed wording in notes. Adjust with assistant adds the human variation to the visible assistant draft. Approvals recheck source evidence and use normal saved receipts; reading or suggesting never creates an item. See [implementation and acceptance](EMAIL_ACTIONS_PLAN.md).

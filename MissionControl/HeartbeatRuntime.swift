@@ -68,6 +68,8 @@ struct HeartbeatActivity {
 struct HeartbeatChildResult {
     var failure:String? = nil
     var nativeUnavailable=false
+    var detail:String? = nil
+    var skipped=false
 }
 
 /// The scheduler owns due dates, receipts, allowance and interruption recovery.
@@ -86,6 +88,7 @@ struct HeartbeatChildResult {
     var suggestions:(HeartbeatChildRequest) async throws->HeartbeatChildResult
     var brief:(HeartbeatChildRequest) async throws->HeartbeatChildResult
     var cancelChildren:()->Void
+    var learning:(HeartbeatChildRequest) async throws->HeartbeatChildResult = {_ in .init(skipped:true)}
 
     #if DEBUG
     /// Metadata-only legacy evaluation uses no desktop or real child workers.

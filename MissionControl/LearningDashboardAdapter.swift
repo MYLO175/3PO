@@ -14,7 +14,7 @@ extension WhatsAppService: WhatsAppLearningReading {}
                 if sourceLearning.busy { lanes.insert(.whatsapp) }
                 if lifeOrganisation.busy { lanes.insert(.organisation) }
                 if memoryMaintenance.busy { lanes.insert(.maintenance) }
-                return LearningActivity(otherWorkBusy: (heartbeat.busy && !(request.map{heartbeat.ownsLearningRun($0.runID)} ?? false)) || projectPlacement.busy || proactive.busy || briefings.busy || emailSummaries.busy, lanes: lanes)
+                return LearningActivity(otherWorkBusy: (heartbeat.busy && !(request.map{self.heartbeat.ownsLearningRun($0.runID)} ?? false)) || projectPlacement.busy || proactive.busy || briefings.busy || emailSummaries.busy, lanes: lanes)
             }, writing: { [weak self] in self?.writing ?? true },
             sourceRevision: { [weak self] in self?.sourceRevision ?? .min },
             nativeItems: { [weak self] kind, now in

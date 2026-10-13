@@ -53,7 +53,7 @@ struct PAHeartbeatStep:Codable,Identifiable {
     var status:String = "pending"
     var detail:String? = nil
     var label:String {
-        switch status {case "done":return "Done";case "running":return "Running";case "failed":return "Stopped";case "skipped":return "Off";case "waiting":return "Waiting";default:return "Not run"}
+        switch status {case "done":return "Done";case "running":return "Running";case "failed":return "Failed";case "skipped":return "Skipped";case "waiting":return "Waiting";default:return "Not run"}
     }
 }
 struct PAHeartbeatMailLane:Codable {
@@ -67,8 +67,11 @@ struct PAHeartbeatState: Codable {
     var accounts: [String:PAHeartbeatAccount] = [:]
 }
 enum PAHeartbeatRules {
+    static func currentCompletion(collectedRevision:Int,currentRevision:Int,collectedAt:Date?,now:Date)->Bool {
+        collectedRevision >= 0 && collectedRevision == currentRevision && collectedAt.map{now.timeIntervalSince($0) >= 0 && now.timeIntervalSince($0) < 1800} == true
+    }
     static func stages()->[PAHeartbeatStep] {
-        [.init(id:"sources",title:"Context"),.init(id:"email",title:"Email review"),.init(id:"suggestions",title:"Suggestions & drafts"),.init(id:"brief",title:"Today’s brief")]
+        [.init(id:"sources",title:"Context"),.init(id:"email",title:"Email review"),.init(id:"learning",title:"Memory & organisation"),.init(id:"suggestions",title:"Suggestions & drafts"),.init(id:"brief",title:"Today’s brief")]
     }
     // Cache arrivals between completed stages are fresh input to the next stage.
     // Each inference job still validates the exact context it actually supplied.
