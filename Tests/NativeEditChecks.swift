@@ -49,6 +49,14 @@ import Foundation
         precondition(approved == shiftedTimed,"Direct approval changes only the proposed start while preserving duration and all other fields")
         func rejectsApproval(_ review:NativeDateReview,_ item:NativeEditDetails) {do {_ = try review.applying(to:item);preconditionFailure("Invalid approval accepted")} catch {}}
         var stale=base;stale.modified = .now;rejectsApproval(approval,stale)
+        var exact=approval
+        exact.expectedOccurrenceID=base.occurrenceID;exact.expectedSourceID=base.sourceID;exact.expectedTitle=base.title
+        exact.expectedStart=base.start;exact.expectedEnd=base.end;exact.expectedHasTime = !base.allDay
+        let exactApproved=try exact.applying(to:base);precondition(exactApproved == shiftedTimed)
+        var wrongTarget=base;wrongTarget.occurrenceID="another-occurrence";rejectsApproval(exact,wrongTarget)
+        wrongTarget=base;wrongTarget.sourceID="another-calendar";rejectsApproval(exact,wrongTarget)
+        wrongTarget=base;wrongTarget.title="Changed title without timestamp";rejectsApproval(exact,wrongTarget)
+        wrongTarget=base;wrongTarget.start=base.start.addingTimeInterval(60);rejectsApproval(exact,wrongTarget)
         rejectsApproval(approval,readOnly)
         var wrongTime=approval;wrongTime.hasTime=false;rejectsApproval(wrongTime,base)
         var dayReview=approval;dayReview.hasTime=false;dayReview.date=Calendar.current.startOfDay(for:date(28))

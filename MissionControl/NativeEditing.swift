@@ -18,8 +18,23 @@ struct NativeDateReview {
     var hasTime:Bool
     var expectedModified:Date?
     var evidence:String
+    var discoveryApproval:Data? = nil
+    var expectedOccurrenceID:String? = nil
+    var expectedSourceID:String? = nil
+    var expectedTitle:String? = nil
+    var expectedStart:Date? = nil
+    var expectedEnd:Date? = nil
+    var expectedDue:Date? = nil
+    var expectedHasTime:Bool? = nil
     func applying(to item:NativeEditDetails) throws -> NativeEditDetails {
-        guard item.modified == expectedModified else { throw ActionFailure.message("The Apple item changed. Check for a fresh proposal before approving it.") }
+        guard item.modified == expectedModified,
+              expectedOccurrenceID.map({$0 == item.occurrenceID}) ?? true,
+              expectedSourceID.map({$0 == item.sourceID}) ?? true,
+              expectedTitle.map({$0 == item.title}) ?? true,
+              expectedStart.map({$0 == item.start}) ?? true,
+              expectedEnd.map({$0 == item.end}) ?? true,
+              expectedHasTime.map({$0 == (item.kind == .event ? !item.allDay : item.hasTime)}) ?? true,
+              expectedOccurrenceID == nil || item.kind == .event || item.due == expectedDue else { throw ActionFailure.message("The Apple item changed. Check for a fresh proposal before approving it.") }
         guard date.timeIntervalSinceReferenceDate.isFinite else { throw ActionFailure.message("The proposed date is invalid.") }
         var edited=item
         if item.kind == .event {
