@@ -134,6 +134,8 @@ import CoreFoundation
         diagnostic(.suggestions,0,.newDate,.timeFlagMismatch) {_ = try actionDecode([invalidAction])}
         invalidAction=actions[0];invalidAction["newDate"]="2027-01-21T16:00:00+99:00"
         diagnostic(.suggestions,0,.newDate,.impossibleDate) {_ = try actionDecode([invalidAction])}
+        invalidAction=actions[0];invalidAction["newDate"]="2027-02-30T16:00:00Z"
+        diagnostic(.suggestions,0,.newDate,.impossibleDate) {_ = try actionDecode([invalidAction])}
         invalidAction=actions[0];invalidAction["newDate"]="21 January 2027"
         diagnostic(.suggestions,0,.newDate,.dateFormat) {_ = try actionDecode([invalidAction])}
         invalidAction=actions[1];invalidAction["newDate"]="2027-01-21T16:00:00Z";invalidAction["hasTime"]=true
@@ -215,10 +217,11 @@ import CoreFoundation
             }
             return true
         }
-        func schemaAccepts(_ rows:[[String:Any]])->Bool {
+        func schemaAccepts(_ rows:[[String:Any]],projectRows:[[String:Any]] = [])->Bool {
             let fields=["mailID","kind","message","evidence","evidenceID","title","targetID","newDate","hasTime","connection","draft","replaces","replacementReason","scope","endDate","projectID"]
             let padded=rows.map{row in var full=Dictionary(uniqueKeysWithValues:fields.map{($0,NSNull() as Any)});full.merge(row){_,new in new};return full}
-            return matches(["suggestions":padded,"projectTasks":[],"handled":[],"resolved":[],"retirements":[]],parameters,root:parameters)
+            let paddedProjects=projectRows.map{row in var full=Dictionary(uniqueKeysWithValues:fields.map{($0,NSNull() as Any)});full.merge(row){_,new in new};return full}
+            return matches(["suggestions":padded,"projectTasks":paddedProjects,"handled":[],"resolved":[],"retirements":[]],parameters,root:parameters)
         }
         var creation:[String:Any]=["mailID":"mail_0","kind":"reminder","message":"Register","evidence":NSNull(),"evidenceID":"mail_0:primary","title":"Register","newDate":NSNull(),"hasTime":NSNull(),"endDate":NSNull(),"replaces":NSNull(),"replacementReason":NSNull()]
         precondition(schemaAccepts([creation]))
@@ -232,6 +235,9 @@ import CoreFoundation
         creation["hasTime"]=true;creation["endDate"]="2027-01-22";precondition(!schemaAccepts([creation]),"Start and end date modes cannot differ")
         creation["endDate"]=NSNull();creation["newDate"]="2027-01-21T25:00:00Z";precondition(!schemaAccepts([creation]))
         creation["newDate"]="";precondition(!schemaAccepts([creation]),"An empty string cannot encode an undated task")
+        precondition(schemaAccepts([],projectRows:[actions[1]]))
+        var timedTask=actions[1];timedTask["newDate"]="2027-01-21T16:00:00Z";timedTask["hasTime"]=true
+        precondition(!schemaAccepts([],projectRows:[timedTask]),"The strict project-task schema accepts only date-only due values")
         var revisedAssessment=separate[0];revisedAssessment.sourceAssessmentRevision="new-assessment"
         precondition(ProactiveRules.unreported([revisedAssessment],prior:[separate[0]]).isEmpty,"Reassessment cannot duplicate a pending concrete action")
 
