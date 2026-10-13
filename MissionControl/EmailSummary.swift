@@ -148,8 +148,14 @@ enum SourceDateGrounding {
     static let instructions="Course, term or project week numbers (for example Wednesday of week one) need an explicit calendar-date anchor in the supporting source quote. The received date, today's date, a separate briefing date and an existing calendar item are not that anchor. Without one, preserve that action’s original wording and flag Date needs clarification; do not use it for followUpDate. Do not choose the nearest weekday or invent urgency. Use an informative update for that unresolved action instead of proposing its date. Independent actions with their own explicit dates remain eligible for followUpDate and actionEvidence."
     static func needsWeekAnchor(_ quote:String)->Bool {
         let week=#"\bweek\s*(?:[0-9]{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b"#
-        let date=#"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4}|\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:January|February|March|April|May|June|July|August|September|October|November|December)|(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2})\b"#
-        return quote.components(separatedBy:CharacterSet(charactersIn:".!?\n")).contains { clause in
+        let month=#"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"#
+        let date=#"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4}|\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?"# + month + "|" + month + #"\s+\d{1,2})\b"#
+        // These transformations only test grounding; the original quote is retained.
+        // Join an adjacent standalone week annotation to its own preceding line,
+        // never an unrelated obligation to any date elsewhere in the quote.
+        var context=quote.replacingOccurrences(of:#"\b(Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\."#,with:"$1",options:[.regularExpression,.caseInsensitive])
+        context=context.replacingOccurrences(of:#"\n[ \t]*(\([ \t]*week[ \t]*(?:[0-9]{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)[ \t]*\))[ \t]*(?=\n|[.!?]|$)"#,with:" $1",options:[.regularExpression,.caseInsensitive])
+        return context.components(separatedBy:CharacterSet(charactersIn:".!?\n")).contains { clause in
             clause.range(of:week,options:[.regularExpression,.caseInsensitive]) != nil && clause.range(of:date,options:[.regularExpression,.caseInsensitive]) == nil
         }
     }

@@ -490,7 +490,7 @@ struct BackgroundActivityView:View {
                                     ForEach(steps) {step in
                                         VStack(alignment:.leading,spacing:3) {
                                             HStack {Text(step.title);Spacer();Text(step.status == "running" && !running ? "Interrupted" : step.label).foregroundStyle(step.status == "failed" ? .orange : .secondary)}
-                                            if let detail=step.detail {Text(detail).font(.caption).foregroundStyle(.secondary)}
+                                            if let detail=step.detail {Text(detail).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)}
                                         }
                                     }
                                 }
@@ -536,7 +536,7 @@ struct BackgroundActivityView:View {
         }.padding(24).frame(width:650,height:650)
             .onAppear {
                 #if DEBUG
-                model.heartbeat.seedHistoryPreview(registration)
+                model.heartbeat.seedHistoryPreview(registration,validationDetail:ReviewInboxEvaluation.dateDiagnosticPreview())
                 #endif
             }
     }

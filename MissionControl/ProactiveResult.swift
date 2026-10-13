@@ -5,7 +5,7 @@ import CoreFoundation
 enum ProactiveResultRules {
     static let toolName = "prepare_review"
     static let maximumArgumentBytes = 32_000
-    static let instructions = "Return the finished comparison by calling pa.prepare_review exactly once. Do not answer in ordinary text or call any other tool. Return suggestions, projectTasks, handled, resolved and retirements arrays, using empty arrays when there is no supported result. Put local tasks inside existing projects in projectTasks; put Calendar and Apple Reminder proposals in suggestions. For a dated project milestone include its Calendar proposal and its local project task in their separate arrays. The combined suggestions/projectTasks limit is 24. This tool returns preparation data only: it does not create, change, complete, dismiss or send anything. Choose the suggestion schema for its action kind. Return null for each inapplicable field; each action variant constrains those fields to null. In suggestions, targetID belongs only to change/remove, connection only to projectTask/change/remove, scope only to remove, draft only to WhatsApp reply and projectID only to projectTask. Existing coverage belongs in handled or retirements, never a creation suggestion with targetID. New calendar/reminder suggestions do not require an existing native target or a listed destination: the human chooses a writable Calendar or Reminder list in the review form. Missing destination metadata is not a reason to omit a supported creation proposal. Only projectTask requires an exact existing projectID. A local task inside a human project must use kind projectTask and that projectID, never kind reminder; reminder is an Apple Reminder. For a supported project milestone return the Calendar proposal and the projectTask proposal separately. The handled and retirements sections each require their own issued targetID. Use null only for optional fields present in the selected schema. If there is no definite supported date, newDate, hasTime and endDate must all be null; never return an empty date string. Preserve all exact evidence, action, date and ownership rules. Keep the entire result below 32000 UTF-8 bytes by using concise messages and evidence IDs instead of repeating Mail quotes. Return at most 24 suggestions, 12 handled and 12 resolved associations and 12 retirements; do not repeat proposals. Local validation remains authoritative. Review each source separately: dates and facts from one email cannot change an action in another. A booking confirmation is existing coverage, never cancellation. Preserve every distinct supported milestone before returning the result."
+    static let instructions = "Return the finished comparison by calling pa.prepare_review exactly once. Do not answer in ordinary text or call any other tool. Return suggestions, projectTasks, handled, resolved and retirements arrays, using empty arrays when there is no supported result. Put local tasks inside existing projects in projectTasks; put Calendar and Apple Reminder proposals in suggestions. For a dated project milestone include its Calendar proposal and its local project task in their separate arrays. The combined suggestions/projectTasks limit is 24. This tool returns preparation data only: it does not create, change, complete, dismiss or send anything. Choose the suggestion schema for its action kind. Return null for each inapplicable field; each action variant constrains those fields to null. In suggestions, targetID belongs only to change/remove, connection only to projectTask/change/remove, scope only to remove, draft only to WhatsApp reply and projectID only to projectTask. Existing coverage belongs in handled or retirements, never a creation suggestion with targetID. New calendar/reminder suggestions do not require an existing native target or a listed destination: the human chooses a writable Calendar or Reminder list in the review form. Missing destination metadata is not a reason to omit a supported creation proposal. Only projectTask requires an exact existing projectID. A local task inside a human project must use kind projectTask and that projectID, never kind reminder; reminder is an Apple Reminder. For a supported project milestone return the Calendar proposal and the projectTask proposal separately. The handled and retirements sections each require their own issued targetID. Use null only for optional fields present in the selected schema. If there is no definite supported date, newDate, hasTime and endDate must all be null; never return an empty date string. Date-only values must use YYYY-MM-DD with hasTime=false. Timed values must use a full timestamp with seconds and an explicit UTC offset with hasTime=true. Start and end must use the same date mode. Project task due dates are date-only: preserve an exact source deadline time in the explanation/notes rather than encoding a timed local task. Preserve all exact evidence, action, date and ownership rules. Keep the entire result below 32000 UTF-8 bytes by using concise messages and evidence IDs instead of repeating Mail quotes. Return at most 24 suggestions, 12 handled and 12 resolved associations and 12 retirements; do not repeat proposals. Local validation remains authoritative. Review each source separately: dates and facts from one email cannot change an action in another. A booking confirmation is existing coverage, never cancellation. Preserve every distinct supported milestone before returning the result."
 
     static func tools(sourceAliases:Set<String>, evidenceAliases:Set<String>, nativeAliases:Set<String>, projectAliases:Set<String>, earlierAliases:Set<String>, confirmationAliases:Set<String>,retirementAliases:Set<String> = [],replacementAliases:Set<String>? = nil,changeSourceAliases:Set<String>? = nil,removalSourceAliases:Set<String>? = nil,writableNativeAliases:Set<String>? = nil,replacementAliasesBySource:[String:Set<String>]? = nil,removalUpgradeAliasesBySource:[String:Set<String>]? = nil) -> [[String:Any]] {
         func text(_ limit:Int,nullable:Bool = false)->[String:Any] { ["type":nullable ? ["string","null"] : ["string"],"maxLength":limit] }
@@ -76,14 +76,20 @@ enum ProactiveResultRules {
             if origins.isEmpty {common["mailID"]=source;common["evidence"]=["type":"null"];common["evidenceID"]=evidence;return object(common)}
             return origins.count == 1 ? origins[0] : ["anyOf":origins]
         }
-        var date=text(40,nullable:true)
-        date["pattern"] = #"^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2}))?$"#
-        let dates:[String:[String:Any]]=["newDate":date,"hasTime":["type":["boolean","null"]],"endDate":date]
-        var variants=[suggestion(["calendar","reminder"],fields:dates,replaces:true),suggestion(["update"],replaces:true),suggestion(["project"])]
+        func date(_ timed:Bool,nullable:Bool = false)->[String:Any] {
+            var value=text(40,nullable:nullable)
+            value["pattern"]=timed ? #"^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):[0-5]\d:[0-5]\d(Z|[+-]([01]\d|2[0-3]):[0-5]\d)$"# : #"^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$"#
+            return value
+        }
+        let undated:[String:[String:Any]]=["newDate":["type":"null"],"hasTime":["type":"null"],"endDate":["type":"null"]]
+        func dates(_ timed:Bool)->[String:[String:Any]] {["newDate":date(timed),"hasTime":["type":"boolean","enum":[timed]],"endDate":date(timed,nullable:true)]}
+        var variants=[suggestion(["calendar","reminder"],fields:undated,replaces:true),suggestion(["calendar","reminder"],fields:dates(false),replaces:true),suggestion(["calendar","reminder"],fields:dates(true),replaces:true),suggestion(["update"],replaces:true),suggestion(["project"])]
         let project:[String:[String:Any]]=["projectID":reference("project",projectAliases),"connection":text(500),"title":text(160)]
-        let projectTask=suggestion(["projectTask"],fields:dates.merging(project){_,new in new})
+        let projectTask:[String:Any]=["anyOf":[suggestion(["projectTask"],fields:undated.merging(project){_,new in new}),suggestion(["projectTask"],fields:dates(false).merging(project){_,new in new})]]
         let editable=Set((writableNativeAliases ?? nativeAliases).filter{$0.hasPrefix("event_") || $0.hasPrefix("reminder_")})
-        if !editable.isEmpty && !(changeSourceAliases ?? sourceAliases).isEmpty {variants.append(suggestion(["change"],fields:["targetID":nativeReference("editable",editable),"newDate":["type":"string","maxLength":40,"pattern":date["pattern"]!],"hasTime":["type":"boolean"],"connection":text(500)],replaces:true,allowedSources:changeSourceAliases))}
+        if !editable.isEmpty && !(changeSourceAliases ?? sourceAliases).isEmpty {
+            for timed in [false,true] {variants.append(suggestion(["change"],fields:["targetID":nativeReference("editable",editable),"newDate":date(timed),"hasTime":["type":"boolean","enum":[timed]],"connection":text(500)],replaces:true,allowedSources:changeSourceAliases))}
+        }
         let removable=Set((writableNativeAliases ?? nativeAliases).filter{$0.hasPrefix("event_")})
         if !removable.isEmpty && !(removalSourceAliases ?? sourceAliases).isEmpty {variants.append(suggestion(["remove"],fields:["targetID":nativeReference("removable",removable),"scope":["type":"string","enum":["occurrence"]],"connection":text(500)],replaces:true,allowedSources:removalSourceAliases))}
         if !whatsapp.isEmpty {variants.append(suggestion(["reply"],fields:["mailID":reference("whatsapp",whatsapp),"evidenceID":["type":"null"],"draft":text(3000)]))}
@@ -119,6 +125,7 @@ enum ProactiveResultRules {
         var values:[Value]=[]
         var issues:[String]=[]
         var entries:[ReviewRejectedEntry]=[]
+        var acceptedRows:[Int]=[]
         var rejectedSources=Set<String>()
         var rejectedReviews=Set<String>()
     }
@@ -129,19 +136,26 @@ enum ProactiveResultRules {
         var result=ValidatedRows<Value>()
         for (index,row) in rows.enumerated() {
             var one:[String:Any]=["suggestions":[],"handled":[],"resolved":[],"retirements":[]];one[section.rawValue]=[row]
-            do {result.values += try decode(String(decoding:try JSONSerialization.data(withJSONObject:one),as:UTF8.self))}
+            do {
+                let values=try decode(String(decoding:try JSONSerialization.data(withJSONObject:one),as:UTF8.self))
+                result.values += values;result.acceptedRows += Array(repeating:index,count:values.count)
+            }
             catch {
                 var issue=(error as? ReviewResultDiagnostic) ?? .init(section:section,field:.envelope,reason:.invalidAssociation)
                 issue.section=section;issue.row=index;result.issues.append(issue.localizedDescription)
-                func bounded(_ key:String,_ count:Int)->String? {(row[key] as? String).map{String($0.prefix(count))}}
-                let source=(row["mailID"] as? String ?? row["reviewID"] as? String).flatMap{sources[$0]}
-                result.entries.append(.init(diagnostic:issue,suggestionTitle:bounded("title",300),kind:bounded("kind",40),sourceID:source?.id,sourceTitle:source.map{String($0.title.prefix(300))},evidenceID:bounded("evidenceID",80),proposedDate:bounded("newDate",80),proposedEndDate:bounded("endDate",80),hasTime:row["hasTime"] as? Bool,timeZoneID:TimeZone.current.identifier))
+                result.entries.append(rejectedEntry(row,diagnostic:issue,sources:sources))
                 if let source=row["mailID"] as? String {result.rejectedSources.insert(source)}
                 if let review=row["reviewID"] as? String {result.rejectedReviews.insert(review)}
                 result.rejectedReviews.formUnion(row["replaces"] as? [String] ?? [])
             }
         }
         return result
+    }
+
+    static func rejectedEntry(_ row:[String:Any],diagnostic:ReviewResultDiagnostic,sources:[String:(id:String,title:String)])->ReviewRejectedEntry {
+        func bounded(_ key:String,_ count:Int)->String? {(row[key] as? String).map{String($0.prefix(count))}}
+        let source=(row["mailID"] as? String ?? row["reviewID"] as? String).flatMap{sources[$0]}
+        return .init(diagnostic:diagnostic,suggestionTitle:bounded("title",300),kind:bounded("kind",40),sourceID:source?.id,sourceTitle:source.map{String($0.title.prefix(300))},evidenceID:bounded("evidenceID",80),proposedDate:bounded("newDate",80),proposedEndDate:bounded("endDate",80),hasTime:row["hasTime"] as? Bool,timeZoneID:TimeZone.current.identifier)
     }
 
     /// Structural checks diagnose association fields before their semantic validators run.

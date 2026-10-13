@@ -384,12 +384,13 @@ import SwiftData
         try repository.write(["paHeartbeat":JSONEncoder().encode(state)],now:clock())
     }
     #if DEBUG
-    func seedHistoryPreview(_ registration:String) {
+    func seedHistoryPreview(_ registration:String,validationDetail:String? = nil) {
         guard ProcessInfo.processInfo.arguments.contains("--preview-settings"),ProcessInfo.processInfo.arguments.contains("--heartbeat-history"),state.accounts[registration] == nil else {return}
         let now=clock()
         var finished=PAHeartbeatRules.stages()
         for index in finished.indices {finished[index].status="done"}
         finished[0].status="waiting";finished[0].detail="Calendar & Reminders: checked · Mail: 1 checked, 1 waiting · WhatsApp: checked"
+        finished[4].detail=validationDetail
         let completed=PAReviewRun(id:"fictional-completed",started:now.addingTimeInterval(-7200),finished:now.addingTimeInterval(-7140),manual:false,phase:"waiting",detail:"Completed with one source waiting.",calls:3,checkedAccounts:1,waitingAccounts:1,preparedItems:2,drafts:1,briefUpdated:true,questions:1,steps:finished)
         var stopped=PAHeartbeatRules.stages();stopped[0].status="done";stopped[1].status="failed"
         let failed=PAReviewRun(id:"fictional-failed",started:now.addingTimeInterval(-3600),finished:now.addingTimeInterval(-3540),manual:false,phase:"failed",detail:"Fictional interrupted email review.",calls:1,checkedAccounts:2,briefUpdated:false,questions:0,steps:stopped,failure:"The model connection was interrupted. Completed work is retained.")

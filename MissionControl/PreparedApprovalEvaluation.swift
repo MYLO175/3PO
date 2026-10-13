@@ -80,7 +80,9 @@ import Foundation
         let preservedRetirement=try ProactiveResultRules.validatedRows(mixed,section:.retirements) {try ProactiveRules.decodeRetirements($0,earlier:issued,targets:["reminder_0":proof],registration:record.registration)}
         checks["unsupported handled association preserves verified retirement"] = rejectedAssociation.values.isEmpty && rejectedAssociation.issues.count == 1 && preservedRetirement.values.count == 1
         let retirements=try ProactiveRules.decodeRetirements(json,earlier:issued,targets:["reminder_0":proof],registration:record.registration)
-        try model.proactive.commitComparison([],issued:issued,permittedEarlier:[],registration:record.registration,progress:.init(),now:.now,retirements:retirements,permittedRetirements:[historical.id])
+        var diagnosticProgress=ProactiveProgress();diagnosticProgress.validationEntries=rejectedAssociation.entries;diagnosticProgress.validationRunID="fixture-run"
+        try model.proactive.commitComparison([],issued:issued,permittedEarlier:[],registration:record.registration,progress:diagnosticProgress,now:.now,retirements:retirements,permittedRetirements:[historical.id])
+        checks["diagnostic details are bound to the exact run"] = model.proactive.validationNotice(record.registration,runID:"fixture-run")?.contains("Reason:") == true && model.proactive.validationNotice(record.registration,runID:"later-run") == nil
         let retired=model.proactive.state.records[0]
         checks["retirement saves exact native coverage without reviving old advice"] = retired.retirementEvidence == proof && retired.retiredAt != nil && !model.proactive.canReview(retired.id,model:model)
         checks["retirement leaves native reminder unchanged"] = EmailNativeEvidence.hash(model.reminderData) == EmailNativeEvidence.hash(reminders)

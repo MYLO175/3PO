@@ -41,7 +41,7 @@ import CoreFoundation
         let actions:[[String:Any]]=quotes.enumerated().flatMap { index,quote in
             ["calendar","projectTask"].map { kind in
                 var row:[String:Any]=["mailID":"mail_0","kind":kind,"message":"Review this supported deadline.","evidenceID":"mail_0:action_"+String(index),"title":"Orion milestone "+String(index),"newDate":["2027-01-21T16:00:00Z","2027-05-31T16:00:00+01:00","2027-06-04"][index],"hasTime":index < 2]
-                if kind == "projectTask" {row["projectID"]=project.id.uuidString;row["connection"]="Existing Orion project."}
+                if kind == "projectTask" {row["projectID"]=project.id.uuidString;row["connection"]="Existing Orion project.";row["newDate"]=["2027-01-21","2027-05-31","2027-06-04"][index];row["hasTime"]=false}
                 return row
             }
         }
@@ -136,6 +136,8 @@ import CoreFoundation
         diagnostic(.suggestions,0,.newDate,.impossibleDate) {_ = try actionDecode([invalidAction])}
         invalidAction=actions[0];invalidAction["newDate"]="21 January 2027"
         diagnostic(.suggestions,0,.newDate,.dateFormat) {_ = try actionDecode([invalidAction])}
+        invalidAction=actions[1];invalidAction["newDate"]="2027-01-21T16:00:00Z";invalidAction["hasTime"]=true
+        diagnostic(.suggestions,0,.hasTime,.projectTimeUnsupported) {_ = try actionDecode([invalidAction])}
         invalidAction=actions[0];invalidAction["endDate"]="2027-01-20T16:00:00Z"
         diagnostic(.suggestions,0,.endDate,.endBeforeStart) {_ = try actionDecode([invalidAction])}
         var unresolved=compound;unresolved.actionEvidence=["Final presentation in week five."]
@@ -222,8 +224,13 @@ import CoreFoundation
         precondition(schemaAccepts([creation]))
         creation["targetID"]="event_0";precondition(!schemaAccepts([creation]),"Creation with targetID must be impossible under the strict schema")
         creation.removeValue(forKey:"targetID");creation["connection"]="Already covered";precondition(!schemaAccepts([creation]))
-        creation.removeValue(forKey:"connection");creation["newDate"]="2027-01-21";precondition(schemaAccepts([creation]))
+        creation.removeValue(forKey:"connection");creation["newDate"]="2027-01-21";creation["hasTime"]=false;precondition(schemaAccepts([creation]))
         creation["hasTime"]=false;precondition(schemaAccepts([creation]))
+        creation["hasTime"]=true;precondition(!schemaAccepts([creation]),"A date-only value cannot be marked timed in the strict schema")
+        creation["newDate"]="2027-01-21T16:00:00Z";precondition(schemaAccepts([creation]))
+        creation["hasTime"]=false;precondition(!schemaAccepts([creation]),"A timestamp cannot be marked date-only in the strict schema")
+        creation["hasTime"]=true;creation["endDate"]="2027-01-22";precondition(!schemaAccepts([creation]),"Start and end date modes cannot differ")
+        creation["endDate"]=NSNull();creation["newDate"]="2027-01-21T25:00:00Z";precondition(!schemaAccepts([creation]))
         creation["newDate"]="";precondition(!schemaAccepts([creation]),"An empty string cannot encode an undated task")
         var revisedAssessment=separate[0];revisedAssessment.sourceAssessmentRevision="new-assessment"
         precondition(ProactiveRules.unreported([revisedAssessment],prior:[separate[0]]).isEmpty,"Reassessment cannot duplicate a pending concrete action")

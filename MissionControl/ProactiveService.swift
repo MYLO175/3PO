@@ -141,7 +141,8 @@ struct ProactiveReviewContext {
         let previous=state;state.records[index].reviewState="approved";state.records[index].reviewedAt = .now
         do {try save()} catch {state=previous;throw ActionFailure.message("Apple save verified; proposal receipt storage failed. Check the original before repeating.")}
     }
-    func validationNotice(_ registration:String)->String? {
+    func validationNotice(_ registration:String,runID:String? = nil)->String? {
+        if let runID,state.accounts[registration]?.validationRunID != runID {return nil}
         if let entries=state.accounts[registration]?.validationEntries,!entries.isEmpty {return "Validated work saved. " + String(entries.count) + " unsupported entries withheld.\n\n" + entries.map(\.display).joined(separator:"\n\n")}
         guard let issues=state.accounts[registration]?.validationIssues,!issues.isEmpty else {return nil}
         return "Validated work saved. Withheld unsupported entries: " + issues.joined(separator:" ")
@@ -409,17 +410,28 @@ struct ProactiveReviewContext {
                 let resolutionRows=try ProactiveResultRules.validatedRows(response,section:.resolved,sources:diagnosticSources) {try EmailResolutionRules.decode($0,requests:requests,confirmations:confirmations,now:now)}
                 let retirementRows=try ProactiveResultRules.validatedRows(response,section:.retirements,sources:diagnosticSources) {try ProactiveRules.decodeRetirements($0,earlier:earlier,targets:retirementTargets,registration:registration)}
                 var issues=proposalRows.issues+handlingRows.issues+resolutionRows.issues+retirementRows.issues
+                var entries=proposalRows.entries+handlingRows.entries+resolutionRows.entries+retirementRows.entries
+                guard let rawSections=try JSONSerialization.jsonObject(with:Data(response.utf8)) as? [String:Any] else {throw ReviewResultDiagnostic(section:.result,field:.envelope,reason:.wrongType)}
+                func recordConflict(_ section:ReviewResultDiagnostic.Section,_ row:Int,_ field:ReviewResultDiagnostic.Field) {
+                    let issue=ReviewResultDiagnostic(section:section,row:row,field:field,reason:.conflictingAssociation)
+                    issues.append(issue.localizedDescription)
+                    if let raw=(rawSections[section.rawValue] as? [[String:Any]])?[row] {entries.append(ProactiveResultRules.rejectedEntry(raw,diagnostic:issue,sources:diagnosticSources))}
+                }
                 var failedSources=proposalRows.rejectedSources.union(handlingRows.rejectedSources).union(resolutionRows.rejectedSources).union(retirementRows.rejectedSources)
                 let failedReviews=proposalRows.rejectedReviews.union(retirementRows.rejectedReviews)
                 var replacementOwners=Set<String>(),decoded:[PADiscovery]=[]
-                for proposal in proposalRows.values {
+                for (index,proposal) in proposalRows.values.enumerated() {
                     let replaces=Set(proposal.replaces ?? [])
-                    guard replacementOwners.isDisjoint(with:replaces) else {issues.append("A conflicting replacement was withheld.");failedSources.formUnion(candidates.filter{$0.mailID == proposal.mailID}.map(\.alias));continue}
+                    guard replacementOwners.isDisjoint(with:replaces) else {recordConflict(.suggestions,proposalRows.acceptedRows[index],.replaces);failedSources.formUnion(candidates.filter{$0.mailID == proposal.mailID}.map(\.alias));continue}
                     replacementOwners.formUnion(replaces);decoded.append(proposal)
                 }
                 let actionSources=Set(decoded.map(\.mailID)),handledSources=Set(handlingRows.values.map(\.0)),resolvedSources=Set(resolutionRows.values.map(\.0))
                 let conflicting=actionSources.intersection(handledSources.union(resolvedSources)).union(handledSources.intersection(resolvedSources))
-                if !conflicting.isEmpty {issues.append("Conflicting handled/completed associations were withheld; actions remain in review.");failedSources.formUnion(candidates.filter{conflicting.contains($0.mailID)}.map(\.alias))}
+                if !conflicting.isEmpty {
+                    failedSources.formUnion(candidates.filter{conflicting.contains($0.mailID)}.map(\.alias))
+                    for (index,value) in handlingRows.values.enumerated() where conflicting.contains(value.0) {recordConflict(.handled,handlingRows.acceptedRows[index],.mailID)}
+                    for (index,value) in resolutionRows.values.enumerated() where conflicting.contains(value.0) {recordConflict(.resolved,resolutionRows.acceptedRows[index],.mailID)}
+                }
                 var associationIDs=Set<String>()
                 let handled=handlingRows.values.filter{!conflicting.contains($0.0) && associationIDs.insert($0.0).inserted}.map {id,value in var saved=value;saved.memoryDependencies=memoryCapture.dependencies;saved.whatsappDependencies=whatsappDependencies;saved.memoryUse=memoryUse;return (id,saved)}
                 let resolved=resolutionRows.values.filter{!conflicting.contains($0.0) && associationIDs.insert($0.0).inserted}.map {id,value in var saved=value;saved.memoryDependencies=memoryCapture.dependencies;saved.whatsappDependencies=whatsappDependencies;saved.memoryUse=memoryUse;return (id,saved)}
@@ -434,8 +446,8 @@ struct ProactiveReviewContext {
                 progress=ProactiveRules.completing(progress,versions:versions.filter{key,_ in !candidates.contains{failedSources.contains($0.alias) && ProactiveRules.sourceKey($0.sourceKind ?? "mail",$0.mailID) == key}},context:context,limited:decoded.count >= 24,reportedKeys:reported)
                 progress=ProactiveRules.recordingReconsideration(progress,reviewed:earlier.filter{alias,record in !failedReviews.contains(alias) && !candidates.contains{candidate in failedSources.contains(candidate.alias) && candidate.mailID == record.mailID}}.map(\.value),active:state.records.filter{$0.registration == registration},context:context)
                 progress.validationIssues=issues.isEmpty ? nil : Array(issues.prefix(12))
-                let entries=proposalRows.entries+handlingRows.entries+resolutionRows.entries+retirementRows.entries
                 progress.validationEntries=entries.isEmpty ? nil : Array(entries.prefix(12))
+                progress.validationRunID=heartbeatRequest?.runID
                 progress.delivered += suggestions.count; progress.fingerprint = issues.isEmpty ? fingerprint : nil; progress.paused = false
                 try commitComparison(suggestions,issued:earlier,permittedEarlier:permittedEarlier,registration:registration,progress:progress,now:now,retirements:retirements,permittedRetirements:permittedRetirements)
                 if heartbeat {

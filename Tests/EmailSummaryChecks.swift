@@ -70,6 +70,11 @@ import Foundation
         assert(week.followUpEvidence == weekQuote && week.evidence == weekQuote)
         assert(SourceDateGrounding.needsWeekAnchor("Briefing on 2 October 2026. "+weekQuote),"A separate event date is not a week anchor")
         assert(!SourceDateGrounding.needsWeekAnchor("Wednesday of week one (14 October 2026)."))
+        assert(!SourceDateGrounding.needsWeekAnchor("Final presentation: Friday 4 Jun 2027 (Week 5)."))
+        assert(!SourceDateGrounding.needsWeekAnchor("Final presentation: Friday 4 Jun. 2027 (Week 5)."))
+        assert(!SourceDateGrounding.needsWeekAnchor("Final presentation: Friday 4 June 2027\n(Week 5)."))
+        assert(SourceDateGrounding.needsWeekAnchor("Briefing on 2 October 2026.\nThe form is due Wednesday of week one."))
+        assert(SourceDateGrounding.needsWeekAnchor("Briefing on 2 October 2026.\n(Week 5)"),"A separate sentence does not anchor a week annotation")
         assert(!SourceDateGrounding.needsWeekAnchor("Submit tomorrow at 16:00."))
         assert(SourceDateGrounding.needsWeekAnchor("Submit in week 2."))
         var oldWeek=week;oldWeek.summary="Due today";oldWeek.reason="16:00 today";oldWeek.followUpDate="2026-10-02"

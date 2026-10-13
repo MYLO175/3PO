@@ -205,6 +205,7 @@ struct ProactiveProgress: Codable {
     var reviewedProposalContexts:[String:String]? = nil
     var validationIssues:[String]? = nil
     var validationEntries:[ReviewRejectedEntry]? = nil
+    var validationRunID:String? = nil
 }
 struct ProactiveState: Codable {
     var version = 1
@@ -280,7 +281,7 @@ struct DiscoveryCandidate {
 struct ReviewResultDiagnostic: LocalizedError, Equatable, Codable {
     enum Section:String,Codable { case result,suggestions,handled,resolved,retirements }
     enum Field:String,Codable { case envelope,tool,arguments,reviewID,mailID,kind,message,evidence,evidenceID,title,targetID,newDate,hasTime,connection,draft,replaces,replacementReason,scope,endDate,projectID,confirmationID,requestEvidenceID,confirmationEvidenceID,allActionsAddressed,reason }
-    enum Reason:String,Codable { case malformedJSON,missingField,wrongType,unsupportedField,tooManyRows,tooLong,emptyValue,unsupportedAction,unissuedSource,unissuedEvidence,quoteMismatch,invalidTarget,invalidDate,incompatibleFields,duplicateProposal,invalidReplacement,missingCompletedCall,unexpectedCallCount,unexpectedTool,oversizedArguments,invalidAssociation,conflictingAssociation,dateFormat,timeFlagMismatch,impossibleDate,unanchoredWeek,endBeforeStart,eventTimeModeChanged,unchangedDate }
+    enum Reason:String,Codable { case malformedJSON,missingField,wrongType,unsupportedField,tooManyRows,tooLong,emptyValue,unsupportedAction,unissuedSource,unissuedEvidence,quoteMismatch,invalidTarget,invalidDate,incompatibleFields,duplicateProposal,invalidReplacement,missingCompletedCall,unexpectedCallCount,unexpectedTool,oversizedArguments,invalidAssociation,conflictingAssociation,dateFormat,timeFlagMismatch,impossibleDate,unanchoredWeek,endBeforeStart,eventTimeModeChanged,unchangedDate,projectTimeUnsupported }
     var section:Section
     var row:Int? = nil
     var field:Field
@@ -289,6 +290,7 @@ struct ReviewResultDiagnostic: LocalizedError, Equatable, Codable {
         switch reason {
         case .dateFormat:return "The proposed date does not use the required format: YYYY-MM-DD for a date only, or a full timestamp with seconds and a UTC offset for a timed action."
         case .timeFlagMismatch:return "The date format conflicts with the timed/all-day flag: a date only cannot be marked timed, and a timestamp cannot be marked date only."
+        case .projectTimeUnsupported:return "Project tasks accept date-only due dates. An exact source deadline time belongs in the explanation or notes, rather than a timed task date."
         case .impossibleDate:return "The proposed value has the expected format but does not represent a valid calendar date or time."
         case .unanchoredWeek:return "The supporting evidence names a numbered course or project week without an explicit calendar-date anchor for that action."
         case .endBeforeStart:return "The proposed end date is earlier than the proposed start date."
@@ -298,6 +300,7 @@ struct ReviewResultDiagnostic: LocalizedError, Equatable, Codable {
         case .unissuedEvidence:return "The evidence reference was not supplied for this source."
         case .invalidTarget:return "The proposed target was not supplied for this review or is not eligible for this action."
         case .invalidAssociation:return "The claimed existing plan or completion did not pass the source-and-target association checks."
+        case .conflictingAssociation:return "This entry conflicts with another accepted action, replacement or handled/completed association for the same concern. It was withheld so the accepted action remains available for review."
         case .incompatibleFields:return "This field is not applicable to the proposed action or conflicts with another supplied field."
         case .missingField:return "A field required for this action is missing."
         default:return "This entry did not pass validation (" + reason.rawValue + ")."
@@ -502,8 +505,8 @@ enum ProactiveRules {
             var projectTask:DiscoveryProjectTask?
             if ["calendar","reminder","projectTask"].contains(value.kind),let date=value.newDate {
                 guard let timed=value.hasTime else {throw reject(.hasTime,.missingField)}
-                let dateOnlyProject=value.kind == "projectTask" && date.range(of:#"^\d{4}-\d{2}-\d{2}$"#,options:.regularExpression) != nil
-                let proposed=DiscoveryProposedDate(start:date,end:value.endDate,hasTime:dateOnlyProject ? false : timed,timeZoneID:TimeZone.current.identifier)
+                guard value.kind != "projectTask" || !timed else {throw reject(.hasTime,.projectTimeUnsupported)}
+                let proposed=DiscoveryProposedDate(start:date,end:value.endDate,hasTime:timed,timeZoneID:TimeZone.current.identifier)
                 if let reason=proposed.rejection() {throw reject(.newDate,reason)}
                 guard let start=proposed.date() else {throw reject(.newDate,.impossibleDate)}
                 guard !SourceDateGrounding.needsWeekAnchor(evidence) else {throw reject(.newDate,.unanchoredWeek)}

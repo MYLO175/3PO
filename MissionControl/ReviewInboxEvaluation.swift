@@ -5,6 +5,15 @@ import SwiftUI
 import EventKit
 
 @MainActor enum ReviewInboxEvaluation {
+    static func dateDiagnosticPreview()->String? {
+        guard ProcessInfo.processInfo.arguments.contains("--preview-settings"),ProcessInfo.processInfo.arguments.contains("--date-diagnostics-preview") else {return nil}
+        let quote="Orion report is due on 21 January 2027."
+        let response=#"{"suggestions":[{"mailID":"mail_0","kind":"calendar","title":"Submit Orion report","message":"Record the report deadline.","evidenceID":"mail_0:primary","newDate":"2027-02-30","hasTime":false}],"handled":[],"resolved":[],"retirements":[]}"#
+        let rows=try? ProactiveResultRules.validatedRows(response,section:.suggestions,sources:["mail_0":("fictional-orion-email","Orion report schedule")]) {
+            try ProactiveRules.decode($0,candidates:[.init(alias:"mail_0",mailID:"fictional-orion-email",evidence:quote,followUpEvidence:"")],registration:"fixture",scope:"fixture",now:.now)
+        }
+        return rows?.entries.first?.display
+    }
     /// Three bounded subscription requests, fictional emails, contextual feedback and strict decoders.
     static func runRelevance(_ model:DashboardModel)async throws->[String:Any] {
         let owner=model.chatGPT.activeID,selected=model.chatGPT.selectedModel,now=Date.now
