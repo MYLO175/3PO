@@ -16,12 +16,26 @@ struct ReviewFeedbackJob:Codable,Identifiable,Equatable {
     var words:String
     var about:String
     var created=Date.now
+    var heartbeatEligible:Bool?
+    var sourceSettings:String?
+    var adviceRevision:String?
     var state=State.queued
     var error:String?
     var pending:Bool {state == .queued || state == .learning || state == .saving}
+    /// Presentation changes (including Dismiss) and unrelated collection revisions
+    /// do not revoke an accepted submission; its actual source and choices do.
+    func matches(message:MailMessage,summary:EmailSummary,registration:String,model:String,sourceRevision:Int,sourceSettings:String)->Bool {
+        self.registration == registration && summary.registration == registration && self.model == model &&
+        (self.sourceSettings.map{$0 == sourceSettings} ?? (self.sourceRevision == sourceRevision)) &&
+        messageID == message.id && accountID == message.accountID && headerFingerprint == EmailSummary.fingerprint(message) &&
+        summary.fingerprint == headerFingerprint && bodyFingerprint == summary.bodyFingerprint &&
+        (summary.observedBodyFingerprint == nil || summary.observedBodyFingerprint == summary.bodyFingerprint) &&
+        assessmentVersion == ReviewAcknowledgementRules.emailVersion(message,summary) &&
+        (adviceRevision == nil || adviceRevision == summary.adviceRevision(replied:message.replied))
+    }
     var status:String {
         switch state {
-        case .queued:"Feedback queued"
+        case .queued:"Feedback queued for next heartbeat"
         case .learning,.saving:"Learning your preference…"
         case .saved:"Preference saved"
         case .failed:"Feedback needs attention"
@@ -32,7 +46,8 @@ struct ReviewFeedbackJob:Codable,Identifiable,Equatable {
 }
 
 /// Explicit submissions only. Navigation never owns or cancels these tasks.
-/// Retained jobs are not recall facts and never replay after reopening.
+/// Never-started authorised jobs may wait for a heartbeat across reopen.
+/// Attempted jobs never replay automatically and pending jobs are not recall facts.
 @MainActor @Observable final class ReviewFeedbackJobs {
     private(set) var records:[ReviewFeedbackJob]=[]
     private(set) var readable=true
@@ -40,7 +55,7 @@ struct ReviewFeedbackJob:Codable,Identifiable,Equatable {
     @ObservationIgnored private let persist:([ReviewFeedbackJob])throws->Void
     @ObservationIgnored private var task:Task<Void,Never>?
     @ObservationIgnored private var operation:Task<ReviewFeedbackInterpretation,Error>?
-    @ObservationIgnored private var restart:(()->Void)?
+    private(set) var ownedHeartbeatRunID:String?
     private(set) var activeID:UUID?
 
     init(load:()throws->[ReviewFeedbackJob],persist:@escaping ([ReviewFeedbackJob])throws->Void) {
@@ -50,7 +65,7 @@ struct ReviewFeedbackJob:Codable,Identifiable,Equatable {
             guard Set(saved.map(\.id)).count == saved.count,Set(saved.map(\.memoryID)).count == saved.count else {throw ReviewFeedbackFailure.message("Invalid feedback identities")}
             records=saved.map {value in
                 var job=value
-                if job.pending {job.state = .interrupted;job.error="The app closed before feedback finished. Your words are retained; retry when ready."}
+                if job.state == .learning || job.state == .saving || (job.state == .queued && job.heartbeatEligible != true) {job.state = .interrupted;job.error="The app closed before feedback finished. Your words are retained; retry when ready."}
                 return job
             }
             if records != saved {try persist(records)}
@@ -73,63 +88,47 @@ struct ReviewFeedbackJob:Codable,Identifiable,Equatable {
     }
     func interruptActive() {
         task?.cancel();operation?.cancel()
-        guard records.contains(where:{$0.pending}) else {return}
-        // Capture cancellation now. Later human submissions belong to a fresh owner.
-        if !change({values in
-            for i in values.indices where values[i].pending {
-                values[i].state = values[i].id == activeID ? .stopped : .interrupted
-                values[i].error="Foreground work interrupted feedback. Your words are retained; retry when ready."
-            }
-        }) {readable=false}
+        guard let activeID,records.first(where:{$0.id == activeID})?.state == .learning else {return}
+        if !update(activeID,{$0.state = .stopped;$0.error="Foreground work interrupted feedback. Your words are retained; retry when ready."}) {readable=false}
+    }
+    func cancelHeartbeat(_ runID:String) {
+        guard ownedHeartbeatRunID == runID else {return}
+        interruptActive()
     }
     @discardableResult func markSaved(_ id:UUID)->Bool {update(id) {$0.state = .saved;$0.error=nil}}
-    /// The owner supplies exact source/ownership guards and the bounded inference.
-    /// The commit is synchronous: cancellation cannot cross a save boundary.
-    func start(validate:@escaping (ReviewFeedbackJob)->Bool,ready:@escaping ()->Bool,prepare:@escaping (ReviewFeedbackJob)async throws->ReviewFeedbackInterpretation,commit:@escaping (ReviewFeedbackJob,ReviewFeedbackInterpretation)throws->Void,alreadySaved:@escaping (ReviewFeedbackJob)->Bool) {
-        guard readable,records.contains(where:{$0.state == .queued}) else {return}
-        if task != nil {
-            restart={ [weak self] in self?.start(validate:validate,ready:ready,prepare:prepare,commit:commit,alreadySaved:alreadySaved) }
-            return
+    /// One durable submission per invocation. No waiting loop or queue drain can
+    /// compete with foreground work or consume an entire heartbeat.
+    func runOne(id:UUID?=nil,registration:String?=nil,heartbeatRunID:String?=nil,validate:@escaping (ReviewFeedbackJob)->Bool,ready:()->Bool,prepare:@escaping (ReviewFeedbackJob)async throws->ReviewFeedbackInterpretation,commit:(ReviewFeedbackJob,ReviewFeedbackInterpretation)throws->Void,alreadySaved:(ReviewFeedbackJob)->Bool)async -> ReviewFeedbackJob? {
+        guard readable,activeID == nil,ready(),!Task.isCancelled,
+              let job=records.first(where:{$0.state == .queued && (id == nil || $0.id == id) && (registration == nil || $0.registration == registration) && (heartbeatRunID == nil || $0.heartbeatEligible == true)}) else {return nil}
+        activeID=job.id;ownedHeartbeatRunID=heartbeatRunID
+        defer {operation=nil;activeID=nil;ownedHeartbeatRunID=nil}
+        do {
+            guard validate(job) else {throw ReviewFeedbackFailure.message("The email, account or settings changed. Your feedback is retained; reopen it before retrying.")}
+            if alreadySaved(job) {_=markSaved(job.id);return records.first{$0.id == job.id}}
+            guard update(job.id,{$0.state = .learning;$0.error=nil}) else {return records.first{$0.id == job.id}}
+            let operation=Task(priority:heartbeatRunID == nil ? .userInitiated : .background) {let result=try await prepare(job);try Task.checkCancellation();return result}
+            self.operation=operation
+            let interpretation=try await withTaskCancellationHandler(operation:{try await operation.value},onCancel:{operation.cancel()})
+            self.operation=nil
+            try Task.checkCancellation()
+            guard validate(job),records.first(where:{$0.id == job.id})?.state == .learning else {throw ReviewFeedbackFailure.message("The email, account or settings changed. No preference was saved; your feedback is retained.")}
+            guard update(job.id,{$0.state = .saving}) else {return records.first{$0.id == job.id}}
+            try commit(job,interpretation)
+            _=markSaved(job.id)
+        } catch {
+            if records.first(where:{$0.id == job.id})?.state != .stopped {
+                _=update(job.id,{$0.state = error is CancellationError ? .stopped : .failed;$0.error=error is CancellationError ? "Interrupted by foreground work. Your feedback is retained; retry when ready." : error.localizedDescription})
+            }
         }
+        return records.first{$0.id == job.id}
+    }
+    /// Explicit Process now / Retry owns only the selected submission.
+    func start(id:UUID?=nil,validate:@escaping (ReviewFeedbackJob)->Bool,ready:@escaping ()->Bool,prepare:@escaping (ReviewFeedbackJob)async throws->ReviewFeedbackInterpretation,commit:@escaping (ReviewFeedbackJob,ReviewFeedbackInterpretation)throws->Void,alreadySaved:@escaping (ReviewFeedbackJob)->Bool) {
+        guard task == nil,activeID == nil else {return}
         task=Task { @MainActor in
-            defer {
-                self.task=nil;self.operation=nil;self.activeID=nil
-                let restart=self.restart;self.restart=nil
-                if self.readable,self.records.contains(where:{$0.state == .queued}) {restart?()}
-            }
-            while let job=self.records.first(where:{$0.state == .queued}) {
-                self.activeID=job.id
-                do {
-                    while !ready() {
-                        try Task.checkCancellation()
-                        guard self.records.first(where:{$0.id == job.id})?.state == .queued else {throw CancellationError()}
-                        guard validate(job) else {throw ReviewFeedbackFailure.message("The email, account or settings changed. Your feedback is retained; reopen it before retrying.")}
-                        try await Task.sleep(for:.milliseconds(500))
-                    }
-                    try Task.checkCancellation()
-                    guard self.records.first(where:{$0.id == job.id})?.state == .queued else {throw CancellationError()}
-                    guard validate(job) else {throw ReviewFeedbackFailure.message("The email, account or settings changed. Your feedback is retained; reopen it before retrying.")}
-                    if alreadySaved(job) {guard self.markSaved(job.id) else {return};continue}
-                    guard self.update(job.id,{$0.state = .learning;$0.error=nil}) else {return}
-                    let operation=Task {let result=try await prepare(job);try Task.checkCancellation();return result}
-                    self.operation=operation
-                    let interpretation=try await withTaskCancellationHandler(operation:{try await operation.value},onCancel:{operation.cancel()})
-                    self.operation=nil
-                    try Task.checkCancellation()
-                    guard validate(job),self.records.first(where:{$0.id == job.id})?.state == .learning else {throw ReviewFeedbackFailure.message("The email, account or settings changed. No preference was saved; your feedback is retained.")}
-                    guard self.update(job.id,{$0.state = .saving}) else {return}
-                    try commit(job,interpretation)
-                    // A failed receipt save cannot cause the same memory to be saved twice.
-                    guard self.markSaved(job.id) else {return}
-                } catch {
-                    self.operation=nil
-                    if self.records.first(where:{$0.id == job.id})?.state != .stopped {
-                        guard self.update(job.id,{$0.state = error is CancellationError ? .stopped : .failed;$0.error=error is CancellationError ? "Interrupted by foreground work. Your feedback is retained; retry when ready." : error.localizedDescription}) else {return}
-                    }
-                    // Other explicit submissions remain queued; never retry this one.
-                    if Task.isCancelled {return}
-                }
-            }
+            defer {self.task=nil}
+            _=await self.runOne(id:id,validate:validate,ready:ready,prepare:prepare,commit:commit,alreadySaved:alreadySaved)
         }
     }
     @discardableResult private func update(_ id:UUID,_ mutation:(inout ReviewFeedbackJob)->Void)->Bool {
