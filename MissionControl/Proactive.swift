@@ -237,6 +237,32 @@ struct DiscoveryCandidate {
     var sourceAssessmentRevision:String? = nil
     var sourceDate:Date? = nil
 }
+/// Only fixed vocabulary and bounded row indexes may enter persisted review errors.
+/// Never interpolate a model value, JSON key, decoding debug description or source alias.
+struct ReviewResultDiagnostic: LocalizedError, Equatable {
+    enum Section:String { case result,suggestions,handled,resolved }
+    enum Field:String { case envelope,tool,arguments,mailID,kind,message,evidence,evidenceID,title,targetID,newDate,hasTime,connection,draft,replaces,replacementReason,scope,endDate,projectID,confirmationID,requestEvidenceID,confirmationEvidenceID,allActionsAddressed,reason }
+    enum Reason:String { case malformedJSON,missingField,wrongType,unsupportedField,tooManyRows,tooLong,emptyValue,unsupportedAction,unissuedSource,unissuedEvidence,quoteMismatch,invalidTarget,invalidDate,incompatibleFields,duplicateProposal,invalidReplacement,missingCompletedCall,unexpectedCallCount,unexpectedTool,oversizedArguments,invalidAssociation,conflictingAssociation }
+    var section:Section
+    var row:Int? = nil
+    var field:Field
+    var reason:Reason
+    var errorDescription:String? {
+        let position=row.map { "[" + String(max(0,min($0,100))) + "]" } ?? ""
+        return "Review result rejected: " + section.rawValue + position + "." + field.rawValue + " (" + reason.rawValue + ")."
+    }
+    static func decoding(_ error:Error,section:Section = .suggestions)->Self {
+        let path:[CodingKey], reason:Reason, missing:String?
+        switch error {
+        case DecodingError.keyNotFound(let key,let context):path=context.codingPath;reason = .missingField;missing=key.stringValue
+        case DecodingError.typeMismatch(_,let context):path=context.codingPath;reason = .wrongType;missing=nil
+        case DecodingError.valueNotFound(_,let context):path=context.codingPath;reason = .missingField;missing=nil
+        default:return .init(section:.result,field:.envelope,reason:.malformedJSON)
+        }
+        let safeField=missing.flatMap(Field.init(rawValue:)) ?? path.reversed().compactMap{Field(rawValue:$0.stringValue)}.first ?? .envelope
+        return .init(section:section,row:path.compactMap(\.intValue).last,field:safeField,reason:reason)
+    }
+}
 enum ReviewValidationFailure:LocalizedError {
     case format,source,quote,target,date
     var errorDescription:String? {
@@ -282,71 +308,97 @@ enum ProactiveRules {
     static func decode(_ text: String, candidates: [DiscoveryCandidate], registration: String, scope: String, now: Date, targets:[String:DiscoveryNativeTarget] = [:], earlier:[String:PADiscovery] = [:], projects:[String:DiscoveryProjectTarget] = [:]) throws -> [PADiscovery] {
         struct Suggestion: Decodable { var mailID: String; var kind: String; var message: String?; var evidence: String?;var evidenceID:String?;var title:String?;var targetID:String?;var newDate:String?;var hasTime:Bool?;var connection:String?;var draft:String?;var replaces:[String]?;var replacementReason:String?;var scope:String?;var endDate:String?;var projectID:String? }
         struct Output: Decodable { var suggestions: [Suggestion] }
-        guard let output = try? JSONDecoder().decode(Output.self,from:Data(text.utf8)) else {throw ReviewValidationFailure.format}
-        guard output.suggestions.count <= 24 else { throw ReviewValidationFailure.format }
+        let output:Output
+        do { output=try JSONDecoder().decode(Output.self,from:Data(text.utf8)) }
+        catch {throw ReviewResultDiagnostic.decoding(error)}
+        guard output.suggestions.count <= 24 else { throw ReviewResultDiagnostic(section:.suggestions,field:.envelope,reason:.tooManyRows) }
         var used=Set<String>()
         var decoded:[PADiscovery]=[]
-        for value in output.suggestions {
-            guard let candidate = candidates.first(where:{ $0.alias == value.mailID }) else {throw ReviewValidationFailure.source}
+        for (row,value) in output.suggestions.enumerated() {
+            func reject(_ field:ReviewResultDiagnostic.Field,_ reason:ReviewResultDiagnostic.Reason)->ReviewResultDiagnostic { .init(section:.suggestions,row:row,field:field,reason:reason) }
+            guard let candidate = candidates.first(where:{ $0.alias == value.mailID }) else {throw reject(.mailID,.unissuedSource)}
             let evidence:String
             if let reference=value.evidenceID {
-                guard candidate.sourceKind != "whatsapp",candidate.sourceText == nil else {throw ReviewValidationFailure.source}
+                guard candidate.sourceKind != "whatsapp",candidate.sourceText == nil else {throw reject(.evidenceID,.incompatibleFields)}
                 if reference == candidate.alias+":primary" {evidence=candidate.evidence}
                 else if reference == candidate.alias+":followup" {evidence=candidate.followUpEvidence}
                 else if let index=candidate.actionEvidence.indices.first(where:{reference == candidate.alias+":action_"+String($0)}) {evidence=candidate.actionEvidence[index]}
-                else {throw ReviewValidationFailure.source}
-                guard value.evidence == nil || value.evidence == evidence else {throw ReviewValidationFailure.quote}
+                else {throw reject(.evidenceID,.unissuedEvidence)}
+                guard value.evidence == nil || value.evidence == evidence else {throw reject(.evidence,.quoteMismatch)}
             } else {evidence=value.evidence ?? ""}
             // Removal cards already show the issued event/date, connection and quote.
             // Their generic approval question can be local when model prose is omitted.
             let message=value.message ?? (value.kind == "remove" ? "Remove this cancelled or postponed occurrence from Calendar?" : value.kind == "projectTask" ? "Add this source-backed task to the suggested project?" : "")
-            guard ["calendar","reminder","update","project","projectTask","change","remove","reply"].contains(value.kind), !message.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, message.count <= 700,value.title.map({ !$0.isEmpty && $0.count <= 300 }) ?? true else {throw ReviewValidationFailure.format}
-            guard !evidence.isEmpty,candidate.sourceText.map({ (8...500).contains(evidence.count) && $0.contains(evidence) }) ?? (evidence == candidate.evidence || evidence == candidate.followUpEvidence || candidate.actionEvidence.contains(evidence)) else {throw ReviewValidationFailure.quote}
+            guard ["calendar","reminder","update","project","projectTask","change","remove","reply"].contains(value.kind) else {throw reject(.kind,.unsupportedAction)}
+            guard !message.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else {throw reject(.message,.emptyValue)}
+            guard message.count <= 700 else {throw reject(.message,.tooLong)}
+            if let title=value.title {
+                guard !title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else {throw reject(.title,.emptyValue)}
+                guard title.count <= 300 else {throw reject(.title,.tooLong)}
+            }
+            guard !evidence.isEmpty,candidate.sourceText.map({ (8...500).contains(evidence.count) && $0.contains(evidence) }) ?? (evidence == candidate.evidence || evidence == candidate.followUpEvidence || candidate.actionEvidence.contains(evidence)) else {throw reject(.evidence,.quoteMismatch)}
             if value.kind == "reply" {
-                guard candidate.sourceKind == "whatsapp",let draft=value.draft,!draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,draft.count <= 3000 else {throw ReviewValidationFailure.format}
-            } else if value.draft != nil {throw ReviewValidationFailure.format}
+                guard candidate.sourceKind == "whatsapp" else {throw reject(.draft,.incompatibleFields)}
+                guard let draft=value.draft,!draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else {throw reject(.draft,.emptyValue)}
+                guard draft.count <= 3000 else {throw reject(.draft,.tooLong)}
+            } else if value.draft != nil {throw reject(.draft,.incompatibleFields)}
             var suggestedDate:DiscoveryProposedDate?
             var projectTask:DiscoveryProjectTask?
             if ["calendar","reminder","projectTask"].contains(value.kind),let date=value.newDate {
-                guard let timed=value.hasTime else {throw ReviewValidationFailure.date}
+                guard let timed=value.hasTime else {throw reject(.hasTime,.missingField)}
                 let dateOnlyProject=value.kind == "projectTask" && date.range(of:#"^\d{4}-\d{2}-\d{2}$"#,options:.regularExpression) != nil
                 let proposed=DiscoveryProposedDate(start:date,end:value.endDate,hasTime:dateOnlyProject ? false : timed,timeZoneID:TimeZone.current.identifier)
-                guard proposed.valid,!SourceDateGrounding.needsWeekAnchor(evidence) else {throw ReviewValidationFailure.date}
+                guard let start=proposed.date(),!SourceDateGrounding.needsWeekAnchor(evidence) else {throw reject(.newDate,.invalidDate)}
+                if let end=proposed.end {guard let parsed=proposed.date(end),parsed >= start else {throw reject(.endDate,.invalidDate)}}
                 suggestedDate=proposed
-            } else if value.endDate != nil {throw ReviewValidationFailure.date}
+            } else if value.endDate != nil {throw reject(.endDate,.incompatibleFields)}
             if value.kind == "projectTask" {
-                guard let id=value.projectID,let target=projects[id],let title=value.title,!title.isEmpty,title.count <= 160,
-                      let connection=value.connection,!connection.isEmpty,connection.count <= 500 else {throw ReviewValidationFailure.target}
+                guard let id=value.projectID,let target=projects[id] else {throw reject(.projectID,.invalidTarget)}
+                guard let title=value.title,!title.isEmpty else {throw reject(.title,.missingField)}
+                guard title.count <= 160 else {throw reject(.title,.tooLong)}
+                guard let connection=value.connection,!connection.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else {throw reject(.connection,.missingField)}
+                guard connection.count <= 500 else {throw reject(.connection,.tooLong)}
                 projectTask = .init(target:target,connection:connection)
-            } else if value.projectID != nil {throw ReviewValidationFailure.target}
+            } else if value.projectID != nil {throw reject(.projectID,.incompatibleFields)}
             var change:DiscoveryDateChange?
             var removal:DiscoveryCalendarRemoval?
             if value.kind == "change" {
-                guard let alias=value.targetID,let target=targets[alias],target.writable else {throw ReviewValidationFailure.target}
-                guard let date=value.newDate,let hasTime=value.hasTime,let connection=value.connection,!connection.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,connection.count <= 500 else {throw ReviewValidationFailure.format}
+                guard let alias=value.targetID,let target=targets[alias],target.writable else {throw reject(.targetID,.invalidTarget)}
+                guard let date=value.newDate else {throw reject(.newDate,.missingField)}
+                guard let hasTime=value.hasTime else {throw reject(.hasTime,.missingField)}
+                guard let connection=value.connection,!connection.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else {throw reject(.connection,.missingField)}
+                guard connection.count <= 500 else {throw reject(.connection,.tooLong)}
                 let proposal=DiscoveryDateChange(target:target,newDate:date,hasTime:hasTime,connection:connection,timeZoneID:TimeZone.current.identifier)
-                guard let parsed=proposal.date(),target.kind != "event" || target.hasTime == hasTime,(hasTime ? (target.start ?? target.due) != parsed : target.originalDate != date) else { throw ReviewValidationFailure.date }
+                guard let parsed=proposal.date(),target.kind != "event" || target.hasTime == hasTime,(hasTime ? (target.start ?? target.due) != parsed : target.originalDate != date) else {throw reject(.newDate,.invalidDate)}
                 change=proposal
             } else if value.kind == "remove" {
-                guard let alias=value.targetID,let target=targets[alias],target.kind == "event",target.writable,target.start != nil,target.end != nil else {throw ReviewValidationFailure.target}
-                guard value.scope == "occurrence",value.newDate == nil,value.hasTime == nil,let connection=value.connection,!connection.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,connection.count <= 500 else {throw ReviewValidationFailure.format}
+                guard let alias=value.targetID,let target=targets[alias],target.kind == "event",target.writable,target.start != nil,target.end != nil else {throw reject(.targetID,.invalidTarget)}
+                guard value.scope == "occurrence" else {throw reject(.scope,.incompatibleFields)}
+                guard value.newDate == nil,value.hasTime == nil else {throw reject(.newDate,.incompatibleFields)}
+                guard let connection=value.connection,!connection.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else {throw reject(.connection,.missingField)}
+                guard connection.count <= 500 else {throw reject(.connection,.tooLong)}
                 removal=DiscoveryCalendarRemoval(target:target,connection:connection,timeZoneID:TimeZone.current.identifier)
-            } else if value.targetID != nil || value.scope != nil || (suggestedDate == nil && (value.newDate != nil || value.hasTime != nil)) || (projectTask == nil && value.connection != nil) { throw ReviewValidationFailure.format }
-            if value.kind != "remove",value.scope != nil {throw ReviewValidationFailure.format}
+            } else {
+                if value.targetID != nil {throw reject(.targetID,.incompatibleFields)}
+                if value.scope != nil {throw reject(.scope,.incompatibleFields)}
+                if suggestedDate == nil && (value.newDate != nil || value.hasTime != nil) {throw reject(.newDate,.incompatibleFields)}
+                if projectTask == nil && value.connection != nil {throw reject(.connection,.incompatibleFields)}
+            }
+            if value.kind != "remove",value.scope != nil {throw reject(.scope,.incompatibleFields)}
             var replacementIDs:[String]=[]
             if let aliases=value.replaces,!aliases.isEmpty {
-                guard aliases.count <= 3,Set(aliases).count == aliases.count,["change","remove","update","calendar","reminder"].contains(value.kind),let reason=value.replacementReason,!reason.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,reason.count <= 500 else {throw ReviewValidationFailure.format}
+                guard aliases.count <= 3,Set(aliases).count == aliases.count,["change","remove","update","calendar","reminder"].contains(value.kind),let reason=value.replacementReason,!reason.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,reason.count <= 500 else {throw reject(.replaces,.invalidReplacement)}
                 for alias in aliases {
-                    guard let old=earlier[alias],old.registration == registration,!old.dismissed,old.reviewState == nil,old.supersededBy == nil,["change","remove","update","calendar","reminder"].contains(old.kind),used.insert(old.id).inserted else {throw ReviewValidationFailure.source}
+                    guard let old=earlier[alias],old.registration == registration,!old.dismissed,old.reviewState == nil,old.supersededBy == nil,["change","remove","update","calendar","reminder"].contains(old.kind),used.insert(old.id).inserted else {throw reject(.replaces,.invalidReplacement)}
                     let sameSource=old.mailID == candidate.mailID && old.sourceKind == candidate.sourceKind && old.sourceIdentity == candidate.sourceIdentity && old.sourceChatID == candidate.sourceChatID
                     let removalUpgrade=sameSource && old.kind == "update" && old.nativeTarget == nil && removal != nil && old.evidence == evidence && old.sourceRevision != nil && old.sourceRevision == candidate.sourceRevision && old.sourceAssessmentRevision == candidate.sourceAssessmentRevision
-                    guard removalUpgrade || (sameSource && old.sourceRevision != candidate.sourceRevision) || candidate.sourceDate.map({$0 > (old.sourceDate ?? old.created)}) == true else {throw ReviewValidationFailure.source}
-                    if let previous=old.nativeTarget,let next=change?.target ?? removal?.target {guard previous.kind == next.kind,previous.itemID == next.itemID,previous.sourceID == next.sourceID else {throw ReviewValidationFailure.target}}
+                    guard removalUpgrade || (sameSource && old.sourceRevision != candidate.sourceRevision) || candidate.sourceDate.map({$0 > (old.sourceDate ?? old.created)}) == true else {throw reject(.replaces,.invalidReplacement)}
+                    if let previous=old.nativeTarget,let next=change?.target ?? removal?.target {guard previous.kind == next.kind,previous.itemID == next.itemID,previous.sourceID == next.sourceID else {throw reject(.targetID,.invalidTarget)}}
                     replacementIDs.append(old.id)
                 }
-            } else if value.replacementReason != nil {throw ReviewValidationFailure.format}
+            } else if value.replacementReason != nil {throw reject(.replacementReason,.incompatibleFields)}
             let record=reviewProjection(PADiscovery(id:UUID().uuidString,registration:registration,mailID:candidate.mailID,kind:value.kind,message:message,evidence:evidence,created:now,scope:scope,sourceKind:candidate.sourceKind,sourceChatID:candidate.sourceChatID,sourceMessageID:candidate.sourceMessageID,sourceIdentity:candidate.sourceIdentity,sourceRevision:candidate.sourceRevision,sourceLabel:candidate.sourceLabel,sourceTitle:value.title ?? (suggestedDate != nil ? String(evidence.prefix(160)) : nil),sourceAssessmentRevision:candidate.sourceAssessmentRevision,proposedChange:change,proposedRemoval:removal,proposedDate:suggestedDate,proposedProjectTask:projectTask,replyDraft:value.draft,sourceDate:candidate.sourceDate,replaces:replacementIDs.isEmpty ? nil : replacementIDs,replacementReason:value.replacementReason))
-            guard !decoded.contains(where:{$0.mailID == record.mailID && sameProposal($0,record)}) else {throw ReviewValidationFailure.format}
+            guard !decoded.contains(where:{$0.mailID == record.mailID && sameProposal($0,record)}) else {throw reject(.envelope,.duplicateProposal)}
             decoded.append(record)
         }
         return decoded

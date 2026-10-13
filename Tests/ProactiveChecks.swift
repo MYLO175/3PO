@@ -52,6 +52,92 @@ import Foundation
         precondition(restoredActions == separate,"Exact dates and project revisions survive reopen")
         let capped=ProactiveRules.completing(.init(),versions:["compound":"v1"],context:"c",limited:true,reportedKeys:["compound"])
         precondition(capped.assessedSourceVersions?["compound"] == nil,"A full batch cannot claim all sibling actions assessed")
+        // Completed typed transport is a preparation contract, never action execution.
+        let envelope=String(decoding:try JSONSerialization.data(withJSONObject:["suggestions":actions,"handled":[],"resolved":[]]),as:UTF8.self)
+        func completed(_ text:String,name:String = ProactiveResultRules.toolName,namespace:String? = "pa") throws -> String {
+            try ProactiveResultRules.completedJSON([(namespace:namespace,name:name,arguments:text)])
+        }
+        let typed=try completed(envelope)
+        let typedRecords=try ProactiveRules.decode(typed,candidates:[compound],registration:"A",scope:"s",now:.now,projects:[project.id.uuidString:project])
+        precondition(typedRecords.count == 6 && Set(typedRecords.map(\.kind)) == ["calendar","projectTask"])
+        let qualified=try completed(envelope,name:"pa.prepare_review",namespace:nil);precondition(qualified == envelope)
+        func diagnostic(_ section:ReviewResultDiagnostic.Section = .suggestions,_ row:Int? = 0,_ field:ReviewResultDiagnostic.Field,_ reason:ReviewResultDiagnostic.Reason,_ run:()throws->Void) {
+            do {try run();fatalError("Invalid typed result accepted")}
+            catch let error as ReviewResultDiagnostic {
+                precondition(error == .init(section:section,row:row,field:field,reason:reason),"Unexpected safe diagnostic: \(error)")
+                precondition(!error.localizedDescription.contains("private-SECRET"),"Diagnostic leaked model/source data")
+            } catch {fatalError("Unexpected error class: \(type(of:error))")}
+        }
+        diagnostic(.result,nil,.tool,.missingCompletedCall) {_ = try ProactiveResultRules.completedJSON([])}
+        diagnostic(.result,nil,.tool,.unexpectedCallCount) {_ = try ProactiveResultRules.completedJSON([(namespace:"pa",name:"prepare_review",arguments:envelope),(namespace:"pa",name:"prepare_review",arguments:envelope)])}
+        diagnostic(.result,nil,.tool,.unexpectedTool) {_ = try completed(envelope,name:"private-SECRET")}
+        diagnostic(.result,nil,.tool,.unexpectedTool) {_ = try completed(envelope,namespace:"private-SECRET")}
+        diagnostic(.result,nil,.envelope,.malformedJSON) {_ = try completed("private-SECRET")}
+        diagnostic(.result,nil,.envelope,.malformedJSON) {_ = try completed("{\"suggestions\":[")}
+        diagnostic(.result,nil,.envelope,.wrongType) {_ = try completed("[]")}
+        diagnostic(.handled,nil,.envelope,.missingField) {_ = try completed("{\"suggestions\":[],\"resolved\":[]}")}
+        diagnostic(.result,nil,.envelope,.unsupportedField) {_ = try completed("{\"suggestions\":[],\"handled\":[],\"resolved\":[],\"private-SECRET\":true}")}
+        diagnostic(.result,nil,.arguments,.oversizedArguments) {_ = try completed(String(repeating:"é",count:16001))}
+        let blank="{\"suggestions\":[],\"handled\":[],\"resolved\":[]}"
+        let boundary=blank+String(repeating:" ",count:32000-blank.utf8.count)
+        let atBoundary=try completed(boundary);precondition(atBoundary == boundary)
+        diagnostic(.result,nil,.arguments,.oversizedArguments) {_ = try completed(boundary+" ")}
+        diagnostic(.suggestions,0,.envelope,.unsupportedField) {_ = try completed("{\"suggestions\":[{\"mailID\":\"mail_0\",\"kind\":\"update\",\"private-SECRET\":true}],\"handled\":[],\"resolved\":[]}")}
+        diagnostic(.suggestions,0,.hasTime,.wrongType) {_ = try completed("{\"suggestions\":[{\"mailID\":\"mail_0\",\"kind\":\"calendar\",\"hasTime\":1}],\"handled\":[],\"resolved\":[]}")}
+        diagnostic(.handled,0,.reason,.missingField) {_ = try completed("{\"suggestions\":[],\"handled\":[{\"mailID\":\"mail_0\",\"targetID\":\"event_0\",\"requestEvidenceID\":\"mail_0:primary\",\"allActionsAddressed\":true}],\"resolved\":[]}")}
+        diagnostic(.resolved,0,.confirmationID,.wrongType) {_ = try completed("{\"suggestions\":[],\"handled\":[],\"resolved\":[{\"mailID\":\"mail_0\",\"confirmationID\":3,\"requestEvidenceID\":\"mail_0:primary\",\"confirmationEvidenceID\":\"completion_0:primary\",\"allActionsAddressed\":true,\"reason\":\"private-SECRET\"}]}")}
+        var invalidAction=actions[0];invalidAction["kind"]="private-SECRET"
+        diagnostic(.suggestions,0,.kind,.unsupportedAction) {_ = try actionDecode([invalidAction])}
+        invalidAction=actions[0];invalidAction["mailID"]="private-SECRET"
+        diagnostic(.suggestions,0,.mailID,.unissuedSource) {_ = try actionDecode([invalidAction])}
+        invalidAction=actions[0];invalidAction["evidenceID"]="private-SECRET"
+        diagnostic(.suggestions,0,.evidenceID,.unissuedEvidence) {_ = try actionDecode([invalidAction])}
+        invalidAction=actions[0];invalidAction["connection"]="private-SECRET"
+        diagnostic(.suggestions,0,.connection,.incompatibleFields) {_ = try actionDecode([invalidAction])}
+        invalidAction=actions[0];invalidAction["newDate"]="2027-02-30";invalidAction["hasTime"]=false
+        diagnostic(.suggestions,0,.newDate,.invalidDate) {_ = try actionDecode([invalidAction])}
+        invalidAction=actions[0];invalidAction.removeValue(forKey:"hasTime")
+        diagnostic(.suggestions,0,.hasTime,.missingField) {_ = try actionDecode([invalidAction])}
+        invalidAction=actions[0];invalidAction["message"]=String(repeating:"a",count:701)
+        diagnostic(.suggestions,0,.message,.tooLong) {_ = try actionDecode([invalidAction])}
+        invalidAction=actions[0];invalidAction["message"]=""
+        diagnostic(.suggestions,0,.message,.emptyValue) {_ = try actionDecode([invalidAction])}
+        invalidAction=actions[0];invalidAction["endDate"]="2026-01-01"
+        diagnostic(.suggestions,0,.endDate,.invalidDate) {_ = try actionDecode([invalidAction])}
+        invalidAction=actions[1];invalidAction["projectID"]="private-SECRET"
+        diagnostic(.suggestions,0,.projectID,.invalidTarget) {_ = try actionDecode([invalidAction])}
+        diagnostic(.suggestions,1,.envelope,.duplicateProposal) {_ = try actionDecode([actions[0],actions[0]])}
+        // Invalid sibling rejects the entire batch, so no partial project/calendar approval exists.
+        diagnostic(.suggestions,1,.projectID,.invalidTarget) {_ = try actionDecode([actions[0],invalidAction])}
+        diagnostic(.suggestions,0,.kind,.missingField) {_ = try ProactiveRules.decode("{\"suggestions\":[{\"mailID\":\"private-SECRET\"}]}",candidates:[],registration:"A",scope:"s",now:.now)}
+        diagnostic(.suggestions,0,.message,.wrongType) {_ = try ProactiveRules.decode("{\"suggestions\":[{\"mailID\":\"mail_0\",\"kind\":\"update\",\"message\":3}]}",candidates:[],registration:"A",scope:"s",now:.now)}
+        // The real transport never exposes unfinished review calls, even after item.done.
+        let item:[String:Any]=["type":"function_call","status":"completed","call_id":"review-fixture","name":"prepare_review","namespace":"pa","arguments":envelope]
+        let doneEvent="data: "+String(decoding:try JSONSerialization.data(withJSONObject:["type":"response.output_item.done","output_index":0,"item":item]),as:UTF8.self)
+        var pendingReview=ChatGPTStream(allowsTools:true)
+        _ = try pendingReview.line(doneEvent)
+        precondition(pendingReview.calls.isEmpty)
+        do {_ = try pendingReview.finish();fatalError("Unfinished review accepted")} catch ChatGPTStream.Failure.interrupted {}
+        var finishedReview=ChatGPTStream(allowsTools:true)
+        _ = try finishedReview.line(doneEvent)
+        _ = try finishedReview.line("data: {\"type\":\"response.completed\"}")
+        _ = try finishedReview.finish()
+        let streamedJSON=try ProactiveResultRules.completedJSON(finishedReview.calls.map{($0.namespace,$0.name,$0.arguments)})
+        precondition(streamedJSON == envelope,"Completed output_item.done fallback retains review preparation")
+        var invalidStatus=item;invalidStatus["status"]="in_progress"
+        var incompleteReview=ChatGPTStream(allowsTools:true)
+        do {
+            _ = try incompleteReview.line("data: "+String(decoding:try JSONSerialization.data(withJSONObject:["type":"response.completed","response":["output":[invalidStatus]]]),as:UTF8.self))
+            fatalError("Incomplete review call accepted")
+        } catch ChatGPTStream.Failure.invalid {}
+        let declarations=ProactiveResultRules.tools(sourceAliases:["mail_0","wa_0"],evidenceAliases:["mail_0:primary","mail_0:action_0"],nativeAliases:["event_0"],projectAliases:[project.id.uuidString],earlierAliases:["review_0"],confirmationAliases:["completion_0"])
+        let namespace=declarations[0],functions=namespace["tools"] as! [[String:Any]],parameters=functions[0]["parameters"] as! [String:Any],properties=parameters["properties"] as! [String:Any]
+        precondition(namespace["name"] as? String == "pa" && functions[0]["strict"] as? Bool == true)
+        precondition(Set(parameters["required"] as! [String]) == ["suggestions","handled","resolved"])
+        let suggestionSchema=(properties["suggestions"] as! [String:Any])["items"] as! [String:Any],fields=suggestionSchema["properties"] as! [String:Any]
+        precondition((fields["evidenceID"] as! [String:Any])["enum"] as? [Any] != nil)
+        precondition(Set((fields["mailID"] as! [String:Any])["enum"] as! [String]) == ["mail_0","wa_0"])
+        precondition(JSONSerialization.isValidJSONObject(declarations))
         var dismissed = records[0]; dismissed.dismissed = true
         precondition(ProactiveRules.unreported(records,prior:[dismissed],budget:3).isEmpty)
         var anotherAccount = dismissed; anotherAccount.registration = "B"
@@ -169,6 +255,6 @@ import Foundation
         precondition(index.mail[legacyAck.mailID]?.map(\.id) == [legacyAck.id,sameSource.id,sameSource.id],"Exact-source lookup preserves legacy mail, sibling order and duplicates while excluding retired/other-owner/undismissed records")
         precondition(index.whatsapp[.init(chat:"a:b",message:"c")]?.map(\.id) == [waAck.id] && index.whatsapp[.init(chat:"a",message:"b:c")]?.map(\.id) == [anotherChat.id],"Chat and message identity must remain separate typed keys")
         precondition(index.mail["missing"] == nil && index.whatsapp[.init(chat:"other",message:"c")] == nil)
-        print("PASS proactive rules: grounded aliases/quotes, prohibited kinds, account dedup/dismissal, daily budget, pause/cooldown/persistence and conservative current-thread latest-suggestion review references.")
+        print("PASS typed review transport, safe field diagnostics, 32000-byte boundary and proactive rules: grounded aliases/quotes, prohibited kinds, account dedup/dismissal, daily budget, pause/cooldown/persistence and conservative current-thread latest-suggestion review references.")
     }
 }
