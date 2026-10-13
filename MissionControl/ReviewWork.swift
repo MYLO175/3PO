@@ -202,7 +202,8 @@ struct ReviewWorkConversationResult {
                     let uncertain=current.actions.contains{$0.phase == .uncertain}
                     let all=current.actions.allSatisfy{$0.phase == .saved}
                     let result:ReviewWorkPhase=all ? .completed : uncertain ? .uncertain : current.savedCount > 0 ? .partial : .failed
-                    let detail=current.actions.first{$0.phase == .failed || $0.phase == .uncertain}?.result
+                    let failed=current.actions.first{$0.phase == .failed || $0.phase == .uncertain}
+                    let detail=failed.map{$0.title+": "+($0.result ?? "This action did not finish.")}
                     _=self.update(job.id){$0.phase=result;$0.message=all ? "\($0.savedCount) actions completed" : "\($0.savedCount) of \($0.actions.count) actions confirmed";$0.error=all ? nil : detail ?? "Remaining work stopped. Reopen this plan before continuing.";$0.finished = .now}
                 }
             }

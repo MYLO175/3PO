@@ -99,6 +99,9 @@ struct ProductionReviewConversationView:View {
         VStack(alignment:.leading,spacing:8) {
             Label(job.phase == .queued ? "Queued: "+job.human : job.phase == .running ? "3PO is working…" : job.message ?? job.phase.rawValue,systemImage:job.pending ? "clock" : "exclamationmark.circle").font(.callout)
             if let error=job.error {Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)}
+            ForEach(job.actions.filter{$0.phase == .failed || $0.phase == .uncertain}) {action in
+                Label(PAProse.display(action.title)+" · "+(action.phase == .uncertain ? "Save needs checking" : "Failed"),systemImage:"exclamationmark.circle").font(.caption.weight(.medium)).foregroundStyle(.orange)
+            }
             HStack {
                 if job.pending {Button("Stop") {model.reviewWork.stop(job.id)}}
                 if [.partial,.failed,.interrupted,.uncertain,.stopped].contains(job.phase) {
