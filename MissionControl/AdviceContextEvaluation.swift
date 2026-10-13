@@ -152,13 +152,23 @@ import Synchronization
         let source=MemorySourceEvidence(identity:identity,revision:"fictional-v1",label:"Fictional Studies",quote:quote,observed:now,sourceDate:now)
         let fact=PAMemory(registration:registration,text:"A Calendar entry requests a four-sensor Orion prototype.",kind:.commitment,explicit:false,provenance:"Fictional source",evidence:quote,certainty:.inferred,durability:.situational,source:source,sourceState:.proposed)
         let human=PAMemory(registration:registration,text:"I prefer preparing the day before.",kind:.preference,provenance:"Fictional human",evidence:"I prefer preparing the day before.")
-        var permitted=true
+        var permitted=true,projectionCalls=0
         store.sourceIsPermitted={_ in permitted}
-        store.sourcePermissionProjection={permitted ? [fact.id] : []}
-        guard store.putSources([fact],evidenceTexts:[identity:quote],expectedRevision:store.revision),store.put(human) else { throw SummaryFailure.invalid }
+        store.sourcePermissionProjection={projectionCalls += 1;return permitted ? [fact.id] : []}
+        guard store.put(human) else { throw SummaryFailure.invalid }
+        let humanOnlyPermitted=store.permittedRecords
+        let humanOnlySkippedProjection=projectionCalls == 0 && humanOnlyPermitted.map(\.id) == [human.id]
+        guard store.putSources([fact],evidenceTexts:[identity:quote],expectedRevision:store.revision) else { throw SummaryFailure.invalid }
         let capture=model.automaticMemory(.brief)
         var checks=fingerprintCacheChecks(model)
         checks.merge(try navigationStorageChecks(),uniquingKeysWith:{$1})
+        checks["human-only store avoids source projection"]=humanOnlySkippedProjection
+        projectionCalls=0
+        let humanDependencies=capture.dependencies.filter{$0.id == human.id.uuidString}
+        let exactHuman=model.memoryDependencyRecords(humanDependencies,use:.brief)
+        checks["human dependencies avoid unrelated source projection"]=projectionCalls == 0 && exactHuman.map(\.id) == [human.id] && model.memoryDependenciesAvailable(humanDependencies,use:.brief)
+        _=model.memoryDependencyRecords(capture.dependencies,use:.brief)
+        checks["mixed dependencies still check live source permission"]=projectionCalls > 0
         checks["actual capture includes permitted source and human facts"]=capture.records.count == 2 && capture.dependencies.count == 2
         let morning=DailyBriefing(id:"fictional-morning",registration:registration,day:BriefingRules.day(now),created:now,items:[.init(text:"Prepare the Orion prototype.",sourceIDs:["memory_0"])],sources:[.init(id:"memory_0",label:"Fictional memory",kind:"memory",date:nil,originalID:fact.id.uuidString)],coverage:"Fictional",message:"Good morning. Prepare the Orion prototype. [memory_0]",memoryDependencies:capture.dependencies)
         let json:[String:Any]=["id":"fictional-message","accountID":"fictional-mail","account":"Fictional Mail","messageID":1,"internetMessageID":"orion@example.invalid","sender":"Fictional tutor","subject":"Orion preparation","received":now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]

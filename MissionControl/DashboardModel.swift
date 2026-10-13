@@ -118,9 +118,10 @@ struct CalendarRemovalReviewSession:Identifiable {
             let registration=self.chatGPT.activeID
             var result=Set<UUID>()
             // Hash each native snapshot once per projection, rather than once per saved fact.
-            for kind in NativeLearningRules.kinds where self.nativeSourceLearning.permittedKind(kind,model:self.learningRuntime()) {
+            let sourceRecords=service.memory.records.filter{$0.registration == registration && $0.source != nil}
+            for kind in NativeLearningRules.kinds where sourceRecords.contains(where:{$0.source?.identity.kind == kind}) && self.nativeSourceLearning.permittedKind(kind,model:self.learningRuntime()) {
                 if let items=self.nativeLearningItems(kind) {
-                    for record in service.memory.records where record.registration == registration && record.source?.identity.kind == kind {
+                    for record in sourceRecords where record.source?.identity.kind == kind {
                         if NativeLearningRules.permitted(record,items:items) { result.insert(record.id) }
                     }
                 }

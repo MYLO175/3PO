@@ -49,9 +49,15 @@ extension DashboardModel {
     }
     func memoryDependencyRecords(_ dependencies:[MemoryDependency],use:AutomaticMemoryUse)->[PAMemory] {
         let ids=Set(dependencies.map(\.id))
-        return assistant.memory.enabled ? assistant.memory.permittedRecords.filter {
+        guard assistant.memory.enabled else {return []}
+        let candidates=assistant.memory.records.filter {
             ids.contains($0.id.uuidString) && MemoryRules.usable($0,registration:chatGPT.activeID) &&
             MemoryRules.inScope($0,conversationID:nil,includeTopics:use == .brief) && automaticMemorySourceAllowed($0,use:use)
-        } : []
+        }
+        // Exact human-only dependencies need no source projection. Source-backed
+        // candidates still pass the same suppression and current-evidence checks.
+        guard candidates.contains(where:{$0.source != nil}) else {return candidates}
+        let permitted=Set(assistant.memory.permittedRecords.map(\.id))
+        return candidates.filter{permitted.contains($0.id)}
     }
 }

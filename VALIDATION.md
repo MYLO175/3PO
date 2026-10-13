@@ -4,8 +4,9 @@
 
 - Signed build passes. Ten focused suites pass; additional completion-cache checks pass.
 - Actual learning runtime34/34; shared learning budget159/159.
-- Signed app-memory: advice144/144, scheduler87/87, removal11/11. Scheduler includes seven injected full-cycle scenarios.
+- Signed app-memory: advice147/147, scheduler87/87, removal11/11. Scheduler includes seven injected full-cycle scenarios.
 - Configured gpt-6-luna: compound actions13/13 and typed brief/WhatsApp7/7, four fictional requests, no native writes.
+- Installed responsiveness correction: target-first memory dependency filtering, three focused permission/inspection suites and three additional actual-consumer assertions pass. Responsive native relaunch and visible review-learning/Daily limit Off controls verified.
 - Installation/live-cycle evidence follows in STATUS; sustained unattended and physical sleep/wake acceptance remain separate.
 
 

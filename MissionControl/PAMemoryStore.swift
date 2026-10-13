@@ -30,6 +30,7 @@ import SwiftData
     @ObservationIgnored var sourceIsPermitted:(PAMemory)->Bool = { _ in false }
     @ObservationIgnored var sourcePermissionProjection:(()->Set<UUID>)?
     var permittedRecords:[PAMemory] {
+        guard records.contains(where:{$0.source != nil}) else {return records}
         let projected=sourcePermissionProjection?()
         return records.filter{record in record.source == nil || (!record.sourceSuppressionKeys.contains{state.suppressed[record.registration,default:[]].contains($0)} && (projected.map{$0.contains(record.id)} ?? sourceIsPermitted(record)))}
     }
