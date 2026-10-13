@@ -32,6 +32,7 @@ import SwiftData
     private var capturedPowerRevision:Int?
     private var capturedPrior:PAHeartbeatAccount?
     private var capturedRunID:String?
+    var activeRegistration:String? {busy ? capturedRegistration : nil}
     var ownedRunID:String? {busy ? capturedRunID : nil}
     func ownsLearningRun(_ runID:String)->Bool {busy && capturedRunID == runID && task?.isCancelled != true}
     @ObservationIgnored private var capturedEligibility:(()->Bool)?
@@ -198,7 +199,9 @@ import SwiftData
         busy=true;capturedRegistration=registration;capturedDay=day;capturedControls=controls;capturedPowerRevision=power;capturedPrior=prior;statusRegistration=registration;status="Preparing collected context for background review…"
         progress=PAHeartbeatProgress(runID:runID,steps:PAHeartbeatRules.stages())
         task=Task {
-            let began=clock(),callsBefore=PAHeartbeatRules.callCount(prior,day:day)
+            let began=clock()
+            runtime.started(registration,runID,began)
+            let callsBefore=PAHeartbeatRules.callCount(prior,day:day)
             let before=runtime.activity(registration,runID)
             var steps=PAHeartbeatRules.stages(),failure:String?,sleepInterrupted=false
             var stageFailures:[String]=[]
@@ -225,6 +228,7 @@ import SwiftData
                 let finalProgress=PAHeartbeatProgress(runID:runID,steps:steps,finished:true)
                 progress=recorded && after.briefUpdated && failure == nil && !sleepInterrupted && !Task.isCancelled && finalProgress.percentage == 100 ? finalProgress : nil
                 busy=false;capturedRegistration=nil;capturedDay=nil;capturedControls=nil;capturedPowerRevision=nil;capturedPrior=nil;capturedRunID=nil;capturedEligibility=nil
+                runtime.finished(registration,run)
             }
             var account=PAHeartbeatRules.clearWait(prior)
             do {

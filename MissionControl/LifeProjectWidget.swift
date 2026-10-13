@@ -12,6 +12,7 @@ enum LifeProjectPresentation: String, CaseIterable, Identifiable {
 struct LifeProjectWidget: View {
     @Bindable var model: DashboardModel
     var configuration: Binding<WidgetConfiguration>
+    var widgetID:UUID? = nil
     var showsHeader = true
     var topicScope:UUID? = nil
     var previewRegistration: String? = nil
@@ -107,6 +108,8 @@ struct LifeProjectWidget: View {
             }.padding(24).frame(width:540,height:460)
         }
         .onGeometryChange(for:CGFloat.self) { $0.size.width } action: { availableWidth=$0 }
+        .onAppear {consumeActivityNavigation()}
+        .onChange(of:model.activityNavigation?.id) {consumeActivityNavigation()}
         .onChange(of: registration) { boardScroll.stop();navigation = .init(); unfiled=false;quickTask="";notesEditing=nil; editing = nil; linking = nil;moving=nil;deleting=nil;matching=nil;drag=nil;boardDrag=nil;dropHover=nil;showDeleted=false;inspecting=false; notice = nil }
         .onChange(of:store.revision) { navigation.reconcile(items:items);boardScroll.stop();boardDrag=nil;dropHover=nil }
         .onChange(of:focusAreas) { navigation.reconcile(items:items);resetPage() }
@@ -177,6 +180,12 @@ struct LifeProjectWidget: View {
         configuration.wrappedValue=config
     }
     private func resetPage() { quickTask="";notice=nil;inspecting=false;boardScroll.stop();boardDrag=nil;drag=nil;dropHover=nil }
+    private func consumeActivityNavigation() {
+        guard let request=model.activityNavigation,request.registration == registration,request.widgetID == widgetID,let id=request.projectID else {return}
+        model.activityNavigation=nil
+        guard let item=items.first(where:{$0.id == id}) else {notice="This saved project is no longer available.";return}
+        open(item)
+    }
     private func navigateHome() { navigation.home();unfiled=false;resetPage() }
     private func setRoot(_ id: UUID?) {
         var config = configuration.wrappedValue

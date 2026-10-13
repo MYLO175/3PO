@@ -105,15 +105,32 @@ struct PATasksView: View {
             }
             if let project=item.proposedProjectTask { Label("Task in " + project.target.title,systemImage:"folder").font(.caption);Text(project.connection).font(.caption).foregroundStyle(.secondary) }
             if let date=item.proposedDate { Text(dateLabel(date.date(),hasTime:date.hasTime,fallback:date.start) + (date.end.map{" to " + dateLabel(date.date($0),hasTime:date.hasTime,fallback:$0)} ?? "")).font(.callout).textSelection(.enabled) }
-            Button("Adjust with assistant…") {refinement="";refiningSuggestion=item}.buttonStyle(.borderless).font(.caption)
+            if item.nativeTarget != nil { Button("Discuss with 3PO…") {model.openReviewConversation([item])}.buttonStyle(.borderless).font(.caption) }
             Button("Source evidence") { sourceDiscovery=item }.buttonStyle(.borderless).font(.caption)
-            HStack { if let claim=model.reviewCreationClaim(item) {Label(claim.receipt == nil ? "Check save outcome" : "Created",systemImage:claim.receipt == nil ? "exclamationmark.circle" : "checkmark.circle").font(.caption).foregroundStyle(.secondary)} else if ["project","projectTask"].contains(item.kind) { if model.assistant.projects.receipt("project-suggestion:"+item.id,registration:item.registration) == nil { Button(item.kind == "projectTask" ? "Review task…" : "Review space…") { reviewingProject=item } } else { Label("Created",systemImage:"checkmark.circle") } } else if !["update","reply"].contains(item.kind) {
-                if item.reviewState == "pending" { Text(item.proposedRemoval == nil ? "Save needs checking in Apple; it will not be repeated." : "Removal needs checking in Calendar; it will not be repeated.").font(.caption).foregroundStyle(.orange) }
-                else if item.nativeTarget != nil {
-                    Button(model.approvingDiscoveryID == item.id ? "Approving…" : "Approve") { Task {await model.approveDiscovery(item)} }.disabled(!model.proactive.canReview(item.id,model:model) || model.writing || model.assistant.busy)
-                    Button(item.proposedRemoval == nil ? "View/edit" : "View event") {model.reviewDiscovery(item)}.disabled(!model.proactive.canReview(item.id,model:model) || model.writing)
-                } else { Button("Review suggestion") { model.reviewDiscovery(item) }.disabled(!model.proactive.canReview(item.id,model:model) || model.writing) }
-            }; Spacer(); if !embedded {Button("Dismiss") {model.proactive.dismiss(item,model:model)}.disabled(model.writing)} }.controlSize(.small)
+            HStack {
+                if item.kind == "project" {Button("Review space…") {reviewingProject=item}}
+                else if item.nativeTarget == nil && !["reply","update"].contains(item.kind) {
+                    let related=model.reviewRecords(model.reviewSource(item))
+                    let completed=related.filter(model.reviewDiscoveryCompleted).count
+                    if model.reviewDiscoveryCompleted(item) {
+                        Label("\(max(1,completed)) action\(completed == 1 ? "" : "s") completed",systemImage:"checkmark.circle.fill").foregroundStyle(.secondary)
+                        Button("View actions") {model.openReviewConversation(related.isEmpty ? [item] : related)}
+                    } else if let claim=model.reviewCreationClaim(item),claim.receipt == nil {
+                        Label("Save needs checking",systemImage:"exclamationmark.circle").foregroundStyle(.orange)
+                        Button("Inspect actions") {model.openReviewConversation(related.isEmpty ? [item] : related)}
+                    } else {
+                        Button("Explore suggested actions") {model.openReviewConversation(related.isEmpty ? [item] : related)}
+                    }
+                } else if item.nativeTarget != nil {
+                    if item.reviewState == "pending" {Text("Save needs checking in Apple; it will not be repeated.").font(.caption).foregroundStyle(.orange)}
+                    else {
+                        Button(model.approvingDiscoveryID == item.id ? "Approving…" : "Approve") {Task {await model.approveDiscovery(item)}}.disabled(!model.proactive.canReview(item.id,model:model) || model.writing || model.assistant.busy)
+                        Button(item.proposedRemoval == nil ? "View/edit" : "View event") {model.reviewDiscovery(item)}.disabled(!model.proactive.canReview(item.id,model:model) || model.writing)
+                    }
+                }
+                Spacer()
+                if !embedded {Button("Dismiss") {model.proactive.dismiss(item,model:model)}.disabled(model.writing)}
+            }.controlSize(.small)
             if model.reviewApprovalErrorAccount == item.registration,model.reviewApprovalErrorID == item.id,let error=model.reviewApprovalError {Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)}
         }
     }
@@ -189,9 +206,20 @@ struct PATasksView: View {
                                 Text(EmailReplyDraftRules.needsBackgroundDraft(summary,message:message) ? "Reply preparation pending" : "Check details before preparing a reply").font(.caption).foregroundStyle(.secondary)
                             }
                             if let relevance=summary.personalRelevance {Label(relevance.reason,systemImage:"person.crop.circle.badge.checkmark").font(.caption).foregroundStyle(.secondary)}
+                            let completedSource=ReviewWorkSource(key:"mail:"+message.id,title:message.subject,kind:"mail",accountID:message.accountID,messageID:message.id)
+                            let completedActions=model.reviewCompletedActions(completedSource)
+                            if completedActions > 0 {
+                                HStack {Label("\(completedActions) action\(completedActions == 1 ? "" : "s") completed",systemImage:"checkmark.circle.fill").foregroundStyle(.secondary);Button("View actions") {model.openReviewSource(message)};Spacer()}.controlSize(.small)
+                            }
                             let proposals=card.discoveries.filter{$0.kind != "update"},updates=card.discoveries.filter{$0.kind == "update"}
+                            let preparedActions=proposals.filter{$0.nativeTarget == nil && $0.kind != "project" && $0.kind != "reply"}
+                            if !preparedActions.isEmpty {
+                                Divider()
+                                Text("\(preparedActions.count) suggested action\(preparedActions.count == 1 ? "" : "s") · "+Array(Set(preparedActions.map{$0.kind == "projectTask" ? "Project tasks" : $0.kind == "calendar" ? "Calendar" : "Reminders"})).sorted().joined(separator:" and ")).font(.caption).foregroundStyle(.secondary)
+                                Button("Explore suggested actions") {model.openReviewConversation(model.reviewRecords(model.reviewSource(preparedActions[0])))}.controlSize(.small)
+                            }
                             if !proposals.isEmpty {
-                                ForEach(proposals) { item in
+                                ForEach(proposals.filter{$0.nativeTarget != nil || $0.kind == "project" || $0.kind == "reply"}) { item in
                                     Divider()
                                     discoveryContent(item,embedded:true,emailTitle:message.subject)
                                 }

@@ -19,7 +19,7 @@ extension EmailSummaryService {
     @discardableResult func retryFeedback(_ job:ReviewFeedbackJob,model:DashboardModel)->Bool {
         guard feedback.activeID != job.id,feedback.records.first(where:{$0.id == job.id}) == job,job.registration == model.chatGPT.activeID,!job.pending else {return false}
         if feedbackMemory(job,model:model) != nil {return feedback.markSaved(job.id)}
-        var retry=job;retry.model=model.chatGPT.selectedModel;retry.sourceRevision=model.sourceRevision;retry.state = .queued;retry.error=nil;retry.heartbeatEligible=true;retry.sourceSettings=model.proactive.sourceSettingsScope(model)
+        var retry=job;retry.activityAttemptID=UUID();retry.model=model.chatGPT.selectedModel;retry.sourceRevision=model.sourceRevision;retry.state = .queued;retry.error=nil;retry.heartbeatEligible=true;retry.sourceSettings=model.proactive.sourceSettingsScope(model)
         guard feedbackSource(retry,model:model) != nil else {feedback.error="This email changed or is unavailable. Your feedback is retained; submit new feedback from its current review.";return false}
         guard feedback.replaceForRetry(retry) else {return false}
         return processFeedbackNow(retry,model:model)

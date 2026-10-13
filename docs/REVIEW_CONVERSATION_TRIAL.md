@@ -1,6 +1,6 @@
 # Conversational Review and AI activity trial
 
-13 October 2026. Separate worktree based on `b079295`; prototype only, not merged or installed over 3PO.
+13 October 2026. Historical source-free prototype checkpoint, based on `b079295`. The user approved this interaction; connected production behaviour and current validation are recorded in [HOW_IT_WORKS](HOW_IT_WORKS.md) and [STATUS](../STATUS.md). The sections below describe the original scripted comparison and its limits.
 
 ## Try it
 
@@ -46,7 +46,7 @@ This is a **scripted interaction prototype**, not a reasoning-quality evaluation
 
 The production system already asks for paired Calendar/project milestone suggestions, but current evidence still shows model omissions. A conversational display alone does not fix that reasoning gap.
 
-## Production implementation after choosing the interaction
+## Original production integration plan (now historical)
 
 Keep one owning integration chat. Add an account-owned Review conversation and durable job record rather than route hidden turns through `AssistantService.send`, which currently targets the primary feed. Reuse `PAConversationEngine` and typed tools through a Review-specific service.
 

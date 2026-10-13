@@ -41,14 +41,14 @@ import SwiftData
         },learning:{request in
             let result=try await model.runHeartbeatLearning(request:request)
             return .init(failure:result.failure,detail:result.detail,skipped:result.skipped)
-        })
+        },started:{model.heartbeatActivityStarted($0,$1,$2)},finished:{model.heartbeatActivityFinished($0,$1)})
     }
 
     private static func environment(_ model:DashboardModel)->HeartbeatEnvironment {
         func otherLearning(_ busy:Bool,_ runID:String?)->Bool {busy && !(runID.map{model.heartbeat.ownsLearningRun($0)} ?? false)}
         let learning=otherLearning(model.sourceLearning.busy,model.sourceLearning.ownedHeartbeatRunID) || otherLearning(model.nativeSourceLearning.busy,model.nativeSourceLearning.ownedHeartbeatRunID) || otherLearning(model.memoryMaintenance.busy,model.memoryMaintenance.ownedHeartbeatRunID) || otherLearning(model.memoryLearning.busy,model.memoryLearning.ownedHeartbeatRunID) || otherLearning(model.lifeOrganisation.busy,model.lifeOrganisation.ownedHeartbeatRunID)
         let feedback=model.emailSummaries.feedback.activeID != nil && !(model.emailSummaries.feedback.ownedHeartbeatRunID.map{model.heartbeat.ownsLearningRun($0)} ?? false)
-        let foreground=feedback || model.assistant.busy || model.chatGPT.busy || model.projectPlacement.busy || learning || model.writing
+        let foreground=model.reviewWork.busy || feedback || model.assistant.busy || model.chatGPT.busy || model.projectPlacement.busy || learning || model.writing
         let proposals=model.proactive.state.accounts[model.chatGPT.activeID]
         let preview=["--sample","--preview-review-inbox","--preview-settings"].contains{ProcessInfo.processInfo.arguments.contains($0)}
         return .init(registration:model.chatGPT.activeID,model:model.chatGPT.selectedModel,sourceSettings:model.proactive.sourceSettingsScope(model),scope:model.proactive.scope(model),whatsappChoices:model.whatsapp.choicesRevision,whatsappIdentity:model.whatsapp.linkedIdentity,contextEnabled:model.assistant.contextEnabled,inferenceVerified:model.chatGPT.inferenceVerified,usagePaused:model.chatGPT.usagePaused,workBusy:foreground || model.briefings.busy || model.proactive.busy || model.emailSummaries.busy,foregroundBusy:foreground,permitted:!preview,emailEnabled:model.emailSummaries.enabled,proposalsEnabled:model.proactive.enabled,proposalAllowanceReached:proposals?.day == BriefingRules.day(model.heartbeat.currentTime) && (proposals?.attempts ?? 0) >= 96)

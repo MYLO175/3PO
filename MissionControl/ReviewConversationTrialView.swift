@@ -183,12 +183,12 @@ struct ReviewTrialStatusPill:View {
                 HStack(spacing:10) {
                     VStack(alignment:.leading,spacing:1) {
                         Text(engine.title).font(.system(size:12,weight:.semibold)).lineLimit(1)
-                        Text(engine.subtitle).font(.system(size:10)).foregroundStyle(palette[.text].opacity(0.62)).lineLimit(1)
+
                     }
                     Spacer(minLength:0)
                     Image(systemName:engine.attention != nil ? "exclamationmark.circle.fill" : engine.progress != nil ? "chevron.down" : engine.lastOutcome?.state == .succeeded ? "checkmark.circle.fill" : "chevron.down").font(.system(size:12)).foregroundStyle(engine.attention != nil ? Color.orange : palette[.accent])
                 }.padding(.leading,9).padding(.trailing,8).frame(width:250)
-            }.buttonStyle(.plain).help("Inspect current and queued AI jobs").accessibilityLabel("AI activity").accessibilityValue(engine.title + ", " + engine.subtitle)
+            }.buttonStyle(.plain).help("Inspect current and queued AI jobs").accessibilityLabel("AI activity").accessibilityValue(engine.title)
         }.padding(4).background(palette[.widget].opacity(0.9),in:Capsule()).overlay(Capsule().stroke(engine.attention != nil ? .orange.opacity(0.5) : palette[.border].opacity(0.45),lineWidth:0.8))
             .animation(reduceMotion ? nil : .easeInOut(duration:0.3),value:engine.progress)
     }

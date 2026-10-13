@@ -9,11 +9,12 @@ struct AIActivityPill: View {
     var openChat: () -> Void
     var openDestination: (AIActivityDestination) -> Void
     var isVisible: (AIActivityRecord) -> Bool = { _ in true }
+    var relatedDestinations:(AIActivityRecord)->[AIActivityDestination] = {_ in []}
     @State private var activityOpen = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var active: AIActivityRecord? {
-        guard var current, current.registration == registration else { return nil }
+        guard var current, current.registration == registration,isVisible(current) else { return nil }
         if let saved = saved.first(where: { $0.id == current.id }) { current.acknowledged = saved.acknowledged }
         return current
     }
@@ -69,7 +70,7 @@ struct AIActivityPill: View {
             .popover(isPresented: $activityOpen, arrowEdge: .bottom) {
                 AIActivityView(store: store, registration: registration, current: active, palette: palette,
                                openChat: { activityOpen = false; openChat() },
-                               openDestination: { activityOpen = false; openDestination($0) }, isVisible: isVisible)
+                               openDestination: { activityOpen = false; openDestination($0) }, isVisible: isVisible,relatedDestinations:relatedDestinations)
             }
         }
         .padding(4)
@@ -88,8 +89,9 @@ struct AIActivityView: View {
     var openChat: () -> Void
     var openDestination: (AIActivityDestination) -> Void
     var isVisible: (AIActivityRecord) -> Bool = { _ in true }
+    var relatedDestinations:(AIActivityRecord)->[AIActivityDestination] = {_ in []}
 
-    private var visibleCurrent: AIActivityRecord? { current.flatMap { $0.registration == registration ? $0 : nil } }
+    private var visibleCurrent: AIActivityRecord? { current.flatMap { $0.registration == registration && isVisible($0) ? $0 : nil } }
     private var records: [AIActivityRecord] {
         let saved = store.records(registration).filter(isVisible)
         guard let current = visibleCurrent else { return saved }
@@ -152,6 +154,11 @@ struct AIActivityView: View {
                 Text(record.date, format: .dateTime.day().month(.abbreviated).hour().minute())
                 if record.acknowledged { Text("· Acknowledged") }
             }.font(.caption2).foregroundStyle(palette[.text].opacity(0.62))
+            if !relatedDestinations(record).isEmpty {
+                HStack(spacing:8) {ForEach(Array(relatedDestinations(record).enumerated()),id:\.offset) {_,destination in
+                    Button {openDestination(destination)} label:{Label(destination.title,systemImage:destination.symbol)}
+                }}.controlSize(.small)
+            }
             HStack(spacing: 8) {
                 if let destination = record.destination {
                     Button { openDestination(destination) } label: { Label(destination.title, systemImage: destination.symbol) }

@@ -10,10 +10,11 @@ extension AssistantService {
         sendProfile(runtime: model.assistantRuntime(), topic: topic, answer: answer, control: control)
     }
     @discardableResult func send(model: DashboardModel, topicID: UUID?, prompt: String, focusAreas: [LifeArea]? = nil, images: [ChatImageAttachment] = []) -> Bool {
-        send(runtime: model.assistantRuntime(), topicID: topicID, prompt: prompt, focusAreas: focusAreas, images: images)
+        model.reviewWork.interruptForForeground(model.chatGPT.activeID)
+        return send(runtime: model.assistantRuntime(), topicID: topicID, prompt: prompt, focusAreas: focusAreas, images: images)
     }
-    func send(model: DashboardModel) { send(runtime: model.assistantRuntime()) }
-    func send(context: String?, model: DashboardModel) { send(context: context, runtime: model.assistantRuntime()) }
+    func send(model: DashboardModel) { model.reviewWork.interruptForForeground(model.chatGPT.activeID);send(runtime: model.assistantRuntime()) }
+    func send(context: String?, model: DashboardModel) { model.reviewWork.interruptForForeground(model.chatGPT.activeID);send(context: context, runtime: model.assistantRuntime()) }
     func resumeQueue(model: DashboardModel) { resumeQueue(runtime: model.assistantRuntime()) }
     func sourceSafeHistory(_ model: DashboardModel, feed: AssistantConversation, topic: AssistantConversation?) -> [AssistantTurn] {
         sourceSafeHistory(runtime: model.assistantRuntime(), feed: feed, topic: topic)
@@ -73,6 +74,8 @@ extension DashboardModel {
             guard let delivery = turn.deliveryID else { return true }
             if delivery.hasPrefix("discovery:") {
                 guard let record = proactive.record(delivery: delivery, model: self), proactive.visible(record, model: self) else { return false }
+                let reviewText=(record.sourceTitle.map{$0+"\n"} ?? "")+record.message
+                guard turn.content == record.message || turn.content == reviewText else {return false}
             } else if delivery.hasPrefix("learn-question:") {
                 guard let record = memoryLearning.question(delivery: delivery, registration: chatGPT.activeID), memoryLearning.visible(record, assistant: assistant) else { return false }
             } else if delivery.contains(":morning:"), !briefings.allowsChatDelivery(delivery, content: turn.content, model: self) { return false }
@@ -83,7 +86,7 @@ extension DashboardModel {
                           history: request.history, focusAreas: request.focusAreas)
         }, afterTurn: { [weak self] in
             guard let self else { return }
-            projectPlacement.check(self)
-        })
+            if !reviewWork.busy {projectPlacement.check(self)}
+        },started:{ [weak self] in self?.assistantActivityStarted($0) },finished:{ [weak self] in self?.assistantActivityFinished($0) })
     }
 }

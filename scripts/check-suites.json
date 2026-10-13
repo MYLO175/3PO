@@ -901,6 +901,28 @@
         "integration-owner startup/output audit",
         "signed DEBUG candidate"
       ]
+    },
+    {
+      "id": "review-work",
+      "tier": "source-free",
+      "script": "scripts/test-review-work.sh",
+      "effects": [
+        "Actual durable queue, injected failures, held work and cancellation races; no sources or inference"
+      ],
+      "requires": [
+        "Xcode"
+      ]
+    },
+    {
+      "id": "ai-activity",
+      "tier": "source-free",
+      "script": "scripts/test-ai-activity.sh",
+      "effects": [
+        "Fictional durable activity, migration, acknowledgement and failure state checks"
+      ],
+      "requires": [
+        "Xcode"
+      ]
     }
   ]
 }

@@ -54,6 +54,13 @@ struct AssistantConversation: Codable, Identifiable, Equatable {
     var created = Date.now
     var turns: [AssistantTurn] = []
     var isPrimary: Bool?
+    /// Dedicated Review history stays outside the primary feed and legacy topics.
+    var reviewKey:String? = nil
+    var reviewSourceKind:String? = nil
+    var reviewAccountID:String? = nil
+    var reviewMessageID:String? = nil
+    var reviewSourceIdentity:String? = nil
+    var reviewSourceChatID:String? = nil
     var focus: String?
     var isTopic: Bool?
     var notebookAreas:[LifeArea]? = nil
@@ -77,7 +84,7 @@ enum ConversationRules {
         return rows
     }
     static func topics(in conversations: [AssistantConversation], registration: String) -> [AssistantConversation] {
-        conversations.filter { $0.accountID == registration && $0.isPrimary != true && ($0.isTopic == true || $0.focus != nil) }
+        conversations.filter { $0.accountID == registration && $0.reviewKey == nil && $0.isPrimary != true && ($0.isTopic == true || $0.focus != nil) }
             .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
     /// Empty stored value means explicitly no topic. Legacy chats become modes only if configured.

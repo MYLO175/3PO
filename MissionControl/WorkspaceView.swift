@@ -72,14 +72,22 @@ struct WorkspaceView: View {
             .background(WorkspaceWindowColour(colour:NSColor(palette[.sidebar])))
             .focusedSceneValue(\.workspaceMenu,WorkspaceMenuActions(sidebar:$sidebarVisible,editing:$editing,newDashboard:newDashboard,addWidget:addWidget,customiseToolbar:customiseToolbar,customiseColors:{ showColors = true }))
             .sheet(isPresented:$showColors) { WorkspaceColorEditor() }
+            .onGeometryChange(for:CGFloat.self) {$0.size.height} action:{model.reviewSheetHeight=max(420,min(660,$0-24))}
             .task { model.start() }
             .onChange(of:store.selected.id) { focusedWidgetID = nil }
+            .onChange(of:model.activityNavigation?.id) {
+                guard let request=model.activityNavigation,request.registration == model.chatGPT.activeID else {model.activityNavigation=nil;return}
+                editing=false;focusedWidgetID=request.widgetID
+                if request.projectID == nil {model.activityNavigation=nil}
+            }
             .onChange(of:model.assistantFocusRequest?.id) {
                 guard let request = model.assistantFocusRequest else { return }
                 editing = false
                 focusedWidgetID = request.widgetID
             }
             .sheet(isPresented:$showName) { VStack(alignment:.leading,spacing:16) { Text(naming == nil ? "New dashboard" : "Edit dashboard").font(.title2.weight(.semibold)); TextField("Name",text:$name).onSubmit { saveName() }; Text("Icon").font(.headline); LazyVGrid(columns:Array(repeating:GridItem(.fixed(38)),count:6),spacing:8) { ForEach(DashboardSymbols.choices,id:\.self) { symbol in Button { dashboardSymbol=symbol } label: { Image(systemName:symbol).frame(width:32,height:32).background(dashboardSymbol == symbol ? Color.accentColor.opacity(0.15) : Color.clear,in:RoundedRectangle(cornerRadius:7)) }.buttonStyle(.borderless).accessibilityLabel(symbol).help(symbol) } }; Button("Automatic icon") { dashboardSymbol=nil }.controlSize(.small); HStack { Spacer(); Button("Cancel") { showName = false }.keyboardShortcut(.cancelAction); Button("Save") { saveName() }.keyboardShortcut(.defaultAction).disabled(name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty) } }.padding(24).frame(width:360) }
+            .sheet(item:$model.reviewPresentation) { ProductionReviewConversationView(model:model,conversationID:$0.id).environment(\.workspacePalette,palette) }
+            .sheet(isPresented:$model.showingAIHeartbeat) { BackgroundActivityView(model:model) }
             .sheet(item:$model.selectedMessage) { DashboardView(model:model).previewSheet($0) }
             .sheet(item:$model.editTarget) { NativeItemEditor(model:model,target:$0) }
             .sheet(item:$model.calendarRemovalReview) { CalendarRemovalReviewSheet(model:model,session:$0) }
@@ -93,7 +101,7 @@ struct WorkspaceView: View {
         }.customizationBehavior(.reorderable).sharedBackgroundVisibility(.hidden)
         ToolbarSpacer(.flexible)
         ToolbarItem(id:"heartbeatProgress") {
-            HeartbeatToolbarProgress(heartbeat:model.heartbeat,palette:palette)
+            EmptyView()
         }.customizationBehavior(.disabled).sharedBackgroundVisibility(.hidden)
         ToolbarItem(id:"feedback") {
             TimelineView(.periodic(from:.now,by:1)) { context in
@@ -102,8 +110,8 @@ struct WorkspaceView: View {
                 }
             }
         }.customizationBehavior(.disabled).sharedBackgroundVisibility(.hidden)
-        ToolbarItem(id:"assistant") {
-            Button { showAssistant() } label: { Label("Assistant",systemImage:"bubble.left.and.bubble.right") }.help("Assistant (⌘J)")
+        ToolbarItem(id:"assistant",placement:.principal) {
+            DashboardAIActivityPill(model:model,palette:palette,openChat:showAssistant)
         }.defaultCustomization(visible(.assistant) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
         ToolbarItem(id:"refresh") {
             Button { model.heartbeat.check(model,manual:true) } label: { Label("Run heartbeat",systemImage:"waveform.path.ecg") }
@@ -382,7 +390,7 @@ private struct WorkspaceTile: View {
         case .tasks: PATasksView(model:model).padding(16)
         case .clock: DateClockWidget(configuration:configuration)
         case .weather: WeatherWidgetView(weather:model.weather).padding(16)
-        case .projects: LifeProjectWidget(model:model,configuration:configuration).padding(16)
+        case .projects: LifeProjectWidget(model:model,configuration:configuration,widgetID:widget.id).padding(16)
         case nil: ContentUnavailableView("Widget unavailable",systemImage:"square.dashed",description:Text("Its saved placement is preserved for a future app version."))
         }
     }

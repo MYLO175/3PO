@@ -91,6 +91,9 @@ struct HeartbeatChildResult {
     var feedback:(HeartbeatChildRequest) async throws->HeartbeatChildResult = {_ in .init(skipped:true)}
     var learning:(HeartbeatChildRequest) async throws->HeartbeatChildResult = {_ in .init(skipped:true)}
 
+    var started:(_ registration:String,_ runID:String,_ date:Date)->Void = {_,_,_ in}
+    var finished:(_ registration:String,_ run:PAReviewRun)->Void = {_,_ in}
+
     #if DEBUG
     /// Metadata-only legacy evaluation uses no desktop or real child workers.
     static var inactive:Self {

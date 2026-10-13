@@ -1,6 +1,6 @@
 import Foundation
 
-struct NativeCreationRequest: Identifiable {
+struct NativeCreationRequest: Identifiable, Codable, Equatable {
     var id = UUID()
     var kind: NativeItemKind
     var registration: String

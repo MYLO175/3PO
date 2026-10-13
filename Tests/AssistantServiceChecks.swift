@@ -45,6 +45,8 @@ import SwiftData
     var itemDetails: [String: NativeEditDetails] = [:]
     var consultedMemory: Set<UUID> = []
     var receipts: [String] = []
+    var pendingNativeActionCount=0
+    var actionReceiptsReadable=true
     var memoryNotes: [String] = []
     var clarification: (String, [String])?
     let mailCursor: any AssistantMailCursor = FictionalMailCursor()
@@ -423,6 +425,59 @@ import SwiftData
         check(batchWrites == 1 && batchContext.sessions[0].receipts.count == 2 && batchService.error == nil,"A recovered later operation preserves earlier verified receipts and self-authored memory revision")
         let replayed=batchProvider.inputs[1].filter{$0["type"] as? String == "function_call_output"}.compactMap{$0["call_id"] as? String}
         check(replayed == [memoryCall.id,creation.id],"Internal reads do not fabricate completed transport calls or duplicate the original operation")
+        let readOnlyProvider=FictionalInference(),readOnlyContext=FictionalContext()
+        let readOnlyService=service(readOnlyProvider,try open("readonly-receipts-unavailable"))
+        var readOnlyOutcomes:[AssistantTurnOutcome]=[]
+        var readOnlyRuntime=readOnlyContext.runtime();readOnlyRuntime.finished={readOnlyOutcomes.append($0)}
+        readOnlyContext.configure={session,_ in session.actionReceiptsReadable=false}
+        readOnlyProvider.replies=[final("Supported fictional read-only answer")]
+        _=readOnlyService.send(runtime:readOnlyRuntime,topicID:nil,prompt:"Explain this fictional project")
+        await until{!readOnlyService.busy}
+        check(readOnlyOutcomes.last?.phase == "completed" && readOnlyOutcomes.last?.unconfirmedActions == 0,"Unavailable historical action receipts cannot invent uncertainty for a read-only answer")
+
+        let uncertainProvider=FictionalInference(),uncertainContext=FictionalContext()
+        let uncertainService=service(uncertainProvider,try open("uncertain-turn"))
+        var uncertainOutcomes:[AssistantTurnOutcome]=[]
+        var uncertainRuntime=uncertainContext.runtime();uncertainRuntime.finished={uncertainOutcomes.append($0)}
+        uncertainContext.configure={session,_ in session.executeBody={_,session in
+            session.pendingNativeActionCount=1
+            throw PANativeActionUncertainty(operationKey:"fictional-durable-claim",nativeReadbackVerified:true,message:"Fictional save receipt is unconfirmed")
+        }}
+        uncertainProvider.replies=[response([nativeCall("change_calendar")]),final("This unsupported success must never be requested")]
+        _=uncertainService.send(runtime:uncertainRuntime,topicID:nil,prompt:"Add the fictional event")
+        await until{!uncertainService.busy}
+        check(uncertainProvider.inputs.count == 1 && uncertainProvider.replies.count == 1,"Native uncertainty stops the real engine before another inference or save")
+        check(uncertainOutcomes.count == 1 && uncertainOutcomes[0].phase == "uncertain" && uncertainOutcomes[0].unconfirmedActions == 1,"Fluent output cannot hide an unconfirmed native operation")
+
+        let reviewProvider=FictionalInference(),reviewContext=FictionalContext()
+        let reviewContainer=try open("review-handover"),reviewService=service(reviewProvider,reviewContainer)
+        let primaryID=reviewService.openPA()!,humanID=UUID(),responseID=UUID()
+        let reviewID=reviewService.openReview(key:"mail:fictional-source",title:"Fictional engineering milestones",sourceKind:"mail",accountID:"fictional-mail",messageID:"fictional-source",identity:nil,chatID:nil,seeds:[.init(role:"assistant",content:"Fictional source plan only",completed:true)])!
+        check(reviewService.activeID == primaryID && reviewService.feed?.turns.isEmpty == true,"Opening Review retains general feed and selection without inference")
+        check(reviewService.topics.isEmpty,"Dedicated Review is excluded from legacy topics")
+        reviewService.draft="Retained general draft"
+        var reviewValid=true,reviewFinished:[AssistantTurnOutcome]=[],normalFinished:[AssistantTurnOutcome]=[]
+        var reviewRuntime=reviewContext.runtime();reviewRuntime.finished={reviewFinished.append($0)}
+        var normalRuntime=reviewContext.runtime();normalRuntime.finished={normalFinished.append($0)}
+        reviewProvider.holdNext=true
+        let submitted=Date.now.addingTimeInterval(-120)
+        check(reviewService.sendReview(runtime:reviewRuntime,conversationID:reviewID,prompt:"Please explain the fictional dates",humanTurnID:humanID,responseTurnID:responseID,query:"engineering milestones",sourceContext:"fictional-source",selectionContext:"Only selected fictional project tasks; unselected Calendar proposals are excluded.",submitted:submitted,focusAreas:[.studies],valid:{reviewValid}),"Real Review uses the shared engine")
+        await until{reviewProvider.waiting}
+        check(reviewContext.requests.last?.history.contains{$0["content"]?.contains("unselected Calendar proposals are excluded") == true} == true && String(describing:reviewProvider.inputs[0]).contains("unselected Calendar proposals are excluded"),"The inference and intent ports capture the displayed checkbox selection")
+        check(reviewService.activeID == primaryID && reviewService.draft == "Retained general draft" && reviewService.feed?.turns.isEmpty == true,"A held Review keeps general selection, draft and history")
+        check(reviewService.conversation(reviewID)?.turns.contains{$0.id == humanID && $0.created == submitted} == true,"Review retains captured human ID and submission time")
+        check(reviewService.send(runtime:normalRuntime,topicID:nil,prompt:"A separate foreground request",focusAreas:[.career]),"Explicit foreground request queues while Review unwinds")
+        reviewValid=false;reviewService.cancel();reviewProvider.replies=[final("Separate foreground result")];reviewProvider.release()
+        await until{!reviewService.busy}
+        check(reviewFinished.count == 1 && reviewFinished[0].responseTurnID == responseID && normalFinished.isEmpty,"Review completion fires once and does not run a general job through its continuation")
+        reviewService.continueForegroundAfterReview(runtime:normalRuntime)
+        await until{!reviewService.busy && normalFinished.count == 1}
+        check(reviewFinished.count == 1 && reviewService.feed?.turns.last?.content == "Separate foreground result","Normal handover retains its own finished callback and result")
+        let normalInput=String(describing:reviewProvider.inputs.last!)
+        check(!normalInput.contains("Fictional source plan only") && !normalInput.contains("Please explain the fictional dates"),"General inference never receives isolated Review history")
+        check(reviewService.draft == "Retained general draft","Normal handover preserves unsent general draft")
+        let reopenedReview=service(reviewProvider,reviewContainer)
+        check(reopenedReview.conversation(reviewID)?.reviewKey == "mail:fictional-source" && reopenedReview.feed?.id == primaryID,"Reopening preserves Review identity separately from the primary feed")
         print("PASS \(count) actual assistant service contracts: persisted preparation/send/reopen, exact traces/receipts, setup, ownership cancellation, serial queues and bounded native-read recovery; fictional providers/storage/settings only, no dashboard or Keychain.")
     }
 }

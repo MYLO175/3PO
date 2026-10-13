@@ -5,6 +5,7 @@ struct ReviewFeedbackJob:Codable,Identifiable,Equatable {
     enum State:String,Codable {case queued,learning,saving,saved,failed,stopped,interrupted}
     var id=UUID()
     var memoryID=UUID()
+    var activityAttemptID:UUID?
     var registration:String
     var messageID:String
     var accountID:String

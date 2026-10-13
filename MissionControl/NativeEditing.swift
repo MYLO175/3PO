@@ -45,7 +45,7 @@ struct NativeDateReview {
         return edited
     }
 }
-struct NativeEditDetails: Equatable {
+struct NativeEditDetails: Codable, Equatable {
     var kind: NativeItemKind
     var itemID: String
     var occurrenceID: String

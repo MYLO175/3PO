@@ -39,6 +39,9 @@ struct AssistantToolRequest {
     var itemDetails: [String: NativeEditDetails] { get }
     var consultedMemory: Set<UUID> { get }
     var receipts: [String] { get }
+    var confirmedActionCount:Int {get}
+    var pendingNativeActionCount:Int {get}
+    var actionReceiptsReadable:Bool {get}
     var memoryNotes: [String] { get set }
     var clarification: (String, [String])? { get }
     var mailCursor: any AssistantMailCursor { get }
@@ -54,4 +57,25 @@ struct AssistantToolRequest {
     var deliveryAvailable: (AssistantTurn) -> Bool
     var tools: (AssistantToolRequest) -> any AssistantToolSession
     var afterTurn: () -> Void
+    var started:(AssistantTurnOutcome)->Void = {_ in}
+    var finished:(AssistantTurnOutcome)->Void = {_ in}
+}
+
+@MainActor extension AssistantToolSession {
+    var confirmedActionCount:Int {receipts.count}
+    var pendingNativeActionCount:Int {0}
+    var actionReceiptsReadable:Bool {true}
+}
+
+struct AssistantTurnOutcome {
+    var registration:String
+    var conversationID:UUID
+    var humanTurnID:UUID
+    var responseTurnID:UUID
+    var phase:String
+    var message:String
+    var receipts:[String]
+    var errors:[String]
+    var confirmedActions:Int = 0
+    var unconfirmedActions:Int = 0
 }

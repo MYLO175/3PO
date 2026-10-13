@@ -66,7 +66,7 @@ struct AssistantPanel: View {
             added=try assistant.images.paste(board,registration:registration)
             guard attachedImages.count+added.count <= ChatImageStore.maxImages else { throw ChatImageFailure.size }
             guard assistant.drafts.setImages(attachedImages+added,registration:registration,widget:widget,conversation:key) else { throw ChatImageFailure.storage }
-            imageError=nil;model.memoryLearning.cancel();model.sourceLearning.cancel();model.nativeSourceLearning.cancel();model.memoryMaintenance.cancel();model.proactive.cancel();model.heartbeat.userStartedTyping()
+            imageError=nil;model.memoryLearning.cancel();model.sourceLearning.cancel();model.nativeSourceLearning.cancel();model.memoryMaintenance.cancel();model.proactive.cancel();model.reviewWork.interruptForForeground(model.chatGPT.activeID);model.heartbeat.userStartedTyping()
         } catch { added.forEach(assistant.images.discard);imageError=error.localizedDescription }
     }
     private func removeImage(_ image:ChatImageAttachment) {
@@ -88,7 +88,7 @@ struct AssistantPanel: View {
     private func showDraft() {
         assistant.drafts.show(registration:model.chatGPT.activeID,widget:imageDraftWidget,conversation:draftKey)
         imageError=nil
-        if !composerEmpty { model.memoryLearning.cancel();model.sourceLearning.cancel();model.nativeSourceLearning.cancel();model.memoryMaintenance.cancel(); model.proactive.cancel();model.heartbeat.userStartedTyping() }
+        if !composerEmpty { model.memoryLearning.cancel();model.sourceLearning.cancel();model.nativeSourceLearning.cancel();model.memoryMaintenance.cancel(); model.proactive.cancel();model.reviewWork.interruptForForeground(model.chatGPT.activeID);model.heartbeat.userStartedTyping() }
     }
     @State private var dictation = DictationService()
     @State private var showDictation = false

@@ -1,0 +1,224 @@
+import Foundation
+
+@MainActor private final class ReviewWorkFixture {
+    var bytes:Data?
+    var commits=0
+    var failNext=false
+    var failAfter:Int?
+    var scope=ReviewWorkScope(registration:"owner-a",model:"model-a",sourceChoices:"sources-a",storage:"storage-a")
+    var ready=true
+    var permitted=true
+    var calls:[String]=[]
+    var observed:[ReviewWorkJob]=[]
+    var canonical:[String:ReviewWorkActionResult]=[:]
+    var hold=false
+    var held:CheckedContinuation<Void,Never>?
+    var conversationHeld:CheckedContinuation<Void,Never>?
+    var converseCalls=0
+    var cancels=0
+    var performResult=ReviewWorkActionResult(phase:.saved,message:"Verified fictional save",itemID:"item",location:"Example")
+    var conversationResult=ReviewWorkConversationResult(phase:.completed,message:"Reply ready",confirmedActions:0)
+    var canonicalOnReturn=false
+    var throwPerform=false
+    var driveOnChange=false
+    var stopOnRunning=false
+    weak var service:ReviewWorkService?
+    enum FixtureError:Error {case failed}
+    func persist(_ value:Data)throws {
+        commits += 1
+        if failNext {failNext=false;throw FixtureError.failed}
+        if let failAfter,commits >= failAfter {throw FixtureError.failed}
+        bytes=value
+    }
+    func make()->ReviewWorkService {
+        let value=ReviewWorkService(load:{self.bytes},persist:{try self.persist($0)})
+        service=value
+        return value
+    }
+    func runtime()->ReviewWorkRuntime {
+        .init(scope:{self.scope},ready:{self.ready},permits:{_ in self.permitted},perform:{job,action,valid in
+            self.calls.append(action.id)
+            if self.hold {self.hold=false;await withCheckedContinuation {self.held=$0}}
+            if self.throwPerform {throw FixtureError.failed}
+            if self.canonicalOnReturn {self.canonical[action.id]=self.performResult}
+            return self.performResult
+        },inspect:{_,action in self.canonical[action.id]},converse:{job,valid in
+            self.converseCalls += 1
+            if self.hold {self.hold=false;await withCheckedContinuation {self.conversationHeld=$0}}
+            return self.conversationResult
+        },cancelConversation:{self.cancels += 1},changed:{value in
+            self.observed.append(value)
+            if self.stopOnRunning && value.phase == .running {self.stopOnRunning=false;self.service?.stop(value.id)}
+            if self.driveOnChange {self.service?.drive(self.runtime())}
+        })
+    }
+    func release() {let continuation=held;held=nil;continuation?.resume();let converse=conversationHeld;conversationHeld=nil;converse?.resume()}
+    func action(_ id:String)->ReviewWorkAction {.init(id:id,title:"Task "+id,destination:"Project",payload:Data(id.utf8))}
+    func job(_ id:String="a",mode:ReviewWorkMode = .approval)->ReviewWorkJob {
+        .init(conversationID:UUID(),scope:scope,source:.init(key:"email:source",title:"Example schedule",kind:"mail",accountID:"mail-a",messageID:"message-a"),mode:mode,human:"Yes",actions:mode == .approval ? [action(id)] : [])
+    }
+}
+
+@main struct ReviewWorkChecks {
+    @MainActor static func main()async throws {
+        var total=0
+        func check(_ value:Bool,_ text:String) {precondition(value,text);total += 1}
+        func until(_ condition:()->Bool)async {for _ in 0..<20_000 {if condition(){return};await Task.yield()};preconditionFailure("Fictional Review work did not settle")}
+        do {
+            let w=ReviewWorkFixture(),s=w.make();w.ready=false
+            let one=w.job("one"),two=w.job("two")
+            check(s.submit(one) && s.submit(two),"Durable submissions accepted while heartbeat blocks runtime")
+            s.drive(w.runtime());check(!s.busy && w.calls.isEmpty && s.waiting(w.scope.registration)==2,"Heartbeat ready gate prevents starts")
+            let bytes=w.bytes!
+            let reopened=ReviewWorkService(load:{bytes},persist:{try w.persist($0)})
+            check(reopened.job(one.id)?.phase == .queued && !reopened.isPaused(w.scope.registration),"Never-started work survives reopen without becoming interrupted")
+            w.ready=true;w.hold=true;s.drive(w.runtime());await until{w.held != nil}
+            s.drive(w.runtime());check(w.calls == ["one"],"One active operation serialises independent drive calls")
+            w.release();await until{!s.busy};check(s.job(one.id)?.phase == .completed && s.job(two.id)?.phase == .queued,"First completion retains later queued work")
+            s.drive(w.runtime());await until{!s.busy};check(s.job(two.id)?.phase == .completed && w.calls == ["one","two"],"Later explicit drive executes second request exactly once")
+            check(s.jobs(w.scope.registration).map(\.id) == [one.id,two.id],"Queue retains identities and insertion order")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make();w.driveOnChange=true
+            _=s.submit(w.job("one"));_=s.submit(w.job("two"));s.drive(w.runtime());await until{!s.busy}
+            check(s.waiting(w.scope.registration)==0,"Completion callback can drive next queued job without polling or another human action")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make(),job=w.job();w.hold=true;_=s.submit(job);s.drive(w.runtime());await until{w.held != nil}
+            let runningBytes=w.bytes!
+            let reopened=ReviewWorkService(load:{runningBytes},persist:{_ in})
+            check(reopened.job(job.id)?.phase == .interrupted && reopened.isPaused(w.scope.registration),"Reopen interrupts attempted work and pauses its account")
+            check(reopened.job(job.id)?.actions[0].phase == .uncertain,"Working action recovers conservatively as uncertain")
+            reopened.drive(w.runtime());check(w.calls.count==1,"Reopened attempted work never replays")
+            check(!reopened.retry(job.id),"Explicit retry cannot repeat an uncertain operation")
+            w.canonical["a"] = .init(phase:.saved,message:"Readback verified",itemID:"original")
+            _=reopened.reconcile(job.id,runtime:w.runtime())
+            check(reopened.job(job.id)?.actions[0].phase == .saved,"Canonical readback can reconcile an interrupted uncertain action without another creation")
+            s.stop(job.id);w.release();await until{!s.busy}
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make(),job=w.job();w.canonical["a"] = .init(phase:.saved,message:"Already verified",itemID:"original")
+            _=s.submit(job);s.drive(w.runtime());await until{!s.busy}
+            check(w.calls.isEmpty && s.job(job.id)?.phase == .completed && s.job(job.id)?.actions[0].itemID == "original","Canonical complete receipt avoids duplicate action")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make(),job=w.job();w.canonical["a"] = .init(phase:.uncertain,message:"Pending native receipt")
+            _=s.submit(job);s.drive(w.runtime());await until{!s.busy}
+            check(w.calls.isEmpty && s.job(job.id)?.phase == .uncertain && s.isPaused(w.scope.registration),"Canonical pending receipt blocks execution and exposes uncertain result")
+        }
+        for mode in [ReviewWorkMode.approval,.conversation] {
+            for change in ["registration","model","sourceChoices","storage","permission"] {
+                let w=ReviewWorkFixture(),s=w.make(),job=w.job(mode:mode);w.hold=true
+                _=s.submit(job);s.drive(w.runtime());await until{w.held != nil || w.conversationHeld != nil}
+                switch change {
+                case "registration":w.scope.registration="owner-b"
+                case "model":w.scope.model="model-b"
+                case "sourceChoices":w.scope.sourceChoices="sources-b"
+                case "storage":w.scope.storage="storage-b"
+                default:w.permitted=false
+                }
+                w.release();await until{!s.busy}
+                check(mode == .approval && ["model","sourceChoices"].contains(change) ? s.job(job.id)?.phase == .completed : s.job(job.id)?.phase != .completed,"Late \(mode.rawValue) result is withheld after \(change) changes without a canonical receipt")
+            }
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make(),job=w.job(mode:.conversation);w.hold=true
+            _=s.submit(job);s.drive(w.runtime());await until{w.conversationHeld != nil};s.stop(job.id);w.release();await until{!s.busy}
+            check(s.job(job.id)?.phase == .stopped && s.job(job.id)?.message == nil && w.cancels==1,"Stop rejects late conversation text and calls cancellation once")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make(),job=w.job();w.hold=true;w.canonicalOnReturn=true
+            _=s.submit(job);s.drive(w.runtime());await until{w.held != nil};s.stop(job.id);w.release();await until{!s.busy}
+            check(s.job(job.id)?.phase == .stopped && s.job(job.id)?.savedCount == 1,"Stop keeps confirmed already-issued save while stopping overall request")
+            check(s.isPaused(w.scope.registration),"Stop leaves later work paused")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make();var job=w.job();job.actions.append(w.action("b"));w.performResult = .init(phase:.failed,message:"Known pre-save failure")
+            _=s.submit(job);s.drive(w.runtime());await until{!s.busy}
+            check(s.job(job.id)?.phase == .failed && s.job(job.id)?.actions[1].phase == .waiting && w.calls == ["a"],"Failure isolates remaining actions and pauses progression")
+            let old=s.job(job.id)!,turn=old.humanTurnID,response=old.responseTurnID
+            check(s.retry(job.id),"Explicit known-safe Retry permits unattempted remainder")
+            check(s.job(job.id)?.id == job.id && s.job(job.id)?.humanTurnID == turn && s.job(job.id)?.responseTurnID != response && s.job(job.id)?.actions.map(\.payload) == job.actions.map(\.payload),"Retry preserves human operation/action identity and captured payload")
+            w.performResult = .init(phase:.saved,message:"Verified");s.drive(w.runtime());await until{!s.busy}
+            check(s.job(job.id)?.phase == .completed,"Explicit Retry can finish known failed operation")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make();var first=w.job();first.actions.append(w.action("b"));let same=w.job()
+            check(s.submit(first),"First selected plan is saved")
+            var duplicate=same;duplicate.actions=first.actions
+            check(!s.submit(duplicate) && s.state.jobs.count==1,"Same ordered concrete pending plan coalesces")
+            var reordered=w.job();reordered.actions=Array(first.actions.reversed())
+            check(!s.submit(reordered),"Same concrete plan coalesces regardless of checkbox/input order")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make(),job=w.job();w.failNext=true
+            check(!s.submit(job) && s.state.jobs.isEmpty && w.bytes == nil,"Failed initial persistence accepts no job and performs no action")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make();let first=w.job("a"),second=w.job("b")
+            _=s.submit(first);_=s.submit(second);w.hold=true;s.drive(w.runtime());await until{w.held != nil}
+            // Permanently fail all writes once the first operation has been issued.
+            w.failAfter=w.commits+1;w.release();await until{!s.busy}
+            check(s.job(first.id)?.phase != .completed && s.error != nil,"Receipt/checkpoint persistence failure cannot claim completion")
+            // Storage later recovers, but uncertain first work must pause further writes.
+            w.failAfter=nil;s.drive(w.runtime());await until{!s.busy}
+            check(w.calls == ["a"] && s.job(second.id)?.phase == .queued,"Progress storage failure latches queue pause after storage recovers")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make();var fabricated=w.job();fabricated.actions[0].phase = .saved;fabricated.actions[0].result="Not inspected"
+            check(!s.submit(fabricated),"New approval jobs cannot fabricate pre-saved action outcomes")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make(),job=w.job(mode:.conversation);w.conversationResult = .init(phase:.queued,message:"Invalid runtime terminal phase")
+            _=s.submit(job);s.drive(w.runtime());await until{!s.busy};s.drive(w.runtime());await until{!s.busy}
+            check(w.converseCalls==1 && s.job(job.id)?.phase != .queued,"Unexpected nonterminal conversation result cannot become automatic replay")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make();var job=w.job("a");job.actions.append(w.action("b"))
+            w.hold=true;_=s.submit(job);s.drive(w.runtime());await until{w.held != nil}
+            w.failNext=true;w.release();await until{!s.busy}
+            check(w.calls == ["a"],"One failed confirmed-result checkpoint stops remaining native actions")
+        }
+        for change in ["model","sourceChoices","storage","permission"] {
+            let w=ReviewWorkFixture(),s=w.make(),job=w.job();_=s.submit(job)
+            switch change {
+            case "model":w.scope.model="model-b"
+            case "sourceChoices":w.scope.sourceChoices="sources-b"
+            case "storage":w.scope.storage="storage-b"
+            default:w.permitted=false
+            }
+            s.drive(w.runtime())
+            await until{!s.busy}
+            check(["model","sourceChoices"].contains(change) ? s.job(job.id)?.phase == .completed : w.calls.isEmpty && s.job(job.id)?.phase == .failed && s.isPaused(w.scope.registration),"Queued \(change) change rejects before action and pauses later work")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make(),job=w.job(mode:.conversation);_=s.submit(job);w.conversationResult = .init(phase:.needsAnswer,message:"Which deadline?")
+            s.drive(w.runtime());await until{!s.busy}
+            check(s.job(job.id)?.phase == .needsAnswer && s.isPaused(w.scope.registration),"Needs-answer retains question and pauses subsequent jobs")
+        }
+        do {
+            let bytes=Data("corrupt".utf8);var persisted=false
+            let s=ReviewWorkService(load:{bytes},persist:{_ in persisted=true})
+            check(!s.readable && !persisted && !s.submit(ReviewWorkFixture().job()),"Corrupt saved state stays untouched and disables submissions")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make(),job=w.job(mode:.conversation);w.stopOnRunning=true
+            _=s.submit(job);s.drive(w.runtime());await until{!s.busy}
+            check(w.converseCalls==0 && s.job(job.id)?.phase == .stopped,"Stop from running notification prevents the first conversation call")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make(),job=w.job(mode:.conversation);w.hold=true
+            _=s.submit(job);s.drive(w.runtime());await until{w.conversationHeld != nil};s.stop(job.id)
+            check(!s.retry(job.id),"Retry waits for a stopped conversation callback to unwind before replacing its response identity")
+            w.release();await until{!s.busy}
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make();_=s.submit(w.job())
+            var object=try JSONSerialization.jsonObject(with:w.bytes!) as! [String:Any];object["futureField"]="retained"
+            let original=try JSONSerialization.data(withJSONObject:object);var wrote=false
+            let future=ReviewWorkService(load:{original},persist:{_ in wrote=true})
+            check(!future.readable && !wrote,"Future fields preserve original bytes and disable queue writes")
+        }
+        print("Review work: \(total)/\(total) source-free injected-runtime checks passed")
+    }
+}
