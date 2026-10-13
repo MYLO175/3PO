@@ -100,8 +100,8 @@ struct ProactiveReviewContext {
         }
         return result.sorted{$0.created > $1.created}
     }
-    func commitComparison(_ suggestions:[PADiscovery],issued:[String:PADiscovery],permittedEarlier:Set<String>,registration:String,progress:ProactiveProgress,now:Date,retirements:[DiscoveryRetirement] = [])throws {
-        guard suggestions.allSatisfy({$0.registration == registration}),retirements.allSatisfy({$0.proposal.registration == registration && issued.values.contains($0.proposal) && permittedEarlier.contains($0.proposal.id)}) else {throw ReviewValidationFailure.source}
+    func commitComparison(_ suggestions:[PADiscovery],issued:[String:PADiscovery],permittedEarlier:Set<String>,registration:String,progress:ProactiveProgress,now:Date,retirements:[DiscoveryRetirement] = [],permittedRetirements:Set<String>? = nil)throws {
+        guard suggestions.allSatisfy({$0.registration == registration}),retirements.allSatisfy({$0.proposal.registration == registration && issued.values.contains($0.proposal) && (permittedRetirements ?? permittedEarlier).contains($0.proposal.id)}) else {throw ReviewValidationFailure.source}
         let reconciled=try ProactiveRules.reconciled(suggestions,prior:state.records,issued:issued,now:now,permittedEarlier:permittedEarlier)
         let records=try ProactiveRules.retiring(retirements,from:reconciled,now:now),previous=state
         state.records=records;state.accounts[registration]=progress
@@ -173,17 +173,19 @@ struct ProactiveReviewContext {
     }
     private func contextRevision(_ model:DashboardModel,mailAccounts:Set<String>? = nil,whatsappReady:Bool = true)->String {
         let facts=model.assistant.memory.permittedRecords.filter{$0.registration == model.chatGPT.activeID && MemoryRules.usable($0,registration:model.chatGPT.activeID) && $0.allSourceEvidence.allSatisfy{source in (source.identity.kind != .mail || (mailAccounts?.contains(source.identity.accountID) ?? true)) && (source.identity.kind != .whatsapp || whatsappReady)}}
-        let values:[String]=["communication-actions-v4-retirement",model.assistant.projects.revision.uuidString,TimeZone.current.identifier,scope(model),model.chatGPT.selectedModel,model.assistant.preferences,model.heartbeat.whatsappEnabled.description,DiscoveryNativeTarget.fingerprint(facts.sorted{$0.id.uuidString < $1.id.uuidString}.map{MemoryDependencyRules.fingerprint(MemoryRetrieval.record($0))}),DiscoveryNativeTarget.fingerprint(model.paOrientation?.calendar ?? model.calendarData),DiscoveryNativeTarget.fingerprint(model.reminderData),EmailNativeEvidence.hash(model.completedReminders),EmailNativeEvidence.hash(model.emailSummaries.dismissalContext(model)),model.reviewAcknowledgementRevision,model.emailSummaries.preferenceRevision(model.chatGPT.activeID),model.emailSummaries.resolutionRevision(model),EmailNativeEvidence.hash(model.emailSummaries.sourceAssessments(model).filter{mailAccounts?.contains($0.0.accountID) ?? true}.map{[$0.0.id,$0.1.adviceRevision(replied:$0.0.replied)]})]
+        let values:[String]=["communication-actions-v5-action-contract",model.assistant.projects.revision.uuidString,TimeZone.current.identifier,scope(model),model.chatGPT.selectedModel,model.assistant.preferences,model.heartbeat.whatsappEnabled.description,DiscoveryNativeTarget.fingerprint(facts.sorted{$0.id.uuidString < $1.id.uuidString}.map{MemoryDependencyRules.fingerprint(MemoryRetrieval.record($0))}),DiscoveryNativeTarget.fingerprint(model.paOrientation?.calendar ?? model.calendarData),DiscoveryNativeTarget.fingerprint(model.reminderData),EmailNativeEvidence.hash(model.completedReminders),EmailNativeEvidence.hash(model.emailSummaries.dismissalContext(model)),model.reviewAcknowledgementRevision,model.emailSummaries.preferenceRevision(model.chatGPT.activeID),model.emailSummaries.resolutionRevision(model),EmailNativeEvidence.hash(model.emailSummaries.sourceAssessments(model).filter{mailAccounts?.contains($0.0.accountID) ?? true}.map{[$0.0.id,$0.1.adviceRevision(replied:$0.0.replied)]})]
         return DiscoveryNativeTarget.fingerprint(values)
     }
-    /// Background comparison only. Rendering never calls this evidence-heavy selector.
-    private func earlierCandidates(_ model:DashboardModel,mailReview:MailReviewScope?,whatsappReady:Bool)->[PADiscovery] {
-        let review=reviewContext(model)
+    /// Historical cards may be reconsidered without reusing their old interpretation
+    /// as current advice. Account/source choices and uncertain operation claims still apply.
+    func earlierCandidates(_ model:DashboardModel,mailReview:MailReviewScope?,whatsappReady:Bool)->[PADiscovery] {
+        let access=PreparedReviewAccess(model)
         return state.records.filter {record in
-            guard record.registration == model.chatGPT.activeID,!record.dismissed,record.reviewState == nil,record.supersededBy == nil,record.retiredAt == nil,model.reviewCreationClaim(record) == nil,reviewEvidenceAvailable(record.id,model:model,context:review) else {return false}
+            guard record.reviewState == nil,!model.reviewDiscoveryCompleted(record),model.reviewCreationClaim(record) == nil,preparedReviewAvailable(record,model:model,access:access) else {return false}
             if record.sourceKind == "whatsapp" {return whatsappReady}
-            return review.highlights.contains {$0.0.id == record.mailID && model.emailSummaries.reviewPermitted($0.0,model:model,scope:mailReview)}
-        }.sorted {$0.created == $1.created ? $0.id < $1.id : $0.created < $1.created}
+            guard let account=access.mailAccountByMessage[record.mailID] else {return false}
+            return mailReview?.permits(account,index:model.mailIndex,snapshot:model.mailData,excluded:model.assistant.excludedAccounts) ?? true
+        }.sorted {$0.created == $1.created ? $0.id < $1.id : $0.created > $1.created}
     }
     func hasPendingSources(_ model:DashboardModel,mailReview:MailReviewScope? = nil,whatsappReady:Bool = true,mailAccountID:String? = nil)->Bool {
         let registration=model.chatGPT.activeID,progress=state.accounts[registration] ?? .init(),context=contextRevision(model,mailAccounts:mailReview?.accountIDs,whatsappReady:whatsappReady)
@@ -295,6 +297,7 @@ struct ProactiveReviewContext {
                 // Unchanged cards receive no new inference. Continue larger queues in bounded batches.
                 let earlierRecords=ProactiveRules.reconsiderationBatch(eligibleEarlier,progress:progress,context:context)
                 let earlier=Dictionary(uniqueKeysWithValues:earlierRecords.enumerated().map{("review_\($0.offset)",$0.element)})
+                let replaceableAliases=Set(earlier.filter{self.reviewEvidenceAvailable($0.value.id,model:model)}.keys)
                 let earlierWhatsApp=ProactiveRules.whatsappDependencies(model.whatsapp.messages,chats:Set(earlier.values.filter{$0.sourceKind == "whatsapp"}.compactMap(\.sourceChatID)),identity:waScope.linkedIdentity)
                 let comparisonDependencies=whatsappDependencies + earlierWhatsApp.filter{old in !whatsappDependencies.contains{$0.chatID == old.chatID}}
                 var handlingTargets=Dictionary(uniqueKeysWithValues:events.prefix(200).enumerated().map{("event_\($0.offset)",EmailNativeEvidence.event($0.element))})
@@ -341,7 +344,7 @@ struct ProactiveReviewContext {
                 }
                 input["lifeStructure"]=["items":lifeRows,"coverage":"Relevant existing human spaces and bounded direct child tasks, including completed work. Partial coverage; absence is not proof. Use only supplied space IDs for projectTask suggestions; no background workspace mutations."]
                 input["whatsapp"]=whatsapp.enumerated().map { ["id":"wa_\($0.offset)","chat":$0.element.chatName,"sender":$0.element.sender,"sentByMe":$0.element.sentByMe,"received":$0.element.date.ISO8601Format(),"text":$0.element.text] as [String:Any] }
-                input["earlierProposals"]=ProactiveRules.earlierRows(earlier,targets:targets)
+                input["earlierProposals"]=ProactiveRules.earlierRows(earlier,targets:targets,replaceable:replaceableAliases)
                 input["completedReminders"]=completed.enumerated().map{["id":"completed_\($0.offset)","title":$0.element.item.title,"due":DateRules.reminderDue($0.element.item),"completed":$0.element.completedAt.ISO8601Format()]}
                 input["completionCoverage"]=completionError == nil ? "At most80recently completed permitted reminders from the last30days; bounded local evidence. Missing entries are unknown." : "Completed reminders unavailable; no completion evidence supplied. Never infer completion from absence."
                 if heartbeat {
@@ -369,8 +372,8 @@ struct ProactiveReviewContext {
                 let evidenceAliases=Set(candidates.flatMap {candidate in
                     (candidate.evidence.isEmpty ? [] : [candidate.alias+":primary"]) + (candidate.followUpEvidence.isEmpty ? [] : [candidate.alias+":followup"]) + candidate.actionEvidence.indices.map{candidate.alias+":action_\($0)"}
                 })
-                let tools=ProactiveResultRules.tools(sourceAliases:sourceAliases,evidenceAliases:evidenceAliases,nativeAliases:Set(handlingTargets.keys),projectAliases:Set(issuedProjects.keys),earlierAliases:Set(earlier.keys),confirmationAliases:Set(emails.indices.map{"mail_\($0)"}+completionEmails.indices.map{"completion_\($0)"}),retirementAliases:Set(retirementTargets.keys))
-                let result = try await model.chatGPT.toolResponse(input:[["role":"user","content":String(decoding:data,as:UTF8.self)]],instructions:(heartbeat ? ProactiveRules.heartbeatInstructions : ProactiveRules.instructions) + " " + MemoryDependencyRules.instructions + " " + CommitmentRules.instructions + " " + ProactiveRules.changeInstructions + " " + ProactiveRules.removalInstructions + " " + ProactiveRules.actionInstructions + " " + ProactiveRules.evidenceInstructions + " " + ProactiveRules.replacementInstructions + " " + ProactiveRules.retirementInstructions + " " + EmailReviewRules.instructions + " " + EmailResolutionRules.instructions + " " + EmailReviewRules.feedbackInstructions + " " + EmailRelevanceRules.instructions + " " + ReviewAcknowledgementRules.instructions + " " + SourceDateGrounding.instructions + " Calendar start/end and timed reminder due values already contain local times and UTC offsets; do not add the timezone offset again. " + ProactiveResultRules.instructions,tools:tools,model:selectedModel,purpose:.suggestions) { _ in }
+                let tools=ProactiveResultRules.tools(sourceAliases:sourceAliases,evidenceAliases:evidenceAliases,nativeAliases:Set(handlingTargets.keys),projectAliases:Set(issuedProjects.keys),earlierAliases:Set(earlier.keys),confirmationAliases:Set(emails.indices.map{"mail_\($0)"}+completionEmails.indices.map{"completion_\($0)"}),retirementAliases:Set(retirementTargets.keys),replacementAliases:replaceableAliases,changeSourceAliases:Set(candidates.filter{ProactiveRules.nativeChangeCue(([$0.evidence,$0.followUpEvidence]+$0.actionEvidence+[$0.sourceText ?? ""]).joined(separator:" "),removal:false)}.map(\.alias)),removalSourceAliases:Set(candidates.filter{ProactiveRules.nativeChangeCue(([$0.evidence,$0.followUpEvidence]+$0.actionEvidence+[$0.sourceText ?? ""]).joined(separator:" "),removal:true)}.map(\.alias)),writableNativeAliases:Set(targets.filter{$0.value.writable}.keys))
+                let result = try await model.chatGPT.toolResponse(input:[["role":"user","content":String(decoding:data,as:UTF8.self)]],instructions:(heartbeat ? ProactiveRules.heartbeatPreparationInstructions : ProactiveRules.preparationInstructions) + " " + MemoryDependencyRules.instructions + " " + CommitmentRules.instructions + " " + ProactiveRules.changeInstructions + " " + ProactiveRules.removalInstructions + " " + ProactiveRules.actionInstructions + " " + ProactiveRules.evidenceInstructions + " " + ProactiveRules.replacementInstructions + " " + ProactiveRules.retirementInstructions + " " + EmailReviewRules.instructions + " " + EmailResolutionRules.instructions + " " + EmailReviewRules.feedbackInstructions + " " + EmailRelevanceRules.instructions + " " + ReviewAcknowledgementRules.instructions + " " + SourceDateGrounding.instructions + " Calendar start/end and timed reminder due values already contain local times and UTC offsets; do not add the timezone offset again. " + ProactiveResultRules.instructions,tools:tools,model:selectedModel,purpose:.suggestions) { _ in }
                 try Task.checkCancellation()
                 if heartbeat {try heartbeatRequest!.validate()}
                 guard (heartbeat ? !model.heartbeat.composerActive : !assistant.hasDraft),!assistant.busy,!model.writing,
@@ -382,6 +385,7 @@ struct ProactiveReviewContext {
                 guard acknowledgementContext == model.reviewAcknowledgements(use:memoryUse,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady),completedRevision == EmailNativeEvidence.hash(model.completedReminders)+EmailNativeEvidence.hash(model.completedReminderHealth) else {throw ActionFailure.message("Review feedback or completion evidence changed; no stale review result saved.")}
                 guard model.whatsappDependenciesAvailable(earlierWhatsApp,use:memoryUse) else {throw ActionFailure.message("Earlier message context changed during comparison; no stale replacement saved.")}
                 let permittedEarlier=Set(earlier.values.filter{self.reviewEvidenceAvailable($0.id,model:model)}.map(\.id))
+                let permittedRetirements=Set(earlierCandidates(model,mailReview:mailReview,whatsappReady:memoryWhatsAppReady).map(\.id))
                 if heartbeat {guard model.heartbeatNativeReady else {throw ActionFailure.message("Saved native evidence changed during review; no stale comparison was saved.")}}
                 let response=try ProactiveResultRules.completedJSON(result.calls.map{($0.namespace,$0.name,$0.arguments)})
                 let decoded:[PADiscovery]
@@ -412,7 +416,7 @@ struct ProactiveReviewContext {
                     let detail=(error as? ReviewResultDiagnostic)?.localizedDescription ?? (error as? ReviewValidationFailure)?.localizedDescription ?? ReviewResultDiagnostic(section:section,field:.envelope,reason:.invalidAssociation).localizedDescription
                     throw ActionFailure.message(detail+" Nothing from this comparison was saved. The next heartbeat can assess fresh context; you can also review again.")
                 }
-                let suggestions = ProactiveRules.unreported(decoded.map { record in var value=record;if value.sourceKind == nil { value.scope=self.legacyMailScope(model) };value.memoryDependencies=memoryCapture.dependencies;value.memoryUse=memoryUse;value.whatsappDependencies=comparisonDependencies;value.comparisonSourceIDs=earlier.isEmpty ? nil : earlier.values.map(\.id).sorted();return value },prior:state.records,dismissedVersions:Dictionary(uniqueKeysWithValues:emails.map{(ProactiveRules.sourceKey("mail",$0.0.id),ReviewAcknowledgementRules.emailVersion($0.0,$0.1))}))
+                let suggestions = ProactiveRules.unreported(decoded.map { record in var value=record;if value.sourceKind == nil { value.scope=self.legacyMailScope(model) };value.memoryDependencies=memoryCapture.dependencies;value.memoryUse=memoryUse;value.whatsappDependencies=comparisonDependencies;value.comparisonSourceIDs=permittedEarlier.isEmpty ? nil : permittedEarlier.sorted();return value },prior:state.records,dismissedVersions:Dictionary(uniqueKeysWithValues:emails.map{(ProactiveRules.sourceKey("mail",$0.0.id),ReviewAcknowledgementRules.emailVersion($0.0,$0.1))}))
                 let reconciled=try ProactiveRules.reconciled(suggestions,prior:state.records,issued:earlier,now:now,permittedEarlier:permittedEarlier)
                 _=try ProactiveRules.retiring(retirements,from:reconciled,now:now)
                 try model.emailSummaries.saveHandling(handled,resolutions:resolved,model:model)
@@ -421,7 +425,7 @@ struct ProactiveReviewContext {
                 progress=ProactiveRules.completing(progress,versions:versions,context:context,limited:decoded.count >= 24,reportedKeys:reported)
                 progress=ProactiveRules.recordingReconsideration(progress,reviewed:Array(earlier.values),active:state.records.filter{$0.registration == registration},context:context)
                 progress.delivered += suggestions.count; progress.fingerprint = fingerprint; progress.paused = false
-                try commitComparison(suggestions,issued:earlier,permittedEarlier:permittedEarlier,registration:registration,progress:progress,now:now,retirements:retirements)
+                try commitComparison(suggestions,issued:earlier,permittedEarlier:permittedEarlier,registration:registration,progress:progress,now:now,retirements:retirements,permittedRetirements:permittedRetirements)
                 if heartbeat {
                     var notified=Set<String>()
                     for record in suggestions where notified.insert(ProactiveRules.sourceKey(record.sourceKind ?? "mail",record.mailID)).inserted {await notify(record,model:model)}

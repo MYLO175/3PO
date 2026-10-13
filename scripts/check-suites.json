@@ -873,6 +873,25 @@
       "requires": [
         "Xcode"
       ]
+    },
+    {
+      "id": "model-review-retirement",
+      "tier": "model",
+      "arguments": [
+        "--validate-review-inbox",
+        "--email-work-only",
+        "--retirement-contract"
+      ],
+      "report": "missioncontrol-email-work-evaluation.json",
+      "effects": [
+        "signed DEBUG app launch",
+        "disposable SwiftData",
+        "one configured subscription request with fictional inputs"
+      ],
+      "requires": [
+        "integration-owner startup/output audit",
+        "signed DEBUG candidate"
+      ]
     }
   ]
 }

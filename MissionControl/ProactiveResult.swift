@@ -5,9 +5,9 @@ import CoreFoundation
 enum ProactiveResultRules {
     static let toolName = "prepare_review"
     static let maximumArgumentBytes = 32_000
-    static let instructions = "Return the finished comparison by calling pa.prepare_review exactly once. Do not answer in ordinary text or call any other tool. Return suggestions, handled, resolved and retirements arrays, using empty arrays when there is no supported result. This tool returns preparation data only: it does not create, change, complete, dismiss or send anything. Use null for inapplicable optional fields. Respect each action kind's fields: connection belongs only to projectTask/change/remove; targetID only to change/remove; scope only to remove; draft only to WhatsApp reply; projectID only to projectTask. Preserve all exact evidence, action, date and ownership rules. Keep the entire result below 32000 UTF-8 bytes by using concise messages and evidence IDs instead of repeating Mail quotes. Return at most 24 suggestions, 12 handled and 12 resolved associations and 12 retirements; do not repeat proposals. Local validation remains authoritative."
+    static let instructions = "Return the finished comparison by calling pa.prepare_review exactly once. Do not answer in ordinary text or call any other tool. Return suggestions, projectTasks, handled, resolved and retirements arrays, using empty arrays when there is no supported result. Put local tasks inside existing projects in projectTasks; put Calendar and Apple Reminder proposals in suggestions. For a dated project milestone include its Calendar proposal and its local project task in their separate arrays. The combined suggestions/projectTasks limit is 24. This tool returns preparation data only: it does not create, change, complete, dismiss or send anything. Choose the suggestion schema for its action kind. Return null for each inapplicable field; each action variant constrains those fields to null. In suggestions, targetID belongs only to change/remove, connection only to projectTask/change/remove, scope only to remove, draft only to WhatsApp reply and projectID only to projectTask. Existing coverage belongs in handled or retirements, never a creation suggestion with targetID. New calendar/reminder suggestions do not require an existing native target or a listed destination: the human chooses a writable Calendar or Reminder list in the review form. Missing destination metadata is not a reason to omit a supported creation proposal. Only projectTask requires an exact existing projectID. A local task inside a human project must use kind projectTask and that projectID, never kind reminder; reminder is an Apple Reminder. For a supported project milestone return the Calendar proposal and the projectTask proposal separately. The handled and retirements sections each require their own issued targetID. Use null only for optional fields present in the selected schema. If there is no definite supported date, newDate, hasTime and endDate must all be null; never return an empty date string. Preserve all exact evidence, action, date and ownership rules. Keep the entire result below 32000 UTF-8 bytes by using concise messages and evidence IDs instead of repeating Mail quotes. Return at most 24 suggestions, 12 handled and 12 resolved associations and 12 retirements; do not repeat proposals. Local validation remains authoritative. Review each source separately: dates and facts from one email cannot change an action in another. A booking confirmation is existing coverage, never cancellation. Preserve every distinct supported milestone before returning the result."
 
-    static func tools(sourceAliases:Set<String>, evidenceAliases:Set<String>, nativeAliases:Set<String>, projectAliases:Set<String>, earlierAliases:Set<String>, confirmationAliases:Set<String>,retirementAliases:Set<String> = []) -> [[String:Any]] {
+    static func tools(sourceAliases:Set<String>, evidenceAliases:Set<String>, nativeAliases:Set<String>, projectAliases:Set<String>, earlierAliases:Set<String>, confirmationAliases:Set<String>,retirementAliases:Set<String> = [],replacementAliases:Set<String>? = nil,changeSourceAliases:Set<String>? = nil,removalSourceAliases:Set<String>? = nil,writableNativeAliases:Set<String>? = nil) -> [[String:Any]] {
         func text(_ limit:Int,nullable:Bool = false)->[String:Any] { ["type":nullable ? ["string","null"] : ["string"],"maxLength":limit] }
         func aliases(_ values:Set<String>,nullable:Bool = false)->[String:Any] {
             var choices:[Any]=values.sorted()
@@ -19,27 +19,70 @@ enum ProactiveResultRules {
         func object(_ fields:[String:[String:Any]])->[String:Any] {
             ["type":"object","properties":fields,"required":fields.keys.sorted(),"additionalProperties":false]
         }
-        let suggestion=object([
-            "mailID":aliases(sourceAliases),
-            "kind":["type":"string","enum":["calendar","reminder","update","project","projectTask","change","remove","reply"]],
-            "message":text(700,nullable:true),"evidence":text(500,nullable:true),"evidenceID":aliases(evidenceAliases,nullable:true),
-            "title":text(300,nullable:true),"targetID":aliases(nativeAliases,nullable:true),"newDate":text(40,nullable:true),
-            "hasTime":["type":["boolean","null"]],"connection":text(500,nullable:true),"draft":text(3000,nullable:true),
-            "replaces":["type":["array","null"],"maxItems":earlierAliases.isEmpty ? 0 : 3,"items":aliases(earlierAliases)],
-            "replacementReason":text(500,nullable:true),"scope":["type":["string","null"],"enum":["occurrence",NSNull()]],
-            "endDate":text(40,nullable:true),"projectID":aliases(projectAliases,nullable:true)
-        ])
-        let mail=Set(sourceAliases.filter{$0.hasPrefix("mail_")})
+        // Share issued alias sets through definitions: per-action variants must not
+        // multiply the provider's total enum count or allow irrelevant mutation fields.
+        var definitions:[String:[String:Any]]=[:]
+        func reference(_ name:String,_ values:Set<String>,nullable:Bool = false)->[String:Any] {
+            let existing=definitions.keys.sorted().first {definitions[$0]?["enum"] as? [String] == (values.isEmpty ? [""] : values.sorted())}
+            let key=existing ?? name
+            if existing == nil {definitions[key]=aliases(values)}
+            let ref:[String:Any]=["$ref":"#/$defs/"+key]
+            return nullable ? ["anyOf":[ref,["type":"null"]]] : ref
+        }
+        func nativeReference(_ name:String,_ values:Set<String>)->[String:Any] {
+            let groups=[Set(values.filter{$0.hasPrefix("event_")}),Set(values.filter{$0.hasPrefix("reminder_")}),Set(values.filter{$0.hasPrefix("completed_")}),Set(values.filter{!$0.hasPrefix("event_") && !$0.hasPrefix("reminder_") && !$0.hasPrefix("completed_")})]
+            let rows=groups.enumerated().filter{!$0.element.isEmpty}.map{reference(name+String($0.offset),$0.element)}
+            return rows.count == 1 ? rows[0] : rows.isEmpty ? reference(name,[]) : ["anyOf":rows]
+        }
+        let mail=Set(sourceAliases.filter{$0.hasPrefix("mail_")}),whatsapp=Set(sourceAliases.filter{$0.hasPrefix("wa_")})
         let primary=Set(evidenceAliases.filter{$0.hasSuffix(":primary")})
-        let handled=object(["mailID":aliases(mail),"targetID":aliases(nativeAliases),"reason":text(500),"requestEvidenceID":aliases(primary),"allActionsAddressed":["type":"boolean","enum":[true]]])
-        let resolved=object(["mailID":aliases(mail),"confirmationID":aliases(confirmationAliases),"requestEvidenceID":aliases(primary),"confirmationEvidenceID":aliases(Set(confirmationAliases.map{$0+":primary"})),"allActionsAddressed":["type":"boolean","enum":[true]],"reason":text(500)])
-        let retirement=object(["reviewID":aliases(earlierAliases),"targetID":aliases(retirementAliases),"reason":text(500)])
-        let parameters=object([
-            "suggestions":["type":"array","maxItems":sourceAliases.isEmpty ? 0 : 24,"items":suggestion],
+        let source=reference("source",sourceAliases),evidence=reference("evidence",evidenceAliases,nullable:true)
+        let replacementIDs=replacementAliases ?? earlierAliases
+        let replacement:[String:[String:Any]]=["replaces":["type":["array","null"],"maxItems":replacementIDs.isEmpty ? 0 : 3,"items":reference("replaceable",replacementIDs)],"replacementReason":replacementIDs.isEmpty ? ["type":"null"] : text(500,nullable:true)]
+        func suggestion(_ kinds:[String],fields:[String:[String:Any]] = [:],replaces:Bool = false,allowedSources:Set<String>? = nil)->[String:Any] {
+            let names=["mailID","kind","message","evidence","evidenceID","title","targetID","newDate","hasTime","connection","draft","replaces","replacementReason","scope","endDate","projectID"]
+            var common=Dictionary(uniqueKeysWithValues:names.map{($0,["type":"null"] as [String:Any])})
+            common.merge(["kind":["type":"string","enum":kinds],"message":text(700,nullable:kinds == ["projectTask"] || kinds == ["remove"]),"title":text(300,nullable:true)]){_,new in new}
+            common.merge(fields){_,new in new}
+            if replaces {common.merge(replacement){_,new in new}}
+            let mailSources=mail.intersection(allowedSources ?? sourceAliases),waSources=whatsapp.intersection(allowedSources ?? sourceAliases)
+            var origins:[[String:Any]]=[]
+            if !mailSources.isEmpty && kinds != ["reply"] {
+                var row=common;row["mailID"]=reference("mailSuggestion",mailSources);row["evidence"]=["type":"null"];row["evidenceID"]=reference("evidence",evidenceAliases)
+                origins.append(object(row))
+            }
+            if !waSources.isEmpty {
+                var row=common;row["mailID"]=reference("waSuggestion",waSources);row["evidenceID"]=["type":"null"]
+                var quote=text(500);quote["minLength"]=8;row["evidence"]=quote
+                origins.append(object(row))
+            }
+            // With no sources, the containing array has maxItems=0 but still
+            // requires a valid schema for items.
+            if origins.isEmpty {common["mailID"]=source;common["evidence"]=["type":"null"];common["evidenceID"]=evidence;return object(common)}
+            return origins.count == 1 ? origins[0] : ["anyOf":origins]
+        }
+        var date=text(40,nullable:true)
+        date["pattern"] = #"^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2}))?$"#
+        let dates:[String:[String:Any]]=["newDate":date,"hasTime":["type":["boolean","null"]],"endDate":date]
+        var variants=[suggestion(["calendar","reminder"],fields:dates,replaces:true),suggestion(["update"],replaces:true),suggestion(["project"])]
+        let project:[String:[String:Any]]=["projectID":reference("project",projectAliases),"connection":text(500),"title":text(160)]
+        let projectTask=suggestion(["projectTask"],fields:dates.merging(project){_,new in new})
+        let editable=Set((writableNativeAliases ?? nativeAliases).filter{$0.hasPrefix("event_") || $0.hasPrefix("reminder_")})
+        if !editable.isEmpty && !(changeSourceAliases ?? sourceAliases).isEmpty {variants.append(suggestion(["change"],fields:["targetID":nativeReference("editable",editable),"newDate":["type":"string","maxLength":40,"pattern":date["pattern"]!],"hasTime":["type":"boolean"],"connection":text(500)],replaces:true,allowedSources:changeSourceAliases))}
+        let removable=Set((writableNativeAliases ?? nativeAliases).filter{$0.hasPrefix("event_")})
+        if !removable.isEmpty && !(removalSourceAliases ?? sourceAliases).isEmpty {variants.append(suggestion(["remove"],fields:["targetID":nativeReference("removable",removable),"scope":["type":"string","enum":["occurrence"]],"connection":text(500)],replaces:true,allowedSources:removalSourceAliases))}
+        if !whatsapp.isEmpty {variants.append(suggestion(["reply"],fields:["mailID":reference("whatsapp",whatsapp),"evidenceID":["type":"null"],"draft":text(3000)]))}
+        let handled=object(["mailID":reference("mail",mail),"targetID":nativeReference("handledNative",nativeAliases),"reason":text(500),"requestEvidenceID":reference("primary",primary),"allActionsAddressed":["type":"boolean","enum":[true]]])
+        let resolved=object(["mailID":reference("mail",mail),"confirmationID":reference("confirmation",confirmationAliases),"requestEvidenceID":reference("primary",primary),"confirmationEvidenceID":reference("confirmationEvidence",Set(confirmationAliases.map{$0+":primary"})),"allActionsAddressed":["type":"boolean","enum":[true]],"reason":text(500)])
+        let retirement=object(["reviewID":reference("earlier",earlierAliases),"targetID":nativeReference("retirement",retirementAliases),"reason":text(500)])
+        var parameters=object([
+            "suggestions":["type":"array","maxItems":sourceAliases.isEmpty ? 0 : 24,"items":["anyOf":variants]],
+            "projectTasks":["type":"array","maxItems":sourceAliases.isEmpty || projectAliases.isEmpty ? 0 : 24,"items":projectTask],
             "handled":["type":"array","maxItems":mail.isEmpty || nativeAliases.isEmpty ? 0 : 12,"items":handled],
             "resolved":["type":"array","maxItems":mail.isEmpty || confirmationAliases.isEmpty ? 0 : 12,"items":resolved],
             "retirements":["type":"array","maxItems":earlierAliases.isEmpty || retirementAliases.isEmpty ? 0 : 12,"items":retirement]
         ])
+        parameters["$defs"]=definitions
         return [["type":"namespace","name":"pa","description":"Return a source-grounded review preparation; no reads, saves or other actions.","tools":[["type":"function","name":toolName,"description":"Return separately reviewable suggestions and strictly supported existing-plan/completion associations.","strict":true,"parameters":parameters]]]]
     }
 
@@ -50,7 +93,11 @@ enum ProactiveResultRules {
         let call=calls[0]
         guard (call.namespace == "pa" && call.name == toolName) || (call.namespace == nil && call.name == "pa."+toolName) else {throw ReviewResultDiagnostic(section:.result,field:.tool,reason:.unexpectedTool)}
         try validateEnvelope(call.arguments)
-        return call.arguments
+        guard var object=try JSONSerialization.jsonObject(with:Data(call.arguments.utf8)) as? [String:Any],let tasks=object.removeValue(forKey:"projectTasks") as? [[String:Any]] else {return call.arguments}
+        let suggestions=(object["suggestions"] as? [[String:Any]] ?? [])+tasks
+        guard suggestions.count <= 24 else {throw ReviewResultDiagnostic(section:.suggestions,field:.envelope,reason:.tooManyRows)}
+        object["suggestions"]=suggestions
+        return String(decoding:try JSONSerialization.data(withJSONObject:object,options:.sortedKeys),as:UTF8.self)
     }
 
     /// Structural checks diagnose association fields before their semantic validators run.
@@ -61,7 +108,14 @@ enum ProactiveResultRules {
         do {raw=try JSONSerialization.jsonObject(with:Data(text.utf8))}
         catch {throw ReviewResultDiagnostic(section:.result,field:.envelope,reason:.malformedJSON)}
         guard let object=raw as? [String:Any] else {throw ReviewResultDiagnostic(section:.result,field:.envelope,reason:.wrongType)}
-        guard Set(object.keys).isSubset(of:["suggestions","handled","resolved","retirements"]) else {throw ReviewResultDiagnostic(section:.result,field:.envelope,reason:.unsupportedField)}
+        guard Set(object.keys).isSubset(of:["suggestions","projectTasks","handled","resolved","retirements"]) else {throw ReviewResultDiagnostic(section:.result,field:.envelope,reason:.unsupportedField)}
+        if let value=object["projectTasks"] {
+            guard let tasks=value as? [[String:Any]],tasks.count <= 24 else {throw ReviewResultDiagnostic(section:.suggestions,field:.envelope,reason:.wrongType)}
+            guard tasks.allSatisfy({$0["kind"] as? String == "projectTask"}) else {throw ReviewResultDiagnostic(section:.suggestions,field:.kind,reason:.unsupportedAction)}
+            var canonical=object;canonical.removeValue(forKey:"projectTasks")
+            canonical["suggestions"]=(object["suggestions"] as? [Any] ?? [])+tasks
+            try validateEnvelope(String(decoding:try JSONSerialization.data(withJSONObject:canonical),as:UTF8.self))
+        }
         for section in [ReviewResultDiagnostic.Section.suggestions,.handled,.resolved,.retirements] {
             if section == .retirements && object[section.rawValue] == nil {continue} // Legacy saved fictional responses remain readable.
             guard let value=object[section.rawValue] else {throw ReviewResultDiagnostic(section:section,field:.envelope,reason:.missingField)}

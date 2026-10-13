@@ -1,6 +1,11 @@
 import Foundation
+import CoreFoundation
 @main struct ProactiveChecks {
     static func main() throws {
+        precondition(ProactiveRules.nativeChangeCue("The Orion review is postponed.",removal:true))
+        precondition(ProactiveRules.nativeChangeCue("The Orion report deadline is now 22 October.",removal:false))
+        precondition(!ProactiveRules.nativeChangeCue("The Orion review is booked for 21 October.",removal:true))
+        precondition(!ProactiveRules.nativeChangeCue("The Orion review is not cancelled.",removal:true))
         let candidates = [DiscoveryCandidate(alias:"mail_0",mailID:"real-A",evidence:"Please register by 10 October.",followUpEvidence:"10 October")]
         let good = #"{"suggestions":[{"mailID":"mail_0","kind":"reminder","message":"I could not spot a registration reminder. Shall I add one?","evidence":"Please register by 10 October."}]}"#
         let records = try ProactiveRules.decode(good,candidates:candidates,registration:"A",scope:"s",now:.now)
@@ -41,7 +46,7 @@ import Foundation
         var oneDismissed=separate[0];oneDismissed.dismissed=true
         precondition(ProactiveRules.unreported(separate,prior:[oneDismissed]).count == 5,"Dismiss one destination preserves siblings")
         func rejectsActions(_ rows:[[String:Any]]) { do {_ = try actionDecode(rows);fatalError("Invalid action accepted")} catch {} }
-        rejectsActions([actions[0],actions[0]])
+        let repeatedCreation=try actionDecode([actions[0],actions[0]]);precondition(repeatedCreation.count == 1)
         var bad=actions[1];bad["projectID"]=UUID().uuidString;rejectsActions([bad])
         bad=actions[0];bad["evidenceID"]="mail_0:action_12";rejectsActions([bad])
         bad=actions[0];bad["newDate"]="2027-02-30";bad["hasTime"]=false;rejectsActions([bad])
@@ -60,6 +65,10 @@ import Foundation
         let typed=try completed(envelope)
         let typedRecords=try ProactiveRules.decode(typed,candidates:[compound],registration:"A",scope:"s",now:.now,projects:[project.id.uuidString:project])
         precondition(typedRecords.count == 6 && Set(typedRecords.map(\.kind)) == ["calendar","projectTask"])
+        let separated=String(decoding:try JSONSerialization.data(withJSONObject:["suggestions":[actions[0]],"projectTasks":[actions[1]],"handled":[],"resolved":[],"retirements":[]]),as:UTF8.self)
+        let separatedJSON=try completed(separated)
+        let separateDestinations=try ProactiveRules.decode(separatedJSON,candidates:[compound],registration:"A",scope:"s",now:.now,projects:[project.id.uuidString:project])
+        precondition(separateDestinations.count == 2 && Set(separateDestinations.map(\.kind)) == ["calendar","projectTask"],"Typed project task array retains both independent destinations")
         let qualified=try completed(envelope,name:"pa.prepare_review",namespace:nil);precondition(qualified == envelope)
         func diagnostic(_ section:ReviewResultDiagnostic.Section = .suggestions,_ row:Int? = 0,_ field:ReviewResultDiagnostic.Field,_ reason:ReviewResultDiagnostic.Reason,_ run:()throws->Void) {
             do {try run();fatalError("Invalid typed result accepted")}
@@ -106,7 +115,8 @@ import Foundation
         diagnostic(.suggestions,0,.endDate,.invalidDate) {_ = try actionDecode([invalidAction])}
         invalidAction=actions[1];invalidAction["projectID"]="private-SECRET"
         diagnostic(.suggestions,0,.projectID,.invalidTarget) {_ = try actionDecode([invalidAction])}
-        diagnostic(.suggestions,1,.envelope,.duplicateProposal) {_ = try actionDecode([actions[0],actions[0]])}
+        let repeatedAction=try actionDecode([actions[0],actions[0]])
+        precondition(repeatedAction.count == 1,"Identical rows produce one saved action")
         // Invalid sibling rejects the entire batch, so no partial project/calendar approval exists.
         diagnostic(.suggestions,1,.projectID,.invalidTarget) {_ = try actionDecode([actions[0],invalidAction])}
         diagnostic(.suggestions,0,.kind,.missingField) {_ = try ProactiveRules.decode("{\"suggestions\":[{\"mailID\":\"private-SECRET\"}]}",candidates:[],registration:"A",scope:"s",now:.now)}
@@ -133,10 +143,69 @@ import Foundation
         let declarations=ProactiveResultRules.tools(sourceAliases:["mail_0","wa_0"],evidenceAliases:["mail_0:primary","mail_0:action_0"],nativeAliases:["event_0"],projectAliases:[project.id.uuidString],earlierAliases:["review_0"],confirmationAliases:["completion_0"])
         let namespace=declarations[0],functions=namespace["tools"] as! [[String:Any]],parameters=functions[0]["parameters"] as! [String:Any],properties=parameters["properties"] as! [String:Any]
         precondition(namespace["name"] as? String == "pa" && functions[0]["strict"] as? Bool == true)
-        precondition(Set(parameters["required"] as! [String]) == ["suggestions","handled","resolved","retirements"])
-        let suggestionSchema=(properties["suggestions"] as! [String:Any])["items"] as! [String:Any],fields=suggestionSchema["properties"] as! [String:Any]
-        precondition((fields["evidenceID"] as! [String:Any])["enum"] as? [Any] != nil)
-        precondition(Set((fields["mailID"] as! [String:Any])["enum"] as! [String]) == ["mail_0","wa_0"])
+        precondition(Set(parameters["required"] as! [String]) == ["suggestions","projectTasks","handled","resolved","retirements"])
+        // Validate representative payloads against the issued schema itself. This
+        // regression catches cross-kind combinations before they reach the provider.
+        func matches(_ value:Any,_ schema:[String:Any],root:[String:Any])->Bool {
+            if let ref=schema["$ref"] as? String {
+                let name=String(ref.split(separator:"/").last!)
+                guard let definition=(root["$defs"] as? [String:[String:Any]])?[name] else {return false}
+                return matches(value,definition,root:root)
+            }
+            if let options=schema["anyOf"] as? [[String:Any]] {return options.contains{matches(value,$0,root:root)}}
+            let types=(schema["type"] as? [String]) ?? (schema["type"] as? String).map{[$0]} ?? []
+            let null=value is NSNull
+            let boolean=(value as? NSNumber).map{CFGetTypeID($0) == CFBooleanGetTypeID()} ?? false
+            let validType=types.contains {type in
+                switch type {case "null":return null;case "string":return value is String;case "boolean":return boolean;case "object":return value is [String:Any];case "array":return value is [Any];default:return false}
+            }
+            guard validType else {return false}
+            if let choices=schema["enum"] as? [Any],!choices.contains(where:{($0 as? NSObject)?.isEqual(value) == true}) {return false}
+            if let text=value as? String,let maximum=schema["maxLength"] as? Int,text.count > maximum {return false}
+            if let text=value as? String,let pattern=schema["pattern"] as? String,text.range(of:pattern,options:.regularExpression) == nil {return false}
+            if let array=value as? [Any] {
+                if let maximum=schema["maxItems"] as? Int,array.count > maximum {return false}
+                if let items=schema["items"] as? [String:Any],!array.allSatisfy({matches($0,items,root:root)}) {return false}
+            }
+            if let object=value as? [String:Any] {
+                let fields=schema["properties"] as? [String:[String:Any]] ?? [:]
+                if let required=schema["required"] as? [String],!required.allSatisfy({object[$0] != nil}) {return false}
+                if schema["additionalProperties"] as? Bool == false,!Set(object.keys).isSubset(of:Set(fields.keys)) {return false}
+                return object.allSatisfy{key,value in fields[key].map{matches(value,$0,root:root)} ?? true}
+            }
+            return true
+        }
+        func schemaAccepts(_ rows:[[String:Any]])->Bool {
+            let fields=["mailID","kind","message","evidence","evidenceID","title","targetID","newDate","hasTime","connection","draft","replaces","replacementReason","scope","endDate","projectID"]
+            let padded=rows.map{row in var full=Dictionary(uniqueKeysWithValues:fields.map{($0,NSNull() as Any)});full.merge(row){_,new in new};return full}
+            return matches(["suggestions":padded,"projectTasks":[],"handled":[],"resolved":[],"retirements":[]],parameters,root:parameters)
+        }
+        var creation:[String:Any]=["mailID":"mail_0","kind":"reminder","message":"Register","evidence":NSNull(),"evidenceID":"mail_0:primary","title":"Register","newDate":NSNull(),"hasTime":NSNull(),"endDate":NSNull(),"replaces":NSNull(),"replacementReason":NSNull()]
+        precondition(schemaAccepts([creation]))
+        creation["targetID"]="event_0";precondition(!schemaAccepts([creation]),"Creation with targetID must be impossible under the strict schema")
+        creation.removeValue(forKey:"targetID");creation["connection"]="Already covered";precondition(!schemaAccepts([creation]))
+        creation.removeValue(forKey:"connection");creation["newDate"]="2027-01-21";precondition(schemaAccepts([creation]))
+        creation["hasTime"]=false;precondition(schemaAccepts([creation]))
+        creation["newDate"]="";precondition(!schemaAccepts([creation]),"An empty string cannot encode an undated task")
+        var revisedAssessment=separate[0];revisedAssessment.sourceAssessmentRevision="new-assessment"
+        precondition(ProactiveRules.unreported([revisedAssessment],prior:[separate[0]]).isEmpty,"Reassessment cannot duplicate a pending concrete action")
+
+        var change:[String:Any]=["mailID":"mail_0","kind":"change","message":"Moved","evidence":NSNull(),"evidenceID":"mail_0:primary","title":NSNull(),"targetID":"event_0","newDate":"2027-01-21","hasTime":false,"connection":"Same plan","replaces":NSNull(),"replacementReason":NSNull()]
+        precondition(schemaAccepts([change]));change["targetID"]="completed_0";precondition(!schemaAccepts([change]))
+        var schemaReply:[String:Any]=["mailID":"wa_0","kind":"reply","message":"Reply","evidence":"Please schemaReply to this fictional message.","evidenceID":NSNull(),"title":NSNull(),"draft":"Thanks."]
+        precondition(schemaAccepts([schemaReply]));schemaReply["mailID"]="mail_0";precondition(!schemaAccepts([schemaReply]))
+        // Mixed retirement and creation remains one valid preparation; irrelevant
+        // fields still fail local semantic validation rather than being discarded.
+        var invalidCreation=actions[0];invalidCreation["targetID"]="event_0"
+        diagnostic(.suggestions,0,.targetID,.incompatibleFields) {_ = try actionDecode([invalidCreation])}
+        let largeEvents=Set((0..<200).map{"event_\($0)"}),largeReminders=Set((0..<120).map{"reminder_\($0)"}),largeCompleted=Set((0..<80).map{"completed_\($0)"})
+        let large=ProactiveResultRules.tools(sourceAliases:["mail_0"],evidenceAliases:["mail_0:primary"],nativeAliases:largeEvents.union(largeReminders).union(largeCompleted),projectAliases:[],earlierAliases:["review_0"],confirmationAliases:["mail_0"],retirementAliases:largeEvents.union(largeReminders).union((0..<60).map{"task_\($0)"}))
+        func enumCount(_ value:Any)->Int {
+            if let object=value as? [String:Any] {return (object["enum"] as? [Any])?.count ?? object.values.reduce(0){$0+enumCount($1)}}
+            if let array=value as? [Any] {return array.reduce(0){$0+enumCount($1)}}
+            return 0
+        }
+        precondition(enumCount(large) <= 1000,"Maximum native coverage remains inside the strict schema's enum limit")
         precondition(JSONSerialization.isValidJSONObject(declarations))
         var dismissed = records[0]; dismissed.dismissed = true
         precondition(ProactiveRules.unreported(records,prior:[dismissed],budget:3).isEmpty)
