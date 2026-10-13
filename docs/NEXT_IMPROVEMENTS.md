@@ -6,6 +6,7 @@ Approved for integration on 13 October after the user compared the [scripted tri
 
 Remaining acceptance and product gaps:
 
+- Streaming regression is fixed with stable Activity metadata and bounded native validation reuse. Keep the200-delta observation and source-withdrawal/invalidation checks in regression coverage. The matched live reply improvement is bounded evidence; sustained responsiveness and provider latency remain separate acceptance.
 - Check the normal app in light/dark palettes and compact windows: the latest message, heartbeat progress, completed tick/count and failure details must remain clear.
 - Verify the real flow of submitting during heartbeat, leaving Review, serial execution, source withdrawal, Stop and reopening. Confirm attempted/uncertain jobs stay paused and canonical receipts prevent repeated saves.
 - Verify a natural-language variation and subsequent yes through the configured model, with disposable native/project fixtures and honest partial outcomes. Opening must remain local/no-AI; a fuller plan must require an explicit request.
