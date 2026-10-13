@@ -2,7 +2,7 @@
 
 ## Conversational Review and one AI activity pill
 
-Approved for integration on 13 October after the user compared the [scripted trial](REVIEW_CONVERSATION_TRIAL.md). The installed implementation contains saved source/account-scoped conversations, explicit real-assistant planning, exact selected-action approval by a direct tick or ordinary reply, durable heartbeat-to-Review scheduling, receipt-based completion counts and a centred palette-aware status pill. AI Activity retains failure details, acknowledgement with Undo and navigation. Bounded installation and native acceptance evidence is recorded in STATUS; broader acceptance below remains open.
+Approved for integration on 13 October after the user compared the [scripted trial](REVIEW_CONVERSATION_TRIAL.md). The installed implementation contains saved source/account-scoped conversations, explicit real-assistant planning, exact selected-action approval by a direct tick or ordinary reply, durable heartbeat-to-Review scheduling, receipt-based completion counts and a centred palette-aware status pill. AI Activity shows work, including typed actions started from chat, and excludes ordinary conversation-only replies. It retains failure details, acknowledgement with Undo and navigation. Bounded installation and native acceptance evidence is recorded in STATUS; broader acceptance below remains open.
 
 Remaining acceptance and product gaps:
 
