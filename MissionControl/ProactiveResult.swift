@@ -118,12 +118,13 @@ enum ProactiveResultRules {
     struct ValidatedRows<Value> {
         var values:[Value]=[]
         var issues:[String]=[]
+        var entries:[ReviewRejectedEntry]=[]
         var rejectedSources=Set<String>()
         var rejectedReviews=Set<String>()
     }
     /// Semantic failure is isolated to a row. Envelope/ownership validation happens
     /// first; a rejected row is never repaired into a native or project operation.
-    static func validatedRows<Value>(_ response:String,section:ReviewResultDiagnostic.Section,decode:(String)throws->[Value])throws->ValidatedRows<Value> {
+    static func validatedRows<Value>(_ response:String,section:ReviewResultDiagnostic.Section,sources:[String:(id:String,title:String)] = [:],decode:(String)throws->[Value])throws->ValidatedRows<Value> {
         guard let object=try JSONSerialization.jsonObject(with:Data(response.utf8)) as? [String:Any],let rows=object[section.rawValue] as? [[String:Any]] else {throw ReviewResultDiagnostic(section:section,field:.envelope,reason:.wrongType)}
         var result=ValidatedRows<Value>()
         for (index,row) in rows.enumerated() {
@@ -132,6 +133,9 @@ enum ProactiveResultRules {
             catch {
                 var issue=(error as? ReviewResultDiagnostic) ?? .init(section:section,field:.envelope,reason:.invalidAssociation)
                 issue.section=section;issue.row=index;result.issues.append(issue.localizedDescription)
+                func bounded(_ key:String,_ count:Int)->String? {(row[key] as? String).map{String($0.prefix(count))}}
+                let source=(row["mailID"] as? String ?? row["reviewID"] as? String).flatMap{sources[$0]}
+                result.entries.append(.init(diagnostic:issue,suggestionTitle:bounded("title",300),kind:bounded("kind",40),sourceID:source?.id,sourceTitle:source.map{String($0.title.prefix(300))},evidenceID:bounded("evidenceID",80),proposedDate:bounded("newDate",80),proposedEndDate:bounded("endDate",80),hasTime:row["hasTime"] as? Bool,timeZoneID:TimeZone.current.identifier))
                 if let source=row["mailID"] as? String {result.rejectedSources.insert(source)}
                 if let review=row["reviewID"] as? String {result.rejectedReviews.insert(review)}
                 result.rejectedReviews.formUnion(row["replaces"] as? [String] ?? [])

@@ -204,6 +204,7 @@ struct ProactiveProgress: Codable {
     var assessedSourceVersions:[String:String]? = nil
     var reviewedProposalContexts:[String:String]? = nil
     var validationIssues:[String]? = nil
+    var validationEntries:[ReviewRejectedEntry]? = nil
 }
 struct ProactiveState: Codable {
     var version = 1
@@ -216,6 +217,26 @@ struct DiscoveryProposedDate: Codable, Equatable {
     var end: String? = nil
     var hasTime: Bool
     var timeZoneID: String
+    func rejection(_ value:String? = nil)->ReviewResultDiagnostic.Reason? {
+        let text=value ?? start
+        let day = #"^\d{4}-\d{2}-\d{2}$"#
+        let timed = #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})$"#
+        if hasTime && text.range(of:day,options:.regularExpression) != nil {return .timeFlagMismatch}
+        if !hasTime && text.range(of:timed,options:.regularExpression) != nil {return .timeFlagMismatch}
+        guard text.range(of:hasTime ? timed : day,options:.regularExpression) != nil else {return .dateFormat}
+        if hasTime {
+            let dayValue=String(text.prefix(10))
+            let dayProposal=DiscoveryProposedDate(start:dayValue,hasTime:false,timeZoneID:timeZoneID)
+            guard dayProposal.date() != nil else {return .impossibleDate}
+            let components=text.dropFirst(11).prefix(8).split(separator:":").compactMap{Int($0)}
+            guard components.count == 3,components[0] < 24,components[1] < 60,components[2] < 60 else {return .impossibleDate}
+            if !text.hasSuffix("Z") {
+                let offset=text.suffix(5).split(separator:":").compactMap{Int($0)}
+                guard offset.count == 2,offset[0] < 24,offset[1] < 60 else {return .impossibleDate}
+            }
+        }
+        return date(text) == nil ? .impossibleDate : nil
+    }
     func date(_ value: String? = nil) -> Date? {
         let text=value ?? start
         if hasTime { return ISO8601DateFormatter().date(from:text) }
@@ -256,14 +277,32 @@ struct DiscoveryCandidate {
 }
 /// Only fixed vocabulary and bounded row indexes may enter persisted review errors.
 /// Never interpolate a model value, JSON key, decoding debug description or source alias.
-struct ReviewResultDiagnostic: LocalizedError, Equatable {
-    enum Section:String { case result,suggestions,handled,resolved,retirements }
-    enum Field:String { case envelope,tool,arguments,reviewID,mailID,kind,message,evidence,evidenceID,title,targetID,newDate,hasTime,connection,draft,replaces,replacementReason,scope,endDate,projectID,confirmationID,requestEvidenceID,confirmationEvidenceID,allActionsAddressed,reason }
-    enum Reason:String { case malformedJSON,missingField,wrongType,unsupportedField,tooManyRows,tooLong,emptyValue,unsupportedAction,unissuedSource,unissuedEvidence,quoteMismatch,invalidTarget,invalidDate,incompatibleFields,duplicateProposal,invalidReplacement,missingCompletedCall,unexpectedCallCount,unexpectedTool,oversizedArguments,invalidAssociation,conflictingAssociation }
+struct ReviewResultDiagnostic: LocalizedError, Equatable, Codable {
+    enum Section:String,Codable { case result,suggestions,handled,resolved,retirements }
+    enum Field:String,Codable { case envelope,tool,arguments,reviewID,mailID,kind,message,evidence,evidenceID,title,targetID,newDate,hasTime,connection,draft,replaces,replacementReason,scope,endDate,projectID,confirmationID,requestEvidenceID,confirmationEvidenceID,allActionsAddressed,reason }
+    enum Reason:String,Codable { case malformedJSON,missingField,wrongType,unsupportedField,tooManyRows,tooLong,emptyValue,unsupportedAction,unissuedSource,unissuedEvidence,quoteMismatch,invalidTarget,invalidDate,incompatibleFields,duplicateProposal,invalidReplacement,missingCompletedCall,unexpectedCallCount,unexpectedTool,oversizedArguments,invalidAssociation,conflictingAssociation,dateFormat,timeFlagMismatch,impossibleDate,unanchoredWeek,endBeforeStart,eventTimeModeChanged,unchangedDate }
     var section:Section
     var row:Int? = nil
     var field:Field
     var reason:Reason
+    var explanation:String {
+        switch reason {
+        case .dateFormat:return "The proposed date does not use the required format: YYYY-MM-DD for a date only, or a full timestamp with seconds and a UTC offset for a timed action."
+        case .timeFlagMismatch:return "The date format conflicts with the timed/all-day flag: a date only cannot be marked timed, and a timestamp cannot be marked date only."
+        case .impossibleDate:return "The proposed value has the expected format but does not represent a valid calendar date or time."
+        case .unanchoredWeek:return "The supporting evidence names a numbered course or project week without an explicit calendar-date anchor for that action."
+        case .endBeforeStart:return "The proposed end date is earlier than the proposed start date."
+        case .eventTimeModeChanged:return "This date-change proposal would switch the existing event between timed and all-day."
+        case .unchangedDate:return "The proposed date is already the current date of the existing item; there is no date change to apply."
+        case .quoteMismatch:return "The supporting quotation does not match the issued source evidence."
+        case .unissuedEvidence:return "The evidence reference was not supplied for this source."
+        case .invalidTarget:return "The proposed target was not supplied for this review or is not eligible for this action."
+        case .invalidAssociation:return "The claimed existing plan or completion did not pass the source-and-target association checks."
+        case .incompatibleFields:return "This field is not applicable to the proposed action or conflicts with another supplied field."
+        case .missingField:return "A field required for this action is missing."
+        default:return "This entry did not pass validation (" + reason.rawValue + ")."
+        }
+    }
     var errorDescription:String? {
         let position=row.map { "[" + String(max(0,min($0,100))) + "]" } ?? ""
         return "Review result rejected: " + section.rawValue + position + "." + field.rawValue + " (" + reason.rawValue + ")."
@@ -278,6 +317,32 @@ struct ReviewResultDiagnostic: LocalizedError, Equatable {
         }
         let safeField=missing.flatMap(Field.init(rawValue:)) ?? path.reversed().compactMap{Field(rawValue:$0.stringValue)}.first ?? .envelope
         return .init(section:section,row:path.compactMap(\.intValue).last,field:safeField,reason:reason)
+    }
+}
+/// Bounded diagnostic metadata, never a proposal or authority to execute it.
+/// Source bodies, model messages and raw response arguments are not retained.
+struct ReviewRejectedEntry:Codable,Equatable {
+    var diagnostic:ReviewResultDiagnostic
+    var suggestionTitle:String?
+    var kind:String?
+    var sourceID:String?
+    var sourceTitle:String?
+    var evidenceID:String?
+    var proposedDate:String?
+    var proposedEndDate:String?
+    var hasTime:Bool?
+    var timeZoneID:String
+    var display:String {
+        var lines=["Withheld: " + (suggestionTitle ?? "Review entry")]
+        if let sourceTitle {lines.append("Source: " + sourceTitle)}
+        if proposedDate != nil || proposedEndDate != nil {
+            lines.append("Proposed date: " + (proposedDate ?? "None"))
+            if let proposedEndDate {lines.append("Proposed end: " + proposedEndDate)}
+            lines.append("Date mode: " + (hasTime.map{$0 ? "Timed" : "Date only"} ?? "Not supplied") + " · " + timeZoneID)
+        }
+        lines.append("Reason: " + diagnostic.explanation)
+        lines.append(diagnostic.localizedDescription)
+        return lines.joined(separator:"\n")
     }
 }
 enum ReviewValidationFailure:LocalizedError {
@@ -439,8 +504,14 @@ enum ProactiveRules {
                 guard let timed=value.hasTime else {throw reject(.hasTime,.missingField)}
                 let dateOnlyProject=value.kind == "projectTask" && date.range(of:#"^\d{4}-\d{2}-\d{2}$"#,options:.regularExpression) != nil
                 let proposed=DiscoveryProposedDate(start:date,end:value.endDate,hasTime:dateOnlyProject ? false : timed,timeZoneID:TimeZone.current.identifier)
-                guard let start=proposed.date(),!SourceDateGrounding.needsWeekAnchor(evidence) else {throw reject(.newDate,.invalidDate)}
-                if let end=proposed.end {guard let parsed=proposed.date(end),parsed >= start else {throw reject(.endDate,.invalidDate)}}
+                if let reason=proposed.rejection() {throw reject(.newDate,reason)}
+                guard let start=proposed.date() else {throw reject(.newDate,.impossibleDate)}
+                guard !SourceDateGrounding.needsWeekAnchor(evidence) else {throw reject(.newDate,.unanchoredWeek)}
+                if let end=proposed.end {
+                    if let reason=proposed.rejection(end) {throw reject(.endDate,reason)}
+                    guard let parsed=proposed.date(end) else {throw reject(.endDate,.impossibleDate)}
+                    guard parsed >= start else {throw reject(.endDate,.endBeforeStart)}
+                }
                 suggestedDate=proposed
             } else if value.endDate != nil {throw reject(.endDate,.incompatibleFields)}
             if value.kind == "projectTask" {
@@ -461,7 +532,10 @@ enum ProactiveRules {
                 guard let connection=value.connection,!connection.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else {throw reject(.connection,.missingField)}
                 guard connection.count <= 500 else {throw reject(.connection,.tooLong)}
                 let proposal=DiscoveryDateChange(target:target,newDate:date,hasTime:hasTime,connection:connection,timeZoneID:TimeZone.current.identifier)
-                guard let parsed=proposal.date(),target.kind != "event" || target.hasTime == hasTime,(hasTime ? (target.start ?? target.due) != parsed : target.originalDate != date) else {throw reject(.newDate,.invalidDate)}
+                if let reason=DiscoveryProposedDate(start:date,hasTime:hasTime,timeZoneID:TimeZone.current.identifier).rejection() {throw reject(.newDate,reason)}
+                guard let parsed=proposal.date() else {throw reject(.newDate,.impossibleDate)}
+                guard target.kind != "event" || target.hasTime == hasTime else {throw reject(.hasTime,.eventTimeModeChanged)}
+                guard hasTime ? (target.start ?? target.due) != parsed : target.originalDate != date else {throw reject(.newDate,.unchangedDate)}
                 change=proposal
             } else if value.kind == "remove" {
                 guard nativeChangeCue(evidence,removal:true) else {throw reject(.evidence,.invalidAssociation)}

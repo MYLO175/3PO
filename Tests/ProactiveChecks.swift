@@ -119,7 +119,7 @@ import CoreFoundation
         invalidAction=actions[0];invalidAction["connection"]="private-SECRET"
         diagnostic(.suggestions,0,.connection,.incompatibleFields) {_ = try actionDecode([invalidAction])}
         invalidAction=actions[0];invalidAction["newDate"]="2027-02-30";invalidAction["hasTime"]=false
-        diagnostic(.suggestions,0,.newDate,.invalidDate) {_ = try actionDecode([invalidAction])}
+        diagnostic(.suggestions,0,.newDate,.impossibleDate) {_ = try actionDecode([invalidAction])}
         invalidAction=actions[0];invalidAction.removeValue(forKey:"hasTime")
         diagnostic(.suggestions,0,.hasTime,.missingField) {_ = try actionDecode([invalidAction])}
         invalidAction=actions[0];invalidAction["message"]=String(repeating:"a",count:701)
@@ -127,7 +127,30 @@ import CoreFoundation
         invalidAction=actions[0];invalidAction["message"]=""
         diagnostic(.suggestions,0,.message,.emptyValue) {_ = try actionDecode([invalidAction])}
         invalidAction=actions[0];invalidAction["endDate"]="2026-01-01"
-        diagnostic(.suggestions,0,.endDate,.invalidDate) {_ = try actionDecode([invalidAction])}
+        diagnostic(.suggestions,0,.endDate,.timeFlagMismatch) {_ = try actionDecode([invalidAction])}
+        invalidAction=actions[0];invalidAction["newDate"]="2027-01-21";invalidAction["hasTime"]=true
+        diagnostic(.suggestions,0,.newDate,.timeFlagMismatch) {_ = try actionDecode([invalidAction])}
+        invalidAction=actions[0];invalidAction["hasTime"]=false
+        diagnostic(.suggestions,0,.newDate,.timeFlagMismatch) {_ = try actionDecode([invalidAction])}
+        invalidAction=actions[0];invalidAction["newDate"]="2027-01-21T16:00:00+99:00"
+        diagnostic(.suggestions,0,.newDate,.impossibleDate) {_ = try actionDecode([invalidAction])}
+        invalidAction=actions[0];invalidAction["newDate"]="21 January 2027"
+        diagnostic(.suggestions,0,.newDate,.dateFormat) {_ = try actionDecode([invalidAction])}
+        invalidAction=actions[0];invalidAction["endDate"]="2027-01-20T16:00:00Z"
+        diagnostic(.suggestions,0,.endDate,.endBeforeStart) {_ = try actionDecode([invalidAction])}
+        var unresolved=compound;unresolved.actionEvidence=["Final presentation in week five."]
+        var unresolvedRow=actions[0];unresolvedRow["evidenceID"]="mail_0:action_0"
+        diagnostic(.suggestions,0,.newDate,.unanchoredWeek) {_ = try ProactiveRules.decode(String(decoding:JSONSerialization.data(withJSONObject:["suggestions":[unresolvedRow]]),as:UTF8.self),candidates:[unresolved],registration:"A",scope:"s",now:.now)}
+        invalidAction=actions[0];invalidAction["newDate"]="2027-02-30";invalidAction["hasTime"]=false
+        let diagnosticResponse=String(decoding:try JSONSerialization.data(withJSONObject:["suggestions":[actions[0],invalidAction],"handled":[],"resolved":[],"retirements":[]]),as:UTF8.self)
+        let detailed=try ProactiveResultRules.validatedRows(diagnosticResponse,section:.suggestions,sources:["mail_0":("exact-source","Orion project schedule")]) {try ProactiveRules.decode($0,candidates:[compound],registration:"A",scope:"s",now:.now)}
+        let entry=try JSONDecoder().decode(ReviewRejectedEntry.self,from:JSONEncoder().encode(detailed.entries[0]))
+        precondition(detailed.values.count == 1 && entry.diagnostic.row == 1 && entry.diagnostic.reason == .impossibleDate && entry.proposedDate == "2027-02-30" && entry.hasTime == false && entry.sourceTitle == "Orion project schedule" && entry.sourceID == "exact-source" && entry.suggestionTitle == invalidAction["title"] as? String)
+        precondition(entry.display.contains("2027-02-30") && entry.display.contains("Orion project schedule") && entry.display.contains("valid calendar date"))
+        let metadata=String(decoding:try JSONEncoder().encode(entry),as:UTF8.self)
+        precondition(!metadata.contains(compound.actionEvidence[0]),"Rejected-entry diagnostics do not duplicate source bodies/quotes")
+        let legacy=try JSONDecoder().decode(ProactiveProgress.self,from:Data(#"{"day":"","attempts":0,"delivered":0,"paused":false}"#.utf8))
+        precondition(legacy.validationEntries == nil,"Legacy progress survives the additive diagnostic field")
         invalidAction=actions[1];invalidAction["projectID"]="private-SECRET"
         diagnostic(.suggestions,0,.projectID,.invalidTarget) {_ = try actionDecode([invalidAction])}
         let repeatedAction=try actionDecode([actions[0],actions[0]])
