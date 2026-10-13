@@ -78,6 +78,7 @@ Heartbeat reconsideration may inspect pending proposals as labelled historical d
 ## Recorded review preference
 
 - 12 October: for source-backed project dates, suggest both Calendar entries and dated tasks inside the existing project. Offer review/approval and an intuitive way to request a variation in ordinary language without re-explaining the source.
+- 13 October: prepared Review actions support checkbox selection and a direct tick to approve, alongside the conversation box for ordinary replies or changes. Preserve an unsent conversation draft when the tick is used.
 
 ## Documentation and checkpoints
 

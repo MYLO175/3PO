@@ -13,7 +13,7 @@ struct ProductionReviewConversationView:View {
     private var jobs:[ReviewWorkJob] {model.reviewWork.jobs(model.chatGPT.activeID,conversation:conversationID)}
     private var discussed:Bool {jobs.contains{$0.mode == .conversation}}
     private var usable:Bool {model.reviewConversationAvailable(conversationID)}
-    private var selectedActions:[ReviewWorkAction] {rows.filter{selected.contains($0.id)}.compactMap(\.action)}
+    private var selectedActions:[ReviewWorkAction] {rows.filter{selected.contains($0.id) && !isSaved($0) && !isReserved($0)}.compactMap(\.action)}
     private var turns:[AssistantTurn] {conversation?.turns.filter{$0.role == "user" || ($0.deliveryID == nil && $0.role == "assistant")} ?? []}
     private var opening:String {
         if let id=conversation?.reviewMessageID,let summary=model.emailSummaries.records.first(where:{$0.id == id && $0.registration == model.chatGPT.activeID}) {return summary.summary}
@@ -43,7 +43,18 @@ struct ProductionReviewConversationView:View {
                             if !discussed,!rows.isEmpty {
                                 Text(completedCount > 0 ? "Saved actions and remaining suggestions" : "Would you like me to add these actions?").font(.headline)
                                 ForEach(rows) {row in preparedRow(row)}
-                                if rows.contains(where:{$0.action != nil}) {Text("Choose the actions above, then say yes or ask for a change.").font(.caption).foregroundStyle(.secondary)}
+                                if rows.contains(where:{$0.action != nil && !isSaved($0)}) {
+                                    HStack(spacing:12) {
+                                        Text("Select actions and press the tick, or ask for a change below.").font(.caption).foregroundStyle(.secondary)
+                                        Spacer(minLength:8)
+                                        Text("\(selectedActions.count) selected").font(.caption).foregroundStyle(.secondary)
+                                        Button {approveSelected()} label:{Image(systemName:"checkmark").font(.headline).frame(width:30,height:30)}
+                                            .buttonStyle(.borderedProminent).clipShape(Circle())
+                                            .disabled(preparing || selectedActions.isEmpty || !model.reviewWork.readable)
+                                            .help("Add selected actions")
+                                            .accessibilityLabel("Approve selected actions")
+                                    }
+                                }
                             }
                             if turns.isEmpty || !discussed {
                                 Button("Suggest a fuller plan") {send("Explain what matters in this source and suggest a complete plan. Look for the relevant existing project and propose dated tasks there as well as useful Calendar entries. Distinguish confirmed dates, provisional windows and missing deadlines. Tell me what you can do and ask before making changes.",actions:[],control:true)}.buttonStyle(.borderless)
@@ -65,7 +76,7 @@ struct ProductionReviewConversationView:View {
                     if model.heartbeat.busy {Label("Your reply will run after the heartbeat finishes",systemImage:"clock").font(.caption).foregroundStyle(.secondary)}
                     if let error=model.reviewWork.error {Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)}
                     HStack(alignment:.bottom,spacing:10) {
-                        TextField("Say yes, or ask for a change…",text:$draft,axis:.vertical).textFieldStyle(.plain).lineLimit(1...4).padding(12).background(palette[.widget],in:RoundedRectangle(cornerRadius:11)).overlay(RoundedRectangle(cornerRadius:11).stroke(palette[.border].opacity(0.65))).onSubmit {sendDraft()}
+                        TextField("Ask for a change, or reply…",text:$draft,axis:.vertical).textFieldStyle(.plain).lineLimit(1...4).padding(12).background(palette[.widget],in:RoundedRectangle(cornerRadius:11)).overlay(RoundedRectangle(cornerRadius:11).stroke(palette[.border].opacity(0.65))).onSubmit {sendDraft()}
                         Button {sendDraft()} label:{Image(systemName:"arrow.up").font(.headline).frame(width:30,height:30)}.buttonStyle(.borderedProminent).clipShape(Circle()).disabled(draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || !model.reviewWork.readable).accessibilityLabel("Send Review reply")
                     }
                     Text("You can leave this review while 3PO works. This conversation stays with this source.").font(.caption2).foregroundStyle(.secondary)
@@ -84,11 +95,17 @@ struct ProductionReviewConversationView:View {
             preparing=false
         }.onChange(of:draft) {_,value in model.reviewWork.setDraft(value,registration:model.chatGPT.activeID,conversation:conversationID)}
     }
+    private func isSaved(_ row:ReviewPreparedRow)->Bool {
+        model.proactive.state.records.first{$0.id == row.id}.map(model.reviewDiscoveryCompleted) == true || jobs.contains{$0.actions.contains{$0.id == row.id && $0.phase == .saved}}
+    }
+    private func isReserved(_ row:ReviewPreparedRow)->Bool {
+        jobs.contains {job in job.mode == .approval && job.actions.contains{$0.id == row.id && (job.pending || $0.phase != .waiting)}}
+    }
     @ViewBuilder private func preparedRow(_ row:ReviewPreparedRow)->some View {
-        let saved=model.proactive.state.records.first{$0.id == row.id}.map(model.reviewDiscoveryCompleted) == true || jobs.contains{$0.actions.contains{$0.id == row.id && $0.phase == .saved}}
+        let saved=isSaved(row)
         HStack(alignment:.top,spacing:10) {
             if saved {Image(systemName:"checkmark.circle.fill").foregroundStyle(palette[.accent])}
-            else if row.action != nil {Toggle("",isOn:Binding(get:{selected.contains(row.id)},set:{if $0 {selected.insert(row.id)} else {selected.remove(row.id)}})).labelsHidden().toggleStyle(.checkbox)}
+            else if row.action != nil {Toggle("",isOn:Binding(get:{selected.contains(row.id)},set:{if $0 {selected.insert(row.id)} else {selected.remove(row.id)}})).labelsHidden().toggleStyle(.checkbox).disabled(isReserved(row))}
             else {Image(systemName:"questionmark.circle").foregroundStyle(.secondary)}
             VStack(alignment:.leading,spacing:5) {Text(PAProse.display(row.title)).font(.callout.weight(.medium));if !row.destination.isEmpty {Text(row.destination).font(.caption.weight(.medium)).foregroundStyle(palette[.accent])};Text(PAProse.display(row.detail)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled);if let error=row.error,!saved {Text(error).font(.caption).foregroundStyle(.orange)}}
             Spacer(minLength:0)
@@ -114,6 +131,11 @@ struct ProductionReviewConversationView:View {
                 Spacer()
             }.controlSize(.small)
         }.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(Color.orange.opacity(job.pending ? 0.04 : 0.08),in:RoundedRectangle(cornerRadius:11))
+    }
+    private func approveSelected() {
+        let actions=selectedActions
+        guard !preparing,!actions.isEmpty,model.reviewWork.readable else {return}
+        _=model.submitReview("yes",conversationID:conversationID,actions:actions,focus:[],selectionActive:true)
     }
     private func sendDraft() {send(draft,actions:discussed ? [] : selectedActions)}
     private func send(_ text:String,actions:[ReviewWorkAction],control:Bool=false) {

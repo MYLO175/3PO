@@ -67,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             } else if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {
                 if ProcessInfo.processInfo.arguments.contains("--heartbeat-progress-preview") {HeartbeatProgressPreviewScreen(model:model)}
                 else if ProcessInfo.processInfo.arguments.contains("--workspace-colours-preview") {WorkspaceThemePreview()}
-                else {ReviewInboxPreview(model:model)}
+                else {ReviewInboxPreview(model:model).preferredColorScheme(selectedColorScheme)}
             } else if ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") {
                 LifeAndPlanPreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-settings") {
