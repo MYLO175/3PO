@@ -1,5 +1,7 @@
 # Validation
 
+13 October responsiveness release (`0c87814`): signed build and app-memory 150/94/11 pass. Focused scheduler, feedback, projection, learning-runtime and native reconciliation/creation/edit checks pass. Fictional native UI validates feedback queue → Dismiss → Process now → saved preference. Installed readback preserves 67/67 records through replacement and all protected state after source refresh. Comparable navigation profile sharply reduces repeated Review work; accessibility timings improve for Review/Projects but Today varies. No personal reminder save was timed. Sustained use remains open; full evidence in STATUS.
+
 ## 13 October installed heartbeat analysis
 
 - Signed build passes. Ten focused suites pass; additional completion-cache checks pass.

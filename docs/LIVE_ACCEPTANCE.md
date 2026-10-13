@@ -1,5 +1,7 @@
 # Installed reliability acceptance
 
+Latest candidate update, 13 October 11:15 UTC / 12:15 London: `0c87814` is installed, adding bounded Review projection, independent post-save collection and heartbeat feedback. All 67 records survived replacement; protected state and workspace layout/drafts/filter membership survive relaunch. Focused/signed app checks and fictional feedback UI pass. Matched-window profiles reduce repeated Review work; individual navigation observations are not sustained acceptance. The conservative 72-hour threshold for this candidate is 16 October 11:15 UTC / 12:15 London. Earlier heartbeat success belongs to the previous candidate. Keep ordinary-use observation; do not force personal inference or native writes for acceptance.
+
 ## Latest installed candidate — heartbeat analysis, 13 October 2026
 
 Code `492928d` replaces the installed app with independent source collection, stage-isolated AI analysis, strict typed suggestions and review-consented memory learning. A personal launch performance regression was found and fixed before acceptance: exact human memory dependencies no longer construct unrelated source projections. Signed build, ten original focused suites, three additional permission/inspection suites, actual app-memory 147/147,87/87,11/11 and configured-model fictional checks 13/13 and 7/7 pass.
@@ -63,7 +65,7 @@ The pre-18:14 backup now contains canonical conversation chunks including the hu
 
 Keep the goal open until at least72 real elapsed hours and at least three distinct local days of normal use have produced evidence for the installed candidate. Several snapshots on one day or a simulated clock do not satisfy this.
 
-On 12 October the user confirmed they will use 3PO casually, including periods when the laptop is closed. Observe that ordinary use; no scripted personal requests or required daily test routine. The latest candidate's conservative elapsed-time threshold is 16 October at 10:06:04 UTC / 11:06:04 London at the earliest. Verify installed identity against the latest release evidence; reconcile any later authorised release before counting its observation period. Time passing alone does not satisfy the remaining evidence gates.
+On 12 October the user confirmed they will use 3PO casually, including periods when the laptop is closed. Observe that ordinary use; no scripted personal requests or required daily test routine. The latest candidate's conservative elapsed-time threshold is 16 October at 11:15 UTC / 12:15 London at the earliest. Verify installed identity against the latest release evidence; reconcile any later authorised release before counting its observation period. Time passing alone does not satisfy the remaining evidence gates.
 
 - Inspect fresh owned heartbeat runs: persistent claims/stages, current brief, independently collected Mail coverage, no same-run retry storm or repeated morning chat/notification delivery.
 - Inspect physical sleep/lid/wake evidence and relevant app receipts. The OS power log can prove an actual transition; it cannot alone prove every app inference/write guard. Compare actual request/run times and sleep interruption/catch-up records, using focused checks for the covered cancellation boundaries.
