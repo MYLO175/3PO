@@ -1,13 +1,13 @@
 # Validation
 
-## 13 October heartbeat analysis candidate
+## 13 October installed heartbeat analysis
 
 - Signed build passes. Ten focused suites pass; additional completion-cache checks pass.
 - Actual learning runtime34/34; shared learning budget159/159.
-- Signed app-memory: advice147/147, scheduler87/87, removal11/11. Scheduler includes seven injected full-cycle scenarios.
+- Signed app-memory: advice 147/147, scheduler 87/87, removal 11/11. Scheduler includes seven injected full-cycle scenarios.
 - Configured gpt-6-luna: compound actions13/13 and typed brief/WhatsApp7/7, four fictional requests, no native writes.
 - Installed responsiveness correction: target-first memory dependency filtering, three focused permission/inspection suites and three additional actual-consumer assertions pass. Responsive native relaunch and visible review-learning/Daily limit Off controls verified.
-- Installation/live-cycle evidence follows in STATUS; sustained unattended and physical sleep/wake acceptance remain separate.
+- Installed `492928d`: native UI responsive; all 66 records preserved through replacement,49 protected records exact after one live 79-second/six-call heartbeat. Four suggestions and fresh brief saved; memory baselines recorded without inference. Eleven preservation/association checks pass. Sustained unattended, actual source-memory quality and physical sleep/wake acceptance remain separate.
 
 
 ## 12 October: typed brief results

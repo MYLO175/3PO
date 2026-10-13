@@ -1,6 +1,14 @@
 # Installed reliability acceptance
 
-## Latest installed candidate — typed brief results, 12 October 2026
+## Latest installed candidate — heartbeat analysis, 13 October 2026
+
+Code `492928d` replaces the installed app with independent source collection, stage-isolated AI analysis, strict typed suggestions and review-consented memory learning. A personal launch performance regression was found and fixed before acceptance: exact human memory dependencies no longer construct unrelated source projections. Signed build, ten original focused suites, three additional permission/inspection suites, actual app-memory 147/147,87/87,11/11 and configured-model fictional checks 13/13 and 7/7 pass.
+
+The corrected app launches responsively. One fresh manual heartbeat at 11:01 London completes in 79 seconds with six calls, four suggestions and a fresh brief; the new learning stage safely baselines sources without inference. Daily limit visibly remains Off; Memory shows source learning included through review access and retains the existing failed-learning pause. All 66 records survive replacement; eleven live readback checks retain 49 protected records, exact original morning deliveries/notification membership, workspace structure/filters/drafts and previous 19 runs within unchanged 20-run retention. No personal native/project action is approved. Existing personal legacy compound-email evidence still awaits bounded re-assessment.
+
+Private release `/private/tmp/3po-heartbeat-analysis-release-4buw0bll` records executable `e4fabc12e37c755826d4f061925850f5538546a2ff158f33f5581e5b8dbf2c3a` and library `5d91209eb35758c7fd0d6b24c2a91c9cf1068231b405eaa7c2f57ceaa86dc758`. Conservative observation start is 13 October 10:06:04 UTC, so the earliest 72-hour threshold is 16 October 10:06:04 UTC. One manual cycle does not prove sustained unattended scheduling, source-memory quality, recovery from real provider failures or physical sleep/wake. Existing follow-up and notification policy is unchanged. Earlier observations remain historical evidence.
+
+## Earlier checkpoint — typed brief results, 12 October 2026
 
 Code `5459516` installed signed at 23:48 London. A fresh authorised manual heartbeat completed at 23:49: six calls, all four stages Done, saved brief exactly linked to its run, native history Completed and next review 00:48. An independent Mail collection issue remained honestly reported while collected data from two accounts stayed usable. Full backup `/private/tmp/3po-brief-release-hjzhnyxk` verified all 66 records/13 files; 50 protected records remain exact after the run. Eight preservation/association checks pass, including original daily messages/notification membership and the earlier failed run.
 
@@ -55,7 +63,7 @@ The pre-18:14 backup now contains canonical conversation chunks including the hu
 
 Keep the goal open until at least72 real elapsed hours and at least three distinct local days of normal use have produced evidence for the installed candidate. Several snapshots on one day or a simulated clock do not satisfy this.
 
-On 12 October the user confirmed they will use 3PO casually, including periods when the laptop is closed. Observe that ordinary use; no scripted personal requests or required daily test routine. The latest candidate's conservative elapsed-time threshold is 15 October at 22:50:32 UTC / 23:50:32 London at the earliest. Verify installed identity against the latest release evidence; reconcile any later authorised release before counting its observation period. Time passing alone does not satisfy the remaining evidence gates.
+On 12 October the user confirmed they will use 3PO casually, including periods when the laptop is closed. Observe that ordinary use; no scripted personal requests or required daily test routine. The latest candidate's conservative elapsed-time threshold is 16 October at 10:06:04 UTC / 11:06:04 London at the earliest. Verify installed identity against the latest release evidence; reconcile any later authorised release before counting its observation period. Time passing alone does not satisfy the remaining evidence gates.
 
 - Inspect fresh owned heartbeat runs: persistent claims/stages, current brief, independently collected Mail coverage, no same-run retry storm or repeated morning chat/notification delivery.
 - Inspect physical sleep/lid/wake evidence and relevant app receipts. The OS power log can prove an actual transition; it cannot alone prove every app inference/write guard. Compare actual request/run times and sleep interruption/catch-up records, using focused checks for the covered cancellation boundaries.
