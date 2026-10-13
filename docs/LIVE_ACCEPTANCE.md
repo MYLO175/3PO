@@ -1,6 +1,8 @@
 # Installed reliability acceptance
 
-Latest candidate update, 13 October 11:15 UTC / 12:15 London: `0c87814` is installed, adding bounded Review projection, independent post-save collection and heartbeat feedback. All 67 records survived replacement; protected state and workspace layout/drafts/filter membership survive relaunch. Focused/signed app checks and fictional feedback UI pass. Matched-window profiles reduce repeated Review work; individual navigation observations are not sustained acceptance. The conservative 72-hour threshold for this candidate is 16 October 11:15 UTC / 12:15 London. Earlier heartbeat success belongs to the previous candidate. Keep ordinary-use observation; do not force personal inference or native writes for acceptance.
+Latest candidate update, 13 October 13:02 UTC / 14:02 London: `186e280` is installed, adding stable prepared Review display, concrete approval authority and bounded heartbeat retirement. All 67 records survive replacement;57 protected records and semantically identical workspace survive source refresh. Signed/focused/app-memory checks 154/105/11 and configured-model compound actions 13/13 pass. Review navigation is observed at 0.65–0.78s including accessibility overhead, with no repeated broad context validation sampled. The conservative 72-hour threshold is 16 October 13:02 UTC / 14:02 London. No personal native save, manual heartbeat or forced retirement was performed. Real retirement decisions and sustained use remain open. Existing follow-up/notification policy is unchanged.
+
+The prior 12:15 London `0c87814` checkpoint remains historical evidence. Stable display now exposes 19 saved pending cards rather than the 10 left by old dynamic filters; no new inference or personal-state rewrite produced that change. A subsequent heartbeat may retire supported obsolete proposals with a reason.
 
 ## Latest installed candidate — heartbeat analysis, 13 October 2026
 

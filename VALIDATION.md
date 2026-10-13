@@ -1,5 +1,7 @@
 # Validation
 
+13 October prepared Review (`186e280`, installed 14:02 London): signed build; five focused suites; actual app-memory 154/154, 105/105, 11/11; configured-model compound actions 13/13 all pass.100 repeated projection reads do not rebuild; memory/native freshness does not invalidate saved cards; permission withdrawal still acts immediately. All 67 records preserved through replacement,57 protected records exact after relaunch and workspace semantically unchanged. Installed navigation observes Review 0.65–0.78s, Today 1.2s and reminder-form opening 0.61s, including accessibility overhead. No personal native save or sustained retirement quality claim. Detailed evidence/limits in STATUS.
+
 13 October responsiveness release (`0c87814`): signed build and app-memory 150/94/11 pass. Focused scheduler, feedback, projection, learning-runtime and native reconciliation/creation/edit checks pass. Fictional native UI validates feedback queue → Dismiss → Process now → saved preference. Installed readback preserves 67/67 records through replacement and all protected state after source refresh. Comparable navigation profile sharply reduces repeated Review work; accessibility timings improve for Review/Projects but Today varies. No personal reminder save was timed. Sustained use remains open; full evidence in STATUS.
 
 ## 13 October installed heartbeat analysis
@@ -7,7 +9,7 @@
 - Signed build passes. Ten focused suites pass; additional completion-cache checks pass.
 - Actual learning runtime34/34; shared learning budget159/159.
 - Signed app-memory: advice 147/147, scheduler 87/87, removal 11/11. Scheduler includes seven injected full-cycle scenarios.
-- Configured gpt-6-luna: compound actions13/13 and typed brief/WhatsApp7/7, four fictional requests, no native writes.
+- Configured gpt-6-luna: compound actions 13/13 and typed brief/WhatsApp7/7, four fictional requests, no native writes.
 - Installed responsiveness correction: target-first memory dependency filtering, three focused permission/inspection suites and three additional actual-consumer assertions pass. Responsive native relaunch and visible review-learning/Daily limit Off controls verified.
 - Installed `492928d`: native UI responsive; all 66 records preserved through replacement,49 protected records exact after one live 79-second/six-call heartbeat. Four suggestions and fresh brief saved; memory baselines recorded without inference. Eleven preservation/association checks pass. Sustained unattended, actual source-memory quality and physical sleep/wake acceptance remain separate.
 
