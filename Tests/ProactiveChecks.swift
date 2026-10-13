@@ -133,7 +133,7 @@ import Foundation
         let declarations=ProactiveResultRules.tools(sourceAliases:["mail_0","wa_0"],evidenceAliases:["mail_0:primary","mail_0:action_0"],nativeAliases:["event_0"],projectAliases:[project.id.uuidString],earlierAliases:["review_0"],confirmationAliases:["completion_0"])
         let namespace=declarations[0],functions=namespace["tools"] as! [[String:Any]],parameters=functions[0]["parameters"] as! [String:Any],properties=parameters["properties"] as! [String:Any]
         precondition(namespace["name"] as? String == "pa" && functions[0]["strict"] as? Bool == true)
-        precondition(Set(parameters["required"] as! [String]) == ["suggestions","handled","resolved"])
+        precondition(Set(parameters["required"] as! [String]) == ["suggestions","handled","resolved","retirements"])
         let suggestionSchema=(properties["suggestions"] as! [String:Any])["items"] as! [String:Any],fields=suggestionSchema["properties"] as! [String:Any]
         precondition((fields["evidenceID"] as! [String:Any])["enum"] as? [Any] != nil)
         precondition(Set((fields["mailID"] as! [String:Any])["enum"] as! [String]) == ["mail_0","wa_0"])
@@ -207,6 +207,53 @@ import Foundation
         let savedReply=try JSONDecoder().decode(PADiscovery.self,from:JSONEncoder().encode(localReplies[0]))
         precondition(savedReply == localReplies[0])
         do {_ = try ProactiveRules.decode(replyPayload.replacingOccurrences(of:"Could you confirm whether you can join our project meeting?",with:"invented quote"),candidates:[replyCandidate],registration:"account",scope:"scope",now:.now);preconditionFailure("Ungrounded reply accepted")} catch {}
+        // Retirement archives the suggestion only, retaining exact evidence and source provenance.
+        let covered=records[0]
+        let coverage=DiscoveryRetirementEvidence(kind:"reminder",id:"existing-reminder",revision:"native-v7")
+        let retirementJSON = #"{"suggestions":[],"handled":[],"resolved":[],"retirements":[{"reviewID":"review_0","targetID":"reminder_0","reason":"The existing registration reminder covers this same registration deadline."}]}"#
+        _ = try completed(retirementJSON)
+        func retire(_ json:String = retirementJSON,_ proposal:PADiscovery = covered,_ target:DiscoveryRetirementEvidence = coverage)throws->[DiscoveryRetirement] {
+            try ProactiveRules.decodeRetirements(json,earlier:["review_0":proposal],targets:["reminder_0":target],registration:"A")
+        }
+        func retirementRejected(_ operation:()throws->Void) {do {try operation();fatalError("Unsupported retirement accepted")} catch {}}
+        let retirements=try retire()
+        let archived=try ProactiveRules.retiring(retirements,from:[covered],now:hbNow)
+        precondition(archived[0].retiredAt == hbNow && archived[0].retirementEvidence == coverage && archived[0].retirementReason == retirements[0].reason)
+        precondition(archived[0].reviewState == nil && !archived[0].dismissed && archived[0].mailID == covered.mailID && archived[0].evidence == covered.evidence,"Retirement is not approval, dismissal, source loss or completion")
+        let reopenedArchive=try JSONDecoder().decode([PADiscovery].self,from:JSONEncoder().encode(archived));precondition(reopenedArchive == archived)
+        let emptyRetirement=try ProactiveRules.decodeRetirements(blank,earlier:[:],targets:[:],registration:"A");precondition(emptyRetirement.isEmpty)
+        retirementRejected {_ = try retire(retirementJSON.replacingOccurrences(of:"review_0",with:"unissued"))}
+        retirementRejected {_ = try retire(retirementJSON.replacingOccurrences(of:"reminder_0",with:"unissued"))}
+        retirementRejected {_ = try ProactiveRules.decodeRetirements(retirementJSON,earlier:["review_0":covered],targets:[:],registration:"A")}
+        var unsafe=covered;unsafe.registration="another";retirementRejected {_ = try retire(retirementJSON,unsafe)}
+        unsafe=covered;unsafe.reviewState="pending";retirementRejected {_ = try retire(retirementJSON,unsafe)}
+        unsafe=covered;unsafe.dismissed=true;retirementRejected {_ = try retire(retirementJSON,unsafe)}
+        unsafe=covered;unsafe.supersededBy="replacement";retirementRejected {_ = try retire(retirementJSON,unsafe)}
+        retirementRejected {_ = try retire(retirementJSON,archived[0])}
+        retirementRejected {_ = try retire(retirementJSON,covered,.init(kind:"event",id:"event",revision:"r"))}
+        unsafe=covered;unsafe.kind="remove";retirementRejected {_ = try retire(retirementJSON,unsafe)}
+        unsafe=covered;unsafe.kind="projectTask";unsafe.proposedProjectTask = .init(target:project,connection:"Registration work")
+        let projectProof=DiscoveryRetirementEvidence(kind:"projectTask",id:"child-task",revision:"task-revision",parentID:project.id.uuidString)
+        let projectRetirements=try retire(retirementJSON,unsafe,projectProof);precondition(projectRetirements.count == 1)
+        var wrongParent=projectProof;wrongParent.parentID=UUID().uuidString
+        retirementRejected {_ = try retire(retirementJSON,unsafe,wrongParent)}
+        unsafe=covered;unsafe.reviewState="approved";retirementRejected {_ = try ProactiveRules.retiring(retirements,from:[unsafe],now:hbNow)}
+        retirementRejected {_ = try ProactiveRules.retiring(retirements+retirements,from:[covered],now:hbNow)}
+        retirementRejected {_ = try ProactiveRules.retiring(retirements,from:[],now:hbNow)}
+        diagnostic(.retirements,0,.reason,.missingField) {_ = try completed(#"{"suggestions":[],"handled":[],"resolved":[],"retirements":[{"reviewID":"review_0","targetID":"reminder_0"}]}"#)}
+        let queuedProposals=(0..<25).map {number -> PADiscovery in var item=covered;item.id="proposal-\(number)";return item}
+        let firstBatch=ProactiveRules.reconsiderationBatch(queuedProposals,progress:.init(),context:"c1")
+        precondition(firstBatch.count == 12)
+        var receipts=ProactiveRules.recordingReconsideration(.init(),reviewed:firstBatch,active:queuedProposals,context:"c1")
+        let secondBatch=ProactiveRules.reconsiderationBatch(queuedProposals,progress:receipts,context:"c1")
+        precondition(Set(firstBatch.map(\.id)).isDisjoint(with:Set(secondBatch.map(\.id))),"Next cycle gives unreviewed cards priority")
+        receipts=ProactiveRules.recordingReconsideration(receipts,reviewed:queuedProposals,active:queuedProposals,context:"c1")
+        precondition(queuedProposals.allSatisfy{receipts.reviewedProposalContexts?[$0.id] == "c1"},"No pending reconsideration remains for unchanged context")
+        let restoredReceipts=try JSONDecoder().decode(ProactiveProgress.self,from:JSONEncoder().encode(receipts))
+        precondition(restoredReceipts.reviewedProposalContexts == receipts.reviewedProposalContexts)
+        precondition(queuedProposals.contains{restoredReceipts.reviewedProposalContexts?[$0.id] != "c2"},"New native/source context enables reconsideration")
+        let pruned=ProactiveRules.recordingReconsideration(receipts,reviewed:[],active:[],context:"c1")
+        precondition(pruned.reviewedProposalContexts?.isEmpty == true)
         // Exact source chronology and persistent replacement chains; no native mutation.
         let target=DiscoveryNativeTarget(kind:"reminder",itemID:"orion",sourceID:"studies",title:"Orion",hasTime:false,writable:true,recurring:false,fingerprint:"native-v1")
         let initialDate=Date(timeIntervalSince1970:1791000000)
