@@ -4,6 +4,9 @@ import EventKit
 extension DashboardModel {
     /// Pure local projection. A missing item is unknown; this never fetches sources or infers.
     func nativeLearningItems(_ kind:MemorySourceKind,now:Date = .now)->[NativeLearningItem]? {
+        nativeLearningValidation.items(kind) {projectedNativeLearningItems(kind,now:now)}
+    }
+    private func projectedNativeLearningItems(_ kind:MemorySourceKind,now:Date)->[NativeLearningItem]? {
         guard assistant.contextEnabled,!ProcessInfo.processInfo.arguments.contains("--sample") else { return nil }
         switch kind {
         case .calendar:

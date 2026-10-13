@@ -25,6 +25,7 @@ struct CalendarRemovalReviewSession:Identifiable {
     var reminderData = ReminderSnapshot(sources: [], reminders: []) {didSet{nativeLearningProjectionRevision &+= 1}}
     @ObservationIgnored var nativeLearningProjectionRevision=0
     @ObservationIgnored let nativeLearningProjectionCache=NativeLearningProjectionCache()
+    @ObservationIgnored let nativeLearningValidation=NativeLearningValidationBatch()
     var completedReminders:[CompletedReminder] = []
     var completedReminderHealth=SourceHealth()
     var mailData = MailSnapshot(messages: [], accounts: [], errors: [])

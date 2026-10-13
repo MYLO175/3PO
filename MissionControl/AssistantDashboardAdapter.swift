@@ -61,11 +61,13 @@ extension DashboardModel {
     func assistantRuntime() -> AssistantRuntime {
         AssistantRuntime(clock: { .now }, state: { [weak self] in
             guard let self else { return nil }
-            return .init(attentionPreferencesReadable: emailSummaries.relevanceReadable,
-                         acknowledgementRevision: reviewAcknowledgementRevision,
-                         resolutionRevision: emailSummaries.resolutionRevision(self),
-                         acknowledgements: reviewAcknowledgements(),
-                         whatsappScope: whatsapp.scope(for: chatGPT.activeID), weatherScope: weather.scope)
+            return nativeLearningValidation.withSnapshot { [self] in
+                AssistantRuntimeState(attentionPreferencesReadable: self.emailSummaries.relevanceReadable,
+                         acknowledgementRevision: self.reviewAcknowledgementRevision,
+                         resolutionRevision: self.emailSummaries.resolutionRevision(self),
+                         acknowledgements: self.reviewAcknowledgements(),
+                         whatsappScope: self.whatsapp.scope(for: self.chatGPT.activeID), weatherScope: self.weather.scope)
+            }
         }, sourceSnapshot: { [weak self] in
             guard let self else { return nil }
             return assistant.snapshot(self)

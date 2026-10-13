@@ -501,7 +501,7 @@ import Observation
             @MainActor func setResponse(_ text: String, completed: Bool) {
                 if let c = allConversations.firstIndex(where:{ $0.id == id }), let t = allConversations[c].turns.firstIndex(where:{ $0.id == response.id }) {
                     allConversations[c].turns[t].content = text; allConversations[c].turns[t].completed = completed
-                    allConversations[c].turns[t].sourceMemoryIDs = Array(Set(capturedSourceMemoryIDs + memory.permittedRecords.filter{$0.source != nil && MemoryRules.usable($0,registration:registration,now:runtime.clock())}.map(\.id)))
+                    allConversations[c].turns[t].sourceMemoryIDs = Array(Set(capturedSourceMemoryIDs).union(expectedSourceMemoryIDs))
                     allConversations[c].turns[t].memoryNotes = session.memoryNotes.isEmpty ? nil : Array(session.memoryNotes.suffix(6))
                     allConversations[c].turns[t].contextCapture?.consultedMemoryIDs = session.consultedMemory.sorted{$0.uuidString < $1.uuidString}
                 }

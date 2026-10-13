@@ -29,6 +29,23 @@ struct NativeLearningProjectionKey:Equatable {
         let value=build();entries[kind.rawValue]=(key,value);return value
     }
 }
+
+/// One synchronous validation decision uses one current native snapshot per
+/// kind. Nothing survives the decision; the next callback checks access again.
+@MainActor final class NativeLearningValidationBatch {
+    private struct Entry {var items:[NativeLearningItem]?}
+    private var current:[String:Entry]?
+    func withSnapshot<T>(_ body:()->T)->T {
+        if current != nil {return body()}
+        current=[:];defer {current=nil}
+        return body()
+    }
+    func items(_ kind:MemorySourceKind,build:()->[NativeLearningItem]?)->[NativeLearningItem]? {
+        guard current != nil else {return build()}
+        if let entry=current?[kind.rawValue] {return entry.items}
+        let value=build();current?[kind.rawValue]=Entry(items:value);return value
+    }
+}
 struct NativeLearningProgress:Codable {
     var enabled=false
     var started:Date?

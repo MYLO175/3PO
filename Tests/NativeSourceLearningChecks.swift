@@ -27,6 +27,18 @@ import SwiftData
         _=projection.items(.reminder,key:projectionKey){projectionBuilds += 1;return []}
         precondition(projectionBuilds == 7,"Native source kinds keep separate projections")
         precondition(!NativeSourceAdapters.fresh(.init(lastSuccess:now.addingTimeInterval(-1801)),now:now),"Current freshness gates reject old coverage even when projected items were cached")
+        let validation=NativeLearningValidationBatch()
+        var accessReads=0
+        validation.withSnapshot {
+            for _ in 0..<200 {_=validation.items(.calendar){accessReads += 1;return [first]}}
+            validation.withSnapshot {_=validation.items(.calendar){accessReads += 1;return nil}}
+        }
+        precondition(accessReads == 1,"One synchronous validation decision captures each native kind once, including nested consumers")
+        validation.withSnapshot {precondition(validation.items(.calendar){accessReads += 1;return nil} == nil)}
+        precondition(accessReads == 2,"A later decision rechecks access and cannot reuse a withdrawn source")
+        _=validation.items(.calendar){accessReads += 1;return [first]}
+        _=validation.items(.calendar){accessReads += 1;return [first]}
+        precondition(accessReads == 4,"Calls outside a validation decision never cache source access")
         precondition(!first.text.contains(event.location))
         var progress=NativeLearningRules.collecting(.init(enabled:true),items:[first],now:now)
         precondition(NativeLearningRules.batch([first],progress:progress,manual:false).isEmpty,"First opt-in is baseline")
