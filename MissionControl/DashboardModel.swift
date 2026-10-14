@@ -132,21 +132,23 @@ struct CalendarRemovalReviewSession:Identifiable {
         }
         service.memory.sourcePermissionProjection = { [weak self,weak service] in
             guard let self,let service,service.contextEnabled else { return [] }
-            let registration=self.chatGPT.activeID
-            var result=Set<UUID>()
-            // Hash each native snapshot once per projection, rather than once per saved fact.
-            let sourceRecords=service.memory.records.filter{$0.registration == registration && $0.source != nil}
-            for kind in NativeLearningRules.kinds where sourceRecords.contains(where:{$0.source?.identity.kind == kind}) && self.nativeSourceLearning.permittedKind(kind,model:self.learningRuntime()) {
-                if let items=self.nativeLearningItems(kind) {
-                    for record in sourceRecords where record.source?.identity.kind == kind {
-                        if NativeLearningRules.permitted(record,items:items) { result.insert(record.id) }
+            return self.nativeLearningValidation.permittedMemory {
+                let registration=self.chatGPT.activeID
+                var result=Set<UUID>()
+                // Hash each native snapshot once per projection, rather than once per saved fact.
+                let sourceRecords=service.memory.records.filter{$0.registration == registration && $0.source != nil}
+                for kind in NativeLearningRules.kinds where sourceRecords.contains(where:{$0.source?.identity.kind == kind}) && self.nativeSourceLearning.permittedKind(kind,model:self.learningRuntime()) {
+                    if let items=self.nativeLearningItems(kind) {
+                        for record in sourceRecords where record.source?.identity.kind == kind {
+                            if NativeLearningRules.permitted(record,items:items) { result.insert(record.id) }
+                        }
                     }
                 }
+                for record in service.memory.records where record.source?.identity.kind == .whatsapp {
+                    if service.memory.sourceIsPermitted(record) { result.insert(record.id) }
+                }
+                return result
             }
-            for record in service.memory.records where record.source?.identity.kind == .whatsapp {
-                if service.memory.sourceIsPermitted(record) { result.insert(record.id) }
-            }
-            return result
         }
         return service
     }()

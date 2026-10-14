@@ -52,10 +52,18 @@ struct NativeLearningProjectionKey:Equatable {
 @MainActor final class NativeLearningValidationBatch {
     private struct Entry {var items:[NativeLearningItem]?}
     private var current:[String:Entry]?
+    private var memoryProjection:Set<UUID>?
     func withSnapshot<T>(_ body:()->T)->T {
         if current != nil {return body()}
-        current=[:];defer {current=nil}
+        current=[:];memoryProjection=nil;defer {current=nil;memoryProjection=nil}
         return body()
+    }
+    /// The same synchronous decision may ask for permitted source memories from
+    /// several consumers. Build membership once, then discard it before yielding.
+    func permittedMemory(build:()->Set<UUID>)->Set<UUID> {
+        guard current != nil else {return build()}
+        if let memoryProjection {return memoryProjection}
+        let value=build();memoryProjection=value;return value
     }
     func items(_ kind:MemorySourceKind,build:()->[NativeLearningItem]?)->[NativeLearningItem]? {
         guard current != nil else {return build()}

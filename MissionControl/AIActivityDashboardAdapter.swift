@@ -33,7 +33,7 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
         let old=aiActivity.state.records.first{$0.registration == job.scope.registration && $0.id == eventID}
         let tools=assistant.activityContext(job.conversationID)?.attemptedTools[job.responseTurnID] ?? []
         let work=job.mode == .approval || AIActivityWork.includes(tools,confirmed:job.savedCount)
-        if job.phase != .queued,(work || state.isFailure || old != nil),!(state == .running && old?.state == .running) {
+        if job.phase != .queued,(work || old != nil),!(state == .running && old?.state == .running) {
             _=aiActivity.upsert(.init(id:eventID,registration:job.scope.registration,kind:.review,state:state,title:job.source.title,message:state == .running ? "Working on "+job.source.title : message.isEmpty ? state.title : message,created:job.created,finished:job.finished,destination:.review(targetID:job.conversationID.uuidString)))
         }
         if job.phase.isFinished,!reviewWork.busy {assistant.continueForegroundAfterReview(runtime:assistantRuntime())}
@@ -113,11 +113,11 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
         }
         if case let .review(id)=record.destination,let id,let uuid=UUID(uuidString:id) {
             guard let context=assistant.activityContext(uuid),let key=context.reviewKey else {return false}
-            if record.state == .succeeded || record.state == .needsAnswer {
+            if record.kind == .review {
                 let event=record.id.hasPrefix("review:") ? String(record.id.dropFirst(7)).split(separator:":",omittingEmptySubsequences:false) : []
                 guard let first=event.first,let jobID=UUID(uuidString:String(first)),let job=reviewWork.job(jobID) else {return false}
                 let responseID=event.count == 2 ? UUID(uuidString:String(event[1])) : nil
-                guard job.mode == .approval || responseID.map({AIActivityWork.includes(context.attemptedTools[$0] ?? [])}) == true else {return false}
+                guard job.mode == .approval || responseID.map({AIActivityWork.includes(context.attemptedTools[$0] ?? [],confirmed:$0 == job.responseTurnID ? job.savedCount : 0)}) == true else {return false}
             }
             return reviewPermits(.init(key:key,title:context.title,kind:context.reviewSourceKind ?? "mail",accountID:context.reviewAccountID,messageID:context.reviewMessageID,identity:context.reviewSourceIdentity,chatID:context.reviewSourceChatID))
         }

@@ -57,6 +57,16 @@ import SwiftData
         _=validation.items(.calendar){accessReads += 1;return [first]}
         _=validation.items(.calendar){accessReads += 1;return [first]}
         precondition(accessReads == 4,"Calls outside a validation decision never cache source access")
+        let factID=UUID();var membershipReads=0
+        validation.withSnapshot {
+            for _ in 0..<200 {precondition(validation.permittedMemory{membershipReads += 1;return [factID]} == [factID])}
+            validation.withSnapshot {precondition(validation.permittedMemory{membershipReads += 1;return []} == [factID])}
+        }
+        precondition(membershipReads == 1,"All current-memory consumers share membership only within one synchronous decision")
+        validation.withSnapshot {precondition(validation.permittedMemory{membershipReads += 1;return []}.isEmpty)}
+        precondition(membershipReads == 2,"The next decision immediately observes a withdrawn source memory")
+        _=validation.permittedMemory{membershipReads += 1;return [factID]};_=validation.permittedMemory{membershipReads += 1;return []}
+        precondition(membershipReads == 4,"Calls outside a decision cannot reuse source-memory authority")
         precondition(!first.text.contains(event.location))
         var progress=NativeLearningRules.collecting(.init(enabled:true),items:[first],now:now)
         precondition(NativeLearningRules.batch([first],progress:progress,manual:false).isEmpty,"First opt-in is baseline")
