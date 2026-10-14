@@ -11,7 +11,6 @@ struct ProductionReviewConversationView:View {
     @State private var draft=""
     private var conversation:AssistantConversation? {model.assistant.conversation(conversationID)}
     private var jobs:[ReviewWorkJob] {model.reviewWork.jobs(model.chatGPT.activeID,conversation:conversationID)}
-    private var discussed:Bool {jobs.contains{$0.mode == .conversation}}
     private var usable:Bool {model.reviewConversationAvailable(conversationID)}
     private var selectedActions:[ReviewWorkAction] {rows.filter{selected.contains($0.id) && !isSaved($0) && !isReserved($0)}.compactMap(\.action)}
     private var turns:[AssistantTurn] {conversation?.turns.filter{$0.role == "user" || ($0.deliveryID == nil && $0.role == "assistant")} ?? []}
@@ -50,9 +49,6 @@ struct ProductionReviewConversationView:View {
                                         Text("\(selectedActions.count) selected").font(.caption).foregroundStyle(.secondary)
                                     }
                                 }
-                            }
-                            if turns.isEmpty || !discussed {
-                                Button("Suggest a fuller plan") {send("Explain what matters in this source and suggest a complete plan. Look for the relevant existing project and propose dated tasks there as well as useful Calendar entries. Distinguish confirmed dates, provisional windows and missing deadlines. Tell me what you can do and ask before making changes.",actions:[],control:true)}.buttonStyle(.borderless)
                             }
                             ForEach(turns) {turn in
                                 VStack(alignment:.leading,spacing:5) {
@@ -128,7 +124,15 @@ struct ProductionReviewConversationView:View {
             if saved {Image(systemName:"checkmark.circle.fill").foregroundStyle(palette[.accent])}
             else if row.action != nil {Toggle("",isOn:Binding(get:{selected.contains(row.id)},set:{if $0 {selected.insert(row.id)} else {selected.remove(row.id)};model.reviewWork.selectPlan(selected,registration:model.chatGPT.activeID,conversation:conversationID)})).labelsHidden().toggleStyle(.checkbox).disabled(isReserved(row))}
             else {Image(systemName:"questionmark.circle").foregroundStyle(.secondary)}
-            VStack(alignment:.leading,spacing:5) {Text(PAProse.display(row.title)).font(.callout.weight(.medium));if !row.destination.isEmpty {Text(row.destination).font(.caption.weight(.medium)).foregroundStyle(palette[.accent])};Text(PAProse.display(row.detail)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled);if let error=row.error,!saved {Text(error).font(.caption).foregroundStyle(.orange)}}
+            VStack(alignment:.leading,spacing:5) {
+                Text(PAProse.display(row.title)).font(.callout.weight(.medium))
+                if !row.destination.isEmpty {Text(row.destination).font(.caption.weight(.medium)).foregroundStyle(palette[.accent])}
+                Text(PAProse.display(row.detail)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                if let error=row.error,!saved {Text(error).font(.caption).foregroundStyle(.orange)}
+                if let action=row.action,let payload=try? JSONDecoder().decode(ReviewPreparedPayload.self,from:action.payload),!payload.proposal.evidence.isEmpty {
+                    DisclosureGroup("Source evidence") {Text(PAProse.display(payload.proposal.evidence)).font(.caption).textSelection(.enabled)}.font(.caption)
+                }
+            }
             Spacer(minLength:0)
             if saved {Text("Completed").font(.caption).foregroundStyle(.secondary)}
         }.padding(13).background(palette[.widget],in:RoundedRectangle(cornerRadius:11)).overlay(RoundedRectangle(cornerRadius:11).stroke(palette[.border].opacity(0.45)))

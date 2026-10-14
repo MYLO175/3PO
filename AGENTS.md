@@ -97,3 +97,10 @@ Heartbeat reconsideration may inspect pending proposals as labelled historical d
 - AI Activity lists action successes/failures, excluding general replies, context reads and every heartbeat record. The pill indicates a running heartbeat without placing it in Activity. It remains steady during jobs and alerts only action failures.
 - Review retains checkboxes during conversation. Done approves checked actions and preserves the unsent draft; Escape dismisses. Immediate conversational execution and Done must share canonical operation identities/receipts. Waiting conversation selection alone neither reserves an action nor authorises a write.
 - Centre the pill vertically in the native toolbar and keep other menu-bar actions on the right. Preserve model, connection, storage and permission settings while fixing responsiveness.
+
+
+## Recorded concise Activity refinement — 14 October
+
+- Show natural green success labels such as Reminder created for six seconds, then return the pill to Ready. Retain live work and unresolved attention priority. Use one local expiry wakeup, never streaming-driven history or source reads.
+- Activity shows five recent tasks with concise natural outcomes and green successes, without acknowledgement labels/buttons/Undo UI. Preserve complete stored history and acknowledgement fields.
+- After a source action completes, replace Explore with the completed count and View actions to its saved conversation; remaining checkboxes stay inside. Pending cards show only Explore, without a suggestion count or separate Suggested actions and evidence disclosure. Keep Background context, Feedback, View email and Dismiss. Evidence stays inside the sheet; remove Suggest a fuller plan.

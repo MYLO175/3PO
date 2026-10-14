@@ -134,7 +134,7 @@ struct AssistantPanel: View {
             Label("\(completed) action\(completed == 1 ? "" : "s") completed",systemImage:"checkmark.circle.fill").font(.caption).foregroundStyle(.secondary)
             Button("View actions") {model.openReviewConversation(related)}
         }
-        if pending {Button("Explore suggested actions") {model.openReviewConversation(related)}}
+        else if pending {Button("Explore suggested actions") {model.openReviewConversation(related)}}
         if record.reviewState == "pending" || discoveryClaim(record).map({$0.receipt == nil}) == true {Label("Save needs checking",systemImage:"exclamationmark.circle").font(.caption).foregroundStyle(.orange)}
     }
     private func lastDiscoveryEntries(_ turns:[AssistantTranscriptRow])->[String:UUID] {

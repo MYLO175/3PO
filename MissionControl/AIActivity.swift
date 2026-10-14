@@ -151,15 +151,53 @@ struct AIActivityRecord: Codable, Equatable, Identifiable {
 
 /// A local display choice; this never changes a saved outcome or resumes work.
 enum AIActivityPillRules {
-    static func displayed(_ records:[AIActivityRecord],current:AIActivityRecord?,registration:String)->AIActivityRecord? {
+    static let successDuration:TimeInterval = 6
+    static func displayed(_ records:[AIActivityRecord],current:AIActivityRecord?,registration:String,now:Date = .now)->AIActivityRecord? {
         if let current,current.registration == registration,current.state == .running {return current}
         let outcomes=records.filter{$0.registration == registration && $0.kind != .heartbeat && $0.state.isTerminal}.sorted {
             $0.date != $1.date ? $0.date > $1.date : $0.id < $1.id
         }
         if let attention=outcomes.first(where:{$0.needsAttention}) {return attention}
         // Acknowledging the latest outcome must not revive an older success.
-        guard let latest=outcomes.first,latest.state == .succeeded,!latest.acknowledged else {return nil}
+        guard let latest=outcomes.first,latest.state == .succeeded,!latest.acknowledged,now >= latest.date,now.timeIntervalSince(latest.date) < successDuration else {return nil}
         return latest
+    }
+}
+
+
+/// Presentation only: retain all stored history and original result prose.
+enum AIActivitySummary {
+    static func recent(_ records:[AIActivityRecord],current:AIActivityRecord?,registration:String)->[AIActivityRecord] {
+        var values=records.filter{$0.registration == registration && $0.kind != .heartbeat && ![.running,.replied,.resolved].contains($0.state)}
+        if let current,current.registration == registration,current.kind != .heartbeat,current.state == .running {
+            values.removeAll{$0.id == current.id};values.append(current)
+        }
+        return Array(values.sorted {
+            if ($0.state == .running) != ($1.state == .running) {return $0.state == .running}
+            return $0.date != $1.date ? $0.date > $1.date : $0.id < $1.id
+        }.prefix(5))
+    }
+    static func text(_ message:String,hint:String? = nil,compact:Bool = false)->String {
+        var text=message.trimmingCharacters(in:.whitespacesAndNewlines)
+        for marker in ["**","__","`"] {text=text.replacingOccurrences(of:marker,with:"")}
+        if text.lowercased().hasPrefix("completed: ") {text=String(text.dropFirst(11))}
+        let labels=[("Created reminder: ","Reminder created"),("Updated reminder: ","Reminder updated"),
+                    ("Created event: ","Calendar event created"),("Updated event: ","Calendar event updated"),
+                    ("Removed event: ","Calendar event removed"),("Deleted event: ","Calendar event removed"),
+                    ("Your feedback was saved","Feedback saved")]
+        for (prefix,label) in labels where text.lowercased().hasPrefix(prefix.lowercased()) {
+            let remainder=String(text.dropFirst(prefix.count)).trimmingCharacters(in:.whitespacesAndNewlines)
+            return compact || remainder.isEmpty ? label : label+": "+remainder
+        }
+        let natural=["Reminder created","Reminder updated","Reminder removed","Calendar event created","Calendar event updated","Calendar event removed","Space created","Task created","Reply draft copied","Feedback saved"]
+        if compact,let label=natural.first(where:{text.hasPrefix($0+": ") || text == $0}) {return label}
+        // Older verified Review outcomes used quoted titles in the final reply.
+        // A captured typed operation supplies the kind; prose never establishes a save.
+        if text.lowercased().hasPrefix("created "),let hint {
+            let quoted=text.range(of:"[“\"]([^”\"]+)[”\"]",options:.regularExpression).map{String(text[$0]).dropFirst().dropLast()}
+            if let quoted {return compact ? hint+" created" : hint+" created: "+quoted}
+        }
+        return text
     }
 }
 

@@ -95,7 +95,7 @@ struct PATasksView: View {
             Label("\(max(1,completed)) action\(max(1,completed) == 1 ? "" : "s") completed",systemImage:"checkmark.circle.fill").foregroundStyle(.secondary)
             Button("View actions") {model.openReviewConversation(related)}
         }
-        if proposals.contains(where:{!completedProposal($0,source:source)}) {
+        else if proposals.contains(where:{!completedProposal($0,source:source)}) {
             Button("Explore suggested actions") {model.openReviewConversation(related)}
         }
     }
@@ -225,18 +225,8 @@ struct PATasksView: View {
                             if proposals.contains(where:{$0.reviewState == "pending" || model.reviewCreationClaim($0).map({$0.receipt == nil}) == true}) {
                                 Label("A save needs checking",systemImage:"exclamationmark.circle").font(.caption).foregroundStyle(.orange)
                             }
-                            if !pendingProposals.isEmpty || hasSummaryDraft {
-                                Divider()
-                                let count=pendingProposals.count+(hasSummaryDraft ? 1 : 0)
-                                Text("\(count) suggested action\(count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                            if completedActions == 0 && (!pendingProposals.isEmpty || hasSummaryDraft) {
                                 Button("Explore suggested actions") {model.openReviewSource(message)}.controlSize(.small)
-                            }
-                            if !proposals.isEmpty {
-                                DisclosureGroup("Suggested actions and evidence") {
-                                    ForEach(proposals) {item in
-                                        discoveryContent(item,embedded:true,emailTitle:message.subject,showsActionEntry:false)
-                                    }
-                                }.font(.caption)
                             }
                             if !updates.isEmpty {
                                 DisclosureGroup("Background context") {

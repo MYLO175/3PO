@@ -6,7 +6,7 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
     func classifyAssistantOutcome(_ outcome:AssistantTurnOutcome)->(phase:ReviewWorkPhase,message:String,actions:Int,error:String?) {
         let phase=ReviewWorkPhase(rawValue:outcome.phase) ?? .failed
         let failures=outcome.errors.filter{!$0.isEmpty}
-        let message=failures.isEmpty ? outcome.message : failures.joined(separator:" · ")
+        let message=failures.isEmpty ? (phase == .completed && outcome.confirmedActions > 0 ? AIActivityWork.completed(outcome.attemptedTools,receipts:outcome.receipts,confirmed:outcome.confirmedActions) : outcome.message) : failures.joined(separator:" · ")
         return (phase,message,outcome.confirmedActions,failures.isEmpty ? nil : message)
     }
     func assistantActivityStarted(_ outcome:AssistantTurnOutcome) {
@@ -131,7 +131,39 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
         return record.registration == chatGPT.activeID
     }
     func activityPresentation(_ record:AIActivityRecord)->AIActivityRecord {
-        guard record.registration == chatGPT.activeID,record.state.needsAttention,let destination=record.destination else {return record}
+        guard record.registration == chatGPT.activeID else {return record}
+        if record.state == .succeeded {
+            var result=record
+            if record.kind == .review {
+                let parts=record.id.split(separator:":")
+                if parts.count == 3,let id=UUID(uuidString:String(parts[1])),let response=UUID(uuidString:String(parts[2])),let job=reviewWork.job(id),job.responseTurnID == response,job.phase == .completed {
+                    let saved=job.actions.filter{$0.phase == .saved}
+                    if job.savedCount == 1,let action=saved.first,let payload=try? JSONDecoder().decode(ReviewPreparedPayload.self,from:action.payload) {
+                        let label:String
+                        if let baseline=payload.nativeBaseline {label=(baseline.kind == .event ? "Calendar event" : "Reminder")+(payload.nativeOperation == "remove" ? " removed" : " updated")}
+                        else if let request=payload.nativeRequest {label=request.kind == .event ? "Calendar event created" : "Reminder created"}
+                        else if let project=payload.project {label=project.kind == .space ? "Space created" : "Task created"}
+                        else if payload.localDraft != nil {label="Reply draft copied"}
+                        else {return result}
+                        let title=payload.project?.title ?? payload.nativeFields?.title ?? payload.nativeBaseline?.title ?? action.title
+                        result.message=payload.localDraft != nil ? label : label+": "+title
+                        return result
+                    }
+                }
+            }
+            var hint:String?
+            if case let .review(id)=record.destination,let conversation=id.flatMap(UUID.init(uuidString:)) {
+                let parts=record.id.split(separator:":")
+                if parts.count == 3,let response=UUID(uuidString:String(parts[2])) {
+                    let tools=assistant.activityContext(conversation)?.attemptedTools[response] ?? []
+                    if tools.contains("change_reminder"),!tools.contains("change_calendar") {hint="Reminder"}
+                    else if tools.contains("change_calendar"),!tools.contains("change_reminder") {hint="Calendar event"}
+                }
+            }
+            result.message=AIActivitySummary.text(record.message,hint:hint)
+            return result
+        }
+        guard record.state.needsAttention,let destination=record.destination else {return record}
         let response:UUID?,conversation:UUID?
         switch destination {
         case .assistant(let id):

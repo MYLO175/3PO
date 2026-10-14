@@ -1,5 +1,12 @@
 # Decisions
 
+## 14 October: brief success messages and concise recent Activity
+
+Show a verified success in green for six seconds, using a natural action label such as Reminder created. Return to Ready locally without changing its historical outcome; unresolved questions/failures and live work retain their existing priority. Use one cancellable expiry wakeup rather than polling or streaming observation. New successful Review jobs use canonical receipts, with concise display projections for older saved prose and captured prepared actions.
+
+Limit the dropdown to five recent tasks, green successes and concise descriptions with conversation navigation. Hide resolved prompts and remove acknowledgement UI while preserving stored acknowledgement and complete history. Once any source action completes, show its completed count and View actions instead of Explore; remaining checkboxes stay in that conversation. Pending cards need only Explore, with captured evidence inside the sheet, no suggested count, redundant evidence disclosure or fuller-plan shortcut.
+
+
 ## 14 October: show action outcomes directly in the pill
 
 The human requested green success messages and attention/failure messages in place of Ready. Choose one live job first; while idle choose the latest unresolved question/failure, otherwise the latest unacknowledged success. Keep semantic colour and an icon, readable full-message accessibility/help and direct Activity navigation. Acknowledging the newest outcome does not resurrect older success.

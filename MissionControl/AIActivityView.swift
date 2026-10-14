@@ -12,6 +12,7 @@ struct AIActivityPill: View {
     var relatedDestinations:(AIActivityRecord)->[AIActivityDestination] = {_ in []}
     var presentation:(AIActivityRecord)->AIActivityRecord = {$0}
     @State private var activityOpen = false
+    @State private var outcomeClock = Date.now
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -23,14 +24,15 @@ struct AIActivityPill: View {
             if let saved=saved.first(where:{$0.id == current.id}) {current.acknowledged=saved.acknowledged}
             return current
         }()
-        let displayed=AIActivityPillRules.displayed(saved,current:active,registration:registration)
+        let displayed=AIActivityPillRules.displayed(saved,current:active,registration:registration,now:max(outcomeClock,.now))
+        let expiry=displayed.flatMap{$0.state == .succeeded ? $0.date.addingTimeInterval(AIActivityPillRules.successDuration) : nil}
         let attention = saved.contains{$0.needsAttention} || store.error != nil
         let success=active == nil && displayed?.state == .succeeded
         let failed=active == nil && displayed?.state.isFailure == true
         let successColour=scheme == .dark ? Color(red:0.44,green:0.83,blue:0.55) : Color(red:0.10,green:0.43,blue:0.22)
         let statusColour:Color=success ? successColour : failed ? .red : active == nil && (displayed?.needsAttention == true || store.error != nil) ? .orange : palette[.text]
         let progress:Double?=nil
-        let message=store.error ?? displayed.map(AIActivityPresentation.message) ?? "3PO is ready"
+        let message=store.error ?? displayed.map{AIActivityPresentation.message($0,compact:true)} ?? "3PO is ready"
         let accessibilityStatus=message+(progress.map{". \(Int($0*100)) percent progress."} ?? "")+(attention ? ". An outcome needs attention." : "")
         HStack(spacing: 0) {
             Button(action: openChat) {
@@ -78,10 +80,18 @@ struct AIActivityPill: View {
         .padding(4)
         .background(palette[.widget].opacity(0.92), in: Capsule())
         .overlay(Capsule().stroke(success ? successColour.opacity(0.4) : failed ? Color.red.opacity(0.45) : attention ? Color.orange.opacity(0.55) : palette[.text].opacity(0.13), lineWidth: 0.75))
+        .task(id:expiry) {
+            guard let expiry else {return}
+            let remaining=expiry.timeIntervalSinceNow
+            if remaining > 0 {try? await Task.sleep(for:.seconds(remaining))}
+            guard !Task.isCancelled else {return}
+            outcomeClock = .now
+        }
+
     }
 }
 
-/// Local inspection only. Navigation and acknowledgement make no source or AI requests.
+/// Local inspection only. Navigation makes no source or AI requests.
 struct AIActivityView: View {
     var store: AIActivityStore
     var registration: String
@@ -93,16 +103,11 @@ struct AIActivityView: View {
     var relatedDestinations:(AIActivityRecord)->[AIActivityDestination] = {_ in []}
     var presentation:(AIActivityRecord)->AIActivityRecord = {$0}
 
+    @Environment(\.colorScheme) private var scheme
     private var visibleCurrent: AIActivityRecord? { current.flatMap { $0.kind != .heartbeat && $0.registration == registration && isVisible($0) ? $0 : nil } }
     private var records: [AIActivityRecord] {
         let saved = store.records(registration).filter{$0.kind != .heartbeat && isVisible($0)}.map(presentation)
-        guard let current = visibleCurrent else { return saved }
-        // A live snapshot augments the same event rather than rendering it twice.
-        var merged = saved.filter { $0.id != current.id }
-        var snapshot = current
-        if let saved = saved.first(where: { $0.id == current.id }) { snapshot.acknowledged = saved.acknowledged }
-        merged.insert(snapshot, at: 0)
-        return merged
+        return AIActivitySummary.recent(saved,current:visibleCurrent,registration:registration)
     }
     var body: some View {
         let shown=records
@@ -126,9 +131,6 @@ struct AIActivityView: View {
                     }.padding(.vertical, 1)
                 }.frame(maxHeight: 380)
             }
-            if store.undoDate(registration) != nil {
-                Button("Undo acknowledgement") { store.undoAcknowledgement(registration) }.controlSize(.small)
-            }
         }
         .padding(18).frame(width: 405)
         .foregroundStyle(palette[.text])
@@ -136,65 +138,45 @@ struct AIActivityView: View {
         .tint(palette[.accent])
     }
     private func activity(_ record: AIActivityRecord) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: record.state.symbol).foregroundStyle(record.needsAttention ? Color.orange : palette[.accent])
-                Text(PAProse.display(record.title)).font(.callout.weight(.semibold)).lineLimit(2)
-                Spacer(minLength: 6)
-                Text(record.state.title).font(.caption2.weight(.medium))
-                    .foregroundStyle(record.needsAttention ? Color.orange : palette[.text].opacity(0.62))
-            }
-            Text(AIActivityPresentation.message(record)).font(.callout).lineSpacing(2).textSelection(.enabled)
+        let colour:Color=record.state == .succeeded ? (scheme == .dark ? Color(red:0.44,green:0.83,blue:0.55) : Color(red:0.10,green:0.43,blue:0.22)) : record.state.isFailure ? .red : record.state == .needsAnswer ? .orange : palette[.text]
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment:.top,spacing:8) {
+                Image(systemName:record.state.symbol)
+                Text(AIActivityPresentation.message(record)).font(.callout.weight(.medium)).lineLimit(3).textSelection(.enabled)
+            }.foregroundStyle(colour)
             if record.state == .running {ProgressView().controlSize(.small)}
-            HStack(spacing: 5) {
-                Text(record.kind.title)
-                Text("·")
-                Text(record.date, format: .dateTime.day().month(.abbreviated).hour().minute())
-                if record.acknowledged { Text("· Acknowledged") }
-            }.font(.caption2).foregroundStyle(palette[.text].opacity(0.62))
-            if !relatedDestinations(record).isEmpty {
-                HStack(spacing:8) {ForEach(Array(relatedDestinations(record).enumerated()),id:\.offset) {_,destination in
-                    Button {openDestination(destination)} label:{Label(destination.title,systemImage:destination.symbol)}
-                }}.controlSize(.small)
+            if record.kind == .review || record.kind == .feedback {
+                Text(PAProse.display(record.title)).font(.caption).foregroundStyle(palette[.text].opacity(0.66)).lineLimit(1)
             }
-            HStack(spacing: 8) {
-                if let destination = record.destination {
-                    Button { openDestination(destination) } label: { Label(destination.title, systemImage: destination.symbol) }
+            HStack {
+                if let destination=record.destination {
+                    Button {openDestination(destination)} label:{Label(destination.title,systemImage:destination.symbol)}.controlSize(.small)
                 }
-                if record.state.isTerminal && !record.acknowledged && !store.readOnly {
-                    Spacer(minLength: 0)
-                    Button("Acknowledge") { store.acknowledge(record.id, registration: registration) }
-                        .help("Acknowledge this AI outcome. The underlying task and saved results are unchanged.")
-                }
-            }.controlSize(.small)
+                Spacer(minLength:4)
+                Text(record.date,format:.dateTime.day().month(.abbreviated).hour().minute()).font(.caption2).foregroundStyle(palette[.text].opacity(0.62))
+            }
         }
         .padding(12)
-        .background(palette[.accent].opacity(record.acknowledged ? 0.035 : 0.065), in: RoundedRectangle(cornerRadius: 11))
-        .overlay(RoundedRectangle(cornerRadius: 11).stroke(record.needsAttention ? Color.orange.opacity(0.28) : palette[.border].opacity(0.55), lineWidth: 0.7))
+        .background(colour.opacity(0.045),in:RoundedRectangle(cornerRadius:11))
+        .overlay(RoundedRectangle(cornerRadius:11).stroke(colour.opacity(record.state == .succeeded || record.state.needsAttention ? 0.3 : 0.15),lineWidth:0.7))
     }
 }
 
 private enum AIActivityPresentation {
-    static func message(_ record: AIActivityRecord) -> String {
-        let message = PAProse.display(record.message).trimmingCharacters(in: .whitespacesAndNewlines)
-        let fallback = PAProse.display(record.title) + " · " + record.state.title.lowercased()
-        let text = message.isEmpty ? fallback : message
+    static func message(_ record: AIActivityRecord,compact:Bool = false) -> String {
+        let message=AIActivitySummary.text(PAProse.display(record.message),compact:compact && record.state == .succeeded)
+        let text=message.isEmpty ? PAProse.display(record.title) : message
         switch record.state {
-        case .failed: return prefixed("Failed", text: text)
-        case .partial: return prefixed("Partly completed", text: text)
-        case .interrupted: return prefixed("Interrupted", text: text)
-        case .uncertain: return prefixed("Outcome unconfirmed", text: text)
-        case .needsAnswer: return prefixed("Needs your answer", text: text)
-        case .running: return record.kind == .heartbeat ? "Heartbeat running…" : record.kind == .review ? "Working on "+PAProse.display(record.title) : "Working on your actions…"
-        case .succeeded:
-            let lower=text.lowercased()
-            return lower.contains("action completed") || lower.contains("actions completed") ? text : prefixed("Completed",text:text)
-        case .replied: return prefixed("Replied",text:text)
-        case .resolved: return prefixed("Resolved",text:text)
-        default: return text
+        case .failed:return prefixed("Failed",text:text)
+        case .partial:return prefixed("Partly completed",text:text)
+        case .interrupted:return prefixed("Interrupted",text:text)
+        case .uncertain:return prefixed("Save needs checking",text:text)
+        case .needsAnswer:return prefixed("Needs your answer",text:text)
+        case .running:return record.kind == .heartbeat ? "Heartbeat running…" : record.kind == .review ? "Working on "+PAProse.display(record.title) : "Working on your actions…"
+        default:return text
         }
     }
-    private static func prefixed(_ label: String, text: String) -> String {
-        text.lowercased().hasPrefix(label.lowercased()) ? text : label + ": " + text
+    private static func prefixed(_ label:String,text:String)->String {
+        text.lowercased().hasPrefix(label.lowercased()) ? text : label+": "+text
     }
 }

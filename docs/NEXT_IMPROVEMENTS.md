@@ -1,5 +1,8 @@
 # Next improvements
 
+14 October concise Activity follow-up: success labels appear green for six seconds; the dropdown displays five recent tasks with green successes, concise outcomes and conversation navigation. Completed source cards replace Explore with their completed count and View actions. Pending cards have no suggested count, separate evidence disclosure or fuller-plan shortcut. Saved history, drafts and direct zero-inference approval remain. Focused and native acceptance are recorded in STATUS; sustained provider/native reliability remains separate.
+
+
 14 October pill outcome refinement implemented: success/question/failure presentation and reply-aware attention use stable metadata. Focused checks cover priority, acknowledgement, scope/account isolation, reply order, exact retry resolution and zero streaming-driven Activity invalidations. Sustained provider/native task reliability remains independent of this local UI change.
 
 

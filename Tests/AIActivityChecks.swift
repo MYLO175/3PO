@@ -34,7 +34,7 @@ import Foundation
             let question=record("question",state:.needsAnswer,offset:30)
             let failure=record("failure",state:.failed,offset:40)
             let running=record("running",state:.running,offset:100)
-            func pill(_ records:[AIActivityRecord],_ current:AIActivityRecord?=nil)->AIActivityRecord? {AIActivityPillRules.displayed(records,current:current,registration:"account-a")}
+            func pill(_ records:[AIActivityRecord],_ current:AIActivityRecord?=nil)->AIActivityRecord? {AIActivityPillRules.displayed(records,current:current,registration:"account-a",now:date.addingTimeInterval(60))}
             check(pill([success,heartbeat])?.id == success.id,"Idle pill shows completed action instead of Ready and excludes heartbeat completion")
             check(pill([success,question])?.id == question.id,"An unanswered question takes priority over success")
             check(pill([success,question,failure])?.id == failure.id,"The newest unresolved attention outcome is shown")
@@ -49,6 +49,25 @@ import Foundation
             check(pill([heartbeat,record("ghost",state:.running)]) == nil,"Historical heartbeat and stale running rows never appear as current work")
             check(pill([failure],record("live-heartbeat",state:.running,kind:.heartbeat))?.kind == .heartbeat,"The live heartbeat remains visible while its completion stays out of history")
             check(pill([record("stopped",state:.stopped,offset:100),success]) == nil,"A stopped latest request does not revive an earlier green success")
+            check(AIActivityPillRules.displayed([success],current:nil,registration:"account-a",now:date.addingTimeInterval(65))?.id == success.id,"Green success lasts six seconds")
+            check(AIActivityPillRules.displayed([success],current:nil,registration:"account-a",now:date.addingTimeInterval(66)) == nil,"Success expires at its exact deadline without acknowledgement")
+            check(AIActivityPillRules.displayed([success],current:nil,registration:"account-a",now:date.addingTimeInterval(600)) == nil,"Reopening does not flash an old success")
+            check(AIActivityPillRules.displayed([failure],current:nil,registration:"account-a",now:date.addingTimeInterval(600))?.id == failure.id,"Failure attention is retained after the success timeout")
+            let history=(0..<9).map{record("task-\($0)",state:.succeeded,offset:Double($0))}
+            let recent=AIActivitySummary.recent(history+[heartbeat,replied],current:nil,registration:"account-a")
+            check(recent.count == 5 && recent.first?.id == "task-8" && history.count == 9,"Five recent tasks exclude heartbeat and resolved prompts without deleting history")
+            check(AIActivitySummary.recent(history,current:running,registration:"account-a").first?.id == running.id,"Live work leads the five recent tasks")
+            check(AIActivitySummary.recent([running],current:running,registration:"account-a").count == 1,"A current task is shown once")
+            check(AIActivitySummary.text("Created reminder: Ask Dad") == "Reminder created: Ask Dad","Canonical Reminder receipt uses natural language")
+            check(AIActivitySummary.text("Reminder created: Ask Dad",compact:true) == "Reminder created","Pill omits the title and extra detail")
+            check(AIActivitySummary.text("Completed: Created **“Ask Dad”** in To do, without a due date.",hint:"Reminder") == "Reminder created: Ask Dad","Older verified Review outcomes lose Markdown and unnecessary detail")
+            check(AIActivitySummary.text("Created event: Random event",compact:true) == "Calendar event created","Calendar success has a concise pill label")
+            check(AIActivitySummary.text("No new changes were confirmed.",hint:"Reminder",compact:true) == "No new changes were confirmed.","A kind hint cannot invent creation")
+            check(AIActivitySummary.text("Space created: Orion follow-up",compact:true) == "Space created","Prepared space success uses a short label")
+            check(AIActivitySummary.recent([record("ghost",state:.running)],current:nil,registration:"account-a").isEmpty,"Saved running rows need an exact live owner")
+            check(AIActivitySummary.recent([record("other",registration:"account-b",state:.succeeded)],current:nil,registration:"account-a").isEmpty,"Recent activity stays account scoped")
+
+
         }
         var bytes: Data?
         var writes = 0

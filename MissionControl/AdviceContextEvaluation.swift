@@ -33,6 +33,12 @@ import Synchronization
         checks["successful exact retry clears the old failure display"]=model.activityPresentation(failed).state == .resolved
         job.actions[0].phase = .failed;try install(job)
         checks["partial or unrelated retry cannot clear the old failure"]=model.activityPresentation(failed).state == .failed
+        let outcome=AssistantTurnOutcome(registration:registration,conversationID:id,humanTurnID:UUID(),responseTurnID:UUID(),phase:"completed",message:"Verbose model prose should stay in the conversation",receipts:["Created reminder: Fictional follow-up"],errors:[],confirmedActions:1,attemptedTools:["change_reminder"])
+        checks["completed Review jobs use verified receipt text"]=model.classifyAssistantOutcome(outcome).message == "Created reminder: Fictional follow-up"
+        let reply=AssistantTurnOutcome(registration:registration,conversationID:id,humanTurnID:UUID(),responseTurnID:UUID(),phase:"completed",message:"An ordinary answer",receipts:[],errors:[])
+        checks["ordinary Review answers retain their original conversation text"]=model.classifyAssistantOutcome(reply).message == reply.message
+        let success=AIActivityRecord(id:"action:"+UUID().uuidString,registration:registration,kind:.action,state:.succeeded,title:"3PO actions",message:"Created reminder: Fictional follow-up")
+        checks["actual Activity adapter displays a concise canonical receipt"]=model.activityPresentation(success).message == "Reminder created: Fictional follow-up" && success.message == "Created reminder: Fictional follow-up"
         checks["activity resolution makes zero inference calls"]=model.aiUsage.state.records.count == usage
         return checks
     }
