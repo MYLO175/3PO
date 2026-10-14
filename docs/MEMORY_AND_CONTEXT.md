@@ -42,6 +42,8 @@ The trace stores no extra copy of memory prose, source bodies, prompts, tool arg
 
 ## Feedback about what deserves review
 
+14 October correction: feedback uses captured source choices and exact email ownership during interpretation. Calendar/Reminders collection notifications are unrelated to that email and do not invalidate it. Explicit retries retain the issued memory identity; a verified save resolves the earlier local alert without rewriting failure history.
+
 Feedback on an email now uses one explicit, bounded subscription request to reason from your comment, the selected topic, and that exact email's sender, subject and up to 16,000 body characters. The **learned preference is the primary memory**, rather than a verbatim copy of an ambiguous comment. Original human words remain evidence. For example, ‘These emails aren't important’ on a general university broadcast can teach that routine newsletters from that communications team should stay quiet, while a new personal request or obligation still matters. Explicit sender-wide human wording can set a broader scope.
 
 **Submit feedback** retains your words locally and closes the dialog immediately. The app processes explicit submissions serially in the background, waiting for other PA operations to finish. You can switch pages, including opening the assistant, while it learns. The card shows progress and the saved preference; Review preferences retains unfinished feedback even if its card leaves the inbox. A targeted Stop stops only that submission. Foreground typing/sending cancels active feedback and interrupts queued submissions, keeping their words for an explicit retry.

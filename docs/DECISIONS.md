@@ -1,5 +1,11 @@
 # Decisions
 
+## 14 October: feedback ignores unrelated EventKit notifications
+
+Email feedback interpretation captures source choices and exact email/account/assessment ownership rather than the global native collection revision. Calendar or Reminders change notifications may arrive during either Mail reading or inference without invalidating an unchanged submission. Current model, memory, storage, foreground/cancellation, device, usage and heartbeat ownership checks remain, with exact Mail body readback before saving. Legacy queued submissions retain their existing stricter revision fallback. Failed or attempted submissions still require explicit retry; installing this fix does not replay them.
+
+Feedback retry resolution is a local Activity projection, matching the exact original submission ID, account and saved canonical memory identity. A queued retry, saved-job marker without memory readback, or success from another submission cannot clear the alert. Historical outcomes, errors and acknowledgements are retained.
+
 ## 14 October: brief success messages and concise recent Activity
 
 Show a verified success in green for six seconds, using a natural action label such as Reminder created. Return to Ready locally without changing its historical outcome; unresolved questions/failures and live work retain their existing priority. Use one cancellable expiry wakeup rather than polling or streaming observation. New successful Review jobs use canonical receipts, with concise display projections for older saved prose and captured prepared actions.

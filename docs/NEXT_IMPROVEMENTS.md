@@ -1,5 +1,7 @@
 # Next improvements
 
+14 October feedback correction: unrelated EventKit notifications no longer reject unchanged email feedback during reading or inference. Verified same-submission retries resolve earlier toolbar alerts locally while preserving history. Fictional asynchronous guards and exact memory readback are covered by the signed app checks; live recovery and installation evidence are recorded in STATUS. Wider provider reliability remains separate.
+
 14 October concise Activity follow-up: success labels appear green for six seconds; the dropdown displays five recent tasks with green successes, concise outcomes and conversation navigation. Completed source cards replace Explore with their completed count and View actions. Pending cards have no suggested count, separate evidence disclosure or fuller-plan shortcut. Saved history, drafts and direct zero-inference approval remain. Focused and native acceptance are recorded in STATUS; sustained provider/native reliability remains separate.
 
 

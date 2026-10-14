@@ -261,10 +261,12 @@ struct CalendarRemovalReviewSession:Identifiable {
             };return
         }
         if ProcessInfo.processInfo.arguments.contains("--validate-advice-context") {
+            Task {
             let result:[String:Any]
-            do { result=try AdviceContextEvaluation.run(self) } catch { result=["error":error.localizedDescription,"requests":0,"storage":"Disposable storage; sources never started"] }
+            do { result=try await AdviceContextEvaluation.run(self) } catch { result=["error":error.localizedDescription,"requests":0,"storage":"Disposable storage; sources never started"] }
             if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-advice-context-evaluation.json"),options:.atomic) }
-            NSApp.terminate(nil);return
+            NSApp.terminate(nil)
+            };return
         }
         if ProcessInfo.processInfo.arguments.contains("--validate-native-memory") {
             Task {

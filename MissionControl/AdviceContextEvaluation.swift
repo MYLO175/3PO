@@ -40,6 +40,19 @@ import Synchronization
         let success=AIActivityRecord(id:"action:"+UUID().uuidString,registration:registration,kind:.action,state:.succeeded,title:"3PO actions",message:"Created reminder: Fictional follow-up")
         checks["actual Activity adapter displays a concise canonical receipt"]=model.activityPresentation(success).message == "Reminder created: Fictional follow-up" && success.message == "Created reminder: Fictional follow-up"
         checks["activity resolution makes zero inference calls"]=model.aiUsage.state.records.count == usage
+        let feedback=ReviewFeedbackJob(registration:registration,messageID:"fictional-retry-email",accountID:"fictional-mail",headerFingerprint:"header",bodyFingerprint:"body",assessmentVersion:"assessment",model:"fictional-model",sourceRevision:0,words:"Routine fictional announcements can stay quiet.",about:"Fictional newsletter",heartbeatEligible:true)
+        precondition(model.emailSummaries.feedback.submit(feedback))
+        let failedFeedback=AIActivityRecord(id:"feedback:"+feedback.id.uuidString+":"+UUID().uuidString,registration:registration,kind:.feedback,state:.failed,title:"Feedback",message:"Old failure",destination:.feedback(targetID:feedback.id.uuidString))
+        checks["feedback alert stays unresolved before verified save"]=model.activityPresentation(failedFeedback).state == .failed
+        precondition(model.emailSummaries.feedback.markSaved(feedback.id))
+        checks["feedback saved job without memory readback cannot resolve failure"]=model.activityPresentation(failedFeedback).state == .failed
+        precondition(model.assistant.memory.saveReviewPreference(feedback.words,registration:registration,about:feedback.about,id:feedback.memoryID))
+        checks["same feedback retry with exact saved memory resolves old failure"]=model.activityPresentation(failedFeedback).state == .resolved && failedFeedback.state == .failed && failedFeedback.message == "Old failure"
+        var otherFeedback=failedFeedback;otherFeedback.destination = .feedback(targetID:UUID().uuidString)
+        checks["feedback retry never resolves another submission failure"]=model.activityPresentation(otherFeedback).state == .failed
+        var wrongRecord=failedFeedback;wrongRecord.id="feedback:"+UUID().uuidString
+        checks["feedback resolution requires matching stored operation identity"]=model.activityPresentation(wrongRecord).state == .failed
+        checks["feedback outcome resolution makes zero inference calls"]=model.aiUsage.state.records.count == usage
         return checks
     }
     private static func navigationStorageChecks()throws->[String:Bool] {
@@ -177,7 +190,35 @@ import Synchronization
         checks["a cached fingerprint cannot bypass current purpose and access guards"] = !model.whatsappDependenciesAvailable([.init(chatID:"fixture-a",linkedIdentity:"fictional-cache-device",fingerprint:fingerprint)],use:.brief)
         return checks
     }
-    static func run(_ model:DashboardModel)throws->[String:Any] {
+    private static func feedbackRefreshChecks(_ model:DashboardModel)async throws->[String:Bool] {
+        let mail=model.mailData,summaries=model.emailSummaries.records,usage=model.aiUsage.state.records.count
+        defer {model.mailData=mail;try? model.emailSummaries.seedAdviceFixture(summaries)}
+        let body="Fictional routine newsletter with optional events.",registration=model.chatGPT.activeID
+        let fields:[String:Any]=["id":"feedback-refresh-fixture","accountID":"fictional-mail","account":"Fictional Mail","messageID":1,"internetMessageID":"feedback-refresh@example.invalid","sender":"Fictional newsletter","subject":"Optional events","received":Date.now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
+        let message=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:fields))
+        let summary=EmailSummary(id:message.id,registration:registration,fingerprint:EmailSummary.fingerprint(message),summary:"Optional events",attention:false,reason:"",evidence:body,bodyFingerprint:EmailSummary.fingerprintBody(body),message:message)
+        model.mailData = .init(messages:[message],accounts:[.init(id:message.accountID,title:message.account)],errors:[])
+        try model.emailSummaries.seedAdviceFixture([summary])
+        let source=ReviewFeedbackEmail(message:message,summary:summary)
+        var checks:[String:Bool]=[:]
+        for phase in ["body read","inference"] {
+            let current=model.emailSummaries.feedbackOwnershipGuard(source,model:model,isCurrent:{true})
+            var reads=0,requests=0
+            let result=try await ReviewFeedbackRules.prepare(source,words:"These can stay quiet",about:message.subject,model:model.chatGPT.selectedModel,isCurrent:current,readBody:{
+                reads += 1;await Task.yield()
+                if phase == "body read" {model.sourceRevision += 1}
+                return body
+            },infer:{_ in
+                requests += 1;await Task.yield()
+                if phase == "inference" {model.sourceRevision += 1}
+                return "{\"rule\":\"Routine fictional newsletters can stay quiet.\"}"
+            })
+            checks["actual feedback guard tolerates EventKit change during "+phase]=reads == 2 && requests == 1 && result.bodyFingerprint == summary.bodyFingerprint
+        }
+        checks["feedback refresh regressions use no subscription inference"]=usage == model.aiUsage.state.records.count
+        return checks
+    }
+    static func run(_ model:DashboardModel)async throws->[String:Any] {
         guard ProcessInfo.processInfo.arguments.contains("--validate-advice-context"),model.assistant.memory.enabled,model.assistant.contextEnabled else {
             throw ActionFailure.message("This check requires the existing memory/source context settings to be on. No settings were changed.")
         }
@@ -196,6 +237,7 @@ import Synchronization
         guard store.putSources([fact],evidenceTexts:[identity:quote],expectedRevision:store.revision) else { throw SummaryFailure.invalid }
         let capture=model.automaticMemory(.brief)
         var checks=fingerprintCacheChecks(model)
+        checks.merge(try await feedbackRefreshChecks(model),uniquingKeysWith:{$1})
         checks.merge(try navigationStorageChecks(),uniquingKeysWith:{$1})
         checks["human-only store avoids source projection"]=humanOnlySkippedProjection
         projectionCalls=0
@@ -346,16 +388,31 @@ import Synchronization
 
         try model.emailSummaries.seedAdviceFixture([summary])
         checks["feedback accepts only exact current permitted email"] = model.emailSummaries.feedbackSourceCurrent(message,summary:summary,model:model)
+        let feedbackOwner=model.emailSummaries.feedbackOwnershipGuard(.init(message:message,summary:summary),model:model,isCurrent:{true})
+        let capturedNativeRevision=model.sourceRevision
+        model.sourceRevision += 1 // The same invalidation as EKEventStoreChanged during an awaited request.
+        checks["feedback ownership survives unrelated EventKit notification during interpretation"] = feedbackOwner() && capturedNativeRevision != model.sourceRevision
         model.mailData = .init(messages:[renamedSender],accounts:model.mailData.accounts,errors:[])
         checks["feedback rejects live header change"] = !model.emailSummaries.feedbackSourceCurrent(message,summary:summary,model:model)
+        checks["captured feedback ownership rejects changed email header"] = !feedbackOwner()
         model.mailData = .init(messages:[message],accounts:[],errors:[])
         checks["feedback rejects removed Mail account"] = !model.emailSummaries.feedbackSourceCurrent(message,summary:summary,model:model)
+        checks["captured feedback ownership rejects removed Mail account"] = !feedbackOwner()
         model.mailData = .init(messages:[message],accounts:[.init(id:message.accountID,title:message.account)],errors:[])
+        try model.emailSummaries.seedAdviceFixture([changedAssessment])
+        checks["captured feedback ownership rejects changed email body"] = !feedbackOwner()
+        try model.emailSummaries.seedAdviceFixture([summary])
+        checks["captured feedback ownership rejects changed human submission"] = !model.emailSummaries.feedbackOwnershipGuard(.init(message:message,summary:summary),model:model,isCurrent:{false})()
+        let cancelledFeedbackOwner=model.emailSummaries.feedbackOwnershipGuard(.init(message:message,summary:summary),model:model,isCurrent:{true})
+        model.emailSummaries.cancelReviewFeedback()
+        checks["captured feedback ownership rejects explicit foreground cancellation"] = !cancelledFeedbackOwner()
+        let memoryFeedbackOwner=model.emailSummaries.feedbackOwnershipGuard(.init(message:message,summary:summary),model:model,isCurrent:{true})
         let project=try model.assistant.projects.save(LifeItem(registration:registration,kind:.space,title:"Orion prototype",status:.active),expected:nil)
         let projectContext=model.emailSummaries.relevanceContext(message,model:model)
         checks["header relevance retrieves current project even without matching human facts"] = projectContext.workspace.contains{$0["id"] == "life:"+project.id.uuidString} && projectContext.memories.isEmpty
         let relevantHuman=PAMemory(registration:registration,text:"I am building the Orion prototype this term.",kind:.context,provenance:"Fictional human",evidence:"I am building the Orion prototype this term.")
         guard store.put(relevantHuman) else {throw SummaryFailure.invalid}
+        checks["captured feedback ownership rejects memory change"] = !memoryFeedbackOwner()
         let relevanceContext=model.emailSummaries.relevanceContext(message,model:model,body:quote)
         checks["email life context selects matching human facts without source facts or biography"] = relevanceContext.memories.contains{$0["id"] == relevantHuman.id.uuidString} && !relevanceContext.memories.contains{$0["id"] == fact.id.uuidString || $0["id"] == human.id.uuidString}
         let supported=try EmailRelevanceRules.validated(.init(reason:"Matches current Orion work",evidence:quote,memoryIDs:[relevantHuman.id.uuidString],workspaceIDs:["life:"+project.id.uuidString],preferenceIDs:[]),context:relevanceContext,message:message,body:quote)

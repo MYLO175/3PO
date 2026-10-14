@@ -184,6 +184,10 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
                     if record.state == .needsAnswer,index+1 < jobs.count {return repliedActivity(record)}
                 }
             }
+        case .feedback(let id):
+            let parts=record.id.split(separator:":")
+            guard record.kind == .feedback,record.state.isFailure,parts.first == "feedback",[2,3].contains(parts.count),let jobID=id.flatMap(UUID.init(uuidString:)),parts[1] == Substring(jobID.uuidString),let job=emailSummaries.feedback.records.first(where:{$0.id == jobID && $0.registration == record.registration}),job.state == .saved,emailSummaries.feedbackMemory(job,model:self) != nil else {return record}
+            var resolved=record;resolved.state = .resolved;return resolved
         default:return record
         }
         guard record.state == .needsAnswer,let conversation,let response,assistant.activityContext(conversation)?.repliesAfter[response] != nil else {return record}

@@ -1,5 +1,9 @@
 # How Mission Control works
 
+## 14 October: feedback stability and retry alerts
+
+Submitted email feedback checks its captured source choices, exact email/account/assessment, model, memory and storage while it learns, with Mail body readback before saving. An unrelated Calendar or Reminders change notification does not invalidate it. A successful explicit retry resolves that submission's earlier failure alert only when its original memory identity has a verified saved preference; the original failed Activity record and heartbeat history remain unchanged. Other failures stay visible. Installing an update never automatically replays attempted feedback.
+
 ## 14 October: current Review and AI activity behaviour
 
 Review is a saved conversation attached to its source. Its suggested actions remain visible as checkboxes while you talk. Ask for a change to update those suggestions, or give a task to execute it immediately. Done approves only the checked, unsubmitted actions and keeps any unsent reply; Escape closes without approval. Both execution routes use the same canonical IDs and save receipts, so completed rows show a tick and cannot be created again. Old stopped requests are collapsed into Earlier requests. Never-started accepted jobs run automatically when the AI becomes idle; attempted or uncertain saves retain explicit recovery.

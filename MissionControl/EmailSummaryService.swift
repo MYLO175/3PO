@@ -49,6 +49,15 @@ import SwiftData
     @ObservationIgnored private var reviewFeedbackTask:Task<ReviewFeedbackInterpretation,Error>?
     private(set) var reviewFeedbackGeneration=0
     func cancelReviewFeedback() {reviewFeedbackGeneration += 1;feedback.interruptActive();reviewFeedbackTask?.cancel()}
+    /// Capture feedback ownership and choices, not EventKit's collection revision.
+    /// Calendar/Reminders notifications can arrive while an unchanged email is interpreted.
+    func feedbackOwnershipGuard(_ source:ReviewFeedbackEmail,model:DashboardModel,isCurrent:@escaping ()->Bool)->()->Bool {
+        let registration=model.chatGPT.activeID,selected=model.chatGPT.selectedModel,memoryRevision=model.assistant.memory.revision,generation=reviewFeedbackGeneration
+        let settings=model.proactive.sourceSettingsScope(model),storage=model.container.map(ObjectIdentifier.init)
+        return {
+            generation == self.reviewFeedbackGeneration && registration == model.chatGPT.activeID && selected == model.chatGPT.selectedModel && memoryRevision == model.assistant.memory.revision && storage == model.container.map(ObjectIdentifier.init) && settings == model.proactive.sourceSettingsScope(model) && self.feedbackSourceCurrent(source.message,summary:source.summary,model:model) && isCurrent()
+        }
+    }
     /// Explicitly submitted feedback; a heartbeat may own one deferred interpretation.
     func interpretReviewFeedback(_ source:ReviewFeedbackEmail,words:String,about:String,model:DashboardModel,heartbeatRequest:HeartbeatChildRequest?=nil,isCurrent:@escaping ()->Bool)async throws->ReviewFeedbackInterpretation {
         #if DEBUG
@@ -65,12 +74,12 @@ import SwiftData
         guard !busy,!model.chatGPT.busy,!model.assistant.busy,!model.writing,(!model.heartbeat.busy || (heartbeatRequest?.runID == model.heartbeat.ownedRunID && feedback.ownedHeartbeatRunID == heartbeatRequest?.runID)),!model.proactive.busy,!model.briefings.busy,!model.memoryLearning.busy,!model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy,!model.projectPlacement.busy,!model.lifeOrganisation.busy else {throw ActionFailure.message("Wait for the current PA operation to finish, then save your feedback.")}
         guard model.heartbeat.deviceAvailable,model.chatGPT.inferenceVerified,!model.chatGPT.usagePaused,model.assistant.memory.canSaveReviewPreference else {throw ActionFailure.message("PA interpretation is unavailable right now. Your feedback is retained; reconnect or save only your words.")}
         try heartbeatRequest?.validate()
-        let registration=model.chatGPT.activeID,selected=model.chatGPT.selectedModel,memoryRevision=model.assistant.memory.revision,sourceRevision=model.sourceRevision,generation=reviewFeedbackGeneration
+        let selected=model.chatGPT.selectedModel,ownershipCurrent=feedbackOwnershipGuard(source,model:model,isCurrent:isCurrent)
         busy=true
         defer {busy=false;reviewFeedbackTask=nil}
         let operation=Task {
             try await ReviewFeedbackRules.prepare(source,words:words,about:about,model:selected,isCurrent:{
-                !Task.isCancelled && generation == self.reviewFeedbackGeneration && registration == model.chatGPT.activeID && selected == model.chatGPT.selectedModel && memoryRevision == model.assistant.memory.revision && sourceRevision == model.sourceRevision && model.heartbeat.deviceAvailable && !model.assistant.busy && !model.writing && model.chatGPT.inferenceVerified && !model.chatGPT.usagePaused && self.feedbackSourceCurrent(source.message,summary:source.summary,model:model) && isCurrent()
+                !Task.isCancelled && ownershipCurrent() && model.heartbeat.deviceAvailable && !model.assistant.busy && !model.writing && model.chatGPT.inferenceVerified && !model.chatGPT.usagePaused
             },readBody:{try heartbeatRequest?.validate();return try await model.mail.body(accountID:source.message.accountID,messageID:source.message.messageID,expectedInternetMessageID:source.message.internetMessageID,mailboxName:source.message.mailboxName)},infer:{input in
                 try heartbeatRequest?.validate()
                 try heartbeatRequest?.claim()
