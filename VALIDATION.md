@@ -1,5 +1,23 @@
 # Validation
 
+14 October documentation reconciliation: 25 non-archived pages, 342 local links/anchors and eight rendered Mermaid diagrams pass. Eleven GitHub-GFM guides render with no page-wide overflow; fictional banner and README/architecture layout are inspected. Current source/queue/approval contracts are checked against committed code and engineering records, preserving both GitHub guide and local development history. Diff/conflict checks and a bounded credential/sensitive-filename/large-blob review pass. This is documentation evidence only; prior app checks and sustained acceptance remain separate.
+
+**Evidence is checkpoint-specific.** The latest recorded app repair is 14 October (`9ca10c2`). This documentation reconciliation adds no app, native-write or model acceptance.
+
+[Documentation](docs/README.md) · [Check tiers](docs/DEVELOPMENT.md#choose-the-right-checks) · [Latest live acceptance](docs/LIVE_ACCEPTANCE.md) · [Detailed status](STATUS.md)
+
+## Read the evidence at the right level
+
+| Evidence | What it means |
+| --- | --- |
+| Source-free rules/services | Fictional deterministic contracts passed at a named revision |
+| Signed candidate app-memory | The actual compiled DEBUG app passed audited disposable consumer/storage modes |
+| Native fixtures / configured model | Separate real EventKit / subscription-model checks with declared effects |
+| Installation and preservation | Signed replacement/readback and saved-record checks passed |
+| Sustained live acceptance | Ordinary use of the latest installed binary; still open in Live acceptance |
+
+Passing one row does not establish the others. Read [Live acceptance](docs/LIVE_ACCEPTANCE.md) for the latest binary/observation period; earlier matrices remain historical evidence where later updates supersede them.
+
 14 October feedback repair: signed build, focused contextual feedback/queue checks,117 Activity checks and signed source-free consumer185/185 pass. Asynchronous EventKit notification changes during both body read and inference preserve unchanged feedback; changed email/header/account/memory/submission and foreground cancellation reject it. An exact saved preference is required before the same feedback failure projects as resolved, with unrelated operations/history retained. Installed signature and2,254 file hashes match. One explicit live retry saves the failed submission at its original identity, with exact words/topic and one memory receipt; toolbar Ready is verified. All75 original records survive,61 byte-exact;36 original memory records,34 Activity entries,686 usage rows and10 other feedback submissions remain exact. Product preferences remain unchanged; private backups are retained. This does not establish sustained provider reliability.
 
 14 October concise Activity:117 Activity checks,192 actual assistant-service contracts and signed source-free adapter169/169 pass with zero inference. Native fictional UI confirms green Space created → Ready after six seconds, completed-only Review entry, remaining choices/draft retention and evidence inside the shared sheet. The dropdown shows up to five recent tasks, green successes and concise messages without acknowledgement UI. Installed `b1d208c` passes strict signature, full file-hash readback and normal UI acceptance: exactly five natural action outcomes and working source-conversation navigation. All75 records remain,65 byte-exact after ordinary collection/mounting; protected conversations, drafts, memory/operation/Activity/Review/usage records and product preferences are exact. Workspace choices remain semantically exact. No personal action approval or AI request is used for QA.

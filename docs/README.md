@@ -1,8 +1,40 @@
-# Mission Control notebook
+# The 3PO documentation
 
-This is the readable explanation of the product: what exists, how it works and what we want to improve. It lives beside the code, so Git records changes to both. You do not need to read code or the development log to understand the app.
+**Understand the product first, then follow the details you need.** These pages explain the software. Personal emails, chats, memories and credentials live outside the repository.
 
-Start with **[Architecture](ARCHITECTURE.md)** for ownership and message flow, then **[How it works](HOW_IT_WORKS.md)** for product behaviour. Use **[Next improvements](NEXT_IMPROVEMENTS.md)** to review priorities and **[Decisions](DECISIONS.md)** to understand why the app is organised this way.
+[Repository home](../README.md) · [Features](FEATURES.md) · [Architecture](ARCHITECTURE.md) · [Getting started](GETTING_STARTED.md)
+
+## A short reading path
+
+1. **[Features](FEATURES.md)** gives you a tour of the dashboard, PA, Review, Projects and background work, with practical examples.
+2. **[Architecture](ARCHITECTURE.md)** explains who owns each part and follows real information through the system.
+3. **[Memory and context](MEMORY_AND_CONTEXT.md)** explains what is saved, what is usable and what is selected for a particular question.
+4. **[Project workspace](PROJECT_WORKSPACE.md)** explains the shared spaces/tasks, their views and their connection to memory.
+
+For setup, use [Getting started](GETTING_STARTED.md). For code and checks, use [Developer guide](DEVELOPMENT.md). Unfamiliar terms are in the [glossary](GLOSSARY.md).
+
+## Find the right page
+
+| Question | Page | Role |
+| --- | --- | --- |
+| What can I do in the app? | [Features](FEATURES.md) | Current product tour |
+| How does a message become an answer or change? | [Architecture](ARCHITECTURE.md) | Components, flows and ownership |
+| How do I build and connect sources? | [Getting started](GETTING_STARTED.md) | Practical setup and troubleshooting |
+| Where do my data go? | [Privacy](PRIVACY.md) | Source access, transmission and local storage |
+| How do recall and corrections work? | [Memory and context](MEMORY_AND_CONTEXT.md) | Detailed memory contract |
+| How do folders, tasks and project links work? | [Project workspace](PROJECT_WORKSPACE.md) | Detailed workspace contract |
+| Where is a specific interaction documented? | [How it works](HOW_IT_WORKS.md) | Detailed behaviour reference with section links |
+| Where should I start in the code? | [Developer guide](DEVELOPMENT.md) | Source map, build and verification tiers |
+| Why was a design chosen? | [Decisions](DECISIONS.md) | Dated decisions; later choices supersede earlier ones |
+| What is still missing? | [Next improvements](NEXT_IMPROVEMENTS.md) | Product gaps and success criteria |
+| What was actually tested or installed? | [Validation](../VALIDATION.md) | Current evidence index, then historical evidence |
+| What still needs ordinary use? | [Live acceptance](LIVE_ACCEPTANCE.md) | Latest installed binary and remaining real-use gates |
+| What changed and when? | [Status](../STATUS.md) | Current summary first; detailed engineering log below |
+| What work is approved? | [Plan](../PLAN.md) · [Reliability checklist](RELIABILITY_IMPLEMENTATION.md) | Approved scope and acceptance gates |
+| How should development be coordinated? | [AGENTS](../AGENTS.md) · [Development workflow](DEVELOPMENT_WORKFLOW.md) | Worktree ownership, contracts and integration |
+| How do source actions and scheduled analysis work? | [Email actions](EMAIL_ACTIONS_PLAN.md) · [Heartbeat reliability](HEARTBEAT_RELIABILITY_PLAN.md) | Implementation, recovery and remaining acceptance |
+| What did the earlier prototype demonstrate? | [Review trial](REVIEW_CONVERSATION_TRIAL.md) | Historical scripted interaction and limits |
+| What do the terms mean? | [Glossary](GLOSSARY.md) | Plain-language definitions |
 
 ## Current checkpoint — 14 October 2026
 
@@ -10,37 +42,16 @@ The latest recorded installed repair is `9ca10c2`: email feedback survives unrel
 
 Read the current summaries in [STATUS](../STATUS.md) and [VALIDATION](../VALIDATION.md) for checks and limits. Earlier dated entries retain their original evidence; newer direction supersedes older interaction or approval rules. Sustained acceptance remains open.
 
-The approved current consolidation scope is **[Reliability implementation](RELIABILITY_IMPLEMENTATION.md)**. The earlier broad proposed delivery sequence is **[PA architecture review](PA_ARCHITECTURE_REVIEW.md)**, covering communications, changing commitments, memory, background jobs, project space and future local models. It distinguishes the inspected implementation from proposed changes. The earlier **[Building a useful personal assistant](PA_INTELLIGENCE_PLAN.md)** remains the detailed staged memory acceptance plan.
+## Current behaviour, plans and evidence
 
-| Document | Purpose |
-| --- | --- |
-| [Architecture](ARCHITECTURE.md) | Current component ownership, request flow and recovery |
-| [Reliability implementation](RELIABILITY_IMPLEMENTATION.md) | Full approved work and explicit completion gates |
-| [Heartbeat reliability](HEARTBEAT_RELIABILITY_PLAN.md) | Independent collection, stage outcomes, learning and recovery |
-| [Email actions](EMAIL_ACTIONS_PLAN.md) | Compound source dates, Calendar/project suggestions and acceptance |
-| [How it works](HOW_IT_WORKS.md) | Current behaviour and the pieces behind it |
-| [Next improvements](NEXT_IMPROVEMENTS.md) | Desired behaviour, gaps and success criteria |
-| [Life and project workspace](PROJECT_WORKSPACE.md) | Shared durable structure, views, PA edits and source relationships |
-| [PA intelligence plan](PA_INTELLIGENCE_PLAN.md) | Detailed phases and tests for a PA that understands useful life context |
-| [PA architecture review](PA_ARCHITECTURE_REVIEW.md) | Current architecture assessment and recommended route to communications understanding, durable jobs and local inference |
-| [Decisions](DECISIONS.md) | Significant choices and their consequences |
-| [PLAN](../PLAN.md) | Full approved implementation scope |
-| [Agent instructions](../AGENTS.md) | How Codex should develop the repository and preserve invariants |
-| [Development workflow](DEVELOPMENT_WORKFLOW.md) | Worktree ownership, bounded delegation, integration and release |
-| [STATUS](../STATUS.md) | Current summary plus detailed dated engineering evidence |
-| [VALIDATION](../VALIDATION.md) | Concise current validation index and known limits, with earlier history |
-| [Live acceptance](LIVE_ACCEPTANCE.md) | Installed observations and remaining sustained-use evidence |
-| [Review trial](REVIEW_CONVERSATION_TRIAL.md) | Historical scripted comparison, separate from production behaviour |
-| [Repository README](../README.md) | Build/run instructions and integration details |
+**Features, Architecture and the detailed guides describe implemented behaviour.** They do not claim that every behaviour has passed sustained live acceptance. Validation and Live acceptance explain that evidence separately.
 
-AGENTS governs Codex development agents, not the installed PA's runtime prompt. Current human direction sets requirements; PLAN records approved scope, Next improvements records gaps/success criteria, and Decisions explains agreed choices. README and How it works describe the product. STATUS and VALIDATION establish what was actually checked; they do not authorise new features or Apple writes. Older dated architecture reviews/plans are historical snapshots where later changes supersede them.
+**Plan and Next improvements describe scope and gaps.** An approved item or a proposed design is not proof of implementation. The [PA intelligence plan](PA_INTELLIGENCE_PLAN.md) retains detailed staged memory criteria. The [6 October architecture review](PA_ARCHITECTURE_REVIEW.md) is an explicitly dated assessment and recommendation, superseded where later work changed the implementation. [Archived instructions](archive/AGENTS-2026-10-08-before-workflow-refresh.md) preserve historical development rules.
 
-## Keeping this useful
+AGENTS is for agents developing this repository. It is not the shipped PA's runtime prompt, and neither a document nor source evidence authorises a personal-data write.
 
-After a meaningful feature changes, update its explanation here and the relevant roadmap item. Keep CURRENT and PLANNED clearly separate. Record a significant change of direction in Decisions. Put build/test evidence in STATUS, rather than making this notebook a long chronological log.
+## Keep the explanation current
 
-Git is the history and backup mechanism; these Markdown pages are the explanation. They can be read in Codex, a text editor or Obsidian. Obsidian is optional and is not part of Mission Control's runtime. These files document the software, not your personal life: emails, chats, credentials and private memory remain outside the repository.
+After a meaningful behaviour change, update its Features entry and the relevant detailed guide. Change Architecture when ownership or data flow changes. Record decisions in Decisions, approved scope in Plan, gaps in Next improvements, and actual checks in Status/Validation. Preserve earlier dated evidence.
 
-Current entry points include the 14 October Review, Activity, streaming and feedback changes. Candidate implementation, installed behaviour and sustained acceptance are recorded separately. An installed build and a passing test are different from a completed live acceptance check; see STATUS and VALIDATION for those boundaries.
-
-[Installed live acceptance](LIVE_ACCEPTANCE.md) tracks real elapsed use, physical power cycles and preservation separately from fictional regression/model evidence.
+Use relative links, descriptive headings and fictional examples. Keep secrets, personal-source content and private diagnostic captures out of documentation and Git. These Markdown pages and diagrams can be read on GitHub, in Codex or in a local editor; no separate documentation service is required.

@@ -13,6 +13,8 @@ One fair automatic learning lane is offered within an owned heartbeat after emai
 
 The PA has a saved notebook and builds a smaller working context for each request. The Life map shows the usable notebook and your workspace. It does not show every cached message, saved transcript or input used by an AI request.
 
+[Documentation](README.md) · [Feature tour](FEATURES.md#memory-and-setup) · [Architecture](ARCHITECTURE.md)
+
 ## The short explanation
 
 **Collect → remember → connect → recall → maintain.**
@@ -32,7 +34,7 @@ Open **PA menu → Memory**, **Life map → Memory & context → Inspect memory 
 - **Overview** explains the layers, counts saved records/current versions/available records, lists exclusion reasons and previews saved-fact selection for a question and Focus.
 - **Facts** shows original facts, certainty, evidence and dates. View version history, confirm, edit, organise, resolve, retire/restore human context, or forget a fact. These are explicit local operations; resolving memory does not complete a Reminder.
 - **Life areas** groups currently usable facts and workspace anchors. Select an area to inspect its facts and recorded relationships. Area branches navigate the notebook; they are not inferred relationship claims.
-- **Life map items** are actual saved workspace entries: areas, courses, projects, headings, resources/notes and work items. Opening an area lists the same counted entries with their type and parent path. Open an entry to browse its contents, then return with Back. Remembered concepts and facts are labelled separately. Opening makes no AI request or edit.
+- **Life map items** are actual saved spaces and tasks. Older area/course/project/heading/resource kinds remain compatibility metadata; richer memory entity types remain separate. Opening an area lists the same counted entries with their type and parent path. Open an entry to browse its contents, then return with Back. Remembered concepts and facts are labelled separately. Opening makes no AI request or edit.
 - **Review** offers possible duplicates, conflicts and retirement candidates with their exact saved facts/evidence. Review now is explicit; weekly background review is optional/off by default. A changed fact invalidates its proposal. Inspect/correct duplicates or conflicts; retirement is a separate reversible human choice. Dismissal supports Undo.
 - **Controls** contains the memory-use, human-conversation learning, optional question and existing-fact organisation controls. Source learning may inherit current review permission or use its explicit source opt-in; global memory controls, selected sources and new-scope baselines still apply.
 
@@ -61,7 +63,7 @@ The interpretation stores header and exact identity/version receipts, not the em
 | Source memory | The same `PAMemory` type with exact source identity/version/quote and optional supporting evidence/report state | Attributed source interpretation, separately permission-gated; never human assertion or action authority. |
 | Belief history | `supersedes` / `supersededBy` between unchanged record identities | Current belief is used; old wording/evidence stays inspectable. Restore makes a new current version. |
 | Organisation | Optional areas and typed endpoints referring to the fact's existing connections | Navigation and recall metadata. Manual organisation is pinned; organisation cannot invent a fact. |
-| Workspace | `LifeWorkspaceStore` human-owned projects, headings, notes, tasks and exact source pointers | Editable durable content, with hierarchy/order/tombstones. Mentioning a project is not permission to create one. |
+| Workspace | `LifeWorkspaceStore` human-owned spaces (with optional notes), tasks and exact source pointers; legacy kinds retained | Editable durable content, with hierarchy/order/tombstones. Mentioning a project is not permission to create one. |
 | Notebook / map | `LifeNotebook` plus canonical workspace-anchor projection | Derived usable facts and exact workspace identities. It is rebuilt locally, not another independently editable memory database. |
 | Working context | Request-local selection, notebook notes, dialogue, preferences, cached snapshot and tool results | Bounded information for one request; ownership is captured before inference and checked before outputs/actions. |
 | Reply trace | Optional `AssistantTurn.contextCapture` | IDs/counts for inspection; separate from source-dependency guards and action receipts. |
@@ -141,7 +143,7 @@ Calendar memory identity is independent of dashboard occurrence IDs: native item
 - `PAMemory.swift` defines facts, evidence and recall ranking. `PAMemoryStore.swift` owns the `paMemory` SwiftData cache envelope, correction/Forget transactions, permitted projection and notebook selection.
 - `LifeNotebook.swift` builds area/entity/link notes; `LifeCanonicalNotebook.swift` projects durable workspace anchors. Original facts remain authoritative.
 - `MemoryInspection.swift` explains the same recall gates. `MemoryInspectionView.swift` renders local inspection. It has no persistence, source refresh or inference path.
-- `AssistantService.swift` assembles one initial selection and notebook context for both the request and its trace. `Conversations.swift` keeps the optional trace on the existing turn in `assistantConversations`.
+- `AssistantService.swift` assembles one initial selection and notebook context for both the request and its trace. `Conversations.swift` keeps the optional trace on the existing turn in the canonical conversation metadata/chunks; the original legacy `assistantConversations` bytes remain preserved.
 - `PAToolSession.swift` records successful memory-read IDs separately from issued IDs. Issued IDs still control mutation safety; the trace grants no authority.
 - `NativeSourceAdapters.swift`/`NativeSourceProjection.swift` project only fresh permitted cached data. `NativeSourceLearning.swift` owns bounds/baseline/decode; `NativeSourceLearningService.swift` owns account opt-ins and `paNativeSourceLearning` cursors. This envelope contains opaque hashes/references, not source text.
 - `MemoryMaintenance.swift` selects bounded human facts and validates proposals. `MemoryMaintenanceService.swift` persists review controls/cursors/proposals in `paMemoryReview`; proposals never execute fact changes. Source learning, usage accounting, brief/proactive services and the queued-work store retain independent responsibilities.
