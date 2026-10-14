@@ -6,7 +6,7 @@ Current direction supersedes the detailed pill/progress interaction below. Revie
 
 The centred pill shows one steady live action job or running heartbeat, then returns to Ready. Only action failures alert. The Activity dropdown shows action successes/failures with acknowledgement and navigation, excluding ordinary replies, context reads and all heartbeat history. Other toolbar icons sit on the right. Streaming never drives Activity or heartbeat stage updates.
 
-The implementation adds callback-scoped validation across the complete ownership decision, bounded unchanged-Mail projection reuse and a compact initial source orientation. Typed reads still issue exact IDs and obtain details when needed. Model and connection settings remain unchanged. Relevant focused checks and native fictional acceptance are recorded in STATUS; provider delivery speed and actual model proposal quality remain separate measurements.
+The implementation adds callback-scoped validation across the complete ownership decision, bounded unchanged-Mail projection reuse and a compact initial source orientation. Typed reads still issue exact IDs and obtain details when needed. Model and connection settings remain unchanged. Relevant focused checks, installed native acceptance, exact original-state readback and matched latency measurements are recorded in STATUS. Reply timings fell from18.59s to8.58–10.38s with the same model; provider delivery and actual model proposal quality remain separate.
 
 ## 13 October: approved conversational Review and AI activity
 
