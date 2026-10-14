@@ -65,6 +65,9 @@ struct ReviewWorkState:Codable,Equatable {
     var plans:[ReviewWorkPlan]?
 }
 struct ReviewWorkPlan:Codable,Equatable {
+    var presentationVersion:Int? = nil
+    var seenProposalIDs:[String]? = nil
+    var unpreparedProposalIDs:[String]? = nil
     var conversationID:UUID
     var scope:ReviewWorkScope
     var source:ReviewWorkSource
@@ -129,7 +132,7 @@ struct ReviewWorkConversationResult {
         guard let root=try JSONSerialization.jsonObject(with:bytes) as? [String:Any],Set(root.keys).isSubset(of:["version","jobs","paused","drafts","plans"]),let jobs=root["jobs"] as? [[String:Any]] else {throw CocoaError(.fileReadCorruptFile)}
         if let plans=root["plans"] as? [[String:Any]] {
             for plan in plans {
-                guard Set(plan.keys).isSubset(of:["conversationID","scope","source","revision","actions","selected"]),
+                guard Set(plan.keys).isSubset(of:["conversationID","scope","source","revision","actions","selected","presentationVersion","seenProposalIDs","unpreparedProposalIDs"]),
                       let scope=plan["scope"] as? [String:Any],Set(scope.keys).isSubset(of:["registration","model","sourceChoices","storage"]),
                       let source=plan["source"] as? [String:Any],Set(source.keys).isSubset(of:["key","title","kind","accountID","messageID","identity","chatID"]),
                       let actions=plan["actions"] as? [[String:Any]],actions.allSatisfy({Set($0.keys).isSubset(of:["id","title","destination","payload","phase","result","itemID","location","coalescingKey"])}) else {throw CocoaError(.fileReadCorruptFile)}
@@ -148,7 +151,7 @@ struct ReviewWorkConversationResult {
     func reserved(_ id:String,registration:String)->Bool {jobs(registration).contains{$0.actions.contains{$0.id == id && $0.phase != .waiting} || ($0.mode == .approval && $0.pending && $0.actions.contains{$0.id == id})}}
     /// Conversation execution shares the exact captured operation and receipts used
     /// by Done. Waiting checkbox context alone is never an issued operation.
-    func performCaptured(_ id:UUID,revision:UUID,actions ids:[String],valid:@escaping @MainActor ()->Bool) async throws->[ReviewWorkAction] {
+    func performCaptured(_ id:UUID,revision:UUID,actions ids:[String],valid:@escaping @MainActor ()->Bool,didSave:(@MainActor (ReviewWorkAction)->Void)? = nil) async throws->[ReviewWorkAction] {
         guard let runtime=activeRuntime,let current=job(id),activeID == id,current.mode == .conversation,current.phase == .running,
               let plan=plan(current.scope.registration,conversation:current.conversationID),plan.revision == revision,
               !ids.isEmpty,Set(ids).count == ids.count,ids.count <= 24,
@@ -163,6 +166,9 @@ struct ReviewWorkConversationResult {
             guard updateAction(id,action.id,{$0.phase = .working}) else {break}
             do {
                 let returned=try await runtime.perform(current,action,valid)
+                // Refresh only the ownership revisions changed by this verified save,
+                // before checking whether another captured action may start.
+                if returned.phase == .saved {didSave?(action)}
                 let result=valid() ? returned : runtime.inspect(current,action) ?? .init(phase:.uncertain,message:"The request stopped before its save could be confirmed. Check the retained receipt.")
                 record(id,action:action.id,result:result)
                 if result.phase != .saved || !valid() {break}
@@ -271,7 +277,7 @@ struct ReviewWorkConversationResult {
                     let result:ReviewWorkPhase=all ? .completed : uncertain ? .uncertain : current.savedCount > 0 ? .partial : .failed
                     let failed=current.actions.first{$0.phase == .failed || $0.phase == .uncertain}
                     let detail=failed.map{$0.title+": "+($0.result ?? "This action did not finish.")}
-                    _=self.update(job.id){$0.phase=result;$0.message=all ? "\($0.savedCount) actions completed" : "\($0.savedCount) of \($0.actions.count) actions confirmed";$0.error=all ? nil : detail ?? "Remaining work stopped. Reopen this plan before continuing.";$0.finished = .now}
+                    _=self.update(job.id){$0.phase=result;$0.message=all ? "\($0.savedCount) action\($0.savedCount == 1 ? "" : "s") completed" : "\($0.savedCount) of \($0.actions.count) actions confirmed";$0.error=all ? nil : detail ?? "Remaining work stopped. Reopen this plan before continuing.";$0.finished = .now}
                 }
             }
         }
@@ -296,7 +302,7 @@ struct ReviewWorkConversationResult {
         }
         guard let current=job(id) else {return false}
         if current.actions.allSatisfy({$0.phase == .saved}),current.phase != .stopped {
-            _=update(id){$0.phase = .completed;$0.message="\($0.savedCount) actions completed";$0.error=nil;$0.finished = .now}
+            _=update(id){$0.phase = .completed;$0.message="\($0.savedCount) action\($0.savedCount == 1 ? "" : "s") completed";$0.error=nil;$0.finished = .now}
         }
         if let value=job(id) {runtime.changed(value)}
         return true

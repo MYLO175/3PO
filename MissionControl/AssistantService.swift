@@ -579,10 +579,11 @@ import Observation
                         do {
                             if call.name == "prepare_review_actions",isReviewTurn,let prepareReviewActions {output=try await prepareReviewActions(call,validOwnership)}
                             else if call.name == "execute_review_actions",isReviewTurn,let executeReviewActions {
-                                let result=try await executeReviewActions(call,validOwnership)
+                                let result=try await executeReviewActions(call,validOwnership,{ projectChanged in
+                                    if projectChanged {expectedProjects=self.projects.revision}
+                                    if let current=runtime.state() {expectedAcknowledgementContext=current.acknowledgements;expectedResolution=current.resolutionRevision}
+                                })
                                 for (key,message) in result.confirmed where reviewConfirmed[key] == nil {reviewConfirmed[key]=message}
-                                expectedProjects=projects.revision
-                                if let current=runtime.state() {expectedAcknowledgementContext=current.acknowledgements;expectedResolution=current.resolutionRevision}
                                 if result.uncertain > 0 {nativeOutcomeUnconfirmed=true;self.error=result.failure ?? "A save needs checking before it can be repeated.";setResponse(confirmedReceipts().joined(separator:"\n"),completed:true);return .stopped}
                                 if let failure=result.failure {throw ActionFailure.message(failure)}
                                 output=result.output

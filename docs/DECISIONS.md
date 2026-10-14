@@ -1,5 +1,11 @@
 # Decisions
 
+## 14 October: one Review action entry
+
+All suggested actions enter the same Explore suggested actions sheet. Do not branch project spaces into a creation form or native changes/removals into inbox Approve/View event controls. Prepared checkbox approval is a local execution job with zero inference. Conversation and Done share canonical saves; exact active Review ownership permits its own saves while preserving full native baseline, scope and readback checks. Unsupported or changed native suggestions remain unapprovable; a creation-only proposal update cannot turn an existing-item action into a new item.
+
+Track seen and unprepared proposal IDs additively so later heartbeat suggestions can appear without resurrecting actions removed during conversation. Reply-copy approval uses the exact saved draft and local completion receipt; no send capability is introduced. Source/account access withdrawal still gates display and execution.
+
 ## 14 October: steady activity pill and one Review execution identity
 
 The human chose action successes/failures in AI Activity, with heartbeat shown only while running in the pill. Ordinary chat and incidental context reads are excluded. The pill changes at job boundaries rather than following reply words or heartbeat stages; completed action history stays inspectable without success alerts.

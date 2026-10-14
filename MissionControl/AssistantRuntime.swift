@@ -64,7 +64,7 @@ struct AssistantToolRequest {
     var withValidation:(() -> Bool)->Bool = {$0()}
     /// Review-only drafts. Produces selectable proposals, never native/project writes.
     var prepareReviewActions:((PAFunctionCall,@escaping NativeWriteValidity) async throws -> String)?
-    var executeReviewActions:((PAFunctionCall,@escaping NativeWriteValidity) async throws -> ReviewActionExecution)?
+    var executeReviewActions:((PAFunctionCall,@escaping NativeWriteValidity,@escaping @MainActor (Bool)->Void) async throws -> ReviewActionExecution)?
     var reviewCreationGuard:((PAFunctionCall)throws->Void)?
 }
 struct ReviewActionExecution {

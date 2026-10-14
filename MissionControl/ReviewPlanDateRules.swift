@@ -9,14 +9,14 @@ enum ReviewPlanDateRules {
     static func rejection(quote: String, basis: String, human: String, title: String,
                           kind: String, start: String?, end: String?, hasTime: Bool,
                           now: Date, timeZoneID: String) -> String? {
-        guard ["source", "human"].contains(basis), ["calendar", "reminder", "projectTask"].contains(kind),
+        guard ["source", "human"].contains(basis), ["calendar", "reminder", "projectTask", "project"].contains(kind),
               let zone = TimeZone(identifier: timeZoneID) else {
             return "The date evidence or time zone is unavailable."
         }
         guard let start else {
             return end != nil || hasTime || kind == "calendar" ? "A Calendar date or complete date mode is required." : nil
         }
-        guard !start.isEmpty, kind != "projectTask" || !hasTime,
+        guard !start.isEmpty, !["projectTask","project"].contains(kind) || !hasTime,
               let proposedStart = proposed(start, timed: hasTime, zone: zone),
               end.map({ proposed($0, timed: hasTime, zone: zone) != nil }) ?? true else {
             return "The suggested date is invalid or uses the wrong date mode."

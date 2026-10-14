@@ -17,11 +17,11 @@ struct ReviewDraftEvidence:Codable,Equatable {
         if call.name == "create_life_items" {
             matches=(args["items"] as? [[String:Any]] ?? []).contains {entry in payloads.contains{payload in
                 guard let item=payload.project else {return false}
-                return entry["kind"] as? String == "task" && entry["title"] as? String == item.title && (entry["parent"] as? String).flatMap(UUID.init(uuidString:)) == item.parentID && entry["due"] as? String == item.due
+                return entry["kind"] as? String == item.kind.rawValue && entry["title"] as? String == item.title && (entry["parent"] as? String).flatMap(UUID.init(uuidString:)) == item.parentID && entry["due"] as? String == item.due
             }}
         } else if ["change_calendar","change_reminder"].contains(call.name),args["operation"] as? String == "create" {
             matches=payloads.contains {payload in
-                guard let fields=payload.nativeFields else {return false}
+                guard payload.nativeBaseline == nil,let fields=payload.nativeFields else {return false}
                 let kind=call.name == "change_calendar" ? NativeItemKind.event : .reminder
                 guard fields.kind == kind,args["title"] as? String == fields.title else {return false}
                 let input=kind == .event ? args["start"] as? String : args["due"] as? String
@@ -30,7 +30,7 @@ struct ReviewDraftEvidence:Codable,Equatable {
         } else {matches=false}
         if matches {throw ActionFailure.message("This creation is already represented by an issued Review action. Use execute_review_actions with its current ID and revision, so its checkbox and canonical receipt are completed together. Do not create a second copy.")}
     }
-    func executeReviewActions(_ call:PAFunctionCall,job:ReviewWorkJob,valid:@escaping NativeWriteValidity) async throws->ReviewActionExecution {
+    func executeReviewActions(_ call:PAFunctionCall,job:ReviewWorkJob,valid:@escaping NativeWriteValidity,didSave:@escaping @MainActor (Bool)->Void) async throws->ReviewActionExecution {
         let input=try ReviewPlanTools.execution(call)
         guard valid(),let plan=reviewWork.plan(job.scope.registration,conversation:job.conversationID),plan.revision == input.revision,
               Set(input.actions).isSubset(of:Set(plan.actions.map(\.id))) else {throw ActionFailure.message("The exact Review plan changed. Re-read its issued actions before acting.")}
@@ -38,14 +38,17 @@ struct ReviewDraftEvidence:Codable,Equatable {
         let actions=plan.actions.filter{input.actions.contains($0.id)}
         let targets=try actions.map {action->[String:Any] in
             let payload=try JSONDecoder().decode(ReviewPreparedPayload.self,from:action.payload)
-            return ["id":action.id,"kind":payload.proposal.kind,"title":action.title,"destination":action.destination,"start":payload.proposal.proposedDate?.start as Any? ?? NSNull(),"end":payload.proposal.proposedDate?.end as Any? ?? NSNull(),"project":payload.project?.parentID?.uuidString as Any? ?? NSNull()]
+            return ["id":action.id,"kind":payload.proposal.kind,"title":action.title,"destination":action.destination,"start":payload.proposal.proposedDate?.start as Any? ?? NSNull(),"end":payload.proposal.proposedDate?.end as Any? ?? NSNull(),"project":payload.project?.parentID?.uuidString as Any? ?? NSNull(),"operation":payload.nativeOperation as Any? ?? NSNull(),"scope":payload.nativeScope as Any? ?? NSNull(),"occurrenceID":payload.nativeBaseline?.occurrenceID as Any? ?? NSNull(),"sourceID":payload.nativeBaseline?.sourceID as Any? ?? NSNull()]
         }
         let target=String(decoding:try JSONSerialization.data(withJSONObject:targets,options:[.sortedKeys]),as:UTF8.self)
         let args:[String:Any]=["revision":input.revision.uuidString,"actions":input.actions,"authorization":input.authorization]
         let history=assistant.conversation(job.conversationID)?.turns.filter{$0.completed}.suffix(8).map{["role":$0.role,"content":$0.content]} ?? []
         _=try await PAToolAuthorization.check(call:call,args:args,human:job.human,history:history,target:target,model:self)
         guard valid() else {throw ActionFailure.message("This request changed before any action was issued.")}
-        let results=try await reviewWork.performCaptured(job.id,revision:input.revision,actions:input.actions,valid:valid)
+        let results=try await reviewWork.performCaptured(job.id,revision:input.revision,actions:input.actions,valid:valid,didSave:{action in
+            let payload=try? JSONDecoder().decode(ReviewPreparedPayload.self,from:action.payload)
+            didSave(payload?.project != nil)
+        })
         let confirmed=Dictionary(uniqueKeysWithValues:results.filter{$0.phase == .saved}.map{($0.id,$0.result ?? "Action completed")})
         let uncertain=results.filter{$0.phase == .uncertain || $0.phase == .working}.count
         let failure=results.first{$0.phase == .failed || $0.phase == .uncertain}?.result ?? (confirmed.count == input.actions.count ? nil : "The remaining actions stopped before a confirmed save.")
@@ -55,7 +58,14 @@ struct ReviewDraftEvidence:Codable,Equatable {
     func reviewPlanRow(_ action:ReviewWorkAction)->ReviewPreparedRow? {
         guard let payload=try? JSONDecoder().decode(ReviewPreparedPayload.self,from:action.payload) else {return nil}
         var detail=payload.proposal.message
-        if let item=payload.project {detail=(item.due.map{"Due "+$0} ?? "No deadline assigned")+"\n"+detail}
+        if let draft=payload.localDraft {detail=draft+"\nThis copies the draft. No email is sent."}
+        else if let baseline=payload.nativeBaseline,payload.nativeOperation == "remove" {detail=baseline.start.formatted(date:.abbreviated,time:baseline.allDay ? .omitted : .shortened)+"\n"+detail+"\nRemoval cannot be undone in 3PO."}
+        else if let baseline=payload.nativeBaseline,let fields=payload.nativeFields {
+            let old=baseline.kind == .event ? baseline.start : baseline.due,new=fields.kind == .event ? fields.start : fields.due
+            let timed=fields.kind == .event ? !fields.allDay : fields.hasTime
+            detail=(old?.formatted(date:.abbreviated,time:timed ? .shortened : .omitted) ?? "No date")+" → "+(new?.formatted(date:.abbreviated,time:timed ? .shortened : .omitted) ?? "No date")+"\n"+detail
+        }
+        else if let item=payload.project {detail=(item.due.map{"Due "+$0} ?? "No deadline assigned")+"\n"+detail}
         else if let fields=payload.nativeFields {
             if fields.kind == .event {
                 var calendar=Calendar(identifier:.gregorian);calendar.timeZone=TimeZone(identifier:fields.timeZoneID) ?? .current
@@ -109,9 +119,10 @@ struct ReviewDraftEvidence:Codable,Equatable {
             }
             if let old,reviewWork.reserved(old.id,registration:job.scope.registration) {throw ActionFailure.message("An already submitted action cannot be changed or repeated. Its receipts are retained.")}
             let previous=old.flatMap{try? JSONDecoder().decode(ReviewPreparedPayload.self,from:$0.payload)}
+            guard previous?.nativeBaseline == nil,previous?.localDraft == nil else {throw ActionFailure.message("This action affects an existing item or a saved reply. Use its exact item with the ordinary action tools for the human's requested change; do not replace it with a new creation.")}
             let kind=entry.kind ?? previous?.proposal.kind ?? ""
             let title=(entry.title ?? previous?.proposal.sourceTitle ?? "").trimmingCharacters(in:.whitespacesAndNewlines)
-            guard ["calendar","reminder","projectTask"].contains(kind),!title.isEmpty,title.count <= 160,
+            guard ["calendar","reminder","projectTask","project"].contains(kind),!title.isEmpty,title.count <= 160,
                   let basis=entry.basis,["source","human"].contains(basis),let evidence=MemoryEvidence.match(entry.evidence,human:basis == "human" ? job.human : sourceText ?? ""),evidence.count <= 4000 else {throw ActionFailure.message("A new or changed suggestion needs a concrete title and an exact supporting source or human quote.")}
             if previous == nil || title != previous?.proposal.sourceTitle {
                 let filler:Set<String>=["a","an","the","to","in","for","of","and","with","add","create","task","event","reminder","please","it","that","this","my"]
@@ -125,7 +136,7 @@ struct ReviewDraftEvidence:Codable,Equatable {
             record.created = .now;record.proposedChange=nil;record.proposedRemoval=nil;record.reviewState=nil;record.dismissed=false
             if let start=entry.start ?? previous?.proposal.proposedDate?.start {
                 let date=DiscoveryProposedDate(start:start,end:entry.end ?? previous?.proposal.proposedDate?.end,hasTime:entry.hasTime ?? previous?.proposal.proposedDate?.hasTime ?? false,timeZoneID:job.timeZoneID ?? TimeZone.current.identifier)
-                guard date.rejection() == nil,date.valid,date.end.map({date.rejection($0) == nil}) ?? true,!SourceDateGrounding.needsWeekAnchor(evidence),kind != "projectTask" || !date.hasTime else {throw ActionFailure.message("This suggested date needs clarification. The prior plan is retained.")}
+                guard date.rejection() == nil,date.valid,date.end.map({date.rejection($0) == nil}) ?? true,!SourceDateGrounding.needsWeekAnchor(evidence),!["projectTask","project"].contains(kind) || !date.hasTime else {throw ActionFailure.message("This suggested date needs clarification. The prior plan is retained.")}
                 record.proposedDate=date
                 if previous == nil || entry.start != nil || entry.end != nil || entry.hasTime != nil {
                     if let rejection=ReviewPlanDateRules.rejection(quote:evidence,basis:basis,human:job.human,title:title,kind:kind,start:date.start,end:date.end,hasTime:date.hasTime,now:job.created,timeZoneID:date.timeZoneID) {throw ActionFailure.message(rejection)}
@@ -154,7 +165,8 @@ struct ReviewDraftEvidence:Codable,Equatable {
             actions.append(captured);if entry.selected {selected.insert(captured.id)}
         }
         guard actions.count <= 24,valid(),sourceStillCurrent() else {throw ActionFailure.message("This plan is unavailable or too large. The prior suggestions are retained.")}
-        let updated=ReviewWorkPlan(conversationID:plan.conversationID,scope:job.scope,source:job.source,actions:actions,selected:selected.sorted())
+        var updated=ReviewWorkPlan(conversationID:plan.conversationID,scope:job.scope,source:job.source,actions:actions,selected:selected.sorted())
+        updated.presentationVersion=2;updated.seenProposalIDs=plan.seenProposalIDs ?? reviewActionRecords(job.source).map(\.id);updated.unpreparedProposalIDs=[]
         guard reviewWork.savePlan(updated,expected:plan.revision) else {throw ActionFailure.message(reviewWork.error ?? "The suggestions could not be saved.")}
         return String(decoding:try JSONSerialization.data(withJSONObject:["draftOnly":true,"nativeWrites":0,"projectWrites":0,"suggestions":actions.count,"selected":selected.count,"revision":updated.revision.uuidString,"message":"The checkbox suggestions were updated. Nothing was executed; Done approves the checked actions."],options:[.sortedKeys]),as:UTF8.self)
     }

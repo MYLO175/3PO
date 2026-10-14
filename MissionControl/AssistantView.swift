@@ -111,12 +111,12 @@ struct AssistantPanel: View {
     @State private var visibleTurnLimit=40
     @State private var sourceDiscovery:PADiscovery?
     @State private var reviewingProject:PADiscovery?
-    @ViewBuilder private func discoveryActions(_ record: PADiscovery, compact: Bool = false) -> some View {
+    @ViewBuilder private func discoveryActions(_ record: PADiscovery, compact: Bool = false, showsActionEntry:Bool = true) -> some View {
         if compact {
-            HStack { reviewDiscoveryButtons(record) }
+            HStack { if showsActionEntry {reviewDiscoveryButtons(record)} }
             HStack { discoverySourceButtons(record) }
         } else {
-            HStack { reviewDiscoveryButtons(record); discoverySourceButtons(record) }
+            HStack { if showsActionEntry {reviewDiscoveryButtons(record)}; discoverySourceButtons(record) }
         }
     }
     private func discoveryClaim(_ record: PADiscovery) -> NativeCreationClaim? {
@@ -124,17 +124,27 @@ struct AssistantPanel: View {
         return model.nativeCreations.state.claims[record.registration + ":" + id.uuidString]
     }
     @ViewBuilder private func reviewDiscoveryButtons(_ record: PADiscovery) -> some View {
-        if let claim = discoveryClaim(record) {
-            Label(claim.receipt == nil ? "Check save outcome" : "Created",systemImage:claim.receipt == nil ? "exclamationmark.circle" : "checkmark.circle").font(.caption).foregroundStyle(.secondary)
-        } else if record.kind == "project" {
-            if model.assistant.projects.receipt("project-suggestion:"+record.id,registration:record.registration) != nil { Label("Created",systemImage:"checkmark.circle").font(.caption) }
-            else { Button("Review space…") { reviewingProject=record }.disabled(model.writing || model.assistant.projects.readOnly) }
-        } else if ["calendar","reminder"].contains(record.kind) {
-            Button(record.kind == "calendar" ? "Review event" : "Review reminder") { model.reviewDiscovery(record) }.disabled(model.writing)
-            Menu("Instead…") {
-                Button(record.kind == "calendar" ? "Remind me instead…" : "Review as an event…") { model.reviewDiscovery(record,as:record.kind == "calendar" ? .reminder : .event) }
-            }.disabled(model.writing)
+        let source=model.reviewSource(record)
+        let current=model.reviewRecords(source)
+        let related=current.isEmpty ? [record] : current
+        let completed=model.reviewCompletedActions(source)
+        let saved=Set(model.reviewWork.jobs(record.registration).filter{$0.source.key == source.key}.flatMap{$0.actions.filter{$0.phase == .saved}.map(\.id)})
+        let pending=related.contains{$0.kind != "update" && !model.reviewDiscoveryCompleted($0) && $0.reviewState != "approved" && !saved.contains($0.id)}
+        if completed > 0 {
+            Label("\(completed) action\(completed == 1 ? "" : "s") completed",systemImage:"checkmark.circle.fill").font(.caption).foregroundStyle(.secondary)
+            Button("View actions") {model.openReviewConversation(related)}
         }
+        if pending {Button("Explore suggested actions") {model.openReviewConversation(related)}}
+        if record.reviewState == "pending" || discoveryClaim(record).map({$0.receipt == nil}) == true {Label("Save needs checking",systemImage:"exclamationmark.circle").font(.caption).foregroundStyle(.orange)}
+    }
+    private func lastDiscoveryEntries(_ turns:[AssistantTranscriptRow])->[String:UUID] {
+        let records=Dictionary(model.proactive.state.records.filter{$0.registration == model.chatGPT.activeID}.map{($0.deliveryID,$0)},uniquingKeysWith:{first,_ in first})
+        var last:[String:UUID]=[:]
+        for row in turns {
+            let turn=row.turn
+            if let delivery=turn.deliveryID,let record=records[delivery],record.kind != "update" {last[model.reviewSource(record).key]=turn.id}
+        }
+        return last
     }
     @ViewBuilder private func discoverySourceButtons(_ record: PADiscovery) -> some View {
         Button(record.sourceKind == "whatsapp" ? "Source message" : "Source email") { if record.sourceKind == "whatsapp" { sourceDiscovery=record } else if let message = model.emailSummaries.highlights(model).first(where:{ $0.0.id == record.mailID })?.0 { model.select(message) } }
@@ -149,6 +159,7 @@ struct AssistantPanel: View {
         let conversation=selected
         let visibleTurns=ConversationRules.transcript(conversation?.turns ?? [],visible:turnVisible)
         let displayedTurns=Array(visibleTurns.suffix(visibleTurnLimit))
+        let discoveryEntries=lastDiscoveryEntries(displayedTurns)
         VStack(spacing: 8) {
             HStack(spacing:8) {
                 Label(assistant.displayName,systemImage:"sparkles").font(.title3.weight(.semibold)).lineLimit(1).truncationMode(.tail)
@@ -241,8 +252,8 @@ struct AssistantPanel: View {
                                 if turn.deliveryID?.contains(":morning:") == true { Button("Briefing and sources") { showBriefing = true }.controlSize(.small) }
                                 if let delivery = turn.deliveryID, let record = model.proactive.record(delivery:delivery,model:model) {
                                     ViewThatFits(in:.horizontal) {
-                                    discoveryActions(record)
-                                    VStack(alignment:.leading,spacing:6) { discoveryActions(record,compact:true) }
+                                    discoveryActions(record,showsActionEntry:discoveryEntries[model.reviewSource(record).key] == turn.id)
+                                    VStack(alignment:.leading,spacing:6) { discoveryActions(record,compact:true,showsActionEntry:discoveryEntries[model.reviewSource(record).key] == turn.id) }
                                     }.controlSize(.small)
 
                                 }

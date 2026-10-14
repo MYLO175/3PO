@@ -41,7 +41,7 @@ struct ProductionReviewConversationView:View {
                             if completedCount > 0 {Label("\(completedCount) action\(completedCount == 1 ? "" : "s") completed",systemImage:"checkmark.circle.fill").font(.callout.weight(.semibold)).foregroundStyle(palette[.accent])}
                             if preparing {HStack {ProgressView().controlSize(.small);Text("Preparing saved actions…").font(.caption).foregroundStyle(.secondary)}}
                             if !rows.isEmpty {
-                                Text(completedCount > 0 ? "Saved actions and remaining suggestions" : "Would you like me to add these actions?").font(.headline)
+                                Text(completedCount > 0 ? "Saved actions and remaining suggestions" : "Would you like me to take these actions?").font(.headline)
                                 ForEach(rows) {row in preparedRow(row)}
                                 if rows.contains(where:{$0.action != nil && !isSaved($0)}) {
                                     HStack(spacing:12) {
@@ -89,16 +89,28 @@ struct ProductionReviewConversationView:View {
         .task {
             draft=model.reviewWork.draft(model.chatGPT.activeID,conversation:conversationID)
             guard let conversation,let source=model.reviewSource(conversation),usable else {preparing=false;return}
-            if let plan=model.reviewWork.plan(model.chatGPT.activeID,conversation:conversationID) {load(plan);preparing=false;return}
-            for record in model.reviewRecords(source) where record.nativeTarget == nil && !["reply","update"].contains(record.kind) {
-                let row=await model.prepareReviewRow(record)
-                guard !Task.isCancelled,usable else {return}
-                rows.append(row)
-                if row.action != nil,!model.reviewDiscoveryCompleted(record) {selected.insert(row.id)}
+            let oldPlan=model.reviewWork.plan(model.chatGPT.activeID,conversation:conversationID)
+            if let oldPlan {load(oldPlan)}
+            let records=model.reviewActionRecords(source)
+            let seen=Set(oldPlan?.seenProposalIDs ?? oldPlan?.actions.map(\.id) ?? [])
+            let upgrading=oldPlan != nil && oldPlan?.presentationVersion == nil
+            let additions=records.filter{record in
+                !rows.contains(where:{$0.id == record.id}) && (oldPlan == nil || (upgrading ? record.nativeTarget != nil || ["project","reply"].contains(record.kind) : oldPlan?.unpreparedProposalIDs?.contains(record.id) == true || (oldPlan?.seenProposalIDs != nil && !seen.contains(record.id))))
             }
-            let actions=rows.compactMap(\.action)
-            let plan=ReviewWorkPlan(conversationID:conversationID,scope:model.reviewWorkScope(),source:source,actions:actions,selected:selected.sorted())
-            _=model.reviewWork.savePlan(plan,expected:nil)
+            // Seen identities distinguish later heartbeat additions from suggestions
+            // the human removed while editing this plan in its conversation.
+            if oldPlan == nil || oldPlan?.seenProposalIDs == nil || !additions.isEmpty {
+                for record in additions {
+                    let captured=model.reviewSummaryDraft(source)?.id == record.id
+                    let row=await model.prepareReviewRow(record,capturedDraft:captured)
+                    guard !Task.isCancelled,usable else {preparing=false;return}
+                    rows.append(row)
+                    if row.action != nil,!model.reviewDiscoveryCompleted(record),!isSaved(row) {selected.insert(row.id)}
+                }
+                var plan=ReviewWorkPlan(conversationID:conversationID,scope:model.reviewWorkScope(),source:source,actions:rows.compactMap(\.action),selected:selected.sorted())
+                plan.presentationVersion=2;plan.seenProposalIDs=seen.union(records.map(\.id)).sorted();plan.unpreparedProposalIDs=rows.filter{$0.action == nil}.map(\.id)
+                if !model.reviewWork.savePlan(plan,expected:oldPlan?.revision),let current=model.reviewWork.plan(model.chatGPT.activeID,conversation:conversationID) {load(current)}
+            }
             preparing=false
         }.onChange(of:draft) {_,value in model.reviewWork.setDraft(value,registration:model.chatGPT.activeID,conversation:conversationID)}
         .onChange(of:model.reviewWork.plan(model.chatGPT.activeID,conversation:conversationID)?.revision) {if let plan=model.reviewWork.plan(model.chatGPT.activeID,conversation:conversationID) {load(plan)}}
@@ -141,7 +153,8 @@ struct ProductionReviewConversationView:View {
         }.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(Color.orange.opacity(job.pending ? 0.04 : 0.08),in:RoundedRectangle(cornerRadius:11))
     }
     private func load(_ plan:ReviewWorkPlan) {
-        rows=plan.actions.compactMap(model.reviewPlanRow)
+        let unresolved=rows.filter{$0.action == nil && plan.unpreparedProposalIDs?.contains($0.id) == true}
+        rows=plan.actions.compactMap(model.reviewPlanRow)+unresolved
         selected=Set(plan.selected)
     }
     private func finish() {

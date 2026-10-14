@@ -103,7 +103,13 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
     }
     func openReviewSource(_ message:MailMessage) {
         let records=proactive.state.records.filter{$0.registration == chatGPT.activeID && $0.mailID == message.id && $0.sourceKind != "whatsapp"}
-        if !records.isEmpty {openReviewConversation(records)}
+        if !records.isEmpty {openReviewConversation(records);return}
+        let source=ReviewWorkSource(key:"mail:"+message.id,title:message.subject,kind:"mail",accountID:message.accountID,messageID:message.id)
+        guard reviewPermits(source) else {return}
+        let summary=emailSummaries.records.first{$0.id == message.id && $0.registration == chatGPT.activeID}
+        let seeds=summary.map{[AssistantTurn(role:"assistant",content:$0.summary,completed:true,deliveryID:"summary:"+message.id)]} ?? []
+        guard let id=assistant.openReview(key:source.key,title:source.title,sourceKind:source.kind,accountID:source.accountID,messageID:source.messageID,identity:nil,chatID:nil,seeds:seeds) else {return}
+        reviewPresentation = .init(id:id)
     }
     func activityVisible(_ record:AIActivityRecord)->Bool {
         guard record.registration == chatGPT.activeID else {return false}
@@ -131,7 +137,8 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
             guard let payload=try? JSONDecoder().decode(ReviewPreparedPayload.self,from:action.payload) else {continue}
             let destination:AIActivityDestination
             if let item=payload.project {destination = .project(targetID:item.parentID?.uuidString ?? item.id.uuidString)}
-            else if payload.nativeRequest?.kind == .event {destination = .calendar(targetID:action.itemID)}
+            else if payload.nativeRequest?.kind == .event || payload.nativeBaseline?.kind == .event {destination = .calendar(targetID:action.itemID)}
+            else if payload.localDraft != nil {continue}
             else {destination = .reminders(targetID:action.itemID)}
             if !destinations.contains(where:{$0.title == destination.title}) {destinations.append(destination)}
         }

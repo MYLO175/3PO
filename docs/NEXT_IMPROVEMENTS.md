@@ -1,5 +1,9 @@
 # Next improvements
 
+## 14 October: unified Review entry checkpoint
+
+Implemented: one Explore suggested actions flow for spaces, tasks, native creation/change/removal and reply copies, with checkbox Done requiring no inference. Focused acceptance covers canonical saves, additive plan reopening, native target revision/scope protection and fictional native UI selection/completion/draft retention. Personal native operations are not executed as UI QA. Semantic proposal relevance, complete date extraction and sustained configured-model behaviour remain separate open acceptance work.
+
 ## 14 October checkpoint: simplify the Review and Activity interaction
 
 Implemented: persistent checkbox plans, Done approval alongside ordinary isolated chat, immediate prepared actions sharing canonical receipts, automatic idle scheduling, completed-row ticks, collapsed old failures and preserved drafts. The pill shows a steady live job/heartbeat and alerts action failure; its dropdown holds action successes/failures only. Full ownership batching, unchanged Mail projection reuse and compact initial orientation address remaining local streaming overhead.

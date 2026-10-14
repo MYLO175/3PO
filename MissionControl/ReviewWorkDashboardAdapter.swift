@@ -1,5 +1,7 @@
 import Foundation
 import SwiftData
+import AppKit
+import CryptoKit
 
 struct ReviewPreparedPayload:Codable,Equatable {
     var proposal:PADiscovery
@@ -9,6 +11,10 @@ struct ReviewPreparedPayload:Codable,Equatable {
     var nativeFields:NativeEditDetails?
     var project:LifeItem?
     var draftEvidence:ReviewDraftEvidence?
+    var nativeBaseline:NativeEditDetails?
+    var nativeOperation:String?
+    var nativeScope:String?
+    var localDraft:String?
 }
 struct ReviewConversationPresentation:Identifiable {var id:UUID}
 struct ReviewPreparedRow:Identifiable {
@@ -21,6 +27,10 @@ struct ReviewPreparedRow:Identifiable {
 }
 
 @MainActor extension DashboardModel {
+    var reviewConversationOwnsAssistant:Bool {
+        guard assistant.busy,let id=reviewWork.activeID,let job=reviewWork.job(id) else {return false}
+        return job.mode == .conversation && job.phase == .running && job.scope.registration == chatGPT.activeID && job.scope.storage == reviewStorageIdentity && assistant.requestConversationID == job.conversationID && assistant.requestTurnID == job.responseTurnID
+    }
     var reviewStorageIdentity:String {container?.configurations.map{$0.url.absoluteString}.sorted().joined(separator:"|") ?? "unavailable"}
     func reviewWorkScope()->ReviewWorkScope {
         let wa=whatsapp.access(for:chatGPT.activeID)
@@ -59,6 +69,24 @@ struct ReviewPreparedRow:Identifiable {
     func reviewRecords(_ source:ReviewWorkSource)->[PADiscovery] {
         proactive.state.records.filter{record in record.registration == chatGPT.activeID && reviewSource(record).key == source.key && record.supersededBy == nil && record.retiredAt == nil && !record.dismissed}
     }
+    func reviewSummaryDraft(_ source:ReviewWorkSource)->PADiscovery? {
+        guard source.kind == "mail",let summary=emailSummaries.records.first(where:{$0.id == source.messageID && $0.registration == chatGPT.activeID}),let message=summary.message ?? mailData.messages.first(where:{$0.id == source.messageID && $0.accountID == source.accountID}),message.accountID == source.accountID,let draft=summary.replyDraft,!draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,
+              !reviewRecords(source).contains(where:{$0.replyDraft == draft}) else {return nil}
+        let hash=SHA256.hash(data:Data((chatGPT.activeID+"|"+source.key+"|"+draft).utf8)).map{String(format:"%02x",$0)}.joined()
+        let h=Array(hash.prefix(32))
+        let id=[String(h[0..<8]),String(h[8..<12]),String(h[12..<16]),String(h[16..<20]),String(h[20..<32])].joined(separator:"-")
+        return .init(id:id,registration:chatGPT.activeID,mailID:summary.id,kind:"reply",message:"Copy this saved reply draft to the clipboard for review in Mail.",evidence:summary.evidence,created:message.received,scope:proactive.sourceSettingsScope(self),sourceTitle:message.subject,replyDraft:draft)
+    }
+    func reviewActionRecords(_ source:ReviewWorkSource)->[PADiscovery] {
+        var records=reviewRecords(source).filter{$0.kind != "update"}
+        if let draft=reviewSummaryDraft(source) {records.append(draft)}
+        return records
+    }
+    func reviewSummaryDraftCompleted(_ message:MailMessage)->Bool {
+        let source=ReviewWorkSource(key:"mail:"+message.id,title:message.subject,kind:"mail",accountID:message.accountID,messageID:message.id)
+        guard let draft=reviewSummaryDraft(source) else {return false}
+        return reviewWork.jobs(chatGPT.activeID).contains{$0.source.key == source.key && $0.actions.contains{$0.id == draft.id && $0.phase == .saved}}
+    }
     func preparedCreationRequest(_ record:PADiscovery)->NativeCreationRequest? {
         guard record.nativeTarget == nil,["calendar","reminder"].contains(record.kind),let id=UUID(uuidString:record.id),let snapshot=preparedApprovalSnapshot(record) else {return nil}
         let source=reviewSource(record),kind:NativeItemKind=record.kind == "calendar" ? .event : .reminder
@@ -70,11 +98,34 @@ struct ReviewPreparedRow:Identifiable {
         guard capturedDraft || currentPreparedApproval(record),let approval=preparedApprovalSnapshot(record) else {row.error="This suggestion changed. Reopen Review for its current version.";return row}
         do {
             var payload=ReviewPreparedPayload(proposal:record,approval:approval,source:reviewSource(record))
-            if ["project","projectTask"].contains(record.kind) {
-                guard record.kind == "projectTask",let target=record.proposedProjectTask?.target,let id=UUID(uuidString:record.id) else {row.error="Review this space’s details separately before creating it.";return row}
+            if let removal=record.proposedRemoval {
+                guard removal.valid,let event=(paOrientation?.calendar ?? calendarData).events.first(where:{$0.id == removal.target.itemID}) else {throw ActionFailure.message("The exact Calendar occurrence is unavailable. Ask below for a current alternative.")}
+                let session=try await preparedReviewSession(.event(event))
+                try validateCalendarRemoval(record,baseline:session.item)
+                payload.nativeBaseline=session.item;payload.nativeOperation="remove";payload.nativeScope=NativeChangeScope.occurrence.rawValue
+                row.title="Remove: "+removal.target.title;row.destination="Calendar · Only this occurrence"
+                row.detail=session.item.start.formatted(date:.abbreviated,time:session.item.allDay ? .omitted : .shortened)+"\n"+record.message+"\nRemoval cannot be undone in 3PO."
+            } else if record.proposedChange != nil {
+                guard let target=dateReviewTarget(record) else {throw ActionFailure.message("The exact item or proposed date changed. Ask below for a current alternative.")}
+                let review:NativeDateReview
+                switch target {case .reviewEvent(_,let value),.reviewReminder(_,let value):review=value;default:throw ActionFailure.message("No exact native date change was captured.")}
+                let session=try await preparedReviewSession(target),edited=try review.applying(to:session.item)
+                payload.nativeBaseline=session.item;payload.nativeFields=edited;payload.nativeOperation="change";payload.nativeScope=(edited.kind == .reminder && session.item.recurring ? NativeChangeScope.reminderSeries : .occurrence).rawValue
+                row.title="Update: "+session.item.title;row.destination=edited.kind == .event ? "Calendar · Only this occurrence" : session.item.recurring ? "Reminders · Repeating reminder" : "Reminders"
+                let old=session.item.kind == .event ? session.item.start : session.item.due,new=edited.kind == .event ? edited.start : edited.due
+                row.detail=(old?.formatted(date:.abbreviated,time:.shortened) ?? "No date")+" → "+(new?.formatted(date:.abbreviated,time:review.hasTime ? .shortened : .omitted) ?? "No date")+"\n"+record.message
+            } else if record.kind == "project" {
+                guard let id=UUID(uuidString:record.id),!title.isEmpty else {throw ActionFailure.message("This space needs a concrete name before approval.")}
+                payload.project = .init(id:id,registration:record.registration,kind:.space,title:String(title.prefix(160)),notes:record.evidence,due:record.proposedDate?.localDay)
+                row.title="Create space: "+title;row.destination="Projects home · New space"
+                row.detail="Name: "+title+"\n"+record.message
+            } else if record.kind == "projectTask" {
+                guard let target=record.proposedProjectTask?.target,let id=UUID(uuidString:record.id) else {row.error="Choose an existing project space below before adding this task.";return row}
                 payload.project = .init(id:id,registration:record.registration,conversationID:target.conversationID,kind:.task,title:String(title.prefix(160)),parentID:target.id,notes:record.evidence,due:record.proposedDate?.localDay)
                 row.destination="Task in "+target.title
                 row.detail=(record.proposedDate?.localDay.map{"Due "+$0+"\n"} ?? "No deadline assigned\n")+record.message
+            } else if record.kind == "reply",let draft=record.replyDraft,!draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {
+                payload.localDraft=draft;row.title="Copy reply draft";row.destination="Clipboard · Unsent draft";row.detail=draft+"\nThis copies the draft. No email is sent."
             } else if let request=preparedCreationRequest(record) {
                 guard !record.needsDateClarification,request.kind != .event || request.suggestedStart != nil else {row.error="The Calendar date needs clarification. Ask below before approving it.";return row}
                 let scope=reviewWorkScope()
@@ -101,23 +152,42 @@ struct ReviewPreparedRow:Identifiable {
             } else {row.error="This action needs its existing detail/occurrence review. You can ask about it below.";return row}
             let encoder=JSONEncoder();encoder.outputFormatting=[.sortedKeys]
             var concrete:[String:Any]=["approval":approval.base64EncodedString()]
+            if let baseline=payload.nativeBaseline {concrete["baseline"]=try JSONSerialization.jsonObject(with:encoder.encode(baseline));concrete["operation"]=payload.nativeOperation;concrete["scope"]=payload.nativeScope}
+            if let draft=payload.localDraft {concrete["localDraft"]=draft}
             if let fields=payload.nativeFields,let object=try JSONSerialization.jsonObject(with:encoder.encode(fields)) as? [String:Any] {
                 let keys:Set<String>=["kind","sourceID","title","notes","location","start","end","allDay","due","hasTime","timeZoneID","url","priority","alarms","availability"]
                 concrete["native"]=object.filter{keys.contains($0.key) && (fields.kind == .event || !["start","end"].contains($0.key))}
             }
             if let item=payload.project,let object=try JSONSerialization.jsonObject(with:encoder.encode(item)) as? [String:Any] {concrete["project"]=object.filter{["id","registration","conversationID","kind","title","parentID","notes","due"].contains($0.key)}}
             let key=try JSONSerialization.data(withJSONObject:concrete,options:[.sortedKeys]).base64EncodedString()
-            row.action = .init(id:record.id,title:title,destination:row.destination,coalescingKey:key,payload:try encoder.encode(payload))
+            row.action = .init(id:record.id,title:row.title,destination:row.destination,coalescingKey:key,payload:try encoder.encode(payload))
         } catch {row.error=error.localizedDescription}
         return row
+    }
+    private func preparedReviewSession(_ target:NativeEditTarget) async throws->NativeEditSession {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") || (ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") && !ProcessInfo.processInfo.arguments.contains("--removal-native")) {
+            guard let session=ReviewInboxEvaluation.previewSession(target) else {throw ActionFailure.message("No fictional native session is available; live source access is disabled.")}
+            return session
+        }
+        #endif
+        let scope=reviewWorkScope(),session=try await eventKit.editSession(target)
+        try Task.checkCancellation();guard scope == reviewWorkScope() else {throw ActionFailure.message("The account or source choices changed while opening this plan.")};return session
     }
     /// The accepted displayed creation is the authority. Background reassessment
     /// cannot substitute another payload or veto it through an evidence revision.
     func acceptedPreparedApproval(_ payload:ReviewPreparedPayload)->Bool {
         let proposal=payload.proposal
-        guard proposal.registration == chatGPT.activeID,proposal.nativeTarget == nil,
+        guard proposal.registration == chatGPT.activeID,
               reviewPermits(payload.source ?? reviewSource(proposal)),preparedApprovalSnapshot(proposal) == payload.approval,
               let identity=UUID(uuidString:proposal.id) else {return false}
+        if let baseline=payload.nativeBaseline {
+            guard currentPreparedApproval(proposal),baseline.writable else {return false}
+            if payload.nativeOperation == "remove" {return proposal.proposedRemoval?.valid == true && payload.nativeScope == NativeChangeScope.occurrence.rawValue && baseline.kind == .event && payload.nativeFields == nil}
+            return payload.nativeOperation == "change" && proposal.proposedChange != nil && payload.nativeFields?.kind == baseline.kind && payload.nativeScope == (baseline.kind == .reminder && baseline.recurring ? NativeChangeScope.reminderSeries : .occurrence).rawValue
+        }
+        guard proposal.nativeTarget == nil else {return false}
+        if let draft=payload.localDraft {return proposal.kind == "reply" && proposal.replyDraft == draft && !draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty}
         if let request=payload.nativeRequest,let fields=payload.nativeFields {
             guard ["calendar","reminder"].contains(proposal.kind),!proposal.needsDateClarification,
                   request.id == identity,request.registration == proposal.registration,request.discoveryID == proposal.id,
@@ -130,10 +200,18 @@ struct ReviewPreparedRow:Identifiable {
         if let item=payload.project,let target=proposal.proposedProjectTask?.target {
             return proposal.kind == "projectTask" && item.id == identity && item.kind == .task && item.registration == proposal.registration && item.parentID == target.id && item.conversationID == target.conversationID
         }
+        if let item=payload.project {return proposal.kind == "project" && item.id == identity && item.kind == .space && item.registration == proposal.registration && item.parentID == nil && item.conversationID == nil}
         return false
     }
     func inspectReviewAction(_ job:ReviewWorkJob,_ action:ReviewWorkAction)->ReviewWorkActionResult? {
         guard let payload=try? JSONDecoder().decode(ReviewPreparedPayload.self,from:action.payload),payload.proposal.registration == job.scope.registration else {return .init(phase:.failed,message:"The captured action payload is unavailable.")}
+        if payload.nativeBaseline != nil {
+            if let current=proactive.state.records.first(where:{$0.id == action.id && $0.registration == job.scope.registration}),preparedApprovalSnapshot(current) == payload.approval {
+                if current.reviewState == "approved" {return .init(phase:.saved,message:payload.nativeOperation == "remove" ? "Removed "+(payload.nativeBaseline?.title ?? action.title) : "Updated "+(payload.nativeBaseline?.title ?? action.title),itemID:payload.nativeBaseline?.occurrenceID,location:payload.nativeBaseline?.kind.rawValue)}
+                if current.reviewState == "pending" {return .init(phase:.uncertain,message:"This native change has an unconfirmed receipt. It will not be repeated.")}
+            }
+        }
+        if payload.localDraft != nil,let saved=reviewWork.jobs(job.scope.registration).flatMap(\.actions).first(where:{$0.id == action.id && $0.phase == .saved && $0.payload == action.payload}) {return .init(phase:.saved,message:saved.result ?? "Copied reply draft",location:"clipboard")}
         if let request=payload.nativeRequest {
             if let receipt=nativeCreations.receipt(request) {return .init(phase:.saved,message:"Created "+receipt.title,itemID:receipt.itemID,location:request.kind.rawValue)}
             if nativeCreations.state.claims[request.key] != nil {return .init(phase:.uncertain,message:"This save has an unconfirmed receipt. Check Calendar or Reminders; it will not be repeated.")}
@@ -147,9 +225,26 @@ struct ReviewPreparedRow:Identifiable {
         let payload=try JSONDecoder().decode(ReviewPreparedPayload.self,from:action.payload)
         let source=payload.source ?? job.source
         guard source.key == job.source.key,source.kind == job.source.kind,source.accountID == job.source.accountID,source.identity == job.source.identity,source.chatID == job.source.chatID else {throw ActionFailure.message("The captured source account does not match this Review request.")}
-        guard action.id == payload.proposal.id,valid(),heartbeat.deviceAvailable,acceptedPreparedApproval(payload),job.scope.storage == reviewStorageIdentity else {throw ActionFailure.message("The captured action, account, source access or destination choices changed. Reopen this plan.")}
+        guard action.id == payload.proposal.id,valid(),heartbeat.deviceAvailable,reviewPermits(source),job.scope.storage == reviewStorageIdentity else {throw ActionFailure.message("The captured action, account, source access or destination choices changed. Reopen this plan.")}
         if let known=inspectReviewAction(job,action) {return known}
-        if let request=payload.nativeRequest,let captured=payload.nativeFields {
+        guard acceptedPreparedApproval(payload) else {throw ActionFailure.message("The approved concrete action or exact native target changed. Reopen this plan.")}
+        if let baseline=payload.nativeBaseline {
+            if payload.nativeOperation == "remove" {
+                try await saveCalendarRemoval(payload.proposal,baseline:baseline,selectedModel:job.scope.model,sourceScope:job.scope.sourceChoices,occurrenceConfirmed:true,additionalValidity:valid)
+            } else if let edited=payload.nativeFields,let target=dateReviewTarget(payload.proposal) {
+                let review:NativeDateReview
+                switch target {case .reviewEvent(_,let value),.reviewReminder(_,let value):review=value;default:throw ActionFailure.message("The captured native change is unavailable.")}
+                guard try review.applying(to:baseline) == edited,let scope=payload.nativeScope.flatMap(NativeChangeScope.init(rawValue:)) else {throw ActionFailure.message("The concrete native change or occurrence scope changed.")}
+                try await saveNativeEdit(baseline:baseline,edited:edited,scope:scope,review:review,validity:valid)
+            } else {throw ActionFailure.message("No exact native operation was captured.")}
+        } else if let draft=payload.localDraft {
+            #if DEBUG
+            guard !ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") else {throw ActionFailure.message("Clipboard writes are disabled in this fictional preview.")}
+            #endif
+            guard valid() else {throw ActionFailure.message("This reply-copy request stopped.")}
+            NSPasteboard.general.clearContents();guard NSPasteboard.general.setString(draft,forType:.string),NSPasteboard.general.string(forType:.string) == draft else {throw ActionFailure.message("The clipboard copy could not be confirmed.")}
+            return .init(phase:.saved,message:"Copied reply draft; no email sent",location:"clipboard")
+        } else if let request=payload.nativeRequest,let captured=payload.nativeFields {
             let session=try await eventKit.creationSession(request)
             try Task.checkCancellation()
             guard valid(),heartbeat.deviceAvailable,session.sources.contains(where:{$0.id == captured.sourceID && $0.writable}) else {throw ActionFailure.message("The selected Calendar/list is no longer available or this request stopped.")}
@@ -168,7 +263,7 @@ struct ReviewPreparedRow:Identifiable {
                 runtime.started={_ in}
                 runtime.working={outcome in self.reviewActivityStarted(job,outcome:outcome)}
                 runtime.prepareReviewActions={call,owned in try await self.prepareReviewActions(call,job:job,valid:{valid() && owned()})}
-                runtime.executeReviewActions={call,owned in try await self.executeReviewActions(call,job:job,valid:{valid() && owned()})}
+                runtime.executeReviewActions={call,owned,refresh in try await self.executeReviewActions(call,job:job,valid:{valid() && owned()},didSave:refresh)}
                 runtime.reviewCreationGuard={call in try self.guardReviewCreation(call,job:job)}
                 runtime.finished={outcome in
                     let classification=self.classifyAssistantOutcome(outcome)
@@ -235,7 +330,7 @@ struct ReviewPreparedRow:Identifiable {
     func reviewSelectionContext(_ job:ReviewWorkJob)->String {
         if let plan=reviewWork.plan(job.scope.registration,conversation:job.conversationID),let data=try? JSONEncoder().encode(plan.actions.compactMap {action->[String:String]? in
             guard let payload=try? JSONDecoder().decode(ReviewPreparedPayload.self,from:action.payload) else {return nil}
-            return ["id":action.id,"title":action.title,"destination":action.destination,"kind":payload.proposal.kind,"start":payload.proposal.proposedDate?.start ?? "","end":payload.proposal.proposedDate?.end ?? "","projectID":payload.project?.parentID?.uuidString ?? "","selected":String(plan.selected.contains(action.id)),"submitted":String(reviewWork.reserved(action.id,registration:job.scope.registration))]
+            return ["id":action.id,"title":action.title,"destination":action.destination,"kind":payload.proposal.kind,"operation":payload.nativeOperation ?? "create","scope":payload.nativeScope ?? "","occurrenceID":payload.nativeBaseline?.occurrenceID ?? "","start":payload.proposal.proposedDate?.start ?? "","end":payload.proposal.proposedDate?.end ?? "","projectID":payload.project?.parentID?.uuidString ?? "","selected":String(plan.selected.contains(action.id)),"submitted":String(reviewWork.reserved(action.id,registration:job.scope.registration))]
         }) {
             return "Current editable Review plan revision: "+plan.revision.uuidString+". These are checkbox draft proposals, not write authority. Selected means the human's current checkbox choice. "+String(decoding:data,as:UTF8.self)
         }

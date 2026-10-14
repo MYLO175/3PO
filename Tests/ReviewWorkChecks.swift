@@ -261,6 +261,7 @@ import Foundation
         do {
             let w=ReviewWorkFixture(),s=w.make(),job=w.job()
             var plan=ReviewWorkPlan(conversationID:job.conversationID,scope:job.scope,source:job.source,actions:[w.action("a"),w.action("b")],selected:["a","b"])
+            plan.presentationVersion=2;plan.seenProposalIDs=["a","b","omitted"];plan.unpreparedProposalIDs=["unavailable"]
             check(s.savePlan(plan,expected:nil),"Prepared plan persists without submitting or executing its suggestions")
             s.selectPlan(["b"],registration:job.scope.registration,conversation:job.conversationID)
             let current=s.plan(job.scope.registration,conversation:job.conversationID)!
@@ -312,6 +313,21 @@ import Foundation
             var approval=w.job("a");approval.conversationID=conversation.conversationID
             check(s.submit(conversation) && s.submit(approval),"Done can queue concrete approval while an explanation retains the same waiting checkbox context")
             check(!s.submit(w.job("a")),"A second exact concrete approval still coalesces with the pending approval")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make();var job=w.job(mode:.conversation)
+            job.actions=[w.action("a"),w.action("b")]
+            let plan=ReviewWorkPlan(conversationID:job.conversationID,scope:job.scope,source:job.source,actions:job.actions,selected:["a","b"])
+            check(s.savePlan(plan,expected:nil) && s.submit(job),"Legacy plans still decode without a presentation version")
+            var actual=0,expected=0,refreshes=0
+            var runtime=w.runtime()
+            runtime.perform={_,action,_ in actual += 1;w.calls.append(action.id);w.canonical[action.id]=w.performResult;return w.performResult}
+            runtime.converse={current,owned in
+                let results=try! await s.performCaptured(current.id,revision:plan.revision,actions:["a","b"],valid:{owned() && actual == expected},didSave:{_ in expected=actual;refreshes += 1})
+                return .init(phase:.completed,message:"Saved",confirmedActions:results.filter{$0.phase == .saved}.count)
+            }
+            s.drive(runtime);await until{!s.busy}
+            check(w.calls == ["a","b"] && refreshes == 2 && s.job(job.id)?.savedCount == 2,"Each verified self-authored save refreshes its ownership before the next prepared action")
         }
         print("Review work: \(total)/\(total) source-free injected-runtime checks passed")
     }

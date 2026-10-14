@@ -248,6 +248,52 @@ import EventKit
         checks["Dismiss leaves native snapshot intact and records no approval"]=model.proactive.state.records[0].reviewState == nil && !model.proactive.canReview(record.id,model:model) && model.calendarData.events[0].id == calendar.events[0].id
         model.proactive.undo(model)
         checks["Dismiss Undo restores removal review"]=model.proactive.canReview(record.id,model:model)
+        let usageBefore=model.aiUsage.state.records.count
+        let removalRow=await model.prepareReviewRow(record)
+        checks["shared removal row captures exact occurrence and visible scope"]=removalRow.action != nil && removalRow.destination == "Calendar · Only this occurrence" && removalRow.detail.contains("cannot be undone")
+        if let action=removalRow.action,let payload=try? JSONDecoder().decode(ReviewPreparedPayload.self,from:action.payload) {
+            checks["accepted removal retains exact baseline and captured approval"]=payload.nativeBaseline?.occurrenceID == calendar.events[0].id && payload.nativeScope == NativeChangeScope.occurrence.rawValue && model.acceptedPreparedApproval(payload)
+            model.calendarData.events[0].modified = .now.addingTimeInterval(5)
+            do {try model.validateCalendarRemoval(record,baseline:ReviewInboxEvaluation.previewSession(.event(model.calendarData.events[0]))!.item);checks["shared removal refuses changed native fields"]=false} catch {checks["shared removal refuses changed native fields"]=true}
+            model.calendarData=calendar
+        }
+        var space=record;space.id=UUID().uuidString;space.kind="project";space.sourceTitle="Orion follow-up";space.proposedRemoval=nil;space.message="Create a space for this follow-up?"
+        let spaceRow=await model.prepareReviewRow(space,capturedDraft:true)
+        checks["shared space row captures a concrete new space at Projects home"]=spaceRow.action != nil && spaceRow.destination == "Projects home · New space"
+        if let action=spaceRow.action {
+            let job=ReviewWorkJob(conversationID:UUID(),scope:model.reviewWorkScope(),source:model.reviewSource(space),mode:.approval,human:"yes",actions:[action])
+            let saved=try await model.performReviewAction(job,action,valid:{true})
+            let again=try await model.performReviewAction(job,action,valid:{true})
+            checks["prepared space approval saves once with canonical readback"]=saved.phase == .saved && again.itemID == saved.itemID && model.assistant.projects.items(owner,includeTopics:true).filter{$0.id.uuidString == space.id}.count == 1
+        }
+        var reply=space;reply.id=UUID().uuidString;reply.kind="reply";reply.replyDraft="Thanks for the update."
+        let replyRow=await model.prepareReviewRow(reply,capturedDraft:true)
+        checks["reply uses the same selectable panel without sending email"]=replyRow.action != nil && replyRow.destination == "Clipboard · Unsent draft" && replyRow.detail.contains("No email is sent")
+        model.openReviewSource(mail.messages[0])
+        checks["source entry opens only the shared Review conversation"]=model.reviewPresentation != nil && model.editTarget == nil
+        model.reviewPresentation=nil
+        let originalSummaries=model.emailSummaries.records
+        var summary=originalSummaries[0];summary.replyDraft="Thanks for this update."
+        try model.emailSummaries.seedAdviceFixture([summary]);try model.proactive.seedAdviceFixture([],model:model)
+        model.openReviewSource(mail.messages[0])
+        let draftSource=ReviewWorkSource(key:"mail:"+mail.messages[0].id,title:mail.messages[0].subject,kind:"mail",accountID:mail.messages[0].accountID,messageID:mail.messages[0].id)
+        let capturedReply=model.reviewSummaryDraft(draftSource)
+        checks["summary-only reply opens the shared conversation and issues stable local action"]=model.reviewPresentation != nil && capturedReply != nil && capturedReply?.id == model.reviewSummaryDraft(draftSource)?.id && model.reviewActionRecords(draftSource).count == 1
+        model.reviewPresentation=nil
+        try model.emailSummaries.seedAdviceFixture(originalSummaries);try model.proactive.seedAdviceFixture([record],model:model)
+        let originalReminders=model.reminderData
+        for recurring in [false,true] {
+            let task=TaskItem(id:"fictional-date-change",listID:"fictional-list",title:"Orion preparation",due:.now,hasTime:false,sourceLabel:"Fictional",writable:true,recurring:recurring,modified:.now)
+            model.reminderData = .init(sources:[.init(id:task.listID,title:task.sourceLabel,account:"Fictional",writable:true)],reminders:[task])
+            var change=record;change.id=UUID().uuidString;change.kind="change";change.proposedRemoval=nil;change.proposedChange = .init(target:.reminder(task),newDate:DateRules.localDate(.now.addingTimeInterval(86400)),hasTime:false,connection:"Exact fictional preparation task.",timeZoneID:TimeZone.current.identifier)
+            try model.proactive.seedAdviceFixture([record,change],model:model)
+            let row=await model.prepareReviewRow(change)
+            if let action=row.action,let payload=try? JSONDecoder().decode(ReviewPreparedPayload.self,from:action.payload),let baseline=payload.nativeBaseline,let scope=payload.nativeScope.flatMap(NativeChangeScope.init(rawValue:)) {
+                do {try NativeEditRules.validateScope(scope,baseline:baseline,edited:payload.nativeFields ?? baseline);checks["shared Reminder captures supported scope recurring=\(recurring)"]=model.acceptedPreparedApproval(payload) && scope == (recurring ? .reminderSeries : .occurrence)} catch {checks["shared Reminder captures supported scope recurring=\(recurring)"]=false}
+            } else {checks["shared Reminder captures supported scope recurring=\(recurring)"]=false}
+        }
+        model.reminderData=originalReminders;try model.proactive.seedAdviceFixture([record],model:model)
+        checks["preparation and concrete approval make zero AI calls"]=model.aiUsage.state.records.count == usageBefore
         try model.proactive.beginReview(record.id,model:model)
         model.calendarData.events=[]
         checks["uncertain removal remains inspectable after event disappearance"]=model.proactive.visible(model.proactive.state.records[0],model:model) && !model.proactive.canReview(record.id,model:model)
@@ -421,6 +467,12 @@ import EventKit
         update.message="The lecture has been postponed. The old Calendar slot may no longer reflect your plan."
         try model.proactive.seedAdviceFixture([record,update],model:model)
     }
+    static func seedUnifiedReviewPreview(_ model:DashboardModel)throws {
+        let removal=try seedRemoval(model)
+        var space=removal;space.id=UUID().uuidString;space.kind="project";space.proposedRemoval=nil;space.sourceTitle="Orion follow-up";space.message="Create a space to organise this follow-up?"
+        var reply=space;reply.id=UUID().uuidString;reply.kind="reply";reply.replyDraft="Thanks for letting me know. I will wait for the replacement date."
+        try model.proactive.seedAdviceFixture([removal,space,reply],model:model)
+    }
     static func seedCompoundPreview(_ model:DashboardModel)throws {
         let owner=model.chatGPT.activeID,now=Date.now
         let project=LifeItem(registration:owner,kind:.space,title:"Orion engineering project")
@@ -510,8 +562,17 @@ import EventKit
         if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"),ProcessInfo.processInfo.arguments.contains("--compound-email-actions"),case .create(let request)=target {
             return .init(item:.init(kind:request.kind,itemID:request.id.uuidString,occurrenceID:request.id.uuidString,sourceID:"fictional-calendar",title:request.title,notes:request.notes,writable:true),sources:[.init(id:"fictional-calendar",title:"Fictional Calendar",account:"Fictional",writable:true)])
         }
-        guard ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"),case .reviewReminder(let task,_) = target else {return nil}
-        return .init(item:.init(kind:.reminder,itemID:task.id,occurrenceID:task.id,sourceID:task.listID,title:task.title,notes:"Original fictional notes stay intact.",due:task.due,hasTime:task.hasTime,writable:true,modified:task.modified),sources:[.init(id:task.listID,title:task.sourceLabel,account:"Fictional",writable:true)])
+        let args=ProcessInfo.processInfo.arguments
+        guard args.contains("--preview-review-inbox") || (args.contains("--validate-review-inbox") && !args.contains("--removal-native")) else {return nil}
+        switch target {
+        case .event(let event),.reviewEvent(let event,_):
+            let day=Calendar.current.startOfDay(for:event.end)
+            let end=event.allDay && event.end != day ? Calendar.current.date(byAdding:.day,value:1,to:day) ?? event.end : event.end
+            return .init(item:.init(kind:.event,itemID:event.memoryItemID ?? event.id,occurrenceID:event.id,sourceID:event.calendarID,title:event.title,notes:"",location:event.location,start:event.start,end:end,allDay:event.allDay,writable:true,modified:event.modified),sources:[.init(id:event.calendarID,title:event.sourceLabel,account:"Fictional",writable:true)])
+        case .reviewReminder(let task,_):
+            return .init(item:.init(kind:.reminder,itemID:task.id,occurrenceID:task.id,sourceID:task.listID,title:task.title,notes:"Original fictional notes stay intact.",due:task.due,hasTime:task.hasTime,recurring:task.recurring,writable:true,modified:task.modified),sources:[.init(id:task.listID,title:task.sourceLabel,account:"Fictional",writable:true)])
+        default:return nil
+        }
     }
     static func runMailReview(_ model:DashboardModel)async throws->[String:Any] {
         let record=try seed(model),now=Date.now,registration=model.chatGPT.activeID
@@ -843,7 +904,7 @@ struct ReviewInboxPreview:View {
             .padding(16).frame(width:ProcessInfo.processInfo.arguments.contains("--navigation-preview") ? 1120 : ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 840 : 600,height:ProcessInfo.processInfo.arguments.contains("--navigation-preview") ? 820 : ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 780 : 660)
             .sheet(item:Binding(get:{model.editTarget},set:{model.editTarget=$0})){NativeItemEditor(model:model,target:$0)}
             .sheet(item:Binding(get:{model.calendarRemovalReview},set:{model.calendarRemovalReview=$0})){CalendarRemovalReviewSheet(model:model,session:$0)}
-            .task {guard !ready else {return};if ProcessInfo.processInfo.arguments.contains("--compound-email-actions") {try? ReviewInboxEvaluation.seedCompoundPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--feedback-preview") {try? ReviewInboxEvaluation.seedFeedbackPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--email-resolution-preview") {try? ReviewInboxEvaluation.seedResolutionPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--grouped-review-preview") {try? ReviewInboxEvaluation.seedGroupedReviewPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--source-details-preview") {try? ReviewInboxEvaluation.seedSourceDetailsPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--calendar-removal-preview") {_ = try? ReviewInboxEvaluation.seedRemoval(model)} else if ProcessInfo.processInfo.arguments.contains("--email-work-preview") {try? ReviewInboxEvaluation.seedEmailWorkPreview(model);if ProcessInfo.processInfo.arguments.contains("--heartbeat-preview") {try? model.briefings.seedHeartbeatPreview(model)}} else {_ = try? ReviewInboxEvaluation.seed(model)};if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {
+            .task {guard !ready else {return};if ProcessInfo.processInfo.arguments.contains("--unified-review-preview") {try? ReviewInboxEvaluation.seedUnifiedReviewPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--compound-email-actions") {try? ReviewInboxEvaluation.seedCompoundPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--feedback-preview") {try? ReviewInboxEvaluation.seedFeedbackPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--email-resolution-preview") {try? ReviewInboxEvaluation.seedResolutionPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--grouped-review-preview") {try? ReviewInboxEvaluation.seedGroupedReviewPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--source-details-preview") {try? ReviewInboxEvaluation.seedSourceDetailsPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--calendar-removal-preview") {_ = try? ReviewInboxEvaluation.seedRemoval(model)} else if ProcessInfo.processInfo.arguments.contains("--email-work-preview") {try? ReviewInboxEvaluation.seedEmailWorkPreview(model);if ProcessInfo.processInfo.arguments.contains("--heartbeat-preview") {try? model.briefings.seedHeartbeatPreview(model)}} else {_ = try? ReviewInboxEvaluation.seed(model)};if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {
                 // Default pages contain native widgets whose mount can independently read sources.
                 let defaults=model.workspace.state.pages.map(\.id)
                 model.workspace.addPage("Navigation fixture")

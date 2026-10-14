@@ -610,7 +610,17 @@ private final class ObservationCounter:@unchecked Sendable {
             let id=service.openReview(key:"mail:canonical",title:"Fictional actions",sourceKind:"mail",accountID:"mail",messageID:"canonical",identity:nil,chatID:nil,seeds:[])!
             var outcomes:[AssistantTurnOutcome]=[],executions=0
             var runtime=context.runtime();runtime.prepareReviewActions={_,_ in "{}"}
-            runtime.executeReviewActions={_,valid in precondition(valid());executions += 1;return .init(output:"{\"verified\":true}",confirmed:["a":"Created A","b":"Created B"])}
+            runtime.executeReviewActions={_,valid,refresh in
+                precondition(valid());executions += 1
+                for name in ["A","B"] {
+                    precondition(valid(),"The previous verified save must not invalidate this batch")
+                    let item=LifeItem(registration:service.connection.activeID,kind:.space,title:name)
+                    _=try service.projects.create([item],receipt:.init(id:"review-"+name,registration:item.registration,result:"Created "+name,itemID:item.id))
+                    refresh(true)
+                    precondition(valid(),"Only the self-authored project revision is adopted")
+                }
+                return .init(output:"{\"verified\":true}",confirmed:["a":"Created A","b":"Created B"])
+            }
             runtime.finished={outcomes.append($0)}
             provider.replies=[response([nativeCall("execute_review_actions")]),final("Two actions completed")]
             check(service.sendReview(runtime:runtime,conversationID:id,prompt:"Add both",humanTurnID:UUID(),responseTurnID:UUID(),query:"Add both",sourceContext:"{}",selectionContext:"Issued exact actions",submitted:context.now,focusAreas:[],valid:{true}),"Review accepts canonical execution through its isolated conversation")
