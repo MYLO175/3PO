@@ -1,5 +1,9 @@
 # Decisions
 
+## 14 October — Carry human instructions across clarification answers
+
+An exact earlier human request can support the current answer to a clarification. The previous current-message-only quote guard rejected a duration answer before intent inference, even though the human had already requested the event. Accept quote provenance from the current message or the last eight same-thread messages, restricted to human turns. The source-free semantic check must still establish the current reply's continuation and reject cancellation, unrelated/hypothetical replies and additional operations. Bind downstream authorisation to the current reply only after that check succeeds. Keep current-message-only memory evidence and all native save guards. No historical failed request is automatically replayed.
+
 Newest decisions appear first. Dated entries preserve the reason for each checkpoint; later decisions supersede conflicting interaction rules, including earlier Activity acknowledgement controls and the fuller-plan shortcut.
 
 ## 14 October: feedback ignores unrelated EventKit notifications

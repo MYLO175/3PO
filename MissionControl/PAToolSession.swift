@@ -98,6 +98,11 @@ import Foundation
         catch is CancellationError { throw CancellationError() }
         catch let failure as PAIntentFailure {throw failure}
         catch { throw PAIntentFailure(reason:error.localizedDescription) }
+        // The source-free check has verified the current reply's continuation of
+        // the cited human request. Bind downstream evidence/receipts to this turn.
+        if let quote=args["authorization"] as? String {
+            args["authorization"]=try PAToolProtocol.conversationalAuthorization(quote,human:human,history:history)
+        }
         if !organisationAccepted,args["organisation"] as? [String:Any] != nil { args["organisation"]=NSNull();memoryNotes.append("Unsupported organisation was omitted; the validated personal fact can still be saved.") }
         try Task.checkCancellation()
         guard valid() else { throw ActionFailure.message("Configuration changed during intent validation; no tool operation executed.") }

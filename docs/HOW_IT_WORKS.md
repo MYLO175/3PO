@@ -358,6 +358,8 @@ Mail collection now runs independently every five minutes while the app is runni
 
 ### When a PA tool fails
 
+For a requested action, answering a clarification completes the existing instruction. The tool may cite an exact quote from the current reply or one of the last eight same-thread messages written by the human. A separate source-free intent check verifies that the current reply actually continues that request and that the proposed operation matches it. Assistant/source text cannot satisfy the quote check; cancellations, hypothetical answers and unrelated replies do not renew an earlier request. Once approved, downstream saves bind to the current human reply. Memory learning still requires evidence from the current message. Native destination, exact target/revision, duplicate/uncertain receipt and save-readback checks remain.
+
 New replies preserve bounded local tool failure reasons under **What went wrong**. These omit raw tool arguments/source bodies and remain attached to the captured account/thread reply. Human-intent checks occur before the operation: their refusal is labelled as an app check, with no native save attempted, rather than claiming Apple Calendar/Reminders rejected a date. Other failures retain the conservative rule against repeating a possibly attempted save. Source-relative timing should be resolved before proposing the change; source facts do not authorise writes. Older replies are preserved as written and have no retrospective tool trace.
 
 

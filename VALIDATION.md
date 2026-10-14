@@ -1,8 +1,10 @@
 # Validation
 
+14 October clarification authorisation: local PA-tool checks,192/192 actual assistant-service contracts, signed Xcode build and strict signature pass. Seven configured-model fictional intent requests yield8/8 checks, accepting duration follow-ups with either the current or earlier human quote and rejecting cancellation, hypothetical and unrelated replies. No native operations. Installed signed bundle matches all2,254 candidate files; normal relaunch retains the lecture/conversation and Ready. All75 original records survive,46 protected records and product preferences are exact; workspace changes are ordinary Calendar mounting/set ordering. This is narrow conversational acceptance, not sustained model/native-save reliability.
+
 14 October documentation reconciliation: 25 non-archived pages, 342 local links/anchors and eight rendered Mermaid diagrams pass. Eleven GitHub-GFM guides render with no page-wide overflow; fictional banner and README/architecture layout are inspected. Current source/queue/approval contracts are checked against committed code and engineering records, preserving both GitHub guide and local development history. Diff/conflict checks and a bounded credential/sensitive-filename/large-blob review pass. This is documentation evidence only; prior app checks and sustained acceptance remain separate.
 
-**Evidence is checkpoint-specific.** The latest recorded app repair is 14 October (`9ca10c2`). This documentation reconciliation adds no app, native-write or model acceptance.
+**Evidence is checkpoint-specific.** The latest app repair is the 14 October clarification authorisation checkpoint above. The earlier documentation reconciliation through `9ca10c2` adds no app, native-write or model acceptance.
 
 [Documentation](docs/README.md) · [Check tiers](docs/DEVELOPMENT.md#choose-the-right-checks) · [Latest live acceptance](docs/LIVE_ACCEPTANCE.md) · [Detailed status](STATUS.md)
 

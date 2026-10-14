@@ -2,6 +2,8 @@
 
 Current direction is recorded first. Older dated stages retain approved scope and history; later refinements supersede conflicting interaction and approval requirements. Current implementation and acceptance are recorded separately in [STATUS](STATUS.md) and [VALIDATION](VALIDATION.md).
 
+14 October clarification refinement: answering the PA's missing-detail question continues the requested action without another add/edit command. Exact recent human quotes support that continuation; current semantic intent, native target/destination/revision, receipts and readback still govern execution. Cancellation, hypothetical/unrelated replies and imported instructions do not authorise changes.
+
 ## 14 October: simplified Review, action history and chat streaming
 
 Current direction supersedes the detailed pill/progress interaction below. Review retains editable checkboxes alongside an ordinary isolated conversation. Done submits checked concrete actions and preserves an unsent draft; Escape only dismisses. Changes to suggestions update the actual saved plan. Understood tasks execute immediately through the same captured operation receipts, preventing a later Done from duplicating them. Other accepted, never-started jobs continue automatically when idle.

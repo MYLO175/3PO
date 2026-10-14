@@ -104,3 +104,7 @@ Heartbeat reconsideration may inspect pending proposals as labelled historical d
 - Show natural green success labels such as Reminder created for six seconds, then return the pill to Ready. Retain live work and unresolved attention priority. Use one local expiry wakeup, never streaming-driven history or source reads.
 - Activity shows live work and five recent task outcomes, excluding queued feedback and context-only read results, with concise natural outcomes and green successes, without acknowledgement labels/buttons/Undo UI. Preserve complete stored history and acknowledgement fields.
 - After a source action completes, replace Explore with the completed count and View actions to its saved conversation; remaining checkboxes stay inside. Pending cards show only Explore, without a suggestion count or separate Suggested actions and evidence disclosure. Keep Background context, Feedback, View email and Dismiss. Evidence stays inside the sheet; remove Suggest a fuller plan.
+
+## Recorded clarification preference — 14 October
+
+- Answering the PA's question about a requested action completes the existing instruction. Do not require another add/edit command after the human supplies the missing duration or other detail. Exact earlier human quotes may support the current continuation; imported/assistant text, unrelated old requests and cancellations remain excluded.

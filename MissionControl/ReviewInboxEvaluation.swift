@@ -147,8 +147,23 @@ import EventKit
         var refused=false
         do {_ = try await PAToolAuthorization.check(call:call,args:unrelated,human:question,history:[],target:nil,model:model)}
         catch let failure as PAIntentFailure {if failure.kind == .refused {refused=true} else {throw failure}}
-        let checks=["generic change_reminder permits an understood create with null target":allowed,"an unrelated question does not authorise creation":refused,"real preferences unchanged":preferences.isEqual(to:UserDefaults.standard.dictionaryRepresentation())]
-        return ["checks":checks,"passed":checks.values.filter{$0}.count,"total":checks.count,"AIRequests":2,"nativeChanges":0,"storage":"Fictional source-free intent checks; no operation executed","model":model.chatGPT.selectedModel]
+        var checks=["generic change_reminder permits an understood create with null target":allowed,"an unrelated question does not authorise creation":refused]
+        let request="Add the extra fictional lecture on Monday 19 October at 3pm in LT4."
+        let history=[["role":"user","content":request],["role":"assistant","content":"How long is the extra lecture at 3pm?"]]
+        let duration="50 minutes, like the other lecture"
+        let lecture:[String:Any]=["operation":"create","target":NSNull(),"destination":NSNull(),"title":"Fictional Computer Vision extra lecture","start":"2026-10-19T15:00:00+01:00","end":"2026-10-19T15:50:00+01:00","allDay":false,"location":"LT4","notes":NSNull(),"scope":NSNull(),"options":NSNull(),"authorization":request]
+        let eventCall=PAFunctionCall(id:"fictional-lecture-follow-up",name:"change_calendar",arguments:"{}")
+        checks["duration answer continues creation with the earlier human quote"]=try await PAToolAuthorization.check(call:eventCall,args:lecture,human:duration,history:history,target:nil,model:model)
+        var currentQuote=lecture;currentQuote["authorization"]=duration
+        checks["duration answer also supports the current human quote"]=try await PAToolAuthorization.check(call:eventCall,args:currentQuote,human:duration,history:history,target:nil,model:model)
+        for (name,reply) in [("cancellation","Actually don't add it."),("unrelated question","What is computer vision?"),("hypothetical duration","If I were adding it, it would be 50 minutes, but I am only asking hypothetically.")] {
+            var refused=false
+            do {_ = try await PAToolAuthorization.check(call:eventCall,args:lecture,human:reply,history:history,target:nil,model:model)}
+            catch let failure as PAIntentFailure {if failure.kind == .refused {refused=true} else {throw failure}}
+            checks[name+" does not reactivate the earlier instruction"]=refused
+        }
+        checks["real preferences unchanged"]=preferences.isEqual(to:UserDefaults.standard.dictionaryRepresentation())
+        return ["checks":checks,"passed":checks.values.filter{$0}.count,"total":checks.count,"AIRequests":7,"nativeChanges":0,"storage":"Fictional source-free intent checks; no operation executed","model":model.chatGPT.selectedModel]
     }
     /// Two actual subscription requests, fictional data only; sources never start.
     static func runHeartbeatContract(_ model:DashboardModel) async throws->[String:Any] {
