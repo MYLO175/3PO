@@ -120,6 +120,21 @@ private final class ObservationCounter:@unchecked Sendable {
             AssistantService(connection: provider, container: container, settings: settings, imageDirectory: directory.appendingPathComponent("images"))
         }
 
+        do {
+            let question=AssistantTurn(role:"assistant",content:"Which time?",completed:true,created:.now)
+            var conversation=AssistantConversation(accountID:"fixture",title:"Reply metadata",turns:[question])
+            check(AssistantActivityContext(conversation).repliesAfter[question.id] == nil,"An unanswered action question remains pending")
+            let reply=AssistantTurn(role:"user",content:"Use noon",completed:true,created:.distantPast)
+            conversation.turns.append(reply)
+            let answered=AssistantActivityContext(conversation)
+            check(answered.repliesAfter[question.id] == reply.id,"Accepted later transcript replies resolve questions even with earlier queued timestamps")
+            conversation.turns[0].content="A streamed partial variant"
+            check(AssistantActivityContext(conversation) == answered,"Question resolution metadata never observes streamed prose")
+            conversation.turns[1].contextID=UUID()
+            check(AssistantActivityContext(conversation).repliesAfter[question.id] == nil,"Replies in another captured conversation scope do not resolve a question")
+            conversation.turns[1].contextID=nil;conversation.turns[1].deliveryID="background-delivery"
+            check(AssistantActivityContext(conversation).repliesAfter[question.id] == nil,"Imported deliveries are not human answers")
+        }
         let streamProvider=FictionalInference(),streamContext=FictionalContext()
         let streamService=service(streamProvider,try open("stream-observation"))
         let streamID=streamService.openPA()!

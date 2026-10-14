@@ -1,5 +1,8 @@
 # Next improvements
 
+14 October pill outcome refinement implemented: success/question/failure presentation and reply-aware attention use stable metadata. Focused checks cover priority, acknowledgement, scope/account isolation, reply order, exact retry resolution and zero streaming-driven Activity invalidations. Sustained provider/native task reliability remains independent of this local UI change.
+
+
 ## 14 October: unified Review entry checkpoint
 
 Implemented: one Explore suggested actions flow for spaces, tasks, native creation/change/removal and reply copies, with checkbox Done requiring no inference. Focused acceptance covers canonical saves, additive plan reopening, native target revision/scope protection and fictional native UI selection/completion/draft retention. Personal native operations are not executed as UI QA. Semantic proposal relevance, complete date extraction and sustained configured-model behaviour remain separate open acceptance work.

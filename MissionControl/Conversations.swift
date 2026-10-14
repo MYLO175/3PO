@@ -59,10 +59,19 @@ struct AssistantActivityContext:Equatable {
     var reviewSourceChatID:String?
     var turnDates:[UUID:Date]=[:]
     var attemptedTools:[UUID:[String]]=[:]
+    var repliesAfter:[UUID:UUID]=[:]
     init(_ conversation:AssistantConversation) {
         accountID=conversation.accountID;title=conversation.title;reviewKey=conversation.reviewKey
         reviewSourceKind=conversation.reviewSourceKind;reviewAccountID=conversation.reviewAccountID
         reviewMessageID=conversation.reviewMessageID;reviewSourceIdentity=conversation.reviewSourceIdentity;reviewSourceChatID=conversation.reviewSourceChatID
+        // Exact transcript order handles queued replies whose timestamps precede
+        // the prior response finishing. Prose and streamed completion flags are excluded.
+        var laterHuman:[String:UUID]=[:]
+        for turn in conversation.turns.reversed() {
+            let scope=(turn.contextID?.uuidString ?? "general")+"|"+(turn.profileSessionID?.uuidString ?? "")
+            if turn.role == "user",turn.deliveryID == nil {laterHuman[scope]=turn.id}
+            else if turn.role == "assistant",let reply=laterHuman[scope] {repliesAfter[turn.id]=reply}
+        }
         for turn in conversation.turns {
             if turnDates[turn.id] == nil,let created=turn.created {turnDates[turn.id]=created}
             if attemptedTools[turn.id] == nil,let names=turn.contextCapture?.attemptedTools,!names.isEmpty {attemptedTools[turn.id]=names}

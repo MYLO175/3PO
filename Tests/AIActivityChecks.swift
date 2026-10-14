@@ -28,6 +28,28 @@ import Foundation
                   message: "Ready to add the reviewed dates", created: date.addingTimeInterval(offset),
                   finished: state.isTerminal ? date.addingTimeInterval(offset + 10) : nil, destination: destination)
         }
+        do {
+            let success=record("success",state:.succeeded,offset:50)
+            let heartbeat=record("heartbeat",state:.succeeded,kind:.heartbeat,offset:90)
+            let question=record("question",state:.needsAnswer,offset:30)
+            let failure=record("failure",state:.failed,offset:40)
+            let running=record("running",state:.running,offset:100)
+            func pill(_ records:[AIActivityRecord],_ current:AIActivityRecord?=nil)->AIActivityRecord? {AIActivityPillRules.displayed(records,current:current,registration:"account-a")}
+            check(pill([success,heartbeat])?.id == success.id,"Idle pill shows completed action instead of Ready and excludes heartbeat completion")
+            check(pill([success,question])?.id == question.id,"An unanswered question takes priority over success")
+            check(pill([success,question,failure])?.id == failure.id,"The newest unresolved attention outcome is shown")
+            check(pill([failure,question],running)?.id == running.id,"A live task takes priority while running")
+            var replied=question;replied.state = .replied
+            check(pill([success,replied])?.id == success.id && !replied.needsAttention,"A replied question stops competing with the current success")
+            var acknowledged=success;acknowledged.acknowledged=true
+            check(pill([acknowledged,record("older",state:.succeeded)]) == nil,"Acknowledging the latest success returns to Ready without resurrecting older successes")
+            var acknowledgedFailure=failure;acknowledgedFailure.acknowledged=true
+            check(pill([success,acknowledgedFailure])?.id == success.id,"Acknowledged failures do not hide a later success")
+            check(pill([record("other",registration:"account-b",state:.needsAnswer),success])?.id == success.id,"Pill selection stays account scoped")
+            check(pill([heartbeat,record("ghost",state:.running)]) == nil,"Historical heartbeat and stale running rows never appear as current work")
+            check(pill([failure],record("live-heartbeat",state:.running,kind:.heartbeat))?.kind == .heartbeat,"The live heartbeat remains visible while its completion stays out of history")
+            check(pill([record("stopped",state:.stopped,offset:100),success]) == nil,"A stopped latest request does not revive an earlier green success")
+        }
         var bytes: Data?
         var writes = 0
         var rejectSave = false

@@ -130,6 +130,39 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
         if case let .feedback(id)=record.destination,let id,let uuid=UUID(uuidString:id),let job=emailSummaries.feedback.records.first(where:{$0.id == uuid && $0.registration == chatGPT.activeID}) {return reviewPermits(.init(key:"mail:"+job.messageID,title:job.about,kind:"mail",accountID:job.accountID,messageID:job.messageID))}
         return record.registration == chatGPT.activeID
     }
+    func activityPresentation(_ record:AIActivityRecord)->AIActivityRecord {
+        guard record.registration == chatGPT.activeID,record.state.needsAttention,let destination=record.destination else {return record}
+        let response:UUID?,conversation:UUID?
+        switch destination {
+        case .assistant(let id):
+            conversation=id.flatMap(UUID.init(uuidString:))
+            response=record.id.hasPrefix("action:") ? UUID(uuidString:String(record.id.dropFirst(7))) : record.id.hasPrefix("chat:") ? UUID(uuidString:String(record.id.dropFirst(5))) : nil
+        case .review(let id):
+            conversation=id.flatMap(UUID.init(uuidString:))
+            let parts=record.id.split(separator:":")
+            response=parts.count == 3 ? UUID(uuidString:String(parts[2])) : nil
+            // Accepted replies update the old question even while waiting behind a heartbeat.
+            if let conversation,let jobID=parts.dropFirst().first.flatMap({UUID(uuidString:String($0))}) {
+                let jobs=reviewWork.jobs(record.registration,conversation:conversation)
+                if let index=jobs.firstIndex(where:{$0.id == jobID}) {
+                    let job=jobs[index]
+                    if record.state.isFailure,job.responseTurnID != response,job.phase == .completed,!job.actions.isEmpty,job.actions.allSatisfy({$0.phase == .saved}) {
+                        var resolved=record;resolved.state = .resolved;return resolved
+                    }
+                    if record.state == .needsAnswer,index+1 < jobs.count {return repliedActivity(record)}
+                }
+            }
+        default:return record
+        }
+        guard record.state == .needsAnswer,let conversation,let response,assistant.activityContext(conversation)?.repliesAfter[response] != nil else {return record}
+        return repliedActivity(record)
+    }
+    private func repliedActivity(_ record:AIActivityRecord)->AIActivityRecord {
+        var result=record;result.state = .replied
+        let prefix="Needs your answer: "
+        if result.message.lowercased().hasPrefix(prefix.lowercased()) {result.message=String(result.message.dropFirst(prefix.count))}
+        return result
+    }
     func relatedActivityDestinations(_ record:AIActivityRecord)->[AIActivityDestination] {
         guard record.kind == .review,record.id.hasPrefix("review:"),let id=UUID(uuidString:String(record.id.dropFirst(7).prefix(36))),let job=reviewWork.job(id),job.scope.registration == chatGPT.activeID,reviewPermits(job.source) else {return []}
         var destinations:[AIActivityDestination]=[]
@@ -172,8 +205,17 @@ private extension ReviewWorkPhase {var isFinished:Bool {self != .running && self
         _=model.aiActivity.upsert(.init(id:"chat:"+UUID().uuidString,registration:registration,kind:.chat,state:.succeeded,title:"3PO chat",message:"Hello! How can I help?",destination:.assistant(targetID:conversation.uuidString)))
         model.assistantActivityFinished(.init(registration:registration,conversationID:conversation,humanTurnID:UUID(),responseTurnID:UUID(),phase:"completed",message:"This ordinary greeting must stay out of activity",receipts:[],errors:[]))
         model.assistantActivityFinished(.init(registration:registration,conversationID:conversation,humanTurnID:UUID(),responseTurnID:UUID(),phase:"completed",message:"This general chat prose must not replace the action receipt",receipts:["Added two dated project tasks"],errors:[],confirmedActions:2,attemptedTools:["create_life_items"]))
-        model.assistantActivityFinished(.init(registration:registration,conversationID:conversation,humanTurnID:UUID(),responseTurnID:UUID(),phase:"failed",message:"General reply prose",receipts:[],errors:["The requested Calendar update failed. No event was saved."],attemptedTools:["change_calendar"]))
-        precondition(model.aiActivity.state.records.count == 3,"The greeting creates no new activity; legacy output is retained")
+        if !ProcessInfo.processInfo.arguments.contains("--pill-success-preview") {
+            model.assistantActivityFinished(.init(registration:registration,conversationID:conversation,humanTurnID:UUID(),responseTurnID:UUID(),phase:"failed",message:"General reply prose",receipts:[],errors:["The requested Calendar update failed. No event was saved."],attemptedTools:["change_calendar"]))
+        }
+        if ProcessInfo.processInfo.arguments.contains("--pill-answer-preview") {
+            let id=model.assistant.openReview(key:"fictional-pill-question",title:"Fictional Calendar request",sourceKind:"mail",accountID:"fictional-mail",messageID:"fictional-question",identity:nil,chatID:nil,seeds:[])!
+            let response=UUID()
+            _=model.assistant.appendReview("Which 30-minute time should I use?",conversationID:id,turnID:response)
+            model.assistantActivityFinished(.init(registration:registration,conversationID:id,humanTurnID:UUID(),responseTurnID:response,phase:"needsAnswer",message:"Which 30-minute time should I use?",receipts:[],errors:[],attemptedTools:["change_calendar"]))
+        }
+        let expected=(ProcessInfo.processInfo.arguments.contains("--pill-success-preview") ? 2 : 3)+(ProcessInfo.processInfo.arguments.contains("--pill-answer-preview") ? 1 : 0)
+        precondition(model.aiActivity.state.records.count == expected,"The greeting creates no new activity; legacy output is retained")
     }
 }
 #endif
@@ -184,7 +226,7 @@ struct DashboardAIActivityPill:View {
     var palette:WorkspacePalette
     var openChat:()->Void
     var body:some View {
-        AIActivityPill(store:model.aiActivity,registration:model.chatGPT.activeID,current:model.currentAIActivity,palette:palette,openChat:openChat,openDestination:model.openAIActivityDestination,isVisible:model.activityVisible,relatedDestinations:model.relatedActivityDestinations)
+        AIActivityPill(store:model.aiActivity,registration:model.chatGPT.activeID,current:model.currentAIActivity,palette:palette,openChat:openChat,openDestination:model.openAIActivityDestination,isVisible:model.activityVisible,relatedDestinations:model.relatedActivityDestinations,presentation:model.activityPresentation)
             .task {model.syncFeedbackActivity()}
             .onChange(of:model.chatGPT.activeID) {model.syncFeedbackActivity();model.scheduleReviewWork()}
             .onChange(of:model.emailSummaries.feedback.records) {model.syncFeedbackActivity()}

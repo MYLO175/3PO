@@ -7,6 +7,35 @@ import Synchronization
 
 /// Actual consumer projections, fictional data and disposable storage; zero subscription requests.
 @MainActor enum AdviceContextEvaluation {
+    private static func activityOutcomeChecks(_ model:DashboardModel)throws->[String:Bool] {
+        let registration=model.chatGPT.activeID,usage=model.aiUsage.state.records.count
+        let id=model.assistant.openReview(key:"fictional-pill-answer",title:"Fictional action question",sourceKind:"mail",accountID:"fictional-mail",messageID:"fictional-question",identity:nil,chatID:nil,seeds:[])!
+        let response=UUID()
+        precondition(model.assistant.appendReview("Which time should I use?",conversationID:id,turnID:response))
+        let question=AIActivityRecord(id:"action:"+response.uuidString,registration:registration,kind:.action,state:.needsAnswer,title:"3PO actions",message:"Which time should I use?",destination:.assistant(targetID:id.uuidString))
+        precondition(model.aiActivity.upsert(question))
+        var checks=["actual pill adapter keeps an unanswered question pending":model.activityPresentation(question).state == .needsAnswer]
+        let other=model.assistant.openReview(key:"fictional-pill-other",title:"Other fictional source",sourceKind:"mail",accountID:"fictional-mail",messageID:"fictional-other",identity:nil,chatID:nil,seeds:[])!
+        _=model.assistant.appendReview("Use noon",conversationID:other,human:true)
+        checks["another source reply does not resolve the current question"]=model.activityPresentation(question).state == .needsAnswer
+        _=model.assistant.appendReview("Use noon",conversationID:id,human:true)
+        checks["same-source reply updates the displayed question"]=model.activityPresentation(question).state == .replied
+        checks["reply display preserves the saved question and acknowledgement"]=model.aiActivity.state.records.first{$0.id == question.id} == question
+        var foreign=question;foreign.registration="another-account"
+        checks["reply presentation does not cross accounts"]=model.activityPresentation(foreign) == foreign
+        let previous=model.reviewWork;defer {model.reviewWork=previous}
+        let source=ReviewWorkSource(key:"fictional-pill-answer",title:"Fictional action question",kind:"mail",accountID:"fictional-mail",messageID:"fictional-question")
+        var action=ReviewWorkAction(id:"canonical-action",title:"Fictional task",destination:"Project",payload:Data());action.phase = .saved
+        var job=ReviewWorkJob(conversationID:id,scope:model.reviewWorkScope(),source:source,mode:.approval,human:"yes",actions:[action]);job.phase = .completed
+        let failed=AIActivityRecord(id:"review:"+job.id.uuidString+":"+UUID().uuidString,registration:registration,kind:.review,state:.failed,title:"Fictional task",message:"The previous attempt failed",destination:.review(targetID:id.uuidString))
+        func install(_ job:ReviewWorkJob)throws {let bytes=try JSONEncoder().encode(ReviewWorkState(jobs:[job]));model.reviewWork=ReviewWorkService(load:{bytes},persist:{_ in})}
+        try install(job)
+        checks["successful exact retry clears the old failure display"]=model.activityPresentation(failed).state == .resolved
+        job.actions[0].phase = .failed;try install(job)
+        checks["partial or unrelated retry cannot clear the old failure"]=model.activityPresentation(failed).state == .failed
+        checks["activity resolution makes zero inference calls"]=model.aiUsage.state.records.count == usage
+        return checks
+    }
     private static func navigationStorageChecks()throws->[String:Bool] {
         let container=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
         let context=container.mainContext,unrelated=Data(repeating:42,count:1_000_000)
@@ -490,6 +519,7 @@ import Synchronization
             let accounts=orientation["mailAccounts"] as? [[String:String]] ?? []
             checks["foreground orientation excludes withdrawn Mail accounts"] = accounts.allSatisfy{row in row["id"].map{!model.assistant.excludedAccounts.contains($0)} == true}
         } else {checks["foreground orientation is available for permitted context"]=false}
+        checks.merge(try activityOutcomeChecks(model),uniquingKeysWith:{$1})
         return ["projectionPerformance":["suggestions":40,"individualChecksMilliseconds":repeatedMilliseconds,"sharedProjectionMilliseconds":sharedMilliseconds],"completed":Date.now.ISO8601Format(),"requests":0,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"storage":"Fictional claims, messages and outputs in disposable SwiftData before source startup. No inference, native writes, permission changes or personal store writes. This tests actual consumer projections, not scheduler races or real message delivery."]
     }
 }

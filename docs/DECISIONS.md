@@ -1,5 +1,12 @@
 # Decisions
 
+## 14 October: show action outcomes directly in the pill
+
+The human requested green success messages and attention/failure messages in place of Ready. Choose one live job first; while idle choose the latest unresolved question/failure, otherwise the latest unacknowledged success. Keep semantic colour and an icon, readable full-message accessibility/help and direct Activity navigation. Acknowledging the newest outcome does not resurrect older success.
+
+Derive Replied from exact later human turns in the same account/conversation/context, using stable IDs/order rather than prose, elapsed time or another source's reply. Accepted queued Review replies can clear that question. Exact retained-job retries clear earlier failure attention only when every captured action is confirmed saved. Preserve the original history/acknowledgement/receipt values; projection is not new action authority. Heartbeats remain running-only in the pill and excluded from the dropdown.
+
+
 ## 14 October: one Review action entry
 
 All suggested actions enter the same Explore suggested actions sheet. Do not branch project spaces into a creation form or native changes/removals into inbox Approve/View event controls. Prepared checkbox approval is a local execution job with zero inference. Conversation and Done share canonical saves; exact active Review ownership permits its own saves while preserving full native baseline, scope and readback checks. Unsupported or changed native suggestions remain unapprovable; a creation-only proposal update cannot turn an existing-item action into a new item.

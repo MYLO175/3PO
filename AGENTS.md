@@ -82,6 +82,7 @@ Heartbeat reconsideration may inspect pending proposals as labelled historical d
 - 13 October: prepared Review actions support checkbox selection and a direct tick to approve, alongside the conversation box for ordinary replies or changes. Preserve an unsent conversation draft when the tick is used.
 - 13 October: AI Activity shows work and action outcomes, excluding general-chat replies. Typed actions started from chat still show progress/results/failures and can open the relevant chat; incidental context lookup alone does not count as work.
 - 14 October: every actionable Review card uses Explore suggested actions and the same checkbox/conversation sheet, including spaces and exact native changes/removals. Prepared Done approval makes no AI call; preserve exact target/scope/readback and uncertain-operation receipts. Source controls remain separate.
+- 14 October: pill shows verified success in green and unresolved question/failure in semantic attention colours; live work/heartbeat wins. Exact later replies and verified same-job retry receipts update attention locally without changing historical outcome/acknowledgement or observing streaming prose.
 - Streaming acceptance must exercise partial text updates, not only final replies. Activity visibility/current-work lookup must not observe streamed transcript prose or fetch native receipts for display-only progress; preserve current permission and final receipt guards.
 
 ## Documentation and checkpoints

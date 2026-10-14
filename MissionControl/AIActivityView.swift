@@ -10,22 +10,27 @@ struct AIActivityPill: View {
     var openDestination: (AIActivityDestination) -> Void
     var isVisible: (AIActivityRecord) -> Bool = { _ in true }
     var relatedDestinations:(AIActivityRecord)->[AIActivityDestination] = {_ in []}
+    var presentation:(AIActivityRecord)->AIActivityRecord = {$0}
     @State private var activityOpen = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         // Resolve history/visibility once, rather than once for every label,
         // progress and accessibility property in this toolbar render.
-        let saved=store.records(registration).filter{$0.kind != .heartbeat && $0.failureAlert && isVisible($0)}
+        let saved=store.records(registration).filter{$0.kind != .heartbeat && isVisible($0)}.map(presentation)
         let active:AIActivityRecord? = {
             guard var current,current.state == .running,current.registration == registration,isVisible(current) else {return nil}
             if let saved=saved.first(where:{$0.id == current.id}) {current.acknowledged=saved.acknowledged}
             return current
         }()
-        let displayed=active ?? saved.first
-        let attention = !saved.isEmpty || store.error != nil
+        let displayed=AIActivityPillRules.displayed(saved,current:active,registration:registration)
+        let attention = saved.contains{$0.needsAttention} || store.error != nil
+        let success=active == nil && displayed?.state == .succeeded
+        let failed=active == nil && displayed?.state.isFailure == true
+        let successColour=scheme == .dark ? Color(red:0.44,green:0.83,blue:0.55) : Color(red:0.10,green:0.43,blue:0.22)
+        let statusColour:Color=success ? successColour : failed ? .red : active == nil && (displayed?.needsAttention == true || store.error != nil) ? .orange : palette[.text]
         let progress:Double?=nil
-        let message=displayed.map(AIActivityPresentation.message) ?? "3PO is ready"
+        let message=store.error ?? displayed.map(AIActivityPresentation.message) ?? "3PO is ready"
         let accessibilityStatus=message+(progress.map{". \(Int($0*100)) percent progress."} ?? "")+(attention ? ". An outcome needs attention." : "")
         HStack(spacing: 0) {
             Button(action: openChat) {
@@ -53,11 +58,11 @@ struct AIActivityPill: View {
                         ProgressView().controlSize(.mini).frame(width: 12, height: 12)
                     }
                     if attention || active?.state != .running {
-                        Image(systemName: attention ? "exclamationmark.circle.fill" : "chevron.down")
+                        Image(systemName: success ? "checkmark.circle.fill" : displayed?.state == .needsAnswer ? "questionmark.circle.fill" : attention ? "exclamationmark.circle.fill" : "chevron.down")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(attention ? Color.orange : palette[.accent].opacity(0.8))
+                            .foregroundStyle(success ? successColour : failed ? Color.red : attention ? Color.orange : palette[.accent].opacity(0.8))
                     }
-                }.foregroundStyle(palette[.text]).padding(.leading, 9).padding(.trailing, 7)
+                }.foregroundStyle(statusColour).padding(.leading, 9).padding(.trailing, 7)
                     .frame(width: 237, height: 29).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -67,12 +72,12 @@ struct AIActivityPill: View {
             .popover(isPresented: $activityOpen, arrowEdge: .bottom) {
                 AIActivityView(store: store, registration: registration, current: active, palette: palette,
                                openChat: { activityOpen = false; openChat() },
-                               openDestination: { activityOpen = false; openDestination($0) }, isVisible: isVisible,relatedDestinations:relatedDestinations)
+                               openDestination: { activityOpen = false; openDestination($0) }, isVisible: isVisible,relatedDestinations:relatedDestinations,presentation:presentation)
             }
         }
         .padding(4)
         .background(palette[.widget].opacity(0.92), in: Capsule())
-        .overlay(Capsule().stroke(attention ? Color.orange.opacity(0.55) : palette[.text].opacity(0.13), lineWidth: 0.75))
+        .overlay(Capsule().stroke(success ? successColour.opacity(0.4) : failed ? Color.red.opacity(0.45) : attention ? Color.orange.opacity(0.55) : palette[.text].opacity(0.13), lineWidth: 0.75))
     }
 }
 
@@ -86,10 +91,11 @@ struct AIActivityView: View {
     var openDestination: (AIActivityDestination) -> Void
     var isVisible: (AIActivityRecord) -> Bool = { _ in true }
     var relatedDestinations:(AIActivityRecord)->[AIActivityDestination] = {_ in []}
+    var presentation:(AIActivityRecord)->AIActivityRecord = {$0}
 
     private var visibleCurrent: AIActivityRecord? { current.flatMap { $0.kind != .heartbeat && $0.registration == registration && isVisible($0) ? $0 : nil } }
     private var records: [AIActivityRecord] {
-        let saved = store.records(registration).filter{$0.kind != .heartbeat && isVisible($0)}
+        let saved = store.records(registration).filter{$0.kind != .heartbeat && isVisible($0)}.map(presentation)
         guard let current = visibleCurrent else { return saved }
         // A live snapshot augments the same event rather than rendering it twice.
         var merged = saved.filter { $0.id != current.id }
@@ -179,6 +185,12 @@ private enum AIActivityPresentation {
         case .interrupted: return prefixed("Interrupted", text: text)
         case .uncertain: return prefixed("Outcome unconfirmed", text: text)
         case .needsAnswer: return prefixed("Needs your answer", text: text)
+        case .running: return record.kind == .heartbeat ? "Heartbeat running…" : record.kind == .review ? "Working on "+PAProse.display(record.title) : "Working on your actions…"
+        case .succeeded:
+            let lower=text.lowercased()
+            return lower.contains("action completed") || lower.contains("actions completed") ? text : prefixed("Completed",text:text)
+        case .replied: return prefixed("Replied",text:text)
+        case .resolved: return prefixed("Resolved",text:text)
         default: return text
         }
     }

@@ -49,7 +49,7 @@ enum AIActivityWork {
 }
 
 enum AIActivityStatus: String, Codable, CaseIterable {
-    case queued, running, succeeded, partial, failed, stopped, interrupted, needsAnswer, uncertain
+    case queued, running, succeeded, partial, failed, stopped, interrupted, needsAnswer, uncertain, replied, resolved
     var title: String {
         switch self {
         case .queued: "Queued"
@@ -60,6 +60,8 @@ enum AIActivityStatus: String, Codable, CaseIterable {
         case .stopped: "Stopped"
         case .interrupted: "Interrupted"
         case .needsAnswer: "Needs your answer"
+        case .replied: "Replied"
+        case .resolved: "Resolved"
         case .uncertain: "Outcome unconfirmed"
         }
     }
@@ -76,6 +78,8 @@ enum AIActivityStatus: String, Codable, CaseIterable {
         case .partial, .failed, .interrupted, .uncertain: "exclamationmark.circle.fill"
         case .stopped: "stop.circle"
         case .needsAnswer: "questionmark.circle.fill"
+        case .replied: "bubble.left.and.bubble.right"
+        case .resolved: "checkmark.circle"
         }
     }
 }
@@ -143,6 +147,20 @@ struct AIActivityRecord: Codable, Equatable, Identifiable {
     var needsAttention: Bool { state.needsAttention && !acknowledged }
     var failureAlert:Bool {state.isFailure && !acknowledged}
     var date: Date { finished ?? created }
+}
+
+/// A local display choice; this never changes a saved outcome or resumes work.
+enum AIActivityPillRules {
+    static func displayed(_ records:[AIActivityRecord],current:AIActivityRecord?,registration:String)->AIActivityRecord? {
+        if let current,current.registration == registration,current.state == .running {return current}
+        let outcomes=records.filter{$0.registration == registration && $0.kind != .heartbeat && $0.state.isTerminal}.sorted {
+            $0.date != $1.date ? $0.date > $1.date : $0.id < $1.id
+        }
+        if let attention=outcomes.first(where:{$0.needsAttention}) {return attention}
+        // Acknowledging the latest outcome must not revive an older success.
+        guard let latest=outcomes.first,latest.state == .succeeded,!latest.acknowledged else {return nil}
+        return latest
+    }
 }
 
 struct AIActivityState: Codable, Equatable {
