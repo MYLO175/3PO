@@ -2,11 +2,15 @@
 
 Requested 12 October 2026. A compound academic project email should lead to separate useful Calendar and existing-project task suggestions. The human should be able to approve the displayed details or describe a variation in ordinary language.
 
+## Current Review flow — 14 October 2026
+
+Explore suggested actions opens the saved source conversation and shared checkbox sheet. Done approves checked concrete payloads without AI and preserves an unsent draft; a conversational request can revise suggestions or execute understood work through the same canonical identities and receipts. Creation approval checks account/source access, captured payload, destination, duplicate/uncertain receipts and readback, without another Mail/body/memory analysis or broad title search. Edits/removals retain exact target, current fields and occurrence scope. Completed source cards show their saved count and View actions, with remaining choices inside. The earlier delivery steps below retain implementation history, including superseded handoff and evidence-reconstruction rules.
+
 ## Diagnosis
 
 The previous assessment retained one primary quote and one follow-up date. The comparison prompt and decoder allowed only one suggestion per email. Projects could propose a new space but could not target a task inside an existing space. Calendar creation discarded inferred dates and required the human to enter them again. A single native match could also hide other obligations by marking the entire email planned.
 
-## Delivery plan
+## Historical delivery plan — 12 October 2026
 
 1. Retain up to twelve distinct exact action quotes within the existing body assessment. Upgrade only eligible current visible assessments through the bounded recheck lane; no historical indexing.
 2. Compare independent actions, with up to 24 proposals per request and three email inputs. Permit Calendar and project-task destinations for the same commitment. A saturated result must not mark the source fully assessed. Keep account, body, assessment and memory receipts.

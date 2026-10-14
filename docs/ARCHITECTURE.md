@@ -11,6 +11,9 @@ The reliability checkpoint is installed and its focused/integration/preservation
 | `DashboardModel` and views | Desktop navigation, mounted widgets, sheets, layouts, feedback and app lifecycle | Desktop adapters prepare domain context and callbacks; presentation is not an inference dependency |
 | `ApplicationServices` | Construction and lifetime of production services | Loads the configured services but does not start source collection or inference; lifecycle starts work explicitly |
 | `AssistantService` | Conversation identities, drafts, captured Focus/setup/queue state, preparation and persisted replies | Uses a narrow runtime context and inference port; dashboard projections and tool creation belong to its desktop adapter |
+| `ReviewWorkStore` and desktop adapters | Saved source conversations, checkbox plans, serial accepted jobs and canonical action identities | Done and immediate conversational execution share durable receipts; waiting selection alone grants no authority |
+| `ReviewFeedbackJobs` and service | Explicit email feedback, queued interpretation and canonical preference readback | One queued submission per heartbeat or explicit Process now; captured source choices and exact email guards exclude unrelated EventKit notifications |
+| `AIActivityStore` and presentation | Saved task outcomes, current work and local attention projection | Five recent tasks; verified success expires after six seconds with one local wakeup; no streamed-prose observation or acknowledgement UI |
 | `PAConversationEngine` | Completed response/tool rounds, transport history, duplicate/stall detection and cancellation | Injected inference/tool functions; no database, dashboard, credentials or source startup |
 | Source services | Permitted bounded reads, exact source identities, current cached snapshots and availability | `NativeSourceReading` separates Calendar/Reminders reads from EventKit writes; Mail and WhatsApp remain read-only |
 | `PAMemoryStore` and notebook projection | Current usable beliefs, evidence, corrections, deterministic relevance and organisation | Permissions and current-belief filtering precede cached preparation; organisation cannot author facts or projects |
@@ -30,7 +33,7 @@ Heartbeat remains the owner of automatic email review, suggestions and current b
 3. The inference port receives bounded input. Completed tool calls go through one request-owned tool session; imported text never grants authority.
 4. Reads issue exact current identities. A supported write requires current human intent, target/scope/revision checks and a durable pending record before native execution. Readback establishes success. An uncertain result stays pending for outcome checking.
 5. The engine repeats as needed, retaining encrypted reasoning and complete transport rounds. Stop or ownership drift ends the captured request. Late text callbacks from an ended round are invalidated.
-6. The service saves final text, supplied/consulted memory IDs, choices and completed receipts in the original reply. Queued work stays serial; clarification, failure and interruption require the existing human continuation policy.
+6. The service saves final text, supplied/consulted memory IDs, choices and completed receipts in the original reply. General delegated work retains its explicit continuation policy. Accepted never-started Review jobs run serially when idle, including after reopening; a failure, Stop or unanswered question affects its own request. Attempted/interrupted work and uncertain saves require explicit recovery.
 
 The context trace records supplied identities and counts. It cannot establish which fact influenced the model's answer.
 

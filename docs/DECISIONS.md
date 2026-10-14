@@ -1,5 +1,7 @@
 # Decisions
 
+Newest decisions appear first. Dated entries preserve the reason for each checkpoint; later decisions supersede conflicting interaction rules, including earlier Activity acknowledgement controls and the fuller-plan shortcut.
+
 ## 14 October: feedback ignores unrelated EventKit notifications
 
 Email feedback interpretation captures source choices and exact email/account/assessment ownership rather than the global native collection revision. Calendar or Reminders change notifications may arrive during either Mail reading or inference without invalidating an unchanged submission. Current model, memory, storage, foreground/cancellation, device, usage and heartbeat ownership checks remain, with exact Mail body readback before saving. Legacy queued submissions retain their existing stricter revision fallback. Failed or attempted submissions still require explicit retry; installing this fix does not replay them.

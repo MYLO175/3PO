@@ -2,7 +2,9 @@
 
 Memory acceptance plan approved 4 October 2026, with subsequent dated corrections below. This plan concerns the PA's understanding, memory, reasoning and useful behaviour. Current requested Memory, Projects and Appearance work may use separate development streams; this plan does not independently defer a newly requested appearance task. No model training, paid API/embedding service, hosted agent migration or new source permission is required for the initial work.
 
-## Current checkpoint — 8 October
+## Current checkpoint — 14 October
+
+Review-permitted sources may teach bounded attributed memory under the global controls; new scopes baseline old content. Saved Review display and Done approval of concrete creations do not reconstruct old evidence. Exact edits/removals and new advice retain their current checks. Explicit email feedback queues for the next heartbeat, one submission per cycle, with Process now for immediate priority. Dismiss acknowledges the exact concern and does not train importance. The numbered phases below retain the original acceptance plan; these current corrections and later decisions supersede conflicting requirements. See [How it works](HOW_IT_WORKS.md), [STATUS](../STATUS.md) and [VALIDATION](../VALIDATION.md).
 
 Implemented foundations include one general conversation with multi-area Focus, exact current-belief/source-permission gates, inspectable evidence/history, bounded native/WhatsApp source learning, human-reviewed plan links and persistent advice dependencies. Targeted recall is lexical/typed-link/exact human-binding selection, permits zero facts and does not always inject unrelated identity/preferences. Notebook facts share the selected IDs. Projects creates only Space/Task while preserving rich memory entity types and legacy IDs. Semantic aliases, embeddings, actual consolidation and broad cross-source episode understanding remain separate uncompleted units.
 

@@ -4,12 +4,20 @@ This is the readable explanation of the product: what exists, how it works and w
 
 Start with **[Architecture](ARCHITECTURE.md)** for ownership and message flow, then **[How it works](HOW_IT_WORKS.md)** for product behaviour. Use **[Next improvements](NEXT_IMPROVEMENTS.md)** to review priorities and **[Decisions](DECISIONS.md)** to understand why the app is organised this way.
 
+## Current checkpoint — 14 October 2026
+
+The latest recorded installed repair is `9ca10c2`: email feedback survives unrelated Calendar/Reminders notifications, and a verified same-submission retry resolves its failure alert. Review uses one saved checkbox/conversation sheet, Done approves captured actions without AI, and accepted never-started Review jobs run when idle. The pill shows verified green success for six seconds; Activity shows five recent tasks with no acknowledgement controls. Explicit email feedback waits for the next heartbeat, one submission per cycle, with Process now for immediate priority.
+
+Read the current summaries in [STATUS](../STATUS.md) and [VALIDATION](../VALIDATION.md) for checks and limits. Earlier dated entries retain their original evidence; newer direction supersedes older interaction or approval rules. Sustained acceptance remains open.
+
 The approved current consolidation scope is **[Reliability implementation](RELIABILITY_IMPLEMENTATION.md)**. The earlier broad proposed delivery sequence is **[PA architecture review](PA_ARCHITECTURE_REVIEW.md)**, covering communications, changing commitments, memory, background jobs, project space and future local models. It distinguishes the inspected implementation from proposed changes. The earlier **[Building a useful personal assistant](PA_INTELLIGENCE_PLAN.md)** remains the detailed staged memory acceptance plan.
 
 | Document | Purpose |
 | --- | --- |
 | [Architecture](ARCHITECTURE.md) | Current component ownership, request flow and recovery |
 | [Reliability implementation](RELIABILITY_IMPLEMENTATION.md) | Full approved work and explicit completion gates |
+| [Heartbeat reliability](HEARTBEAT_RELIABILITY_PLAN.md) | Independent collection, stage outcomes, learning and recovery |
+| [Email actions](EMAIL_ACTIONS_PLAN.md) | Compound source dates, Calendar/project suggestions and acceptance |
 | [How it works](HOW_IT_WORKS.md) | Current behaviour and the pieces behind it |
 | [Next improvements](NEXT_IMPROVEMENTS.md) | Desired behaviour, gaps and success criteria |
 | [Life and project workspace](PROJECT_WORKSPACE.md) | Shared durable structure, views, PA edits and source relationships |
@@ -21,6 +29,8 @@ The approved current consolidation scope is **[Reliability implementation](RELIA
 | [Development workflow](DEVELOPMENT_WORKFLOW.md) | Worktree ownership, bounded delegation, integration and release |
 | [STATUS](../STATUS.md) | Current summary plus detailed dated engineering evidence |
 | [VALIDATION](../VALIDATION.md) | Concise current validation index and known limits, with earlier history |
+| [Live acceptance](LIVE_ACCEPTANCE.md) | Installed observations and remaining sustained-use evidence |
+| [Review trial](REVIEW_CONVERSATION_TRIAL.md) | Historical scripted comparison, separate from production behaviour |
 | [Repository README](../README.md) | Build/run instructions and integration details |
 
 AGENTS governs Codex development agents, not the installed PA's runtime prompt. Current human direction sets requirements; PLAN records approved scope, Next improvements records gaps/success criteria, and Decisions explains agreed choices. README and How it works describe the product. STATUS and VALIDATION establish what was actually checked; they do not authorise new features or Apple writes. Older dated architecture reviews/plans are historical snapshots where later changes supersede them.
@@ -31,6 +41,6 @@ After a meaningful feature changes, update its explanation here and the relevant
 
 Git is the history and backup mechanism; these Markdown pages are the explanation. They can be read in Codex, a text editor or Obsidian. Obsidian is optional and is not part of Mission Control's runtime. These files document the software, not your personal life: emails, chats, credentials and private memory remain outside the repository.
 
-Current entry points include the 11–12 October reliability work. Candidate implementation, installed behaviour and sustained acceptance are recorded separately. An installed build and a passing test are different from a completed live acceptance check; see STATUS and VALIDATION for those boundaries.
+Current entry points include the 14 October Review, Activity, streaming and feedback changes. Candidate implementation, installed behaviour and sustained acceptance are recorded separately. An installed build and a passing test are different from a completed live acceptance check; see STATUS and VALIDATION for those boundaries.
 
 [Installed live acceptance](LIVE_ACCEPTANCE.md) tracks real elapsed use, physical power cycles and preservation separately from fictional regression/model evidence.

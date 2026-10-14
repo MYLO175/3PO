@@ -1,5 +1,7 @@
 # How Mission Control works
 
+The 14 October sections describe current behaviour. Older dated sections preserve the interaction and engineering context at that checkpoint; later Review, Activity, feedback and approval rules take precedence.
+
 ## 14 October: feedback stability and retry alerts
 
 Submitted email feedback checks its captured source choices, exact email/account/assessment, model, memory and storage while it learns, with Mail body readback before saving. An unrelated Calendar or Reminders change notification does not invalidate it. A successful explicit retry resolves that submission's earlier failure alert only when its original memory identity has a verified saved preference; the original failed Activity record and heartbeat history remain unchanged. Other failures stay visible. Installing an update never automatically replays attempted feedback.
@@ -21,6 +23,8 @@ Done invokes no AI: the durable approval job executes its captured payloads thro
 14 October pill outcomes: while idle the message can show the latest verified completion in green, an unanswered question in amber, or a failed/unconfirmed action in red. A live action or heartbeat takes priority while running; otherwise unresolved attention comes before success. Success expires locally after six seconds, without modifying stored acknowledgement or task history. A single cancellable expiry wakeup avoids per-word observation or polling. A later human reply in the exact conversation/context updates an old question to Replied; accepted Review replies update it while queued. A completed retry resolves the prior failure only for the same retained job with all its captured action receipts saved. These are local display projections: historical outcomes, acknowledgement, execution receipts and transcripts remain intact. Conversation metadata omits streamed text, so no new per-word source/AI reads are introduced.
 
 ## 13 October: connected Review conversations and AI activity
+
+Historical introduction to the connected implementation. The current section above supersedes its tick, fuller-plan shortcut, latest-message pill and acknowledgement controls.
 
 Exploring a Review suggestion opens a conversation saved with that exact source and account. It shows the prepared explanation and actions, and keeps its replies separate from general 3PO chat. Opening makes no AI request or source-body reread. Calendar/Reminders creation rows may prepare enabled writable destination defaults so the displayed action has a concrete destination. Missing dates or existing-item edits still need their specific clarification or occurrence review.
 

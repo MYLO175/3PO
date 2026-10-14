@@ -2,6 +2,8 @@
 
 Approved by the user on 11 October 2026. Baseline: `b092562`, after the Review/memory-feedback work completed. The owning integration chat implements the full seven-stage plan and verifies completion against this checklist. Phone support is outside this work.
 
+The checklist records the 11–12 October consolidation evidence. Later Review, streaming, Activity and feedback checkpoints are indexed in [STATUS](../STATUS.md) and [VALIDATION](../VALIDATION.md); the counts and candidate IDs below remain dated results, not a new combined run. Sustained acceptance stays open.
+
 ## Completion checklist
 
 | Stage | Required deliverable | Evidence needed | Current state |
@@ -22,7 +24,7 @@ All work preserves stable IDs, account/registration boundaries, source consent, 
 
 Every implementation checkpoint records changed behaviour, focused checks, integration checks and remaining acceptance. Synthetic timelines cannot substitute for physical sleep/wake or several days of real operation. No checkpoint claims the full goal complete while a required row remains unverified.
 
-## Current integration evidence — 12 October
+## 12 October integration evidence
 
 Final source-free inventory: `/private/tmp/missioncontrol-check-0grobw_d/results.json` (59/59). Signed app-memory: `/private/tmp/missioncontrol-check-6ilz4px7/results.json` (137/137 consumer, 62/62 scheduler/storage and 11/11 removal contracts; zero model/native changes). Optional performance: `/private/tmp/missioncontrol-check-3hbi2orz/results.json`. Prior model tier: `/private/tmp/missioncontrol-check-c3vm8ntq/results.json` (4/5; valid empty commitment extraction was a quality failure, not success). STATUS and VALIDATION retain intermediate failures, the completed backed-up installation and the still-required sustained acceptance.
 

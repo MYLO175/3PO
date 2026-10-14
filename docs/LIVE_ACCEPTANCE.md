@@ -1,5 +1,13 @@
 # Installed reliability acceptance
 
+## Latest recorded installed checkpoint — 14 October 2026
+
+`9ca10c2` repairs feedback invalidation by unrelated EventKit notifications, following unified Review, streaming and concise Activity releases. The existing 3PO installation has recorded signed readback, 2,254 matching files and one explicitly retried feedback submission saved at its original memory identity. All 75 original records remain; protected memory, Activity, usage and other feedback records are exact. These are prior acceptance results from the repair chat, reconciled here without rerunning the app or personal inference. [STATUS](../STATUS.md) and [VALIDATION](../VALIDATION.md) retain the detailed checks and limits.
+
+Several days of reliable unattended use remain unverified. Earlier observation starts and earliest 72-hour dates below apply to their named candidates; they do not establish sustained acceptance of this later installed repair. This documentation update creates no observation timer, automation or notification policy.
+
+## Earlier installation observations — 12–13 October 2026
+
 Latest installed code `7cf0a37` adds precise rejected-date diagnostics and a coupled date contract. Strict signed readback preserves67 records. The17:12 London live cycle completes in59 displayed seconds/6 calls with a fresh brief, no date rejection and Suggestions & drafts Done. One unsupported handled association is withheld and source-identified; Ria remains retired.57 records remain byte-identical and11 preservation/outcome checks pass, including foreground/native/project receipts and original morning/notification membership. Fictional native UI verifies an impossible-date rejection with action/source/date/mode/timezone and explanation. Model mixed quality remains8/9 and the historical old date is irrecoverable. Conservative observation restart 13 October 16:17:21 UTC, earliest72-hour threshold 16 October 16:17:21 UTC; no new automation or notification policy. Earlier entries remain historical evidence.
 
 Latest candidate: `3f79ac3`, signed and installed13 October16:17 London. Strict install/readback preserves67/67 records. Fresh installed AI cycle finishes70s later with5 calls and a supported brief; Suggestions & drafts Done retains one precise withheld invalid-date warning. The Ria reminder proposal is retired with exact current native proof/reason and visibly absent; its sibling reply draft remains.57 records are byte-identical after analysis; protected foreground/native/project receipts and original morning/notification membership remain. Existing independent Mail collection issue is disclosed without stopping AI. One cycle establishes this observed recovery; it does not establish sustained quality or every model output. Conservative observation starts 13 October 15:20:42 UTC, with earliest72-hour threshold 16 October 15:20:42 UTC. Earlier failures and acceptance observations remain historical evidence. Existing follow-up/notification policy is unchanged.
@@ -8,7 +16,7 @@ Latest candidate update, 13 October 13:02 UTC / 14:02 London: `186e280` is insta
 
 The prior 12:15 London `0c87814` checkpoint remains historical evidence. Stable display now exposes 19 saved pending cards rather than the 10 left by old dynamic filters; no new inference or personal-state rewrite produced that change. A subsequent heartbeat may retire supported obsolete proposals with a reason.
 
-## Latest installed candidate — heartbeat analysis, 13 October 2026
+## Earlier installed candidate — heartbeat analysis, 13 October 2026
 
 Code `492928d` replaces the installed app with independent source collection, stage-isolated AI analysis, strict typed suggestions and review-consented memory learning. A personal launch performance regression was found and fixed before acceptance: exact human memory dependencies no longer construct unrelated source projections. Signed build, ten original focused suites, three additional permission/inspection suites, actual app-memory 147/147,87/87,11/11 and configured-model fictional checks 13/13 and 7/7 pass.
 

@@ -1,5 +1,7 @@
 # Mission Control specification
 
+Current direction is recorded first. Older dated stages retain approved scope and history; later refinements supersede conflicting interaction and approval requirements. Current implementation and acceptance are recorded separately in [STATUS](STATUS.md) and [VALIDATION](VALIDATION.md).
+
 ## 14 October: simplified Review, action history and chat streaming
 
 Current direction supersedes the detailed pill/progress interaction below. Review retains editable checkboxes alongside an ordinary isolated conversation. Done submits checked concrete actions and preserves an unsent draft; Escape only dismisses. Changes to suggestions update the actual saved plan. Understood tasks execute immediately through the same captured operation receipts, preventing a later Done from duplicating them. Other accepted, never-started jobs continue automatically when idle.
@@ -13,6 +15,8 @@ All actionable Review cards now use one Explore suggested actions entry. The sam
 14 October outcome follow-up: the pill shows a green receipt-based success, amber unanswered questions, or red failed/unconfirmed work while idle. Live work and running heartbeat take precedence. Unresolved attention takes precedence over success; the latest success appears for six seconds, then returns to Ready. Activity shows five recent tasks, with green success and no acknowledgement controls. Completed source cards replace Explore with the completed count and View actions; suggestion counts, the inbox evidence disclosure and the fuller-plan shortcut are removed. Replying updates the question display, and a verified complete retry resolves its earlier failure without rewriting saved history. Heartbeat completion and ordinary chat remain excluded.
 
 ## 13 October: approved conversational Review and AI activity
+
+Historical integration direction. The 14 October section above governs Done, the six-second success pill, five recent task outcomes and removal of acknowledgement controls.
 
 The user approved merging the interaction trial into the normal app, with one refinement: completed suggestions show a tick and the number of confirmed actions, with View actions for their saved details. The centred toolbar pill keeps the circular chat shortcut and shows the current job or latest real message, including AI failures. AI Activity retains outcomes, reversible acknowledgement and navigation back to the relevant conversation or details.
 
