@@ -1,5 +1,22 @@
 import Foundation
 import CryptoKit
+struct MailLearningProjectionKey:Equatable {
+    var collectionRevision:Int
+    var summaryRevision:Int
+    var registration:String
+    var excluded:Set<String>
+}
+/// Only pure quote/header formatting is retained; current source access remains checked by its caller.
+@MainActor final class MailLearningProjectionCache {
+    private var entry:(key:MailLearningProjectionKey,from:Date,until:Date,items:[NativeLearningItem])?
+    func items(key:MailLearningProjectionKey,now:Date,until:Date,build:()->[NativeLearningItem])->[NativeLearningItem] {
+        if let entry,entry.key == key,now >= entry.from,now < entry.until {return entry.items}
+        let items=build();entry=(key,now,until,items);return items
+    }
+    static func deadline(checked:[Date],now:Date)->Date {
+        checked.flatMap{[$0,$0.addingTimeInterval(86400)]}.filter{$0 >= now}.min() ?? now.addingTimeInterval(86400)
+    }
+}
 
 /// A bounded, exact version of already collected source data. Never a write instruction.
 struct NativeLearningItem:Equatable {

@@ -28,11 +28,13 @@ struct CalendarRemovalReviewSession:Identifiable {
     @ObservationIgnored let nativeLearningValidation=NativeLearningValidationBatch()
     var completedReminders:[CompletedReminder] = []
     var completedReminderHealth=SourceHealth()
-    var mailData = MailSnapshot(messages: [], accounts: [], errors: [])
+    var mailData = MailSnapshot(messages: [], accounts: [], errors: []) {didSet{mailLearningProjectionRevision &+= 1}}
+    var mailLearningProjectionRevision=0
+    @ObservationIgnored let mailLearningProjectionCache=MailLearningProjectionCache()
     var calendarHealth = SourceHealth()
     var reminderHealth = SourceHealth()
     var mailHealth = SourceHealth()
-    var mailIndex = MailIndexState()
+    var mailIndex = MailIndexState() {didSet{mailLearningProjectionRevision &+= 1}}
     var mailCoverage: String { sample ? "Sample data" : mailIndex.coverage(accounts: mailData.accounts) }
     var selectedDate = Calendar.current.startOfDay(for: .now)
     var excludedCalendars: Set<String> = [] { didSet { saveFilters() } }

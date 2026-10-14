@@ -7,11 +7,14 @@ import Foundation
             precondition(condition(), label); checks += 1
         }
         enum FixtureFailure: Error { case unavailable }
+        check(!AIActivityStatus.succeeded.isFailure && !AIActivityStatus.stopped.isFailure && !AIActivityStatus.needsAnswer.isFailure,"Success, targeted Stop and questions do not raise failure alerts")
+        check(AIActivityStatus.failed.isFailure && AIActivityStatus.partial.isFailure && AIActivityStatus.uncertain.isFailure,"Failed and unconfirmed action outcomes raise failure alerts")
         check(!AIActivityWork.includes([]),"Conversation-only replies never become activity")
         check(!AIActivityWork.includes(["read_memory","read_life_notebook","ask_clarification"]),"Context lookup and ordinary clarification do not turn conversation into work")
         check(!AIActivityWork.includes(["unknown_tool"]),"Unknown tool names cannot invent work")
         check(AIActivityWork.includes(["change_calendar"]),"An attempted Calendar change stays visible even before a save succeeds")
-        check(AIActivityWork.includes(["search_mail"]),"An explicit source search is work")
+        check(!AIActivityWork.includes(["search_mail","read_calendar","read_life_items"]),"Context reads do not become action outcomes")
+        check(AIActivityWork.includes(["execute_review_actions"]),"Prepared actions executed through Review are action work")
         check(AIActivityWork.includes([],confirmed:3) && AIActivityWork.includes([],unconfirmed:1),"Verified or uncertain operation receipts keep actual actions visible")
         check(AIActivityWork.running(["read_memory","change_reminder"]) == "Updating Reminders…","Live activity describes the typed operation")
         check(AIActivityWork.completed(["change_calendar"],receipts:["Added the reviewed event"],confirmed:1) == "Added the reviewed event","Completed activity uses verified receipts instead of chat prose")

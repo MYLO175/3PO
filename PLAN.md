@@ -1,5 +1,13 @@
 # Mission Control specification
 
+## 14 October: simplified Review, action history and chat streaming
+
+Current direction supersedes the detailed pill/progress interaction below. Review retains editable checkboxes alongside an ordinary isolated conversation. Done submits checked concrete actions and preserves an unsent draft; Escape only dismisses. Changes to suggestions update the actual saved plan. Understood tasks execute immediately through the same captured operation receipts, preventing a later Done from duplicating them. Other accepted, never-started jobs continue automatically when idle.
+
+The centred pill shows one steady live action job or running heartbeat, then returns to Ready. Only action failures alert. The Activity dropdown shows action successes/failures with acknowledgement and navigation, excluding ordinary replies, context reads and all heartbeat history. Other toolbar icons sit on the right. Streaming never drives Activity or heartbeat stage updates.
+
+The implementation adds callback-scoped validation across the complete ownership decision, bounded unchanged-Mail projection reuse and a compact initial source orientation. Typed reads still issue exact IDs and obtain details when needed. Model and connection settings remain unchanged. Relevant focused checks and native fictional acceptance are recorded in STATUS; provider delivery speed and actual model proposal quality remain separate measurements.
+
 ## 13 October: approved conversational Review and AI activity
 
 The user approved merging the interaction trial into the normal app, with one refinement: completed suggestions show a tick and the number of confirmed actions, with View actions for their saved details. The centred toolbar pill keeps the circular chat shortcut and shows the current job or latest real message, including AI failures. AI Activity retains outcomes, reversible acknowledgement and navigation back to the relevant conversation or details.

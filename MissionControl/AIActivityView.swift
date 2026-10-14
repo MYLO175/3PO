@@ -16,15 +16,15 @@ struct AIActivityPill: View {
     var body: some View {
         // Resolve history/visibility once, rather than once for every label,
         // progress and accessibility property in this toolbar render.
-        let saved=store.records(registration).filter(isVisible)
+        let saved=store.records(registration).filter{$0.kind != .heartbeat && $0.failureAlert && isVisible($0)}
         let active:AIActivityRecord? = {
-            guard var current,current.registration == registration,isVisible(current) else {return nil}
+            guard var current,current.state == .running,current.registration == registration,isVisible(current) else {return nil}
             if let saved=saved.first(where:{$0.id == current.id}) {current.acknowledged=saved.acknowledged}
             return current
         }()
         let displayed=active ?? saved.first
-        let attention=saved.contains(where:\.needsAttention) || active?.needsAttention == true || store.error != nil
-        let progress:Double?=active?.state == .running ? active?.progress.flatMap{$0.isFinite ? min(1,max(0,$0)) : nil} : nil
+        let attention = !saved.isEmpty || store.error != nil
+        let progress:Double?=nil
         let message=displayed.map(AIActivityPresentation.message) ?? "3PO is ready"
         let accessibilityStatus=message+(progress.map{". \(Int($0*100)) percent progress."} ?? "")+(attention ? ". An outcome needs attention." : "")
         HStack(spacing: 0) {
@@ -52,8 +52,8 @@ struct AIActivityPill: View {
                     if active?.state == .running && progress == nil {
                         ProgressView().controlSize(.mini).frame(width: 12, height: 12)
                     }
-                    if attention || active?.state != .running || progress != nil {
-                        Image(systemName: attention ? "exclamationmark.circle.fill" : displayed?.state == .succeeded ? "checkmark.circle.fill" : "chevron.down")
+                    if attention || active?.state != .running {
+                        Image(systemName: attention ? "exclamationmark.circle.fill" : "chevron.down")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(attention ? Color.orange : palette[.accent].opacity(0.8))
                     }
@@ -73,7 +73,6 @@ struct AIActivityPill: View {
         .padding(4)
         .background(palette[.widget].opacity(0.92), in: Capsule())
         .overlay(Capsule().stroke(attention ? Color.orange.opacity(0.55) : palette[.text].opacity(0.13), lineWidth: 0.75))
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: progress)
     }
 }
 
@@ -88,9 +87,9 @@ struct AIActivityView: View {
     var isVisible: (AIActivityRecord) -> Bool = { _ in true }
     var relatedDestinations:(AIActivityRecord)->[AIActivityDestination] = {_ in []}
 
-    private var visibleCurrent: AIActivityRecord? { current.flatMap { $0.registration == registration && isVisible($0) ? $0 : nil } }
+    private var visibleCurrent: AIActivityRecord? { current.flatMap { $0.kind != .heartbeat && $0.registration == registration && isVisible($0) ? $0 : nil } }
     private var records: [AIActivityRecord] {
-        let saved = store.records(registration).filter(isVisible)
+        let saved = store.records(registration).filter{$0.kind != .heartbeat && isVisible($0)}
         guard let current = visibleCurrent else { return saved }
         // A live snapshot augments the same event rather than rendering it twice.
         var merged = saved.filter { $0.id != current.id }
@@ -140,12 +139,7 @@ struct AIActivityView: View {
                     .foregroundStyle(record.needsAttention ? Color.orange : palette[.text].opacity(0.62))
             }
             Text(AIActivityPresentation.message(record)).font(.callout).lineSpacing(2).textSelection(.enabled)
-            if record.state == .running {
-                if let progress = record.progress, progress.isFinite {
-                    ProgressView(value: min(1, max(0, progress))).tint(palette[.accent])
-                        .accessibilityLabel("AI job progress")
-                } else { ProgressView().controlSize(.small) }
-            }
+            if record.state == .running {ProgressView().controlSize(.small)}
             HStack(spacing: 5) {
                 Text(record.kind.title)
                 Text("·")

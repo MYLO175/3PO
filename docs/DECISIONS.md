@@ -1,5 +1,13 @@
 # Decisions
 
+## 14 October: steady activity pill and one Review execution identity
+
+The human chose action successes/failures in AI Activity, with heartbeat shown only while running in the pill. Ordinary chat and incidental context reads are excluded. The pill changes at job boundaries rather than following reply words or heartbeat stages; completed action history stays inspectable without success alerts.
+
+Review keeps its checkbox list alongside natural chat. Done approves the current checked concrete payloads; Escape never approves and an unsent draft survives Done. An immediate request to execute prepared actions uses the same canonical IDs, durable progress and native/project receipts as Done. Current human intent is validated semantically without asking for repeated approval. Generic creation tools are directed to that path when an exact prepared creation is already represented, preventing duplicates. Waiting selection captured as conversation context is not a reservation or authority.
+
+Initial general-chat orientation is compact; details are obtained by existing typed reads. Current source/permission checks remain at every delivery decision, while unchanged formatting and projections are reused within strict revision/time bounds. Model and connection settings are preserved. Measurements must distinguish callback cost from remote delivery; a short fixture is not a latency guarantee.
+
 ## 13 October: approve connected Review and a shared activity pill
 
 The user approved the trial for the normal app. Review becomes a source/account-scoped saved conversation, separate from general chat, so a person can discuss several related actions without leaving that source's context. Opening shows saved text without AI; preparing native destination defaults is distinct from the explicit Suggest a fuller plan request.

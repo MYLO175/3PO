@@ -1,6 +1,16 @@
 import SwiftUI
 import AppKit
 
+/// Unchanged historical replies do not parse Markdown again for each streamed word.
+struct AssistantReplyText:View,Equatable {
+    var content:String
+    var completed:Bool
+    var body:some View {
+        Text((try? AttributedString(markdown:content,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(content))
+            .textSelection(.enabled).lineSpacing(3)
+    }
+}
+
 struct AssistantPanel: View {
     @Environment(\.workspacePalette) private var palette
     @Bindable var model: DashboardModel
@@ -196,7 +206,7 @@ struct AssistantPanel: View {
                                     DisclosureGroup("Details") { Text(PAProse.display(turn.content)).textSelection(.enabled) }.font(.caption)
                                 } else if turn.role == "assistant" {
                                     let content=PAProse.display(PAIntentFailure.correctedLegacyReply(turn.content,errors:turn.toolErrors))
-                                    Text((try? AttributedString(markdown:content,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(content)).textSelection(.enabled).lineSpacing(3).id(turn.completed)
+                                    AssistantReplyText(content:content,completed:turn.completed).equatable().id(turn.completed)
                                 } else if !turn.content.isEmpty { Text(turn.content).textSelection(.enabled) }
                                 if turn.completed, turn.role == "assistant",turn.id == conversation?.turns.last?.id,let choices=turn.choices {
                                     ViewThatFits(in:.horizontal) {

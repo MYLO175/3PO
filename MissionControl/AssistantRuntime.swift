@@ -60,6 +60,18 @@ struct AssistantToolRequest {
     var started:(AssistantTurnOutcome)->Void = {_ in}
     var working:(AssistantTurnOutcome)->Void = {_ in}
     var finished:(AssistantTurnOutcome)->Void = {_ in}
+    /// Share current source projections only within one synchronous ownership decision.
+    var withValidation:(() -> Bool)->Bool = {$0()}
+    /// Review-only drafts. Produces selectable proposals, never native/project writes.
+    var prepareReviewActions:((PAFunctionCall,@escaping NativeWriteValidity) async throws -> String)?
+    var executeReviewActions:((PAFunctionCall,@escaping NativeWriteValidity) async throws -> ReviewActionExecution)?
+    var reviewCreationGuard:((PAFunctionCall)throws->Void)?
+}
+struct ReviewActionExecution {
+    var output:String
+    var confirmed:[String:String]
+    var uncertain:Int=0
+    var failure:String?
 }
 
 @MainActor extension AssistantToolSession {

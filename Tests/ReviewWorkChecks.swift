@@ -258,6 +258,61 @@ import Foundation
             let future=ReviewWorkService(load:{original},persist:{_ in wrote=true})
             check(!future.readable && !wrote,"Future fields preserve original bytes and disable queue writes")
         }
+        do {
+            let w=ReviewWorkFixture(),s=w.make(),job=w.job()
+            var plan=ReviewWorkPlan(conversationID:job.conversationID,scope:job.scope,source:job.source,actions:[w.action("a"),w.action("b")],selected:["a","b"])
+            check(s.savePlan(plan,expected:nil),"Prepared plan persists without submitting or executing its suggestions")
+            s.selectPlan(["b"],registration:job.scope.registration,conversation:job.conversationID)
+            let current=s.plan(job.scope.registration,conversation:job.conversationID)!
+            check(current.selected == ["b"] && current.revision != plan.revision && s.state.jobs.isEmpty && w.calls.isEmpty,"Checkbox choices persist with a revision without write authority")
+            check(!s.savePlan(plan,expected:plan.revision),"A stale AI draft cannot overwrite a newer checkbox choice")
+            let reopened=ReviewWorkService(load:{w.bytes},persist:{try w.persist($0)})
+            check(reopened.plan(job.scope.registration,conversation:job.conversationID) == current,"Reopen preserves exact plan identities, concrete payloads and checkbox choices")
+            s.setDraft("Unsent question",registration:job.scope.registration,conversation:job.conversationID)
+            check(s.submit(job) && s.draft(job.scope.registration,conversation:job.conversationID) == "Unsent question","Done's concrete approval retains an unsent conversation draft")
+            plan=current;plan.actions[0].title="Retargeted action";plan.revision=UUID()
+            check(!s.savePlan(plan,expected:current.revision) && s.plan(job.scope.registration,conversation:job.conversationID) == current,"A pending approval's exact captured action cannot be retargeted by a new plan")
+            let next=w.job("b");var changed=next;changed.conversationID=job.conversationID;changed.human="Explain this";changed.mode = .conversation;changed.actions=[]
+            check(s.submit(changed) && s.draft(job.scope.registration,conversation:job.conversationID).isEmpty,"Submitting an actual conversation reply clears only its own saved draft")
+            var object=try JSONSerialization.jsonObject(with:w.bytes!) as! [String:Any]
+            var plans=object["plans"] as! [[String:Any]]
+            var actions=plans[0]["actions"] as! [[String:Any]];actions[0]["futureField"]="Preserved";plans[0]["actions"]=actions;object["plans"]=plans
+            let futureBytes=try JSONSerialization.data(withJSONObject:object);var wrote=false
+            let future=ReviewWorkService(load:{futureBytes},persist:{_ in wrote=true})
+            check(!future.readable && !wrote,"Unknown nested draft fields are retained verbatim instead of being lost in a migration")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make();w.canonicalOnReturn=true
+            var job=w.job(mode:.conversation);job.actions=[w.action("a")]
+            let plan=ReviewWorkPlan(conversationID:job.conversationID,scope:job.scope,source:job.source,actions:job.actions,selected:["a"])
+            check(s.savePlan(plan,expected:nil) && s.submit(job),"Conversation keeps exact checkbox context without approving it")
+            check(!s.reserved("a",registration:job.scope.registration),"Waiting conversational context does not reserve a suggestion")
+            var runtime=w.runtime()
+            runtime.converse={current,valid in
+                do {
+                    do {_=try await s.performCaptured(current.id,revision:UUID(),actions:["a"],valid:valid);check(false,"Stale execution must reject")} catch {check(w.calls.isEmpty,"Stale revision executes no action")}
+                    do {_=try await s.performCaptured(current.id,revision:plan.revision,actions:["a","a"],valid:valid);check(false,"Duplicate IDs must reject")} catch {check(w.calls.isEmpty,"Repeated issued IDs execute no action")}
+                    let result=try await s.performCaptured(current.id,revision:plan.revision,actions:["a"],valid:valid)
+                    check(result.first?.phase == .saved && s.reserved("a",registration:current.scope.registration),"Immediate execution saves and reserves the same canonical checkbox identity")
+                    _=try await s.performCaptured(current.id,revision:plan.revision,actions:["a"],valid:valid)
+                    return .init(phase:.completed,message:"Saved",confirmedActions:1)
+                } catch {preconditionFailure(error.localizedDescription)}
+            }
+            s.drive(runtime);await until{!s.busy}
+            check(w.calls == ["a"] && s.job(job.id)?.savedCount == 1 && s.job(job.id)?.conversationActionCount == 0,"Repeated conversational execution counts one canonical operation without extra saves")
+            let reopened=ReviewWorkService(load:{w.bytes},persist:{try w.persist($0)})
+            check(reopened.job(job.id)?.actions.first?.phase == .saved && reopened.reserved("a",registration:job.scope.registration),"Reopen retains the completed checkbox and exact operation receipt")
+            var done=w.job("a");done.conversationID=job.conversationID
+            _=s.submit(done);s.drive(w.runtime());await until{!s.busy}
+            check(w.calls == ["a"] && s.job(done.id)?.actions.first?.phase == .saved,"Done reconciles the conversational receipt instead of creating a duplicate")
+        }
+        do {
+            let w=ReviewWorkFixture(),s=w.make();w.ready=false
+            var conversation=w.job(mode:.conversation);conversation.actions=[w.action("a")]
+            var approval=w.job("a");approval.conversationID=conversation.conversationID
+            check(s.submit(conversation) && s.submit(approval),"Done can queue concrete approval while an explanation retains the same waiting checkbox context")
+            check(!s.submit(w.job("a")),"A second exact concrete approval still coalesces with the pending approval")
+        }
         print("Review work: \(total)/\(total) source-free injected-runtime checks passed")
     }
 }

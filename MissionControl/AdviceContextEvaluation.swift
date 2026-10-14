@@ -483,6 +483,13 @@ import Synchronization
         checks["removed account withdraws unsupported review count"] = model.reviewInbox.pendingCount == 0
         model.mailData=reviewMailData
         checks.merge(try resolutionConsumerChecks(model),uniquingKeysWith:{$1})
+        if let text=model.assistant.foregroundSnapshot(model),let orientation=try JSONSerialization.jsonObject(with:Data(text.utf8)) as? [String:Any] {
+            checks["foreground orientation omits bulk Calendar, Reminders and email bodies"] = orientation["events"] == nil && orientation["reminders"] == nil && orientation["savedEmailSummaries"] == nil && orientation["recentEmailHeaders"] == nil
+            checks["foreground orientation retains exact acknowledgement and resolution context"] = orientation["reviewAcknowledgements"] != nil && orientation["resolvedEmailRequests"] != nil && orientation["attentionPreferences"] != nil
+            checks["foreground orientation marks source IDs as metadata and exposes typed detail reads"] = (orientation["coverage"] as? String)?.contains("not issued mutation") == true && (orientation["coverage"] as? String)?.contains("read_calendar/read_reminders") == true
+            let accounts=orientation["mailAccounts"] as? [[String:String]] ?? []
+            checks["foreground orientation excludes withdrawn Mail accounts"] = accounts.allSatisfy{row in row["id"].map{!model.assistant.excludedAccounts.contains($0)} == true}
+        } else {checks["foreground orientation is available for permitted context"]=false}
         return ["projectionPerformance":["suggestions":40,"individualChecksMilliseconds":repeatedMilliseconds,"sharedProjectionMilliseconds":sharedMilliseconds],"completed":Date.now.ISO8601Format(),"requests":0,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"storage":"Fictional claims, messages and outputs in disposable SwiftData before source startup. No inference, native writes, permission changes or personal store writes. This tests actual consumer projections, not scheduler races or real message delivery."]
     }
 }

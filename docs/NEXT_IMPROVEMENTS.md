@@ -1,5 +1,11 @@
 # Next improvements
 
+## 14 October checkpoint: simplify the Review and Activity interaction
+
+Implemented: persistent checkbox plans, Done approval alongside ordinary isolated chat, immediate prepared actions sharing canonical receipts, automatic idle scheduling, completed-row ticks, collapsed old failures and preserved drafts. The pill shows a steady live job/heartbeat and alerts action failure; its dropdown holds action successes/failures only. Full ownership batching, unchanged Mail projection reuse and compact initial orientation address remaining local streaming overhead.
+
+Acceptance still distinguishes source-free/native UI checks from provider timing and model quality. Continue measuring first-text, delivery rate and callback cost separately. Sustained natural-language proposal changes, complete multi-date generation and live personal multi-action native acceptance remain unclaimed; no test authorises personal Calendar or project changes.
+
 13 October Review queue follow-up: accepted, unstarted work starts automatically when idle; terminal requests retain explicit recovery without blocking later jobs. Source-free queue and typing checks pass. Signed app/UI and installation acceptance are recorded in STATUS; sustained mixed heartbeat/chat/Review usage remains an acceptance item.
 
 ## Conversational Review and one AI activity pill

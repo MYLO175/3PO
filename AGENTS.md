@@ -89,3 +89,9 @@ Heartbeat reconsideration may inspect pending proposals as labelled historical d
 - After meaningful behaviour changes, update relevant docs/HOW_IT_WORKS.md, docs/NEXT_IMPROVEMENTS.md, docs/DECISIONS.md and PLAN/STATUS as applicable. Planned, implemented, focused-tested and live-verified remain separate.
 - Keep STATUS's current summary first and append detailed dated evidence below. Workers report commits/files/checks/limitations; integration owner reconciles shared docs and commits validated checkpoints. No app build is required for documentation-only edits.
 - Prior instructions are preserved verbatim in [the 8 October archive](docs/archive/AGENTS-2026-10-08-before-workflow-refresh.md). Consult relevant feature detail when necessary; it is chronological history, not permission to reapply superseded policies. Latest human direction and this current working agreement take precedence. PLAN's historical stage sections also remain history.
+
+## Recorded interaction refinement — 14 October
+
+- AI Activity lists action successes/failures, excluding general replies, context reads and every heartbeat record. The pill indicates a running heartbeat without placing it in Activity. It remains steady during jobs and alerts only action failures.
+- Review retains checkboxes during conversation. Done approves checked actions and preserves the unsent draft; Escape dismisses. Immediate conversational execution and Done must share canonical operation identities/receipts. Waiting conversation selection alone neither reserves an action nor authorises a write.
+- Centre the pill vertically in the native toolbar and keep other menu-bar actions on the right. Preserve model, connection, storage and permission settings while fixing responsiveness.

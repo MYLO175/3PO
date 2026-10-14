@@ -53,13 +53,46 @@ extension AssistantService {
         guard let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]), let string = String(data: data, encoding: .utf8) else { return nil }
         return string
     }
+    /// Small initial orientation; exact item details are read through the same existing PA tools.
+    func foregroundSnapshot(_ model:DashboardModel)->String? {
+        guard contextEnabled else {return nil}
+        let calendar=model.paOrientation?.calendar ?? model.calendarData
+        let calendars=calendar.sources.filter{!excludedCalendars.contains($0.id)}
+        let lists=model.reminderData.sources.filter{!excludedLists.contains($0.id)}
+        let accounts=model.mailData.accounts.filter{!excludedAccounts.contains($0.id)}
+        let now=Date.now,calendarCount=calendar.events.filter{!excludedCalendars.contains($0.calendarID)}.count
+        let calendarCoverage:String
+        if let orientation=model.paOrientation {
+            let stale=Calendar.current.isDate(orientation.refreshed,inSameDayAs:now) ? "" : "Cached from an earlier day. "
+            calendarCoverage=stale+"Calendar cache window "+DateRules.localDate(orientation.start)+" to "+DateRules.localDate(orientation.end)+" (end exclusive); \(calendarCount) enabled cached events. Refreshed "+DateRules.localTimestamp(orientation.refreshed)+". Event details are omitted; use read_calendar for the requested dates."
+        } else {
+            calendarCoverage="Cached dashboard snapshot; \(calendarCount) enabled cached events. The collected window is unavailable here. Event details are omitted; use read_calendar for the requested dates."
+        }
+        let value:[String:Any] = [
+            "now":DateRules.localTimestamp(now),"timezone":TimeZone.current.identifier,"localWeather":model.weather.context(),
+            "calendarStatus":model.paOrientation == nil ? model.calendarHealth.detail : model.paOrientationHealth.detail,
+            "calendarCount":calendarCount,
+            "calendarCoverage":calendarCoverage,
+            "calendarSources":calendars.prefix(60).map{["id":$0.id,"name":$0.label,"writable":$0.writable] as [String:Any]},
+            "reminderStatus":model.reminderHealth.detail,"reminderCount":model.reminderData.reminders.filter{!excludedLists.contains($0.listID)}.count,
+            "reminderSources":lists.prefix(60).map{["id":$0.id,"name":$0.label,"writable":$0.writable] as [String:Any]},
+            "mailStatus":model.mailHealth.detail,"mailCoverage":model.mailCoverage,"mailHeaderCount":model.mailData.messages.filter{!excludedAccounts.contains($0.accountID)}.count,
+            "mailAccounts":accounts.prefix(30).map{["id":$0.id,"name":$0.title]},
+            "attentionPreferences":model.emailSummaries.preferences(model.chatGPT.activeID).map{["topic":$0.topic,"attention":$0.direction]},
+            "reviewAcknowledgements":(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(model.reviewAcknowledgements()))) ?? [],
+            "resolvedEmailRequests":model.emailSummaries.resolutionContext(model),
+            "coverage":"Initial source orientation only. Source IDs/names above are metadata, not issued mutation destinations or item IDs. Use read_calendar/read_reminders for actual relevant items and fresh writable sources, read_attention for saved brief/assessments/suggestions, and selective search_mail/read_email for emails. Never infer an empty source from omitted details. All normal source permissions and write checks still apply."
+        ]
+        guard let data=try? JSONSerialization.data(withJSONObject:value,options:[.sortedKeys]) else {return nil}
+        return String(decoding:data,as:UTF8.self)
+    }
 }
 
 extension DashboardModel {
     /// Desktop composition only. A foreground turn consumes snapshots and typed
     /// tools; it never receives the dashboard itself.
     func assistantRuntime() -> AssistantRuntime {
-        AssistantRuntime(clock: { .now }, state: { [weak self] in
+        var runtime=AssistantRuntime(clock: { .now }, state: { [weak self] in
             guard let self else { return nil }
             return nativeLearningValidation.withSnapshot { [self] in
                 AssistantRuntimeState(attentionPreferencesReadable: self.emailSummaries.relevanceReadable,
@@ -70,7 +103,7 @@ extension DashboardModel {
             }
         }, sourceSnapshot: { [weak self] in
             guard let self else { return nil }
-            return assistant.snapshot(self)
+            return assistant.foregroundSnapshot(self)
         }, deliveryAvailable: { [weak self] turn in
             guard let self else { return false }
             guard let delivery = turn.deliveryID else { return true }
@@ -90,5 +123,10 @@ extension DashboardModel {
             guard let self else { return }
             if !reviewWork.busy {projectPlacement.check(self)}
         },started:{ [weak self] in self?.assistantActivityStarted($0) },working:{ [weak self] in self?.assistantActivityStarted($0) },finished:{ [weak self] in self?.assistantActivityFinished($0) })
+        runtime.withValidation={ [weak self] decision in
+            guard let self else {return false}
+            return self.nativeLearningValidation.withSnapshot(decision)
+        }
+        return runtime
     }
 }

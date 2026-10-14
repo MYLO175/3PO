@@ -8,6 +8,24 @@ import SwiftData
         var event=AgendaEvent(id:"occurrence",calendarID:calendar.id,title:"Orion engineering supervision",start:now.addingTimeInterval(86400),end:now.addingTimeInterval(90000),allDay:false,location:"Private address excluded",sourceLabel:calendar.label,modified:now.addingTimeInterval(-3600),memoryItemID:"stable-occurrence")
         func calendarItem()->NativeLearningItem { NativeSourceAdapters.calendar(.init(start:now,end:now.addingTimeInterval(90*86400),refreshed:now,calendar:.init(sources:[calendar],events:[event])),sources:[],now:now).first! }
         let first=calendarItem()
+        let mailProjection=MailLearningProjectionCache()
+        var mailKey=MailLearningProjectionKey(collectionRevision:1,summaryRevision:1,registration:registration,excluded:[])
+        var mailBuilds=0
+        let expiry=now.addingTimeInterval(10)
+        for _ in 0..<200 {_=mailProjection.items(key:mailKey,now:now,until:expiry){mailBuilds += 1;return [first]}}
+        precondition(mailBuilds == 1,"Repeated unchanged Mail quote projections build once")
+        mailKey.collectionRevision += 1;_=mailProjection.items(key:mailKey,now:now,until:expiry){mailBuilds += 1;return []}
+        mailKey.summaryRevision += 1;_=mailProjection.items(key:mailKey,now:now,until:expiry){mailBuilds += 1;return []}
+        mailKey.registration="other";_=mailProjection.items(key:mailKey,now:now,until:expiry){mailBuilds += 1;return []}
+        mailKey.excluded=["account"];_=mailProjection.items(key:mailKey,now:now,until:expiry){mailBuilds += 1;return []}
+        precondition(mailBuilds == 5,"Mail/index, every summary update, ownership and source exclusions invalidate formatted quote projections")
+        _=mailProjection.items(key:mailKey,now:expiry,until:expiry){mailBuilds += 1;return [first]}
+        precondition(mailBuilds == 6,"Exact quote expiry rebuilds rather than retaining a result across the boundary")
+        _=mailProjection.items(key:mailKey,now:expiry.addingTimeInterval(1),until:expiry.addingTimeInterval(86400)){mailBuilds += 1;return []}
+        _=mailProjection.items(key:mailKey,now:now.addingTimeInterval(-1),until:expiry){mailBuilds += 1;return []}
+        precondition(mailBuilds == 8,"The first post-expiry callback and clock rollback rebuild current quote eligibility")
+        precondition(MailLearningProjectionCache.deadline(checked:[now.addingTimeInterval(-86390)],now:expiry) == expiry,"An inclusive 24-hour edge is never cached beyond that instant")
+        precondition(MailLearningProjectionCache.deadline(checked:[expiry],now:now) == expiry,"Future checked timestamps invalidate when they become current")
         let projection=NativeLearningProjectionCache()
         var projectionKey=NativeLearningProjectionKey(collectionRevision:1,excluded:[],timezone:"Europe/London",locale:"en_GB:gregorian",day:Calendar.current.startOfDay(for:now))
         var projectionBuilds=0

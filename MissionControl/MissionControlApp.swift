@@ -42,6 +42,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             (code == 0 ? FileHandle.standardOutput : FileHandle.standardError).write(Data(output.utf8))
             Darwin.exit(code)
         }
+        // Apply the approved centre/right layout once. Retain the human's visible
+        // item choices/order and every unrelated native toolbar preference.
+        if !ProcessInfo.processInfo.arguments.contains(where:{$0.hasPrefix("--preview") || $0.hasPrefix("--validate") || $0.hasPrefix("--render") || $0.hasPrefix("--evaluation")}) {
+            let defaults=UserDefaults.standard,key="NSToolbar Configuration mission-control.workspace.native-toolbar"
+            if !defaults.bool(forKey:"workspaceToolbarCentredActionsV1"),var value=defaults.dictionary(forKey:key),let ids=value["TB Item Identifiers"] as? [String],ids.contains("assistant") {
+                let trailing=ids.filter{!["sidebar","assistant","NSToolbarFlexibleSpaceItem"].contains($0)}
+                value["TB Item Identifiers"]=(ids.contains("sidebar") ? ["sidebar"] : [])+["NSToolbarFlexibleSpaceItem","assistant","NSToolbarFlexibleSpaceItem"]+trailing
+                defaults.set(value,forKey:key);defaults.set(true,forKey:"workspaceToolbarCentredActionsV1")
+            }
+        }
         let dashboard=DashboardModel()
         _model=State(initialValue:dashboard)
         #if DEBUG

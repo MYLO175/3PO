@@ -1,6 +1,15 @@
 # Status
 
-## Current summary — 13 October 2026
+## Current summary — 14 October 2026
+
+The approved simplification is implemented on main: Review keeps editable checkboxes during ordinary isolated chat; Done approves selected actions and retains an unsent draft; Escape dismisses only. Immediate prepared actions and Done share canonical operation IDs/receipts, with completed ticks and unique counts. Waiting conversation selection is context rather than reservation. Accepted unstarted work continues automatically; uncertainty/attempted recovery stays local to that request.
+
+AI Activity shows actual action successes/failures with acknowledgement/navigation, excluding general replies, context reads and all heartbeat history. The steady centred pill shows one live action job or running heartbeat and alerts action failure. Live-owner IDs prevent stale persisted running records from showing phantom work. Toolbar controls use the right side, with an additive one-time correction for spacers saved by the previous layout; visible controls/order and unrelated preferences are retained.
+
+Remaining local chat work has been reduced through complete ownership-decision batching, cached unchanged Mail projections with observable invalidation/freshness boundaries, compact initial source orientation and stable historical text parsing. Model and connection settings are unchanged. Actual assistant-service187/187, Review81/81, date-evidence59/59, Activity88/88 and native-source checks pass. Signed source-free consumer modes pass with zero inference. Native fictional UI verifies selection changes, ordinary greeting, two immediate saves, one Done save, no duplicate creation, exact completed counts, draft retention, Escape and success/failure history. New proposals capture exact source/body/memory receipts and reject unsupported dates; unchanged identities/coalescing are retained. Installed delivery and after-change live timing are pending below.
+
+## Previous summary — 13 October 2026
+
 
 Read this summary first. Detailed dated entries below preserve implementation evidence and intermediate failures; older instructions/next-step lists are superseded by later corrections and current AGENTS.md. Do not restart Stage 1/2 or historical Mail indexing.
 

@@ -522,6 +522,102 @@ private final class ObservationCounter:@unchecked Sendable {
         check(reviewService.draft == "Retained general draft","Normal handover preserves unsent general draft")
         let reopenedReview=service(reviewProvider,reviewContainer)
         check(reopenedReview.conversation(reviewID)?.reviewKey == "mail:fictional-source" && reopenedReview.feed?.id == primaryID,"Reopening preserves Review identity separately from the primary feed")
+
+        // The real AssistantService and PAMemoryStore share a current native
+        // snapshot only within each synchronous ownership decision. There is
+        // no provider, source collection, native write or personal state here.
+        for revokeSource in [false,true] {
+            let projectionProvider=FictionalInference(),projectionContext=FictionalContext()
+            let projectionService=service(projectionProvider,try open(revokeSource ? "stream-source-withdrawal" : "stream-source-batching"))
+            let sourceIdentity=MemorySourceIdentity(kind:.calendar,accountID:"fictional-provider",containerID:"fictional-calendar",itemID:"fictional-stream-item")
+            let sourceQuote="Prepare the fictional Orion prototype."
+            let sourceItem=NativeLearningItem(identity:sourceIdentity,revision:"fictional-current-v1",label:"Fictional Studies",text:sourceQuote,date:projectionContext.now,changed:Date.now)
+            let sourceEvidence=MemorySourceEvidence(identity:sourceIdentity,revision:sourceItem.revision,label:sourceItem.label,quote:sourceQuote,observed:Date.now,sourceDate:sourceItem.date)
+            let sourceFact=PAMemory(registration:projectionProvider.activeID,text:"A Calendar entry requests the fictional Orion prototype.",kind:.commitment,explicit:false,provenance:"Fictional Calendar source",evidence:sourceQuote,certainty:.inferred,durability:.situational,source:sourceEvidence,sourceState:.proposed)
+            check(projectionService.memory.putSources([sourceFact],evidenceTexts:[sourceIdentity:sourceQuote],expectedRevision:projectionService.memory.revision),"Streaming batching fixture saves exact source evidence in disposable storage")
+            let validation=NativeLearningValidationBatch()
+            var sourceAvailable=true,validationDecisions=0,nativeQueries=0,nativeBuilds=0,withdrawnBuilds=0
+            @MainActor func currentItems()->[NativeLearningItem]? {
+                nativeQueries += 1
+                return validation.items(.calendar) {
+                    nativeBuilds += 1
+                    if !sourceAvailable {withdrawnBuilds += 1;return nil}
+                    return [sourceItem]
+                }
+            }
+            projectionService.memory.sourcePermissionProjection={
+                guard let items=currentItems() else {return []}
+                return Set(projectionService.memory.records.filter{NativeLearningRules.permitted($0,items:items)}.map(\.id))
+            }
+            var projectionRuntime=projectionContext.runtime()
+            projectionRuntime.state={
+                // A current runtime acknowledgement can depend on the same
+                // native kind as the independent source-memory ownership guard.
+                _=currentItems()
+                return projectionContext.state
+            }
+            projectionRuntime.withValidation={body in
+                validationDecisions += 1
+                return validation.withSnapshot(body)
+            }
+            projectionProvider.deltas=(1...200).map{"Fictional streamed token \($0). "}
+            projectionProvider.replies=[final("Completed fictional current-source response")]
+            var emittedDeltas=0,partialAtWithdrawal=""
+            projectionProvider.afterDelta={
+                emittedDeltas += 1
+                if revokeSource && emittedDeltas == 50 {
+                    partialAtWithdrawal=projectionService.feed?.turns.last?.content ?? ""
+                    sourceAvailable=false
+                }
+            }
+            let clock=ContinuousClock(),began=clock.now
+            check(projectionService.send(runtime:projectionRuntime,topicID:nil,prompt:"Explain the fictional Orion prototype"),"Current-source streaming fixture starts the actual assistant service")
+            // Preparation has separate current decisions; isolate the engine's
+            // callback counts before its task first runs on the main actor.
+            validationDecisions=0;nativeQueries=0;nativeBuilds=0;withdrawnBuilds=0
+            await until{!projectionService.busy}
+            let localElapsed=began.duration(to:clock.now)
+            check(validationDecisions >= 202,"All 200 partial callbacks, preflight and completed response retain a fresh full ownership decision")
+            check(nativeQueries == validationDecisions*2 && nativeBuilds == validationDecisions,"Runtime and source-memory consumers share one current snapshot per callback, with no cross-callback reuse")
+            if revokeSource {
+                check(withdrawnBuilds > 0 && projectionService.error != nil,"The callback after access withdrawal freshly checks the unavailable native source")
+                check(!partialAtWithdrawal.isEmpty && projectionService.feed?.turns.last?.content == partialAtWithdrawal && projectionService.feed?.turns.last?.completed == false,"Source withdrawal stops later partials and rejects completed output while retaining earlier historical text")
+            } else {
+                check(projectionService.feed?.turns.last?.content == "Completed fictional current-source response" && projectionService.feed?.turns.last?.completed == true && projectionService.error == nil,"Batching retains authoritative completed text and ordinary chat behaviour")
+            }
+            check(projectionContext.sessions.allSatisfy{$0.calls.isEmpty},"Streaming validation never invokes tools or performs a save")
+            print("Local current-source streaming:200 deltas; revoke=\(revokeSource); decisions \(validationDecisions); queries \(nativeQueries); builds \(nativeBuilds); elapsed \(localElapsed)")
+        }
+        do {
+            let definitions=ReviewPlanTools.tools.first?["tools"] as? [[String:Any]] ?? []
+            let normal=PAToolProtocol.tools.first?["tools"] as? [[String:Any]] ?? []
+            check(definitions.contains{$0["name"] as? String == "prepare_review_actions"} && !normal.contains{$0["name"] as? String == "prepare_review_actions"},"Only Review inference receives the draft proposal tool")
+            check(ReviewPlanTools.tools.count == 1 && ReviewPlanTools.tools[0]["name"] as? String == "pa", "Draft preparation retains the local pa tool namespace")
+            let input=ReviewPlanTools.Input(revision:UUID(),actions:[.init(existingID:"issued-action",selected:false)])
+            let args=String(decoding:try JSONEncoder().encode(input),as:UTF8.self)
+            let call=PAFunctionCall(id:"draft",name:"prepare_review_actions",namespace:"pa",arguments:args)
+            let parsed=try ReviewPlanTools.input(call)
+            check(parsed.revision == input.revision && parsed.actions[0].existingID == "issued-action" && !parsed.actions[0].selected,"Typed plan requests preserve exact revision and unticked action identity")
+            var foreign=call;foreign.namespace="foreign"
+            do {_=try ReviewPlanTools.input(foreign);check(false,"Foreign namespace cannot prepare a Review plan")} catch {check(true,"Foreign namespace cannot prepare a Review plan")}
+            var object=try JSONSerialization.jsonObject(with:Data(args.utf8)) as! [String:Any]
+            var rows=object["actions"] as! [[String:Any]];rows[0]["nativeSave"]="attempted";object["actions"]=rows
+            var unknown=call;unknown.arguments=String(decoding:try JSONSerialization.data(withJSONObject:object),as:UTF8.self)
+            do {_=try ReviewPlanTools.input(unknown);check(false,"Unknown concrete fields cannot slip into a draft tool")} catch {check(true,"Unknown concrete fields cannot slip into a draft tool")}
+        }
+        do {
+            let provider=FictionalInference(),context=FictionalContext(),store=try open("review-canonical-actions"),service=service(provider,store)
+            let id=service.openReview(key:"mail:canonical",title:"Fictional actions",sourceKind:"mail",accountID:"mail",messageID:"canonical",identity:nil,chatID:nil,seeds:[])!
+            var outcomes:[AssistantTurnOutcome]=[],executions=0
+            var runtime=context.runtime();runtime.prepareReviewActions={_,_ in "{}"}
+            runtime.executeReviewActions={_,valid in precondition(valid());executions += 1;return .init(output:"{\"verified\":true}",confirmed:["a":"Created A","b":"Created B"])}
+            runtime.finished={outcomes.append($0)}
+            provider.replies=[response([nativeCall("execute_review_actions")]),final("Two actions completed")]
+            check(service.sendReview(runtime:runtime,conversationID:id,prompt:"Add both",humanTurnID:UUID(),responseTurnID:UUID(),query:"Add both",sourceContext:"{}",selectionContext:"Issued exact actions",submitted:context.now,focusAreas:[],valid:{true}),"Review accepts canonical execution through its isolated conversation")
+            await until{!service.busy}
+            check(executions == 1 && context.sessions.first?.calls.isEmpty == true,"Prepared execution uses its canonical callback rather than generic native creation")
+            check(outcomes.first?.confirmedActions == 2 && outcomes.first?.receipts == ["Created A","Created B"] && outcomes.first?.phase == "completed","Canonical execution contributes exact confirmed receipts and honest completion")
+        }
         print("PASS \(count) actual assistant service contracts: persisted preparation/send/reopen, exact traces/receipts, setup, ownership cancellation, serial queues and bounded native-read recovery; fictional providers/storage/settings only, no dashboard or Keychain.")
     }
 }

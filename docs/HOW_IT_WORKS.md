@@ -1,5 +1,15 @@
 # How Mission Control works
 
+## 14 October: current Review and AI activity behaviour
+
+Review is a saved conversation attached to its source. Its suggested actions remain visible as checkboxes while you talk. Ask for a change to update those suggestions, or give a task to execute it immediately. Done approves only the checked, unsubmitted actions and keeps any unsent reply; Escape closes without approval. Both execution routes use the same canonical IDs and save receipts, so completed rows show a tick and cannot be created again. Old stopped requests are collapsed into Earlier requests. Never-started accepted jobs run automatically when the AI becomes idle; attempted or uncertain saves retain explicit recovery.
+
+The toolbar pill is vertically centred with other controls on the right. It shows a steady job while actual action work runs, or Heartbeat running during analysis. Successful completion returns the pill to Ready. Unacknowledged action failures remain visible. AI Activity lists action successes and failures, with local acknowledgement and links to the relevant conversation or place. General replies, incidental source reads and heartbeat history stay out of this dropdown. Historical records are preserved and filtered locally; live work requires its current owner ID.
+
+During streaming, each complete synchronous ownership decision shares checked source projections. Mail projections reuse unchanged collections/summaries only until their next exact freshness boundary; observable revisions invalidate warm consumers. Earlier reply rendering and overload-message cleanup avoid repeated Markdown parsing. The initial chat orientation supplies source health/counts/coverage rather than hundreds of event/reminder/email details. Typed reads obtain the requested details and fresh mutation IDs. Current permission, account, source, storage and receipt guards remain. DEBUG timing can record counts and callback durations without reply/source text.
+
+New or changed suggestions require exact supporting quotes, action-specific date validation and captured source/body/memory dependency receipts. Existing proposals retain their identities when concrete content is unchanged; duplicate aliases are rejected and identical new suggestions coalesce. Saved display and concrete human approval remain independent of broad evidence reconstruction. New source advice performs its own current evidence checks.
+
 ## 13 October: connected Review conversations and AI activity
 
 Exploring a Review suggestion opens a conversation saved with that exact source and account. It shows the prepared explanation and actions, and keeps its replies separate from general 3PO chat. Opening makes no AI request or source-body reread. Calendar/Reminders creation rows may prepare enabled writable destination defaults so the displayed action has a concrete destination. Missing dates or existing-item edits still need their specific clarification or occurrence review.

@@ -4,6 +4,7 @@ import Observation
 enum ReviewWorkPhase:String,Codable {case queued,running,completed,partial,failed,uncertain,needsAnswer,stopped,interrupted}
 enum ReviewWorkMode:String,Codable {case approval,conversation}
 enum ReviewActionPhase:String,Codable {case waiting,working,saved,failed,uncertain}
+struct ReviewWorkFailure:LocalizedError {var message:String;init(_ message:String){self.message=message};var errorDescription:String? {message}}
 struct ReviewWorkSource:Codable,Equatable {
     var key:String
     var title:String
@@ -47,11 +48,12 @@ struct ReviewWorkJob:Codable,Identifiable,Equatable {
     var actions:[ReviewWorkAction]=[]
     var phase:ReviewWorkPhase = .queued
     var created=Date.now
+    var timeZoneID:String?=TimeZone.current.identifier
     var finished:Date?
     var message:String?
     var error:String?
     var conversationActionCount:Int?
-    var savedCount:Int {mode == .approval ? actions.filter{$0.phase == .saved}.count : conversationActionCount ?? 0}
+    var savedCount:Int {actions.filter{$0.phase == .saved}.count + (mode == .conversation ? conversationActionCount ?? 0 : 0)}
     var pending:Bool {phase == .queued || phase == .running}
 }
 struct ReviewWorkState:Codable,Equatable {
@@ -60,6 +62,15 @@ struct ReviewWorkState:Codable,Equatable {
     // Retain legacy saved flags without using them to block accepted, unstarted work.
     var paused:[String:Bool]=[:]
     var drafts:[String:String]=[:]
+    var plans:[ReviewWorkPlan]?
+}
+struct ReviewWorkPlan:Codable,Equatable {
+    var conversationID:UUID
+    var scope:ReviewWorkScope
+    var source:ReviewWorkSource
+    var revision=UUID()
+    var actions:[ReviewWorkAction]
+    var selected:[String]
 }
 struct ReviewWorkActionResult {
     var phase:ReviewActionPhase
@@ -115,9 +126,17 @@ struct ReviewWorkConversationResult {
     }
     /// A future schema is retained verbatim rather than losing unrecognised fields.
     private static func validateSchema(_ bytes:Data)throws {
-        guard let root=try JSONSerialization.jsonObject(with:bytes) as? [String:Any],Set(root.keys).isSubset(of:["version","jobs","paused","drafts"]),let jobs=root["jobs"] as? [[String:Any]] else {throw CocoaError(.fileReadCorruptFile)}
+        guard let root=try JSONSerialization.jsonObject(with:bytes) as? [String:Any],Set(root.keys).isSubset(of:["version","jobs","paused","drafts","plans"]),let jobs=root["jobs"] as? [[String:Any]] else {throw CocoaError(.fileReadCorruptFile)}
+        if let plans=root["plans"] as? [[String:Any]] {
+            for plan in plans {
+                guard Set(plan.keys).isSubset(of:["conversationID","scope","source","revision","actions","selected"]),
+                      let scope=plan["scope"] as? [String:Any],Set(scope.keys).isSubset(of:["registration","model","sourceChoices","storage"]),
+                      let source=plan["source"] as? [String:Any],Set(source.keys).isSubset(of:["key","title","kind","accountID","messageID","identity","chatID"]),
+                      let actions=plan["actions"] as? [[String:Any]],actions.allSatisfy({Set($0.keys).isSubset(of:["id","title","destination","payload","phase","result","itemID","location","coalescingKey"])}) else {throw CocoaError(.fileReadCorruptFile)}
+            }
+        }
         for job in jobs {
-            guard Set(job.keys).isSubset(of:["id","humanTurnID","responseTurnID","conversationID","scope","source","mode","human","humanControl","selectionActive","focusAreas","actions","phase","created","finished","message","error","conversationActionCount"]),let scope=job["scope"] as? [String:Any],Set(scope.keys).isSubset(of:["registration","model","sourceChoices","storage"]),let source=job["source"] as? [String:Any],Set(source.keys).isSubset(of:["key","title","kind","accountID","messageID","identity","chatID"]),let actions=job["actions"] as? [[String:Any]],actions.allSatisfy({Set($0.keys).isSubset(of:["id","title","destination","payload","phase","result","itemID","location","coalescingKey"])}) else {throw CocoaError(.fileReadCorruptFile)}
+            guard Set(job.keys).isSubset(of:["id","humanTurnID","responseTurnID","conversationID","scope","source","mode","human","humanControl","selectionActive","focusAreas","actions","phase","created","timeZoneID","finished","message","error","conversationActionCount"]),let scope=job["scope"] as? [String:Any],Set(scope.keys).isSubset(of:["registration","model","sourceChoices","storage"]),let source=job["source"] as? [String:Any],Set(source.keys).isSubset(of:["key","title","kind","accountID","messageID","identity","chatID"]),let actions=job["actions"] as? [[String:Any]],actions.allSatisfy({Set($0.keys).isSubset(of:["id","title","destination","payload","phase","result","itemID","location","coalescingKey"])}) else {throw CocoaError(.fileReadCorruptFile)}
         }
     }
     private static func encode(_ value:ReviewWorkState)throws->Data {let encoder=JSONEncoder();encoder.outputFormatting=[.sortedKeys];return try encoder.encode(value)}
@@ -125,14 +144,63 @@ struct ReviewWorkConversationResult {
     func job(_ id:UUID)->ReviewWorkJob? {state.jobs.first{$0.id == id}}
     func waiting(_ registration:String)->Int {state.jobs.filter{$0.scope.registration == registration && $0.phase == .queued}.count}
     func draft(_ registration:String,conversation:UUID)->String {state.drafts[registration+":"+conversation.uuidString] ?? ""}
+    func plan(_ registration:String,conversation:UUID)->ReviewWorkPlan? {state.plans?.first{$0.scope.registration == registration && $0.conversationID == conversation}}
+    func reserved(_ id:String,registration:String)->Bool {jobs(registration).contains{$0.actions.contains{$0.id == id && $0.phase != .waiting} || ($0.mode == .approval && $0.pending && $0.actions.contains{$0.id == id})}}
+    /// Conversation execution shares the exact captured operation and receipts used
+    /// by Done. Waiting checkbox context alone is never an issued operation.
+    func performCaptured(_ id:UUID,revision:UUID,actions ids:[String],valid:@escaping @MainActor ()->Bool) async throws->[ReviewWorkAction] {
+        guard let runtime=activeRuntime,let current=job(id),activeID == id,current.mode == .conversation,current.phase == .running,
+              let plan=plan(current.scope.registration,conversation:current.conversationID),plan.revision == revision,
+              !ids.isEmpty,Set(ids).count == ids.count,ids.count <= 24,
+              Set(ids).isSubset(of:Set(plan.actions.map(\.id))),valid() else {throw ReviewWorkFailure("The request or selected plan changed. Nothing new was executed.")}
+        let captured=ids.compactMap {key in plan.actions.first{$0.id == key}}
+        guard captured.allSatisfy({action in !jobs(current.scope.registration).contains {other in other.id != id && other.actions.contains{$0.id == action.id && ($0.phase != .waiting || (other.mode == .approval && other.pending))}}}) else {throw ReviewWorkFailure("An action has already been submitted. Its original receipts are retained.")}
+        guard update(id,{job in for action in captured where !job.actions.contains(where:{$0.id == action.id}) {job.actions.append(action)}}) else {throw ReviewWorkFailure(error ?? "The captured actions could not be saved.")}
+        for action in captured {
+            guard valid(),activeID == id,job(id)?.phase == .running else {break}
+            if let known=runtime.inspect(current,action) {record(id,action:action.id,result:known);if known.phase != .saved {break};continue}
+            if job(id)?.actions.first(where:{$0.id == action.id})?.phase == .saved {continue}
+            guard updateAction(id,action.id,{$0.phase = .working}) else {break}
+            do {
+                let returned=try await runtime.perform(current,action,valid)
+                let result=valid() ? returned : runtime.inspect(current,action) ?? .init(phase:.uncertain,message:"The request stopped before its save could be confirmed. Check the retained receipt.")
+                record(id,action:action.id,result:result)
+                if result.phase != .saved || !valid() {break}
+            } catch {
+                record(id,action:action.id,result:runtime.inspect(current,action) ?? .init(phase:.failed,message:error.localizedDescription));break
+            }
+        }
+        guard readable else {throw ReviewWorkFailure(error ?? "Action progress could not be saved. Check original receipts before retrying.")}
+        return job(id)?.actions.filter{ids.contains($0.id)} ?? []
+    }
+    @discardableResult func savePlan(_ plan:ReviewWorkPlan,expected:UUID?)->Bool {
+        let old=self.plan(plan.scope.registration,conversation:plan.conversationID)
+        guard old?.revision == expected,plan.actions.count <= 24,Set(plan.actions.map(\.id)).count == plan.actions.count,
+              Set(plan.selected).isSubset(of:Set(plan.actions.map(\.id))),plan.actions.allSatisfy({$0.phase == .waiting && $0.result == nil && $0.itemID == nil}),
+              old?.actions.filter({reserved($0.id,registration:plan.scope.registration)}).allSatisfy({plan.actions.contains($0)}) ?? true else {error="These suggestions changed or have already been submitted. Reopen this review.";return false}
+        return change {value in
+            if value.plans == nil {value.plans=[]}
+            if let index=value.plans?.firstIndex(where:{$0.scope.registration == plan.scope.registration && $0.conversationID == plan.conversationID}) {value.plans?[index]=plan}
+            else {value.plans?.append(plan)}
+        }
+    }
+    func selectPlan(_ ids:Set<String>,registration:String,conversation:UUID) {
+        guard var plan=self.plan(registration,conversation:conversation) else {return}
+        let selected=ids.intersection(Set(plan.actions.map(\.id))).sorted()
+        guard plan.selected != selected else {return}
+        let old=plan.revision;plan.selected=selected;plan.revision=UUID();_=savePlan(plan,expected:old)
+    }
     func setDraft(_ text:String,registration:String,conversation:UUID) {_=change{$0.drafts[registration+":"+conversation.uuidString]=String(text.prefix(24_000))}}
     @discardableResult func submit(_ job:ReviewWorkJob)->Bool {
         guard readable,job.phase == .queued,!job.scope.registration.isEmpty,!job.human.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,job.human.count <= 24_000,!state.jobs.contains(where:{$0.id == job.id || $0.humanTurnID == job.humanTurnID}) else {error="Check this reply before submitting. Your draft is retained.";return false}
         if job.mode == .approval {
             guard !job.actions.isEmpty,job.actions.allSatisfy({$0.phase == .waiting && $0.result == nil && $0.itemID == nil}),Set(job.actions.map(\.id)).count == job.actions.count else {error="Choose at least one concrete action.";return false}
-            if state.jobs.contains(where:{$0.scope.registration == job.scope.registration && $0.pending && $0.actions.sorted{$0.id < $1.id}.map{$0.coalescingKey ?? $0.payload.base64EncodedString()} == job.actions.sorted{$0.id < $1.id}.map{$0.coalescingKey ?? $0.payload.base64EncodedString()}}) {error="This exact plan is already queued; its existing request is retained.";return false}
+            if state.jobs.contains(where:{$0.scope.registration == job.scope.registration && $0.mode == .approval && $0.pending && $0.actions.sorted{$0.id < $1.id}.map{$0.coalescingKey ?? $0.payload.base64EncodedString()} == job.actions.sorted{$0.id < $1.id}.map{$0.coalescingKey ?? $0.payload.base64EncodedString()}}) {error="This exact plan is already queued; its existing request is retained.";return false}
         }
-        return change {value in value.jobs.append(job);value.drafts[job.scope.registration+":"+job.conversationID.uuidString]=""}
+        return change {value in
+            value.jobs.append(job)
+            if job.mode == .conversation {value.drafts[job.scope.registration+":"+job.conversationID.uuidString]=""}
+        }
     }
     private func matchesScope(_ job:ReviewWorkJob,_ scope:ReviewWorkScope)->Bool {
         if job.mode == .approval {return job.scope.registration == scope.registration && job.scope.storage == scope.storage}
@@ -166,13 +234,13 @@ struct ReviewWorkConversationResult {
                 let result=await runtime.converse(job,valid)
                 guard self.readable else {return}
                 if self.job(job.id)?.phase == .stopped {
-                    _=self.update(job.id){$0.conversationActionCount=result.confirmedActions};return
+                    _=self.update(job.id){$0.conversationActionCount=max(0,result.confirmedActions-$0.actions.filter{$0.phase == .saved}.count)};return
                 }
                 guard valid() else {
-                    _=self.update(job.id){$0.phase = .failed;$0.message="The request stopped because its account, settings or source access changed.";$0.error=$0.message;$0.conversationActionCount=result.confirmedActions;$0.finished = .now};return
+                    _=self.update(job.id){$0.phase = .failed;$0.message="The request stopped because its account, settings or source access changed.";$0.error=$0.message;$0.conversationActionCount=max(0,result.confirmedActions-$0.actions.filter{$0.phase == .saved}.count);$0.finished = .now};return
                 }
                 let terminal:ReviewWorkPhase = [.completed,.partial,.failed,.uncertain,.needsAnswer,.stopped,.interrupted].contains(result.phase) ? result.phase : .failed
-                _=self.update(job.id){$0.phase=terminal;$0.message=terminal == result.phase ? result.message : "The assistant returned an invalid completion state. It will not be replayed.";$0.error=result.error;$0.conversationActionCount=result.confirmedActions;$0.finished = .now}
+                _=self.update(job.id){$0.phase=terminal;$0.message=terminal == result.phase ? result.message : "The assistant returned an invalid completion state. It will not be replayed.";$0.error=result.error;$0.conversationActionCount=max(0,result.confirmedActions-$0.actions.filter{$0.phase == .saved}.count);$0.finished = .now}
             } else {
                 for original in job.actions {
                     guard valid() else {break}

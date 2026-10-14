@@ -914,6 +914,17 @@
       ]
     },
     {
+      "id": "review-plan-dates",
+      "tier": "source-free",
+      "script": "scripts/test-review-plan-dates.sh",
+      "effects": [
+        "Fictional source/human date grounding; no sources, native writes or inference"
+      ],
+      "requires": [
+        "Xcode"
+      ]
+    },
+    {
       "id": "ai-activity",
       "tier": "source-free",
       "script": "scripts/test-ai-activity.sh",

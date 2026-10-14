@@ -312,6 +312,9 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         defer { deadline.stop(); inferenceSession.invalidateAndCancel() }
         let usageID = usageStore?.begin(registration: registration, model: model, purpose: purpose)
         do {
+        #if DEBUG
+        let streamClock=ProcessInfo.processInfo.systemUptime
+        #endif
         let (bytes, response) = try await inferenceSession.bytes(for: request)
         if let http = response as? HTTPURLResponse { responseRequestID = http.value(forHTTPHeaderField:"x-request-id"); responseHTTPStatus = http.statusCode }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
@@ -319,14 +322,34 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
             throw apiError(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0,registration:registration)
         }
         var stream = ChatGPTStream(allowsTools:!tools.isEmpty)
+        #if DEBUG
+        var firstDelta:Double?,lastDelta:Double?,callbackSeconds=0.0,deltaCount=0
+        #endif
         do {
             for try await byte in bytes {
                 try Task.checkCancellation()
                 guard activeID == registration else { throw ChatGPTError.message("The selected account changed; the old response was stopped.") }
-                if let delta = try stream.byte(byte) { onDelta?(delta) }
+                if let delta = try stream.byte(byte) {
+                    #if DEBUG
+                    let arrived=ProcessInfo.processInfo.systemUptime
+                    if firstDelta == nil {firstDelta=arrived-streamClock}
+                    lastDelta=arrived-streamClock;deltaCount += 1
+                    #endif
+                    onDelta?(delta)
+                    #if DEBUG
+                    callbackSeconds += ProcessInfo.processInfo.systemUptime-arrived
+                    #endif
+                }
             }
             let text = try stream.finishBytes()
             usageStore?.finish(usageID, outcome: .completed, tokens: stream.reportedTokens, httpStatus: responseHTTPStatus)
+            #if DEBUG
+            if let flag=ProcessInfo.processInfo.arguments.firstIndex(of:"--stream-profile-path"),ProcessInfo.processInfo.arguments.indices.contains(flag+1) {
+                let path=ProcessInfo.processInfo.arguments[flag+1]
+                let report:[String:Any] = ["model":model,"streamSeconds":ProcessInfo.processInfo.systemUptime-streamClock,"firstDeltaSeconds":firstDelta as Any? ?? NSNull(),"lastDeltaSeconds":lastDelta as Any? ?? NSNull(),"callbackSeconds":callbackSeconds,"deltaCount":deltaCount,"inputTokens":stream.reportedTokens?.input as Any? ?? NSNull(),"outputTokens":stream.reportedTokens?.output as Any? ?? NSNull()]
+                if path.hasPrefix("/private/tmp/"),let data=try? JSONSerialization.data(withJSONObject:report,options:[.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:path),options:.atomic)}
+            }
+            #endif
             return PAResponse(text:text,output:stream.output,calls:stream.calls)
         } catch let failure as ChatGPTStream.Failure {
             switch failure {

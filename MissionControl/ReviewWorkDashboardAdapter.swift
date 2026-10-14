@@ -8,6 +8,7 @@ struct ReviewPreparedPayload:Codable,Equatable {
     var nativeRequest:NativeCreationRequest?
     var nativeFields:NativeEditDetails?
     var project:LifeItem?
+    var draftEvidence:ReviewDraftEvidence?
 }
 struct ReviewConversationPresentation:Identifiable {var id:UUID}
 struct ReviewPreparedRow:Identifiable {
@@ -63,10 +64,10 @@ struct ReviewPreparedRow:Identifiable {
         let source=reviewSource(record),kind:NativeItemKind=record.kind == "calendar" ? .event : .reminder
         return .init(id:id,kind:kind,registration:record.registration,title:String((record.sourceTitle ?? source.title).prefix(500)),notes:"Source: "+(record.sourceLabel ?? source.title)+"\n"+record.evidence,discoveryID:record.id,discoveryApproval:snapshot,evidence:record.message+"\n\n"+record.evidence,requiresDateSelection:kind == .event,suggestedStart:record.proposedDate?.date(),suggestedEnd:record.proposedDate?.end.flatMap{record.proposedDate?.date($0)},suggestedHasTime:record.proposedDate?.hasTime,suggestedTimeZone:record.proposedDate?.timeZoneID)
     }
-    func prepareReviewRow(_ record:PADiscovery) async->ReviewPreparedRow {
+    func prepareReviewRow(_ record:PADiscovery,capturedDraft:Bool=false) async->ReviewPreparedRow {
         let title=record.sourceTitle ?? reviewSource(record).title
         var row=ReviewPreparedRow(id:record.id,title:title,detail:record.message,destination:"",action:nil)
-        guard currentPreparedApproval(record),let approval=preparedApprovalSnapshot(record) else {row.error="This suggestion changed. Reopen Review for its current version.";return row}
+        guard capturedDraft || currentPreparedApproval(record),let approval=preparedApprovalSnapshot(record) else {row.error="This suggestion changed. Reopen Review for its current version.";return row}
         do {
             var payload=ReviewPreparedPayload(proposal:record,approval:approval,source:reviewSource(record))
             if ["project","projectTask"].contains(record.kind) {
@@ -87,7 +88,7 @@ struct ReviewPreparedRow:Identifiable {
                 session=try await eventKit.creationSession(request)
                 #endif
                 try Task.checkCancellation()
-                guard scope == reviewWorkScope(),currentPreparedApproval(record) else {throw ActionFailure.message("The account, destination choices or suggestion changed while preparing this plan.")}
+                guard scope == reviewWorkScope(),capturedDraft || currentPreparedApproval(record) else {throw ActionFailure.message("The account, destination choices or suggestion changed while preparing this plan.")}
                 let fields=NativeCreationRules.applyingSuggestion(request,to:session.item)
                 guard let destination=session.sources.first(where:{$0.id == fields.sourceID && $0.writable}),!(request.kind == .event ? assistant.excludedCalendars : assistant.excludedLists).contains(destination.id) else {throw ActionFailure.message("Choose an enabled writable destination before approving this action.")}
                 payload.nativeRequest=request;payload.nativeFields=fields
@@ -165,7 +166,10 @@ struct ReviewPreparedRow:Identifiable {
             await withCheckedContinuation {continuation in
                 var runtime=self.assistantRuntime()
                 runtime.started={_ in}
-                runtime.working={_ in}
+                runtime.working={outcome in self.reviewActivityStarted(job,outcome:outcome)}
+                runtime.prepareReviewActions={call,owned in try await self.prepareReviewActions(call,job:job,valid:{valid() && owned()})}
+                runtime.executeReviewActions={call,owned in try await self.executeReviewActions(call,job:job,valid:{valid() && owned()})}
+                runtime.reviewCreationGuard={call in try self.guardReviewCreation(call,job:job)}
                 runtime.finished={outcome in
                     let classification=self.classifyAssistantOutcome(outcome)
                     continuation.resume(returning:.init(phase:classification.phase,message:classification.message,confirmedActions:classification.actions,error:classification.error))
@@ -178,6 +182,32 @@ struct ReviewPreparedRow:Identifiable {
         if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {
             runtime.ready={!self.heartbeat.busy && !self.assistant.busy && !self.writing}
             runtime.converse={_,_ in .init(phase:.failed,message:"This source-free preview does not call the AI. Your reply remains in the fictional review.",error:"AI is disabled for this preview.")}
+            if ProcessInfo.processInfo.arguments.contains("--review-plan-update-preview") {
+                runtime.converse={job,valid in
+                    _=self.assistant.appendReview(job.human,conversationID:job.conversationID,turnID:job.humanTurnID,human:true)
+                    if job.human.lowercased() == "hi" {
+                        _=self.assistant.appendReview("Hi! How can I help?",conversationID:job.conversationID,turnID:job.responseTurnID)
+                        return .init(phase:.completed,message:"Hi! How can I help?")
+                    }
+                    do {
+                        guard let plan=self.reviewWork.plan(job.scope.registration,conversation:job.conversationID) else {throw ActionFailure.message("The fictional plan is unavailable.")}
+                        if job.human.lowercased().hasPrefix("add selected project tasks") {
+                            let ids=plan.actions.filter{plan.selected.contains($0.id) && $0.destination.hasPrefix("Task in")}.map(\.id)
+                            let results=try await self.reviewWork.performCaptured(job.id,revision:plan.revision,actions:ids,valid:valid)
+                            let count=results.filter{$0.phase == .saved}.count
+                            _=self.assistant.appendReview("\(count) selected project tasks completed.",conversationID:job.conversationID,turnID:job.responseTurnID)
+                            return .init(phase:count == ids.count ? .completed : .failed,message:"\(count) actions completed",confirmedActions:count)
+                        }
+                        let entries=plan.actions.map {action in
+                            ReviewPlanTools.Entry(existingID:action.id,selected:action.destination.hasPrefix("Task in"))
+                        }
+                        let args=String(decoding:try JSONEncoder().encode(ReviewPlanTools.Input(revision:plan.revision,actions:entries)),as:UTF8.self)
+                        _=try await self.prepareReviewActions(.init(id:UUID().uuidString,name:"prepare_review_actions",namespace:"pa",arguments:args),job:job,valid:valid)
+                        _=self.assistant.appendReview("The project tasks are checked; Calendar entries are unchecked. Press Done to add the selected tasks.",conversationID:job.conversationID,turnID:job.responseTurnID)
+                        return .init(phase:.completed,message:"The project tasks are checked; Calendar entries are unchecked. Press Done to add the selected tasks.")
+                    } catch {return .init(phase:.failed,message:error.localizedDescription,error:error.localizedDescription)}
+                }
+            }
             runtime.perform={job,action,valid in
                 let payload=try JSONDecoder().decode(ReviewPreparedPayload.self,from:action.payload)
                 guard payload.nativeRequest == nil,payload.project != nil else {throw ActionFailure.message("Apple writes are disabled in this source-free preview.")}
@@ -203,6 +233,12 @@ struct ReviewPreparedRow:Identifiable {
         }
     }
     func reviewSelectionContext(_ job:ReviewWorkJob)->String {
+        if let plan=reviewWork.plan(job.scope.registration,conversation:job.conversationID),let data=try? JSONEncoder().encode(plan.actions.compactMap {action->[String:String]? in
+            guard let payload=try? JSONDecoder().decode(ReviewPreparedPayload.self,from:action.payload) else {return nil}
+            return ["id":action.id,"title":action.title,"destination":action.destination,"kind":payload.proposal.kind,"start":payload.proposal.proposedDate?.start ?? "","end":payload.proposal.proposedDate?.end ?? "","projectID":payload.project?.parentID?.uuidString ?? "","selected":String(plan.selected.contains(action.id)),"submitted":String(reviewWork.reserved(action.id,registration:job.scope.registration))]
+        }) {
+            return "Current editable Review plan revision: "+plan.revision.uuidString+". These are checkbox draft proposals, not write authority. Selected means the human's current checkbox choice. "+String(decoding:data,as:UTF8.self)
+        }
         guard job.selectionActive == true else {return ""}
         if job.actions.isEmpty {return "The currently displayed prepared plan has NO selected actions. Selection is draft context, never independent authority. Do not interpret a mere acknowledgement as approval of unselected proposals; ask which action the human wants. They may explicitly request another plan."}
         struct Selected:Encodable {var title:String;var destination:String;var date:DiscoveryProposedDate?;var taskDue:String?}

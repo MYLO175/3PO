@@ -65,7 +65,7 @@ struct WorkspaceView: View {
 
             }
         }.background(palette[.sidebar]).tint(accentColor).foregroundStyle(palette[.text]).environment(\.workspacePalette,palette).frame(minWidth:780,minHeight:580)
-            .toolbar(id:"mission-control.workspace.native-toolbar") { windowToolbar }
+            .toolbar(id:ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") ? "mission-control.workspace.native-toolbar.review-fixture" : "mission-control.workspace.native-toolbar") { windowToolbar }
             .toolbarBackground(palette[.sidebar],for:.windowToolbar)
             .toolbarBackground(.visible,for:.windowToolbar)
             .windowToolbarFullScreenVisibility(.visible)
@@ -111,29 +111,30 @@ struct WorkspaceView: View {
             }
         }.customizationBehavior(.disabled).sharedBackgroundVisibility(.hidden)
         ToolbarItem(id:"assistant",placement:.principal) {
-            DashboardAIActivityPill(model:model,palette:palette,openChat:showAssistant)
+            DashboardAIActivityPill(model:model,palette:palette,openChat:showAssistant).frame(height:46,alignment:.center)
         }.defaultCustomization(visible(.assistant) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
-        ToolbarItem(id:"refresh") {
+        ToolbarSpacer(.flexible)
+        ToolbarItem(id:"refresh",placement:.primaryAction) {
             Button { model.heartbeat.check(model,manual:true) } label: { Label("Run heartbeat",systemImage:"waveform.path.ecg") }
                 .disabled(model.heartbeat.manualCheckBlockReason(model) != nil).help(model.heartbeat.manualCheckHelp(model)+" (⌘R)")
         }.defaultCustomization(visible(.refresh) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
         }
         Group {
-        ToolbarItem(id:"addWidget") { addMenu }.defaultCustomization(visible(.addWidget) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
-        ToolbarItem(id:"edit") {
+        ToolbarItem(id:"addWidget",placement:.primaryAction) { addMenu }.defaultCustomization(visible(.addWidget) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
+        ToolbarItem(id:"edit",placement:.primaryAction) {
             Button { editing.toggle() } label: { Label(editing ? "Done" : "Edit layout",systemImage:editing ? "checkmark" : "square.grid.2x2") }.help("Arrange widgets · Drag handle/corner, release to snap")
         }.defaultCustomization(visible(.edit) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
-        ToolbarItem(id:"undo") {
+        ToolbarItem(id:"undo",placement:.primaryAction) {
             Button { model.undoLatest() } label: { Label(model.undoLabel,systemImage:"arrow.uturn.backward") }.disabled(model.latestUndo == nil || model.writing || model.assistant.busy).help(model.undoLabel)
         }.defaultCustomization(visible(.undo) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
-        ToolbarItem(id:"appearance") {
+        ToolbarItem(id:"appearance",placement:.primaryAction) {
             Menu {
                 Picker("Appearance",selection:$appearance) { Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark") }
                 Divider()
                 Button("Customise colours…") { showColors = true }
             } label: { Label("Appearance",systemImage:"paintpalette") }
         }.defaultCustomization(visible(.appearance) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
-        ToolbarItem(id:"customise") {
+        ToolbarItem(id:"customise",placement:.primaryAction) {
             Menu {
                 Button("Customise toolbar…") { customiseToolbar() }
                 Section("Actions") {
@@ -148,7 +149,7 @@ struct WorkspaceView: View {
                 }
             } label: { Label("Toolbar options",systemImage:"slider.horizontal.3") }
         }.customizationBehavior(.reorderable).sharedBackgroundVisibility(.hidden)
-        ToolbarItem(id:"settings") { SettingsLink { Label("Settings",systemImage:"gearshape") } }.sharedBackgroundVisibility(.hidden)
+        ToolbarItem(id:"settings",placement:.primaryAction) { SettingsLink { Label("Settings",systemImage:"gearshape") } }.sharedBackgroundVisibility(.hidden)
         }
     }
     private func newDashboard() { naming = nil; dashboardSymbol=nil; name = "New dashboard"; showName = true }

@@ -10,7 +10,8 @@ import SwiftData
     var error: String? = UserDefaults.standard.string(forKey:"emailSummaryError") { didSet { UserDefaults.standard.set(error,forKey:"emailSummaryError") } }
     var modelID = UserDefaults.standard.string(forKey: "emailSummaryModel") ?? "" { didSet { UserDefaults.standard.set(modelID, forKey: "emailSummaryModel") } }
     var effort = UserDefaults.standard.string(forKey: "emailSummaryEffort") ?? "medium" { didSet { UserDefaults.standard.set(effort, forKey: "emailSummaryEffort") } }
-    private(set) var records: [EmailSummary] = []
+    private(set) var records: [EmailSummary] = [] {didSet{sourceProjectionRevision &+= 1}}
+    @ObservationIgnored private(set) var sourceProjectionRevision=0
     private(set) var relevancePreferences:[ReviewRelevancePreference]=[]
     private(set) var relevanceReadable=true
     let feedback:ReviewFeedbackJobs

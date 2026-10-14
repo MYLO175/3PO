@@ -27,13 +27,15 @@ enum AIActivityWork {
         "organise_memory":"Organising memory…", "save_memory":"Saving a memory…",
         "remember_context":"Saving a memory…", "change_memory":"Updating memory…",
         "read_life_items":"Checking project items…", "create_life_items":"Adding project items…",
+        "execute_review_actions":"Completing Review actions…",
         "change_life_item":"Updating a project item…", "link_life_item":"Linking project items…",
         "unlink_life_item":"Unlinking project items…", "show_project_view":"Opening a project…",
         "undo_life_edit":"Undoing a project change…", "delete_life_item":"Removing a project item…",
         "restore_life_item":"Restoring a project item…", "reorder_life_item":"Reordering project items…"
     ]
     static func includes(_ tools:[String],confirmed:Int=0,unconfirmed:Int=0)->Bool {
-        confirmed > 0 || unconfirmed > 0 || tools.contains{descriptions[$0] != nil}
+        let reads:Set<String>=["read_calendar","read_reminders","read_item_details","search_mail","continue_mail","read_email","search_whatsapp","read_weather","read_life_items"]
+        return confirmed > 0 || unconfirmed > 0 || tools.contains{descriptions[$0] != nil && !reads.contains($0)}
     }
     static func running(_ tools:[String])->String {
         tools.reversed().compactMap{descriptions[$0]}.first ?? "Working on your actions…"
@@ -62,6 +64,7 @@ enum AIActivityStatus: String, Codable, CaseIterable {
         }
     }
     var isTerminal: Bool { self != .queued && self != .running }
+    var isFailure:Bool {[.partial,.failed,.interrupted,.uncertain].contains(self)}
     var needsAttention: Bool {
         [.partial, .failed, .interrupted, .needsAnswer, .uncertain].contains(self)
     }
@@ -138,6 +141,7 @@ struct AIActivityRecord: Codable, Equatable, Identifiable {
         self.finished = finished; self.destination = destination; self.acknowledged = acknowledged
     }
     var needsAttention: Bool { state.needsAttention && !acknowledged }
+    var failureAlert:Bool {state.isFailure && !acknowledged}
     var date: Date { finished ?? created }
 }
 
