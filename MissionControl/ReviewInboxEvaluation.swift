@@ -486,7 +486,19 @@ import EventKit
         let removal=try seedRemoval(model)
         var space=removal;space.id=UUID().uuidString;space.kind="project";space.proposedRemoval=nil;space.sourceTitle="Orion follow-up";space.message="Create a space to organise this follow-up?"
         var reply=space;reply.id=UUID().uuidString;reply.kind="reply";reply.replyDraft="Thanks for letting me know. I will wait for the replacement date."
-        try model.proactive.seedAdviceFixture([removal,space,reply],model:model)
+        var proposals=[removal,space,reply]
+        if ProcessInfo.processInfo.arguments.contains("--no-action-preview") {
+            let now=Date.now,owner=model.chatGPT.activeID
+            let raw:[String:Any]=["id":"fictional-guidance","accountID":"fictional-mail","account":"Fictional Mail","messageID":2,"internetMessageID":"guidance@example.invalid","sender":"Fictional office","subject":"Orion form received","received":now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
+            let message=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:raw))
+            let summary=EmailSummary(id:message.id,registration:owner,fingerprint:EmailSummary.fingerprint(message),summary:"Receipt confirmed; read the supplied guidance.",attention:true,reason:"Read the supplied guidance.",evidence:"Please read the guidance.",bodyFingerprint:"fictional-guidance-body",message:message)
+            model.mailData = .init(messages:model.mailData.messages+[message],accounts:model.mailData.accounts,errors:model.mailData.errors)
+            try model.emailSummaries.seedAdviceFixture(model.emailSummaries.records+[summary])
+            var concern=removal;concern.id=UUID().uuidString;concern.mailID=message.id;concern.kind="calendar";concern.proposedRemoval=nil;concern.sourceTitle=message.subject;concern.message=summary.summary;concern.evidence=summary.evidence;concern.sourceAssessmentRevision=summary.adviceRevision(replied:false)
+            var context=concern;context.id=UUID().uuidString;context.kind="update"
+            proposals += [concern,context]
+        }
+        try model.proactive.seedAdviceFixture(proposals,model:model)
     }
     static func seedCompoundPreview(_ model:DashboardModel)throws {
         let owner=model.chatGPT.activeID,now=Date.now

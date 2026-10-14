@@ -8,7 +8,25 @@ import Foundation
         let candidate=DiscoveryCandidate(alias:"wa_0",mailID:"opaque-message",evidence:"",followUpEvidence:"",sourceKind:"whatsapp",sourceChatID:"studies",sourceMessageID:"message",sourceIdentity:"linked",sourceRevision:"rev1",sourceLabel:"Orion project",sourceText:quote)
         let json=#"{"suggestions":[{"mailID":"wa_0","kind":"change","targetID":"reminder_0","newDate":"2026-10-20","hasTime":false,"connection":"The same distinctive Orion report is named in the message and reminder.","message":"The Orion message moves the deadline from 16 to 20 October. Review the reminder date?","evidence":"The Orion prototype report deadline has moved to 20 October 2026."}]}"#
         func decode(_ text:String,_ targets:[String:DiscoveryNativeTarget] = ["reminder_0":target]) throws->[PADiscovery] {try ProactiveRules.decode(text,candidates:[candidate],registration:"account",scope:"scope",now:now,targets:targets)}
+        var actionFixture=PADiscovery(id:UUID().uuidString,registration:"account",mailID:"fictional-safety-guidance",kind:"calendar",message:"Receipt confirmed; read the supplied guidance.",evidence:"Read the supplied guidance.",created:now,scope:"scope",sourceTitle:"Fictional safety guidance")
+        precondition(!ProactiveReviewRules.hasSuggestedAction(actionFixture),"Informational Calendar-labelled concerns without a date do not offer Explore")
+        actionFixture.proposedDate = .init(start:"2026-10-20",hasTime:false,timeZoneID:TimeZone.current.identifier)
+        precondition(ProactiveReviewRules.hasSuggestedAction(actionFixture),"A concrete Calendar date retains Explore")
+        actionFixture.proposedDate?.start="2026-02-30"
+        precondition(!ProactiveReviewRules.hasSuggestedAction(actionFixture),"An impossible date is not a concrete action")
+        actionFixture.kind="reminder";actionFixture.proposedDate=nil
+        precondition(ProactiveReviewRules.hasSuggestedAction(actionFixture),"Undated Reminder actions stay available")
+        actionFixture.kind="reply"
+        precondition(!ProactiveReviewRules.hasSuggestedAction(actionFixture),"Reply labels without a saved draft do not offer Explore")
+        actionFixture.replyDraft="  ";precondition(!ProactiveReviewRules.hasSuggestedAction(actionFixture),"Whitespace-only drafts are not actions")
+        actionFixture.replyDraft="Thanks for the update.";precondition(ProactiveReviewRules.hasSuggestedAction(actionFixture),"Saved reply copies retain Explore")
+        actionFixture.kind="update";precondition(!ProactiveReviewRules.hasSuggestedAction(actionFixture),"Background context alone never offers Explore")
+        actionFixture.kind="project";precondition(ProactiveReviewRules.hasSuggestedAction(actionFixture),"Concrete new spaces retain Explore")
+        actionFixture.kind="projectTask";precondition(!ProactiveReviewRules.hasSuggestedAction(actionFixture),"Project tasks need a captured destination")
+        actionFixture.proposedProjectTask = .init(target:.init(id:UUID(),revision:UUID(),title:"Fictional project"),connection:"Named project")
+        precondition(ProactiveReviewRules.hasSuggestedAction(actionFixture),"Tasks in a captured project retain Explore")
         let record=try decode(json)[0],change=record.proposedChange!
+        precondition(ProactiveReviewRules.hasSuggestedAction(record),"Exact native changes retain Explore")
         precondition(change.target.itemID == targetTask.id && change.target.sourceID == "studies" && DateRules.localDate(change.date()!) == "2026-10-20")
         precondition(change.target.matches(events:[],reminders:[targetTask],excludedCalendars:[],excludedLists:[]))
         var moved=targetTask;moved.due=change.date()

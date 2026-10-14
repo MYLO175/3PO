@@ -1,6 +1,22 @@
 import Foundation
 
 enum ProactiveReviewRules {
+    /// Local presentation only. A category label or informational explanation is
+    /// insufficient to offer an action; retain the saved concern and history.
+    static func hasSuggestedAction(_ record:PADiscovery)->Bool {
+        guard UUID(uuidString:record.id) != nil else {return false}
+        if let removal=record.proposedRemoval {return removal.target.kind == "event" && removal.target.writable && removal.target.start != nil && removal.target.end != nil && removal.scope == "occurrence"}
+        if let change=record.proposedChange {return change.target.writable && DiscoveryProposedDate(start:change.newDate,hasTime:change.hasTime,timeZoneID:change.timeZoneID).valid}
+        switch record.kind {
+        case "calendar":return !record.needsDateClarification && record.proposedDate?.valid == true
+        case "reminder":return !record.needsDateClarification && (record.proposedDate == nil || record.proposedDate?.valid == true)
+        case "project":return true
+        case "projectTask":return record.proposedProjectTask != nil
+        case "reply":return record.replyDraft.map{!$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty} == true
+        default:return false
+        }
+    }
+
     static func reference(_ request: String, turns: [AssistantTurn], records: [PADiscovery]) -> PADiscovery? {
         let value = request.trimmingCharacters(in:.whitespacesAndNewlines)
         guard value.count <= 200, let last = turns.last(where:{ $0.role == "assistant" }), last.completed, let delivery = last.deliveryID,

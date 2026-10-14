@@ -1,5 +1,8 @@
 # Next improvements
 
+14 October empty-action refinement: Explore appears only for concrete saved actions. Informational/category-only concerns retain their source controls; saved records and execution contracts are preserved. Focused and native visibility acceptance is recorded in STATUS.
+
+
 14 October clarification repair: a duration answer can continue the earlier human creation request without repeating add it. The local quote guard now accepts recent exact human quotes; the separate semantic check still rejects cancellation, unrelated and hypothetical replies. Focused checks, signed build, seven configured-model fictional requests and installation/readback are recorded in STATUS. These narrow cases do not establish sustained conversational or native-save reliability.
 
 14 October feedback correction: unrelated EventKit notifications no longer reject unchanged email feedback during reading or inference. Verified same-submission retries resolve earlier toolbar alerts locally while preserving history. Fictional asynchronous guards and exact memory readback are covered by the signed app checks; live recovery and installation evidence are recorded in STATUS. Wider provider reliability remains separate.

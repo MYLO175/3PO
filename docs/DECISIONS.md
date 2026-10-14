@@ -1,5 +1,10 @@
 # Decisions
 
+## 14 October: omit Explore when there is no suggested action
+
+A saved suggestion category alone does not justify an Explore button. Require concrete captured action details: a valid Calendar date, optional valid Reminder date, project destination where needed, exact native change/removal or a nonempty saved reply draft. Ordinary undated Reminder and named Space proposals remain available. Keep informational concern/history and source controls intact; this is local presentation, not new advice, reconstruction or authority. Apply the same rule to email cards, standalone suggestions and assistant discovery controls.
+
+
 ## 14 October — Carry human instructions across clarification answers
 
 An exact earlier human request can support the current answer to a clarification. The previous current-message-only quote guard rejected a duration answer before intent inference, even though the human had already requested the event. Accept quote provenance from the current message or the last eight same-thread messages, restricted to human turns. The source-free semantic check must still establish the current reply's continuation and reject cancellation, unrelated/hypothetical replies and additional operations. Bind downstream authorisation to the current reply only after that check succeeds. Keep current-message-only memory evidence and all native save guards. No historical failed request is automatically replayed.

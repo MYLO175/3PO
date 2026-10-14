@@ -129,7 +129,7 @@ struct AssistantPanel: View {
         let related=current.isEmpty ? [record] : current
         let completed=model.reviewCompletedActions(source)
         let saved=Set(model.reviewWork.jobs(record.registration).filter{$0.source.key == source.key}.flatMap{$0.actions.filter{$0.phase == .saved}.map(\.id)})
-        let pending=related.contains{$0.kind != "update" && !model.reviewDiscoveryCompleted($0) && $0.reviewState != "approved" && !saved.contains($0.id)}
+        let pending=related.contains{ProactiveReviewRules.hasSuggestedAction($0) && !model.reviewDiscoveryCompleted($0) && $0.reviewState != "approved" && !saved.contains($0.id)}
         if completed > 0 {
             Label("\(completed) action\(completed == 1 ? "" : "s") completed",systemImage:"checkmark.circle.fill").font(.caption).foregroundStyle(.secondary)
             Button("View actions") {model.openReviewConversation(related)}

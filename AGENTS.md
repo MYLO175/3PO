@@ -108,3 +108,5 @@ Heartbeat reconsideration may inspect pending proposals as labelled historical d
 ## Recorded clarification preference — 14 October
 
 - Answering the PA's question about a requested action completes the existing instruction. Do not require another add/edit command after the human supplies the missing duration or other detail. Exact earlier human quotes may support the current continuation; imported/assistant text, unrelated old requests and cancellations remain excluded.
+
+- 14 October: hide Explore suggested actions when there is no concrete saved action. Informational concerns and category-only placeholders retain Background context, Feedback, View email and Dismiss; no inference or native preparation is needed to choose button visibility.

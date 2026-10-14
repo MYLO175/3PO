@@ -95,7 +95,7 @@ struct PATasksView: View {
             Label("\(max(1,completed)) action\(max(1,completed) == 1 ? "" : "s") completed",systemImage:"checkmark.circle.fill").foregroundStyle(.secondary)
             Button("View actions") {model.openReviewConversation(related)}
         }
-        else if proposals.contains(where:{!completedProposal($0,source:source)}) {
+        else if proposals.contains(where:{ProactiveReviewRules.hasSuggestedAction($0) && !completedProposal($0,source:source)}) {
             Button("Explore suggested actions") {model.openReviewConversation(related)}
         }
     }
@@ -220,8 +220,8 @@ struct PATasksView: View {
                                 HStack {Label("\(completedActions) action\(completedActions == 1 ? "" : "s") completed",systemImage:"checkmark.circle.fill").foregroundStyle(.secondary);Button("View actions") {model.openReviewSource(message)};Spacer()}.controlSize(.small)
                             }
                             let proposals=card.discoveries.filter{$0.kind != "update"},updates=card.discoveries.filter{$0.kind == "update"}
-                            let pendingProposals=proposals.filter{!completedProposal($0,source:completedSource)}
-                            let hasSummaryDraft=summary.replyDraft != nil && !proposals.contains{$0.replyDraft != nil} && !model.reviewSummaryDraftCompleted(message)
+                            let pendingProposals=proposals.filter{ProactiveReviewRules.hasSuggestedAction($0) && !completedProposal($0,source:completedSource)}
+                            let hasSummaryDraft=summary.replyDraft.map{!$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty} == true && !proposals.contains{$0.replyDraft != nil} && !model.reviewSummaryDraftCompleted(message)
                             if proposals.contains(where:{$0.reviewState == "pending" || model.reviewCreationClaim($0).map({$0.receipt == nil}) == true}) {
                                 Label("A save needs checking",systemImage:"exclamationmark.circle").font(.caption).foregroundStyle(.orange)
                             }
