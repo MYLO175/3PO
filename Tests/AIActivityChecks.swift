@@ -63,6 +63,10 @@ import Foundation
             check(AIActivitySummary.text("Completed: Created **“Ask Dad”** in To do, without a due date.",hint:"Reminder") == "Reminder created: Ask Dad","Older verified Review outcomes lose Markdown and unnecessary detail")
             check(AIActivitySummary.text("Created event: Random event",compact:true) == "Calendar event created","Calendar success has a concise pill label")
             check(AIActivitySummary.text("No new changes were confirmed.",hint:"Reminder",compact:true) == "No new changes were confirmed.","A kind hint cannot invent creation")
+            var readOnly=success;readOnly.message="Checked Reminders"
+            check(AIActivitySummary.recent([readOnly],current:nil,registration:"account-a").isEmpty,"Historical context-only results do not occupy task history")
+            check(AIActivitySummary.recent([record("waiting",state:.queued)],current:nil,registration:"account-a").isEmpty,"Never-started feedback remains saved without crowding completed task history")
+            check(AIActivitySummary.text("Recreated London visit (tentative) as an all-day event for Saturday.",hint:"Calendar event") == "Calendar event created: London visit (tentative)","Older verified Calendar outcomes omit scheduling prose")
             check(AIActivitySummary.text("Space created: Orion follow-up",compact:true) == "Space created","Prepared space success uses a short label")
             check(AIActivitySummary.recent([record("ghost",state:.running)],current:nil,registration:"account-a").isEmpty,"Saved running rows need an exact live owner")
             check(AIActivitySummary.recent([record("other",registration:"account-b",state:.succeeded)],current:nil,registration:"account-a").isEmpty,"Recent activity stays account scoped")

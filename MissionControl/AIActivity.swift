@@ -154,7 +154,7 @@ enum AIActivityPillRules {
     static let successDuration:TimeInterval = 6
     static func displayed(_ records:[AIActivityRecord],current:AIActivityRecord?,registration:String,now:Date = .now)->AIActivityRecord? {
         if let current,current.registration == registration,current.state == .running {return current}
-        let outcomes=records.filter{$0.registration == registration && $0.kind != .heartbeat && $0.state.isTerminal}.sorted {
+        let outcomes=records.filter{$0.registration == registration && $0.kind != .heartbeat && $0.state.isTerminal && !AIActivitySummary.contextOnly($0)}.sorted {
             $0.date != $1.date ? $0.date > $1.date : $0.id < $1.id
         }
         if let attention=outcomes.first(where:{$0.needsAttention}) {return attention}
@@ -167,8 +167,13 @@ enum AIActivityPillRules {
 
 /// Presentation only: retain all stored history and original result prose.
 enum AIActivitySummary {
+    static func contextOnly(_ record:AIActivityRecord)->Bool {
+        guard record.state == .succeeded else {return false}
+        let reads:Set<String>=["Checked Calendar","Checked Reminders","Checked item details","Searched email","Read the email","Searched WhatsApp","Checked the weather","Checked project items"]
+        return reads.contains(text(record.message))
+    }
     static func recent(_ records:[AIActivityRecord],current:AIActivityRecord?,registration:String)->[AIActivityRecord] {
-        var values=records.filter{$0.registration == registration && $0.kind != .heartbeat && ![.running,.replied,.resolved].contains($0.state)}
+        var values=records.filter{$0.registration == registration && $0.kind != .heartbeat && $0.state.isTerminal && ![.replied,.resolved].contains($0.state) && !contextOnly($0)}
         if let current,current.registration == registration,current.kind != .heartbeat,current.state == .running {
             values.removeAll{$0.id == current.id};values.append(current)
         }
@@ -196,6 +201,10 @@ enum AIActivitySummary {
         if text.lowercased().hasPrefix("created "),let hint {
             let quoted=text.range(of:"[“\"]([^”\"]+)[”\"]",options:.regularExpression).map{String(text[$0]).dropFirst().dropLast()}
             if let quoted {return compact ? hint+" created" : hint+" created: "+quoted}
+        }
+        if text.lowercased().hasPrefix("recreated "),let hint,let range=text.range(of:" as ",options:.caseInsensitive) {
+            let title=String(text[text.index(text.startIndex,offsetBy:10)..<range.lowerBound])
+            return compact ? hint+" created" : hint+" created: "+title
         }
         return text
     }

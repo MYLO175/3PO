@@ -102,5 +102,5 @@ Heartbeat reconsideration may inspect pending proposals as labelled historical d
 ## Recorded concise Activity refinement — 14 October
 
 - Show natural green success labels such as Reminder created for six seconds, then return the pill to Ready. Retain live work and unresolved attention priority. Use one local expiry wakeup, never streaming-driven history or source reads.
-- Activity shows five recent tasks with concise natural outcomes and green successes, without acknowledgement labels/buttons/Undo UI. Preserve complete stored history and acknowledgement fields.
+- Activity shows live work and five recent task outcomes, excluding queued feedback and context-only read results, with concise natural outcomes and green successes, without acknowledgement labels/buttons/Undo UI. Preserve complete stored history and acknowledgement fields.
 - After a source action completes, replace Explore with the completed count and View actions to its saved conversation; remaining checkboxes stay inside. Pending cards show only Explore, without a suggestion count or separate Suggested actions and evidence disclosure. Keep Background context, Feedback, View email and Dismiss. Evidence stays inside the sheet; remove Suggest a fuller plan.
