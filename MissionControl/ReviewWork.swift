@@ -75,6 +75,11 @@ struct ReviewWorkPlan:Codable,Equatable {
     var actions:[ReviewWorkAction]
     var selected:[String]
 }
+enum ReviewSelectionRules {
+    static let version=3
+    static func approvalTitle(_ count:Int)->String {count == 0 ? "No actions" : "Approve \(count) action\(count == 1 ? "" : "s")"}
+    static func initial(_ plan:ReviewWorkPlan)->Set<String> {plan.presentationVersion == version ? Set(plan.selected) : []}
+}
 struct ReviewWorkActionResult {
     var phase:ReviewActionPhase
     var message:String

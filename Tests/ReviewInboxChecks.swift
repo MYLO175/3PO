@@ -25,6 +25,14 @@ import Foundation
         actionFixture.kind="projectTask";precondition(!ProactiveReviewRules.hasSuggestedAction(actionFixture),"Project tasks need a captured destination")
         actionFixture.proposedProjectTask = .init(target:.init(id:UUID(),revision:UUID(),title:"Fictional project"),connection:"Named project")
         precondition(ProactiveReviewRules.hasSuggestedAction(actionFixture),"Tasks in a captured project retain Explore")
+        var repeated=actionFixture;repeated.kind="reminder";repeated.proposedProjectTask=nil;repeated.replyDraft=nil;repeated.sourceRevision="same-source";repeated.sourceAssessmentRevision="same-assessment"
+        var alias=repeated;alias.id=UUID().uuidString;alias.evidence="Another exact quotation about that same task."
+        precondition(ProactiveRules.sameProposal(repeated,alias),"Same named action from one source assessment coalesces across quoted explanations")
+        alias.sourceAssessmentRevision="different-assessment";precondition(!ProactiveRules.sameProposal(repeated,alias),"Unverified historical quote rewrites do not imply equivalence")
+        alias=repeated;alias.id=UUID().uuidString;alias.evidence="Another quotation";alias.proposedDate = .init(start:"2026-10-20",hasTime:false,timeZoneID:TimeZone.current.identifier)
+        precondition(!ProactiveRules.sameProposal(repeated,alias),"A different due date remains a distinct proposed action")
+        alias=repeated;alias.evidence="Another quotation";alias.kind="calendar";precondition(!ProactiveRules.sameProposal(repeated,alias),"Calendar and Reminder destinations never coalesce")
+        alias=repeated;alias.evidence="Another quotation";alias.mailID="another-message";precondition(!ProactiveRules.sameProposal(repeated,alias),"Different source messages retain distinct quote evidence")
         let record=try decode(json)[0],change=record.proposedChange!
         precondition(ProactiveReviewRules.hasSuggestedAction(record),"Exact native changes retain Explore")
         precondition(change.target.itemID == targetTask.id && change.target.sourceID == "studies" && DateRules.localDate(change.date()!) == "2026-10-20")

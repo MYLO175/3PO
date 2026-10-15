@@ -1,5 +1,8 @@
 # Next improvements
 
+15 October Review selection clarity: unchecked defaults, explicit count-based approval labels and local grouping of exact-source duplicate choices are implemented. Distinct dates/destinations/settings and all original IDs/history remain. Focused and installed acceptance are recorded in STATUS; general semantic matching remains outside this bounded comparison.
+
+
 15 October final-outcome refinement: matched project preparation recovery now separates retained diagnostics from genuinely unresolved failures. Typed final action results drive the pill locally; successful corrected replies omit What went wrong, while genuine sibling and uncertain failures remain. Ordinary streamed text does not publish Activity outcomes. Focused, signed-consumer and installation evidence is recorded in STATUS. Arbitrary semantic equivalence between different requested payloads is not inferred.
 
 

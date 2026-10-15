@@ -1,5 +1,8 @@
 # Mission Control specification
 
+15 October Review approval refinement: start new actions unchecked and replace Done with No actions / Approve 1 action / Approve N actions. Reset legacy automatic selections once, retain later manual selections and drafts. Collapse exact-source duplicate concrete choices while preserving history, distinct settings/destinations and save identities.
+
+
 15 October action-outcome refinement: the pill and successful replies must reflect the final verified task result. Keep recovered project preparation in diagnostic history, clear only matching resolved failures, and show What went wrong only after a reply finishes with an unresolved failure. Genuine sibling failures and uncertain saves remain visible. Stable saved outcome metadata drives presentation; no prose guessing or receipt reads during streaming.
 
 

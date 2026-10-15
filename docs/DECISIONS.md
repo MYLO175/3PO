@@ -1,5 +1,12 @@
 # Decisions
 
+## 15 October: Review defaults to no approval
+
+Replace Done with No actions or Approve N actions so the consequence is explicit. New actions are unchecked; version3 resets older implicit selections once and preserves later human choices. Keep draft retention and the exact queue/receipt contract.
+
+The observed duplicate was the same named undated Reminder from one source assessment with two quotations. Proposal comparison now recognises that case within exact provenance and typed date/parent boundaries. Prepared display additionally compares concrete destinations/settings and preserves explicit custom notes, grouping legacy aliases locally without deleting saved history. A conversational multi-ID execution refuses duplicate concrete actions before writing. This does not infer general semantic equivalence across unrelated sources or ambiguous historical wording.
+
+
 ## 15 October 2026: show unresolved outcomes, retain recovered diagnostics
 
 The human reported a verified four-space creation still showing Partly completed and What went wrong. An earlier invalid project identity had remained in unresolvedToolErrors after execution succeeded. Match local pre-save project preparation against the corrected operation, preserving exact known references and concrete batch fields. Resolve one unambiguous correspondence or exact repeated references only; never clear unrelated sibling or uncertain failures because another operation saved. Keep diagnostics separate from the final result.

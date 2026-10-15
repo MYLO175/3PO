@@ -633,7 +633,11 @@ enum ProactiveRules {
         guard a.proposedRemoval == nil && b.proposedRemoval == nil else {return false}
         if let x=a.proposedChange,let y=b.proposedChange { return x.target.kind == y.target.kind && x.target.itemID == y.target.itemID && x.target.sourceID == y.target.sourceID && x.newDate == y.newDate && x.hasTime == y.hasTime && x.timeZoneID == y.timeZoneID }
         let distinctTitles=a.sourceTitle != nil && b.sourceTitle != nil && a.sourceTitle != b.sourceTitle
-        return a.proposedChange == nil && b.proposedChange == nil && a.kind == b.kind && !distinctTitles && a.evidence == b.evidence && a.proposedDate == b.proposedDate && a.proposedProjectTask?.target.id == b.proposedProjectTask?.target.id
+        let sameSnapshot=a.registration == b.registration && a.mailID == b.mailID && (a.sourceKind ?? "mail") == (b.sourceKind ?? "mail") && a.sourceIdentity == b.sourceIdentity && a.sourceChatID == b.sourceChatID && (
+            (a.sourceContentVersion != nil && a.sourceContentVersion == b.sourceContentVersion) ||
+            (a.sourceContentVersion == nil && b.sourceContentVersion == nil && a.sourceRevision != nil && a.sourceRevision == b.sourceRevision && a.sourceAssessmentRevision != nil && a.sourceAssessmentRevision == b.sourceAssessmentRevision))
+        let sameNamedAction=["calendar","reminder","project","projectTask"].contains(a.kind) && a.sourceTitle.map{!$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty} == true && a.sourceTitle == b.sourceTitle && sameSnapshot
+        return a.proposedChange == nil && b.proposedChange == nil && a.kind == b.kind && !distinctTitles && (a.evidence == b.evidence || sameNamedAction) && a.proposedDate == b.proposedDate && a.proposedProjectTask?.target.id == b.proposedProjectTask?.target.id
     }
     static func recoveringPreparedMail(_ progress:ProactiveProgress,candidates:[DiscoveryCandidate],prior:[PADiscovery],registration:String)->ProactiveProgress {
         var result=progress,versions=progress.preparedMailVersions ?? []

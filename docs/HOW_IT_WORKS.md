@@ -1,5 +1,12 @@
 # How 3PO works: detailed reference
 
+## 15 October: explicit Review approval choices
+
+New suggestions start unchecked. The sheet button reads No actions when none are selected; clicking it closes without approving anything or dismissing the email. Selecting one or more changes the label to Approve 1 action / Approve N actions. Existing automatically checked plans reset once on first opening under the new selection policy; later deliberate choices and unsent drafts remain saved. Newly generated conversational suggestions start unchecked, while explicit selection changes to existing issued actions remain available.
+
+Identical concrete actions from one exact source snapshot/assessment share a checkbox even if their supporting quotations differ. Distinct dates, native destinations/settings, project parents and explicit custom notes remain separate. Stored proposals, IDs, evidence and receipts stay intact. A saved or reserved alias takes precedence over waiting copies; neither becomes an automatically replayed action. Grouping decodes stable captured metadata only when rows load, not on each streamed word. Conversational execution rejects multiple IDs describing the same captured action before any write.
+
+
 ## 15 October: final task outcomes and recovered preparation
 
 An invalid project reference may fail before any save, then be corrected within the same human request. The assistant now matches that preparation problem to the later successful exact read or verified creation batch. Concrete batch fields and known destinations stay bound; a different sibling, a changed known parent, an unverified save, a broad read replacing an exact branch, or several ambiguous matching failures cannot clear the problem. The original diagnostic remains in saved history and context inspection.

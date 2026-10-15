@@ -114,3 +114,10 @@ Heartbeat reconsideration may inspect pending proposals as labelled historical d
 - When intent validation cannot authorise an otherwise complete supported Calendar, Reminder or project change, show the exact proposed actions in chat with Approve actions and Dismiss. Clear understood requests still execute directly. Approval is human authority for the captured payload and makes no further AI call. Missing essential fields, unavailable sources/targets and stale existing-item revisions still need preparation or clarification; approval never bypasses those checks. An unavailable intent provider may leave a complete local proposal without retrying inference. Never-started proposals survive reopening; attempted/uncertain saves never automatically replay. Preserve unsent drafts and finish only the exact associated queue/Review request.
 
 - 14 October: hide Explore suggested actions when there is no concrete saved action. Informational concerns and category-only placeholders retain Background context, Feedback, View email and Dismiss; no inference or native preparation is needed to choose button visibility.
+
+
+## Recorded Review approval clarity — 15 October
+
+- New Review suggestions start unchecked. Existing preselected plans reset once; later deliberate choices remain saved on reopening. Newly generated conversation suggestions also start unchecked.
+- The sheet button says No actions at zero selection, otherwise Approve 1 action / Approve N actions. No actions closes without approving or dismissing the source card; preserve unsent drafts.
+- Collapse duplicate concrete choices from the same exact source snapshot/assessment even when supporting quotations differ. Preserve original proposal/operation IDs and history, distinct destinations/dates/native settings/custom notes, saved/uncertain operations and canonical readback. Do not infer equivalence by title alone or observe streaming text to group rows.

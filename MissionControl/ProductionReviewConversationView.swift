@@ -6,13 +6,17 @@ struct ProductionReviewConversationView:View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.workspacePalette) private var palette
     @State private var rows:[ReviewPreparedRow]=[]
+    @State private var rowGroups:[[ReviewPreparedRow]]=[]
     @State private var selected=Set<String>()
     @State private var preparing=true
     @State private var draft=""
     private var conversation:AssistantConversation? {model.assistant.conversation(conversationID)}
     private var jobs:[ReviewWorkJob] {model.reviewWork.jobs(model.chatGPT.activeID,conversation:conversationID)}
     private var usable:Bool {model.reviewConversationAvailable(conversationID)}
-    private var selectedActions:[ReviewWorkAction] {rows.filter{selected.contains($0.id) && !isSaved($0) && !isReserved($0)}.compactMap(\.action)}
+    private var displayedRows:[ReviewPreparedRow] {rowGroups.compactMap {group in
+        group.first(where:isSaved) ?? group.first(where:isReserved) ?? group.first(where:{selected.contains($0.id)}) ?? group.first
+    }}
+    private var selectedActions:[ReviewWorkAction] {displayedRows.filter{selected.contains($0.id) && !isSaved($0) && !isReserved($0)}.compactMap(\.action)}
     private var turns:[AssistantTurn] {conversation?.turns.filter{$0.role == "user" || ($0.deliveryID == nil && $0.role == "assistant")} ?? []}
     private var opening:String {
         if let id=conversation?.reviewMessageID,let summary=model.emailSummaries.records.first(where:{$0.id == id && $0.registration == model.chatGPT.activeID}) {return summary.summary}
@@ -29,7 +33,7 @@ struct ProductionReviewConversationView:View {
                 Image(systemName:"bubble.left.and.text.bubble.right").font(.title2).foregroundStyle(palette[.accent]).padding(.top,3)
                 VStack(alignment:.leading,spacing:5) {Text(conversation?.title ?? "Review suggestion").font(.title3.weight(.semibold)).lineLimit(2);Text("Discuss a plan with 3PO").font(.caption).foregroundStyle(.secondary)}
                 Spacer(minLength:8)
-                Button("Done") {finish()}.disabled(preparing || !model.reviewWork.readable)
+                Button(ReviewSelectionRules.approvalTitle(selectedActions.count)) {finish()}.disabled(preparing || !model.reviewWork.readable)
             }.padding(22)
             Divider()
             if usable {
@@ -41,10 +45,10 @@ struct ProductionReviewConversationView:View {
                             if preparing {HStack {ProgressView().controlSize(.small);Text("Preparing saved actions…").font(.caption).foregroundStyle(.secondary)}}
                             if !rows.isEmpty {
                                 Text(completedCount > 0 ? "Saved actions and remaining suggestions" : "Would you like me to take these actions?").font(.headline)
-                                ForEach(rows) {row in preparedRow(row)}
+                                ForEach(displayedRows) {row in preparedRow(row)}
                                 if rows.contains(where:{$0.action != nil && !isSaved($0)}) {
                                     HStack(spacing:12) {
-                                        Text("Choose actions, then press Done. Or ask for a change below.").font(.caption).foregroundStyle(.secondary)
+                                        Text("Select actions to approve, or ask for a change below.").font(.caption).foregroundStyle(.secondary)
                                         Spacer(minLength:8)
                                         Text("\(selectedActions.count) selected").font(.caption).foregroundStyle(.secondary)
                                     }
@@ -96,18 +100,18 @@ struct ProductionReviewConversationView:View {
             }
             // Seen identities distinguish later heartbeat additions from suggestions
             // the human removed while editing this plan in its conversation.
-            if oldPlan == nil || oldPlan?.seenProposalIDs == nil || !additions.isEmpty {
+            if oldPlan == nil || oldPlan?.presentationVersion != ReviewSelectionRules.version || oldPlan?.seenProposalIDs == nil || !additions.isEmpty {
                 for record in additions {
                     let captured=model.reviewSummaryDraft(source)?.id == record.id
                     let row=await model.prepareReviewRow(record,capturedDraft:captured)
                     guard !Task.isCancelled,usable else {preparing=false;return}
                     rows.append(row)
-                    if row.action != nil,!model.reviewDiscoveryCompleted(record),!isSaved(row) {selected.insert(row.id)}
                 }
                 var plan=ReviewWorkPlan(conversationID:conversationID,scope:model.reviewWorkScope(),source:source,actions:rows.compactMap(\.action),selected:selected.sorted())
-                plan.presentationVersion=2;plan.seenProposalIDs=seen.union(records.map(\.id)).sorted();plan.unpreparedProposalIDs=rows.filter{$0.action == nil}.map(\.id)
+                plan.presentationVersion=ReviewSelectionRules.version;plan.seenProposalIDs=seen.union(records.map(\.id)).sorted();plan.unpreparedProposalIDs=rows.filter{$0.action == nil}.map(\.id)
                 if !model.reviewWork.savePlan(plan,expected:oldPlan?.revision),let current=model.reviewWork.plan(model.chatGPT.activeID,conversation:conversationID) {load(current)}
             }
+            rowGroups=DashboardModel.reviewRowGroups(rows)
             preparing=false
         }.onChange(of:draft) {_,value in model.reviewWork.setDraft(value,registration:model.chatGPT.activeID,conversation:conversationID)}
         .onChange(of:model.reviewWork.plan(model.chatGPT.activeID,conversation:conversationID)?.revision) {if let plan=model.reviewWork.plan(model.chatGPT.activeID,conversation:conversationID) {load(plan)}}
@@ -160,7 +164,8 @@ struct ProductionReviewConversationView:View {
     private func load(_ plan:ReviewWorkPlan) {
         let unresolved=rows.filter{$0.action == nil && plan.unpreparedProposalIDs?.contains($0.id) == true}
         rows=plan.actions.compactMap(model.reviewPlanRow)+unresolved
-        selected=Set(plan.selected)
+        rowGroups=DashboardModel.reviewRowGroups(rows)
+        selected=ReviewSelectionRules.initial(plan)
     }
     private func finish() {
         let actions=selectedActions

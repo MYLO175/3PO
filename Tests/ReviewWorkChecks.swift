@@ -259,6 +259,20 @@ import Foundation
             check(!future.readable && !wrote,"Future fields preserve original bytes and disable queue writes")
         }
         do {
+            check(ReviewSelectionRules.approvalTitle(0) == "No actions","Zero selection clearly closes without approval")
+            check(ReviewSelectionRules.approvalTitle(1) == "Approve 1 action","Singular approval names exactly one action")
+            check(ReviewSelectionRules.approvalTitle(2) == "Approve 2 actions","Plural approval names its exact count")
+            let w=ReviewWorkFixture(),job=w.job()
+            var plan=ReviewWorkPlan(conversationID:job.conversationID,scope:job.scope,source:job.source,actions:[w.action("a")],selected:["a"])
+            check(ReviewSelectionRules.initial(plan).isEmpty,"Legacy automatic checkbox selections reset locally")
+            plan.presentationVersion=2
+            check(ReviewSelectionRules.initial(plan).isEmpty,"Earlier preselected plans default to zero")
+            plan.presentationVersion=ReviewSelectionRules.version
+            check(ReviewSelectionRules.initial(plan) == ["a"],"Later deliberate checkbox choices survive reopening")
+            plan.selected=[]
+            check(ReviewSelectionRules.initial(plan).isEmpty,"New plans begin with no checked actions")
+        }
+        do {
             let w=ReviewWorkFixture(),s=w.make(),job=w.job()
             var plan=ReviewWorkPlan(conversationID:job.conversationID,scope:job.scope,source:job.source,actions:[w.action("a"),w.action("b")],selected:["a","b"])
             plan.presentationVersion=2;plan.seenProposalIDs=["a","b","omitted"];plan.unpreparedProposalIDs=["unavailable"]

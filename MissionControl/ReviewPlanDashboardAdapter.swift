@@ -36,6 +36,9 @@ struct ReviewDraftEvidence:Codable,Equatable {
               Set(input.actions).isSubset(of:Set(plan.actions.map(\.id))) else {throw ActionFailure.message("The exact Review plan changed. Re-read its issued actions before acting.")}
         try PAToolProtocol.evidence(input.authorization,human:job.human)
         let actions=plan.actions.filter{input.actions.contains($0.id)}
+        for (index,action) in actions.enumerated() where actions.prefix(index).contains(where:{Self.samePreparedReviewAction($0,action)}) {
+            throw ActionFailure.message("These IDs describe the same prepared action. Choose one current action ID; no changes were made.")
+        }
         let targets=try actions.map {action->[String:Any] in
             let payload=try JSONDecoder().decode(ReviewPreparedPayload.self,from:action.payload)
             return ["id":action.id,"kind":payload.proposal.kind,"title":action.title,"destination":action.destination,"start":payload.proposal.proposedDate?.start as Any? ?? NSNull(),"end":payload.proposal.proposedDate?.end as Any? ?? NSNull(),"project":payload.project?.parentID?.uuidString as Any? ?? NSNull(),"operation":payload.nativeOperation as Any? ?? NSNull(),"scope":payload.nativeScope as Any? ?? NSNull(),"occurrenceID":payload.nativeBaseline?.occurrenceID as Any? ?? NSNull(),"sourceID":payload.nativeBaseline?.sourceID as Any? ?? NSNull()]
@@ -162,13 +165,13 @@ struct ReviewDraftEvidence:Codable,Equatable {
             var payload=try JSONDecoder().decode(ReviewPreparedPayload.self,from:action.payload)
             payload.draftEvidence = .init(basis:basis,sourceRevision:basis == "source" ? sourceRevision : nil,bodyDigest:basis == "source" ? sourceText.map{SHA256.hash(data:Data($0.utf8)).map{String(format:"%02x",$0)}.joined()} : nil,humanTurnID:basis == "human" ? job.humanTurnID : nil,memoryDependencies:dependencies)
             let encoder=JSONEncoder();encoder.outputFormatting=[.sortedKeys];captured.payload=try encoder.encode(payload)
-            actions.append(captured);if entry.selected {selected.insert(captured.id)}
+            actions.append(captured)
         }
         guard actions.count <= 24,valid(),sourceStillCurrent() else {throw ActionFailure.message("This plan is unavailable or too large. The prior suggestions are retained.")}
         var updated=ReviewWorkPlan(conversationID:plan.conversationID,scope:job.scope,source:job.source,actions:actions,selected:selected.sorted())
-        updated.presentationVersion=2;updated.seenProposalIDs=plan.seenProposalIDs ?? reviewActionRecords(job.source).map(\.id);updated.unpreparedProposalIDs=[]
+        updated.presentationVersion=ReviewSelectionRules.version;updated.seenProposalIDs=plan.seenProposalIDs ?? reviewActionRecords(job.source).map(\.id);updated.unpreparedProposalIDs=[]
         guard reviewWork.savePlan(updated,expected:plan.revision) else {throw ActionFailure.message(reviewWork.error ?? "The suggestions could not be saved.")}
-        return String(decoding:try JSONSerialization.data(withJSONObject:["draftOnly":true,"nativeWrites":0,"projectWrites":0,"suggestions":actions.count,"selected":selected.count,"revision":updated.revision.uuidString,"message":"The checkbox suggestions were updated. Nothing was executed; Done approves the checked actions."],options:[.sortedKeys]),as:UTF8.self)
+        return String(decoding:try JSONSerialization.data(withJSONObject:["draftOnly":true,"nativeWrites":0,"projectWrites":0,"suggestions":actions.count,"selected":selected.count,"revision":updated.revision.uuidString,"message":"The checkbox suggestions were updated. Nothing was executed. The approval button approves the checked actions."],options:[.sortedKeys]),as:UTF8.self)
     }
     private static func sameReviewCreation(_ lhs:PADiscovery,_ rhs:PADiscovery)->Bool {
         lhs.kind == rhs.kind && lhs.sourceTitle == rhs.sourceTitle && lhs.proposedDate == rhs.proposedDate && lhs.evidence == rhs.evidence && lhs.proposedProjectTask?.target.id == rhs.proposedProjectTask?.target.id

@@ -383,6 +383,26 @@ import EventKit
             let again=try await model.performReviewAction(job,action,valid:{true})
             checks["prepared space approval saves once with canonical readback"]=saved.phase == .saved && again.itemID == saved.itemID && model.assistant.projects.items(owner,includeTopics:true).filter{$0.id.uuidString == space.id}.count == 1
         }
+        if let captured=spaceRow.action {
+            var original=try JSONDecoder().decode(ReviewPreparedPayload.self,from:captured.payload)
+            original.proposal.sourceRevision="fixture-source";original.proposal.sourceAssessmentRevision="fixture-assessment"
+            var alternate=original;alternate.proposal.id=UUID().uuidString;alternate.proposal.evidence="Another quotation for the same fictional task.";alternate.project?.id=UUID();alternate.project?.notes=alternate.proposal.evidence
+            func encoded(_ value:ReviewPreparedPayload)->ReviewWorkAction {var action=captured;action.id=value.proposal.id;action.payload=try! JSONEncoder().encode(value);return action}
+            checks["captured aliases group without changing their operation identities"]=DashboardModel.samePreparedReviewAction(encoded(original),encoded(alternate)) && encoded(original).id != encoded(alternate).id
+            alternate.project?.parentID=UUID()
+            checks["different project destinations never group"] = !DashboardModel.samePreparedReviewAction(encoded(original),encoded(alternate))
+            original.project=nil;original.proposal.kind="reminder";original.nativeFields = .init(kind:.reminder,itemID:"new-one",occurrenceID:"new-one",sourceID:"fixture-list",title:"Fictional follow-up",notes:"Source: "+(original.proposal.sourceLabel ?? original.source?.title ?? "")+"\n"+original.proposal.evidence)
+            alternate=original;alternate.proposal.id=UUID().uuidString;alternate.proposal.evidence="Another quotation for the same fictional task.";alternate.nativeFields?.itemID="new-two";alternate.nativeFields?.occurrenceID="new-two";alternate.nativeFields?.notes="Source: "+(alternate.proposal.sourceLabel ?? alternate.source?.title ?? "")+"\n"+alternate.proposal.evidence
+            checks["same concrete Reminder with different supporting prose groups"]=DashboardModel.samePreparedReviewAction(encoded(original),encoded(alternate))
+            alternate.nativeFields?.sourceID="another-list"
+            checks["different native lists stay separate"] = !DashboardModel.samePreparedReviewAction(encoded(original),encoded(alternate))
+            alternate=original;alternate.nativeFields?.due = .now
+            checks["different native due dates stay separate"] = !DashboardModel.samePreparedReviewAction(encoded(original),encoded(alternate))
+            alternate=original;alternate.nativeFields?.notes="A different explicit instruction."
+            checks["explicit custom notes are not discarded as duplicate prose"] = !DashboardModel.samePreparedReviewAction(encoded(original),encoded(alternate))
+            alternate=original;alternate.nativeFields?.priority=1
+            checks["different Reminder priorities stay separate"] = !DashboardModel.samePreparedReviewAction(encoded(original),encoded(alternate))
+        }
         var reply=space;reply.id=UUID().uuidString;reply.kind="reply";reply.replyDraft="Thanks for the update."
         let replyRow=await model.prepareReviewRow(reply,capturedDraft:true)
         checks["reply uses the same selectable panel without sending email"]=replyRow.action != nil && replyRow.destination == "Clipboard · Unsent draft" && replyRow.detail.contains("No email is sent")
@@ -589,6 +609,12 @@ import EventKit
         var space=removal;space.id=UUID().uuidString;space.kind="project";space.proposedRemoval=nil;space.sourceTitle="Orion follow-up";space.message="Create a space to organise this follow-up?"
         var reply=space;reply.id=UUID().uuidString;reply.kind="reply";reply.replyDraft="Thanks for letting me know. I will wait for the replacement date."
         var proposals=[removal,space,reply]
+        if ProcessInfo.processInfo.arguments.contains("--duplicate-action-preview") {
+            var task=space;task.id=UUID().uuidString;task.kind="reminder";task.sourceTitle="Replace Orion lecture slides";task.message="Replace the old downloaded file.";task.sourceRevision="same-fictional-source";task.sourceAssessmentRevision="same-fictional-assessment";task.evidence="Updated slides are available; replace the old file."
+            var alias=task;alias.id=UUID().uuidString;alias.message="The revised slides replace the old download.";alias.evidence="Replace your earlier downloaded slides with the update."
+            proposals += [task,alias]
+        }
+
         if ProcessInfo.processInfo.arguments.contains("--no-action-preview") {
             let now=Date.now,owner=model.chatGPT.activeID
             let raw:[String:Any]=["id":"fictional-guidance","accountID":"fictional-mail","account":"Fictional Mail","messageID":2,"internetMessageID":"guidance@example.invalid","sender":"Fictional office","subject":"Orion form received","received":now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
@@ -688,8 +714,9 @@ import EventKit
         try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]).write(to:EvaluationOutput.url("/tmp/missioncontrol-review-source-details-evaluation.json"))
     }
     static func previewSession(_ target:NativeEditTarget)->NativeEditSession? {
-        if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"),ProcessInfo.processInfo.arguments.contains("--compound-email-actions"),case .create(let request)=target {
-            return .init(item:.init(kind:request.kind,itemID:request.id.uuidString,occurrenceID:request.id.uuidString,sourceID:"fictional-calendar",title:request.title,notes:request.notes,writable:true),sources:[.init(id:"fictional-calendar",title:"Fictional Calendar",account:"Fictional",writable:true)])
+        if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"),(ProcessInfo.processInfo.arguments.contains("--compound-email-actions") || ProcessInfo.processInfo.arguments.contains("--duplicate-action-preview")),case .create(let request)=target {
+            let id=request.kind == .event ? "fictional-calendar" : "fictional-list"
+            return .init(item:.init(kind:request.kind,itemID:request.id.uuidString,occurrenceID:request.id.uuidString,sourceID:id,title:request.title,notes:request.notes,writable:true),sources:[.init(id:id,title:request.kind == .event ? "Fictional Calendar" : "Fictional Reminders",account:"Fictional",writable:true)])
         }
         let args=ProcessInfo.processInfo.arguments
         guard args.contains("--preview-review-inbox") || (args.contains("--validate-review-inbox") && !args.contains("--removal-native")) else {return nil}

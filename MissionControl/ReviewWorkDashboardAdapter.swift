@@ -27,6 +27,35 @@ struct ReviewPreparedRow:Identifiable {
 }
 
 @MainActor extension DashboardModel {
+    /// Group presentation aliases without rewriting their captured IDs or receipts.
+    static func samePreparedReviewAction(_ left:ReviewWorkAction,_ right:ReviewWorkAction)->Bool {
+        guard let a=try? JSONDecoder().decode(ReviewPreparedPayload.self,from:left.payload),let b=try? JSONDecoder().decode(ReviewPreparedPayload.self,from:right.payload),a.source != nil,a.source == b.source,
+              (ProactiveRules.sameProposal(a.proposal,b.proposal) || (a.draftEvidence != nil && a.draftEvidence == b.draftEvidence && a.proposal.kind == b.proposal.kind && a.proposal.sourceTitle != nil && a.proposal.sourceTitle == b.proposal.sourceTitle && a.proposal.proposedDate == b.proposal.proposedDate && a.proposal.proposedProjectTask?.target.id == b.proposal.proposedProjectTask?.target.id)),a.nativeOperation == b.nativeOperation,a.nativeScope == b.nativeScope,a.nativeBaseline == b.nativeBaseline,a.localDraft == b.localDraft else {return false}
+        if var x=a.nativeFields,var y=b.nativeFields {
+            guard a.project == nil,b.project == nil else {return false}
+            if a.nativeBaseline == nil {
+                func sourceNotes(_ payload:ReviewPreparedPayload)->String {"Source: "+(payload.proposal.sourceLabel ?? payload.source?.title ?? "")+"\n"+payload.proposal.evidence}
+                if x.notes == sourceNotes(a) {x.notes=""}
+                if y.notes == sourceNotes(b) {y.notes=""}
+                x.itemID="";y.itemID="";x.occurrenceID="";y.occurrenceID="";x.modified=nil;y.modified=nil
+                if x.kind == .reminder {x.start = .distantPast;y.start = .distantPast;x.end = .distantPast;y.end = .distantPast}
+            }
+            return x == y
+        }
+        guard a.nativeFields == nil,b.nativeFields == nil else {return false}
+        if let x=a.project,let y=b.project {
+            let notesA=x.notes == a.proposal.evidence ? "" : x.notes,notesB=y.notes == b.proposal.evidence ? "" : y.notes
+            return notesA == notesB && x.registration == y.registration && x.kind == y.kind && x.title == y.title && x.parentID == y.parentID && x.conversationID == y.conversationID && x.due == y.due && x.status == y.status && x.areas == y.areas && x.estimateMinutes == y.estimateMinutes}
+        return a.project == nil && b.project == nil && a.localDraft != nil
+    }
+    static func reviewRowGroups(_ rows:[ReviewPreparedRow])->[[ReviewPreparedRow]] {
+        var groups:[[ReviewPreparedRow]]=[]
+        for row in rows {
+            if let action=row.action,let index=groups.firstIndex(where:{$0.first?.action.map{samePreparedReviewAction($0,action)} == true}) {groups[index].append(row)}
+            else {groups.append([row])}
+        }
+        return groups
+    }
     var reviewConversationOwnsAssistant:Bool {
         guard assistant.busy,let id=reviewWork.activeID,let job=reviewWork.job(id) else {return false}
         return job.mode == .conversation && job.phase == .running && job.scope.registration == chatGPT.activeID && job.scope.storage == reviewStorageIdentity && assistant.requestConversationID == job.conversationID && assistant.requestTurnID == job.responseTurnID
@@ -298,8 +327,8 @@ struct ReviewPreparedRow:Identifiable {
                         }
                         let args=String(decoding:try JSONEncoder().encode(ReviewPlanTools.Input(revision:plan.revision,actions:entries)),as:UTF8.self)
                         _=try await self.prepareReviewActions(.init(id:UUID().uuidString,name:"prepare_review_actions",namespace:"pa",arguments:args),job:job,valid:valid)
-                        _=self.assistant.appendReview("The project tasks are checked; Calendar entries are unchecked. Press Done to add the selected tasks.",conversationID:job.conversationID,turnID:job.responseTurnID)
-                        return .init(phase:.completed,message:"The project tasks are checked; Calendar entries are unchecked. Press Done to add the selected tasks.")
+                        _=self.assistant.appendReview("The project tasks are checked; Calendar entries are unchecked. Press Approve to add the selected tasks.",conversationID:job.conversationID,turnID:job.responseTurnID)
+                        return .init(phase:.completed,message:"The project tasks are checked; Calendar entries are unchecked. Press Approve to add the selected tasks.")
                     } catch {return .init(phase:.failed,message:error.localizedDescription,error:error.localizedDescription)}
                 }
             }
