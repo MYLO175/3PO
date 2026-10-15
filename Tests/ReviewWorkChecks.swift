@@ -329,6 +329,39 @@ import Foundation
             s.drive(runtime);await until{!s.busy}
             check(w.calls == ["a","b"] && refreshes == 2 && s.job(job.id)?.savedCount == 2,"Each verified self-authored save refreshes its ownership before the next prepared action")
         }
+        do {
+            let w=ReviewWorkFixture(),s=w.make();var job=w.job(mode:.conversation)
+            var earlier=w.action("earlier");earlier.phase = .saved;earlier.result="Earlier verified save";earlier.itemID="original-item"
+            job.actions=[earlier]
+            w.conversationResult = .init(phase:.needsAnswer,message:"Review the proposed actions",confirmedActions:3,error:"Waiting for approval")
+            check(s.submit(job),"A conversation job with earlier verified actions can await direct chat approval")
+            s.drive(w.runtime());await until{!s.busy}
+            let waiting=s.job(job.id)!
+            check(waiting.phase == .needsAnswer && waiting.conversationActionCount == 2 && waiting.savedCount == 3,"Waiting approval retains both canonical action receipts and earlier conversational successes")
+            let next=w.job("next")
+            check(s.submit(next),"Unrelated queued work is retained while the human approves a waiting conversation")
+            let before=s.state,observed=w.observed.count,conversationCalls=w.converseCalls
+            func finish(id:UUID?=nil,registration:String?=nil,conversation:UUID?=nil,response:UUID?=nil,phase:ReviewWorkPhase = .completed,count:Int=4)->Bool {
+                s.finishChatApproval(jobID:id ?? job.id,registration:registration ?? job.scope.registration,conversationID:conversation ?? job.conversationID,responseID:response ?? job.responseTurnID,phase:phase,message:"Four more actions verified",error:nil,confirmedActions:count)
+            }
+            check(!finish(id:UUID()) && !finish(registration:"other-owner") && !finish(conversation:UUID()) && !finish(response:UUID()),"Chat approval completion requires the exact job, account, conversation and response identities")
+            for phase:ReviewWorkPhase in [.queued,.running,.needsAnswer,.interrupted] {
+                check(!finish(phase:phase),"Chat approval cannot move waiting work into nonterminal \(phase.rawValue) state")
+            }
+            check(!finish(count:-1) && s.state == before,"Rejected approval outcomes leave all jobs, receipts and counts unchanged")
+            // A local completion must not invoke the callback that normally
+            // starts queued work, even when that callback is configured to drive.
+            w.driveOnChange=true
+            check(finish(),"The exact waiting conversation accepts its verified chat approval outcome")
+            let finished=s.job(job.id)!
+            check(finished.phase == .completed && finished.finished != nil && finished.message == "Four more actions verified" && finished.error == nil,"Chat approval persists the terminal phase, finish time and current outcome")
+            check(finished.conversationActionCount == 6 && finished.savedCount == 7 && finished.actions == waiting.actions && finished.scope == waiting.scope,"Direct approval adds four successes to the prior count and preserves exact earlier action receipts and scope")
+            check(!finish() && s.job(job.id) == finished,"A second completion cannot count the same approval twice")
+            check(s.activeID == nil && s.job(next.id)?.phase == .queued && w.calls.isEmpty && w.converseCalls == conversationCalls && w.observed.count == observed,"Finishing chat approval neither starts work nor advances or notifies the scheduler")
+            let reopened=w.make()
+            check(reopened.job(job.id) == finished && reopened.job(next.id)?.phase == .queued,"Terminal approval counts, original receipts and queued work survive reopening")
+            check(!reopened.finishChatApproval(jobID:job.id,registration:job.scope.registration,conversationID:job.conversationID,responseID:job.responseTurnID,phase:.completed,message:"Duplicate",error:nil,confirmedActions:4) && reopened.job(job.id) == finished,"Reopening cannot replay the additive approval completion")
+        }
         print("Review work: \(total)/\(total) source-free injected-runtime checks passed")
     }
 }

@@ -22,7 +22,25 @@ struct AssistantTurn: Codable, Identifiable, Equatable {
     var images:[ChatImageAttachment]? = nil
     /// IDs/counts only. A prepared input trace, not an assertion of model attention or write success.
     var contextCapture: PAContextCapture? = nil
+    /// Concrete local proposals. Approval is a human UI action, never model prose.
+    var actionApprovals:[AssistantActionProposal]? = nil
+    var approvalQueuedRequestID:UUID? = nil
 }
+
+struct AssistantActionProposal:Codable,Equatable,Identifiable {
+    enum Phase:String,Codable {case pending,attempted,completed,failed,dismissed}
+    var id=UUID()
+    var toolName:String
+    var arguments:String
+    /// Private exact targets/destinations and ownership, not an inference trace.
+    var snapshot:Data
+    var outline:[String]
+    var details:[String]
+    var phase:Phase = .pending
+    var result:String? = nil
+    var approvedAt:Date? = nil
+}
+struct PAChatApprovalRequired:Error {var proposal:AssistantActionProposal;var stopInference=false}
 struct PAContextCapture: Codable, Equatable, Identifiable {
     var id = UUID()
     var captured = Date.now

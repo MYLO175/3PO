@@ -13,11 +13,149 @@ import CryptoKit
     private var issuedWidgets: [UUID:WidgetPlacement] = [:]
     private let evaluationStore: LifeWorkspaceStore?
     private var store: LifeWorkspaceStore { evaluationStore ?? model.assistant.projects }
+    private var approvalReferenceIDs = Set<UUID>()
+    struct Capture: Codable {
+        var issued: [UUID:LifeItem]
+        var links: [UUID:UUID]
+        var widgets: [UUID:WidgetPlacement]
+    }
     init(model: DashboardModel, registration: String, topic: UUID?, includeTopics: Bool, turnID: UUID, evaluationStore: LifeWorkspaceStore? = nil) {
         self.evaluationStore = evaluationStore
         self.model = model; self.registration = registration; self.topic = topic; self.includeTopics = includeTopics; self.turnID = turnID
     }
     private func json(_ value: Any) throws -> String { String(data: try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]), encoding: .utf8)! }
+    private func operationKey(_ call: PAFunctionCall, args: [String:Any]) throws -> String {
+        let canonical = try JSONSerialization.data(withJSONObject: ["name":call.name, "arguments":args, "registration":registration, "topic":topic?.uuidString ?? "shared", "turn":turnID.uuidString], options: [.sortedKeys])
+        return "life:" + SHA256.hash(data: canonical).map { String(format:"%02x", $0) }.joined()
+    }
+    private func hasReceipt(_ call: PAFunctionCall, args: [String:Any]) throws -> Bool {
+        guard LifeWorkspaceTools.mutations.contains(call.name) else { return false }
+        return store.receipt(try operationKey(call,args:args),registration:registration) != nil
+    }
+    func completedReceipt(_ call: PAFunctionCall, args: [String:Any]) throws -> String? {
+        guard registration == model.chatGPT.activeID else { throw LifeWorkspaceFailure.message("Account changed; project operation stopped.") }
+        guard LifeWorkspaceTools.mutations.contains(call.name),let receipt = store.receipt(try operationKey(call,args:args),registration:registration) else { return nil }
+        return try json(["saved":true,"alreadySaved":true,"result":receipt.result,"instruction":"This operation already has a durable receipt. Read current records before doing anything else."])
+    }
+    /// References come only from the proposed operation, never title matching or
+    /// a search across old conversation prose. Non-item source IDs stay separate.
+    private func exactReferences(_ call: PAFunctionCall, args: [String:Any]) throws -> [UUID:Bool] {
+        var result: [UUID:Bool] = [:] // true requires a parentable space
+        func add(_ token: Any?, parent: Bool = false) throws {
+            guard let token = token as? String else { return }
+            guard let id = UUID(uuidString:token) else { throw LifeWorkspaceFailure.message("Use the exact project item identity returned by a current read.") }
+            result[id] = (result[id] ?? false) || parent
+        }
+        switch call.name {
+        case "create_life_items":
+            for (index, entry) in (args["items"] as? [[String:Any]] ?? []).enumerated() {
+                if let token = entry["parent"] as? String, token.hasPrefix("batch:") {
+                    guard let parent = Int(token.dropFirst(6)), parent >= 0, parent < index else { throw LifeWorkspaceFailure.message("A batch parent must refer to an earlier item in this batch.") }
+                } else { try add(entry["parent"],parent:true) }
+            }
+        case "change_life_item":
+            try add(args["id"])
+            if args["move"] as? Bool == true { try add(args["parent"],parent:true) }
+        case "delete_life_item", "restore_life_item": try add(args["id"])
+        case "reorder_life_item":
+            try add(args["id"]); try add(args["parent"],parent:true); try add(args["before"])
+        case "link_life_item":
+            try add(args["from"])
+            if args["kind"] as? String == "item" { try add(args["id"]) }
+        case "undo_life_edit":
+            guard let ticket = store.undoEdit(registration) else { throw LifeWorkspaceFailure.message("There is no unchanged local project edit available to undo.") }
+            try add(ticket.before.id.uuidString)
+        case "show_project_view": try add(args["root"],parent:true)
+        case "read_life_items": try add(args["root"])
+        default: break
+        }
+        return result
+    }
+    /// Local read preparation precedes semantic checking. Previously issued
+    /// stale targets are rejected rather than silently rebased onto new content.
+    func prepareExactReferences(_ call: PAFunctionCall, args: [String:Any]) throws {
+        guard registration == model.chatGPT.activeID else { throw LifeWorkspaceFailure.message("Account changed; project operation stopped.") }
+        if try hasReceipt(call,args:args) { return }
+        let restoring = call.name == "restore_life_item"
+        let all = store.items(registration,topic:topic,includeTopics:includeTopics,includeDeleted:restoring)
+        var references = try exactReferences(call,args:args)
+        if call.name == "unlink_life_item" {
+            guard let id = (args["id"] as? String).flatMap(UUID.init(uuidString:)),
+                  let link = store.state.links.first(where: { $0.id == id && $0.registration == registration && (includeTopics || $0.conversationID == nil || $0.conversationID == topic) }),
+                  issuedLinks[id].map({ $0 == store.revision }) ?? true else { throw LifeWorkspaceFailure.message("Read the exact current relationship before removing it.") }
+            references[link.from] = false
+            issuedLinks[id] = store.revision
+        }
+        for (id,parent) in references {
+            guard let item = all.first(where: { $0.id == id }),
+                  restoring ? item.deletedAt != nil : item.deletedAt == nil,
+                  !parent || !item.kind.isWork,
+                  issued[id].map({ $0.revision == item.revision }) ?? true else {
+                throw LifeWorkspaceFailure.message("The exact project item is unavailable or changed. Read its current state before changing or linking it.")
+            }
+        }
+        var prepared = Set(references.keys)
+        for id in references.keys {
+            if let item = all.first(where: { $0.id == id }) {
+                prepared.formUnion(LifeItemQuery.path(item,in:all).map(\.id))
+                if call.name == "create_life_items" { prepared.formUnion(all.filter { $0.parentID == id && $0.deletedAt == nil }.prefix(20).map(\.id)) }
+            }
+        }
+        guard prepared.count <= 80 else { throw LifeWorkspaceFailure.message("The requested project references exceed the bounded read allowance. Read a smaller branch first.") }
+        // Parentless creation still inspects the existing structure locally.
+        if call.name == "create_life_items", references.isEmpty {
+            prepared.formUnion(all.prefix(60).map(\.id))
+        }
+        for item in all where prepared.contains(item.id) {
+            if issued[item.id] == nil { issued[item.id] = item }
+        }
+        approvalReferenceIDs = prepared
+        if call.name == "show_project_view" {
+            guard let id = (args["widget"] as? String).flatMap(UUID.init(uuidString:)),
+                  let widget = model.workspace.selected.widgets.first(where: { $0.id == id && $0.kind == .projects }),
+                  issuedWidgets[id].map({ $0 == widget }) ?? true else { throw LifeWorkspaceFailure.message("The exact Projects widget is unavailable or changed.") }
+            issuedWidgets[id] = widget
+        }
+    }
+    func approvalCapture() -> Capture {
+        let ordered = issued.keys.sorted { left,right in
+            if approvalReferenceIDs.contains(left) != approvalReferenceIDs.contains(right) { return approvalReferenceIDs.contains(left) }
+            return left.uuidString < right.uuidString
+        }
+        let retained = Dictionary(uniqueKeysWithValues:ordered.prefix(80).compactMap { id in issued[id].map { (id,$0) } })
+        return .init(issued:retained,links:issuedLinks,widgets:issuedWidgets)
+    }
+    /// Approval adopts only captured identities. A creation's destination keeps
+    /// its identity when descriptive fields change; edits retain exact revisions.
+    func restoreApprovalCapture(_ value: Capture, call: PAFunctionCall, args: [String:Any]) throws {
+        guard registration == model.chatGPT.activeID else { throw LifeWorkspaceFailure.message("Account changed; project approval stopped.") }
+        if try hasReceipt(call,args:args) { return }
+        guard value.issued.count <= 80 else { throw LifeWorkspaceFailure.message("The captured project read exceeds its bounded allowance.") }
+        let references = try exactReferences(call,args:args)
+        let all = store.items(registration,topic:topic,includeTopics:includeTopics,includeDeleted:call.name == "restore_life_item")
+        var restored: [UUID:LifeItem] = [:]
+        for (id,old) in value.issued {
+            guard old.id == id,let item = all.first(where: { $0.id == id }),item.registration == old.registration,item.conversationID == old.conversationID else { continue }
+            if item.revision == old.revision { restored[id] = item }
+            else if call.name == "create_life_items",references[id] == true,item.deletedAt == nil,!item.kind.isWork { restored[id] = item }
+        }
+        for (id,parent) in references {
+            guard let item = restored[id],call.name == "restore_life_item" ? item.deletedAt != nil : item.deletedAt == nil,!parent || !item.kind.isWork else {
+                throw LifeWorkspaceFailure.message("The approved project target changed or is unavailable. Review its current state before saving.")
+            }
+        }
+        if call.name == "unlink_life_item" {
+            guard let id = (args["id"] as? String).flatMap(UUID.init(uuidString:)),value.links[id] == store.revision,
+                  let link = store.state.links.first(where: { $0.id == id && $0.registration == registration && (includeTopics || $0.conversationID == nil || $0.conversationID == topic) }),restored[link.from] != nil else { throw LifeWorkspaceFailure.message("The approved relationship changed or is unavailable.") }
+        }
+        if call.name == "show_project_view" {
+            guard let id = (args["widget"] as? String).flatMap(UUID.init(uuidString:)),let captured = value.widgets[id],model.workspace.selected.widgets.contains(captured),captured.kind == .projects else { throw LifeWorkspaceFailure.message("The approved Projects widget changed or is unavailable.") }
+        }
+        issued = restored
+        issuedLinks = value.links.filter { $0.value == store.revision }
+        issuedWidgets = value.widgets.filter { model.workspace.selected.widgets.contains($0.value) }
+        approvalReferenceIDs = Set(references.keys)
+    }
     private func current(_ text: String?) throws -> LifeItem {
         guard let id = text.flatMap(UUID.init(uuidString:)), let issued = issued[id],
               let value = store.items(registration, topic: topic, includeTopics: includeTopics).first(where: { $0.id == id }), value.revision == issued.revision else {
@@ -61,11 +199,8 @@ import CryptoKit
     func execute(_ call: PAFunctionCall, args: [String:Any], reference: LifeReference? = nil) throws -> String {
         func text(_ key: String) -> String? { args[key] as? String }
         guard registration == model.chatGPT.activeID else { throw LifeWorkspaceFailure.message("Account changed; project operation stopped.") }
-        let canonical = try JSONSerialization.data(withJSONObject: ["name":call.name, "arguments":args, "registration":registration, "topic":topic?.uuidString ?? "shared", "turn":turnID.uuidString], options: [.sortedKeys])
-        let operationKey = "life:" + SHA256.hash(data: canonical).map { String(format:"%02x", $0) }.joined()
-        if LifeWorkspaceTools.mutations.contains(call.name), let receipt = store.receipt(operationKey, registration: registration) {
-            return try json(["saved":true, "alreadySaved":true, "result":receipt.result, "instruction":"This operation already has a durable receipt. Read current records before doing anything else."])
-        }
+        let operationKey = try operationKey(call,args:args)
+        if let receipt = try completedReceipt(call,args:args) { return receipt }
         switch call.name {
         case "undo_life_edit":
             let summary = "Local project edit undone. Linked sources are unchanged."

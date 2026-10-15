@@ -11,6 +11,57 @@ struct AssistantReplyText:View,Equatable {
     }
 }
 
+struct AssistantActionApprovalView:View {
+    @Bindable var model:DashboardModel
+    var conversationID:UUID
+    var turn:AssistantTurn
+    var body:some View {
+        if let proposals=turn.actionApprovals,!proposals.isEmpty {
+            let available=proposals.allSatisfy{PAToolSession.approvalAvailable($0,model:model)}
+            VStack(alignment:.leading,spacing:10) {
+                if available {
+                    ForEach(proposals) {proposal in
+                        VStack(alignment:.leading,spacing:5) {
+                            ForEach(Array(proposal.outline.enumerated()),id:\.offset) {_,line in
+                                Label(PAProse.display(line),systemImage:proposal.phase == .completed ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(proposal.phase == .completed ? Color.green : Color.primary)
+                            }
+                            let notes=proposal.details.filter{$0.hasPrefix("Notes:") || $0.contains(" · Notes:")}
+                            ForEach(Array(proposal.details.filter{!notes.contains($0)}.enumerated()),id:\.offset) {_,detail in Text(PAProse.display(detail)).font(.caption).textSelection(.enabled)}
+                            if !notes.isEmpty {DisclosureGroup("Notes") {ForEach(Array(notes.enumerated()),id:\.offset) {_,detail in Text(PAProse.display(detail)).textSelection(.enabled)}}.font(.caption)}
+                            if let result=proposal.result {Text(PAProse.display(result)).font(.caption).foregroundStyle(proposal.phase == .completed ? Color.green : Color.red)}
+                            if proposal.phase == .dismissed {Text("Dismissed").font(.caption).foregroundStyle(.secondary)}
+                            if proposal.phase == .attempted {Text(model.assistant.busy && model.assistant.requestTurnID == turn.id ? "Saving…" : "This save needs checking before another attempt.").font(.caption).foregroundStyle(.orange)}
+                        }
+                    }
+                    if proposals.contains(where:{$0.phase == .pending}) && !proposals.contains(where:{$0.phase == .attempted || $0.phase == .failed}) {
+                        HStack {
+                            Button("Approve actions",systemImage:"checkmark") {model.approveChatActions(conversationID:conversationID,responseID:turn.id)}.buttonStyle(.borderedProminent)
+                            Button("Dismiss") {model.dismissChatActions(conversationID:conversationID,responseID:turn.id)}
+                        }.disabled(model.assistant.busy || model.chatGPT.busy || !model.heartbeat.deviceAvailable)
+                    }
+                } else {Text("These proposed actions are unavailable under the current account or source choices.").font(.caption).foregroundStyle(.secondary)}
+            }.padding(12).background(.quaternary,in:RoundedRectangle(cornerRadius:10))
+        }
+    }
+}
+
+#if DEBUG
+struct ChatApprovalPreview:View {
+    @Bindable var model:DashboardModel
+    @State private var seeded=false
+    var body:some View {
+        AssistantPanel(model:model,assistant:model.assistant,readingMode:.constant(false))
+            .padding(20).frame(minWidth:650,minHeight:600).preferredColorScheme(.dark)
+            .task {
+                guard !seeded else {return};seeded=true
+                do {model.assistant.seedChatApprovalPreview(try await ReviewInboxEvaluation.chatApprovalFixture(model))}
+                catch {model.assistant.error=error.localizedDescription}
+            }
+    }
+}
+#endif
+
 struct AssistantPanel: View {
     @Environment(\.workspacePalette) private var palette
     @Bindable var model: DashboardModel
@@ -218,6 +269,7 @@ struct AssistantPanel: View {
                                 } else if turn.role == "assistant" {
                                     let content=PAProse.display(PAIntentFailure.correctedLegacyReply(turn.content,errors:turn.toolErrors))
                                     AssistantReplyText(content:content,completed:turn.completed).equatable().id(turn.completed)
+                                    if let selectedID {AssistantActionApprovalView(model:model,conversationID:selectedID,turn:turn)}
                                 } else if !turn.content.isEmpty { Text(turn.content).textSelection(.enabled) }
                                 if turn.completed, turn.role == "assistant",turn.id == conversation?.turns.last?.id,let choices=turn.choices {
                                     ViewThatFits(in:.horizontal) {

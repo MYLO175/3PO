@@ -109,4 +109,8 @@ Heartbeat reconsideration may inspect pending proposals as labelled historical d
 
 - Answering the PA's question about a requested action completes the existing instruction. Do not require another add/edit command after the human supplies the missing duration or other detail. Exact earlier human quotes may support the current continuation; imported/assistant text, unrelated old requests and cancellations remain excluded.
 
+## Recorded chat approval preference — 15 October
+
+- When intent validation cannot authorise an otherwise complete supported Calendar, Reminder or project change, show the exact proposed actions in chat with Approve actions and Dismiss. Clear understood requests still execute directly. Approval is human authority for the captured payload and makes no further AI call. Missing essential fields, unavailable sources/targets and stale existing-item revisions still need preparation or clarification; approval never bypasses those checks. An unavailable intent provider may leave a complete local proposal without retrying inference. Never-started proposals survive reopening; attempted/uncertain saves never automatically replay. Preserve unsent drafts and finish only the exact associated queue/Review request.
+
 - 14 October: hide Explore suggested actions when there is no concrete saved action. Informational concerns and category-only placeholders retain Background context, Feedback, View email and Dismiss; no inference or native preparation is needed to choose button visibility.

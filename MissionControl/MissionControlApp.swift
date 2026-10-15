@@ -68,10 +68,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
     private var reviewTrial:Bool {ProcessInfo.processInfo.arguments.contains("--preview-review-conversation")}
     var body: some Scene {
-        Window(reviewTrial ? "3PO · Review trial" : "3PO", id: reviewTrial ? "reviewConversationTrial" : ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") ? "reviewInboxPreview" : ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") ? "reviewInboxValidation" : ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") ? "lifePlansPreview" : ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") ? "commitmentValidation" : ProcessInfo.processInfo.arguments.contains("--validate-advice-context") ? "adviceValidation" : ProcessInfo.processInfo.arguments.contains("--preview-memory-review") ? "memoryReviewPreview" : "dashboard") {
+        Window(reviewTrial ? "3PO · Review trial" : "3PO", id: reviewTrial ? "reviewConversationTrial" : ProcessInfo.processInfo.arguments.contains("--preview-chat-approval") ? "chatApprovalPreview" : ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") ? "reviewInboxPreview" : ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") ? "reviewInboxValidation" : ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") ? "lifePlansPreview" : ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") ? "commitmentValidation" : ProcessInfo.processInfo.arguments.contains("--validate-advice-context") ? "adviceValidation" : ProcessInfo.processInfo.arguments.contains("--preview-memory-review") ? "memoryReviewPreview" : "dashboard") {
             #if DEBUG
             if reviewTrial {
                 ReviewConversationTrialView()
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-chat-approval") {
+                ChatApprovalPreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") {
                 CalendarDragPreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {

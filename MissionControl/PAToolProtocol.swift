@@ -132,7 +132,7 @@ enum PAToolProtocol {
     static func nativeReadPreflight(_ name:String,operation:String,hasSources:Bool,hasDetails:Bool,target:String? = nil)throws {
         guard ["change_calendar","change_reminder"].contains(name) else {return}
         if operation == "create",!hasSources {throw PAReadPrerequisite(readTool:name == "change_calendar" ? "read_calendar" : "read_reminders",reason:PAReadPrerequisite.destinations)}
-        if ["edit","delete"].contains(operation),!hasDetails {throw PAReadPrerequisite(readTool:"read_item_details",reason:PAReadPrerequisite.details,target:target)}
+        if (["edit","delete"].contains(operation) || name == "change_reminder" && operation == "complete"),!hasDetails {throw PAReadPrerequisite(readTool:"read_item_details",reason:PAReadPrerequisite.details,target:target)}
     }
     static func exclusiveAllDayEnd(_ end: Date, calendar: Calendar = .current) -> Date {
         let midnight = calendar.startOfDay(for:end)

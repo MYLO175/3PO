@@ -190,7 +190,7 @@ struct CalendarRemovalReviewSession:Identifiable {
     init(nativeSources: (any NativeSourceReading)? = nil) {
         injectedNativeSources = nativeSources
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--preview-review-conversation") {
+        if ProcessInfo.processInfo.arguments.contains("--preview-review-conversation") || ProcessInfo.processInfo.arguments.contains("--preview-chat-approval") {
             do {container=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))}
             catch {storageError="Trial storage unavailable"}
             return
@@ -228,7 +228,7 @@ struct CalendarRemovalReviewSession:Identifiable {
     func start() {
         guard !started else { return }; started = true
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--preview-review-conversation") { return }
+        if ProcessInfo.processInfo.arguments.contains("--preview-review-conversation") || ProcessInfo.processInfo.arguments.contains("--preview-chat-approval") { return }
         if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") { return }
         if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") || ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") || ProcessInfo.processInfo.arguments.contains("--preview-memory-review") || ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") {return}
         if ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") {
@@ -243,11 +243,12 @@ struct CalendarRemovalReviewSession:Identifiable {
                 let relevanceOnly=ProcessInfo.processInfo.arguments.contains("--relevance-only")
                 let schedulerOnly=ProcessInfo.processInfo.arguments.contains("--scheduler-only")
                 let intentPreparation=ProcessInfo.processInfo.arguments.contains("--intent-preparation-only")
+                let chatApproval=ProcessInfo.processInfo.arguments.contains("--chat-approval-only")
                 let heartbeatContract=ProcessInfo.processInfo.arguments.contains("--heartbeat-contract-only")
                 let briefDayparts=ProcessInfo.processInfo.arguments.contains("--brief-dayparts-only")
                 let proposalTimeline=ProcessInfo.processInfo.arguments.contains("--proposal-timeline-only")
-                do {result=try await (resolutionOnly ? ReviewInboxEvaluation.runEmailResolution(self) : removalOnly ? ReviewInboxEvaluation.runCalendarRemoval(self) : relevanceOnly ? ReviewInboxEvaluation.runRelevance(self) : briefDayparts ? ReviewInboxEvaluation.runBriefDayparts(self) : intentPreparation ? ReviewInboxEvaluation.runIntentPreparation(self) : heartbeatContract ? ReviewInboxEvaluation.runHeartbeatContract(self) : proposalTimeline ? ReviewInboxEvaluation.runProposalTimeline(self) : schedulerOnly ? HeartbeatService.evaluateScheduling(self) : emailWork ? ReviewInboxEvaluation.runEmailWork(self) : evidenceOnly ? ReviewInboxEvaluation.runMailEvidence(self) : mailOnly ? ReviewInboxEvaluation.runMailReview(self) : approvalOnly ? ReviewInboxEvaluation.runApproval(self) : ReviewInboxEvaluation.run(self))} catch {result=["error":error.localizedDescription,"storage":"Fictional disposable source-free startup"]}
-                let path=resolutionOnly ? "/tmp/missioncontrol-email-resolution-evaluation.json" : removalOnly ? "/tmp/missioncontrol-calendar-removal-evaluation.json" : relevanceOnly ? "/tmp/missioncontrol-relevance-evaluation.json" : briefDayparts ? "/tmp/missioncontrol-brief-dayparts-evaluation.json" : intentPreparation ? "/tmp/missioncontrol-intent-preparation-evaluation.json" : heartbeatContract ? "/tmp/missioncontrol-heartbeat-contract-evaluation.json" : proposalTimeline ? "/tmp/missioncontrol-proposal-timeline-evaluation.json" : schedulerOnly ? "/tmp/missioncontrol-review-scheduler-evaluation.json" : emailWork ? "/tmp/missioncontrol-email-work-evaluation.json" : evidenceOnly ? "/tmp/missioncontrol-mail-evidence-evaluation.json" : mailOnly ? "/tmp/missioncontrol-mail-review-evaluation.json" : approvalOnly ? "/tmp/missioncontrol-review-approval-evaluation.json" : "/tmp/missioncontrol-review-inbox-evaluation.json"
+                do {result=try await (chatApproval ? ReviewInboxEvaluation.runChatApproval(self) : resolutionOnly ? ReviewInboxEvaluation.runEmailResolution(self) : removalOnly ? ReviewInboxEvaluation.runCalendarRemoval(self) : relevanceOnly ? ReviewInboxEvaluation.runRelevance(self) : briefDayparts ? ReviewInboxEvaluation.runBriefDayparts(self) : intentPreparation ? ReviewInboxEvaluation.runIntentPreparation(self) : heartbeatContract ? ReviewInboxEvaluation.runHeartbeatContract(self) : proposalTimeline ? ReviewInboxEvaluation.runProposalTimeline(self) : schedulerOnly ? HeartbeatService.evaluateScheduling(self) : emailWork ? ReviewInboxEvaluation.runEmailWork(self) : evidenceOnly ? ReviewInboxEvaluation.runMailEvidence(self) : mailOnly ? ReviewInboxEvaluation.runMailReview(self) : approvalOnly ? ReviewInboxEvaluation.runApproval(self) : ReviewInboxEvaluation.run(self))} catch {result=["error":error.localizedDescription,"storage":"Fictional disposable source-free startup"]}
+                let path=chatApproval ? "/tmp/missioncontrol-chat-approval-evaluation.json" : resolutionOnly ? "/tmp/missioncontrol-email-resolution-evaluation.json" : removalOnly ? "/tmp/missioncontrol-calendar-removal-evaluation.json" : relevanceOnly ? "/tmp/missioncontrol-relevance-evaluation.json" : briefDayparts ? "/tmp/missioncontrol-brief-dayparts-evaluation.json" : intentPreparation ? "/tmp/missioncontrol-intent-preparation-evaluation.json" : heartbeatContract ? "/tmp/missioncontrol-heartbeat-contract-evaluation.json" : proposalTimeline ? "/tmp/missioncontrol-proposal-timeline-evaluation.json" : schedulerOnly ? "/tmp/missioncontrol-review-scheduler-evaluation.json" : emailWork ? "/tmp/missioncontrol-email-work-evaluation.json" : evidenceOnly ? "/tmp/missioncontrol-mail-evidence-evaluation.json" : mailOnly ? "/tmp/missioncontrol-mail-review-evaluation.json" : approvalOnly ? "/tmp/missioncontrol-review-approval-evaluation.json" : "/tmp/missioncontrol-review-inbox-evaluation.json"
                 if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:EvaluationOutput.url(path),options:.atomic)}
                 NSApp.terminate(nil)
             };return

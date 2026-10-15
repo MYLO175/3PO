@@ -294,6 +294,19 @@ struct ReviewWorkConversationResult {
     func interruptForForeground(_ registration:String) {
         if let id=activeID,job(id)?.scope.registration == registration {stop(id)}
     }
+    /// A direct chat button finishes its exact waiting conversation job locally.
+    /// The phase guard makes this additive receipt count a one-time transition.
+    @discardableResult func finishChatApproval(jobID:UUID,registration:String,conversationID:UUID,responseID:UUID,phase:ReviewWorkPhase,message:String,error:String?,confirmedActions:Int)->Bool {
+        guard let current=job(jobID),current.mode == .conversation,current.phase == .needsAnswer,
+              current.scope.registration == registration,current.conversationID == conversationID,current.responseTurnID == responseID,
+              [.completed,.partial,.failed,.uncertain,.stopped].contains(phase),confirmedActions >= 0 else {return false}
+        let (count,overflow)=(current.conversationActionCount ?? 0).addingReportingOverflow(confirmedActions)
+        guard !overflow else {return false}
+        return update(jobID) {
+            $0.phase=phase;$0.finished = .now;$0.message=message;$0.error=error
+            $0.conversationActionCount=count
+        }
+    }
     /// Explicit inspection reconciles canonical local receipts; it never performs an operation.
     @discardableResult func reconcile(_ id:UUID,runtime:ReviewWorkRuntime)->Bool {
         guard let original=job(id),!original.pending,original.mode == .approval,original.scope.registration == runtime.scope().registration,original.scope.storage == runtime.scope().storage,runtime.permits(original.source) else {return false}

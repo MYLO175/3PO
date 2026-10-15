@@ -73,7 +73,7 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
             return .init(id:eventID,registration:registration,kind:.review,state:.running,title:job.source.title,message:message,progress:job.mode == .approval && !job.actions.isEmpty ? Double(job.savedCount)/Double(job.actions.count) : nil,created:job.created,destination:.review(targetID:job.conversationID.uuidString))
         }
         if assistant.busy,let turnID=assistant.requestTurnID,
-           let saved=records.first(where:{$0.registration == registration && $0.kind == .action && $0.id == "action:"+turnID.uuidString}),activityVisible(saved) {
+           let saved=records.first(where:{$0.registration == registration && ($0.kind == .action && $0.id == "action:"+turnID.uuidString || $0.kind == .review && $0.id.hasSuffix(":"+turnID.uuidString))}),activityVisible(saved) {
             var current=saved
             current.state = .running;current.finished=nil;current.progress=nil
             current.message=assistant.toolStatus.isEmpty ? saved.message : assistant.toolStatus

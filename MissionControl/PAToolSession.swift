@@ -32,10 +32,136 @@ import Foundation
     var issuedDiscoveryDismissals:[String:PADiscovery] = [:]
     private lazy var life = LifeWorkspaceToolSession(model:model, registration:registration, topic:topicID, includeTopics:focusAreas != nil, turnID:turnID, evaluationStore:evaluationProjects)
     private var issuedWhatsApp: [String:LifeReference] = [:]
+    private var preparingApprovals=false
+    private var executingApproval=false
     private var issuedLifeMail = Set<String>()
     private var whatsappSearch: WhatsAppSearchCursor?
     private let evaluationMemory:PAMemoryStore?
     private let evaluationProjects:LifeWorkspaceStore?
+    static let approvableTools:Set<String>=["change_calendar","change_reminder","create_life_items","change_life_item","delete_life_item","restore_life_item","reorder_life_item"]
+    private struct ApprovalSnapshot:Codable {
+        var registration:String;var storage:String;var human:String;var turnID:UUID;var topicID:UUID?;var focusAreas:[LifeArea]?
+        var contextEnabled:Bool;var calendars:Set<String>;var lists:Set<String>;var accounts:Set<String>
+        var whatsappAccess:WhatsAppAccess;var whatsappIdentity:String
+        var calendar:CalendarSnapshot;var reminders:ReminderSnapshot;var details:[String:NativeEditDetails]
+        var life:LifeWorkspaceToolSession.Capture
+    }
+    static func approvalAvailable(_ proposal:AssistantActionProposal,model:DashboardModel)->Bool {
+        guard proposal.snapshot.count <= 600_000,let value=try? JSONDecoder().decode(ApprovalSnapshot.self,from:proposal.snapshot) else {return false}
+        let assistant=model.assistant
+        return value.registration == model.chatGPT.activeID && value.storage == model.reviewStorageIdentity && value.contextEnabled == assistant.contextEnabled && value.calendars == assistant.excludedCalendars && value.lists == assistant.excludedLists && value.accounts == assistant.excludedAccounts && value.whatsappIdentity == model.whatsapp.linkedIdentity && value.whatsappAccess == model.whatsapp.access(for:value.registration)
+    }
+    static func performApproval(_ proposal:AssistantActionProposal,model:DashboardModel,valid:@escaping NativeWriteValidity) async throws->String {
+        guard Self.approvableTools.contains(proposal.toolName),approvalAvailable(proposal,model:model),model.heartbeat.deviceAvailable else {throw ActionFailure.message("The captured account, source access or storage is unavailable. No change was attempted.")}
+        let value=try JSONDecoder().decode(ApprovalSnapshot.self,from:proposal.snapshot)
+        let session=PAToolSession(model:model,human:value.human,humanContext:value.human,topicID:value.topicID,turnID:value.turnID,focusAreas:value.focusAreas)
+        session.calendar=value.calendar;session.reminders=value.reminders;session.itemDetails=value.details
+        let call=PAFunctionCall(id:proposal.id.uuidString,name:proposal.toolName,namespace:"pa",arguments:proposal.arguments)
+        let args=try PAToolProtocol.arguments(call)
+        try session.life.restoreApprovalCapture(value.life,call:call,args:args)
+        session.executingApproval=true
+        let output=try await session.execute(call,valid:valid)
+        let result=(try? JSONSerialization.jsonObject(with:Data(output.utf8))) as? [String:Any]
+        guard let summary=result?["result"] as? String,result?["verified"] as? Bool == true || result?["saved"] as? Bool == true else {throw ActionFailure.message("The approved operation did not return a verified save receipt.")}
+        return summary
+    }
+    private func prepareApproval(_ call:PAFunctionCall,args supplied:[String:Any]) async throws->AssistantActionProposal {
+        var args=supplied
+        args["authorization"]=human
+        let native=["change_calendar","change_reminder"].contains(call.name)
+        let event=call.name == "change_calendar"
+        func text(_ name:String)->String? {args[name] as? String}
+        var outline:[String]=[],details:[String]=[],nativePreview:NativeEditDetails?
+        let capture=life.approvalCapture()
+        func item(_ token:String?)->LifeItem? {token.flatMap(UUID.init(uuidString:)).flatMap{capture.issued[$0]}}
+        func parentName(_ token:String?)->String {
+            guard let token else {return "Projects Home"}
+            if token.hasPrefix("batch:"),let index=Int(token.dropFirst(6)),let rows=args["items"] as? [[String:Any]],rows.indices.contains(index) {return rows[index]["title"] as? String ?? "New space"}
+            return item(token)?.title ?? "Unavailable destination"
+        }
+        if native {
+            if text("operation") == "create",text("destination") == nil {
+                let request=NativeCreationRequest(kind:event ? .event : .reminder,registration:registration,title:text("title") ?? "")
+                let destination=try await model.eventKit.creationSession(request).item.sourceID
+                guard (event ? calendar.sources : reminders.sources).contains(where:{$0.id == destination && $0.writable}) else {throw ActionFailure.message("Read the current writable destination before preparing approval.")}
+                args["destination"]=destination
+            }
+            let operation=text("operation") ?? ""
+            let kind:ActionKind=event ? (operation == "create" ? .createEvent : operation == "delete" ? .deleteEvent : .editEvent) : (operation == "create" ? .createReminder : operation == "delete" ? .deleteReminder : operation == "complete" ? .completeReminder : .editReminder)
+            let draft=ActionDraft(kind:kind,target:text("target"),destination:text("destination"),title:text("title"),due:text("due"),hasTime:args["hasTime"] as? Bool,start:text("start"),end:text("end"),allDay:args["allDay"] as? Bool,scope:text("scope"),notes:text("notes"),location:text("location"),options:try (args["options"] as? [String:Any]).map{try json($0)})
+            try ActionRules.validate(draft)
+            let baseline=text("target").flatMap{itemDetails[$0]}
+            if baseline?.recurring == true,operation != "complete",text("scope") == nil {throw ActionFailure.message("Choose the exact occurrence or repeating-series scope before approval.")}
+            let title=text("title") ?? baseline?.title ?? reminders.reminders.first(where:{$0.id == text("target")})?.title ?? calendar.events.first(where:{$0.id == text("target")})?.title
+            guard let title,!title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else {throw ActionFailure.message("Specify the action's title before approval.")}
+            let verb=["create":"Create","edit":"Update","delete":"Delete","complete":"Complete"][operation] ?? "Change"
+            outline=[verb+" "+(event ? "event: " : "reminder: ")+title]
+            let initial=baseline ?? NativeEditDetails(kind:event ? .event : .reminder,itemID:"proposal",occurrenceID:"proposal",sourceID:text("destination") ?? "",title:title,notes:"",start:.now,end:Date.now.addingTimeInterval(3600),writable:true)
+            var preview=initial
+            try preview.applyToolFields(draft)
+            try NativeEditRules.validate(preview,baseline:initial)
+            nativePreview=preview
+            if operation == "edit",let baseline {details.append("Existing item: "+baseline.title)}
+            let destination=text("destination") ?? baseline?.sourceID ?? reminders.reminders.first(where:{$0.id == text("target")})?.listID
+            if let source=(event ? calendar.sources : reminders.sources).first(where:{$0.id == destination}) {details.append("Destination: "+source.displayLabel)}
+            if event {details.append(preview.allDay ? "All-day event" : "Timed event · "+preview.timeZoneID)}
+            for key in ["start","end","due"] {
+                if let raw=text(key) {
+                    if raw == "undated" {details.append("Remove due date");continue}
+                    var date=try ActionRules.date(raw,dateOnly:event ? preview.allDay : !preview.hasTime)
+                    if event,preview.allDay,key == "end" {date=Calendar.current.date(byAdding:.day,value:-1,to:date)!}
+                    details.append(["start":"Starts","end":"Ends","due":"Due"][key]!+": "+date.formatted(date:.abbreviated,time:raw.contains("T") ? .shortened : .omitted))
+                }
+            }
+            if let value=text("scope") {details.append("Scope: "+(["occurrence":"Only this occurrence","futureEvents":"This and all future occurrences","reminderSeries":"The repeating reminder"][value] ?? value))}
+            if operation == "delete" {details.append("Deletion has no app Undo.")}
+            if let location=text("location") {details.append("Location: "+(location.isEmpty ? "Remove location" : location))}
+        } else if call.name == "create_life_items" {
+            for row in args["items"] as? [[String:Any]] ?? [] {
+                let title=row["title"] as? String ?? "",kind=row["kind"] as? String ?? "item"
+                guard !title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else {throw ActionFailure.message("Specify the new project's title before approval.")}
+                outline.append("Create "+kind+": "+title+" in "+parentName(row["parent"] as? String))
+                for key in ["notes","due","estimateMinutes"] {
+                    if let value=row[key],!(value is NSNull),String(describing:value) != "" {details.append(title+" · "+(["notes":"Notes","due":"Due date","estimateMinutes":"Estimated minutes"][key] ?? key)+": "+String(describing:value))}
+                }
+            }
+        } else {
+            guard let target=item(text("id")) else {throw ActionFailure.message("Read the exact project target before preparing approval.")}
+            let verb=["change_life_item":"Update","delete_life_item":"Move to Recently deleted","restore_life_item":"Restore","reorder_life_item":"Rearrange"][call.name] ?? "Change"
+            outline=[verb+": "+target.title]
+            if args["move"] as? Bool == true || call.name == "reorder_life_item" {details.append("Destination: "+parentName(text("parent")))}
+            if call.name == "delete_life_item" {details.append(args["keepChildren"] as? Bool == true ? "Keep its contents in the parent folder." : "Move this item and all its contents to Recently deleted.")}
+            for key in ["title","status","due","estimateMinutes","notes"] {
+                if let value=args[key],!(value is NSNull) {details.append((["due":"Due date","estimateMinutes":"Estimated minutes"][key] ?? key.capitalized)+": "+String(describing:value))}
+            }
+            if call.name == "reorder_life_item",let before=item(text("before")) {details.append("Before: "+before.title)}
+        }
+        if native,let notes=text("notes") {details.append("Notes: "+(notes.isEmpty ? "Clear notes" : notes))}
+        if let options=args["options"] as? [String:Any],let preview=nativePreview {
+            for (key,label) in [("url","Link"),("timeZone","Time zone"),("priority","Priority"),("availability","Availability")] {
+                if let value=options[key] as? String {details.append(label+": "+(value.isEmpty ? "Remove" : value))}
+            }
+            if options["alerts"] is [[String:Any]] {
+                if preview.alarms.isEmpty {details.append("Remove time alerts")}
+                for alert in preview.alarms {
+                    details.append("Alert: "+(alert.absolute.map{$0.formatted(date:.abbreviated,time:.shortened)} ?? "\(Int(abs(alert.offset)/60)) minutes "+(alert.offset <= 0 ? "before" : "after")))
+                }
+            }
+            if options["recurrence"] is [[String:Any]] {
+                if preview.recurrenceRules.isEmpty {details.append("Remove repetition")}
+                for rule in preview.recurrenceRules {
+                    details.append("Repeat: "+rule.summary)
+                    if !rule.weekdays.isEmpty {details.append("Days: "+rule.weekdays.map{($0.week == 0 ? "" : "Week \($0.week) ")+Calendar.current.weekdaySymbols[$0.weekday-1]}.joined(separator:", "))}
+                    for (label,values) in [("Days of month",rule.monthDays),("Months",rule.months),("Weeks of year",rule.yearWeeks),("Days of year",rule.yearDays),("Matching positions",rule.positions)] where !values.isEmpty {details.append(label+": "+values.map(String.init).joined(separator:", "))}
+                }
+            }
+        }
+        guard !outline.isEmpty else {throw ActionFailure.message("Prepare a complete concrete action before requesting approval.")}
+        let snapshot=ApprovalSnapshot(registration:registration,storage:model.reviewStorageIdentity,human:human,turnID:turnID,topicID:topicID,focusAreas:focusAreas,contextEnabled:model.assistant.contextEnabled,calendars:model.assistant.excludedCalendars,lists:model.assistant.excludedLists,accounts:model.assistant.excludedAccounts,whatsappAccess:model.whatsapp.access(for:registration),whatsappIdentity:model.whatsapp.linkedIdentity,calendar:.init(sources:calendar.sources,events:calendar.events.filter{$0.id == text("target")}),reminders:.init(sources:reminders.sources,reminders:reminders.reminders.filter{$0.id == text("target")}),details:itemDetails.filter{$0.key == text("target")},life:capture)
+        let encoded=try JSONEncoder().encode(snapshot)
+        guard encoded.count <= 600_000 else {throw ActionFailure.message("The captured action is too large. Prepare a smaller set of changes.")}
+        return .init(toolName:call.name,arguments:try json(args),snapshot:encoded,outline:outline,details:details)
+    }
     private var memory:PAMemoryStore { evaluationMemory ?? model.assistant.memory }
     init(model: DashboardModel, human: String, humanContext: String, topicID: UUID?, turnID: UUID, mail: MailLookup? = nil, history: [[String:String]] = [], evaluationMemory:PAMemoryStore? = nil, evaluationProjects:LifeWorkspaceStore? = nil,focusAreas:[LifeArea]? = nil) {
         self.evaluationMemory=evaluationMemory;self.evaluationProjects=evaluationProjects;self.focusAreas=focusAreas
@@ -60,6 +186,7 @@ import Foundation
             }
         }
         func text(_ name: String) -> String? { args[name] as? String }
+        if let quote=text("authorization"),let current=try? PAToolProtocol.conversationalAuthorization(quote,human:human,history:history) {args["authorization"]=current}
         let assistant = model.assistant
         let memoryTool = ["read_memory","save_memory","remember_context","change_memory","read_life_notebook","organise_memory"].contains(call.name)
         let lifeTool = LifeWorkspaceTools.names.contains(call.name)
@@ -74,6 +201,13 @@ import Foundation
             target=try json(["memoryID":record.id.uuidString,"currentBeliefData":record.text,"scope":record.conversationID?.uuidString ?? "shared"])
         }
         if lifeTool {
+            if let completed=try life.completedReceipt(call,args:args) {
+                localActionCounter.record(name:call.name,arguments:args,output:completed)
+                if let value=(try JSONSerialization.jsonObject(with:Data(completed.utf8)) as? [String:Any])?["result"] as? String,!receipts.contains(value) {receipts.append(value)}
+                return completed
+            }
+            do {try life.prepareExactReferences(call,args:args)}
+            catch {throw PAReadPreparationFailure(readTool:"read_life_items",reason:error.localizedDescription)}
             var resolved = try JSONSerialization.jsonObject(with:Data((try life.targetData(args) ?? "{}").utf8)) as! [String:Any]
             if call.name == "link_life_item", let id = text("id") {
                 switch text("kind") {
@@ -94,10 +228,19 @@ import Foundation
         }
         try PAToolProtocol.nativeReadPreflight(call.name,operation:text("operation") ?? "",hasSources:!(call.name == "change_calendar" ? calendar.sources : reminders.sources).isEmpty,hasDetails:text("target").flatMap{itemDetails[$0]} != nil,target:text("target"))
         let organisationAccepted: Bool
-        do { organisationAccepted=try await PAToolAuthorization.check(call:call,args:args,human:human,history:history,target:target,model:model) }
+        do {
+            if preparingApprovals,Self.approvableTools.contains(call.name) {throw PAIntentFailure(reason:"Review the remaining proposed changes together.")}
+            organisationAccepted=executingApproval ? true : try await PAToolAuthorization.check(call:call,args:args,human:human,history:history,target:target,model:model)
+        }
         catch is CancellationError { throw CancellationError() }
-        catch let failure as PAIntentFailure {throw failure}
-        catch { throw PAIntentFailure(reason:error.localizedDescription) }
+        catch {
+            guard !executingApproval,Self.approvableTools.contains(call.name) else {throw error}
+            let proposal=try await prepareApproval(call,args:args)
+            try Task.checkCancellation()
+            guard valid() else {throw ActionFailure.message("Ownership changed while preparing approval; no change was attempted.")}
+            preparingApprovals=true
+            throw PAChatApprovalRequired(proposal:proposal,stopInference:(error as? PAIntentFailure)?.kind == .unavailable)
+        }
         // The source-free check has verified the current reply's continuation of
         // the cited human request. Bind downstream evidence/receipts to this turn.
         if let quote=args["authorization"] as? String {

@@ -243,6 +243,13 @@ import Observation
     private func prepare(_ prompt: String, id: UUID, now: Date) -> AssistantTurn? {
         guard let index = allConversations.firstIndex(where:{ $0.id == id && $0.accountID == connection.activeID }) else { return nil }
         let previous = allConversations
+        // A new human direction supersedes unapproved proposals in this scope.
+        for i in allConversations[index].turns.indices where allConversations[index].turns[i].contextID == activeTopicID {
+            if var proposals=allConversations[index].turns[i].actionApprovals {
+                for p in proposals.indices where proposals[p].phase == .pending {proposals[p].phase = .dismissed}
+                allConversations[index].turns[i].actionApprovals=proposals
+            }
+        }
         let session=sendingProfile ? profileSession(activeTopicID) : nil
         if reviewHumanTurnID == nil || !allConversations[index].turns.contains(where:{$0.id == reviewHumanTurnID}) {
             allConversations[index].turns.append(.init(id:reviewHumanTurnID ?? UUID(),role:"user",content:prompt,completed:true,created:reviewSubmitted ?? now,contextID:activeTopicID,profileSessionID:session,profileControl:reviewHumanControl ? true : sendingProfile ? sendingProfileControl : nil,focusAreas:activeFocusAreas,images:activeImages.isEmpty ? nil : activeImages))
@@ -282,6 +289,12 @@ import Observation
     }
 
     #if DEBUG
+    func seedChatApprovalPreview(_ proposal:AssistantActionProposal) {
+        guard ProcessInfo.processInfo.arguments.contains("--preview-chat-approval"),let id=openPA(),let c=allConversations.firstIndex(where:{$0.id == id}) else {return}
+        allConversations[c].turns.append(.init(role:"user",content:"Add matching spaces for the four remaining fictional modules.",completed:true))
+        allConversations[c].turns.append(.init(role:"assistant",content:"Review the proposed actions below. Approve to carry them out, or reply with changes.",completed:true,actionApprovals:[proposal]))
+        _=save();draft="Keep this unsent variation"
+    }
     func seedWorkflowPreview() {
         guard ProcessInfo.processInfo.arguments.contains("--preview-projects") else { return }
         var feed=AssistantConversation(accountID:connection.activeID,title:"Preview PA");feed.isPrimary=true
@@ -369,6 +382,67 @@ import Observation
         if !save() { allConversations = previous }
     }
     func cancel() { task?.cancel() }
+    @discardableResult func dismissActions(conversationID:UUID,responseID:UUID)->Bool {
+        guard !busy,let c=allConversations.firstIndex(where:{$0.id == conversationID && $0.accountID == connection.activeID}),let t=allConversations[c].turns.firstIndex(where:{$0.id == responseID}),var values=allConversations[c].turns[t].actionApprovals,values.contains(where:{$0.phase == .pending}) else {return false}
+        let previous=values
+        for i in values.indices where values[i].phase == .pending {values[i].phase = .dismissed}
+        allConversations[c].turns[t].actionApprovals=values
+        if !save() {allConversations[c].turns[t].actionApprovals=previous;return false}
+        if let queued=allConversations[c].turns[t].approvalQueuedRequestID,queue.items.contains(where:{$0.id == queued && $0.registration == connection.activeID && $0.state == .needsAnswer}) {_=queue.finish(queued,result:"Proposed actions dismissed",needsAnswer:false)}
+        return true
+    }
+    @discardableResult func approveActions(runtime:AssistantRuntime,conversationID:UUID,responseID:UUID) -> Bool {
+        guard !busy,!connection.busy,conversationsWritable,let execute=runtime.approveAction,
+              let conversation=conversation(conversationID),let turn=conversation.turns.first(where:{$0.id == responseID}),
+              let proposals=turn.actionApprovals,!proposals.contains(where:{$0.phase == .attempted || $0.phase == .failed}),
+              proposals.contains(where:{$0.phase == .pending}),
+              proposals.filter({$0.phase == .pending}).allSatisfy({runtime.approvalAvailable?($0) == true}),
+              let humanID=conversation.turns.prefix(while:{$0.id != responseID}).last(where:{$0.role == "user"})?.id else {return false}
+        let registration=connection.activeID
+        let pending=proposals.filter{$0.phase == .pending}
+        busy=true;error=nil;errorConversationID=conversationID;errorTopicID=turn.contextID
+        requestConversationID=conversationID;requestTurnID=responseID;requestTopicID=turn.contextID;toolStatus="Saving approved actions…"
+        runtime.started(.init(registration:registration,conversationID:conversationID,humanTurnID:humanID,responseTurnID:responseID,phase:"running",message:toolStatus,receipts:[],errors:[],attemptedTools:pending.map(\.toolName)))
+        task=Task {
+            var receipts:[String]=[],failure:String?,uncertain=false,confirmedCount=0
+            defer {
+                if failure == nil,let queuedID=turn.approvalQueuedRequestID,queue.items.contains(where:{$0.id == queuedID && $0.registration == registration && $0.topicID == turn.contextID && $0.state == .needsAnswer}) {
+                    _=queue.finish(queuedID,result:receipts.joined(separator:"\n"),needsAnswer:false)
+                }
+                busy=false;toolStatus="";requestConversationID=nil;requestTurnID=nil;requestTopicID=nil
+                runtime.finished(.init(registration:registration,conversationID:conversationID,humanTurnID:humanID,responseTurnID:responseID,phase:uncertain ? "uncertain" : failure != nil ? (receipts.isEmpty ? "failed" : "partial") : "completed",message:failure ?? receipts.joined(separator:"\n"),receipts:receipts,errors:failure.map{[$0]} ?? [],confirmedActions:confirmedCount,unconfirmedActions:uncertain ? 1 : 0,attemptedTools:pending.map(\.toolName)))
+                runtime.afterTurn()
+            }
+            for proposal in pending {
+                guard let c=allConversations.firstIndex(where:{$0.id == conversationID && $0.accountID == registration}),let t=allConversations[c].turns.firstIndex(where:{$0.id == responseID}),let p=allConversations[c].turns[t].actionApprovals?.firstIndex(where:{$0.id == proposal.id && $0 == proposal}) else {failure="The displayed proposal changed. No additional action was attempted.";break}
+                let valid:NativeWriteValidity={
+                    registration == self.connection.activeID && self.conversationsWritable && self.requestConversationID == conversationID && self.requestTurnID == responseID && runtime.approvalAvailable?(proposal) == true
+                }
+                guard !Task.isCancelled,valid() else {failure="Stopped before the next approved action.";break}
+                // Persist attempted state before handing the exact payload to a writer.
+                // Reopening or clicking twice cannot replay a possibly attempted save.
+                allConversations[c].turns[t].actionApprovals?[p].phase = .attempted
+                allConversations[c].turns[t].actionApprovals?[p].approvedAt=runtime.clock()
+                guard save() else {failure=error ?? "Approval could not be saved; no operation was attempted.";break}
+                do {
+                    let result=try await execute(proposal,valid)
+                    allConversations[c].turns[t].actionApprovals?[p].phase = .completed
+                    allConversations[c].turns[t].actionApprovals?[p].result=result
+                    receipts.append(result)
+                    confirmedCount += max(1,proposal.outline.count)
+                    guard save() else {uncertain=true;failure="A save completed but its chat receipt needs checking.";break}
+                } catch {
+                    uncertain=error is PANativeActionUncertainty || error is CancellationError
+                    failure=error.localizedDescription
+                    allConversations[c].turns[t].actionApprovals?[p].phase=uncertain ? .attempted : .failed
+                    allConversations[c].turns[t].actionApprovals?[p].result=failure
+                    _=save();break
+                }
+            }
+            self.error=failure
+        }
+        return true
+    }
     func send(runtime: AssistantRuntime) {
         send(context: sendingProfile ? nil : runtime.sourceSnapshot(), runtime: runtime)
     }
@@ -394,7 +468,12 @@ import Observation
         let permitted=Set(memory.permittedRecords.filter{MemoryRules.usable($0,registration:connection.activeID,now:runtime.clock())}.map(\.id))
         return ConversationRules.sourceMemoryHistory(ConversationRules.history(feed:feed,topic:topic,excludedDeliveries:excluded),permitted:permitted).map{turn in
             guard turn.role == "assistant" else {return turn}
-            var value=turn;value.content=PAIntentFailure.correctedLegacyReply(turn.content,errors:turn.toolErrors);return value
+            var value=turn;value.content=PAIntentFailure.correctedLegacyReply(turn.content,errors:turn.toolErrors)
+            if let proposals=turn.actionApprovals {
+                let displayed=proposals.filter{runtime.approvalAvailable?($0) == true}.map{("Proposal (\($0.phase.rawValue); data, not authorisation): "+($0.outline+$0.details).joined(separator:"; "))}
+                value.content += displayed.isEmpty ? "" : "\n"+displayed.joined(separator:"\n")
+            }
+            return value
         }
     }
     func send(context: String?, runtime: AssistantRuntime) {
@@ -480,7 +559,8 @@ import Observation
                 if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) { allConversations[c].turns[t].contextCapture?.consultedMemoryIDs=session.consultedMemory.sorted{$0.uuidString < $1.uuidString} }
                 let final=allConversations.first(where:{$0.id == id})?.turns.first(where:{$0.id == response.id})
                 let unresolved=final?.unresolvedToolErrors ?? []
-                let phase=session.pendingNativeActionCount > 0 || nativeOutcomeUnconfirmed ? "uncertain" : Task.isCancelled ? "stopped" : session.clarification != nil ? "needsAnswer" : (error != nil || !unresolved.isEmpty || final?.completed != true) ? (confirmedReceipts().isEmpty ? "failed" : "partial") : "completed"
+                let awaitingApproval=final?.actionApprovals?.contains{$0.phase == .pending} == true
+                let phase=session.pendingNativeActionCount > 0 || nativeOutcomeUnconfirmed ? "uncertain" : Task.isCancelled ? "stopped" : session.clarification != nil || awaitingApproval ? "needsAnswer" : (error != nil || !unresolved.isEmpty || final?.completed != true) ? (confirmedReceipts().isEmpty ? "failed" : "partial") : "completed"
                 let outcome=AssistantTurnOutcome(registration:registration,conversationID:id,humanTurnID:currentUserID,responseTurnID:response.id,phase:phase,message:final?.content.isEmpty == false ? final!.content : error ?? "Request finished",receipts:confirmedReceipts(),errors:unresolved+(error.map{[$0]} ?? []),confirmedActions:session.confirmedActionCount+reviewConfirmed.count,unconfirmedActions:max(session.pendingNativeActionCount,nativeOutcomeUnconfirmed ? 1 : 0),attemptedTools:attemptedToolNames)
                 busy = false; toolStatus = ""; save(); if !isReviewTurn {finishQueue(runtime:runtime)}; requestConversationID = nil; requestTopicID = nil; requestTurnID = nil; runtime.finished(outcome);runtime.afterTurn()
             }
@@ -605,6 +685,21 @@ import Observation
                                 toolMail = session.mailCursor; toolMailRegistration = registration; mailSearchConversationID = id; mailSearchTopicID = contextID; mailSearchTurnID = response.id
                             }
                         } catch is CancellationError { throw CancellationError() }
+                        catch let approval as PAChatApprovalRequired {
+                            guard valid(),let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) else {throw ActionFailure.message("The request changed before approval could be prepared.")}
+                            var proposals=allConversations[c].turns[t].actionApprovals ?? []
+                            if !proposals.contains(where:{$0.toolName == approval.proposal.toolName && $0.arguments == approval.proposal.arguments}) {proposals.append(approval.proposal)}
+                            allConversations[c].turns[t].actionApprovals=proposals
+                            allConversations[c].turns[t].approvalQueuedRequestID=executingQueuedID
+                            queuedNeedsAnswer=true
+                            queueRunning=false
+                            guard save() else {throw ActionFailure.message("The proposed action could not be saved. No operation was attempted.")}
+                            if approval.stopInference {
+                                setResponse(([confirmedReceipts().joined(separator:"\n"),"Review the proposed actions below. Approve to carry them out, or reply with changes."].filter{!$0.isEmpty}).joined(separator:"\n\n"),completed:true)
+                                return .stopped
+                            }
+                            return .output("{\"approvalRequired\":true,\"saved\":false,\"instruction\":\"The concrete action is displayed with an Approve button in chat. Never claim it was executed or ask the human to repeat their instruction. Prepare any remaining requested actions with ordinary tools; these also await approval. Do not invent extra actions.\"}",succeeded:true)
+                        }
                         catch {
                             let note=(error as? PAIntentFailure)?.note ?? String(error.localizedDescription.prefix(700))
                             if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {
@@ -667,6 +762,8 @@ import Observation
                     if setupMode {
                         guard let question=PAProfileSetup.question(from:text) else { throw ActionFailure.message("The interview did not return one short question. Your answer and any verified memories are kept; use Continue to try the next question.") }
                         outcome=question
+                    } else if allConversations.first(where:{$0.id == id})?.turns.first(where:{$0.id == response.id})?.actionApprovals?.contains(where:{$0.phase == .pending}) == true {
+                        outcome=([confirmedReceipts().joined(separator:"\n"),"Review the proposed actions below. Approve to carry them out, or reply with changes."].filter{!$0.isEmpty}).joined(separator:"\n\n")
                     } else { outcome=text }
                     setResponse(outcome,completed:true); return
                 }

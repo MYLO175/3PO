@@ -5,6 +5,8 @@
 
 Current direction is recorded first. Older dated stages retain approved scope and history; later refinements supersede conflicting interaction and approval requirements. Current implementation and acceptance are recorded separately in [STATUS](STATUS.md) and [VALIDATION](VALIDATION.md).
 
+15 October: complete supported actions that intent validation cannot authorise become persisted in-chat outlines with Approve actions and Dismiss. Native creations/changes/completion/removal and project creation/edit/removal/restore/reordering share the original guarded writers and canonical receipts. Approve executes only the captured payload without inference; unrelated later human direction supersedes unapproved proposals. Exact project references are prepared locally before intent checking. Missing essential information still requires clarification. Provider unavailability does not trigger another inference; attempted saves do not replay after reopen. This is a concrete approval fallback, not a numeric confidence threshold.
+
 14 October clarification refinement: answering the PA's missing-detail question continues the requested action without another add/edit command. Exact recent human quotes support that continuation; current semantic intent, native target/destination/revision, receipts and readback still govern execution. Cancellation, hypothetical/unrelated replies and imported instructions do not authorise changes.
 
 ## 14 October: simplified Review, action history and chat streaming

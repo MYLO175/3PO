@@ -66,6 +66,9 @@ struct AssistantToolRequest {
     var prepareReviewActions:((PAFunctionCall,@escaping NativeWriteValidity) async throws -> String)?
     var executeReviewActions:((PAFunctionCall,@escaping NativeWriteValidity,@escaping @MainActor (Bool)->Void) async throws -> ReviewActionExecution)?
     var reviewCreationGuard:((PAFunctionCall)throws->Void)?
+    var approvalAvailable:((AssistantActionProposal)->Bool)?
+    /// Executes the exact displayed payload with human authority and no inference.
+    var approveAction:((AssistantActionProposal,@escaping NativeWriteValidity) async throws -> String)?
 }
 struct ReviewActionExecution {
     var output:String

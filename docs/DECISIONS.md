@@ -1,5 +1,11 @@
 # Decisions
 
+## 15 October — Replace uncertain-action refusal with concrete chat approval
+
+Intent validation is not a requirement for the human to repeat an understood request. For complete supported native/project actions, a refused or unavailable check prepares an exact local proposal. The button is explicit human authority for that captured action; executing it makes no AI call and does not reconstruct a plan. Missing essential data and changed/unavailable targets stay preparation/clarification failures. Unavailable inference stops immediately after preparing the local proposal, with no provider retry.
+
+Read exact referenced project identities locally before target/intent validation, scoped to the captured account/topic. Keep stale issued revisions as failures. Persist proposals additively on their assistant turn, with attempted state before writes, canonical original operation identities, verified outcomes, draft preservation and no reopen/uncertain replay. A new human direction supersedes pending proposals. Update only the exact associated general queue or Review request after approval. Preserve saved history and existing source withdrawal rules. Clear operations remain immediate; this fallback does not claim a measurable confidence percentage or replace memory evidence validation.
+
 ## 14 October: omit Explore when there is no suggested action
 
 A saved suggestion category alone does not justify an Explore button. Require concrete captured action details: a valid Calendar date, optional valid Reminder date, project destination where needed, exact native change/removal or a nonempty saved reply draft. Ordinary undated Reminder and named Space proposals remain available. Keep informational concern/history and source controls intact; this is local presentation, not new advice, reconstruction or authority. Apply the same rule to email cards, standalone suggestions and assistant discovery controls.

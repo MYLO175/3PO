@@ -643,6 +643,106 @@ private final class ObservationCounter:@unchecked Sendable {
             check(executions == 1 && context.sessions.first?.calls.isEmpty == true,"Prepared execution uses its canonical callback rather than generic native creation")
             check(outcomes.first?.confirmedActions == 2 && outcomes.first?.receipts == ["Created A","Created B"] && outcomes.first?.phase == "completed","Canonical execution contributes exact confirmed receipts and honest completion")
         }
-        print("PASS \(count) actual assistant service contracts: persisted preparation/send/reopen, exact traces/receipts, setup, ownership cancellation, serial queues and bounded native-read recovery; fictional providers/storage/settings only, no dashboard or Keychain.")
+        do {
+            let provider=FictionalInference(),context=FictionalContext(),container=try open("chat-approval")
+            let assistant=service(provider,container),id=assistant.openPA()!
+            let snapshot=Data("fictional exact target snapshot".utf8)
+            context.configure={session,_ in session.executeBody={call,_ in
+                throw PAChatApprovalRequired(proposal:.init(toolName:call.name,arguments:"{\"exact\":\"fictional target\"}",snapshot:snapshot,outline:["Create fictional space"],details:["Inside fictional Engineering"]))
+            }}
+            var outcomes:[AssistantTurnOutcome]=[],executed:[UUID]=[],allowed=true
+            var runtime=context.runtime()
+            runtime.finished={outcomes.append($0)}
+            runtime.approvalAvailable={_ in allowed}
+            runtime.approveAction={proposal,valid in
+                check(valid() && proposal.snapshot == snapshot,"Button approval keeps exact captured payload and current ownership")
+                executed.append(proposal.id);return "Created fictional approved item"
+            }
+            provider.replies=[tools(["create_life_items","change_calendar"]),final("I already saved everything")]
+            check(assistant.send(runtime:runtime,topicID:nil,prompt:"Set up the fictional modules"),"Action planning starts")
+            await until{!assistant.busy}
+            let turn=assistant.conversation(id)!.turns.last!
+            check(turn.actionApprovals?.count == 2 && turn.actionApprovals?.allSatisfy{$0.phase == .pending} == true,"Multiple uncertain actions become saved proposals")
+            check(turn.content.contains("Review the proposed actions") && !turn.content.contains("already saved"),"Pending approval overrides an invented completion claim")
+            check(outcomes.last?.phase == "needsAnswer" && outcomes.last?.errors.isEmpty == true,"Approval is waiting for human input, not a failed action")
+            check(executed.isEmpty,"Preparing an approval never executes a write")
+            let reopened=service(provider,container)
+            check(reopened.conversation(id)?.turns.last?.actionApprovals == turn.actionApprovals,"Never-started approvals survive reopening with the same identities")
+            reopened.draft="An unsent variation"
+            allowed=false
+            check(!reopened.approveActions(runtime:runtime,conversationID:id,responseID:turn.id),"Withdrawn access prevents approval")
+            allowed=true
+            let before=provider.inputs.count
+            check(reopened.approveActions(runtime:runtime,conversationID:id,responseID:turn.id),"Explicit button approval starts the captured actions")
+            check(!reopened.approveActions(runtime:runtime,conversationID:id,responseID:turn.id),"A rapid second click cannot start a second save")
+            await until{!reopened.busy}
+            check(executed == turn.actionApprovals!.map(\.id),"Only the displayed exact actions execute once, in order")
+            check(provider.inputs.count == before,"Button approval makes zero AI calls")
+            check(reopened.draft == "An unsent variation","Approval preserves the unsent composer draft")
+            check(reopened.conversation(id)?.turns.last?.actionApprovals?.allSatisfy{$0.phase == .completed && $0.approvedAt != nil} == true,"Verified results are persisted on the original proposals")
+            check(!reopened.approveActions(runtime:runtime,conversationID:id,responseID:turn.id),"Completed approvals cannot be replayed")
+            check(service(provider,container).conversation(id)?.turns.last?.actionApprovals?.allSatisfy{$0.phase == .completed} == true,"Completed receipts survive reopen")
+        }
+        do {
+            let provider=FictionalInference(),context=FictionalContext(),container=try open("chat-approval-uncertainty")
+            let assistant=service(provider,container),id=assistant.openPA()!
+            context.configure={session,_ in session.executeBody={call,_ in
+                throw PAChatApprovalRequired(proposal:.init(toolName:call.name,arguments:"{}",snapshot:Data(),outline:["Fictional change"],details:[]),stopInference:true)
+            }}
+            var runtime=context.runtime(),writes=0
+            runtime.approvalAvailable={_ in true}
+            runtime.approveAction={_,_ in writes += 1;throw PANativeActionUncertainty(operationKey:"fictional-key",message:"Check the existing save")}
+            provider.replies=[tools(["change_calendar"])]
+            check(assistant.send(runtime:runtime,topicID:nil,prompt:"Make the fictional change"),"Unavailable intent can prepare a complete local proposal")
+            await until{!assistant.busy}
+            let turn=assistant.conversation(id)!.turns.last!
+            check(provider.inputs.count == 1 && turn.completed,"Unavailable intent stops inference without a provider retry")
+            check(assistant.approveActions(runtime:runtime,conversationID:id,responseID:turn.id),"Human approval can execute the displayed complete proposal without intent inference")
+            await until{!assistant.busy}
+            check(writes == 1 && assistant.conversation(id)?.turns.last?.actionApprovals?.first?.phase == .attempted,"Uncertain save retains attempted state and never claims success")
+            let reopened=service(provider,container)
+            check(!reopened.approveActions(runtime:runtime,conversationID:id,responseID:turn.id),"Reopening never replays an attempted uncertain save")
+        }
+        do {
+            let provider=FictionalInference(),context=FictionalContext(),container=try open("chat-approval-revision")
+            let assistant=service(provider,container),id=assistant.openPA()!
+            context.configure={session,_ in session.executeBody={call,_ in throw PAChatApprovalRequired(proposal:.init(toolName:call.name,arguments:"{}",snapshot:Data(),outline:["Fictional change"],details:[]),stopInference:true)}}
+            var runtime=context.runtime();runtime.approvalAvailable={_ in true};runtime.approveAction={_,_ in preconditionFailure("A dismissed proposal cannot execute")}
+            provider.replies=[tools(["change_calendar"])]
+            check(assistant.send(runtime:runtime,topicID:nil,prompt:"Prepare the fictional change"),"Supersession fixture starts")
+            await until{!assistant.busy}
+            let responseID=assistant.conversation(id)!.turns.last!.id
+            provider.replies=[final("Understood, cancelled")]
+            check(assistant.send(runtime:runtime,topicID:nil,prompt:"Actually don't do that"),"A later human direction is accepted")
+            await until{!assistant.busy}
+            check(assistant.conversation(id)?.turns.first(where:{$0.id == responseID})?.actionApprovals?.first?.phase == .dismissed,"A later human direction dismisses old pending authority")
+            check(!assistant.approveActions(runtime:runtime,conversationID:id,responseID:responseID),"Cancelled old proposals cannot be approved")
+            provider.replies=[tools(["change_calendar"])]
+            _=assistant.send(runtime:runtime,topicID:nil,prompt:"Prepare a different fictional change")
+            await until{!assistant.busy}
+            let dismissID=assistant.conversation(id)!.turns.last!.id,before=provider.inputs.count
+            check(assistant.dismissActions(conversationID:id,responseID:dismissID),"Dismiss explicitly declines the saved proposals")
+            check(assistant.conversation(id)?.turns.last?.actionApprovals?.allSatisfy{$0.phase == .dismissed} == true && provider.inputs.count == before,"Dismiss is local, persists the declined state and makes no inference")
+            check(!assistant.approveActions(runtime:runtime,conversationID:id,responseID:dismissID),"A dismissed proposal cannot execute later")
+        }
+        do {
+            let provider=FictionalInference(),context=FictionalContext(),assistant=service(provider,try open("chat-approval-queue"))
+            context.configure={session,_ in session.executeBody={call,_ in throw PAChatApprovalRequired(proposal:.init(toolName:call.name,arguments:"{}",snapshot:Data(),outline:["Create A","Create B","Create C","Create D"],details:[]),stopInference:true)}}
+            var runtime=context.runtime(),outcomes:[AssistantTurnOutcome]=[]
+            runtime.approvalAvailable={_ in true};runtime.approveAction={_,_ in "Created four fictional items"};runtime.finished={outcomes.append($0)}
+            _=assistant.queue.add(registration:provider.activeID,topicID:nil,prompt:"Queued fictional modules")
+            _=assistant.queue.add(registration:provider.activeID,topicID:nil,prompt:"Later queued work")
+            provider.replies=[tools(["create_life_items"])]
+            assistant.resumeQueue(runtime:runtime)
+            await until{!assistant.busy}
+            let feed=assistant.feed!,turn=feed.turns.last!,queuedID=assistant.queue.items[0].id
+            check(assistant.queue.items[0].state == .needsAnswer && assistant.queue.items[1].state == .waiting && provider.inputs.count == 1,"Approval pauses the general delegated queue before unrelated queued work")
+            check(turn.approvalQueuedRequestID == queuedID,"The proposal retains its exact queued request association")
+            check(assistant.approveActions(runtime:runtime,conversationID:feed.id,responseID:turn.id),"Queued proposal accepts local human approval")
+            await until{!assistant.busy}
+            check(assistant.queue.items[0].state == .completed && assistant.queue.items[1].state == .waiting,"Approval resolves only the associated queue request without replay or automatic continuation")
+            check(outcomes.last?.confirmedActions == 4,"A four-item batch reports four created items rather than one receipt")
+        }
+        print("PASS \(count) actual assistant service contracts: persisted preparation/send/reopen, exact traces/receipts, setup, ownership cancellation, serial queues, native-read recovery and direct in-chat approval; fictional providers/storage/settings only, no dashboard or Keychain.")
     }
 }

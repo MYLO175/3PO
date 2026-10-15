@@ -45,7 +45,7 @@ extension EventKitService {
     func applyTool(_ draft: ActionDraft, reminder: TaskItem?, event: AgendaEvent?, marker: String, allowedCalendars: Set<String>, allowedLists: Set<String>, expectedDetails: NativeEditDetails? = nil, valid: NativeWriteValidity? = nil) async throws -> ActionResult {
         try ActionRules.validate(draft)
         guard (draft.notes?.count ?? 0) <= 10_000, (draft.location?.count ?? 0) <= 2000 else {throw ActionFailure.message("Notes/location exceed supported size.")}
-        if draft.kind == .completeReminder {return try await apply(draft,reminder:reminder,event:event,marker:marker,allowedCalendars:allowedCalendars,allowedLists:allowedLists)}
+        if draft.kind == .completeReminder {return try await apply(draft,reminder:reminder,event:event,marker:marker,allowedCalendars:allowedCalendars,allowedLists:allowedLists,valid:valid,expectedDetails:expectedDetails)}
         if draft.kind == .createEvent || draft.kind == .createReminder {
             let request=NativeCreationRequest(kind:draft.kind == .createEvent ? .event : .reminder,registration:"tool",title:draft.title ?? "",notes:NativeRequestNotes.creation(draft.notes))
             let session=try await creationSession(request),baseline=session.item

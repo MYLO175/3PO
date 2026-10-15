@@ -127,6 +127,40 @@ extension DashboardModel {
             guard let self else {return false}
             return self.nativeLearningValidation.withSnapshot(decision)
         }
+        runtime.approvalAvailable={ [weak self] proposal in
+            guard let self else {return false}
+            return PAToolSession.approvalAvailable(proposal,model:self)
+        }
+        runtime.approveAction={ [weak self] proposal,valid in
+            guard let self else {throw ActionFailure.message("The captured workspace is unavailable.")}
+            return try await PAToolSession.performApproval(proposal,model:self,valid:valid)
+        }
         return runtime
+    }
+    func approveChatActions(conversationID:UUID,responseID:UUID) {
+        guard !assistant.busy,!chatGPT.busy,heartbeat.deviceAvailable else {return}
+        memoryLearning.cancel();sourceLearning.cancel();nativeSourceLearning.cancel();memoryMaintenance.cancel()
+        proactive.cancel();reviewWork.interruptForForeground(chatGPT.activeID);heartbeat.userStartedTyping()
+        var runtime=assistantRuntime()
+        if let job=reviewWork.jobs(chatGPT.activeID,conversation:conversationID).first(where:{$0.responseTurnID == responseID && $0.mode == .conversation && $0.phase == .needsAnswer}) {
+            let eventID="review:"+job.id.uuidString+":"+responseID.uuidString
+            runtime.started={ [weak self] outcome in
+                guard let self else {return}
+                _=aiActivity.upsert(.init(id:eventID,registration:job.scope.registration,kind:.review,state:.running,title:job.source.title,message:"Saving approved actions…",created:job.created,destination:.review(targetID:conversationID.uuidString)))
+            }
+            runtime.finished={ [weak self] outcome in
+                guard let self else {return}
+                if reviewWork.finishChatApproval(jobID:job.id,registration:job.scope.registration,conversationID:conversationID,responseID:responseID,phase:ReviewWorkPhase(rawValue:outcome.phase) ?? .failed,message:outcome.message,error:outcome.errors.first,confirmedActions:outcome.confirmedActions),let updated=reviewWork.job(job.id) {reviewJobChanged(updated)}
+            }
+        }
+        _=assistant.approveActions(runtime:runtime,conversationID:conversationID,responseID:responseID)
+    }
+    func dismissChatActions(conversationID:UUID,responseID:UUID) {
+        guard assistant.dismissActions(conversationID:conversationID,responseID:responseID) else {return}
+        _=aiActivity.acknowledge("action:"+responseID.uuidString,registration:chatGPT.activeID)
+        for job in reviewWork.jobs(chatGPT.activeID,conversation:conversationID) where job.responseTurnID == responseID && job.mode == .conversation && job.phase == .needsAnswer {
+            if reviewWork.finishChatApproval(jobID:job.id,registration:job.scope.registration,conversationID:conversationID,responseID:responseID,phase:.stopped,message:"Proposed actions dismissed",error:nil,confirmedActions:0),let updated=reviewWork.job(job.id) {reviewJobChanged(updated)}
+            _=aiActivity.acknowledge("review:"+job.id.uuidString+":"+responseID.uuidString,registration:chatGPT.activeID)
+        }
     }
 }

@@ -66,7 +66,10 @@ import Foundation
             assert(missingSource)
             try PAToolProtocol.nativeReadPreflight(name,operation:"create",hasSources:true,hasDetails:false)
         }
-        try PAToolProtocol.nativeReadPreflight("change_reminder",operation:"complete",hasSources:true,hasDetails:false)
+        var completionNeedsDetails=false
+        do {try PAToolProtocol.nativeReadPreflight("change_reminder",operation:"complete",hasSources:true,hasDetails:false)} catch {completionNeedsDetails=true}
+        precondition(completionNeedsDetails,"Completion needs the full current reminder baseline before intent or approval")
+        try PAToolProtocol.nativeReadPreflight("change_reminder",operation:"complete",hasSources:true,hasDetails:true)
         try PAToolProtocol.nativeReadPreflight("read_reminders",operation:"",hasSources:false,hasDetails:false)
         let preparation=PAReadPrerequisite(readTool:"read_item_details",reason:PAReadPrerequisite.details,target:"exact-A")
         precondition(!preparation.resolved(by:"read_item_details",id:"exact-B"))

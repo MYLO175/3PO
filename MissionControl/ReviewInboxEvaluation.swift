@@ -5,6 +5,77 @@ import SwiftUI
 import EventKit
 
 @MainActor enum ReviewInboxEvaluation {
+    static func chatApprovalFixture(_ model:DashboardModel) async throws->AssistantActionProposal {
+        guard ["--validate-review-inbox","--preview-chat-approval"].contains(where:ProcessInfo.processInfo.arguments.contains) else {throw SummaryFailure.invalid}
+        let store=model.assistant.projects,owner=model.chatGPT.activeID
+        let root=LifeItem(registration:owner,kind:.space,title:"Fictional Engineering")
+        let modules=LifeItem(registration:owner,kind:.space,title:"Modules",parentID:root.id)
+        let initial=(1...4).map{LifeItem(registration:owner,kind:.space,title:"Existing module \($0)",parentID:modules.id)}
+        let filler=(1...70).map{LifeItem(registration:owner,kind:.space,title:"Other fictional space \($0)")}
+        _=try store.create([root,modules]+initial,receipt:.init(id:"fictional-module-setup",registration:owner,result:"Fictional setup"))
+        for index in stride(from:0,to:filler.count,by:12) {
+            _=try store.create(Array(filler[index..<min(index+12,filler.count)]),receipt:.init(id:"fictional-other-\(index)",registration:owner,result:"Fictional setup"))
+        }
+        let human="Add matching spaces for the other four fictional modules inside Modules."
+        let rows=(5...8).map{["title":"Module \($0)","kind":"space","parent":modules.id.uuidString,"notes":"Fictional module notes","due":NSNull(),"estimateMinutes":NSNull(),"areas":["studies"]] as [String:Any]}
+        let arguments=String(decoding:try JSONSerialization.data(withJSONObject:["items":rows,"authorization":"A deliberately non-matching quote to exercise local approval without inference"]),as:UTF8.self)
+        let session=PAToolSession(model:model,human:human,humanContext:human,topicID:nil,turnID:UUID(),focusAreas:[])
+        do {_ = try await session.execute(.init(id:"fictional-prepare-modules",name:"create_life_items",namespace:"pa",arguments:arguments),valid:{true})}
+        catch let approval as PAChatApprovalRequired {return approval.proposal}
+        throw ActionFailure.message("The fictional action did not prepare an approval.")
+    }
+    static func runChatApproval(_ model:DashboardModel) async throws->[String:Any] {
+        let preferences=UserDefaults.standard.dictionaryRepresentation() as NSDictionary
+        let proposal=try await chatApprovalFixture(model)
+        let store=model.assistant.projects,owner=model.chatGPT.activeID
+        var checks:[String:Bool]=[:]
+        let initial=store.items(owner,includeTopics:true)
+        checks["preparation does not create the four proposed modules"]=initial.count == 76 && !initial.contains{$0.title == "Module 5"}
+        checks["exact parent is read beyond the ordinary search cap"]=proposal.outline.count == 4 && proposal.outline.allSatisfy{$0.contains("in Modules")}
+        checks["current captured source and account choices permit display"]=PAToolSession.approvalAvailable(proposal,model:model)
+        var parent=initial.first{$0.title == "Modules"}!,oldRevision=UUID()
+        oldRevision=parent.revision;parent.notes="A harmless description change"
+        _=try store.save(parent,expected:oldRevision)
+        let result=try await PAToolSession.performApproval(proposal,model:model,valid:{true})
+        let saved=store.items(owner,includeTopics:true),added=saved.filter{$0.title.hasPrefix("Module ")}
+        checks["explicit approval atomically creates exactly four captured spaces"]=added.count == 4 && added.allSatisfy{$0.parentID == parent.id && $0.notes == "Fictional module notes"} && result.contains("4")
+        let count=saved.count
+        _=try await PAToolSession.performApproval(proposal,model:model,valid:{true})
+        checks["canonical receipt prevents a second save"]=store.items(owner,includeTopics:true).count == count
+        checks["a changed parent description alone does not block creation"]=added.count == 4
+        var child=added[0]
+        let args:[String:Any]=["id":child.id.uuidString,"title":"A proposed rename","notes":NSNull(),"status":NSNull(),"due":NSNull(),"estimateMinutes":NSNull(),"move":false,"parent":NSNull(),"authorization":"not the human message"]
+        let human="Rename this fictional module."
+        let session=PAToolSession(model:model,human:human,humanContext:human,topicID:nil,turnID:UUID(),focusAreas:[])
+        var edit:AssistantActionProposal?
+        do {_ = try await session.execute(.init(id:"fictional-edit",name:"change_life_item",namespace:"pa",arguments:String(decoding:try JSONSerialization.data(withJSONObject:args),as:UTF8.self)),valid:{true})}
+        catch let waiting as PAChatApprovalRequired {edit=waiting.proposal}
+        let prior=child.revision;child.notes="An outside change after proposal"
+        _=try store.save(child,expected:prior)
+        var staleRejected=false
+        if let edit {do {_ = try await PAToolSession.performApproval(edit,model:model,valid:{true})} catch {staleRejected=true}}
+        checks["editing a changed exact target is rejected"]=staleRejected && store.items(owner,includeTopics:true).first{$0.id == child.id}?.title == child.title
+        let fakeSource=SourceOption(id:"fictional-calendar",title:"Fictional calendar",account:"Fictional account",writable:true)
+        let native=PAToolSession(model:model,human:"Prepare a fictional event",humanContext:"",topicID:nil,turnID:UUID(),focusAreas:[])
+        native.calendar = .init(sources:[fakeSource],events:[])
+        func event(_ start:String?,_ end:String?,allDay:Bool)->PAFunctionCall {
+            let args:[String:Any]=["operation":"create","target":NSNull(),"destination":fakeSource.id,"title":"Fictional event","notes":NSNull(),"location":NSNull(),"start":start as Any? ?? NSNull(),"end":end as Any? ?? NSNull(),"allDay":allDay,"scope":NSNull(),"options":NSNull(),"authorization":"not a human quote"]
+            return .init(id:UUID().uuidString,name:"change_calendar",namespace:"pa",arguments:String(decoding:try! JSONSerialization.data(withJSONObject:args),as:UTF8.self))
+        }
+        for (label,call) in [("missing time",event(nil,nil,allDay:false)),("reversed range",event("2026-10-19T16:00:00+01:00","2026-10-19T15:00:00+01:00",allDay:false)),("all-day timestamp mismatch",event("2026-10-19T15:00:00+01:00","2026-10-19T16:00:00+01:00",allDay:true))] {
+            var rejected=false
+            do {_ = try await native.execute(call,valid:{true})} catch is PAChatApprovalRequired {} catch {rejected=true}
+            checks[label+" is not offered for approval"]=rejected
+        }
+        do {_ = try await native.execute(event("2026-10-19","2026-10-20",allDay:true),valid:{true})}
+        catch let waiting as PAChatApprovalRequired {
+            let start=waiting.proposal.details.first(where:{$0.hasPrefix("Starts: ")}).map{String($0.dropFirst(8))}
+            let end=waiting.proposal.details.first(where:{$0.hasPrefix("Ends: ")}).map{String($0.dropFirst(6))}
+            checks["all-day outline includes mode and human inclusive end"]=waiting.proposal.details.contains("All-day event") && start != nil && start == end
+        }
+        checks["real preferences unchanged"]=preferences.isEqual(to:UserDefaults.standard.dictionaryRepresentation())
+        return ["checks":checks,"passed":checks.values.filter{$0}.count,"total":checks.count,"AIRequests":0,"nativeChanges":0,"storage":"Fictional local project records in disposable SwiftData; exact production action preparation and approval, no source startup"]
+    }
     static func dateDiagnosticPreview()->String? {
         guard ProcessInfo.processInfo.arguments.contains("--preview-settings"),ProcessInfo.processInfo.arguments.contains("--date-diagnostics-preview") else {return nil}
         let quote="Orion report is due on 21 January 2027."

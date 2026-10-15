@@ -1,5 +1,7 @@
 # Validation
 
+15 October chat approval:226 actual assistant-service,99 Review-work,117 Activity,70 conversation-repository and focused PA-tool/project/ownership/native-editing checks pass. Signed production-path fictional approval passes12/12 with zero AI/native changes; native fictional chat verifies a four-space outline, one approval, green ticks and preserved draft. The installed strict-signed bundle matches2,254 candidate files and relaunches normally. All80 personal records survive;55 protected records, workspace and product preferences are exact. Saved proposals, duplicate/reopen/uncertain-save guards, current target revisions, date modes/ranges, queue/Review association and full completion baselines are covered. These are bounded checks, not sustained conversational/native reliability.
+
 14 October empty-action Review visibility: focused Review inbox/feedback checks and12 concrete-action visibility assertions pass. Signed source-free removal/unified contract22/22 passes with zero inference/native writes. Native mixed-card preview confirms the information-only card has no Explore and retains its source controls, while real removal/space/reply suggestions retain three checkboxes. Installed `fde27f6` passes strict signature/full file hashes and normal native acceptance of the reported information-only card. All79 records remain,71 byte-exact after eight ordinary source/health cache updates; protected records, workspace and preferences are unchanged.
 
 
@@ -7,7 +9,7 @@
 
 14 October documentation reconciliation: 25 non-archived pages, 342 local links/anchors and eight rendered Mermaid diagrams pass. Eleven GitHub-GFM guides render with no page-wide overflow; fictional banner and README/architecture layout are inspected. Current source/queue/approval contracts are checked against committed code and engineering records, preserving both GitHub guide and local development history. Diff/conflict checks and a bounded credential/sensitive-filename/large-blob review pass. This is documentation evidence only; prior app checks and sustained acceptance remain separate.
 
-**Evidence is checkpoint-specific.** The latest app repair is the 14 October clarification authorisation checkpoint above. The earlier documentation reconciliation through `9ca10c2` adds no app, native-write or model acceptance.
+**Evidence is checkpoint-specific.** The latest app change is the 15 October chat approval checkpoint above. Earlier documentation and conversational checkpoints retain their dated acceptance limits.
 
 [Documentation](docs/README.md) · [Check tiers](docs/DEVELOPMENT.md#choose-the-right-checks) · [Latest live acceptance](docs/LIVE_ACCEPTANCE.md) · [Detailed status](STATUS.md)
 

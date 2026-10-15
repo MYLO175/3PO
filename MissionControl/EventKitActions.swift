@@ -11,11 +11,11 @@ extension EventKitService {
         var rightCalendar = right.calendar ?? Calendar.current; rightCalendar.timeZone = right.timeZone ?? .current
         return leftCalendar.date(from:left) == rightCalendar.date(from:right)
     }
-    func apply(_ draft: ActionDraft, reminder expected: TaskItem?, event expectedEvent: AgendaEvent?, marker: String, allowedCalendars: Set<String>, allowedLists: Set<String>) async throws -> ActionResult {
-        do { return try await applyChecked(draft, reminder:expected, event:expectedEvent, marker:marker, allowedCalendars:allowedCalendars, allowedLists:allowedLists) }
+    func apply(_ draft: ActionDraft, reminder expected: TaskItem?, event expectedEvent: AgendaEvent?, marker: String, allowedCalendars: Set<String>, allowedLists: Set<String>, valid: NativeWriteValidity? = nil, expectedDetails: NativeEditDetails? = nil) async throws -> ActionResult {
+        do { return try await applyChecked(draft, reminder:expected, event:expectedEvent, marker:marker, allowedCalendars:allowedCalendars, allowedLists:allowedLists,valid:valid,expectedDetails:expectedDetails) }
         catch { store.reset(); throw error }
     }
-    private func applyChecked(_ draft: ActionDraft, reminder expected: TaskItem?, event expectedEvent: AgendaEvent?, marker: String, allowedCalendars: Set<String>, allowedLists: Set<String>) async throws -> ActionResult {
+    private func applyChecked(_ draft: ActionDraft, reminder expected: TaskItem?, event expectedEvent: AgendaEvent?, marker: String, allowedCalendars: Set<String>, allowedLists: Set<String>, valid: NativeWriteValidity? = nil, expectedDetails: NativeEditDetails? = nil) async throws -> ActionResult {
         try ActionRules.validate(draft)
         switch draft.kind {
         case .deleteEvent,.deleteReminder: throw ActionFailure.message("Deletion requires the fresh native tool path.")
@@ -46,7 +46,7 @@ extension EventKitService {
                 guard due == expected.due, (components?.hour != nil) == expected.hasTime, found.hasRecurrenceRules == expected.recurring else { throw IntegrationError.missing }
                 if draft.kind == .completeReminder {
                     guard draft.title == nil, draft.destination == nil, draft.due == nil else { throw ActionFailure.message("Completion cannot also edit a reminder.") }
-                    let token = try await complete(id:expected.id)
+                    let token = try await complete(id:expected.id,valid:valid,expected:expectedDetails)
                     return .init(message:"Completed reminder: " + expected.title, undoToken:token, itemID:expected.id)
                 }
                 guard !found.hasRecurrenceRules else { throw ActionFailure.message("Editing a recurring reminder series is not supported yet; completion and Undo are available.") }

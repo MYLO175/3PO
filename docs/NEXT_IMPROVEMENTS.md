@@ -1,5 +1,7 @@
 # Next improvements
 
+15 October chat approval fallback: complete supported native/project changes that cannot pass intent validation become saved chat proposals with zero-inference Approve actions and local Dismiss. Exact project targets are prepared before the check, and approval retains native/project revision, destination, ownership, uncertain receipt and readback checks. Targeted fictional service, signed production-path and native UI evidence belongs in STATUS. Broad conversational quality and sustained provider/native reliability remain separate; memory and source-link controls are outside this approval fallback.
+
 14 October empty-action refinement: Explore appears only for concrete saved actions. Informational/category-only concerns retain their source controls; saved records and execution contracts are preserved. Focused and native visibility acceptance is recorded in STATUS.
 
 

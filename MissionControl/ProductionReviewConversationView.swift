@@ -54,6 +54,7 @@ struct ProductionReviewConversationView:View {
                                 VStack(alignment:.leading,spacing:5) {
                                     Text(turn.role == "user" ? "You" : "3PO").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                                     Text(PAProse.display(turn.content.isEmpty ? "Thinking…" : turn.content)).font(.callout).lineSpacing(3).textSelection(.enabled)
+                                    AssistantActionApprovalView(model:model,conversationID:conversationID,turn:turn)
                                     if let errors=turn.unresolvedToolErrors,!errors.isEmpty {Label(errors.joined(separator:" · "),systemImage:"exclamationmark.circle").font(.caption).foregroundStyle(.orange)}
                                     if turn.completed,turn.id == turns.last?.id,let choices=turn.choices {
                                         HStack {ForEach(choices,id:\.self) {choice in Button(choice) {send(choice,actions:selectedActions)}}}.controlSize(.small)
