@@ -5,6 +5,37 @@ import SwiftUI
 import EventKit
 
 @MainActor enum ReviewInboxEvaluation {
+    static func mailPreparationChecks() throws->[String:Bool] {
+        let cache=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+        var service=ProactiveService(container:cache),checks:[String:Bool]=[:]
+        let now=Date.now
+        let source=DiscoveryCandidate(alias:"mail_0",mailID:"fictional-mail-dedup",evidence:"Submit the Orion report on 21 October 2026.",followUpEvidence:"",sourceRevision:"header",sourceAssessmentRevision:"assessment",sourceContentVersion:"fictional-account-message-body")
+        let json=#"{"suggestions":[{"mailID":"mail_0","kind":"calendar","message":"Add the Orion report deadline?","evidenceID":"mail_0:primary","title":"Orion report","newDate":"2026-10-21","hasTime":false}]}"#
+        let proposals=try ProactiveRules.decode(json,candidates:[source],registration:"fictional-owner",scope:"fictional",now:now)
+        let progress=ProactiveRules.recordingPreparedMail(.init(),candidates:[source],proposals:proposals,failedSources:[],limited:false)
+        try service.commitComparison(proposals,issued:[:],permittedEarlier:[],registration:"fictional-owner",progress:progress,now:now)
+        service=ProactiveService(container:cache)
+        checks["prepared Mail source receipt survives production cache reopen"]=service.state.accounts["fictional-owner"]?.preparedMailVersions == progress.preparedMailVersions && service.state.records == proposals
+        var repeated=proposals[0];repeated.id=UUID().uuidString;repeated.sourceTitle="A rewritten deadline";repeated.evidence="the Orion report";repeated.sourceAssessmentRevision="new-assessment"
+        try service.commitComparison([repeated],issued:[:],permittedEarlier:[],registration:"fictional-owner",progress:progress,now:now)
+        service=ProactiveService(container:cache)
+        checks["production commit cannot admit rewritten repeat or new operation ID"]=service.state.records == proposals
+        var pending=service.state;pending.records[0].reviewState="pending"
+        try LocalRecordRepository(container:cache).save(pending,key:"paDiscoveries")
+        service=ProactiveService(container:cache)
+        try service.finishReview(proposals[0].id,registration:"fictional-owner")
+        let completed=service.state.records
+        try service.commitComparison([repeated],issued:[:],permittedEarlier:[],registration:"fictional-owner",progress:progress,now:now)
+        service=ProactiveService(container:cache)
+        checks["approved proposal and original receipt identity remain exact"]=service.state.records == completed && completed[0].reviewState == "approved"
+        var changed=repeated;changed.sourceContentVersion="fictional-account-message-new-body"
+        try service.commitComparison([changed],issued:[:],permittedEarlier:[],registration:"fictional-owner",progress:progress,now:now)
+        checks["changed Mail content can prepare a distinct review"]=service.state.records.count == 2
+        var other=proposals[0];other.id=UUID().uuidString;other.registration="other-owner"
+        try service.commitComparison([other],issued:[:],permittedEarlier:[],registration:"other-owner",progress:.init(),now:now)
+        checks["preparation receipts remain registration scoped"]=service.state.records.count == 3 && service.state.accounts["other-owner"]?.preparedMailVersions == nil
+        return checks
+    }
     static func chatApprovalFixture(_ model:DashboardModel) async throws->AssistantActionProposal {
         guard ["--validate-review-inbox","--preview-chat-approval"].contains(where:ProcessInfo.processInfo.arguments.contains) else {throw SummaryFailure.invalid}
         let store=model.assistant.projects,owner=model.chatGPT.activeID
@@ -319,7 +350,7 @@ import EventKit
         let owner=model.chatGPT.activeID,selected=model.chatGPT.selectedModel,preferences=NSDictionary(dictionary:UserDefaults.standard.dictionaryRepresentation())
         let preferenceDomain=Bundle.main.bundleIdentifier ?? "com.mylomichael.missioncontrol"
         let savedPreferences=NSDictionary(dictionary:UserDefaults.standard.persistentDomain(forName:preferenceDomain) ?? [:])
-        var checks:[String:Bool]=[:],failure="",cleanupError=""
+        var checks=try mailPreparationChecks(),failure="",cleanupError=""
         let record=try seedRemoval(model),calendar=model.calendarData,mail=model.mailData
         checks["removal card visible with exact supported event"]=model.proactive.visible(record,model:model) && model.reviewInbox.discoveries.contains(record)
         checks["View event resolves the exact occurrence"]={model.reviewDiscovery(record);if case .event(let event)=model.editTarget {return event.id == record.nativeTarget?.itemID};return false}()

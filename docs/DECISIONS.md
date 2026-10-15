@@ -1,5 +1,12 @@
 # Decisions
 
+## 15 October 2026: durable per-email Review preparation
+
+The human requested that Review items already made for an email should not be made again. Use a persistent exact-content preparation receipt, rather than generated wording or the current assessment/workspace revision as identity. The receipt is scoped by registration and hashes the native Mail account, exact message and source body version. It records a successful uncapped proposal-producing pass atomically with saved Review state, survives reopening/day/context/cache changes, and grants no completion or write authority.
+
+Keep the email available for handling/resolution and historical-proposal reconsideration; suppress only another automatic set of suggestions/project tasks. Distinct initial sibling actions/destinations, new source messages/content, supported exact replacements and explicit human variations remain available. Capped, failed/conflicting and unattributed-rejection results cannot stamp completion of preparation. Do not invent a legacy complete-pass receipt from a proposal alone: recover only exact current saved completion evidence; otherwise keep conservative action-level comparison. Stable duplicate identity ignores project-parent metadata and native baseline fingerprints while execution still validates full current targets/revisions. Existing IDs, approvals, dismissals, uncertain receipts and history remain intact.
+
+
 ## 15 October — Replace uncertain-action refusal with concrete chat approval
 
 Intent validation is not a requirement for the human to repeat an understood request. For complete supported native/project actions, a refused or unavailable check prepares an exact local proposal. The button is explicit human authority for that captured action; executing it makes no AI call and does not reconstruct a plan. Missing essential data and changed/unavailable targets stay preparation/clarification failures. Unavailable inference stops immediately after preparing the local proposal, with no provider retry.

@@ -43,6 +43,8 @@ struct PADiscovery: Codable, Identifiable, Equatable {
     var retirementEvidence:DiscoveryRetirementEvidence? = nil
     /// Original communication records quoted in this comparison; no generated-history replay.
     var comparisonSourceIDs:[String]? = nil
+    /// Exact Mail content identity, independent of generated assessment prose.
+    var sourceContentVersion:String? = nil
     var deliveryID: String { "discovery:" + id }
     var needsDateClarification:Bool { SourceDateGrounding.needsWeekAnchor(evidence) && !["project","reply"].contains(kind) }
     var nativeTarget:DiscoveryNativeTarget? { proposedChange?.target ?? proposedRemoval?.target }
@@ -206,6 +208,9 @@ struct ProactiveProgress: Codable {
     var validationIssues:[String]? = nil
     var validationEntries:[ReviewRejectedEntry]? = nil
     var validationRunID:String? = nil
+    /// Durable preparation receipts, not evidence of completion or write authority.
+    /// Retained across days/context changes and after the source leaves the cache.
+    var preparedMailVersions:Set<String>? = nil
 }
 struct ProactiveState: Codable {
     var version = 1
@@ -275,6 +280,7 @@ struct DiscoveryCandidate {
     var sourceText:String? = nil
     var sourceAssessmentRevision:String? = nil
     var sourceDate:Date? = nil
+    var sourceContentVersion:String? = nil
 }
 /// Only fixed vocabulary and bounded row indexes may enter persisted review errors.
 /// Never interpolate a model value, JSON key, decoding debug description or source alias.
@@ -390,6 +396,7 @@ enum ProactiveRules {
     // typed preparations use the two variants above with prepare_review's contract.
     static let instructions=preparationInstructions+" Return only JSON with a suggestions array, using exact supplied mailID, kind, message and evidence fields."
     static let heartbeatInstructions=heartbeatPreparationInstructions+" Return only JSON with a suggestions array, using exact supplied mailID, kind, message and evidence fields."
+    static let preparedMailInstructions="An email with reviewAlreadyPrepared=true has already produced a complete saved Review preparation for that exact content. Do not generate another set of suggestions or projectTasks from it, even if wording or workspace context changed. It may still support handled/resolved evidence or exact issued proposal retirement/replacement under their separate rules. This receipt means prepared, never completed, dismissed or authorised."
     /// A conservative language prerequisite for native-change proposals. This is
     /// not a match or permission decision; the model and exact target checks follow.
     static func nativeChangeCue(_ evidence:String,removal:Bool)->Bool {
@@ -567,7 +574,7 @@ enum ProactiveRules {
                     replacementIDs.append(old.id)
                 }
             } else if value.replacementReason != nil {throw reject(.replacementReason,.incompatibleFields)}
-            let record=reviewProjection(PADiscovery(id:UUID().uuidString,registration:registration,mailID:candidate.mailID,kind:value.kind,message:message,evidence:evidence,created:now,scope:scope,sourceKind:candidate.sourceKind,sourceChatID:candidate.sourceChatID,sourceMessageID:candidate.sourceMessageID,sourceIdentity:candidate.sourceIdentity,sourceRevision:candidate.sourceRevision,sourceLabel:candidate.sourceLabel,sourceTitle:value.title ?? (suggestedDate != nil ? String(evidence.prefix(160)) : nil),sourceAssessmentRevision:candidate.sourceAssessmentRevision,proposedChange:change,proposedRemoval:removal,proposedDate:suggestedDate,proposedProjectTask:projectTask,replyDraft:value.draft,sourceDate:candidate.sourceDate,replaces:replacementIDs.isEmpty ? nil : replacementIDs,replacementReason:value.replacementReason))
+            let record=reviewProjection(PADiscovery(id:UUID().uuidString,registration:registration,mailID:candidate.mailID,kind:value.kind,message:message,evidence:evidence,created:now,scope:scope,sourceKind:candidate.sourceKind,sourceChatID:candidate.sourceChatID,sourceMessageID:candidate.sourceMessageID,sourceIdentity:candidate.sourceIdentity,sourceRevision:candidate.sourceRevision,sourceLabel:candidate.sourceLabel,sourceTitle:value.title ?? (suggestedDate != nil ? String(evidence.prefix(160)) : nil),sourceAssessmentRevision:candidate.sourceAssessmentRevision,proposedChange:change,proposedRemoval:removal,proposedDate:suggestedDate,proposedProjectTask:projectTask,replyDraft:value.draft,sourceDate:candidate.sourceDate,replaces:replacementIDs.isEmpty ? nil : replacementIDs,replacementReason:value.replacementReason,sourceContentVersion:candidate.sourceContentVersion))
             // Identical prepared actions are redundant data, never separate authority.
             if !decoded.contains(where:{$0.mailID == record.mailID && sameProposal($0,record)}) {decoded.append(record)}
         }
@@ -613,26 +620,55 @@ enum ProactiveRules {
     }
     static func sourceKey(_ kind:String,_ id:String)->String { SHA256.hash(data:Data((kind+":"+id).utf8)).map{String(format:"%02x",$0)}.joined() }
     static func assessed(_ progress:ProactiveProgress,kind:String,id:String,revision:String,context:String)->Bool { progress.sourceContextRevision == context && progress.assessedSourceVersions?[sourceKey(kind,id)] == revision }
-    static func completing(_ progress:ProactiveProgress,versions:[String:String],context:String,limited:Bool,reportedKeys:Set<String>)->ProactiveProgress {
+    static func completing(_ progress:ProactiveProgress,versions:[String:String],context:String,limited:Bool,reportedKeys:Set<String>,sourceFailuresAttributed:Bool = true)->ProactiveProgress {
         var result=progress
         var seen=result.sourceContextRevision == context ? result.assessedSourceVersions ?? [:] : [:]
-        for (key,version) in versions where !limited { seen[key]=version }
+        for (key,version) in versions where !limited && sourceFailuresAttributed { seen[key]=version }
         // Opaque identity/revision metadata only; no quotations or message contents.
         if seen.count > 2000 { seen=Dictionary(uniqueKeysWithValues:seen.sorted{$0.key < $1.key}.suffix(2000)) }
         result.sourceContextRevision=context;result.assessedSourceVersions=seen;return result
     }
     static func sameProposal(_ a:PADiscovery,_ b:PADiscovery)->Bool {
-        if let x=a.proposedRemoval,let y=b.proposedRemoval {return x.target.kind == y.target.kind && x.target.itemID == y.target.itemID && x.target.sourceID == y.target.sourceID && x.target.fingerprint == y.target.fingerprint && x.scope == y.scope && x.timeZoneID == y.timeZoneID}
+        if let x=a.proposedRemoval,let y=b.proposedRemoval {return x.target.kind == y.target.kind && x.target.itemID == y.target.itemID && x.target.sourceID == y.target.sourceID && x.scope == y.scope && x.timeZoneID == y.timeZoneID}
         guard a.proposedRemoval == nil && b.proposedRemoval == nil else {return false}
-        if let x=a.proposedChange,let y=b.proposedChange { return x.target.itemID == y.target.itemID && x.target.sourceID == y.target.sourceID && x.target.fingerprint == y.target.fingerprint && x.newDate == y.newDate && x.hasTime == y.hasTime && x.timeZoneID == y.timeZoneID }
-        return a.proposedChange == nil && b.proposedChange == nil && a.kind == b.kind && a.evidence == b.evidence && a.proposedDate == b.proposedDate && a.proposedProjectTask?.target == b.proposedProjectTask?.target
+        if let x=a.proposedChange,let y=b.proposedChange { return x.target.kind == y.target.kind && x.target.itemID == y.target.itemID && x.target.sourceID == y.target.sourceID && x.newDate == y.newDate && x.hasTime == y.hasTime && x.timeZoneID == y.timeZoneID }
+        let distinctTitles=a.sourceTitle != nil && b.sourceTitle != nil && a.sourceTitle != b.sourceTitle
+        return a.proposedChange == nil && b.proposedChange == nil && a.kind == b.kind && !distinctTitles && a.evidence == b.evidence && a.proposedDate == b.proposedDate && a.proposedProjectTask?.target.id == b.proposedProjectTask?.target.id
     }
-    static func unreported(_ values: [PADiscovery], prior: [PADiscovery], budget: Int = .max,dismissedVersions:[String:String] = [:]) -> [PADiscovery] {
-        Array(values.filter { value in !prior.contains(where:{ old in
-            guard old.registration == value.registration,old.mailID == value.mailID,old.sourceKind == value.sourceKind,old.sourceIdentity == value.sourceIdentity,old.sourceChatID == value.sourceChatID,sameProposal(old,value) else {return false}
-            if !old.dismissed,old.reviewState == nil,old.retiredAt == nil,old.supersededBy == nil,old.sourceRevision == value.sourceRevision {return true}
+    static func recoveringPreparedMail(_ progress:ProactiveProgress,candidates:[DiscoveryCandidate],prior:[PADiscovery],registration:String)->ProactiveProgress {
+        var result=progress,versions=progress.preparedMailVersions ?? []
+        for source in candidates where source.sourceKind != "whatsapp" {
+            // A legacy record alone might be one sibling from a capped result.
+            // Only a completed pass for this exact current assessment can migrate.
+            guard let assessment=source.sourceAssessmentRevision,let version=source.sourceContentVersion,
+                  progress.assessedSourceVersions?[sourceKey("mail",source.mailID)] == assessment,
+                  prior.contains(where:{$0.registration == registration && $0.sourceKind != "whatsapp" && $0.mailID == source.mailID && $0.sourceRevision == source.sourceRevision && $0.sourceAssessmentRevision == assessment}) else {continue}
+            versions.insert(version)
+        }
+        result.preparedMailVersions=versions.isEmpty ? nil : versions
+        return result
+    }
+    static func recordingPreparedMail(_ progress:ProactiveProgress,candidates:[DiscoveryCandidate],proposals:[PADiscovery],failedSources:Set<String>,limited:Bool)->ProactiveProgress {
+        guard !limited,failedSources.isSubset(of:Set(candidates.map(\.alias))) else {return progress}
+        var result=progress,versions=progress.preparedMailVersions ?? []
+        for source in candidates where source.sourceKind != "whatsapp" && !failedSources.contains(source.alias) && proposals.contains(where:{$0.mailID == source.mailID && $0.sourceKind != "whatsapp"}) {
+            if let version=source.sourceContentVersion {versions.insert(version)}
+        }
+        result.preparedMailVersions=versions.isEmpty ? nil : versions
+        return result
+    }
+    static func unreported(_ values: [PADiscovery], prior: [PADiscovery], budget: Int = .max,dismissedVersions:[String:String] = [:],preparedMailVersions:Set<String> = []) -> [PADiscovery] {
+        var accepted:[PADiscovery]=[]
+        for value in values {
+            if value.sourceKind != "whatsapp",value.replaces?.isEmpty ?? true,let version=value.sourceContentVersion,preparedMailVersions.contains(version) {continue}
+            let duplicate=(prior+accepted).contains { old in
+            guard old.registration == value.registration,old.mailID == value.mailID,(old.sourceKind ?? "mail") == (value.sourceKind ?? "mail"),old.sourceIdentity == value.sourceIdentity,old.sourceChatID == value.sourceChatID,sameProposal(old,value) else {return false}
+            if value.sourceKind != "whatsapp" {return true}
             if old.dismissed,let version=old.dismissedSourceVersion,version == dismissedVersions[sourceKey("mail",value.mailID)] {return true}
-            return old.sourceRevision == value.sourceRevision && (old.sourceAssessmentRevision == nil || old.sourceAssessmentRevision == value.sourceAssessmentRevision)
-        }) }.prefix(max(0,budget)))
+            return old.sourceRevision == value.sourceRevision && (old.sourceAssessmentRevision == nil || old.sourceAssessmentRevision == value.sourceAssessmentRevision || (!old.dismissed && old.reviewState == nil && old.retiredAt == nil && old.supersededBy == nil))
+            }
+            if !duplicate {accepted.append(value)}
+        }
+        return Array(accepted.prefix(max(0,budget)))
     }
 }

@@ -1,5 +1,8 @@
 # Mission Control specification
 
+15 October approved refinement: once an exact email content version has produced a complete saved Review preparation, later assessments must not generate another set. Persist opaque registration/account/message/content receipts independently of generated prose, day and workspace context. Preserve original action IDs/outcomes, distinct sibling destinations, failed/capped continuation, source handling/resolution, exact validated replacements and explicit human variations.
+
+
 14 October Review entry refinement: hide Explore suggested actions when no concrete action is captured, including informational Calendar-labelled concerns without dates. Keep genuine saved actions, completed View actions and ordinary source controls. Button visibility remains local and makes no inference/source/native requests.
 
 

@@ -2,6 +2,7 @@ import Foundation
 import CoreFoundation
 @main struct ProactiveChecks {
     static func main() throws {
+        try ReviewMailDedupChecks.run()
         precondition(ProactiveRules.nativeChangeCue("The Orion review is postponed.",removal:true))
         precondition(ProactiveRules.nativeChangeCue("The Orion report deadline is now 22 October.",removal:false))
         precondition(!ProactiveRules.nativeChangeCue("The Orion review is booked for 21 October.",removal:true))

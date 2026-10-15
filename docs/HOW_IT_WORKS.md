@@ -1,5 +1,14 @@
 # How 3PO works: detailed reference
 
+## 15 October: prepare each email once
+
+Review preparation now saves an opaque receipt for the exact Mail account, message and body/content version under the active registration. A successful uncapped pass that produced proposals records the receipt in the same cache transaction as those proposals. Reassessing the same email can still compare handling, confirmations and existing proposals, but cannot add another set of background suggestions or project tasks. Rewritten AI prose, new assessment revisions, changed project descriptions, day changes and reopening do not reset the receipt. The receipt is preparation history, never evidence that work is complete or permission to save an action.
+
+The first preparation retains separate supported actions and destinations. Capped results, source-specific validation/conflict failures and unattributed rejected rows do not claim complete preparation. New messages and changed source content remain eligible, with unchanged concrete actions still deduplicated. An exact validated replacement can supersede an existing concern; explicit human requests can revise or create through the ordinary foreground workflow. Approval, uncertain-save, dismissal and retirement records keep their original identities and outcomes. Project-parent identity and native occurrence/action identity are stable for duplicate comparison; their full current revisions remain mandatory at execution.
+
+Legacy completed-pass receipts can migrate only when their saved assessed version and existing proposal match the current exact source assessment, independently of old context revision. A legacy proposal alone cannot prove all siblings were prepared, so incomplete or unverifiable historical batches retain action-level deduplication. Receipts contain hashes, no duplicated email text, and outlive ordinary source-cache pruning.
+
+
 For a simple product tour, start with **[Features](FEATURES.md)**. This reference retains detailed interactions and contracts, including dated refinements. [Architecture](ARCHITECTURE.md) explains the component boundaries; [Validation](../VALIDATION.md) records what has actually been checked.
 
 [Documentation](README.md) · [Getting started](GETTING_STARTED.md) · [Memory](MEMORY_AND_CONTEXT.md) · [Projects](PROJECT_WORKSPACE.md)

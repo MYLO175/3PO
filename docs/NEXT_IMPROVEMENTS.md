@@ -1,5 +1,8 @@
 # Next improvements
 
+15 October Review repeat prevention: durable exact-email/content preparation receipts now prevent reassessment from adding another set of background actions. Partial/failed batches remain resumable; separate actions, new messages/content, exact replacements and explicit human requests retain their paths. Existing complete legacy passes migrate only with exact saved assessment support. Historical partial batches without a completion receipt retain conservative action-level deduplication; semantic equivalence across differently worded historical quotes is not claimed. Validation and installation evidence are recorded in STATUS.
+
+
 15 October chat approval fallback: complete supported native/project changes that cannot pass intent validation become saved chat proposals with zero-inference Approve actions and local Dismiss. Exact project targets are prepared before the check, and approval retains native/project revision, destination, ownership, uncertain receipt and readback checks. Targeted fictional service, signed production-path and native UI evidence belongs in STATUS. Broad conversational quality and sustained provider/native reliability remain separate; memory and source-link controls are outside this approval fallback.
 
 14 October empty-action refinement: Explore appears only for concrete saved actions. Informational/category-only concerns retain their source controls; saved records and execution contracts are preserved. Focused and native visibility acceptance is recorded in STATUS.
