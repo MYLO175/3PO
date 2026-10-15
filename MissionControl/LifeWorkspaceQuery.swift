@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 /// Resolve the same canonical IDs counted by the map, preserving workspace order and ownership.
 enum LifeAreaWorkspace {
@@ -99,5 +100,20 @@ enum LifeBoardScrollRules {
         let speed:CGFloat=pointerY < edge ? -(edge-pointerY)/edge : pointerY > height-edge ? (pointerY-height+edge)/edge : 0
         let next=min(max(0,offset+speed*10),max(0,contentHeight-height))
         return next-offset
+    }
+}
+
+/// Insertion feedback uses stationary captured slots, never the translated folder tile.
+struct LifeFolderInsertion:Equatable {
+    var target:UUID
+    var after:Bool
+    var before:UUID?
+}
+enum LifeFolderOrder {
+    static func insertion(at point:CGPoint,dragging id:UUID,orderedIDs:[UUID],frames:[UUID:CGRect])->LifeFolderInsertion? {
+        let peers=orderedIDs.filter{$0 != id}
+        guard let target=peers.first(where:{frames[$0]?.insetBy(dx:-10,dy:0).contains(point) == true}),let frame=frames[target],let index=peers.firstIndex(of:target) else {return nil}
+        let after=point.x >= frame.midX
+        return .init(target:target,after:after,before:after ? peers.dropFirst(index+1).first : target)
     }
 }

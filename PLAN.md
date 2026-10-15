@@ -1,5 +1,7 @@
 # Mission Control specification
 
+15 October Projects design: sibling folder tiles support drag-to-reorder with insertion feedback and Move earlier/later menu actions. Keep saved identity, hierarchy, contents and guarded session Undo. Move progress beside the current breadcrumb: short and thick, red To do / amber In progress / green Done, with counts on hover and no visible percentages. Preserve each folder tile’s progress preview. Replace the trailing Add a task field with a + in each Board/List stage header, preselecting its stage. Develop and validate in a separate worktree; integration/installation remain separate checkpoints.
+
 15 October approved refinement: once an exact email content version has produced a complete saved Review preparation, later assessments must not generate another set. Persist opaque registration/account/message/content receipts independently of generated prose, day and workspace context. Preserve original action IDs/outcomes, distinct sibling destinations, failed/capped continuation, source handling/resolution, exact validated replacements and explicit human variations.
 
 

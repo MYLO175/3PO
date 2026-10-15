@@ -1,5 +1,7 @@
 # Validation
 
+15 October Projects design worktree: signed Debug build/strict signature and focused workspace, ownership and placement suites pass. Fictional visual/native UI verifies breadcrumb progress, retained folder previews, menu reorder/Undo, exact In progress task creation, List preservation and Done preselection. Persistence fixtures cover folder-only order/reload, task/placement metadata preservation, no-op/outside targets and changed ownership/revision refusal. Not integrated/installed; pointer drag automation fails with `noWindowsAvailable`, so hands-on drag smoothness remains unverified.
+
 ## 15 October 2026: Review email repeat prevention
 
 Implemented, focused-tested and installed. Durable exact account/message/content preparation receipts survive reassessment, day/context changes and reopening. Capped/failed/unattributed rows cannot freeze missing siblings or become completed-pass migration evidence. Existing action IDs/outcomes, distinct initial destinations, new source information, exact replacements and explicit human requests retain their paths. Legacy recovery requires a supported completed assessment receipt.

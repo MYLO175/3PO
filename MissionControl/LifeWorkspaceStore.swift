@@ -8,6 +8,7 @@ struct LifeWorkspaceEditUndo {
     var created = Date.now
     var others: [LifeItem] = []
     var versions: [UUID:UUID] = [:]
+    var preservesPlacement = false
 }
 
 @MainActor @Observable final class LifeWorkspaceStore {
@@ -26,7 +27,7 @@ struct LifeWorkspaceEditUndo {
     func undo(_ registration: String, receipt: LifeWorkspaceReceipt? = nil) throws {
         guard let ticket = undoEdit(registration) else { throw LifeWorkspaceFailure.message("No unchanged project edit remains to undo. Creation and relationship changes are outside this Undo.") }
         var candidate=state
-        for var before in [ticket.before]+ticket.others { if ["pending","running"].contains(before.placement?.status ?? "") { before.placement?.status="paused";before.placement?.reason="Organisation was undone. Continue explicitly to reconsider." };if before.kind == .project { before.placement?.parentPinned=true };guard let index=candidate.items.firstIndex(where:{$0.id == before.id}) else { throw LifeWorkspaceFailure.message("Undo item unavailable.") };before.revision=UUID();before.updated = .now;candidate.items[index]=before }
+        for var before in [ticket.before]+ticket.others { if !ticket.preservesPlacement,["pending","running"].contains(before.placement?.status ?? "") { before.placement?.status="paused";before.placement?.reason="Organisation was undone. Continue explicitly to reconsider." };if !ticket.preservesPlacement,before.kind == .project { before.placement?.parentPinned=true };guard let index=candidate.items.firstIndex(where:{$0.id == before.id}) else { throw LifeWorkspaceFailure.message("Undo item unavailable.") };before.revision=UUID();before.updated = .now;candidate.items[index]=before }
         try addReceipt(receipt,to:&candidate);try persist(candidate);edits.removeValue(forKey:registration)
     }
     init(container: ModelContainer?) {
@@ -51,9 +52,9 @@ struct LifeWorkspaceEditUndo {
         LifeWorkspaceRules.ordered(state.items.filter { (includeDeleted || $0.deletedAt == nil) && LifeWorkspaceRules.scoped($0, registration: registration, topic: topic, includeTopics: includeTopics) })
     }
     /// A single revision-checked atomic structural edit, with exact multi-record Undo.
-    private func structural(_ before: [LifeItem], candidate: LifeWorkspaceState, receipt: LifeWorkspaceReceipt? = nil) throws {
+    private func structural(_ before: [LifeItem], candidate: LifeWorkspaceState, receipt: LifeWorkspaceReceipt? = nil, preservesPlacement:Bool=false) throws {
         try persistWithReceipt(candidate,receipt:receipt)
-        if let first=before.first { edits[first.registration] = .init(before:first,savedRevision:state.items.first{$0.id == first.id}!.revision,others:Array(before.dropFirst()),versions:[:])
+        if let first=before.first { edits[first.registration] = .init(before:first,savedRevision:state.items.first{$0.id == first.id}!.revision,others:Array(before.dropFirst()),versions:[:],preservesPlacement:preservesPlacement)
             // Capture each actual saved revision, never infer identity from a label.
             edits[first.registration]?.versions=Dictionary(uniqueKeysWithValues:before.compactMap{old in state.items.first{$0.id == old.id}.map{(old.id,$0.revision)}})
         }
@@ -73,6 +74,32 @@ struct LifeWorkspaceEditUndo {
             if value != candidate.items[index] || value.sortOrder != order { before.append(candidate.items[index]);if value.placement?.status == "running" { value.placement?.status="paused";value.placement?.reason="Filing changed during placement. Continue explicitly to reconsider." };value.sortOrder=order;value.revision=UUID();value.updated = .now;candidate.items[index]=value }
         }
         if !before.isEmpty { try structural(before,candidate:candidate,receipt:receipt) } else if receipt != nil { try persistWithReceipt(state,receipt:receipt) }
+    }
+    /// Preserve parent/placement metadata while reusing the exact structural Undo path.
+    func reorderFolder(_ id:UUID,registration:String,before sibling:UUID?,expectedRevision:UUID)throws {
+        guard revision == expectedRevision,let item=items(registration,includeTopics:true).first(where:{$0.id == id}),!item.kind.isWork else { throw LifeWorkspaceFailure.message("The folder order changed.") }
+        let siblings=state.items.filter{$0.registration == registration && $0.parentID == item.parentID && $0.conversationID == item.conversationID && $0.deletedAt == nil}
+        let old=LifeWorkspaceRules.ordered(siblings).filter{!$0.kind.isWork}
+        var peers=old.filter{$0.id != id}
+        if let sibling {
+            guard let index=peers.firstIndex(where:{$0.id == sibling}) else { throw LifeWorkspaceFailure.message("The insertion folder changed.") }
+            peers.insert(item,at:index)
+        } else { peers.append(item) }
+        guard peers.map(\.id) != old.map(\.id) else {return}
+        guard !old.contains(where:{$0.placement?.status == "running"}) else { throw LifeWorkspaceFailure.message("Folder organisation is running. Wait until it finishes before reordering.") }
+        // Reuse folder slots; task records and their editor/operation revisions stay exact.
+        let positions=Dictionary(uniqueKeysWithValues:siblings.enumerated().map{($0.element.id,$0.offset)})
+        var slots=old.map{$0.sortOrder ?? positions[$0.id] ?? 0}.sorted()
+        for index in slots.indices.dropFirst() where slots[index] <= slots[index-1] {
+            guard slots[index-1] < Int.max else { throw LifeWorkspaceFailure.message("This folder order cannot be adjusted.") }
+            slots[index]=slots[index-1]+1
+        }
+        var candidate=state,originals:[LifeItem]=[]
+        for (order,var value) in peers.enumerated() {
+            guard value.sortOrder != slots[order],let index=candidate.items.firstIndex(where:{$0.id == value.id}) else {continue}
+            originals.append(candidate.items[index]);value.sortOrder=slots[order];value.revision=UUID();value.updated = .now;candidate.items[index]=value
+        }
+        try structural(originals,candidate:candidate,preservesPlacement:true)
     }
     func trash(_ id:UUID,registration:String,keepChildren:Bool,expectedRevision:UUID,receipt:LifeWorkspaceReceipt? = nil) throws {
         if self.receipt(receipt?.id,registration:registration) != nil { return }
@@ -220,5 +247,26 @@ struct LifeWorkspaceEditUndo {
         guard item.status != stage.status else { return }
         var value=item;value.status=stage.status
         _ = try store.save(value,expected:item.revision)
+    }
+}
+
+/// Reordering is an exact sibling-only local edit. Moving into another folder stays explicit.
+@MainActor enum LifeFolderReorder {
+    static func apply(_ id:UUID,before:UUID?,parent:UUID?,capturedPage:UUID?,currentPage:UUID?,registration:String,activeRegistration:String,capturedIDs:Set<UUID>,currentIDs:Set<UUID>,expectedRevision:UUID,store:LifeWorkspaceStore)throws {
+        let permitted=capturedIDs.intersection(currentIDs)
+        guard registration == activeRegistration,capturedPage == currentPage,store.revision == expectedRevision,permitted.contains(id),
+              let item=store.items(registration,includeTopics:true).first(where:{$0.id == id}),!item.kind.isWork,item.parentID == parent else {
+            throw LifeWorkspaceFailure.message("This folder changed. Try reordering it again.")
+        }
+        if let before {
+            guard before != id,permitted.contains(before),store.items(registration,includeTopics:true).contains(where:{$0.id == before && !$0.kind.isWork && $0.parentID == parent && $0.conversationID == item.conversationID}) else {
+                throw LifeWorkspaceFailure.message("The folder order changed. Try reordering it again.")
+            }
+        }
+        // A missing legacy parent must never turn a reorder into an implicit filing operation.
+        if let parent,!store.items(registration,topic:item.conversationID).contains(where:{$0.id == parent}) {
+            throw LifeWorkspaceFailure.message("Choose a current parent with Move before reordering this folder.")
+        }
+        try store.reorderFolder(id,registration:registration,before:before,expectedRevision:expectedRevision)
     }
 }

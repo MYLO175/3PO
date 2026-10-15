@@ -20,7 +20,6 @@ struct LifeProjectWidget: View {
     @Environment(\.workspacePalette) private var palette
     @State private var navigation = LifeProjectNavigation()
     @State private var unfiled=false
-    @State private var quickTask = ""
     @State private var notesEditing: LifeItem?
     @State private var editing: LifeItem?
     @State private var linking: LifeItem?
@@ -32,6 +31,10 @@ struct LifeProjectWidget: View {
     @State private var matching:LifeItem?
     @State private var drag:LifeProjectDrag?
     @State private var dropHover:String?
+    @State private var hoveredFolder:UUID?
+    @State private var folderDrag:LifeFolderDrag?
+    @State private var folderFrames:[UUID:CGRect]=[:]
+    @State private var folderInsertion:LifeFolderInsertion?
     @State private var boardDrag:LifeBoardDrag?
     @State private var stageFrames:[String:CGRect]=[:]
     @State private var availableWidth:CGFloat=300
@@ -59,12 +62,12 @@ struct LifeProjectWidget: View {
     private var work:[LifeItem] { children.filter{$0.kind.isWork && $0.status != .archived} }
     private var looseWork:[LifeItem] { LifeFolderContents.children(of:nil,in:items).filter{$0.kind.isWork} }
     private var filtered:[LifeItem] { unfiled ? children.filter{$0.kind.isWork} : atHome ? folders : children }
-    private var viewTitle:String { presentation == .overview && !work.isEmpty && !atHome ? "Board" : presentation.title }
+    private var viewTitle:String { presentation == .overview && !atHome ? "Board" : presentation.title }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             ViewThatFits(in:.horizontal) {
-                HStack(spacing:12) { breadcrumbs;Spacer(minLength:12);controls }
-                VStack(alignment:.leading,spacing:10) { breadcrumbs;HStack { Spacer();controls } }
+                HStack(spacing:24) { pageHeading;Spacer(minLength:12);controls }
+                VStack(alignment:.leading,spacing:12) { pageHeading;HStack { Spacer();controls } }
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
@@ -77,15 +80,16 @@ struct LifeProjectWidget: View {
                         switch presentation {
                         case .overview:
                             if !unfiled { folderGrid(folders) }
-                            if !work.isEmpty { board }
+                            board
                         case .board:
                             if !unfiled { folderGrid(folders) }
                             board
-                        case .list: rows(filtered)
+                        case .list:
+                            rows(filtered.filter{!$0.kind.isWork})
+                            taskList
                         case .outline: outline
                         case .deadlines: deadlines
                         }
-                        if !atHome { quickCapture }
                     }
                     if atHome && folders.isEmpty && looseWork.isEmpty {
                         Button { add(.space) } label: { Label("New space",systemImage:"plus").padding(.vertical,20) }.buttonStyle(.plain).foregroundStyle(palette[.accent]).disabled(store.readOnly || registration.isEmpty)
@@ -110,8 +114,8 @@ struct LifeProjectWidget: View {
         .onGeometryChange(for:CGFloat.self) { $0.size.width } action: { availableWidth=$0 }
         .onAppear {consumeActivityNavigation()}
         .onChange(of:model.activityNavigation?.id) {consumeActivityNavigation()}
-        .onChange(of: registration) { boardScroll.stop();navigation = .init(); unfiled=false;quickTask="";notesEditing=nil; editing = nil; linking = nil;moving=nil;deleting=nil;matching=nil;drag=nil;boardDrag=nil;dropHover=nil;showDeleted=false;inspecting=false; notice = nil }
-        .onChange(of:store.revision) { navigation.reconcile(items:items);boardScroll.stop();boardDrag=nil;dropHover=nil }
+        .onChange(of: registration) { boardScroll.stop();navigation = .init(); unfiled=false;notesEditing=nil; editing = nil; linking = nil;moving=nil;deleting=nil;matching=nil;drag=nil;folderDrag=nil;folderInsertion=nil;boardDrag=nil;dropHover=nil;showDeleted=false;inspecting=false; notice = nil }
+        .onChange(of:store.revision) { navigation.reconcile(items:items);boardScroll.stop();boardDrag=nil;folderInsertion=nil;dropHover=nil }
         .onChange(of:focusAreas) { navigation.reconcile(items:items);resetPage() }
         .onChange(of: savedRoot) { navigation = .init();unfiled=false;resetPage() }
     }
@@ -149,6 +153,22 @@ struct LifeProjectWidget: View {
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel("Folder options")
         }.foregroundStyle(palette[.accent])
     }
+    private var pageProgress:LifeTaskProgress {
+        if let current,!current.kind.isWork { return LifeFolderContents.progress(under:current.id,in:items) }
+        return LifeTaskProgress(items:unfiled ? looseWork : [])
+    }
+    private var pageHeading:some View {
+        ViewThatFits(in:.horizontal) {
+            HStack(spacing:24) {
+                breadcrumbs
+                if pageProgress.total > 0 { LifeTaskProgressView(progress:pageProgress).frame(width:144) }
+            }
+            VStack(alignment:.leading,spacing:12) {
+                breadcrumbs
+                if pageProgress.total > 0 { LifeTaskProgressView(progress:pageProgress).frame(width:120) }
+            }
+        }
+    }
     private var breadcrumbs:some View {
         let path=current.map{LifeItemQuery.path($0,in:items)} ?? []
         return ViewThatFits(in:.horizontal) {
@@ -179,7 +199,7 @@ struct LifeProjectWidget: View {
         else {config.projectView=value.rawValue}
         configuration.wrappedValue=config
     }
-    private func resetPage() { quickTask="";notice=nil;inspecting=false;boardScroll.stop();boardDrag=nil;drag=nil;dropHover=nil }
+    private func resetPage() { notice=nil;inspecting=false;boardScroll.stop();boardDrag=nil;folderDrag=nil;folderInsertion=nil;drag=nil;dropHover=nil }
     private func consumeActivityNavigation() {
         guard let request=model.activityNavigation,request.registration == registration,request.widgetID == widgetID,let id=request.projectID else {return}
         model.activityNavigation=nil
@@ -194,24 +214,10 @@ struct LifeProjectWidget: View {
         navigation = .init();unfiled=false;resetPage()
     }
     private func open(_ item: LifeItem) { navigation.open(item.id);unfiled=false;resetPage() }
-    private func add(_ kind:LifeItemKind) {
-        editing=LifeItem(registration:registration,conversationID:current?.conversationID ?? topicScope,kind:kind,title:"",parentID:current?.id,areas:current?.areas ?? Array(focusAreas.prefix(3)))
-    }
-    private var quickCapture:some View {
-        HStack(spacing:8) {
-            Image(systemName:"plus").foregroundStyle(.secondary)
-            TextField("Add a task…",text:$quickTask).textFieldStyle(.plain).onSubmit { saveQuickTask() }
-            if !quickTask.isEmpty { Button { saveQuickTask() } label:{Image(systemName:"arrow.turn.down.left")}.buttonStyle(.plain).help("Add local task").disabled(quickTask.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || store.readOnly || registration.isEmpty) }
-        }.font(.callout).padding(.vertical,8)
-    }
-    private func saveQuickTask() {
-        let title=quickTask.trimmingCharacters(in:.whitespacesAndNewlines)
-        guard !atHome,!title.isEmpty,registration == model.chatGPT.activeID else { return }
-        do {
-            if let current, !store.items(registration,topic:topicScope).contains(where:{$0.id == current.id && $0.revision == current.revision}) { throw LifeWorkspaceFailure.message("This page changed. Reopen it before adding work.") }
-            _ = try store.save(.init(registration:registration,conversationID:current?.conversationID ?? topicScope,kind:.task,title:title,parentID:current?.id,areas:current?.areas ?? Array(focusAreas.prefix(3))),expected:nil)
-            quickTask="";notice=nil
-        } catch { notice=error.localizedDescription }
+    private func add(_ kind:LifeItemKind,stage:LifeTaskStage = .todo) {
+        var item=LifeItem(registration:registration,conversationID:current?.conversationID ?? topicScope,kind:kind,title:"",parentID:current?.id,areas:current?.areas ?? Array(focusAreas.prefix(3)))
+        if kind.isWork { item.status=stage.status }
+        editing=item
     }
     private func complete(_ item:LifeItem) { setStatus(item,item.status == .done ? .planned : .done) }
     private func setStatus(_ item:LifeItem,_ status:LifeItemStatus) {
@@ -231,8 +237,6 @@ struct LifeProjectWidget: View {
             if item.due != nil || item.estimateMinutes != nil {
                 ViewThatFits(in:.horizontal) { HStack(spacing:12) { properties(item) };VStack(alignment:.leading,spacing:4) { properties(item) } }.font(.caption).foregroundStyle(.secondary)
             }
-            let progress=LifeFolderContents.progress(under:item.id,in:items)
-            if progress.total > 0 { LifeTaskProgressView(progress:progress,showsLegend:true) }
             notesPanel(item)
         }
     }
@@ -253,19 +257,21 @@ struct LifeProjectWidget: View {
         if let minutes=item.estimateMinutes { Label("\(minutes) min",systemImage:"clock") }
     }
     private func folderGrid(_ values:[LifeItem],includeUnfiled:Bool=false)->some View {
-        LazyVGrid(columns:[GridItem(.adaptive(minimum:min(160,max(80,availableWidth))),spacing:16,alignment:.top)],alignment:.leading,spacing:18) {
+        LazyVGrid(columns:[GridItem(.adaptive(minimum:min(160,max(80,availableWidth))),spacing:20,alignment:.top)],alignment:.leading,spacing:18) {
             ForEach(values) { item in
-                interactive(item) {
-                    Button { open(item) } label: {
-                        VStack(spacing:12) {
-                            Image(systemName:item.icon ?? "folder.fill").font(.system(size:48,weight:.regular)).foregroundStyle(palette[.accent].opacity(0.85))
-                            Text(item.title).font(.callout.weight(.medium)).foregroundStyle(palette[.text]).multilineTextAlignment(.center).lineLimit(3).frame(maxWidth:.infinity)
-                            let progress=LifeFolderContents.progress(under:item.id,in:items)
-                            if progress.total > 0 { LifeTaskProgressView(progress:progress,showsLegend:false).frame(maxWidth:100) }
-                            else { let count=LifeFolderContents.children(of:item.id,in:items).count;Text(count == 0 ? "" : "\(count) inside").font(.caption2).foregroundStyle(.secondary) }
-                        }.padding(.vertical,16).padding(.horizontal,8).frame(maxWidth:.infinity,minHeight:140,alignment:.top).contentShape(RoundedRectangle(cornerRadius:12))
-                    }.buttonStyle(.plain)
+                interactive(item,filing:false) {
+                    Button { open(item) } label: { folderTile(item) }.buttonStyle(.plain)
                 }
+                .background(GeometryReader { proxy in Color.clear.preference(key:LifeFolderFrames.self,value:[item.id:proxy.frame(in:.named("project-folders"))]) })
+                .overlay(alignment:folderInsertion?.after == true ? .trailing : .leading) {
+                    if folderInsertion?.target == item.id {
+                        Capsule().fill(palette[.accent]).frame(width:3).padding(.vertical,12).offset(x:folderInsertion?.after == true ? 10 : -10).allowsHitTesting(false)
+                    }
+                }
+                .highPriorityGesture(folderGesture(item))
+                .offset(folderDrag?.capture.id == item.id ? folderDrag?.translation ?? .zero : .zero)
+                .zIndex(folderDrag?.capture.id == item.id ? 1 : 0)
+                .accessibilityHint("Drag to reorder. More options include Move earlier and Move later.")
             }
             if includeUnfiled,!looseWork.isEmpty {
                 Button { navigation.home();unfiled=true;resetPage() } label: {
@@ -277,6 +283,54 @@ struct LifeProjectWidget: View {
                 }.buttonStyle(.plain)
             }
         }
+        .coordinateSpace(name:"project-folders")
+        .onPreferenceChange(LifeFolderFrames.self) { folderFrames=$0 }
+        .onDisappear { folderDrag=nil;folderInsertion=nil }
+    }
+    private func folderTile(_ item:LifeItem)->some View {
+        VStack(spacing:12) {
+            Image(systemName:item.icon ?? "folder.fill").font(.system(size:48,weight:.regular)).foregroundStyle(palette[.accent].opacity(0.85))
+            Text(item.title).font(.callout.weight(.medium)).foregroundStyle(palette[.text]).multilineTextAlignment(.center).lineLimit(3).frame(maxWidth:.infinity)
+            let progress=LifeFolderContents.progress(under:item.id,in:items)
+            if progress.total > 0 { LifeTaskProgressView(progress:progress,compact:true).frame(maxWidth:96) }
+            else { let count=LifeFolderContents.children(of:item.id,in:items).count;Text(count == 0 ? "" : "\(count) inside").font(.caption2).foregroundStyle(.secondary) }
+        }.padding(.vertical,16).padding(.horizontal,8).frame(maxWidth:.infinity,minHeight:140,alignment:.top)
+            .background(palette[.input].opacity(folderDrag?.capture.id == item.id ? 0.8 : hoveredFolder == item.id ? 0.35 : 0),in:RoundedRectangle(cornerRadius:12))
+            .contentShape(RoundedRectangle(cornerRadius:12))
+            .onHover { inside in hoveredFolder=inside ? item.id : hoveredFolder == item.id ? nil : hoveredFolder }
+    }
+    private func reorderPeers(_ item:LifeItem)->[LifeItem] {
+        folders.filter{$0.parentID == item.parentID && $0.conversationID == item.conversationID}
+    }
+    private func folderGesture(_ item:LifeItem)->some Gesture {
+        DragGesture(minimumDistance:6,coordinateSpace:.named("project-folders"))
+            .onChanged { value in
+                guard !store.readOnly,registration == model.chatGPT.activeID else { return }
+                if folderDrag == nil {
+                    folderDrag = .init(capture:.init(id:item.id,registration:registration,revision:store.revision),page:current?.id,parent:item.parentID,peers:reorderPeers(item).map(\.id),frames:folderFrames,translation:.zero)
+                }
+                guard let captured=folderDrag,captured.capture.id == item.id,captured.capture.revision == store.revision else { return }
+                folderDrag?.translation=value.translation
+                folderInsertion=LifeFolderOrder.insertion(at:value.location,dragging:item.id,orderedIDs:captured.peers,frames:captured.frames)
+            }
+            .onEnded { value in
+                defer { folderDrag=nil;folderInsertion=nil }
+                guard let captured=folderDrag,captured.capture.id == item.id,
+                      let insertion=LifeFolderOrder.insertion(at:value.location,dragging:item.id,orderedIDs:captured.peers,frames:captured.frames) else { return }
+                do {
+                    try LifeFolderReorder.apply(item.id,before:insertion.before,parent:captured.parent,capturedPage:captured.page,currentPage:current?.id,registration:captured.capture.registration,activeRegistration:model.chatGPT.activeID,capturedIDs:Set(captured.peers),currentIDs:Set(reorderPeers(item).map(\.id)),expectedRevision:captured.capture.revision,store:store)
+                    notice=nil
+                } catch { notice=error.localizedDescription }
+            }
+    }
+    private func moveFolder(_ item:LifeItem,earlier:Bool) {
+        let peers=reorderPeers(item)
+        guard let index=peers.firstIndex(where:{$0.id == item.id}),earlier ? index > 0 : index+1 < peers.count else { return }
+        let before=earlier ? peers[index-1].id : peers.dropFirst(index+2).first?.id
+        do {
+            try LifeFolderReorder.apply(item.id,before:before,parent:item.parentID,capturedPage:current?.id,currentPage:current?.id,registration:registration,activeRegistration:model.chatGPT.activeID,capturedIDs:Set(peers.map(\.id)),currentIDs:Set(peers.map(\.id)),expectedRevision:store.revision,store:store)
+            notice=nil
+        } catch { notice=error.localizedDescription }
     }
     private func card(_ item:LifeItem,filing:Bool=true,showStage:Bool=true)->some View {
         interactive(item,filing:filing) {
@@ -298,6 +352,11 @@ struct LifeProjectWidget: View {
         let actions=content().contentShape(Rectangle())
             .contextMenu {
                 Button("Open") { open(item) }
+                if !item.kind.isWork {
+                    let peers=reorderPeers(item)
+                    Button("Move earlier") { moveFolder(item,earlier:true) }.disabled(store.readOnly || peers.first?.id == item.id || !peers.contains{$0.id == item.id})
+                    Button("Move later") { moveFolder(item,earlier:false) }.disabled(store.readOnly || peers.last?.id == item.id || !peers.contains{$0.id == item.id})
+                }
                 if item.kind.isWork { Menu("Stage") { ForEach(LifeTaskStage.allCases) { stage in Button(stage.rawValue) { setStatus(item,stage.status) } } } }
                 Button("Edit details…") { editing=item };Button("Edit notes…") { notesEditing=item };Button("Move…") { moving=item };Button("Link something…") { linking=item };Button("Match PA understanding…") { matching=item };Divider();Button("Delete…",role:.destructive) { deleting=item }
             }
@@ -332,13 +391,33 @@ struct LifeProjectWidget: View {
             if outlineItems.count > 120 { Text("Showing 120 items. Open a folder to see more.").font(.caption).foregroundStyle(.secondary) }
         }
     }
+    private func stageHeader(_ stage:LifeTaskStage,count:Int)->some View {
+        HStack(spacing:7) {
+            Circle().fill(stage.color).frame(width:7,height:7)
+            Text(stage.rawValue).font(.caption.weight(.semibold))
+            Text(String(count)).font(.caption).monospacedDigit().foregroundStyle(.secondary)
+            Spacer(minLength:4)
+            Button { add(.task,stage:stage) } label: { Image(systemName:"plus").font(.system(size:12,weight:.medium)).frame(width:24,height:24).contentShape(RoundedRectangle(cornerRadius:6)) }
+                .buttonStyle(.plain).foregroundStyle(.secondary).help("Add a task to "+stage.rawValue).accessibilityLabel("Add task: "+stage.rawValue).disabled(store.readOnly || registration.isEmpty)
+        }.padding(.horizontal,3)
+    }
+    private var taskList:some View {
+        VStack(alignment:.leading,spacing:18) {
+            ForEach(LifeTaskStage.allCases) { stage in
+                let tasks=work.filter{LifeTaskStage.stage(for:$0.status) == stage}
+                VStack(alignment:.leading,spacing:8) { stageHeader(stage,count:tasks.count);rows(tasks) }
+            }
+            let archived=filtered.filter{$0.kind.isWork && $0.status == .archived}
+            if !archived.isEmpty { Text("Archived").font(.caption).foregroundStyle(.secondary);rows(archived) }
+        }
+    }
     private var board:some View {
         let columns=availableWidth >= 560 ? 3 : availableWidth >= 380 ? 2 : 1
         return LazyVGrid(columns:Array(repeating:GridItem(.flexible(minimum:0),alignment:.top),count:columns),alignment:.leading,spacing:12) {
             ForEach(LifeTaskStage.allCases) { stage in
                 let tasks=work.filter{LifeTaskStage.stage(for:$0.status) == stage}
                 VStack(alignment:.leading,spacing:9) {
-                    HStack(spacing:6) { Circle().fill(stage.color).frame(width:7,height:7);Text(stage.rawValue).font(.caption.weight(.medium));Text(String(tasks.count)).font(.caption).foregroundStyle(.secondary);Spacer(minLength:0) }.padding(.horizontal,3)
+                    stageHeader(stage,count:tasks.count)
                     ForEach(tasks) { item in
                         card(item,filing:false,showStage:false)
                             .highPriorityGesture(boardGesture(item))
@@ -438,27 +517,24 @@ struct LifeProjectWidget: View {
 }
 
 extension LifeTaskStage {
-    var color:Color { switch self { case .todo:Color(red:0.55,green:0.47,blue:0.76);case .inProgress:Color(red:0.81,green:0.59,blue:0.23);case .done:Color(red:0.32,green:0.65,blue:0.45) } }
+    var color:Color { switch self { case .todo:Color(red:0.80,green:0.34,blue:0.32);case .inProgress:Color(red:0.81,green:0.59,blue:0.23);case .done:Color(red:0.32,green:0.65,blue:0.45) } }
 }
 struct LifeTaskProgressView:View {
     let progress:LifeTaskProgress
-    var showsLegend=false
-    var body:some View {
-        VStack(alignment:.leading,spacing:8) {
-            GeometryReader { proxy in
-                HStack(spacing:0) { ForEach(Array(LifeTaskStage.allCases.enumerated()),id:\.element.id) { index,stage in
-                    if progress.counts[index] > 0 { stage.color.frame(width:proxy.size.width*Double(progress.counts[index])/Double(max(1,progress.total))) }
-                } }.clipShape(Capsule())
-            }.frame(height:showsLegend ? 7 : 4).accessibilityLabel("Overall task progress").accessibilityValue(LifeTaskStage.allCases.enumerated().map{"\($0.element.rawValue) \(progress.percentages[$0.offset]) percent"}.joined(separator:", ")).help("Overall progress across \(progress.total) saved tasks, including subfolders.")
-            if showsLegend {
-                ViewThatFits(in:.horizontal) {
-                    HStack(spacing:16) { legend }
-                    VStack(alignment:.leading,spacing:5) { legend }
-                }
-            }
-        }
+    var compact=false
+    private var summary:String {
+        LifeTaskStage.allCases.enumerated().map { "\($0.element.rawValue): \(progress.counts[$0.offset])" }.joined(separator:", ")
     }
-    private var legend:some View { ForEach(Array(LifeTaskStage.allCases.enumerated()),id:\.element.id) { index,stage in HStack(spacing:5) { Circle().fill(stage.color).frame(width:6,height:6);Text(stage.rawValue+" \(progress.percentages[index])%").foregroundStyle(.secondary) }.font(.caption2) } }
+    var body:some View {
+        GeometryReader { proxy in
+            HStack(spacing:0) { ForEach(Array(LifeTaskStage.allCases.enumerated()),id:\.element.id) { index,stage in
+                if progress.counts[index] > 0 { stage.color.frame(width:proxy.size.width*Double(progress.counts[index])/Double(max(1,progress.total))) }
+            } }.clipShape(Capsule())
+                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.07),lineWidth:0.5))
+        }.frame(height:compact ? 7 : 12)
+            .accessibilityElement(children:.ignore).accessibilityLabel("Task progress").accessibilityValue(summary)
+            .help(summary+". Includes tasks in subfolders.")
+    }
 }
 
 /// A captured page/revision draft; source links and native notes are never edited here.

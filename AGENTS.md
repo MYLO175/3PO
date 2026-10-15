@@ -114,3 +114,10 @@ Heartbeat reconsideration may inspect pending proposals as labelled historical d
 - When intent validation cannot authorise an otherwise complete supported Calendar, Reminder or project change, show the exact proposed actions in chat with Approve actions and Dismiss. Clear understood requests still execute directly. Approval is human authority for the captured payload and makes no further AI call. Missing essential fields, unavailable sources/targets and stale existing-item revisions still need preparation or clarification; approval never bypasses those checks. An unavailable intent provider may leave a complete local proposal without retrying inference. Never-started proposals survive reopening; attempted/uncertain saves never automatically replay. Preserve unsent drafts and finish only the exact associated queue/Review request.
 
 - 14 October: hide Explore suggested actions when there is no concrete saved action. Informational concerns and category-only placeholders retain Background context, Feedback, View email and Dismiss; no inference or native preparation is needed to choose button visibility.
+
+
+## Recorded Projects design preference — 15 October
+
+- Folder-grid dragging reorders within the current folder, with visible insertion feedback and Move earlier/later menu alternatives. Filing into another folder stays under explicit Move/Tree.
+- Show a short, thick progress bar beside the current breadcrumb, following deeper paths, with red To do, amber In progress and green Done. No visible percentages or permanent legend; exact counts appear on hover. Keep individual folder progress previews.
+- Replace the trailing Add a task field with a + inside each Board/List stage heading, opening a task with that stage and current folder selected.

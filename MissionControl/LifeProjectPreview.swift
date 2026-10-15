@@ -39,6 +39,8 @@ import AppKit
     static func render(_ model: DashboardModel) async {
         guard let (registration,university,engineering,project) = seed(model) else { return }
         let previews:[(String,CGFloat,CGFloat,String,String,UUID?)]=[
+            ("wide-dark",1100,650,"dark","Overview",engineering.id),
+            ("deep-dark",900,500,"dark","Overview",project.id),
             ("home",620,500,"light","Overview",nil),
             ("home-dark",620,500,"dark","Deadlines",nil),
             ("compact",240,500,"dark","Overview",engineering.id),

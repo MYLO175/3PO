@@ -1,5 +1,7 @@
 # Next improvements
 
+15 October Projects refinement: implemented and focused-tested in an isolated worktree, pending integration. Sibling drag ordering and menu alternatives, compact breadcrumb progress with red To do/counts on hover, retained tile previews, and stage-specific + task creation. Desktop and narrow/deep layouts, persistence/reload and guarded Undo have fictional evidence. Native menu reorder and stage-specific task creation are verified; hands-on pointer drag smoothness and installed/personal-data acceptance remain separate.
+
 15 October Review repeat prevention: durable exact-email/content preparation receipts now prevent reassessment from adding another set of background actions. Partial/failed batches remain resumable; separate actions, new messages/content, exact replacements and explicit human requests retain their paths. Existing complete legacy passes migrate only with exact saved assessment support. Historical partial batches without a completion receipt retain conservative action-level deduplication; semantic equivalence across differently worded historical quotes is not claimed. Validation and installation evidence are recorded in STATUS.
 
 
