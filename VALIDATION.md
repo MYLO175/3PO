@@ -1,6 +1,6 @@
 # Validation
 
-15 October Review approval clarity:106 runtime/selection checks and focused proactive/Review inbox suites pass. Signed source-free consumer194/194 and captured-action/removal34/34 pass. Native fictional UI verifies grouped duplicate Reminder aliases, zero checked defaults, No actions / Approve 1 action / Approve 2 actions, draft retention and one selected disposable project save. All82 personal records remain exact through preview; installed acceptance is recorded in STATUS.
+15 October Review approval clarity:106 runtime/selection checks and focused proactive/Review inbox suites pass. Signed source-free consumer194/194 and captured-action/removal34/34 pass. Native fictional UI verifies grouped duplicate Reminder aliases, zero checked defaults, No actions / Approve 1 action / Approve 2 actions, draft retention and one selected disposable project save. Installed `92b820c` passes signature/full file hashes and normal launch. All82 records remain,72 byte-exact after ordinary source/workspace updates; protected histories, plans, projects and preferences are exact. The current personal inbox is empty, so no card is restored or personal action approved; the original duplicate payloads remain exact and match the grouped fixture’s provenance/concrete-field case.
 
 
 ## 15 October 2026: final action outcome reporting
