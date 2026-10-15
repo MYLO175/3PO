@@ -128,13 +128,20 @@ struct LifeWorkspaceEditUndo {
     func receipt(_ key: String?, registration: String) -> LifeWorkspaceReceipt? {
         key.flatMap { key in state.receipts.first { $0.id == key && $0.registration == registration } }
     }
-    @discardableResult func save(_ value: LifeItem, expected: UUID?, receipt: LifeWorkspaceReceipt? = nil) throws -> LifeItem {
+    @discardableResult func save(_ value: LifeItem, expected: UUID?, receipt: LifeWorkspaceReceipt? = nil, notesFormattingIsCurrent:Bool=false) throws -> LifeItem {
         if let prior = self.receipt(receipt?.id, registration: value.registration), let id = prior.itemID, let item = state.items.first(where: { $0.id == id && $0.registration == value.registration }) { return item }
         var candidate = state, item = value
         var before: LifeItem?
         if let index = candidate.items.firstIndex(where: { $0.id == item.id }) {
             let old = candidate.items[index]
             guard old.registration == item.registration && old.conversationID == item.conversationID && old.revision == expected && old.deletedAt == nil else { throw LifeWorkspaceFailure.message("This item changed while you were editing. Reopen it before saving.") }
+            if !notesFormattingIsCurrent,item.notes != old.notes && item.notesFormatting == old.notesFormatting {item.notesFormatting=nil}
+            if var notes=item.additionalNotes {
+                for index in notes.indices {
+                    if !notesFormattingIsCurrent,let previous=old.additionalNotes?.first(where:{$0.id == notes[index].id}),notes[index].text != previous.text,notes[index].formatting == previous.formatting {notes[index].formatting=nil}
+                }
+                item.additionalNotes=notes
+            }
             try LifeWorkspaceRules.validateChange(item, from: old, in: candidate.items)
             if item.placement?.status == "running" { item.placement?.status="paused";item.placement?.reason="Project edited during placement. Continue explicitly to reconsider it." }
             if item.parentID != old.parentID { item.sortOrder=candidate.items.filter{$0.registration == item.registration && $0.conversationID == item.conversationID && $0.parentID == item.parentID && $0.deletedAt == nil}.count }

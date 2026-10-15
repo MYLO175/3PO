@@ -210,6 +210,39 @@ import SwiftData
         precondition(LifeFolderOrder.insertion(at:CGPoint(x:330,y:60),dragging:first.id,orderedIDs:[first.id,second.id,third.id],frames:frames)?.before == third.id)
         precondition(LifeFolderOrder.insertion(at:CGPoint(x:150,y:200),dragging:first.id,orderedIDs:[first.id,second.id,third.id],frames:frames)?.before == nil)
         precondition(LifeFolderOrder.insertion(at:CGPoint(x:400,y:400),dragging:first.id,orderedIDs:[first.id,second.id,third.id],frames:frames) == nil,"Outside release never saves")
+        // Optional rich text and independent note cards preserve the original plain note.
+        let notesOwner=try store.save(LifeItem(registration:"notes",kind:.space,title:"Notes owner",notes:"Original note"),expected:nil)
+        let styled=LifeNoteFormatting(length:notesOwner.notes.utf16.count,runs:[.init(location:0,length:8,size:22,bold:true,italic:false)])
+        var noteItem=notesOwner;noteItem.notesFormatting=styled
+        let extraNote=LifeNote(text:"Independent sticky note",formatting:.init(length:23,runs:[.init(location:0,length:11,size:15,bold:false,italic:true)]))
+        noteItem.additionalNotes=[extraNote]
+        let savedNotes=try store.save(noteItem,expected:notesOwner.revision)
+        precondition(savedNotes.noteCards.map(\.id) == [notesOwner.id,extraNote.id] && savedNotes.notes == notesOwner.notes)
+        precondition(LifeWorkspaceStore(container:container).state.items.first{$0.id == savedNotes.id} == savedNotes)
+        precondition(LifeItemQuery(query:"sticky").matching(store.items("notes")).map(\.id) == [notesOwner.id])
+        var sameLength=savedNotes;sameLength.notes="Jriginal note"
+        let richSaved=try store.save(sameLength,expected:savedNotes.revision,notesFormattingIsCurrent:true)
+        precondition(richSaved.notesFormatting == styled,"Same-length rich text edits must retain unchanged font runs")
+        var sameExtra=richSaved;sameExtra.additionalNotes?[0].text="Jndependent sticky note"
+        let extraRichSaved=try store.save(sameExtra,expected:richSaved.revision,notesFormattingIsCurrent:true)
+        precondition(extraRichSaved.additionalNotes?[0].formatting == extraNote.formatting)
+        var unrelated=extraRichSaved;unrelated.title="Renamed notes owner"
+        let renamedNotes=try store.save(unrelated,expected:extraRichSaved.revision)
+        precondition(renamedNotes.notesFormatting == styled && renamedNotes.additionalNotes == extraRichSaved.additionalNotes)
+        var staleNotes=savedNotes;staleNotes.notes="Stale overwrite"
+        rejects {_=try store.save(staleNotes,expected:savedNotes.revision)}
+        var plainEdit=renamedNotes;plainEdit.notes="Updated by the plain editor"
+        let plainSaved=try store.save(plainEdit,expected:renamedNotes.revision)
+        precondition(plainSaved.notesFormatting == nil && plainSaved.additionalNotes == extraRichSaved.additionalNotes,"Plain edits clear only stale formatting, retaining sibling notes")
+        var deleteNote=plainSaved;deleteNote.additionalNotes=[]
+        _=try store.save(deleteNote,expected:plainSaved.revision)
+        try store.undo("notes")
+        let restoredNotes=store.items("notes").first{$0.id == notesOwner.id}!
+        precondition(restoredNotes.additionalNotes == extraRichSaved.additionalNotes,"Note deletion Undo restores the same note identities and formatting")
+        var badFormat=restoredNotes;badFormat.notesFormatting=styled
+        rejects {_=try store.save(badFormat,expected:restoredNotes.revision)}
+        var duplicateNote=restoredNotes;duplicateNote.additionalNotes=[extraNote,extraNote]
+        rejects {_=try store.save(duplicateNote,expected:restoredNotes.revision)}
         // Corrupt/unsupported storage stays intact and cannot be replaced by an empty state.
         let broken = try ModelContainer(for: CachedDashboard.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let bytes = Data("{\"version\":99,\"items\":[],\"links\":[],\"receipts\":[]}".utf8)
@@ -218,6 +251,6 @@ import SwiftData
         rejects { _ = try unavailable.save(root, expected: nil) }
         let preserved = try broken.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first!.data
         precondition(preserved == bytes)
-        print("PASS: project persistence, identity, scope, dates, hierarchy, receipts, corrupt-store preservation, bookmarks, stale notes/Undo, direct folder contents, legacy stages, exact progress, guarded board changes/Undo and folder ordering/reload/metadata/Undo/gesture targets")
+        print("PASS: project persistence, identity, scope, dates, hierarchy, receipts, corrupt-store preservation, bookmarks, stale notes/Undo, direct folder contents, legacy stages, exact progress, guarded board changes/Undo folder ordering/reload/metadata/Undo/gesture targets, styled/multiple notes/reload/stale edits and note deletion Undo")
     }
 }

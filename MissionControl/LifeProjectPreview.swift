@@ -7,7 +7,13 @@ import AppKit
         let registration = model.chatGPT.activeID.isEmpty ? "fictional-preview" : model.chatGPT.activeID
         let university = LifeItem(registration:registration, kind:.organisation, title:"Example University", areas:[.studies])
         let engineering = LifeItem(registration:registration, kind:.course, title:"Engineering", parentID:university.id, areas:[.studies])
-        let project = LifeItem(registration:registration, kind:.project, title:"Sensor Garden", parentID:engineering.id, notes:"A fictional sensor prototype, from research to a tested baseline.", status:.active, areas:[.studies,.projects])
+        var project = LifeItem(registration:registration, kind:.project, title:"Sensor Garden", parentID:engineering.id, notes:"A fictional sensor prototype, from research to a tested baseline.", status:.active, areas:[.studies,.projects])
+        project.notes="Project overview\nA fictional sensor prototype, from research to a tested baseline."
+        project.notesFormatting = .init(length:project.notes.utf16.count,runs:[.init(location:0,length:16,size:22,bold:true,italic:false)])
+        project.additionalNotes=[
+            .init(text:"Ideas to explore\n•\tTry a smaller sensor\n•\tCompare two capture angles\n•\tKeep the setup repeatable"),
+            .init(text:"Meeting notes\nBring the prototype and the latest measurements.\nDiscuss what made the baseline reliable.\nAgree the next experiment.\nRecord uncertainties and follow-up questions.\nKeep this fictional note available without pushing the task board down the page.\nThis final line is visible after Show more.")
+        ]
         let research = LifeItem(registration:registration, kind:.section, title:"Research", parentID:project.id, areas:[.studies])
         let paper = LifeItem(registration:registration, kind:.task, title:"Read the baseline paper", parentID:research.id, status:.done, due:"2026-10-08", estimateMinutes:45)
         let baseline = LifeItem(registration:registration, kind:.task, title:"Build the first working baseline", parentID:project.id, status:.active, due:"2026-10-12", estimateMinutes:120)
@@ -39,6 +45,7 @@ import AppKit
     static func render(_ model: DashboardModel) async {
         guard let (registration,university,engineering,project) = seed(model) else { return }
         let previews:[(String,CGFloat,CGFloat,String,String,UUID?)]=[
+            ("notes-dark",1100,940,"dark","Overview",project.id),
             ("wide-dark",1100,650,"dark","Overview",engineering.id),
             ("deep-dark",900,500,"dark","Overview",project.id),
             ("home",620,500,"light","Overview",nil),

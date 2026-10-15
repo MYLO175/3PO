@@ -24,7 +24,7 @@ struct LifeItemQuery {
                   !unfinished || (item.status != .done && item.status != .archived),
                   dueBefore.map({ limit in item.due.map { $0 <= limit } ?? false }) ?? true,
                   maxMinutes.map({ limit in item.estimateMinutes.map { $0 <= limit } ?? false }) ?? true else { return false }
-            var text = item.title + " " + item.notes, cursor = item.parentID, seen = Set<UUID>()
+            var text = item.title + " " + item.searchableNotes, cursor = item.parentID, seen = Set<UUID>()
             while let id = cursor, seen.insert(id).inserted, let parent = byID[id] { text += " " + parent.title; cursor = parent.parentID }
             let key = LifeWorkspaceRules.key(text)
             return terms.allSatisfy { key.contains($0) }

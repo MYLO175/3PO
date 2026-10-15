@@ -221,6 +221,18 @@
       ]
     },
     {
+      "id": "life-notes",
+      "tier": "source-free",
+      "script": "scripts/test-life-notes.sh",
+      "effects": [
+        "fictional values",
+        "in-memory AppKit text editing"
+      ],
+      "requires": [
+        "Xcode"
+      ]
+    },
+    {
       "id": "life-ownership",
       "tier": "source-free",
       "script": "scripts/test-life-ownership.sh",

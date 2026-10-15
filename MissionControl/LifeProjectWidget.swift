@@ -20,7 +20,7 @@ struct LifeProjectWidget: View {
     @Environment(\.workspacePalette) private var palette
     @State private var navigation = LifeProjectNavigation()
     @State private var unfiled=false
-    @State private var notesEditing: LifeItem?
+    @State private var notesEditing: LifeNoteEditing?
     @State private var editing: LifeItem?
     @State private var linking: LifeItem?
     @State private var inspecting=false
@@ -91,6 +91,7 @@ struct LifeProjectWidget: View {
                         case .deadlines: deadlines
                         }
                     }
+                    if let current { LifeNotesSection(model:model,item:current,availableWidth:availableWidth) { notesEditing=$0 } }
                     if atHome && folders.isEmpty && looseWork.isEmpty {
                         Button { add(.space) } label: { Label("New space",systemImage:"plus").padding(.vertical,20) }.buttonStyle(.plain).foregroundStyle(palette[.accent]).disabled(store.readOnly || registration.isEmpty)
                     }
@@ -99,7 +100,7 @@ struct LifeProjectWidget: View {
             }.id((current?.id.uuidString ?? (unfiled ? "unfiled" : "home"))+":"+presentation.rawValue)
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .sheet(item: $editing) { item in LifeItemEditor(model: model, item: item) { editing = nil } }
-        .sheet(item: $notesEditing) { item in LifeProjectNotesSheet(model:model,item:item,notes:item.notes) { notesEditing=nil } }
+        .sheet(item: $notesEditing) { capture in LifeProjectNotesSheet(model:model,capture:capture) }
         .sheet(item:$matching) { item in LifeIdentitySheet(model:model,item:item) { matching=nil } }
         .sheet(item:$moving) { item in LifeMoveSheet(model:model,item:item) { moving=nil } }
         .sheet(item:$deleting) { item in LifeDeleteSheet(model:model,item:item) { deleting=nil } }
@@ -140,7 +141,7 @@ struct LifeProjectWidget: View {
             }
             Menu {
                 if let current {
-                    Button("Edit details…") { editing=current };Button("Edit notes…") { notesEditing=current }
+                    Button("Edit details…") { editing=current };Button("Edit notes…") { notesEditing=LifeNoteEditing(item:current,noteID:current.notes.isEmpty ? nil : current.id) }
                     Button("Connections & organisation…") { inspecting=true }
                     Button("Move…") { moving=current }
                     Divider()
@@ -236,19 +237,6 @@ struct LifeProjectWidget: View {
             }
             if item.due != nil || item.estimateMinutes != nil {
                 ViewThatFits(in:.horizontal) { HStack(spacing:12) { properties(item) };VStack(alignment:.leading,spacing:4) { properties(item) } }.font(.caption).foregroundStyle(.secondary)
-            }
-            notesPanel(item)
-        }
-    }
-    private func notesPanel(_ item:LifeItem)->some View {
-        VStack(alignment:.leading,spacing:6) {
-            if item.notes.isEmpty {
-                Button { notesEditing=item } label:{Label("Add a note…",systemImage:"square.and.pencil")}.buttonStyle(.plain).font(.callout).foregroundStyle(palette[.text].opacity(0.45)).padding(.vertical,6)
-            } else {
-                HStack(alignment:.top,spacing:10) {
-                    Text(item.notes).font(.callout).foregroundStyle(palette[.text].opacity(0.8)).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)
-                    Button { notesEditing=item } label:{Image(systemName:"pencil")}.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary).accessibilityLabel("Edit folder notes")
-                }
             }
         }
     }
@@ -358,7 +346,7 @@ struct LifeProjectWidget: View {
                     Button("Move later") { moveFolder(item,earlier:false) }.disabled(store.readOnly || peers.last?.id == item.id || !peers.contains{$0.id == item.id})
                 }
                 if item.kind.isWork { Menu("Stage") { ForEach(LifeTaskStage.allCases) { stage in Button(stage.rawValue) { setStatus(item,stage.status) } } } }
-                Button("Edit details…") { editing=item };Button("Edit notes…") { notesEditing=item };Button("Move…") { moving=item };Button("Link something…") { linking=item };Button("Match PA understanding…") { matching=item };Divider();Button("Delete…",role:.destructive) { deleting=item }
+                Button("Edit details…") { editing=item };Button("Edit notes…") { notesEditing=LifeNoteEditing(item:item,noteID:item.notes.isEmpty ? nil : item.id) };Button("Move…") { moving=item };Button("Link something…") { linking=item };Button("Match PA understanding…") { matching=item };Divider();Button("Delete…",role:.destructive) { deleting=item }
             }
         if filing {
             actions.onDrag { drag = .init(id:item.id,registration:registration,revision:store.revision);let provider=NSItemProvider();provider.registerDataRepresentation(forTypeIdentifier:LifeProjectDrag.type.identifier,visibility:.ownProcess) { complete in complete(Data(item.id.uuidString.utf8),nil);return nil };return provider }.onDrop(of:[LifeProjectDrag.type],delegate:LifeProjectDrop(target:item.id,parent:item.kind.isWork ? item.parentID : item.id,before:item.kind.isWork ? item.id : nil,drag:$drag,hover:$dropHover,key:item.id.uuidString,store:store,activeRegistration:{model.chatGPT.activeID},report:{notice=$0}))
@@ -534,32 +522,6 @@ struct LifeTaskProgressView:View {
         }.frame(height:compact ? 7 : 12)
             .accessibilityElement(children:.ignore).accessibilityLabel("Task progress").accessibilityValue(summary)
             .help(summary+". Includes tasks in subfolders.")
-    }
-}
-
-/// A captured page/revision draft; source links and native notes are never edited here.
-struct LifeProjectNotesSheet:View {
-    @Bindable var model:DashboardModel
-    let item:LifeItem
-    @State var notes:String
-    var close:()->Void
-    @State private var error:String?
-    var body:some View {
-        VStack(alignment:.leading,spacing:14) {
-            Text("Notes").font(.title2.weight(.semibold))
-            Text(item.title).font(.callout).foregroundStyle(.secondary)
-            TextEditor(text:$notes).font(.body).padding(6).frame(minHeight:240).background(.quaternary,in:RoundedRectangle(cornerRadius:8))
-            if let error { Text(error).font(.callout).foregroundStyle(.orange).textSelection(.enabled) }
-            HStack {
-                Button("Cancel",action:close).keyboardShortcut(.cancelAction)
-                Spacer()
-                Button("Save") {
-                    guard item.registration == model.chatGPT.activeID else {error="Account changed; your draft has not been saved.";return}
-                    var value=item;value.notes=notes
-                    do { _ = try model.assistant.projects.save(value,expected:item.revision);close() } catch { self.error=error.localizedDescription }
-                }.keyboardShortcut(.defaultAction).disabled(item.registration != model.chatGPT.activeID || model.assistant.projects.readOnly)
-            }
-        }.padding(24).frame(width:520,height:440)
     }
 }
 

@@ -25,6 +25,8 @@ struct LifeItem: Codable, Identifiable, Equatable {
     var title: String
     var parentID: UUID? = nil
     var notes = ""
+    var notesFormatting:LifeNoteFormatting? = nil
+    var additionalNotes:[LifeNote]? = nil
     var status: LifeItemStatus = .planned
     /// Local date, not an inferred instant or a mirrored Apple due date.
     var due: String? = nil
@@ -44,6 +46,39 @@ struct LifeItem: Codable, Identifiable, Equatable {
     var deletedRoot: UUID? = nil
     var icon:String? = nil
     var displaySymbol:String { icon.flatMap{LifeProjectIcons.symbols.contains($0) ? $0 : nil} ?? kind.symbol }
+}
+/// Plain note text stays authoritative; font runs are an optional presentation sidecar.
+struct LifeNoteRun:Codable,Equatable {
+    var location:Int
+    var length:Int
+    var size:Double
+    var bold:Bool
+    var italic:Bool
+}
+struct LifeNoteFormatting:Codable,Equatable {
+    var version=1
+    var length:Int
+    var runs:[LifeNoteRun]
+    func valid(for text:String)->Bool {
+        guard version == 1,length == text.utf16.count,runs.count <= 12000 else {return false}
+        var end=0
+        for run in runs {
+            guard run.location >= end,run.length > 0,run.location <= length,run.length <= length-run.location,run.size.isFinite,(9...72).contains(run.size) else {return false}
+            end=run.location+run.length
+        }
+        return true
+    }
+}
+struct LifeNote:Codable,Identifiable,Equatable {
+    var id=UUID()
+    var text:String
+    var formatting:LifeNoteFormatting? = nil
+}
+extension LifeItem {
+    var noteCards:[LifeNote] {
+        (notes.isEmpty ? [] : [LifeNote(id:id,text:notes,formatting:notesFormatting)])+(additionalNotes ?? [])
+    }
+    var searchableNotes:String { ([notes]+(additionalNotes ?? []).map(\.text)).joined(separator:"\n\n") }
 }
 enum LifeProjectIcons {
     static let symbols=["folder","book.closed","graduationcap","briefcase","laptopcomputer","lightbulb","wrench.and.screwdriver","leaf","house","person.2","star","flag","doc.text","chart.bar"]
@@ -156,6 +191,9 @@ enum LifeWorkspaceRules {
         for item in state.items {
             try require(item.icon.map{LifeProjectIcons.symbols.contains($0)} != false,"Choose a supported project icon.")
             try require(!item.registration.isEmpty && !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && item.title.count <= 160 && item.notes.count <= 12000 && dateValid(item.due) && item.estimateMinutes.map { (1...100000).contains($0) } != false && item.areas.count <= 3 && Set(item.areas).count == item.areas.count, "A project field is empty, too long or invalid.")
+            let extraNotes=item.additionalNotes ?? []
+            try require(extraNotes.count <= 100 && Set(extraNotes.map(\.id)).count == extraNotes.count && !extraNotes.contains{$0.id == item.id} && extraNotes.allSatisfy{$0.text.count <= 12000},"A note is too long or has a duplicate identity.")
+            try require(item.notesFormatting.map{$0.valid(for:item.notes)} != false && extraNotes.allSatisfy{note in note.formatting.map{$0.valid(for:note.text)} != false},"Note formatting no longer matches its text.")
             try require(item.humanEvidence.map { !$0.isEmpty && $0.count <= 2000 } != false, "The project origin evidence is invalid.")
             try require(item.ownership == nil || ["workspace","life"].contains(item.ownership!), "Unknown item ownership.")
             try require(item.ownership != "life" || [.area,.organisation,.course,.person,.goal].contains(item.kind), "Life organisation cannot create project workspace content.")

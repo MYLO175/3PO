@@ -1,5 +1,7 @@
 # Validation
 
+15 October sticky notes worktree: signed build/strict signature and native-editor, workspace, notebook, placement and PA-tool checks pass. Native fictional UI verifies bottom multi-note cards, writing click-to-edit, expansion, Command-B/Command-I, asterisk-Space/Return bullets, independent note creation and saved font-size/style readback. Fixtures cover text Undo, size/traits/Unicode/paste, legacy optional fields, same-length rich saves, stale edits, persistence and note-delete Undo. Additional-note read text stays within the existing 2,000-character item bound. Not integrated/installed; no personal/native Apple or AI changes.
+
 15 October Projects design worktree: signed Debug build/strict signature and focused workspace, ownership and placement suites pass. Fictional visual/native UI verifies breadcrumb progress, retained folder previews, menu reorder/Undo, exact In progress task creation, List preservation and Done preselection. Persistence fixtures cover folder-only order/reload, task/placement metadata preservation, no-op/outside targets and changed ownership/revision refusal. Not integrated/installed; pointer drag automation fails with `noWindowsAvailable`, so hands-on drag smoothness remains unverified.
 
 ## 15 October 2026: Review email repeat prevention
