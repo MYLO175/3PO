@@ -1,5 +1,8 @@
 # Mission Control specification
 
+15 October action-outcome refinement: the pill and successful replies must reflect the final verified task result. Keep recovered project preparation in diagnostic history, clear only matching resolved failures, and show What went wrong only after a reply finishes with an unresolved failure. Genuine sibling failures and uncertain saves remain visible. Stable saved outcome metadata drives presentation; no prose guessing or receipt reads during streaming.
+
+
 15 October approved refinement: once an exact email content version has produced a complete saved Review preparation, later assessments must not generate another set. Persist opaque registration/account/message/content receipts independently of generated prose, day and workspace context. Preserve original action IDs/outcomes, distinct sibling destinations, failed/capped continuation, source handling/resolution, exact validated replacements and explicit human variations.
 
 

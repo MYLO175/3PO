@@ -281,7 +281,7 @@ struct AssistantPanel: View {
                                     DisclosureGroup("Memory tool notes") { ForEach(Array(notes.enumerated()),id:\.offset) { _,note in Text(note).font(.caption).foregroundStyle(.orange).textSelection(.enabled) } }
                                         .font(.caption)
                                 }
-                                if case let errors = PAReadPrerequisite.visibleFailures(unresolved:turn.unresolvedToolErrors,history:turn.toolErrors),!errors.isEmpty {
+                                if turn.role == "assistant",turn.completed,case let errors = PAReadPrerequisite.visibleFailures(unresolved:turn.unresolvedToolErrors,history:turn.toolErrors),!errors.isEmpty {
                                     DisclosureGroup("What went wrong") { ForEach(Array(errors.enumerated()),id:\.offset) { _,reason in Text(reason).font(.caption).textSelection(.enabled) } }.font(.caption)
                                 }
                                 if turn.role == "assistant", assistant.mailSearchTurnID == turn.id,

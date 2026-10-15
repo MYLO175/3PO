@@ -1,5 +1,12 @@
 # How 3PO works: detailed reference
 
+## 15 October: final task outcomes and recovered preparation
+
+An invalid project reference may fail before any save, then be corrected within the same human request. The assistant now matches that preparation problem to the later successful exact read or verified creation batch. Concrete batch fields and known destinations stay bound; a different sibling, a changed known parent, an unverified save, a broad read replacing an exact branch, or several ambiguous matching failures cannot clear the problem. The original diagnostic remains in saved history and context inspection.
+
+Final action results persist typed phase, verified receipt text and confirmed/unconfirmed counts. Activity projects them through stable account/conversation/response metadata rather than assistant prose or live source reads. Successful approval still includes genuine unresolved siblings. Explicitly verified corrections can resolve exact older attention IDs while preserving their stored outcomes and acknowledgement flags. A successful corrected reply has no What went wrong disclosure; completed replies with genuine unresolved failures retain it. Streaming replies do not flash intermediate failure disclosures. Ordinary reply streaming adds no Activity outcome.
+
+
 ## 15 October: prepare each email once
 
 Review preparation now saves an opaque receipt for the exact Mail account, message and body/content version under the active registration. A successful uncapped pass that produced proposals records the receipt in the same cache transaction as those proposals. Reassessing the same email can still compare handling, confirmations and existing proposals, but cannot add another set of background suggestions or project tasks. Rewritten AI prose, new assessment revisions, changed project descriptions, day changes and reopening do not reset the receipt. The receipt is preparation history, never evidence that work is complete or permission to save an action.

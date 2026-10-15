@@ -132,6 +132,14 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
     }
     func activityPresentation(_ record:AIActivityRecord)->AIActivityRecord {
         guard record.registration == chatGPT.activeID else {return record}
+        if case let .assistant(id)=record.destination,let conversation=id.flatMap(UUID.init(uuidString:)),let context=assistant.activityContext(conversation) {
+            if context.resolvedActivityIDs.contains(record.id) {
+                var result=record;result.state = .resolved;result.message="Resolved by a later correction";return result
+            }
+            if record.id.hasPrefix("action:"),let response=UUID(uuidString:String(record.id.dropFirst(7))),let outcome=context.actionResults[response],outcome.succeeded,(context.unresolvedActionErrors[response] ?? []).isEmpty {
+                var result=record;result.state = .succeeded;result.message=AIActivitySummary.text(outcome.receipts.joined(separator:" · "));return result
+            }
+        }
         if record.state == .succeeded {
             var result=record
             if record.kind == .review {

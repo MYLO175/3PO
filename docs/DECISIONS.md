@@ -1,5 +1,12 @@
 # Decisions
 
+## 15 October 2026: show unresolved outcomes, retain recovered diagnostics
+
+The human reported a verified four-space creation still showing Partly completed and What went wrong. An earlier invalid project identity had remained in unresolvedToolErrors after execution succeeded. Match local pre-save project preparation against the corrected operation, preserving exact known references and concrete batch fields. Resolve one unambiguous correspondence or exact repeated references only; never clear unrelated sibling or uncertain failures because another operation saved. Keep diagnostics separate from the final result.
+
+Persist final action metadata for stable local Activity presentation, including verified receipts and counts; do not parse success prose, inspect receipts from the pill or observe streamed text. Completed replies expose What went wrong only for unresolved failures. A reviewed exact historical correction may carry explicit resolved Activity IDs without changing the original history or acknowledgement. Personal recovery requires canonical operation and source-turn proof plus the current human's confirmation, never a general migration from any nearby successful receipt.
+
+
 ## 15 October 2026: durable per-email Review preparation
 
 The human requested that Review items already made for an email should not be made again. Use a persistent exact-content preparation receipt, rather than generated wording or the current assessment/workspace revision as identity. The receipt is scoped by registration and hashes the native Mail account, exact message and source body version. It records a successful uncapped proposal-producing pass atomically with saved Review state, survives reopening/day/context/cache changes, and grants no completion or write authority.

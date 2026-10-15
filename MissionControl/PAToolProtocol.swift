@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// The subscription transport requires function tools grouped in a namespace.
 enum PAToolProtocol {
@@ -251,6 +252,56 @@ struct PAReadPreparationFailure:LocalizedError {
     var reason:String
     var errorDescription:String? {reason}
     static let guidance="The preparatory source/details read did not finish, and no native save was attempted. Preserve the human's original request and any earlier verified receipts. Explain the specific source/availability limitation; do not ask the human to repeat an already clear request or claim completion. Do not substitute a different destination/target or retry an uncertain native save."
+}
+
+/// One failed pre-save batch can be resolved only by the same concrete batch.
+/// Invalid parent tokens may be corrected; already-valid destinations stay exact.
+struct PAProjectPreparation {
+    private var name:String
+    private var fields:[String]
+    private var parents:[String?]
+    var exactReferences:Bool {parents.allSatisfy{$0 != nil}}
+    private static func parent(_ value:Any?)->String? {
+        guard let value=value as? String else {return "root"}
+        if let id=UUID(uuidString:value) {return id.uuidString}
+        if value.hasPrefix("life:"),let id=UUID(uuidString:String(value.dropFirst(5))) {return id.uuidString}
+        if value.hasPrefix("batch:"),let index=Int(value.dropFirst(6)),index >= 0 {return "batch:"+String(index)}
+        return nil
+    }
+    private static func fields(_ row:[String:Any])->String? {
+        var row=row;row.removeValue(forKey:"parent")
+        if let title=row["title"] as? String {row["title"]=title.trimmingCharacters(in:.whitespacesAndNewlines)}
+        guard let data=try? JSONSerialization.data(withJSONObject:row,options:.sortedKeys) else {return nil}
+        return SHA256.hash(data:data).map{String(format:"%02x",$0)}.joined()
+    }
+    init?(call:PAFunctionCall,reason:String) {
+        let known:Set<String>=["Use the exact project item identity returned by a current read.","Read the current exact project item before changing or linking it.","Read the current structure before adding items.","The exact project item is unavailable or changed. Read its current state before changing or linking it."]
+        guard ["create_life_items","read_life_items"].contains(call.name),known.contains(reason),let args=try? PAToolProtocol.arguments(call) else {return nil}
+        let rows:[[String:Any]]
+        if call.name == "read_life_items" {var row=args;row["parent"]=row.removeValue(forKey:"root");rows=[row]}
+        else {guard let items=args["items"] as? [[String:Any]],!items.isEmpty else {return nil};rows=items}
+        let fields=rows.compactMap(Self.fields)
+        guard fields.count == rows.count else {return nil}
+        name=call.name;self.fields=fields;parents=rows.map{Self.parent($0["parent"])}
+    }
+    func resolved(by call:PAFunctionCall,output:String)->Bool {
+        guard call.name == name,let args=try? PAToolProtocol.arguments(call),let result=(try? JSONSerialization.jsonObject(with:Data(output.utf8))) as? [String:Any],let items=result["items"] as? [[String:Any]] else {return false}
+        let rows:[[String:Any]]
+        if name == "read_life_items" {
+            guard result["coverage"] as? String != nil else {return false}
+            var row=args;row["parent"]=row.removeValue(forKey:"root");rows=[row]
+        } else {
+            guard result["saved"] as? Bool == true,let requested=args["items"] as? [[String:Any]],items.count == fields.count else {return false}
+            let ids=items.compactMap{($0["id"] as? String).flatMap(UUID.init(uuidString:))}
+            guard ids.count == items.count,Set(ids).count == ids.count else {return false}
+            rows=requested
+        }
+        guard rows.count == fields.count,rows.compactMap(Self.fields) == fields else {return false}
+        return zip(parents,rows).allSatisfy {required,row in
+            guard let actual=Self.parent(row["parent"]) else {return false}
+            return required.map{$0 == actual} ?? (actual != "root")
+        }
+    }
 }
 
 /// Counts saved local changes by their concrete result, preserving duplicate-operation identity.

@@ -23,6 +23,28 @@ import Synchronization
         checks["reply display preserves the saved question and acknowledgement"]=model.aiActivity.state.records.first{$0.id == question.id} == question
         var foreign=question;foreign.registration="another-account"
         checks["reply presentation does not cross accounts"]=model.activityPresentation(foreign) == foreign
+        let recoveryResponse=UUID()
+        precondition(model.assistant.appendReview("Fictional project creation completed",conversationID:id,turnID:recoveryResponse))
+        let old=AIActivityRecord(id:"action:"+UUID().uuidString,registration:registration,kind:.action,state:.partial,title:"3PO actions",message:"An earlier project attempt failed",destination:.assistant(targetID:id.uuidString))
+        let repaired=AIActivityRecord(id:"action:"+recoveryResponse.uuidString,registration:registration,kind:.action,state:.partial,title:"3PO actions",message:"Use the exact project item identity returned by a current read.",destination:.assistant(targetID:id.uuidString))
+        precondition(model.aiActivity.upsert(repaired))
+        let completed=AssistantActionResult(phase:"completed",receipts:["Created 4 local workspace items."],confirmedActions:4,unconfirmedActions:0,resolvedActivityIDs:[old.id])
+        model.assistant.seedActionResultFixture(conversationID:id,responseID:recoveryResponse,result:completed,errors:[])
+        checks["verified final action metadata corrects a stale partial display"]=model.activityPresentation(repaired).state == .succeeded
+        checks["recovered success uses the verified receipt"]=model.activityPresentation(repaired).message == "Created 4 local workspace items."
+        checks["explicit exact earlier recovery clears only that attention"]=model.activityPresentation(old).state == .resolved
+        checks["recovery display preserves raw failure history and acknowledgement"]=model.aiActivity.state.records.first{$0.id == repaired.id} == repaired
+        let repairedTurn=model.assistant.conversation(id)!.turns.first{$0.id == recoveryResponse}!
+        checks["successful repaired reply has no What went wrong but retains diagnostics"]=PAReadPrerequisite.visibleFailures(unresolved:repairedTurn.unresolvedToolErrors,history:repairedTurn.toolErrors).isEmpty && repairedTurn.toolErrors?.isEmpty == false
+        var uncertain=completed;uncertain.phase="uncertain";uncertain.unconfirmedActions=1
+        model.assistant.seedActionResultFixture(conversationID:id,responseID:recoveryResponse,result:uncertain,errors:["A save needs checking"])
+        checks["uncertain or partial work cannot become a success projection"]=model.activityPresentation(repaired).state == .partial && model.activityPresentation(old).state == .partial
+        checks["genuine unresolved reply failures retain What went wrong"] = !PAReadPrerequisite.visibleFailures(unresolved:model.assistant.conversation(id)!.turns.first{$0.id == recoveryResponse}!.unresolvedToolErrors,history:[]).isEmpty
+        model.assistant.seedActionResultFixture(conversationID:id,responseID:recoveryResponse,result:completed,errors:["An unrelated sibling still failed"])
+        checks["successful approval cannot conceal a genuine unresolved sibling"]=model.activityPresentation(repaired).state == .partial && model.activityPresentation(old).state == .partial
+        model.assistant.seedActionResultFixture(conversationID:id,responseID:recoveryResponse,result:completed,errors:[])
+        var otherAccount=repaired;otherAccount.registration="foreign-account"
+        checks["saved outcome projection cannot cross accounts"]=model.activityPresentation(otherAccount) == otherAccount
         let previous=model.reviewWork;defer {model.reviewWork=previous}
         let source=ReviewWorkSource(key:"fictional-pill-answer",title:"Fictional action question",kind:"mail",accountID:"fictional-mail",messageID:"fictional-question")
         var action=ReviewWorkAction(id:"canonical-action",title:"Fictional task",destination:"Project",payload:Data());action.phase = .saved

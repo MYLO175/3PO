@@ -25,6 +25,18 @@ struct AssistantTurn: Codable, Identifiable, Equatable {
     /// Concrete local proposals. Approval is a human UI action, never model prose.
     var actionApprovals:[AssistantActionProposal]? = nil
     var approvalQueuedRequestID:UUID? = nil
+    /// Final verified work metadata. Never inferred from assistant prose.
+    var actionResult:AssistantActionResult? = nil
+}
+
+struct AssistantActionResult:Codable,Equatable {
+    var phase:String
+    var receipts:[String]
+    var confirmedActions:Int
+    var unconfirmedActions:Int
+    /// Explicitly verified/user-confirmed recovery only, preserving saved history.
+    var resolvedActivityIDs:[String]? = nil
+    var succeeded:Bool {phase == "completed" && confirmedActions > 0 && unconfirmedActions == 0 && !receipts.isEmpty}
 }
 
 struct AssistantActionProposal:Codable,Equatable,Identifiable {
@@ -78,6 +90,9 @@ struct AssistantActivityContext:Equatable {
     var turnDates:[UUID:Date]=[:]
     var attemptedTools:[UUID:[String]]=[:]
     var repliesAfter:[UUID:UUID]=[:]
+    var actionResults:[UUID:AssistantActionResult]=[:]
+    var unresolvedActionErrors:[UUID:[String]]=[:]
+    var resolvedActivityIDs:Set<String>=[]
     init(_ conversation:AssistantConversation) {
         accountID=conversation.accountID;title=conversation.title;reviewKey=conversation.reviewKey
         reviewSourceKind=conversation.reviewSourceKind;reviewAccountID=conversation.reviewAccountID
@@ -93,6 +108,11 @@ struct AssistantActivityContext:Equatable {
         for turn in conversation.turns {
             if turnDates[turn.id] == nil,let created=turn.created {turnDates[turn.id]=created}
             if attemptedTools[turn.id] == nil,let names=turn.contextCapture?.attemptedTools,!names.isEmpty {attemptedTools[turn.id]=names}
+            if turn.completed,let result=turn.actionResult {
+                actionResults[turn.id]=result
+                if let errors=turn.unresolvedToolErrors,!errors.isEmpty {unresolvedActionErrors[turn.id]=errors}
+                if result.succeeded,(turn.unresolvedToolErrors ?? []).isEmpty {resolvedActivityIDs.formUnion(result.resolvedActivityIDs ?? [])}
+            }
         }
     }
 }

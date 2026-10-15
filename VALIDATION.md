@@ -1,5 +1,14 @@
 # Validation
 
+## 15 October 2026: final action outcome reporting
+
+Implemented and installed. Exact project preparation recovery separates retained diagnostics from unresolved failures; typed final results drive Activity through stable account/response metadata. Genuine siblings, ambiguous targets, broad reads and uncertain saves remain protected. Successful completed replies omit What went wrong.
+
+267 actual assistant-service checks, 117/117 Activity, 70 conversation repository and PA-tool checks pass. The actual 200-delta streaming case keeps zero Activity invalidations. Signed build and production-consumer evaluation pass 194/194 with zero AI/native/personal writes. Installed signature and all 2,254 files match. Native acceptance confirms green four-item completion, Ready and successful reply disclosures absent; genuine failed history remains.
+
+Bounded canonical-receipt/user-confirmed metadata recovery corrected the existing observed result and exact earlier correction-chain attention. An older normal test copy was closed; two lost Activity history entries recovered from the private baseline, and only the installed process remains. All 80 records survive; 67 byte-exact after three intentional metadata rows, nine source/cache rows and Calendar mount date/set ordering. All other 52 protected records, project state and preferences are exact. Notes/task progress retained; no requested operation replayed. Private evidence: /private/tmp/3po-action-outcome-20261015.
+
+
 ## 15 October 2026: Review email repeat prevention
 
 Implemented, focused-tested and installed. Durable exact account/message/content preparation receipts survive reassessment, day/context changes and reopening. Capped/failed/unattributed rows cannot freeze missing siblings or become completed-pass migration evidence. Existing action IDs/outcomes, distinct initial destinations, new source information, exact replacements and explicit human requests retain their paths. Legacy recovery requires a supported completed assessment receipt.

@@ -303,6 +303,45 @@ private final class ObservationCounter:@unchecked Sendable {
         func response(_ calls:[PAFunctionCall])->PAResponse {
             .init(text:"",output:calls.map{["type":"function_call","call_id":$0.id,"name":$0.name,"arguments":$0.arguments]},calls:calls)
         }
+        let projectReason="Use the exact project item identity returned by a current read."
+        let projectParent=UUID().uuidString
+        func projectCall(_ parent:String,title:String="Fictional module",read:Bool=false)->PAFunctionCall {
+            let fields:[String:Any]=read ? ["query":"Modules","root":parent,"unfinished":false,"dueBefore":NSNull(),"maxMinutes":NSNull(),"deleted":false] : ["items":[["title":title,"kind":"space","parent":parent,"notes":"Fictional notes","due":NSNull(),"estimateMinutes":NSNull(),"areas":[]]],"authorization":"Add the fictional module"]
+            return .init(id:UUID().uuidString,name:read ? "read_life_items" : "create_life_items",namespace:"pa",arguments:String(decoding:try! JSONSerialization.data(withJSONObject:fields,options:.sortedKeys),as:UTF8.self))
+        }
+        for mode in ["creation","read","sibling","unverified","changed-parent","ambiguous"] {
+            let p=FictionalInference(),c=FictionalContext(),container=try open("project-recovery-"+mode)
+            let value=service(p,container),bad=projectCall(mode == "changed-parent" ? projectParent : "invalid-project-reference",read:mode == "read")
+            let good=projectCall(mode == "changed-parent" ? UUID().uuidString : projectParent,title:mode == "sibling" ? "Different module" : "Fictional module",read:mode == "read")
+            var attempt=0,outcomes:[AssistantTurnOutcome]=[]
+            c.configure={session,_ in session.executeBody={call,session in
+                attempt += 1
+                if attempt == 1 || (mode == "ambiguous" && attempt == 2) {throw PAReadPreparationFailure(readTool:"read_life_items",reason:projectReason)}
+                if mode == "read" {return "{\"items\":[],\"coverage\":\"Fictional exact branch\"}"}
+                if mode == "unverified" {return "{\"saved\":false,\"items\":[]}"}
+                session.receipts.append("Space created: Fictional module")
+                return "{\"saved\":true,\"items\":[{\"id\":\""+UUID().uuidString+"\"}]}"
+            }}
+            p.replies=(mode == "ambiguous" ? [response([bad]),response([projectCall("another-invalid-parent")])] : [response([bad])])+[response([good]),final("Fictional request finished")]
+            var runtime=c.runtime();runtime.finished={outcomes.append($0)}
+            check(value.send(runtime:runtime,topicID:nil,prompt:"Add the fictional module"),"Project preparation recovery starts within the existing request")
+            await until{!value.busy}
+            let recovered=["creation","read"].contains(mode),turn=value.feed!.turns.last!
+            check(turn.unresolvedToolErrors?.isEmpty == recovered,"Only matching verified project preparation resolves: "+mode)
+            check(turn.toolErrors == Array(repeating:projectReason,count:mode == "ambiguous" ? 2 : 1) && turn.contextCapture?.preparationNotes?.contains(projectReason) == true,"Original diagnostics remain inspectable after project recovery: "+mode)
+            check(outcomes.last?.phase == (recovered ? "completed" : mode == "unverified" ? "failed" : "partial"),"Final action outcome reflects unresolved work: "+mode)
+            check(turn.actionResult?.phase == outcomes.last?.phase && value.activityContext(value.feed!.id)?.actionResults[turn.id] == turn.actionResult,"Pill uses stable saved final outcome metadata: "+mode)
+            let reopened=try ConversationRepository(container:container).load().first!.turns.last!
+            check(reopened.actionResult == turn.actionResult && reopened.unresolvedToolErrors == turn.unresolvedToolErrors,"Recovered project status survives reopening: "+mode)
+        }
+        do {
+            let failed=projectCall("life:"+projectParent,read:true)
+            let requirement=PAProjectPreparation(call:failed,reason:projectReason)!
+            check(requirement.resolved(by:projectCall(projectParent,read:true),output:"{\"items\":[],\"coverage\":\"Exact read\"}"),"Known prefixed UUID recovery preserves the exact project identity")
+            var broadArgs=try PAToolProtocol.arguments(projectCall(projectParent,read:true));broadArgs["root"]=NSNull()
+            let broad=PAFunctionCall(id:UUID().uuidString,name:"read_life_items",namespace:"pa",arguments:String(decoding:try JSONSerialization.data(withJSONObject:broadArgs,options:.sortedKeys),as:UTF8.self))
+            check(!PAProjectPreparation(call:projectCall("ambiguous-branch",read:true),reason:projectReason)!.resolved(by:broad,output:"{\"items\":[],\"coverage\":\"Broad overview\"}"),"A broad overview cannot resolve a failed exact-branch read")
+        }
         let destination=SourceOption(id:"fictional-destination",title:"Fictional destination",account:"Fictional",writable:true)
         for name in ["change_calendar","change_reminder"] {
             for explicit in [false,true] {
@@ -682,6 +721,22 @@ private final class ObservationCounter:@unchecked Sendable {
             check(reopened.conversation(id)?.turns.last?.actionApprovals?.allSatisfy{$0.phase == .completed && $0.approvedAt != nil} == true,"Verified results are persisted on the original proposals")
             check(!reopened.approveActions(runtime:runtime,conversationID:id,responseID:turn.id),"Completed approvals cannot be replayed")
             check(service(provider,container).conversation(id)?.turns.last?.actionApprovals?.allSatisfy{$0.phase == .completed} == true,"Completed receipts survive reopen")
+        }
+        do {
+            let provider=FictionalInference(),context=FictionalContext(),assistant=service(provider,try open("approval-keeps-sibling")),id=assistant.openPA()!
+            context.configure={session,_ in session.executeBody={call,_ in
+                if call.name == "create_life_items" {throw ActionFailure.message("A different requested action could not be saved")}
+                throw PAChatApprovalRequired(proposal:.init(toolName:call.name,arguments:"{}",snapshot:Data(),outline:["Fictional Calendar action"],details:[]))
+            }}
+            var outcomes:[AssistantTurnOutcome]=[],runtime=context.runtime()
+            runtime.finished={outcomes.append($0)};runtime.approvalAvailable={_ in true};runtime.approveAction={_,_ in "Calendar event created"}
+            provider.replies=[tools(["create_life_items","change_calendar"]),final("Approve the Calendar action")]
+            check(assistant.send(runtime:runtime,topicID:nil,prompt:"Do the two fictional actions"),"Mixed failure and pending approval starts")
+            await until{!assistant.busy}
+            let response=assistant.conversation(id)!.turns.last!.id
+            check(assistant.approveActions(runtime:runtime,conversationID:id,responseID:response),"The supported sibling can still be approved")
+            await until{!assistant.busy}
+            check(outcomes.last?.phase == "partial" && outcomes.last?.errors.contains("A different requested action could not be saved") == true,"Successful button approval retains the unrelated failed sibling")
         }
         do {
             let provider=FictionalInference(),context=FictionalContext(),container=try open("chat-approval-uncertainty")

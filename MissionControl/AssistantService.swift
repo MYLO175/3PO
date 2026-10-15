@@ -138,6 +138,21 @@ import Observation
         guard let value=activityContexts[id],value.accountID == connection.activeID else {return nil}
         return value
     }
+    private func recordActionResult(_ outcome:AssistantTurnOutcome) {
+        guard !outcome.attemptedTools.isEmpty || outcome.confirmedActions > 0 || outcome.unconfirmedActions > 0 else {return}
+        guard let c=allConversations.firstIndex(where:{$0.id == outcome.conversationID && $0.accountID == outcome.registration}),let t=allConversations[c].turns.firstIndex(where:{$0.id == outcome.responseTurnID}) else {return}
+        allConversations[c].turns[t].actionResult = .init(phase:outcome.phase,receipts:outcome.receipts,confirmedActions:outcome.confirmedActions,unconfirmedActions:outcome.unconfirmedActions)
+    }
+    #if DEBUG
+    func seedActionResultFixture(conversationID:UUID,responseID:UUID,result:AssistantActionResult,errors:[String]) {
+        precondition(ProcessInfo.processInfo.arguments.contains("--validate-advice-context"))
+        guard let c=allConversations.firstIndex(where:{$0.id == conversationID && $0.accountID == connection.activeID}),let t=allConversations[c].turns.firstIndex(where:{$0.id == responseID}) else {preconditionFailure("Missing fictional action turn")}
+        allConversations[c].turns[t].actionResult=result
+        allConversations[c].turns[t].unresolvedToolErrors=errors
+        allConversations[c].turns[t].toolErrors=["Use the exact project item identity returned by a current read."]
+        precondition(save())
+    }
+    #endif
     private func refreshActivityContexts() {
         var next:[UUID:AssistantActivityContext]=[:]
         for conversation in allConversations where next[conversation.id] == nil {next[conversation.id]=AssistantActivityContext(conversation)}
@@ -406,11 +421,13 @@ import Observation
         task=Task {
             var receipts:[String]=[],failure:String?,uncertain=false,confirmedCount=0
             defer {
-                if failure == nil,let queuedID=turn.approvalQueuedRequestID,queue.items.contains(where:{$0.id == queuedID && $0.registration == registration && $0.topicID == turn.contextID && $0.state == .needsAnswer}) {
+                let remainingErrors=self.conversation(conversationID)?.turns.first{$0.id == responseID}?.unresolvedToolErrors ?? []
+                if failure == nil,remainingErrors.isEmpty,let queuedID=turn.approvalQueuedRequestID,queue.items.contains(where:{$0.id == queuedID && $0.registration == registration && $0.topicID == turn.contextID && $0.state == .needsAnswer}) {
                     _=queue.finish(queuedID,result:receipts.joined(separator:"\n"),needsAnswer:false)
                 }
                 busy=false;toolStatus="";requestConversationID=nil;requestTurnID=nil;requestTopicID=nil
-                runtime.finished(.init(registration:registration,conversationID:conversationID,humanTurnID:humanID,responseTurnID:responseID,phase:uncertain ? "uncertain" : failure != nil ? (receipts.isEmpty ? "failed" : "partial") : "completed",message:failure ?? receipts.joined(separator:"\n"),receipts:receipts,errors:failure.map{[$0]} ?? [],confirmedActions:confirmedCount,unconfirmedActions:uncertain ? 1 : 0,attemptedTools:pending.map(\.toolName)))
+                let outcome=AssistantTurnOutcome(registration:registration,conversationID:conversationID,humanTurnID:humanID,responseTurnID:responseID,phase:uncertain ? "uncertain" : failure != nil || !remainingErrors.isEmpty ? (receipts.isEmpty ? "failed" : "partial") : "completed",message:failure ?? receipts.joined(separator:"\n"),receipts:receipts,errors:remainingErrors+(failure.map{[$0]} ?? []),confirmedActions:confirmedCount,unconfirmedActions:uncertain ? 1 : 0,attemptedTools:pending.map(\.toolName))
+                recordActionResult(outcome);save();runtime.finished(outcome)
                 runtime.afterTurn()
             }
             for proposal in pending {
@@ -562,6 +579,7 @@ import Observation
                 let awaitingApproval=final?.actionApprovals?.contains{$0.phase == .pending} == true
                 let phase=session.pendingNativeActionCount > 0 || nativeOutcomeUnconfirmed ? "uncertain" : Task.isCancelled ? "stopped" : session.clarification != nil || awaitingApproval ? "needsAnswer" : (error != nil || !unresolved.isEmpty || final?.completed != true) ? (confirmedReceipts().isEmpty ? "failed" : "partial") : "completed"
                 let outcome=AssistantTurnOutcome(registration:registration,conversationID:id,humanTurnID:currentUserID,responseTurnID:response.id,phase:phase,message:final?.content.isEmpty == false ? final!.content : error ?? "Request finished",receipts:confirmedReceipts(),errors:unresolved+(error.map{[$0]} ?? []),confirmedActions:session.confirmedActionCount+reviewConfirmed.count,unconfirmedActions:max(session.pendingNativeActionCount,nativeOutcomeUnconfirmed ? 1 : 0),attemptedTools:attemptedToolNames)
+                recordActionResult(outcome)
                 busy = false; toolStatus = ""; save(); if !isReviewTurn {finishQueue(runtime:runtime)}; requestConversationID = nil; requestTopicID = nil; requestTurnID = nil; runtime.finished(outcome);runtime.afterTurn()
             }
             var expectedMemory = memoryRevision
@@ -597,6 +615,7 @@ import Observation
                 }
             }
             var preparations:[String:[PAReadPrerequisite]]=[:]
+            var projectPreparations:[(note:String,requirement:PAProjectPreparation)]=[]
             if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {allConversations[c].turns[t].unresolvedToolErrors=[]}
             @MainActor func resolvePreparations(after call:PAFunctionCall) {
                 let readID=(try? PAToolProtocol.arguments(call))?["id"] as? String
@@ -670,6 +689,14 @@ import Observation
                             }
                             else {output = try await executePrepared(call)}
                             succeeded=true
+                            let matching=projectPreparations.filter{$0.requirement.resolved(by:call,output:output)}
+                            let recovered=matching.filter{$0.requirement.exactReferences || matching.count == 1}
+                            if !recovered.isEmpty,let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {
+                                for issue in recovered {
+                                    if let index=allConversations[c].turns[t].unresolvedToolErrors?.firstIndex(of:issue.note) {allConversations[c].turns[t].unresolvedToolErrors?.remove(at:index)}
+                                }
+                                projectPreparations.removeAll{$0.requirement.resolved(by:call,output:output) && ($0.requirement.exactReferences || matching.count == 1)}
+                            }
                             resolvePreparations(after:call)
                             if let (question,options)=session.clarification {
                                 setResponse(([confirmedReceipts().joined(separator:"\n"),question].filter{!$0.isEmpty}).joined(separator:"\n\n"),completed:true)
@@ -715,6 +742,11 @@ import Observation
                                 allConversations[c].turns[t].unresolvedToolErrors=Array(unresolved.suffix(PAToolProtocol.maxStoredToolErrors))
                                 if let preparation=error as? PAReadPrerequisite {
                                     preparations[note,default:[]].append(preparation)
+                                    var notes=allConversations[c].turns[t].contextCapture?.preparationNotes ?? [];notes.append(note)
+                                    allConversations[c].turns[t].contextCapture?.preparationNotes=Array(notes.suffix(6))
+                                }
+                                if let preparation=error as? PAReadPreparationFailure,preparation.readTool == "read_life_items",let requirement=PAProjectPreparation(call:call,reason:preparation.reason) {
+                                    projectPreparations.append((note,requirement));projectPreparations=Array(projectPreparations.suffix(PAToolProtocol.maxStoredToolErrors))
                                     var notes=allConversations[c].turns[t].contextCapture?.preparationNotes ?? [];notes.append(note)
                                     allConversations[c].turns[t].contextCapture?.preparationNotes=Array(notes.suffix(6))
                                 }

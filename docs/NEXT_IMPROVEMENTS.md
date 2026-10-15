@@ -1,5 +1,8 @@
 # Next improvements
 
+15 October final-outcome refinement: matched project preparation recovery now separates retained diagnostics from genuinely unresolved failures. Typed final action results drive the pill locally; successful corrected replies omit What went wrong, while genuine sibling and uncertain failures remain. Ordinary streamed text does not publish Activity outcomes. Focused, signed-consumer and installation evidence is recorded in STATUS. Arbitrary semantic equivalence between different requested payloads is not inferred.
+
+
 15 October Review repeat prevention: durable exact-email/content preparation receipts now prevent reassessment from adding another set of background actions. Partial/failed batches remain resumable; separate actions, new messages/content, exact replacements and explicit human requests retain their paths. Existing complete legacy passes migrate only with exact saved assessment support. Historical partial batches without a completion receipt retain conservative action-level deduplication; semantic equivalence across differently worded historical quotes is not claimed. Validation and installation evidence are recorded in STATUS.
 
 
