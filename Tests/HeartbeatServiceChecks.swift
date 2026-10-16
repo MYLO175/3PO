@@ -240,6 +240,21 @@ import SwiftData
         lostService.check(runtime:lostNative.runtime());await until{!lostService.busy}
         check(lostService.state.accounts[owner]?.pending == true && lostService.state.accounts[owner]?.reviews?.last?.steps?.first(where:{$0.id == "suggestions"})?.status == "waiting","A child's late native read failure cannot be labelled a completed comparison")
 
+        for change in ["notifications","unchanged controls"] {
+            let stable=FictionalHeartbeatWorld(),stableStore=try store(),stableService=make(stable,stableStore)
+            stable.holdStage="email"
+            stableService.check(runtime:stable.runtime());await until{stable.waiting}
+            let revision=stableService.controlsRevision,request=stable.capturedRequest!
+            if change == "notifications" {stableService.notificationsEnabled.toggle()}
+            else {
+                let enabled=stableService.enabled,minutes=stableService.intervalMinutes,limit=stableService.dailyCallLimit
+                stableService.enabled=enabled;stableService.intervalMinutes=minutes;stableService.dailyCallLimit=limit
+            }
+            check(stableService.controlsRevision == revision,"\(change) preserves captured analysis controls")
+            check(({do{try request.validate();return true}catch{return false}})(),"\(change) preserves held child ownership")
+            stable.release();await until{!stableService.busy}
+            check(stable.stages == ["email","suggestions","brief"] && stableService.state.accounts[owner]?.assessed != nil && stableService.state.accounts[owner]?.calls == 3,"\(change) completes the same owned heartbeat")
+        }
         for change in ["owner","model","scope","controls","midnight","foreground","context","usage","typing","stop"] {
             let late=FictionalHeartbeatWorld(),lateStore=try store(),lateService=make(late,lateStore)
             late.holdStage="email"
@@ -249,7 +264,7 @@ import SwiftData
             case "owner":late.environment.registration="another-fictional-owner"
             case "model":late.environment.model="different-model"
             case "scope":late.environment.scope="changed-permissions"
-            case "controls":lateService.notificationsEnabled.toggle()
+            case "controls":lateService.intervalMinutes=lateService.intervalMinutes == 30 ? 60 : 30
             case "midnight":late.now=late.now.addingTimeInterval(86400)
             case "foreground":late.environment.foregroundBusy=true
             case "context":late.environment.contextEnabled=false
