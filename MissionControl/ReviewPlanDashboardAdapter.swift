@@ -99,11 +99,11 @@ struct ReviewDraftEvidence:Codable,Equatable {
                 #if DEBUG
                 guard !ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") else {throw ActionFailure.message("Source reads are disabled in this fictional preview.")}
                 #endif
-                let revision=DiscoveryNativeTarget.fingerprint(message)
+                let revision=ReviewInferenceGuard.mailSource(message)
                 sourceRevision=revision
                 let body=try await mail.body(accountID:message.accountID,messageID:message.messageID,expectedInternetMessageID:message.internetMessageID,mailboxName:message.mailboxName)
                 sourceText=String(body.prefix(16000))
-                sourceStillCurrent={self.mailData.messages.contains{$0.id == message.id && DiscoveryNativeTarget.fingerprint($0) == revision}}
+                sourceStillCurrent={self.mailData.messages.contains{$0.id == message.id && ReviewInferenceGuard.mailSource($0) == revision}}
             }
         }
         guard valid(),sourceStillCurrent() else {throw ActionFailure.message("The source or request changed before these suggestions were prepared.")}
