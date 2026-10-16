@@ -182,6 +182,9 @@ struct MemorySelection {
 struct MemoryLexicalIndex {
     var text: [UUID: Set<String>]
     var all: [UUID: Set<String>]
+    /// Literal declarations in current human evidence, not guessed global synonyms.
+    var abbreviations: [UUID: [String: Set<String>]]
+    var phrases: [UUID: [String]]
     init(_ memories: [PAMemory]) {
         let textTerms = Dictionary(memories.map { ($0.id, MemoryRetrieval.tokens($0.text)) }, uniquingKeysWith: { $0.union($1) })
         text = textTerms
@@ -189,6 +192,30 @@ struct MemoryLexicalIndex {
             let extra = (memory.reviewPreference == true ? [memory.reviewContext ?? "",memory.reviewInterpretation?.rule ?? "",memory.reviewInterpretation?.senderRecallLabel ?? ""].joined(separator:" ") : "") + " " + (memory.connections ?? []).map { $0.subject + " " + $0.relation + " " + $0.object }.joined(separator: " ")
             return (memory.id, (textTerms[memory.id] ?? []).union(MemoryRetrieval.tokens(extra)))
         }, uniquingKeysWith: { $0.union($1) })
+        abbreviations = Dictionary(memories.compactMap { memory in
+            guard memory.source == nil, memory.explicit || memory.certainty == .stated else { return nil }
+            let declarations = MemoryRetrieval.explicitAbbreviations(memory.evidence ?? (memory.explicit ? memory.text : ""))
+            return declarations.isEmpty ? nil : (memory.id, declarations)
+        }, uniquingKeysWith: { first, _ in first })
+        phrases = abbreviations.isEmpty ? [:] : Dictionary(memories.map { memory in
+            (memory.id, ([memory.text] + (memory.connections ?? []).flatMap { [$0.subject, $0.object] }).map { " " + MemoryRetrieval.literalWords($0).joined(separator: " ") + " " })
+        }, uniquingKeysWith: { first, _ in first })
+    }
+    /// A cached index can contain other accounts, retired facts and unavailable sources.
+    /// Only current eligible human declarations may extend this particular query.
+    func abbreviationMatches(terms: Set<String>, eligibleIDs: Set<UUID>) -> Set<UUID> {
+        var definitions: [String: Set<String>] = [:]
+        for id in eligibleIDs {
+            for (short, expansions) in abbreviations[id] ?? [:] where terms.contains(short) {
+                definitions[short, default: []].formUnion(expansions)
+            }
+        }
+        // An ambiguous initialism is not a reason to choose one interpretation.
+        let expansions = definitions.values.filter { $0.count == 1 }.flatMap { $0 }
+        guard !expansions.isEmpty else { return [] }
+        return Set(eligibleIDs.filter { id in
+            (phrases[id] ?? []).contains { field in expansions.contains { field.contains(" " + $0 + " ") } }
+        })
     }
 }
 enum MemoryRetrieval {
@@ -197,8 +224,43 @@ enum MemoryRetrieval {
     // Keep common task-bearing abbreviations without making ordinary two-letter
     // words relevance seeds. These remain literal terms, not semantic aliases.
     private static let meaningfulShortTerms:Set<String> = ["ai","ml","cv","uk"]
+    /// Bounded grammatical/spelling equivalence for ordinary PA vocabulary. Do not
+    /// stem arbitrary names (James/Jame), prefixes (organ/organisation), or concepts.
+    private static let wordForms: [String: String] = {
+        var result: [String: String] = [:]
+        for singular in "application meeting deadline task project reminder message email interview course lecture employer preference commitment appointment obligation newsletter receipt confirmation assessment result update request note folder document source account permission".split(separator: " ").map(String.init) {
+            result[singular + "s"] = singular
+        }
+        result["responsibilities"] = "responsibility"
+        for (british, american) in [("organise", "organize"), ("organises", "organizes"), ("organised", "organized"), ("organising", "organizing"), ("organisation", "organization"), ("organisations", "organizations"), ("prioritise", "prioritize"), ("prioritises", "prioritizes"), ("prioritised", "prioritized"), ("prioritising", "prioritizing")] {
+            result[american] = british
+        }
+        result["organisations"] = "organisation"; result["organizations"] = "organisation"
+        return result
+    }()
+    fileprivate static func literalWords(_ text: String) -> [String] {
+        text.folding(options:[.caseInsensitive,.diacriticInsensitive],locale:Locale(identifier:"en_GB")).split { !$0.isLetter && !$0.isNumber }.map(String.init)
+    }
     static func tokens(_ text: String) -> Set<String> {
-        Set(text.folding(options:[.caseInsensitive,.diacriticInsensitive],locale:Locale(identifier:"en_GB")).split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { ($0.count > 2 || meaningfulShortTerms.contains($0)) && !ignored.contains($0) })
+        Set(literalWords(text).map { wordForms[$0] ?? $0 }.filter { ($0.count > 2 || meaningfulShortTerms.contains($0)) && !ignored.contains($0) })
+    }
+    private static let abbreviationPattern = try! NSRegularExpression(pattern: #"((?:[\p{L}\p{N}]+[ \t]+){1,7}[\p{L}\p{N}]+)[ \t]*\(([A-Z][A-Z0-9]{1,7})\)"#)
+    fileprivate static func explicitAbbreviations(_ evidence: String) -> [String: Set<String>] {
+        var result: [String: Set<String>] = [:]
+        let bounded = String(evidence.prefix(2000))
+        guard bounded.contains("(") else { return [:] }
+        for match in abbreviationPattern.matches(in: bounded, range: NSRange(bounded.startIndex..., in: bounded)).prefix(8) {
+            guard let labelRange = Range(match.range(at: 1), in: bounded), let shortRange = Range(match.range(at: 2), in: bounded) else { continue }
+            let short = String(bounded[shortRange]).lowercased(), words = literalWords(String(bounded[labelRange]))
+            guard short.count > 2 || meaningfulShortTerms.contains(short) else { continue }
+            for count in 2...min(8, words.count) {
+                let suffix = words.suffix(count)
+                if suffix.compactMap(\.first).map(String.init).joined() == short {
+                    result[short, default: []].insert(suffix.joined(separator: " ")); break
+                }
+            }
+        }
+        return result
     }
     static func queryTerms(_ query:String?,selfLabel:String)->Set<String> {
         tokens(query ?? "").subtracting(tokens(selfLabel))
@@ -243,10 +305,11 @@ enum MemoryRetrieval {
         let lexical = suppliedLexical ?? MemoryLexicalIndex(eligible)
         let textTerms = lexical.text, recordTerms = lexical.all
         let eligibleIDs=Set(eligible.map(\.id))
+        let abbreviationMatches = lexical.abbreviationMatches(terms: terms, eligibleIDs: eligibleIDs)
         let seedEntities=Array(notebook.entities.filter { $0.id != LifeNotebook.selfID && !$0.memoryIDs.isDisjoint(with:eligibleIDs) && !tokens($0.label).isDisjoint(with:terms) }.prefix(20))
         let seeds=Set(seedEntities.map(\.id))
         let workspaceConnected=Set(seedEntities.filter{$0.id.hasPrefix("life:")}.flatMap(\.memoryIDs)).intersection(eligibleIDs)
-        let matchedPlans=Set(eligible.filter{!(textTerms[$0.id] ?? []).isDisjoint(with:terms)}.compactMap(\.commitmentGroup))
+        let matchedPlans=Set(eligible.filter{!(textTerms[$0.id] ?? []).isDisjoint(with:terms) || abbreviationMatches.contains($0.id)}.compactMap(\.commitmentGroup))
         let planConnected=Set(eligible.filter{$0.commitmentGroup.map{matchedPlans.contains($0)} == true}.map(\.id))
         var neighbours=seeds,connected=Set(seedEntities.flatMap(\.memoryIDs)).intersection(eligibleIDs)
         // Two bounded hops. The universal self node is never a bridge to the whole life.
@@ -259,15 +322,24 @@ enum MemoryRetrieval {
                 if neighbours.count >= 60 { break }
             }
         }
-        func relevance(_ memory:PAMemory)->Int {
-            let words = recordTerms[memory.id] ?? []
-            let direct=words.intersection(terms).reduce(0) { $0+min($1.count,12)*5 }
-            let nearby=(connected.contains(memory.id) || planConnected.contains(memory.id)) ? 30 : 0
-            let focused=memory.organisation?.areas.contains(where:focus.contains) == true ? 15 : 0
-            return direct+nearby+focused
+        // Distinctive words outrank generic words under a tight context budget.
+        // Compute once per candidate, rather than intersecting token sets in every sort comparison.
+        var frequency: [String: Int] = [:]
+        for memory in eligible {
+            for term in (recordTerms[memory.id] ?? []).intersection(terms) { frequency[term, default: 0] += 1 }
         }
+        let weights = Dictionary(terms.map { term in
+            (term, min(term.count, 12) * 5 + Int(log2(Double(eligible.count + 1) / Double((frequency[term] ?? 0) + 1)) * 20))
+        }, uniquingKeysWith: { first, _ in first })
+        let scores = Dictionary(eligible.map { memory in
+            let direct = (recordTerms[memory.id] ?? []).intersection(terms).reduce(0) { $0 + (weights[$1] ?? 0) }
+            let nearby = (connected.contains(memory.id) || planConnected.contains(memory.id)) ? 30 : 0
+            let abbreviation = abbreviationMatches.contains(memory.id) ? 100 : 0
+            let focused = memory.organisation?.areas.contains(where: focus.contains) == true ? 15 : 0
+            return (memory.id, direct + nearby + abbreviation + focused)
+        }, uniquingKeysWith: { first, _ in first })
         func ordered(_ lhs: PAMemory, _ rhs: PAMemory) -> Bool {
-            let a = relevance(lhs), b = relevance(rhs)
+            let a = scores[lhs.id] ?? 0, b = scores[rhs.id] ?? 0
             if a != b { return a > b }
             if lhs.explicit != rhs.explicit { return lhs.explicit }
             if (lhs.kind == .preference) != (rhs.kind == .preference) { return lhs.kind == .preference }
@@ -277,7 +349,7 @@ enum MemoryRetrieval {
         }
         func relevant(_ memory:PAMemory)->Bool {
             let words = recordTerms[memory.id] ?? []
-            return !words.isDisjoint(with:terms) || connected.contains(memory.id) || planConnected.contains(memory.id)
+            return !words.isDisjoint(with:terms) || connected.contains(memory.id) || planConnected.contains(memory.id) || abbreviationMatches.contains(memory.id)
         }
         let ranked = eligible.filter{!targeted || relevant($0)}.sorted(by:ordered)
         // Core preferences belong to broad orientation, not every unrelated source assessment.
@@ -293,6 +365,7 @@ enum MemoryRetrieval {
             if pinned.contains(where:{$0.id == memory.id}) { why.append("Core confirmed preference") }
             let words = recordTerms[memory.id] ?? []
             if !words.isDisjoint(with:terms) { why.append("Words match your question") }
+            if abbreviationMatches.contains(memory.id) { why.append("Matches an abbreviation explicitly recorded by you") }
             if connected.contains(memory.id) { why.append("Related recorded connection, within two hops") }
             if workspaceConnected.contains(memory.id) { why.append("Linked to a matching saved project or life item") }
             if planConnected.contains(memory.id) { why.append("Same plan as another relevant report, connected by you") }

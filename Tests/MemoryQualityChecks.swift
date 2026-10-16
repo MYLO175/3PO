@@ -156,6 +156,83 @@ import SwiftData
         check(reloaded.invalidateSource(source.identity, registration: "owner", previousRevision: "version-1", reason: .changed), "Exact changed source version invalidates")
         check(reloaded.selection("owner", query: "Robotics meeting").records.isEmpty && reloaded.records.contains { $0.id == report.id }, "Invalidated source history is preserved outside recall")
 
+        // Matched retrieval cases and hard negatives. These exercise existing local
+        // production selection, including cached indexes containing unusable records.
+        var localCases: [(String, [PAMemory], Set<UUID>)] = []
+        let inflections = [
+            ("application", "My graduate applications close in November."),
+            ("responsibility", "My responsibilities include coordinating the robotics team."),
+            ("meeting", "My supervision meetings take place on Fridays."),
+            ("deadlines", "The coursework deadline is next Tuesday."),
+            ("organisation", "Organization of the lab equipment is my job."),
+            ("prioritising", "Prioritizing graduate recruitment is important this term.")
+        ]
+        for (offset, pair) in inflections.enumerated() {
+            let relevant = fact(300 + offset, pair.1)
+            localCases.append((pair.0, [relevant] + distractors, [relevant.id]))
+        }
+        let acronym = fact(320, "I take Probabilistic Machine Learning (PML).")
+        let courseDeadline = fact(321, "Probabilistic Machine Learning coursework is due on Friday.")
+        let machineOnly = fact(322, "The machine workshop closes at five.")
+        let learningOnly = fact(323, "I enjoy learning piano.")
+        let unrelatedAcronym = fact(324, "Project Management Lab (PML) meets weekly.")
+        localCases.append(("PML", [acronym, courseDeadline, machineOnly, learningOnly] + distractors, [acronym.id, courseDeadline.id]))
+        let mlExpansion = fact(325, "My career interest is Machine Learning (ML).", area: .career)
+        let mlDetails = fact(326, "Machine Learning roles with research responsibility interest me.", area: .career)
+        localCases.append(("ML", [mlExpansion, mlDetails, machineOnly, learningOnly], [mlExpansion.id, mlDetails.id]))
+        for (offset, pair) in [("James", "My friend Jame plays cricket."), ("Mars", "I have a mar on my table."), ("class", "I own a classic car."), ("organ", "I study organisation theory.")].enumerated() {
+            localCases.append((pair.0, [fact(340 + offset, pair.1)], []))
+        }
+        // Exact retrieval should remain unchanged, including the negative topic boundaries.
+        let exactSupervision = fact(350, "My supervision takes place on Fridays.")
+        localCases.append(("supervision", [exactSupervision, machineOnly], [exactSupervision.id]))
+        var localHits = 0, localExpected = 0, localSelected = 0, localWrong = 0
+        for (query, records, desired) in localCases {
+            let actual = ids(MemoryRetrieval.select(records, registration: "owner", query: query, now: now, focus: [.career]))
+            localHits += actual.intersection(desired).count; localExpected += desired.count
+            localSelected += actual.count; localWrong += actual.subtracting(desired).count
+            check(actual == desired, "Local matched/negative query '\(query)' retrieves exactly the supported facts")
+        }
+        print("LOCAL QUALITY MEASURE: relevant recall \(localHits)/\(localExpected); precision \(localHits)/\(localSelected); irrelevant \(localWrong); cases \(localCases.count). Fictional matched vocabulary, not general semantic quality.")
+        let abbreviationReason = MemoryRetrieval.select([acronym, courseDeadline], registration: "owner", query: "PML", now: now).reasons[courseDeadline.id]
+        check(abbreviationReason?.contains("Matches an abbreviation explicitly recorded by you") == true && abbreviationReason?.contains("Words match your question") == false, "Derived abbreviation recall explains its actual reason without claiming literal words")
+        let ambiguousRecords = [acronym, courseDeadline, unrelatedAcronym]
+        check(ids(MemoryRetrieval.select(ambiguousRecords, registration: "owner", query: "PML", now: now)) == [acronym.id, unrelatedAcronym.id], "Conflicting explicit abbreviation meanings do not expand to an arbitrary course")
+        var otherAccountAlias = acronym; otherAccountAlias.id = fact(360, "").id; otherAccountAlias.registration = "other"
+        var retiredAlias = acronym; retiredAlias.id = fact(361, "").id; retiredAlias.retiredAt = now
+        var supersededAlias = acronym; supersededAlias.id = fact(362, "").id; supersededAlias.supersededBy = UUID()
+        var topicAlias = acronym; topicAlias.id = fact(363, "").id; topicAlias.conversationID = UUID()
+        var inferredAlias = acronym; inferredAlias.id = fact(364, "").id; inferredAlias.explicit = false; inferredAlias.certainty = .inferred
+        var sourceAlias = acronym; sourceAlias.id = fact(365, "").id; sourceAlias.source = source
+        for alias in [otherAccountAlias, retiredAlias, supersededAlias, topicAlias, inferredAlias, sourceAlias] {
+            let records = [alias, courseDeadline]
+            let lexical = MemoryLexicalIndex(records)
+            let selected = MemoryRetrieval.select(records, registration: "owner", query: "PML", now: now, lexical: lexical)
+            check(!ids(selected).contains(courseDeadline.id), "An unavailable, foreign, scoped, inferred or source declaration cannot extend a cached-index query")
+        }
+        let globalCache = MemoryLexicalIndex([acronym, courseDeadline])
+        check(MemoryRetrieval.select([courseDeadline], registration: "owner", query: "PML", now: now, lexical: globalCache).records.isEmpty, "Removing the alias declaration from the eligible candidate set removes its cached influence")
+        var foreignConflict = unrelatedAcronym; foreignConflict.registration = "other"
+        check(ids(MemoryRetrieval.select([acronym, courseDeadline, foreignConflict], registration: "owner", query: "PML", now: now, lexical: MemoryLexicalIndex([acronym, courseDeadline, foreignConflict]))) == [acronym.id, courseDeadline.id], "A foreign account's conflicting abbreviation does not poison the current account")
+        let undeclared = fact(366, "Probabilistic Machine Learning coursework closes Friday.")
+        check(MemoryRetrieval.select([undeclared], registration: "owner", query: "PML", now: now).records.isEmpty, "Initialisms are never guessed from capital letters alone")
+        let nearName = fact(367, "Probability Machine Learning coursework closes Friday.")
+        check(ids(MemoryRetrieval.select([acronym, nearName], registration: "owner", query: "PML", now: now)) == [acronym.id], "A similar course name does not inherit another course's abbreviation")
+        let falseDeclaration = fact(368, "My Banana Project (PML) is unrelated to the course.")
+        check(ids(MemoryRetrieval.select([falseDeclaration, courseDeadline], registration: "owner", query: "PML", now: now)) == [falseDeclaration.id], "Parentheses without matching initials create no inferred alias")
+        let ownNamedAlias = fact(369, "My name is PML.", area: .about)
+        var ownName = ownNamedAlias; ownName.organisation?.selfName = "PML"
+        check(MemoryRetrieval.select([ownName, acronym, courseDeadline], registration: "owner", query: "PML", now: now).records.isEmpty, "An own-name-only query cannot seed abbreviation expansion")
+        let commonApplications = (400..<430).map { fact($0, "I track applications for fictional employer \($0).", area: .career) }
+        let specific = fact(431, "Beacon is recruiting this autumn.", area: .career)
+        check(ids(MemoryRetrieval.select(commonApplications + [specific], registration: "owner", query: "Beacon applications", now: now, limit: 1)) == [specific.id], "Distinctive topic words outrank frequent long vocabulary under a tight context cap")
+        let bounded = MemoryRetrieval.select(commonApplications + [specific, acronym, courseDeadline], registration: "owner", query: "PML applications Beacon", now: now, bytes: 1500)
+        check(try JSONSerialization.data(withJSONObject: bounded.records, options: [.sortedKeys]).count <= 1500, "Abbreviation and morphological matches still obey the exact byte cap")
+        check(MemoryRetrieval.select(commonApplications + [specific, acronym, courseDeadline], registration: "owner", query: "PML applications Beacon", now: now, limit: 2).records.count <= 2, "Improved ranking still obeys the exact record cap")
+        let longQuery = String(repeating: "ordinary query payload ", count: 1000) + "PML"
+        check(ids(MemoryRetrieval.select([acronym, courseDeadline, machineOnly, learningOnly], registration: "owner", query: longQuery, now: now)) == [acronym.id, courseDeadline.id], "A long query adds no partial expansion phrase matches")
+
+
         // Measure semantic aspirations with desired relevance, without asserting that a
         // known miss is a passing capability or freezing that limitation into a contract.
         let semanticFacts = [fact(20, "I want to work in artificial intelligence.", area: .career), fact(21, "I favour employers in Britain.", area: .career)]
