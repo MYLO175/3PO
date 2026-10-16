@@ -138,3 +138,11 @@ Heartbeat reconsideration may inspect pending proposals as labelled historical d
 
 - Inside each space, the top three-dot menu offers independent Spaces, Tasks and Notes visibility. Hiding preserves content and progress. Save choices with the widget’s account/folder presentation settings and retain visible defaults for older pages.
 - Notes should use available page space; show Show more only when the note overflows its responsive preview, rather than always shortening at five lines. Keep folders, tasks and then notes, click-to-edit and the native formatting controls.
+
+
+## Recorded AI experience direction — 16 October
+
+- For the next couple of weeks, improve the existing chat, Review and brief experience; avoid adding product features/screens. Make information gathering, source following, useful memory, cross-source connections and duplicate prevention simpler and faster.
+- Share the retrieval process across those consumers. This is ordinary app code around the existing AI/tools, not an extra AI agent. Memory includes life facts, ongoing responsibilities, projects and preferences; preferences are one category.
+- Prefer converting obsolete records into the canonical format rather than keeping a permanent runtime adapter. The human permits removal of older records that genuinely no longer fit. Preserve meaning, account, identity, evidence/history and operation uncertainty where still applicable; perform justified conversion/removal transactionally with a recovery backup and readback.
+- Long-term memory should retain concise useful knowledge and evidence references, not duplicate whole emails/messages. Source caches remain separate. Similarity can find candidates; it does not prove two people/events/obligations are identical or authorise writes.

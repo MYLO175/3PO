@@ -140,6 +140,11 @@ struct PAContextCaptureView:View {
                     Text("Prepared "+capture.captured.formatted(date:.abbreviated,time:.shortened)+" · "+capture.model).font(.caption)
                     Text("A record of prepared inputs and attempted tools, not proof the model relied on every fact or that an action succeeded. Inspect saved receipts for verified changes.").font(.callout).foregroundStyle(.secondary)
                     Text("Focus: "+(capture.focusAreas.map{$0.isEmpty ? "All life areas" : $0.map(\.title).joined(separator:", ")} ?? "Legacy thread")).font(.callout)
+                    if let purpose=capture.selectionPurpose {
+                        Text("Selection purpose: "+purpose.replacingOccurrences(of:"Conversation",with:" conversation").replacingOccurrences(of:"Read",with:" read")).font(.caption)
+                    }
+                    if capture.usedFollowupContext == true {Text("The preceding human request helped resolve this follow-up.").font(.caption)}
+                    if let hints=capture.sourceHints,!hints.isEmpty {Text("Relevant source hints: "+hints.joined(separator:", ")+". Actual tool attempts are listed below.").font(.caption)}
                     facts("Initial saved-fact selection",capture.memoryIDs,caption:"\(capture.memoryIDs.count) selected from \(capture.eligibleMemoryCount) available at preparation")
                     facts("Life notebook facts",capture.notebookMemoryIDs,caption:"Separate bounded area notes, up to 8 KB including workspace structure")
                     facts("Additional memory reads",capture.consultedMemoryIDs,caption:"Facts returned by memory/notebook tools; distinct from saved or edited facts")

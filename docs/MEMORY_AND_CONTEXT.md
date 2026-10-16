@@ -1,5 +1,16 @@
 # Memory and context in 3PO
 
+## Shared working context — 16 October 2026
+
+Chat, Review conversation, memory/notebook tools, source suggestions, email assessment and briefs now use one local working-context preparation path. It makes no model call or source read. Each purpose retains its existing account/Focus/source choices and budgets: ordinary40 records/20KB, email header2/body6 human-origin facts, and bounded notebook anchors drawn from the same selected IDs. Selection and notebook share one permission-filtered snapshot. Inactive Projects are excluded before the email anchor budget is applied. Memory-off also withdraws historical preference-backed relevance.
+
+A short referential timing/status question may reuse the immediately previous human request as retrieval subject. New distinctive subjects do not borrow old queries; synthetic labels never become search terms. Optional reply traces record purpose, source-hint categories and whether a follow-up used that subject, alongside the existing exact IDs and tool names. They do not record reasoning or prove which fact influenced the model.
+
+New and converted Review preferences are canonical PAMemory. One atomic conversion preserves legacy account/IDs/direction/inactive state and exact original receipt provenance, writes canonical facts plus a conversion receipt, then removes the old reviewRelevancePreferences record. Runtime consumers no longer load or edit the separate preference store. Restoring identical old bytes cannot resurrect forgotten/edited memory; unknown semantics/collisions/save failures preserve the original and expose a conversion error. The conversion proof validates historical receipts only, never supplies a second retrieval store. General assistant writing instructions remain an explicit app setting.
+
+Retrieval adds bounded grammatical/spelling variants, eligible human-written parenthesised abbreviations and distinctive-term ranking. No embedding model or hosted search service is introduced. The existing AI can request targeted alternative memory-search wording using its existing tools; actual-model rewording quality is validated separately from deterministic lexical tests. Pending cross-source concerns are selected for relevant comparison with fair reconsideration; exact native duplicate edits/removals share the same captured baseline. Arbitrary new creations still need semantic judgment; no title-only identity merge or automatic project/commitment-group authoring occurs.
+
+
 ## Saved output and current reasoning — 13 October 2026
 
 Review cards and saved briefs display the prepared result without rerunning supporting-memory, source-content or native-item freshness checks. Explicit account/source access changes still apply immediately. Evidence inspection happens on demand. A later heartbeat can reassess and retire a suggestion with a saved reason; approving a concrete displayed creation authorises that action without another memory analysis. Exact target checks remain for edits/removals. New AI reasoning, automatic advice and source learning still use current permitted evidence.

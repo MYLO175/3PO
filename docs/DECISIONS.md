@@ -1,5 +1,12 @@
 # Decisions
 
+## 16 October: simplify existing AI context and convert old preferences
+
+The human approved shared information gathering for chat, Review and briefs, stronger useful retrieval/connections and faithful conversion or justified removal of old records. Keep the current product surfaces and existing AI/tool loop. One deterministic context path prepares bounded facts/preferences/notebook data under purpose-specific permissions; the model chooses permitted reads and reasons over the returned evidence. No separate routing model, expanded source access or new hosted retrieval provider.
+
+Convert legacy Review attention choices into canonical memories atomically and remove the old runtime preference API/editor. Retain exact conversion provenance for historical advice receipts without retrieving from a compatibility store. Existing facts/history/receipts remain; migration failures cannot silently drop records or grant new certainty. Local matching improvements and AI query rewording are measured separately from full semantic indexing and general cross-source identity.
+
+
 ## 16 October: repair exact ownership and expensive projections
 
 The human approved working through the code audit, beginning with the highest-priority bugs and Projects performance, while preserving existing data and features. Keep canonical schemas and identities; strengthen existing writers instead of replacing the app architecture.

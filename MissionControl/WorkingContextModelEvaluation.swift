@@ -9,7 +9,7 @@ import SwiftData
         case requestBudget, toolBudget, unavailableTool, ownership, fictionalStore
         var errorDescription: String? {
             switch self {
-            case .requestBudget: return "The overall eight-request evaluation allowance was reached. No automatic retry."
+            case .requestBudget: return "The overall twelve-request evaluation allowance was reached. No automatic retry."
             case .toolBudget: return "The overall 24-tool evaluation allowance was reached. Nothing executed outside fictional ports."
             case .unavailableTool: return "A tool outside the explicitly permitted read-only fixture schema was requested. Nothing executed."
             case .ownership: return "The configured subscription connection or model changed during evaluation."
@@ -40,10 +40,12 @@ import SwiftData
         let now=ISO8601DateFormatter().date(from:"2026-10-16T12:00:00+01:00")!
         let course=PAMemory(registration: fictionalOwner, text:"I study Mechanical Engineering at Northbridge University.", kind:.context, provenance:"Direct fictional human statement", evidence:"I study Mechanical Engineering at Northbridge University.", sourceDate:now, certainty:.stated, durability:.stable)
         let earlier=PAMemory(registration: fictionalOwner, text:"The earlier Lark prototype presentation email gave a submission deadline of 21 October 2026 at 16:00.", kind:.commitment, provenance:"Earlier fictional human report", evidence:"The Lark prototype presentation email gave 21 October at 16:00.", sourceDate:now.addingTimeInterval(-86400), certainty:.stated, durability:.situational)
-        guard memory.put(course), memory.put(earlier) else { throw Failure.fictionalStore }
+        let interest=PAMemory(registration:fictionalOwner,text:"Artificial intelligence safety research appeals to me.",kind:.context,provenance:"Fictional human",evidence:"Artificial intelligence safety research appeals to me.",sourceDate:now,certainty:.stated,durability:.stable)
+        guard memory.put(course), memory.put(earlier), memory.put(interest) else { throw Failure.fictionalStore }
         let scenarios=[
             Scenario(id:"email-hint-changed-deadline",human:"Check my email for the Lark prototype presentation deadline. What is the latest arrangement?"),
             Scenario(id:"stable-human-memory",human:"What am I studying at Northbridge University?"),
+            Scenario(id:"semantic-memory-rewording",human:"What have I told you about my interests in ML?"),
             Scenario(id:"same-name-uncertainty",human:"Which of my two Catch up with Alex appointments on 20 October is with Alex Morgan? Please check my Calendar.")
         ]
         var requestCount=0, toolCount=0, observedToolCalls=0, rejectedTools=0
@@ -62,6 +64,7 @@ import SwiftData
             var issuedEmailIDs=Set<String>(), visibleEmailIDs=Set<String>(), readEmailIDs=Set<String>(), returnedMessage=false, returnedCalendar=false
             var searchRequest:Int?, emailRequest:Int?, messageRequest:Int?
             var memoryIDs=Set<UUID>()
+            var memoryQueries:[String]=[],targetedMemoryReads=true
             let prepared=PAWorkingContext.prepare(memory:memory,registration:fictionalOwner,purpose:.conversation,query:scenario.human,includeSources:false,now:now)
             memoryIDs.formUnion(prepared.memoryIDs)
             let context:[String: Any]=[
@@ -78,7 +81,7 @@ import SwiftData
             do {
                 let result=try await PAConversationEngine().run(base:base,allowedTools:allowed,valid:valid,receipts:{[]},infer:{ input, delta in
                     guard valid() else { throw Failure.ownership }
-                    guard requestCount < 8 else { throw Failure.requestBudget }
+                    guard requestCount < 12 else { throw Failure.requestBudget }
                     requestCount += 1
                     visibleEmailIDs=issuedEmailIDs
                     let response=try await model.chatGPT.toolResponse(input:input,instructions:instructions,tools:tools,model:selectedModel,purpose:.diagnostic,onDelta:delta)
@@ -101,9 +104,12 @@ import SwiftData
                     let output:[String: Any]
                     switch call.name {
                     case "read_memory":
+                        let query=arguments["query"] as? String
+                        memoryQueries.append(query ?? "<broad>")
+                        targetedMemoryReads = targetedMemoryReads && !(query.map{MemoryRetrieval.tokens($0).isEmpty} ?? true)
                         let selected=PAWorkingContext.prepare(memory:memory,registration:fictionalOwner,purpose:.memoryRead,query:arguments["query"] as? String,includeSources:false,includeNotebook:false,now:now)
                         memoryIDs.formUnion(selected.memoryIDs)
-                        output=["records":selected.selection.records,"selected":selected.selection.records.count,"eligible":selected.selection.eligibleCount,"coverage":"Bounded relevant saved human memory; historical data, not a fresh source read."]
+                        output=["records":selected.selection.records,"selected":selected.selection.records.count,"eligible":selected.selection.eligibleCount,"searchAdvice":PAWorkingContext.memorySearchAdvice(selected.selection),"coverage":"Bounded relevant saved human memory; historical data, not a fresh source read."]
                     case "search_mail":
                         let terms=arguments["terms"] as? [String] ?? []
                         let relevant=terms.contains { term in
@@ -153,17 +159,21 @@ import SwiftData
                 checks[scenario.id+":shared-selected-fact"]=memoryIDs.contains(course.id)
                 checks[scenario.id+":answered-stable-fact"]=lower.contains("mechanical engineering") && lower.contains("northbridge")
                 checks[scenario.id+":no-unnecessary-source-read"]=names.allSatisfy{$0 == "read_memory"}
+            } else if scenario.id == "semantic-memory-rewording" {
+                checks[scenario.id+":retrieved-reworded-memory"]=memoryIDs.contains(interest.id) && names.contains("read_memory") && targetedMemoryReads
+                checks[scenario.id+":answered-supported-interest"]=lower.contains("safety") && (lower.contains("artificial intelligence") || lower.contains("ai"))
+                checks[scenario.id+":no-unnecessary-source-read"]=names.allSatisfy{$0 == "read_memory"}
             } else {
                 checks[scenario.id+":read-distinct-occurrences"]=returnedCalendar
                 let uncertainty=["can't","cannot","unclear","not enough","don't know","doesn't","not possible","unable","insufficient","not specified","not clear","no surname","neither","can't tell","cannot tell","not identify","couldn't","can't determine","can't establish"]
                 checks[scenario.id+":reported-uncertainty"]=lower.contains("alex") && uncertainty.contains{lower.contains($0)}
             }
-            rows.append(["scenario":scenario.id,"completed":completed,"requests":requestCount-startRequests,"toolCalls":toolCount-startCalls,"toolNames":names,"reply":String(reply.prefix(2000)),"error":failure as Any? ?? NSNull(),"sourceHints":prepared.sourceHints,"selectedMemoryCount":prepared.memoryIDs.count])
+            rows.append(["scenario":scenario.id,"completed":completed,"requests":requestCount-startRequests,"toolCalls":toolCount-startCalls,"toolNames":names,"reply":String(reply.prefix(2000)),"error":failure as Any? ?? NSNull(),"sourceHints":prepared.sourceHints,"selectedMemoryCount":prepared.memoryIDs.count,"memoryQueries":memoryQueries])
         }
-        checks["overall:bounded-inference"]=requestCount <= 8 && toolCount <= 24 && observedToolCalls <= 24
+        checks["overall:bounded-inference"]=requestCount <= 12 && toolCount <= 24 && observedToolCalls <= 24
         checks["overall:no-unpermitted-tools"]=rejectedTools == 0 && allNames.allSatisfy{allowed.contains($0)}
         checks["overall:configured-ownership-retained"]=valid()
-        return ["completed":Date.now.ISO8601Format(),"model":selectedModel,"requests":requestCount,"toolCalls":toolCount,"observedToolCalls":observedToolCalls,"toolNames":allNames,"rejectedTools":rejectedTools,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"scenarios":rows,"boundary":"Three fictional scenarios through PAWorkingContext, production PA schema, PAConversationEngine and configured subscription transport. Fixed read-only ports only; no personal source content, PAToolSession, native helpers, app actions or personal memory writes. Answer checks are bounded lexical evidence, not a general semantic-quality guarantee. Maximum eight requests/24 port calls; an oversized observed call batch is rejected before execution and reported as failed. Failures are reported without automatic retry."]
+        return ["completed":Date.now.ISO8601Format(),"model":selectedModel,"requests":requestCount,"toolCalls":toolCount,"observedToolCalls":observedToolCalls,"toolNames":allNames,"rejectedTools":rejectedTools,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"scenarios":rows,"boundary":"Four fictional scenarios through PAWorkingContext, production PA schema, PAConversationEngine and configured subscription transport. Fixed read-only ports only; no personal source content, PAToolSession, native helpers, app actions or personal memory writes. Answer checks are bounded lexical evidence, not a general semantic-quality guarantee. Maximum twelve requests/24 port calls; an oversized observed call batch is rejected before execution and reported as failed. Failures are reported without automatic retry."]
     }
 }
 #endif

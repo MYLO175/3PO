@@ -384,7 +384,7 @@ import Foundation
             let selection = PAWorkingContext.prepare(memory:memory,registration:registration,purpose:.memoryRead,query:text("query"),conversationID:topicID,includeTopics:focusAreas != nil,focus:focusAreas ?? assistant.conversation(topicID)?.notebookAreas ?? [],includeNotebook:false).selection
             issuedMemory.formUnion(selection.records.compactMap { $0["id"].flatMap(UUID.init(uuidString:)) })
             consultedMemory.formUnion(selection.records.compactMap { $0["id"].flatMap(UUID.init(uuidString:)) })
-            return try json(["records":selection.records,"eligible":selection.eligibleCount,"selected":selection.records.count,"coverage":focusAreas != nil ? "Bounded account-owned relevant memory with life-area focus; not exhaustive recall." : "Bounded relevant shared/current-topic memory; not exhaustive recall."])
+            return try json(["records":selection.records,"eligible":selection.eligibleCount,"selected":selection.records.count,"searchAdvice":PAWorkingContext.memorySearchAdvice(selection),"coverage":focusAreas != nil ? "Bounded account-owned relevant memory with life-area focus; not exhaustive recall." : "Bounded relevant shared/current-topic memory; not exhaustive recall."])
         case "read_life_notebook":
             guard memory.enabled else { throw ActionFailure.message("Memory is disabled.") }
             let focus=focusAreas ?? assistant.conversation(topicID)?.notebookAreas ?? []

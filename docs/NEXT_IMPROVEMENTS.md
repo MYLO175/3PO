@@ -1,5 +1,12 @@
 # Next improvements
 
+## 16 October: improve existing AI experience
+
+Shared context preparation and canonical Review preference conversion now replace divergent retrieval paths/legacy preference editing. Local matching handles selected grammatical variants and explicitly supported abbreviations; the existing AI can use targeted alternative search wording. Related pending Mail/WhatsApp concerns receive bounded comparison priority, and exact native changes/removals coalesce only with current identical baselines. STATUS/VALIDATION distinguish offline, signed, actual-model and installed acceptance.
+
+Remaining: general semantic paraphrase recall, durable evidence-linked cross-source situation understanding beyond issued proposal/native anchors, and robust identity for arbitrary fresh creations. Measure misses and false links on held-out cases before adding an embedding runtime or persistent situation model. Keep current screens and features while improving correctness, latency and understandable evidence. Topic pages, additional agents and broader source/history ingestion are not part of this increment.
+
+
 ## 16 October audit follow-through
 
 The approved repair batch addresses the concrete correctness defects and the indexed Projects/transcript performance paths described in [the audit](CODE_AUDIT_2026-10-16.md). Retain the original assessment as the pre-repair record; STATUS/VALIDATION distinguish the candidate's focused, combined, build and installed acceptance.

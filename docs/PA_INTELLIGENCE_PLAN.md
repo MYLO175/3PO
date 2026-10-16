@@ -2,7 +2,11 @@
 
 Memory acceptance plan approved 4 October 2026, with subsequent dated corrections below. This plan concerns the PA's understanding, memory, reasoning and useful behaviour. Current requested Memory, Projects and Appearance work may use separate development streams; this plan does not independently defer a newly requested appearance task. No model training, paid API/embedding service, hosted agent migration or new source permission is required for the initial work.
 
-## Current checkpoint — 14 October
+## Current checkpoint — 16 October
+
+The current authorised increment improves existing experience through shared local context selection, canonical Review preference conversion, measured lexical/explicit-abbreviation recall and relevant cross-source proposal comparison. Existing source and action authority remains; no new UI feature, embedding provider, background scan or automatic identity merge. See MEMORY_AND_CONTEXT for implemented contracts and STATUS/VALIDATION for current acceptance. The original staged plan below remains historical scope, not a request to restart phases.
+
+## Previous checkpoint — 14 October
 
 Review-permitted sources may teach bounded attributed memory under the global controls; new scopes baseline old content. Saved Review display and Done approval of concrete creations do not reconstruct old evidence. Exact edits/removals and new advice retain their current checks. Explicit email feedback queues for the next heartbeat, one submission per cycle, with Process now for immediate priority. Dismiss acknowledges the exact concern and does not train importance. The numbered phases below retain the original acceptance plan; these current corrections and later decisions supersede conflicting requirements. See [How it works](HOW_IT_WORKS.md), [STATUS](../STATUS.md) and [VALIDATION](../VALIDATION.md).
 

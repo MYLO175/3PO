@@ -667,10 +667,20 @@
     {
       "id": "native-reminder-completion",
       "tier": "native",
-      "arguments": ["--validate-review-inbox", "--reminder-completion-native"],
+      "arguments": [
+        "--validate-review-inbox",
+        "--reminder-completion-native"
+      ],
       "report": "missioncontrol-reminder-completion-evaluation.json",
-      "effects": ["signed DEBUG app launch", "disposable SwiftData", "disposable native Reminder completion, Undo and cleanup"],
-      "requires": ["integration-owner startup/output audit", "signed DEBUG candidate"]
+      "effects": [
+        "signed DEBUG app launch",
+        "disposable SwiftData",
+        "disposable native Reminder completion, Undo and cleanup"
+      ],
+      "requires": [
+        "integration-owner startup/output audit",
+        "signed DEBUG candidate"
+      ]
     },
     {
       "id": "native-removal",
@@ -953,6 +963,34 @@
       ],
       "requires": [
         "Xcode"
+      ]
+    },
+    {
+      "id": "working-context",
+      "tier": "source-free",
+      "script": "scripts/test-working-context.sh",
+      "effects": [
+        "fictional shared context, permission and follow-up fixtures; no app, model or source reads"
+      ]
+    },
+    {
+      "id": "review-preference-conversion",
+      "tier": "source-free",
+      "script": "scripts/test-review-preference-conversion.sh",
+      "effects": [
+        "fictional legacy conversion, rollback, stale owners and opaque fields in disposable storage"
+      ]
+    },
+    {
+      "id": "working-context-model",
+      "tier": "model",
+      "arguments": [
+        "--validate-review-inbox",
+        "--working-context-model"
+      ],
+      "report": "missioncontrol-working-context-model-evaluation.json",
+      "effects": [
+        "Configured subscription model on four fictional scenarios; maximum12 requests/24 read-only fixture calls; no personal source content or native writes"
       ]
     }
   ]

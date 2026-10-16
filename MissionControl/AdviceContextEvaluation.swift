@@ -458,33 +458,30 @@ import Synchronization
         checks["date-clarified actionable assessment also invalidates withdrawn life relevance"] = model.emailSummaries.highlights(model).first{$0.0.id == taskMail.id}!.1.adviceRevision(replied:false) != taskAssessment
         model.mailData = .init(messages:[message],accounts:model.mailData.accounts,errors:[])
         try model.emailSummaries.seedAdviceFixture([summary])
-        let beforePreference=model.reviewAcknowledgementRevision
-        let preference=ReviewRelevancePreference(registration:registration,topic:"Orion prototype",direction:"more")
-        try model.emailSummaries.savePreference(preference,expected:nil,model:model)
-        let savedPreference=model.emailSummaries.relevancePreferences.first{$0.id == preference.id}!
-        checks["explicit relevance preference changes advice context and matches its topic"] = model.reviewAcknowledgementRevision != beforePreference && model.emailSummaries.preferences(registration,query:"Orion update").count == 1 && model.emailSummaries.preferences(registration,query:"Unrelated shopping discount").isEmpty
-        var outdatedPreference=savedPreference;outdatedPreference.topic="Earlier overwrite"
-        do {try model.emailSummaries.savePreference(outdatedPreference,expected:preference,model:model);checks["stale preference editor cannot overwrite current receipt"]=false} catch {checks["stale preference editor cannot overwrite current receipt"]=true}
-        var anotherOwner=ReviewRelevancePreference(registration:"fictional-other",topic:"Private",direction:"less")
-        do {try model.emailSummaries.savePreference(anotherOwner,expected:nil,model:model);checks["preference account ownership is captured"]=false} catch {checks["preference account ownership is captured"]=true}
-        anotherOwner.registration=registration
-        try model.emailSummaries.undoPreference(model)
-        checks["preference Undo restores original attention and human-choice stamp"] = model.emailSummaries.preferences(registration).isEmpty && model.reviewAcknowledgementRevision == beforePreference
+        let beforePreference=model.assistant.memory.revision
+        let preferenceID=UUID()
+        guard model.assistant.memory.saveReviewPreference("Prioritise useful Orion prototype updates.",registration:registration,about:"Orion prototype",id:preferenceID) else {throw SummaryFailure.invalid}
+        let savedPreference=model.assistant.memory.records.first{$0.id == preferenceID}!
+        let matching=PAWorkingContext.prepare(memory:model.assistant.memory,registration:registration,purpose:.emailBody,query:"Orion update")
+        let unrelatedContext=PAWorkingContext.prepare(memory:model.assistant.memory,registration:registration,purpose:.emailBody,query:"Unrelated shopping discount")
+        checks["canonical preference changes context and matches only its topic"] = model.assistant.memory.revision != beforePreference && matching.memoryIDs.contains(preferenceID) && !unrelatedContext.memoryIDs.contains(preferenceID)
+        var outdated=savedPreference;outdated.text="Stale editor text"
+        checks["stale preference editor cannot overwrite canonical memory"] = !model.assistant.memory.saveReviewPreference("Changed",registration:registration,expected:outdated)
+        checks["preference account ownership is captured"] = !model.assistant.memory.saveReviewPreference("Changed",registration:"fictional-other",expected:savedPreference)
+        checks["disabled canonical preference leaves every context consumer"] = model.assistant.memory.retire(savedPreference.id,retired:true,expectedRevision:model.assistant.memory.revision) && !PAWorkingContext.prepare(memory:model.assistant.memory,registration:registration,purpose:.conversation,query:"Orion prototype").memoryIDs.contains(preferenceID)
         let isolated=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
-        let preferenceStore=EmailSummaryService(container:isolated)
-        try preferenceStore.savePreference(preference,expected:nil,model:model)
-        let reopened=EmailSummaryService(container:isolated)
-        checks["explicit preferences reopen from independent saved storage"] = reopened.preferences(registration).map(\.topic) == [preference.topic]
-        let maximum=(0..<40).map{ReviewRelevancePreference(registration:registration,topic:"Fictional topic \($0)",direction:"less")}
-        var inactive=preference;inactive.inactive=true
-        let cache=try isolated.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first{$0.key == "reviewRelevancePreferences"}!
-        cache.data=try JSONEncoder().encode(maximum+[inactive]);try isolated.mainContext.save()
-        let full=EmailSummaryService(container:isolated)
-        var restored=inactive;restored.inactive=false
-        do {try full.savePreference(restored,expected:inactive,model:model);checks["restoring preference cannot exceed current attention bound"]=false} catch {checks["restoring preference cannot exceed current attention bound"]=full.preferences(registration).count == 40}
-        let invalidBytes=try JSONEncoder().encode([preference,preference]);cache.data=invalidBytes;try isolated.mainContext.save()
-        let invalid=EmailSummaryService(container:isolated)
-        checks["invalid saved preferences are blocked and preserved without exposure"] = !invalid.relevanceReadable && invalid.preferences(registration).isEmpty && cache.data == invalidBytes
+        let legacyPreferenceFixture=ReviewRelevancePreference(registration:registration,topic:"Fictional old topic",direction:"more")
+        try LocalRecordRepository(container:isolated).save([legacyPreferenceFixture],key:"reviewRelevancePreferences")
+        let converted=PAMemoryStore(container:isolated)
+        let legacyPreferenceFixtureRemoved = try LocalRecordRepository.read("reviewRelevancePreferences",container:isolated) == nil
+        checks["legacyPreferenceFixture preferences convert once into canonical storage"] = converted.records.contains{$0.id == legacyPreferenceFixture.id && $0.reviewPreference == true} && legacyPreferenceFixtureRemoved
+        let reopened=PAMemoryStore(container:isolated)
+        checks["converted preference and original receipt proof reopen"] = reopened.matchesConvertedReviewPreference(id:legacyPreferenceFixture.id.uuidString,revision:legacyPreferenceFixture.revision.uuidString,registration:registration,direction:"more") && reopened.records.count == converted.records.count
+        let invalidStore=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+        let invalidBytes=try JSONEncoder().encode([legacyPreferenceFixture,legacyPreferenceFixture]);try LocalRecordRepository(container:invalidStore).write(["reviewRelevancePreferences":invalidBytes])
+        let invalid=PAMemoryStore(container:invalidStore)
+        let invalidRetained = try LocalRecordRepository.read("reviewRelevancePreferences",container:invalidStore) == invalidBytes
+        checks["invalid saved preferences are blocked and preserved without exposure"] = !invalid.reviewPreferenceMigrationReadable && invalid.records.isEmpty && invalidRetained
         try model.proactive.seedAdviceFixture([],model:model)
         try ReviewInboxEvaluation.seedEmailWorkPreview(model)
         let words="Assessment submission confirmations can stay quiet. Assessment invitations and results are important to me."
@@ -599,7 +596,7 @@ import Synchronization
         checks.merge(try resolutionConsumerChecks(model),uniquingKeysWith:{$1})
         if let text=model.assistant.foregroundSnapshot(model),let orientation=try JSONSerialization.jsonObject(with:Data(text.utf8)) as? [String:Any] {
             checks["foreground orientation omits bulk Calendar, Reminders and email bodies"] = orientation["events"] == nil && orientation["reminders"] == nil && orientation["savedEmailSummaries"] == nil && orientation["recentEmailHeaders"] == nil
-            checks["foreground orientation retains exact acknowledgement and resolution context"] = orientation["reviewAcknowledgements"] != nil && orientation["resolvedEmailRequests"] != nil && orientation["attentionPreferences"] != nil
+            checks["foreground orientation retains acknowledgements without a second preference payload"] = orientation["reviewAcknowledgements"] != nil && orientation["resolvedEmailRequests"] != nil && orientation["attentionPreferences"] == nil
             checks["foreground orientation marks source IDs as metadata and exposes typed detail reads"] = (orientation["coverage"] as? String)?.contains("not issued mutation") == true && (orientation["coverage"] as? String)?.contains("read_calendar/read_reminders") == true
             let accounts=orientation["mailAccounts"] as? [[String:String]] ?? []
             checks["foreground orientation excludes withdrawn Mail accounts"] = accounts.allSatisfy{row in row["id"].map{!model.assistant.excludedAccounts.contains($0)} == true}

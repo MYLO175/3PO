@@ -45,8 +45,16 @@ import SwiftData
         check(reopened.reviewPreferences("account-b").isEmpty && reopened.reviewPreferences("account-b",includeRetired:true).map(\.id) == [b.id])
         check(reopened.matchesConvertedReviewPreference(id: a.id.uuidString, revision: a.revision.uuidString, registration: "account-a", direction: "more"))
         check(!reopened.matchesConvertedReviewPreference(id: a.id.uuidString, revision: a.revision.uuidString, registration: "account-b", direction: "more"))
+        reopened.enabled=false
+        check(!reopened.matchesConvertedReviewPreference(id:a.id.uuidString,revision:a.revision.uuidString,registration:"account-a",direction:"more"))
+        reopened.enabled=true
+        check(reopened.matchesConvertedReviewPreference(id:a.id.uuidString,revision:a.revision.uuidString,registration:"account-a",direction:"more"))
+        let classified=LifeMemoryOrganisation(areas:[.projects],connections:[])
+        check(reopened.setOrganisation(a.id,value:classified))
+        check(reopened.matchesConvertedReviewPreference(id:a.id.uuidString,revision:a.revision.uuidString,registration:"account-a",direction:"more"))
         let secondProof = try ReviewPreferenceConversion.run(repository: repository, now: now.addingTimeInterval(100))!
-        try check(secondProof.migratedAt == now && (repository.read("paMemory")) == stored)
+        check(secondProof.migratedAt == now)
+        check(reopened.records.first{$0.id == a.id}?.organisation?.areas == [.projects])
         check(reopened.forget(a.id))
         check(!reopened.matchesConvertedReviewPreference(id: a.id.uuidString, revision: a.revision.uuidString, registration: "account-a", direction: "more"))
         let forgottenBytes = try repository.read("paMemory")!

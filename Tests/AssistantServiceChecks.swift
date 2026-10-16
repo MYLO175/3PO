@@ -189,6 +189,7 @@ private final class ObservationCounter:@unchecked Sendable {
         check(reply.completed && reply.content == "Completed fictional coursework plan", "Completed transport must supersede partial text and receipts.")
         check(reply.contextCapture?.memoryIDs.contains(fact.id) == true && reply.contextCapture?.consultedMemoryIDs == [fact.id], "Actual preparation must retain selected and successfully read memory identities separately.")
         check(reply.contextCapture?.attemptedTools == ["read_memory", "remember_context"] && reply.focusAreas == [.studies], "Actual execution traces and captured Focus must stay on the response.")
+        check(reply.contextCapture?.selectionPurpose == "conversation" && reply.contextCapture?.usedFollowupContext == false,"Actual preparation uses the shared context policy and retains its small trace")
         check(reply.created == context.now && reply.contextCapture?.captured == context.now, "Preparation and trace dates must use the injected clock.")
         check(context.sessions.first?.receipts == ["Fictional memory saved and verified"] && context.afterCalls == 1, "Verified receipts must persist across rounds and finish once.")
         check(provider.inputs.last?.contains(where: { $0["encrypted_content"] as? String == "fictional-reasoning" }) == true, "Actual service must replay completed reasoning output.")

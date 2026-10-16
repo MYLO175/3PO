@@ -127,7 +127,7 @@ import EventKit
         let owner=model.chatGPT.activeID,selected=model.chatGPT.selectedModel,now=Date.now
         let fact=PAMemory(registration:owner,text:"I am building the four-sensor Orion prototype this term.",kind:.context,provenance:"Fictional human",evidence:"I am building the four-sensor Orion prototype this term.")
         guard model.assistant.memory.put(fact) else {throw SummaryFailure.invalid}
-        try model.emailSummaries.savePreference(.init(registration:owner,topic:"Routine Lakeside Club match availability requests",direction:"less"),expected:nil,model:model)
+        guard model.assistant.memory.saveReviewPreference("Routine Lakeside Club match availability requests can stay quiet.",registration:owner,about:"Routine Lakeside Club match availability requests") else {throw SummaryFailure.invalid}
         let reviewWords="These can stay quiet. Invitations to complete assessments, new assessment stages and results are important to me."
         guard model.assistant.memory.saveReviewPreference(reviewWords,registration:owner,about:"Assessment submission confirmations") else {throw SummaryFailure.invalid}
         let reviewFact=model.assistant.memory.reviewPreferences(owner).first!

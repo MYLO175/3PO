@@ -40,9 +40,22 @@ import SwiftData
         check(initial.memoryIDs.contains(sourced.id) && !withdrawn.memoryIDs.contains(sourced.id), "Permission withdrawal bypasses cached selection immediately")
         check(!withdrawn.notebook.contains(sourced.id.uuidString), "Permission withdrawal bypasses cached notebook immediately")
         let irrelevant = PAWorkingContext.prepare(memory: memory, registration: "owner", purpose: .conversation, query: "Submarine maintenance", focus: [.projects])
+        check(PAWorkingContext.memorySearchAdvice(irrelevant.selection).contains("meaningfully different targeted query"),"An empty local search explains how to recover a wording miss")
         check(irrelevant.selection.records.isEmpty, "Focus cannot fill an unrelated targeted request")
         let followup = PAWorkingContext.prepare(memory: memory, registration: "owner", purpose: .conversation, query: "When is its deadline?", previousHuman: "Check the Orion prototype email")
         check(followup.usedFollowup && followup.memoryIDs.contains(human.id) && followup.sourceHints.contains("mail"), "Referential follow-up carries the previous human retrieval subject")
+        let followupQuery = PAWorkingContext.retrievalQuestion("When is its deadline?",previousHuman:"Check the Orion prototype email").query!
+        check(!MemoryRetrieval.tokens(followupQuery).contains("reference") && !MemoryRetrieval.tokens(followupQuery).contains("request"), "Search text contains no synthetic headings")
+        memory.notebookProjection = { base, _, _, _ in
+            var result=base
+            result.anchors=(0..<20).map{.init(id:"life:done-\($0)",label:"Orion prototype",kind:"task",parent:nil,areas:[.projects],notes:"Completed fictional project",path:[],relations:[])}
+            result.anchors.append(.init(id:"life:active",label:"Orion prototype",kind:"project",parent:nil,areas:[.projects],notes:"Current fictional project",path:[],relations:[]))
+            return result
+        }
+        let activeContext=PAWorkingContext.prepare(memory:memory,registration:"owner",purpose:.emailHeader,query:"Orion prototype",workspaceIDs:["life:active"])
+        let activeNotes=try JSONSerialization.jsonObject(with:Data(activeContext.notebook.utf8)) as! [String:Any]
+        check((activeNotes["lifeStructure"] as? [[String:Any]])?.first?["id"] as? String == "life:active", "Excluded projects cannot consume the notebook anchor budget")
+        memory.notebookProjection=nil
         let changedTopic = PAWorkingContext.retrievalQuestion("When was that museum opened?", previousHuman: "Check the Orion prototype email")
         check(!changedTopic.followed, "A new distinctive subject cannot borrow an unrelated previous question")
         check(!PAWorkingContext.retrievalQuestion("Do that", previousHuman: "Orion prototype").followed, "Acknowledgement does not trigger a broad recall shortcut")

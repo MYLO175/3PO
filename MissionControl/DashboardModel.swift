@@ -245,6 +245,13 @@ struct CalendarRemovalReviewSession:Identifiable {
         if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") || ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") || ProcessInfo.processInfo.arguments.contains("--preview-memory-review") || ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") {return}
         if ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") {
             Task {
+                if ProcessInfo.processInfo.arguments.contains("--working-context-model") {
+                    let report:[String:Any]
+                    do {report=try await WorkingContextModelEvaluation.run(self)}
+                    catch {report=["error":error.localizedDescription,"requests":0,"storage":"Fictional read-only ports; normal source startup did not run."]}
+                    if let data=try? JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-working-context-model-evaluation.json"),options:.atomic)}
+                    NSApp.terminate(nil);return
+                }
                 if ProcessInfo.processInfo.arguments.contains("--reminder-completion-native") {
                     let report:[String:Any]
                     do {report=try await ReviewInboxEvaluation.runReminderCompletion(self)}

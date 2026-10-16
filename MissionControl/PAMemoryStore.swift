@@ -70,10 +70,11 @@ import SwiftData
     /// Old advice may retain exact legacy receipts. Validate only the immutable
     /// conversion proof and unchanged current memory; never retrieve legacy data.
     func matchesConvertedReviewPreference(id: String, revision: String, registration: String, direction: String) -> Bool {
-        guard reviewPreferenceMigrationReadable, let proof = reviewPreferenceMigration?.items.first(where: {
+        guard enabled, reviewPreferenceMigrationReadable, let proof = reviewPreferenceMigration?.items.first(where: {
             $0.memory.id.uuidString == id && $0.legacyRevision.uuidString == revision && $0.memory.registration == registration && $0.direction == direction
         }) else { return false }
-        return records.contains { $0 == proof.memory && MemoryRules.usable($0, registration: registration) }
+        let expected=MemoryDependencyRules.fingerprint(MemoryRetrieval.record(proof.memory))
+        return records.contains { $0.id == proof.memory.id && MemoryRules.usable($0, registration: registration) && MemoryDependencyRules.fingerprint(MemoryRetrieval.record($0)) == expected }
     }
     func items(_ registration: String) -> [PAMemory] { records.filter { $0.registration == registration }.sorted { $0.reviewed > $1.reviewed } }
     func suppressed(_ registration: String) -> Set<String> { state.suppressed[registration] ?? [] }
@@ -333,11 +334,16 @@ import SwiftData
         return prepareNotebook(enabled ? candidates : [],registration:registration,topic:topic,includeTopics:includeTopics,now:now)
     }
     func selection(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, focus:[LifeArea] = [],includeSources:Bool = true,sourceFilter:((PAMemory)->Bool)? = nil,now:Date = .now) -> MemorySelection {
-        guard enabled else { return MemorySelection(records:[],eligibleCount:0) }
+        guard enabled else {return MemorySelection(records:[],eligibleCount:0)}
+        return selectionContext(registration,conversationID:conversationID,includeTopics:includeTopics,query:query,focus:focus,includeSources:includeSources,sourceFilter:sourceFilter,now:now).selection
+    }
+    /// Selection and notebook share one permission-filtered, current snapshot.
+    func selectionContext(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, focus:[LifeArea] = [],includeSources:Bool = true,sourceFilter:((PAMemory)->Bool)? = nil,now:Date = .now) -> (selection:MemorySelection,notebook:LifeNotebook) {
+        guard enabled else { return (MemorySelection(records:[],eligibleCount:0),prepareNotebook([],registration:registration,topic:conversationID,includeTopics:includeTopics,now:now)) }
         let candidates=(includeSources ? permittedRecords : records.filter{$0.source == nil}).filter{$0.source == nil || (sourceFilter?($0) ?? true)}
         let projected=prepareNotebook(candidates,registration:registration,topic:conversationID,includeTopics:includeTopics,now:now)
         if preparedLexical?.revision != revision { preparedLexical = (revision, MemoryLexicalIndex(records)) }
-        return MemoryRetrieval.select(candidates,registration:registration,conversationID:conversationID,includeTopics:includeTopics,query:query,now:now,focus:focus,notebook:projected,lexical:preparedLexical?.value)
+        return (MemoryRetrieval.select(candidates,registration:registration,conversationID:conversationID,includeTopics:includeTopics,query:query,now:now,focus:focus,notebook:projected,lexical:preparedLexical?.value),projected)
     }
     func context(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil,includeSources:Bool = true,now:Date = .now) -> [[String:String]] {
         selection(registration,conversationID:conversationID,includeTopics:includeTopics,query:query,includeSources:includeSources,now:now).records
