@@ -26,6 +26,17 @@ import Foundation
         var changedIdentity=originalSource;changedIdentity.originalID="different-event"
         let identitySnapshot=try BriefingRules.sourceSnapshot(nativePayload,sources:[changedIdentity])
         precondition(identitySnapshot != originalSnapshot,"Equal titles must never hide a changed source identity")
+        let secondSource=BriefingSource(id:"calendar_1",label:"Other event",kind:"calendar",date:nil,originalID:"other-stable-event")
+        let firstRow=["id":"calendar_0","title":"Test event","start":"2026-10-05T10:00:00+01:00"],secondRow=["id":"calendar_1","title":"Other event","start":"2026-10-06T10:00:00+01:00"]
+        let ordered=try BriefingRules.sourceSnapshot(["calendar":[firstRow,secondRow]],sources:[originalSource,secondSource])
+        var firstReordered=originalSource,secondReordered=secondSource
+        firstReordered.id="calendar_1";secondReordered.id="calendar_0"
+        var firstSwapped=firstRow,secondSwapped=secondRow
+        firstSwapped["id"]="calendar_1";secondSwapped["id"]="calendar_0"
+        let providerReordered=try BriefingRules.sourceSnapshot(["calendar":[secondSwapped,firstSwapped]],sources:[secondReordered,firstReordered])
+        precondition(ordered == providerReordered,"Provider order and temporary aliases do not change exact native evidence")
+        let added=try BriefingRules.sourceSnapshot(["calendar":[firstRow,secondRow]],sources:[originalSource,secondSource])
+        precondition(added != originalSnapshot,"A newly admitted native item changes the supplied comparison set")
         var london = Calendar(identifier: .gregorian)
         london.timeZone = TimeZone(identifier: "Europe/London")!
         let midnight = ISO8601DateFormatter().date(from: "2026-10-01T23:00:00Z")!
@@ -191,6 +202,17 @@ import Foundation
         let decodedState=try JSONDecoder().decode(BriefingState.self,from:JSONEncoder().encode(questionState))
         precondition(decodedState.reviewQuestions?.first?.dismissed == true && decodedState.updatedBriefs?["owner"]?.heartbeatID == "run-1")
         precondition(decodedState.records.isEmpty && decodedState.notificationClaims.isEmpty,"Heartbeat updates never claim a morning delivery or notification")
+        let resolutionRow=["requestID":"fictional-request","accountID":"fictional-account","confirmationID":"fictional-confirmation","confirmationQuote":"Received"]
+        let receipts=BriefingResolutionReceipt.capture([resolutionRow])
+        let crowded=(0..<30).map{["requestID":"unrelated-\($0)","accountID":"fictional-account"]}+[resolutionRow]
+        precondition(BriefingResolutionReceipt.available(receipts,rows:crowded),"Unrelated confirmations cannot evict a supplied receipt via presentation caps")
+        var changedResolution=resolutionRow;changedResolution["confirmationQuote"]="Changed"
+        precondition(!BriefingResolutionReceipt.available(receipts,rows:[changedResolution]),"A changed supplied confirmation still invalidates the result")
+        precondition(!BriefingResolutionReceipt.available(receipts,rows:[]),"Missing supplied confirmation remains unavailable")
+        precondition(BriefingResolutionReceipt.available([],rows:[changedResolution]),"Omitted Mail introduces no confirmation dependency")
+        var receiptBrief=heartbeat;receiptBrief.emailResolutionReceipts=receipts
+        let decodedReceiptBrief=try JSONDecoder().decode(DailyBriefing.self,from:JSONEncoder().encode(receiptBrief))
+        precondition(decodedReceiptBrief.emailResolutionReceipts == receipts,"Additive exact receipts round-trip without source prose")
         var recovery=BriefingPreparationRecovery()
         precondition(recovery.advance(.init(kinds:["whatsapp"])) && recovery.omittedKinds.isEmpty,"First evidence change recaptures fresh context")
         precondition(recovery.advance(.init(kinds:["mail"])) && recovery.omittedKinds == ["mail","whatsapp"],"Repeated churn omits only affected optional sources on final preparation")

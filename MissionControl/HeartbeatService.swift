@@ -3,8 +3,8 @@ import Observation
 import SwiftData
 
 @MainActor @Observable final class HeartbeatService {
-    var enabled:Bool {didSet {guard !restoringSettings else {return};settings.set(enabled,forKey:"paHeartbeatEnabled");controlsRevision=UUID();if !enabled {cancel()}}}
-    var notificationsEnabled:Bool {didSet {guard !restoringSettings else {return};settings.set(notificationsEnabled,forKey:"paHeartbeatNotifications");controlsRevision=UUID()}}
+    var enabled:Bool {didSet {guard !restoringSettings,enabled != oldValue else {return};settings.set(enabled,forKey:"paHeartbeatEnabled");controlsRevision=UUID();if !enabled {cancel()}}}
+    var notificationsEnabled:Bool {didSet {guard !restoringSettings,notificationsEnabled != oldValue else {return};settings.set(notificationsEnabled,forKey:"paHeartbeatNotifications")}}
     var whatsappEnabled:Bool {didSet {
         guard !restoringSettings,whatsappEnabled != oldValue else {return}
         settings.set(whatsappEnabled,forKey:"paHeartbeatWhatsApp")
@@ -14,8 +14,8 @@ import SwiftData
     }}
     /// A durable permission boundary, independent of ordinary heartbeat timing edits.
     private(set) var whatsappLearningAccessRevision:UUID?
-    var intervalMinutes:Int {didSet {guard !restoringSettings else {return};if ![15,30,60,120].contains(intervalMinutes) {intervalMinutes=60};settings.set(intervalMinutes,forKey:"paHeartbeatMinutes");controlsRevision=UUID();cancel()}}
-    var dailyCallLimit:Int {didSet {guard !restoringSettings else {return};let bounded=PAHeartbeatRules.callLimit(dailyCallLimit);if bounded != dailyCallLimit {dailyCallLimit=bounded};settings.set(dailyCallLimit,forKey:"paHeartbeatCallLimit");controlsRevision=UUID();cancel()}}
+    var intervalMinutes:Int {didSet {guard !restoringSettings else {return};if ![15,30,60,120].contains(intervalMinutes) {intervalMinutes=60};guard intervalMinutes != oldValue else {return};settings.set(intervalMinutes,forKey:"paHeartbeatMinutes");controlsRevision=UUID();cancel()}}
+    var dailyCallLimit:Int {didSet {guard !restoringSettings else {return};let bounded=PAHeartbeatRules.callLimit(dailyCallLimit);if bounded != dailyCallLimit {dailyCallLimit=bounded};guard dailyCallLimit != oldValue else {return};settings.set(dailyCallLimit,forKey:"paHeartbeatCallLimit");controlsRevision=UUID();cancel()}}
     @ObservationIgnored private var restoringSettings=true
     @ObservationIgnored private let settings:UserDefaults
     @ObservationIgnored private let repository:LocalRecordRepository?
@@ -604,6 +604,21 @@ import SwiftData
             ports.email={request in
                 try request.validate();try request.claim();expired=request;order.append("email")
                 if scenario == "foreground stop" {cycle.userStartedTyping()}
+                if scenario == "notification toggle" {
+                    let previous=cycle.controlsRevision
+                    cycle.notificationsEnabled.toggle()
+                    await Task.yield()
+                    try request.validate()
+                    checks["notification delivery changes retain the running analysis owner"] = cycle.controlsRevision == previous
+                }
+                if scenario == "no-op controls" {
+                    let previous=cycle.controlsRevision
+                    let enabled=cycle.enabled,notifications=cycle.notificationsEnabled,interval=cycle.intervalMinutes,limit=cycle.dailyCallLimit
+                    cycle.enabled=enabled;cycle.notificationsEnabled=notifications;cycle.intervalMinutes=interval;cycle.dailyCallLimit=limit
+                    await Task.yield()
+                    try request.validate()
+                    checks["no-op heartbeat controls retain the running analysis owner"] = cycle.controlsRevision == previous
+                }
                 return .init(failure:scenario == "email failure" || scenario == "capped email failure" ? "fixture transport failure" : nil)
             }
             ports.learning={request in

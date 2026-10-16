@@ -1,9 +1,29 @@
 import Foundation
+import CryptoKit
 
 /// Stored negative-context dependency, with no duplicate concern prose.
 struct ReviewAcknowledgementReceipt:Codable,Equatable {
     var id:String
     var revision:String
+}
+
+/// Exact supplied email-confirmation support, without duplicating source prose.
+struct BriefingResolutionReceipt:Codable,Equatable {
+    var requestID:String
+    var accountID:String
+    var fingerprint:String
+    static func capture(_ rows:[[String:String]])->[Self] {
+        rows.map {row in
+            let data=(try? JSONSerialization.data(withJSONObject:row,options:[.sortedKeys])) ?? Data()
+            return .init(requestID:row["requestID"] ?? "",accountID:row["accountID"] ?? "",fingerprint:SHA256.hash(data:data).map{String(format:"%02x",$0)}.joined())
+        }
+    }
+    static func available(_ receipts:[Self],rows:[[String:String]])->Bool {
+        guard receipts.count <= 24,Set(receipts.map{[$0.accountID,$0.requestID]}).count == receipts.count,
+              receipts.allSatisfy({!$0.requestID.isEmpty && !$0.accountID.isEmpty && $0.fingerprint.count == 64}) else {return false}
+        let current=capture(rows)
+        return receipts.allSatisfy{current.contains($0)}
+    }
 }
 
 struct BriefingContextChanged: Error {
@@ -57,6 +77,7 @@ struct DailyBriefing: Codable, Identifiable {
     var reviewAcknowledgementRevision:String? = nil
     var reviewAcknowledgementReceipts:[ReviewAcknowledgementReceipt]? = nil
     var emailResolutionRevision:String? = nil
+    var emailResolutionReceipts:[BriefingResolutionReceipt]? = nil
 }
 struct BriefingState: Codable {
     var records: [DailyBriefing] = []
@@ -122,8 +143,24 @@ enum BriefingRules {
     /// Canonical supplied content plus original identity; notifications alone never invalidate this.
     static func sourceSnapshot(_ input:[String:Any],sources:[BriefingSource]) throws -> Data {
         let encoder=JSONEncoder();encoder.outputFormatting = [.sortedKeys]
-        let identities=try JSONSerialization.jsonObject(with:encoder.encode(sources))
-        return try JSONSerialization.data(withJSONObject:["input":input,"sources":identities],options:[.sortedKeys])
+        // Aliases are positions within one model input. Match fresh reads by
+        // exact native identity/content even if the provider reorders its rows.
+        let identity=Dictionary(sources.map{($0.id,$0.kind+":"+($0.originalID ?? $0.id))},uniquingKeysWith:{first,_ in first})
+        var canonical=input
+        func sortedRows(_ rows:[[String:Any]]) throws -> [[String:Any]] {
+            try rows.map{row -> (Data,[String:Any]) in
+                var row=row
+                if let id=row["id"] as? String {row["id"]=identity[id] ?? id}
+                return (try JSONSerialization.data(withJSONObject:row,options:[.sortedKeys]),row)
+            }.sorted{$0.0.lexicographicallyPrecedes($1.0)}.map{$0.1}
+        }
+        for key in ["calendar","reminders"] {
+            if let rows=input[key] as? [[String:Any]] {canonical[key]=try sortedRows(rows)}
+        }
+        var sourceRows=(try JSONSerialization.jsonObject(with:encoder.encode(sources))) as! [[String:Any]]
+        for index in sourceRows.indices {sourceRows[index]["id"]=identity[sources[index].id]}
+        let identities=try sourceRows.map{(try JSONSerialization.data(withJSONObject:$0,options:[.sortedKeys]),$0)}.sorted{$0.0.lexicographicallyPrecedes($1.0)}.map{$0.1}
+        return try JSONSerialization.data(withJSONObject:["input":canonical,"sources":identities],options:[.sortedKeys])
     }
     static func day(_ now: Date, calendar: Calendar = .current) -> String {
         let c = calendar.dateComponents([.year,.month,.day], from: now)
