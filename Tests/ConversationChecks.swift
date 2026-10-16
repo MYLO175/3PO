@@ -1,6 +1,6 @@
 import Foundation
 @main struct Checks {
-    static func main() throws {
+    @MainActor static func main() throws {
         let legacy = Data("{\"id\":\"00000000-0000-0000-0000-000000000001\",\"accountID\":\"one\",\"title\":\"Old topic\",\"created\":0,\"turns\":[{\"id\":\"00000000-0000-0000-0000-000000000002\",\"role\":\"user\",\"content\":\"Hello\",\"completed\":true}]}".utf8)
         var chat = try JSONDecoder().decode(AssistantConversation.self,from:legacy)
         precondition(chat.isPrimary == nil && chat.turns[0].deliveryID == nil && chat.turns[0].created == nil)
@@ -119,6 +119,7 @@ import Foundation
         var failureTurn=legacyTurn;failureTurn.toolErrors=["3PO stopped this request before executing the operation: Resolve the opening date."]
         let restoredFailure=try JSONDecoder().decode(AssistantTurn.self,from:JSONEncoder().encode(failureTurn))
         precondition(restoredFailure.toolErrors == failureTurn.toolErrors && restoredFailure.id == legacyTurn.id && restoredFailure.content == legacyTurn.content)
+        AssistantTranscriptProjectionChecks.run()
         print("PASS: legacy data preservation, configured-topic-only selection, explicit no-topic/account isolation, distinct persisted topic threads, bounded isolated history and memory-learning scope")
     }
 }

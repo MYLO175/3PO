@@ -5,10 +5,22 @@ import AppKit
 struct AssistantReplyText:View,Equatable {
     var content:String
     var completed:Bool
+    var errors:[String]? = nil
     var body:some View {
-        Text((try? AttributedString(markdown:content,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(content))
+        let displayed=PAProse.display(PAIntentFailure.correctedLegacyReply(content,errors:errors))
+        Text((try? AttributedString(markdown:displayed,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(displayed))
             .textSelection(.enabled).lineSpacing(3)
     }
+}
+
+/// Source controls keep observing their current services inside this subtree;
+/// unchanged completed rows skip rebuilding on another row's streamed text.
+private struct AssistantTranscriptRowContent<Content: View>: View, Equatable {
+    var key: AssistantTranscriptRenderKey
+    var colors: [WorkspaceColorRole: Color]
+    var content: () -> Content
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.key == rhs.key && lhs.colors == rhs.colors }
+    var body: some View { content() }
 }
 
 struct AssistantActionApprovalView:View {
@@ -73,11 +85,6 @@ struct AssistantPanel: View {
     @State private var showRename = false
     @State private var composerFocused = false
     private var selectedID: UUID? { assistant.feed?.id }
-    private var selected: AssistantConversation? {
-        guard var feed = assistant.feed else { return nil }
-        feed.turns = ConversationRules.thread(feed:feed,topic:topic).filter { $0.profileSessionID == nil }
-        return feed
-    }
     private var selectedTopicID:UUID? { nil }
     private var focusAreas:[LifeArea] {
         if configuration == nil { return LifeFocusRules.normalised(assistant.standaloneFocusSelections[model.chatGPT.activeID] ?? []) }
@@ -142,6 +149,7 @@ struct AssistantPanel: View {
         let attachments=attachedImages
         let value = draft.wrappedValue, contextID = selectedTopicID, key = draftKey, registration = model.chatGPT.activeID
         if assistant.send(model:model,topicID:contextID,prompt:value,focusAreas:focusAreas,images:attachments) {
+            transcriptScroll.reset()
             if let widgetID { assistant.drafts.set("",registration:registration,widget:widgetID,conversation:key) } else { assistant.draft = "" }
             _ = assistant.drafts.setImages([],registration:registration,widget:imageDraftWidget,conversation:key)
             imageError=nil
@@ -160,6 +168,9 @@ struct AssistantPanel: View {
     @State private var showProfileSetup = false
     @State private var showBriefing = false
     @State private var visibleTurnLimit=40
+    @State private var transcriptCache=AssistantTranscriptProjectionCache()
+    @State private var transcriptScroll=AssistantTranscriptScrollState()
+    @State private var transcriptUserScrolling=false
     @State private var sourceDiscovery:PADiscovery?
     @State private var reviewingProject:PADiscovery?
     @ViewBuilder private func discoveryActions(_ record: PADiscovery, compact: Bool = false, showsActionEntry:Bool = true) -> some View {
@@ -207,9 +218,9 @@ struct AssistantPanel: View {
         inspectingContext=capture
     }
     var body: some View {
-        let conversation=selected
-        let visibleTurns=ConversationRules.transcript(conversation?.turns ?? [],visible:turnVisible)
-        let displayedTurns=Array(visibleTurns.suffix(visibleTurnLimit))
+        let conversation=assistant.feed
+        let page=transcriptCache.value(owner:assistant,revision:assistant.transcriptRevision,registration:model.chatGPT.activeID,feed:conversation,topic:topic,activeTurnID:assistant.requestTurnID,limit:visibleTurnLimit,visible:turnVisible)
+        let displayedTurns=page.rows
         let discoveryEntries=lastDiscoveryEntries(displayedTurns)
         VStack(spacing: 8) {
             HStack(spacing:8) {
@@ -235,7 +246,7 @@ struct AssistantPanel: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
-                        if conversation?.turns.isEmpty ?? true {
+                        if page.threadCount == 0 {
                             VStack(alignment:.leading,spacing:12) {
                                 Text("A little clarity for your day").font(.headline)
                                 Text("Ask about what's coming up, find an email, or tell me what needs doing.").font(.callout).foregroundStyle(.secondary)
@@ -246,12 +257,13 @@ struct AssistantPanel: View {
                                 }
                             }.padding(.vertical,12)
                         }
-                        if visibleTurns.count > visibleTurnLimit { Button("Earlier conversation (\(visibleTurns.count-visibleTurnLimit) messages)") { visibleTurnLimit+=40 }.font(.caption).frame(maxWidth:.infinity) }
-                        if visibleTurnLimit > 40 { Button("Collapse older conversation") { visibleTurnLimit=40 }.font(.caption).frame(maxWidth:.infinity) }
+                        if page.totalCount > visibleTurnLimit { Button("Earlier conversation (\(page.totalCount-visibleTurnLimit) messages)") { transcriptScroll.pause();visibleTurnLimit+=40 }.font(.caption).frame(maxWidth:.infinity) }
+                        if visibleTurnLimit > 40 { Button("Collapse older conversation") { visibleTurnLimit=40;transcriptScroll.reset();if let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }.font(.caption).frame(maxWidth:.infinity) }
                         ForEach(displayedTurns) { row in
                             let turn=row.turn
                             if let separator=row.separator { Text(separator).font(.caption.weight(.medium)).foregroundStyle(.secondary).frame(maxWidth:.infinity).padding(.vertical,6) }
                             let replyingHere = turn.role == "assistant" && sendingHere && assistant.requestTurnID == turn.id
+                            AssistantTranscriptRowContent(key:.init(turn:turn,registration:model.chatGPT.activeID,conversationID:selectedID,topicID:selectedTopicID,lastTurnID:page.lastThreadTurnID,replying:replyingHere,toolStatus:replyingHere ? assistant.toolStatus : "",discoveryEntries:discoveryEntries),colors:palette.colors) {
                             HStack(alignment:.top) {
                             if turn.role == "user" { Spacer(minLength:35) }
                             VStack(alignment: .leading, spacing: 5) {
@@ -267,11 +279,10 @@ struct AssistantPanel: View {
                                     Text(PAProse.display(turn.content.components(separatedBy:"\n\n").first ?? turn.content)).lineLimit(3).textSelection(.enabled)
                                     DisclosureGroup("Details") { Text(PAProse.display(turn.content)).textSelection(.enabled) }.font(.caption)
                                 } else if turn.role == "assistant" {
-                                    let content=PAProse.display(PAIntentFailure.correctedLegacyReply(turn.content,errors:turn.toolErrors))
-                                    AssistantReplyText(content:content,completed:turn.completed).equatable().id(turn.completed)
+                                    AssistantReplyText(content:turn.content,completed:turn.completed,errors:turn.toolErrors).equatable().id(turn.completed)
                                     if let selectedID {AssistantActionApprovalView(model:model,conversationID:selectedID,turn:turn)}
                                 } else if !turn.content.isEmpty { Text(turn.content).textSelection(.enabled) }
-                                if turn.completed, turn.role == "assistant",turn.id == conversation?.turns.last?.id,let choices=turn.choices {
+                                if turn.completed, turn.role == "assistant",turn.id == page.lastThreadTurnID,let choices=turn.choices {
                                     ViewThatFits(in:.horizontal) {
                                         HStack { ForEach(choices,id:\.self) { choice in Button(choice) { draft.wrappedValue=choice; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) } }
                                         VStack(alignment:.leading) { ForEach(choices,id:\.self) { choice in Button(choice) { draft.wrappedValue=choice; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) } }
@@ -328,13 +339,19 @@ struct AssistantPanel: View {
                             }
                             .accessibilityIdentifier("pa-turn-"+turn.id.uuidString)
                             if turn.role != "user" { Spacer(minLength:20) }
-                            }.id(turn.id)
+                            }
+                            }.equatable().id(turn.id)
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
-                }.onChange(of: conversation?.turns.last?.content) { if let id = conversation?.turns.last?.id { proxy.scrollTo(id, anchor: .bottom) } }
-                .onChange(of:selectedID) { visibleTurnLimit=40;if let id = conversation?.turns.last?.id { proxy.scrollTo(id,anchor:.bottom) } }
-                .onChange(of:selectedTopicID) { visibleTurnLimit=40;if let id = conversation?.turns.last?.id { proxy.scrollTo(id,anchor:.bottom) } }
-                .onAppear { if let id = conversation?.turns.last?.id { proxy.scrollTo(id,anchor:.bottom) } }
+                }.onScrollGeometryChange(for:Double.self) { geometry in
+                    Double(geometry.contentSize.height-geometry.visibleRect.maxY)
+                } action: { _, distance in transcriptScroll.update(distanceFromBottom:distance,userScrolling:transcriptUserScrolling) }
+                .onScrollPhaseChange { _, phase in transcriptUserScrolling = phase == .tracking || phase == .interacting || phase == .decelerating }
+                .onChange(of:page.lastVisibleTurn?.content) { if transcriptScroll.followsBottom,let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
+                .onChange(of:page.lastVisibleTurn?.id) { if transcriptScroll.followsBottom,let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
+                .onChange(of:selectedID) { visibleTurnLimit=40;transcriptScroll.reset();if let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
+                .onChange(of:selectedTopicID) { visibleTurnLimit=40;transcriptScroll.reset();if let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
+                .onAppear { if let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
             }
             if model.memoryLearning.canUndoQuestion(model.chatGPT.activeID) { HStack { Text("Question dismissed").font(.caption).foregroundStyle(.secondary); Button("Undo") { model.memoryLearning.undoQuestion(model.chatGPT.activeID) }.controlSize(.small); Spacer() } }
             if let error = assistant.error, errorHere, !model.chatGPT.usagePaused { DisclosureGroup("Request didn’t complete") { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }.font(.caption) }
