@@ -260,7 +260,7 @@ import UserNotifications
                         (whatsappAccess.briefEnabled == model.whatsapp.access(for:registration).briefEnabled && (!whatsappAccess.briefEnabled || whatsappScope == model.whatsapp.scope(for:model.chatGPT.activeID)),"WhatsApp connection or selection"),
                         (recovery.omittedKinds.contains("memory") || (memoryCapture == model.automaticMemory(.brief,mailAccounts:recovery.omittedKinds.contains("mail") ? [] : mailReview?.accountIDs,whatsappReady:whatsappReady && !recovery.omittedKinds.contains("whatsapp")) && model.memoryDependenciesAvailable(memoryCapture.dependencies,use:.brief)),"PA memory or evidence"),
                         (model.assistant.contextEnabled && (heartbeat || manual || enabled),"brief access"),
-                        (model.emailSummaries.relevanceReadable,"saved attention preferences"),
+                        (model.assistant.memory.reviewPreferenceMigrationReadable,"saved attention preferences"),
                         (contextWasEnabled == model.assistant.contextEnabled,"source access"),
                         (calendars == model.assistant.excludedCalendars && lists == model.assistant.excludedLists && accounts == model.assistant.excludedAccounts,"source selection"),
                         (emailsWereEnabled == model.emailSummaries.enabled,"email access"),
@@ -364,7 +364,6 @@ import UserNotifications
                     sources += items.enumerated().map{.init(id:"workspace_\($0.offset)",label:$0.element.title,kind:"workspace",date:nil,originalID:$0.element.id.uuidString,contentRevision:$0.element.revision.uuidString)}
                 }
                 let acknowledgementContext=model.reviewAcknowledgements(use:.brief,mailAccounts:recovery.omittedKinds.contains("mail") ? [] : mailReview?.accountIDs,whatsappReady:whatsappReady && !recovery.omittedKinds.contains("whatsapp"))
-                input["attentionPreferences"]=model.emailSummaries.preferences(registration).map{["topic":$0.topic,"attention":$0.direction]}
                 input["reviewAcknowledgements"]=try JSONSerialization.jsonObject(with:JSONEncoder().encode(acknowledgementContext))
                 input["allowedSourceIDs"]=sources.map(\.id).sorted()
                 if live,recovery.omittedKinds.isEmpty,!model.hasReviewAcknowledgements,let morning,usable(morning,model:model),let earlier=BriefingRules.earlierMessage(morning:morning,sourceScope:scope(model)) { input["earlierBrief"] = ["prepared":morning.created.ISO8601Format(),"message":earlier] }

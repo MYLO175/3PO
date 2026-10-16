@@ -354,14 +354,14 @@ import Foundation
         case "read_weather":
             await model.weather.prepareForBrief(); return try json(model.weather.context())
         case "read_attention":
-            guard model.emailSummaries.relevanceReadable else {throw ActionFailure.message("Saved attention preferences are unavailable. No review advice was supplied.")}
+            guard memory.reviewPreferenceMigrationReadable else {throw ActionFailure.message("Saved attention preferences are unavailable. No review advice was supplied.")}
             let summaries = model.emailSummaries.highlights(model).filter{!model.acknowledgedEmail($0.0,$0.1)}
             let discoveries = model.proactive.state.records.filter { model.proactive.visible($0,model:model) }.map(ProactiveRules.reviewProjection)
             issuedSuggestions.formUnion(summaries.prefix(40).map { "email:" + $0.1.id }); issuedSuggestions.formUnion(discoveries.prefix(10).map { "discovery:" + $0.id })
             for pair in summaries.prefix(40) {issuedEmailDismissalVersions[pair.1.id]=ReviewAcknowledgementRules.emailVersion(pair.0,pair.1)}
             for record in discoveries.prefix(10) {issuedDiscoveryDismissals[record.id]=record}
             let brief = model.briefings.current(model)
-            return try json(["resolvedEmailRequests":model.emailSummaries.resolutionContext(model),"attentionPreferences":model.emailSummaries.preferences(registration).map{["topic":$0.topic,"attention":$0.direction]},"reviewAcknowledgements":try JSONSerialization.jsonObject(with:JSONEncoder().encode(model.reviewAcknowledgements())),"brief":brief?.message ?? "No saved brief for today", "briefCoverage":brief?.coverage ?? "Unavailable", "emailCoverage":model.emailSummaries.coverage(model),"emails":summaries.prefix(40).map { ["id":$0.1.id,"subject":$0.0.subject,"account":$0.0.account,"summary":$0.1.summary,"category":EmailHighlightRules.category($0.1,replied:$0.0.replied),"evidence":$0.1.evidence] },"suggestions":discoveries.prefix(10).map { ["id":$0.id,"kind":$0.kind,"message":$0.message,"evidence":$0.evidence] }])
+            return try json(["resolvedEmailRequests":model.emailSummaries.resolutionContext(model),"reviewAcknowledgements":try JSONSerialization.jsonObject(with:JSONEncoder().encode(model.reviewAcknowledgements())),"brief":brief?.message ?? "No saved brief for today", "briefCoverage":brief?.coverage ?? "Unavailable", "emailCoverage":model.emailSummaries.coverage(model),"emails":summaries.prefix(40).map { ["id":$0.1.id,"subject":$0.0.subject,"account":$0.0.account,"summary":$0.1.summary,"category":EmailHighlightRules.category($0.1,replied:$0.0.replied),"evidence":$0.1.evidence] },"suggestions":discoveries.prefix(10).map { ["id":$0.id,"kind":$0.kind,"message":$0.message,"evidence":$0.evidence] }])
         case "dismiss_suggestion":
             try PAToolProtocol.evidence(text("authorization"),human:human)
             let id = text("id")!, kind = text("kind")!
@@ -381,17 +381,18 @@ import Foundation
             let result = try await model.undoAssistantAppleChange(); receipts.append(result); return try json(["verified":true,"result":result])
         case "read_memory":
             guard memory.enabled else { throw ActionFailure.message("Memory is disabled.") }
-            let selection = memory.selection(registration,conversationID:topicID,includeTopics:focusAreas != nil,query:text("query"),focus:focusAreas ?? assistant.conversation(topicID)?.notebookAreas ?? [])
+            let selection = PAWorkingContext.prepare(memory:memory,registration:registration,purpose:.memoryRead,query:text("query"),conversationID:topicID,includeTopics:focusAreas != nil,focus:focusAreas ?? assistant.conversation(topicID)?.notebookAreas ?? [],includeNotebook:false).selection
             issuedMemory.formUnion(selection.records.compactMap { $0["id"].flatMap(UUID.init(uuidString:)) })
             consultedMemory.formUnion(selection.records.compactMap { $0["id"].flatMap(UUID.init(uuidString:)) })
             return try json(["records":selection.records,"eligible":selection.eligibleCount,"selected":selection.records.count,"coverage":focusAreas != nil ? "Bounded account-owned relevant memory with life-area focus; not exhaustive recall." : "Bounded relevant shared/current-topic memory; not exhaustive recall."])
         case "read_life_notebook":
             guard memory.enabled else { throw ActionFailure.message("Memory is disabled.") }
-            let notebook=memory.notebook(registration,topic:topicID,includeTopics:focusAreas != nil)
             let focus=focusAreas ?? assistant.conversation(topicID)?.notebookAreas ?? []
-            let selection=memory.selection(registration,conversationID:topicID,includeTopics:focusAreas != nil,query:text("query"),focus:focus)
+            let working=PAWorkingContext.prepare(memory:memory,registration:registration,purpose:.notebookRead,query:text("query"),conversationID:topicID,includeTopics:focusAreas != nil,focus:focus)
+            let selection=working.selection
+            let notebook=memory.notebook(registration,topic:topicID,includeTopics:focusAreas != nil)
             issuedMemory.formUnion(selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))})
-            let notes=try JSONSerialization.jsonObject(with:Data(notebook.context(query:text("query"),focus:focus,selectedMemoryIDs:Set(selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))})).utf8)) as! [String:Any]
+            let notes=try JSONSerialization.jsonObject(with:Data(working.notebook.utf8)) as! [String:Any]
             for area in notes["areas"] as? [[String:Any]] ?? [] { issuedMemory.formUnion((area["facts"] as? [[String:String]] ?? []).compactMap{$0["id"].flatMap(UUID.init(uuidString:))}) }
             consultedMemory.formUnion(selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))})
             for area in notes["areas"] as? [[String:Any]] ?? [] { consultedMemory.formUnion((area["facts"] as? [[String:String]] ?? []).compactMap{$0["id"].flatMap(UUID.init(uuidString:))}) }

@@ -72,6 +72,9 @@ struct PAContextCapture: Codable, Equatable, Identifiable {
     var preparationNotes:[String]? = nil
     /// Version 1 records initial, successful-read and transitive history dependencies.
     var sourceMemoryDependencyVersion:Int? = nil
+    var selectionPurpose:String? = nil
+    var sourceHints:[String]? = nil
+    var usedFollowupContext:Bool? = nil
     static func notebookIDs(_ context:String)->(memories:[UUID],workspace:[String]) {
         let object=(try? JSONSerialization.jsonObject(with:Data(context.utf8))) as? [String:Any] ?? [:]
         let areas=object["areas"] as? [[String:Any]] ?? []

@@ -44,7 +44,6 @@ extension AssistantService {
             "reminders":tasks.prefix(80).map { ["id":$0.id, "title":String($0.title.prefix(500)), "due":DateRules.reminderDue($0), "hasTime":$0.hasTime, "source":$0.sourceLabel] as [String:Any] },
             "mailStatus":model.mailHealth.detail, "mailCoverage":model.mailCoverage, "mailHeaderCount":emails.count,
             "recentEmailHeaders":emails.prefix(20).map { ["id":$0.id, "sender":String($0.sender.prefix(500)), "subject":String($0.subject.prefix(500)), "received":$0.received.ISO8601Format(), "account":$0.account] },
-            "attentionPreferences":model.emailSummaries.preferences(model.chatGPT.activeID).map{["topic":$0.topic,"attention":$0.direction]},
             "reviewAcknowledgements":(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(model.reviewAcknowledgements()))) ?? [],
             "resolvedEmailRequests":model.emailSummaries.resolutionContext(model),
             "savedEmailSummaries":Array(summaries.prefix(20)), "emailSummaryCoverage":model.emailSummaries.coverage(model),
@@ -78,7 +77,6 @@ extension AssistantService {
             "reminderSources":lists.prefix(60).map{["id":$0.id,"name":$0.label,"writable":$0.writable] as [String:Any]},
             "mailStatus":model.mailHealth.detail,"mailCoverage":model.mailCoverage,"mailHeaderCount":model.mailData.messages.filter{!excludedAccounts.contains($0.accountID)}.count,
             "mailAccounts":accounts.prefix(30).map{["id":$0.id,"name":$0.title]},
-            "attentionPreferences":model.emailSummaries.preferences(model.chatGPT.activeID).map{["topic":$0.topic,"attention":$0.direction]},
             "reviewAcknowledgements":(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(model.reviewAcknowledgements()))) ?? [],
             "resolvedEmailRequests":model.emailSummaries.resolutionContext(model),
             "coverage":"Initial source orientation only. Source IDs/names above are metadata, not issued mutation destinations or item IDs. Use read_calendar/read_reminders for actual relevant items and fresh writable sources, read_attention for saved brief/assessments/suggestions, and selective search_mail/read_email for emails. Never infer an empty source from omitted details. All normal source permissions and write checks still apply."
@@ -95,7 +93,7 @@ extension DashboardModel {
         var runtime=AssistantRuntime(clock: { .now }, state: { [weak self] in
             guard let self else { return nil }
             return nativeLearningValidation.withSnapshot { [self] in
-                AssistantRuntimeState(attentionPreferencesReadable: self.emailSummaries.relevanceReadable,
+                AssistantRuntimeState(attentionPreferencesReadable: self.assistant.memory.reviewPreferenceMigrationReadable,
                          acknowledgementRevision: self.reviewAcknowledgementRevision,
                          resolutionRevision: self.emailSummaries.resolutionRevision(self),
                          acknowledgements: self.reviewAcknowledgements(),

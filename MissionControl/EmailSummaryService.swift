@@ -149,20 +149,16 @@ import SwiftData
         guard model.assistant.contextEnabled else {return .init()}
         let registration=model.chatGPT.activeID,query=MemoryRetrieval.emailQuery(subject:message.subject,sender:message.sender,body:body)
         let memory=model.assistant.memory
-        let review=memory.enabled ? MemoryRetrieval.select(memory.reviewPreferences(registration),registration:registration,query:query,limit:header ? 2 : 4).records : []
-        let reviewIDs=Set(review.compactMap{$0["id"]})
-        let other=memory.selection(registration,query:query,includeSources:false).records.filter{!reviewIDs.contains($0["id"] ?? "")}
-        let selected=Array((review+other).prefix(header ? 2 : 6))
-        let ids=Set(selected.compactMap{$0["id"].flatMap(UUID.init(uuidString:))})
+        let working=PAWorkingContext.prepare(memory:memory,registration:registration,purpose:header ? .emailHeader : .emailBody,query:query)
+        let selected=working.selection.records
         let items=model.assistant.projects.items(registration).filter{$0.status != .archived && $0.status != .done}
-        let notebook=LifeNotebook.build(model.assistant.memory.enabled ? model.assistant.memory.records.filter{$0.source == nil} : [],registration:registration).integrating(items,links:model.assistant.projects.state.links.filter{$0.registration == registration})
-        let data=Data(notebook.context(query:query,maxBytes:header ? 1800 : 4000,selectedMemoryIDs:ids).utf8)
+        let data=Data(working.notebook.utf8)
         let anchors=((try? JSONSerialization.jsonObject(with:data)) as? [String:Any])?["lifeStructure"] as? [[String:Any]] ?? []
         let workspace=anchors.prefix(header ? 2 : 4).compactMap {row->[String:String]? in
             guard let id=row["id"] as? String,let item=items.first(where:{"life:"+$0.id.uuidString == id}) else {return nil}
             return ["id":id,"revision":item.revision.uuidString,"title":item.title,"notes":String(item.notes.prefix(header ? 80 : 250)),"status":item.status.rawValue]
         }
-        return .init(memories:selected,workspace:workspace,preferences:Array(preferences(registration,query:query).prefix(header ? 2 : 4)),memoryReceipts:MemoryDependencyRules.capture(selected))
+        return .init(memories:selected,workspace:workspace,memoryReceipts:working.dependencies)
     }
     func reviewPreferenceStamp(_ message:MailMessage,model:DashboardModel,evidence:String="")->String? {
         guard model.assistant.memory.enabled else {return nil}
@@ -181,9 +177,9 @@ import SwiftData
         return summary.needsActionEvidenceRecheck()
     }
     func relevanceAvailable(_ value:EmailPersonalRelevance,model:DashboardModel)->Bool {
-        guard relevanceReadable,model.assistant.contextEnabled,model.memoryDependenciesAvailable(value.memories,use:.suggestions) else {return false}
+        guard model.assistant.memory.reviewPreferenceMigrationReadable,model.assistant.contextEnabled,model.memoryDependenciesAvailable(value.memories,use:.suggestions) else {return false}
         let items=model.assistant.projects.items(model.chatGPT.activeID)
-        return value.workspace.allSatisfy{receipt in items.contains{"life:"+$0.id.uuidString == receipt.id && $0.revision.uuidString == receipt.revision && $0.status != .archived && $0.status != .done}} && value.preferences.allSatisfy{receipt in preferences(model.chatGPT.activeID).contains{$0.id.uuidString == receipt.id && $0.revision.uuidString == receipt.revision && $0.direction == "more"}}
+        return value.workspace.allSatisfy{receipt in items.contains{"life:"+$0.id.uuidString == receipt.id && $0.revision.uuidString == receipt.revision && $0.status != .archived && $0.status != .done}} && value.preferences.allSatisfy{receipt in model.assistant.memory.matchesConvertedReviewPreference(id:receipt.id,revision:receipt.revision,registration:model.chatGPT.activeID,direction:"more")}
     }
     func eligible(_ model: DashboardModel) -> [MailMessage] {
         model.mailData.messages.filter { !model.assistant.excludedAccounts.contains($0.accountID) }.sorted { $0.received > $1.received }
@@ -427,7 +423,7 @@ import SwiftData
             do {try heartbeatRequest.validate()} catch {return}
         }
         if resume { paused = false; error = nil }
-        guard relevanceReadable, (!model.heartbeat.busy || heartbeat), enabled, !paused, !model.chatGPT.usagePaused, !busy, !model.chatGPT.busy,!model.projectPlacement.busy, !model.assistant.busy, !model.briefings.busy, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing, model.chatGPT.inferenceVerified else { return }
+        guard model.assistant.memory.reviewPreferenceMigrationReadable, (!model.heartbeat.busy || heartbeat), enabled, !paused, !model.chatGPT.usagePaused, !busy, !model.chatGPT.busy,!model.projectPlacement.busy, !model.assistant.busy, !model.briefings.busy, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing, model.chatGPT.inferenceVerified else { return }
         let registration = model.chatGPT.activeID, selectedModel = modelID.isEmpty ? model.chatGPT.selectedModel : modelID, selectedEffort = effort
         let requestedModel = modelID
         let sourceRevision=model.sourceRevision,controls=model.heartbeat.controlsRevision,day=BriefingRules.day(.now)
@@ -457,7 +453,7 @@ import SwiftData
                 if !unknown.isEmpty {
                     phase = "Assessing incoming headers"
                     let aliases = Dictionary(uniqueKeysWithValues:unknown.enumerated().map { ("mail_\($0.offset)",$0.element) })
-                    let memoryRevision=model.assistant.memory.revision,projectsRevision=model.assistant.projects.revision,preferenceRevision=self.preferenceRevision(registration)
+                    let memoryRevision=model.assistant.memory.revision,projectsRevision=model.assistant.projects.revision,preferenceRevision=model.assistant.memory.revision
                     let contexts=aliases.mapValues{relevanceContext($0,model:model,header:true)}
                     let input = String(data:try JSONSerialization.data(withJSONObject:aliases.keys.sorted().map {alias in ["id":alias,"sender":aliases[alias]!.sender,"subject":aliases[alias]!.subject,"received":aliases[alias]!.received.ISO8601Format(),"lifeContext":contexts[alias]!.input] as [String:Any]},options:.sortedKeys),encoding:.utf8)!
                     if heartbeat { try heartbeatRequest!.claim() }
@@ -465,7 +461,7 @@ import SwiftData
                     try Task.checkCancellation()
                     try validateWork()
                     guard requestedModel == modelID, selectedEffort == effort, selectedModel == (modelID.isEmpty ? model.chatGPT.selectedModel : modelID), enabled, !paused, registration == model.chatGPT.activeID, unknown.allSatisfy(permitted) else { return }
-                    guard memoryRevision == model.assistant.memory.revision,projectsRevision == model.assistant.projects.revision,preferenceRevision == self.preferenceRevision(registration),aliases.allSatisfy({contexts[$0.key] == relevanceContext($0.value,model:model,header:true)}) else {return}
+                    guard memoryRevision == model.assistant.memory.revision,projectsRevision == model.assistant.projects.revision,preferenceRevision == model.assistant.memory.revision,aliases.allSatisfy({contexts[$0.key] == relevanceContext($0.value,model:model,header:true)}) else {return}
                     let selected = try MailMonitoringRules.selections(output,allowed:Set(aliases.keys))
                     let previous = decisions
                     for (alias,message) in aliases {
@@ -532,7 +528,7 @@ import SwiftData
                     }
                     let excerpt = String(body.prefix(16000))
                     let dismissalFeedback:[[String:String]] = []
-                    let memoryRevision=model.assistant.memory.revision,projectsRevision=model.assistant.projects.revision,preferenceRevision=self.preferenceRevision(registration)
+                    let memoryRevision=model.assistant.memory.revision,projectsRevision=model.assistant.projects.revision,preferenceRevision=model.assistant.memory.revision
                     let relevanceContext=self.relevanceContext(message,model:model,body:excerpt)
                     // Classification has no saved source-memory dependency receipt; keep source facts out.
                     let memoryContext=relevanceContext.memories
@@ -545,7 +541,7 @@ import SwiftData
                     try validateWork()
                     guard permitted(message) else {return}
                     guard requestedModel == modelID, selectedEffort == effort, selectedModel == (modelID.isEmpty ? model.chatGPT.selectedModel : modelID), enabled, !paused, registration == model.chatGPT.activeID, !model.assistant.excludedAccounts.contains(message.accountID) else { return }
-                    guard memoryRevision == model.assistant.memory.revision,projectsRevision == model.assistant.projects.revision,preferenceRevision == self.preferenceRevision(registration),relevanceContext == self.relevanceContext(message,model:model,body:excerpt) else { return }
+                    guard memoryRevision == model.assistant.memory.revision,projectsRevision == model.assistant.projects.revision,preferenceRevision == model.assistant.memory.revision,relevanceContext == self.relevanceContext(message,model:model,body:excerpt) else { return }
                     phase = "Validating completed summary"
                     let decoded: EmailSummary
                     do { decoded = try EmailSummary.decode(text,message:message,body:excerpt,registration:registration,relevanceContext:relevanceContext) }

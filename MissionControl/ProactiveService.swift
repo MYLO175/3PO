@@ -180,7 +180,7 @@ struct ProactiveReviewContext {
     }
     private func contextRevision(_ model:DashboardModel,mailAccounts:Set<String>? = nil,whatsappReady:Bool = true)->String {
         let facts=model.assistant.memory.permittedRecords.filter{$0.registration == model.chatGPT.activeID && MemoryRules.usable($0,registration:model.chatGPT.activeID) && $0.allSourceEvidence.allSatisfy{source in (source.identity.kind != .mail || (mailAccounts?.contains(source.identity.accountID) ?? true)) && (source.identity.kind != .whatsapp || whatsappReady)}}
-        let values:[String]=["communication-actions-v6-date-contract",model.assistant.projects.revision.uuidString,TimeZone.current.identifier,scope(model),model.chatGPT.selectedModel,model.assistant.preferences,model.heartbeat.whatsappEnabled.description,DiscoveryNativeTarget.fingerprint(facts.sorted{$0.id.uuidString < $1.id.uuidString}.map{MemoryDependencyRules.fingerprint(MemoryRetrieval.record($0))}),DiscoveryNativeTarget.fingerprint(model.paOrientation?.calendar ?? model.calendarData),DiscoveryNativeTarget.fingerprint(model.reminderData),EmailNativeEvidence.hash(model.completedReminders),EmailNativeEvidence.hash(model.emailSummaries.dismissalContext(model)),model.reviewAcknowledgementRevision,model.emailSummaries.preferenceRevision(model.chatGPT.activeID),model.emailSummaries.resolutionRevision(model),EmailNativeEvidence.hash(model.emailSummaries.sourceAssessments(model).filter{mailAccounts?.contains($0.0.accountID) ?? true}.map{[$0.0.id,$0.1.adviceRevision(replied:$0.0.replied)]})]
+        let values:[String]=["communication-actions-v6-date-contract",model.assistant.projects.revision.uuidString,TimeZone.current.identifier,scope(model),model.chatGPT.selectedModel,model.assistant.preferences,model.heartbeat.whatsappEnabled.description,DiscoveryNativeTarget.fingerprint(facts.sorted{$0.id.uuidString < $1.id.uuidString}.map{MemoryDependencyRules.fingerprint(MemoryRetrieval.record($0))}),DiscoveryNativeTarget.fingerprint(model.paOrientation?.calendar ?? model.calendarData),DiscoveryNativeTarget.fingerprint(model.reminderData),EmailNativeEvidence.hash(model.completedReminders),EmailNativeEvidence.hash(model.emailSummaries.dismissalContext(model)),model.reviewAcknowledgementRevision,model.assistant.memory.revision.uuidString,model.emailSummaries.resolutionRevision(model),EmailNativeEvidence.hash(model.emailSummaries.sourceAssessments(model).filter{mailAccounts?.contains($0.0.accountID) ?? true}.map{[$0.0.id,$0.1.adviceRevision(replied:$0.0.replied)]})]
         return DiscoveryNativeTarget.fingerprint(values)
     }
     /// Historical cards may be reconsidered without reusing their old interpretation
@@ -221,7 +221,7 @@ struct ProactiveReviewContext {
         sourceReadError=nil
         let assistant = model.assistant, registration = model.chatGPT.activeID, now = Date.now
         guard manual || now.timeIntervalSince(lastCheck) >= 300 else { return }
-        guard (!model.heartbeat.busy || heartbeat), readable, model.emailSummaries.relevanceReadable, enabled, !busy, assistant.contextEnabled, (heartbeat ? !model.heartbeat.composerActive : !assistant.hasDraft), !assistant.busy, !model.writing, !model.chatGPT.busy,!model.projectPlacement.busy, model.chatGPT.inferenceVerified, !model.chatGPT.usagePaused, !model.briefings.busy, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.memoryLearning.busy, !model.emailSummaries.busy, !registration.isEmpty else { return }
+        guard (!model.heartbeat.busy || heartbeat), readable, model.assistant.memory.reviewPreferenceMigrationReadable, enabled, !busy, assistant.contextEnabled, (heartbeat ? !model.heartbeat.composerActive : !assistant.hasDraft), !assistant.busy, !model.writing, !model.chatGPT.busy,!model.projectPlacement.busy, model.chatGPT.inferenceVerified, !model.chatGPT.usagePaused, !model.briefings.busy, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.memoryLearning.busy, !model.emailSummaries.busy, !registration.isEmpty else { return }
         lastCheck = now
         if heartbeat {error=nil}
         let day = BriefingRules.day(now)
@@ -368,7 +368,6 @@ struct ProactiveReviewContext {
                 let feedback:[[String:String]]=[]
                 input["reviewFeedback"]=feedback
                 let relevanceQuery=(emails.map{$0.0.subject+" "+$0.1.summary+" "+$0.1.evidence}+whatsapp.map{$0.chatName+" "+$0.sender+" "+$0.text}).joined(separator:"\n")
-                input["attentionPreferences"]=model.emailSummaries.preferences(registration,query:relevanceQuery).map{["topic":$0.topic,"attention":$0.direction]}
                 let acknowledgementContext=model.reviewAcknowledgements(use:memoryUse,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady)
                 input["reviewAcknowledgements"]=try JSONSerialization.jsonObject(with:JSONEncoder().encode(acknowledgementContext))
                 input["whatsappCoverage"]=whatsapp.isEmpty ? "No WhatsApp material supplied; unavailable, disabled or no eligible received text. Never claim nothing important exists." : "Selected chats, last 48 hours, at most eight cached messages; partial linked-device history."
@@ -530,8 +529,7 @@ struct ProactiveReviewContext {
         let proposals=proactive.state.records.filter{$0.registration == registration && $0.dismissed}.map{"discovery:"+$0.id+":"+($0.dismissedSourceVersion ?? $0.sourceRevision ?? "legacy")}
         let questions=(briefings.state.reviewQuestions ?? []).filter{$0.snapshot.registration == registration && $0.dismissed}.map{"question:"+$0.id}
         let learning=(memoryLearning.state.questions ?? []).filter{$0.registration == registration && $0.dismissed}.map{"learning:"+$0.id}
-        let preferences=emailSummaries.relevancePreferences.filter{$0.registration == registration}.map{"relevance:"+$0.id.uuidString+":"+$0.revision.uuidString}
-        return DiscoveryNativeTarget.fingerprint((emails+proposals+questions+learning+preferences).sorted())
+        return DiscoveryNativeTarget.fingerprint((emails+proposals+questions+learning).sorted())
     }
     var hasReviewAcknowledgements:Bool {reviewAcknowledgementRevision != DiscoveryNativeTarget.fingerprint([String]())}
     func acknowledgedEmail(_ message:MailMessage,_ summary:EmailSummary)->Bool {
