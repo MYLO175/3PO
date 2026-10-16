@@ -36,7 +36,7 @@ struct ActionTarget: Identifiable { var id: String; var label: String }
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         let canonical = String(data:try encoder.encode(draft),encoding:.utf8)!
         let key = ActionRules.key(registration:model.actionRegistration,request:turnID.uuidString,selectedTarget:canonical)
-        if let prior = ledger[key], prior.undone != true {
+        if let prior = ledger[key], prior.undone != true && prior.preSaveFailure == nil {
             if let result = prior.result { return "Already applied: " + result }
             throw PANativeActionUncertainty(operationKey: key, message: "This operation already has a pending receipt. Check the original before continuing; no save was repeated.")
         }
@@ -52,6 +52,11 @@ struct ActionTarget: Identifiable { var id: String; var label: String }
         let result: ActionResult
         do {
             result = try await model.nativeActionWriter.applyTool(draft,reminder:reminder,event:event,marker:key,allowedCalendars:allowedCalendars,allowedLists:allowedLists,expectedDetails:expectedDetails,valid:valid)
+        } catch let failure as NativePreSaveFailure {
+            do { try receipts.failedBeforeSave(key, failure: failure) }
+            catch { throw PANativeActionUncertainty(operationKey: key, message: "No Apple save was attempted, but its failure receipt could not be saved. The pending receipt is retained; check it before continuing.") }
+            try Task.checkCancellation()
+            throw failure
         } catch {
             throw PANativeActionUncertainty(operationKey: key, message: "The Apple operation's outcome is unconfirmed. Its pending receipt is retained; check the original before continuing. " + String(error.localizedDescription.prefix(500)))
         }
@@ -78,11 +83,17 @@ struct ActionTarget: Identifiable { var id: String; var label: String }
     }
     func performNativeDeletion(baseline: NativeEditDetails, scope: NativeChangeScope, requestID: UUID, model: any NativeActionRuntime) async throws -> String {
         let key=ActionRules.key(registration:model.actionRegistration,request:requestID.uuidString,selectedTarget:baseline.occurrenceID + ":delete:" + scope.rawValue)
-        if let prior=ledger[key] { if let result=prior.result {return result};throw PANativeActionUncertainty(operationKey:key,message:"A deletion is already recorded as pending. Check Apple Calendar or Reminders before continuing; it was not repeated.") }
+        if let prior=ledger[key],prior.preSaveFailure == nil { if let result=prior.result {return result};throw PANativeActionUncertainty(operationKey:key,message:"A deletion is already recorded as pending. Check Apple Calendar or Reminders before continuing; it was not repeated.") }
         try NativeEditRules.validateDeletion(scope,baseline:baseline)
         try receipts.begin(key, turnID: requestID, registration: model.actionRegistration)
         let result: String
         do { result=try await model.nativeActionWriter.deleteItem(baseline:baseline,scope:scope) }
+        catch let failure as NativePreSaveFailure {
+            do { try receipts.failedBeforeSave(key, failure: failure) }
+            catch { throw PANativeActionUncertainty(operationKey: key, message: "No Apple removal was attempted, but its failure receipt could not be saved. The pending receipt is retained; check it before continuing.") }
+            try Task.checkCancellation()
+            throw failure
+        }
         catch { throw PANativeActionUncertainty(operationKey:key,message:"The native deletion's outcome is unconfirmed. Its pending receipt is retained; check the original before continuing. " + String(error.localizedDescription.prefix(500))) }
         do { try receipts.complete(key, result: result, itemID: baseline.itemID) }
         catch { throw PANativeActionUncertainty(operationKey:key,nativeReadbackVerified:true,message:"Native deletion readback was confirmed, but its completion receipt could not be saved. The pending receipt is retained; check the original before continuing.") }

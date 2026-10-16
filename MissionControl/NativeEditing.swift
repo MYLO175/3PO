@@ -76,6 +76,26 @@ struct NativeEditUndo {
     var saved: NativeEditDetails
     var created = Date.now
 }
+struct NativeCompletionSnapshot: Equatable {
+    var details: NativeEditDetails
+    var dueComponents: DateComponents?
+    var completed: Bool
+    var completionDate: Date?
+}
+enum NativeCompletionRules {
+    static func validateDisplayed(_ expected: TaskItem, details: NativeEditDetails) throws {
+        guard details.kind == .reminder, details.itemID == expected.id,
+              details.sourceID == expected.listID,
+              (details.title.isEmpty ? "Untitled reminder" : details.title) == expected.title,
+              details.due == expected.due, details.hasTime == expected.hasTime,
+              details.recurring == expected.recurring, details.modified == expected.modified,
+              details.writable == expected.writable else { throw IntegrationError.missing }
+    }
+    static func validateUndo(saved: NativeCompletionSnapshot, current: NativeCompletionSnapshot,
+                             detached: NativeCompletionSnapshot?, currentDetached: NativeCompletionSnapshot?) throws {
+        guard saved == current, detached == currentDetached else { throw IntegrationError.missing }
+    }
+}
 struct NativeEventMoveProposal {
     var occurrenceID: String
     var sourceID: String

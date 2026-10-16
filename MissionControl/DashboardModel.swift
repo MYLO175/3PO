@@ -683,10 +683,14 @@ struct CalendarRemovalReviewSession:Identifiable {
     }
     func complete(_ reminder: TaskItem) {
         guard !sample, !writing else { return }
+        let owner = nativeCollectionScope
         writing = true; writeError = nil
         Task {
             do {
-                undoToken = try await eventKit.complete(id: reminder.id)
+                let baseline = try await eventKit.editSession(.reminder(reminder)).item
+                undoToken = try await eventKit.complete(id: reminder.id, valid: {
+                    owner.registration == self.nativeCollectionScope.registration && owner.storage == self.nativeCollectionScope.storage
+                }, expected: baseline)
                 undoTitle = reminder.title
                 showFeedback("Completed: " + reminder.title)
                 await refreshReminders()

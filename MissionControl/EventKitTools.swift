@@ -43,33 +43,48 @@ extension NativeEditDetails {
 }
 extension EventKitService {
     func applyTool(_ draft: ActionDraft, reminder: TaskItem?, event: AgendaEvent?, marker: String, allowedCalendars: Set<String>, allowedLists: Set<String>, expectedDetails: NativeEditDetails? = nil, valid: NativeWriteValidity? = nil) async throws -> ActionResult {
-        try ActionRules.validate(draft)
-        guard (draft.notes?.count ?? 0) <= 10_000, (draft.location?.count ?? 0) <= 2000 else {throw ActionFailure.message("Notes/location exceed supported size.")}
-        if draft.kind == .completeReminder {return try await apply(draft,reminder:reminder,event:event,marker:marker,allowedCalendars:allowedCalendars,allowedLists:allowedLists,valid:valid,expectedDetails:expectedDetails)}
-        if draft.kind == .createEvent || draft.kind == .createReminder {
-            let request=NativeCreationRequest(kind:draft.kind == .createEvent ? .event : .reminder,registration:"tool",title:draft.title ?? "",notes:NativeRequestNotes.creation(draft.notes))
-            let session=try await creationSession(request),baseline=session.item
+        var enteredWriter = false
+        do {
+            try ActionRules.validate(draft)
+            guard (draft.notes?.count ?? 0) <= 10_000, (draft.location?.count ?? 0) <= 2000 else {throw ActionFailure.message("Notes/location exceed supported size.")}
+            if draft.kind == .completeReminder {
+                guard let reminder, draft.target == reminder.id, allowedLists.contains(reminder.listID) else { throw IntegrationError.missing }
+                let baseline = try await editSession(.reminder(reminder)).item
+                if let expectedDetails { guard baseline == expectedDetails else { throw IntegrationError.missing } }
+                enteredWriter = true
+                let token = try await complete(id: reminder.id, valid: valid, expected: baseline)
+                return .init(message: "Completed reminder: " + reminder.title, undoToken: token, itemID: reminder.id)
+            }
+            if draft.kind == .createEvent || draft.kind == .createReminder {
+                let request=NativeCreationRequest(kind:draft.kind == .createEvent ? .event : .reminder,registration:"tool",title:draft.title ?? "",notes:NativeRequestNotes.creation(draft.notes))
+                let session=try await creationSession(request),baseline=session.item
+                var edited=baseline;try edited.applyToolFields(draft)
+                guard (edited.kind == .event ? allowedCalendars : allowedLists).contains(edited.sourceID) else {throw IntegrationError.readOnly}
+                enteredWriter = true
+                let receipt=try await createItem(request:request,baseline:baseline,edited:edited,scope:"tool",valid:valid)
+                return .init(message:"Created " + (edited.kind == .event ? "event: " : "reminder: ") + receipt.title,itemID:receipt.itemID)
+            }
+            let target: NativeEditTarget
+            if draft.kind == .editReminder || draft.kind == .deleteReminder {
+                guard let reminder,allowedLists.contains(reminder.listID) else {throw IntegrationError.readOnly};target = .reminder(reminder)
+            } else {guard let event,allowedCalendars.contains(event.calendarID) else {throw IntegrationError.readOnly};target = .event(event)}
+            let baseline=try await editSession(target).item
+            if let expectedDetails {guard baseline == expectedDetails else {throw IntegrationError.missing}}
+            guard baseline.canEdit else {throw IntegrationError.readOnly}
+            let scope: NativeChangeScope
+            if baseline.recurring {
+                guard let raw=draft.scope,let resolved=NativeChangeScope(rawValue:raw) else {throw ActionFailure.message(baseline.kind == .event ? "Choose only this event or this and all future events." : "Choose the repeating reminder; its edit/delete affects future repeats.")};scope=resolved
+            } else {scope = .occurrence;guard draft.scope == nil || draft.scope == "occurrence" else {throw ActionFailure.message("This item is not recurring.")}}
+            if draft.kind == .deleteEvent || draft.kind == .deleteReminder {enteredWriter = true;return .init(message:try await deleteItem(baseline:baseline,scope:scope,valid:valid),itemID:baseline.itemID)}
             var edited=baseline;try edited.applyToolFields(draft)
-            guard (edited.kind == .event ? allowedCalendars : allowedLists).contains(edited.sourceID) else {throw IntegrationError.readOnly}
-            let receipt=try await createItem(request:request,baseline:baseline,edited:edited,scope:"tool",valid:valid)
-            return .init(message:"Created " + (edited.kind == .event ? "event: " : "reminder: ") + receipt.title,itemID:receipt.itemID)
+            enteredWriter = true
+            let saved=try await saveEdit(baseline:baseline,edited:edited,scope:scope,valid:valid)
+            let undo=NativeEditRules.supportsUndo(baseline:baseline,edited:edited,scope:scope) ? NativeEditUndo(original:baseline,saved:saved) : nil
+            return .init(message:"Updated " + (baseline.kind == .event ? "event: " : "reminder: ") + saved.title + (scope == .futureEvents ? " (this and all future events)" : scope == .reminderSeries ? " (repeating reminder)" : ""),itemID:saved.itemID,nativeUndo:undo)
+        } catch {
+            if !enteredWriter { throw NativePreSaveFailure(message: error.localizedDescription) }
+            throw error
         }
-        let target: NativeEditTarget
-        if draft.kind == .editReminder || draft.kind == .deleteReminder {
-            guard let reminder,allowedLists.contains(reminder.listID) else {throw IntegrationError.readOnly};target = .reminder(reminder)
-        } else {guard let event,allowedCalendars.contains(event.calendarID) else {throw IntegrationError.readOnly};target = .event(event)}
-        let baseline=try await editSession(target).item
-        if let expectedDetails {guard baseline == expectedDetails else {throw IntegrationError.missing}}
-        guard baseline.canEdit else {throw IntegrationError.readOnly}
-        let scope: NativeChangeScope
-        if baseline.recurring {
-            guard let raw=draft.scope,let resolved=NativeChangeScope(rawValue:raw) else {throw ActionFailure.message(baseline.kind == .event ? "Choose only this event or this and all future events." : "Choose the repeating reminder; its edit/delete affects future repeats.")};scope=resolved
-        } else {scope = .occurrence;guard draft.scope == nil || draft.scope == "occurrence" else {throw ActionFailure.message("This item is not recurring.")}}
-        if draft.kind == .deleteEvent || draft.kind == .deleteReminder {return .init(message:try await deleteItem(baseline:baseline,scope:scope,valid:valid),itemID:baseline.itemID)}
-        var edited=baseline;try edited.applyToolFields(draft)
-        let saved=try await saveEdit(baseline:baseline,edited:edited,scope:scope,valid:valid)
-        let undo=NativeEditRules.supportsUndo(baseline:baseline,edited:edited,scope:scope) ? NativeEditUndo(original:baseline,saved:saved) : nil
-        return .init(message:"Updated " + (baseline.kind == .event ? "event: " : "reminder: ") + saved.title + (scope == .futureEvents ? " (this and all future events)" : scope == .reminderSeries ? " (repeating reminder)" : ""),itemID:saved.itemID,nativeUndo:undo)
     }
 }
 

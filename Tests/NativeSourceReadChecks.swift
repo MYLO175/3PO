@@ -45,6 +45,19 @@ private final class CollectionClock: @unchecked Sendable {
         return count
     }
 }
+private final class PendingNativeFetch: @unchecked Sendable {
+    private let lock = NSLock()
+    private var callback: (([TaskItem]?) -> Void)?
+    private var cancellations = 0
+    private var finished = false
+    func register(_ callback: @escaping ([TaskItem]?) -> Void) -> (() -> Void) {
+        lock.lock(); self.callback = callback; lock.unlock()
+        return { self.lock.lock(); self.cancellations += 1; self.lock.unlock() }
+    }
+    func finish() { lock.lock(); finished = true; lock.unlock() }
+    var state: (registered: Bool, cancelled: Int, finished: Bool) { lock.lock(); defer { lock.unlock() }; return (callback != nil, cancellations, finished) }
+    func deliver(_ items: [TaskItem]?) { lock.lock(); let callback = callback; lock.unlock(); callback?(items) }
+}
 
 @main struct NativeSourceReadChecks {
     static func main() async throws {
@@ -114,6 +127,44 @@ private final class CollectionClock: @unchecked Sendable {
         } catch is CancellationError {
             check(true, "The production callback adapter must reject a cancelled successful result.")
         }
+
+        let pending = PendingNativeFetch()
+        let stopped = Task {
+            defer { pending.finish() }
+            let _: [TaskItem] = try await NativeSourceRead.fetchCancellableSnapshot(source: "Reminders", fetch: pending.register)
+        }
+        while !pending.state.registered { try await Task.sleep(for: .milliseconds(1)) }
+        stopped.cancel()
+        for _ in 0..<100 where !pending.state.finished { try await Task.sleep(for: .milliseconds(2)) }
+        check(pending.state.finished && pending.state.cancelled == 1, "Stop must release a held callback and cancel its provider exactly once.")
+        pending.deliver([newTask]); pending.deliver(nil)
+        do { try await stopped.value; preconditionFailure("A stopped fetch succeeded") } catch is CancellationError {}
+
+        let expired = PendingNativeFetch()
+        do {
+            let _: [TaskItem] = try await NativeSourceRead.fetchCancellableSnapshot(source: "Reminders", timeout: 0.01, fetch: expired.register)
+            preconditionFailure("A provider without a callback did not time out")
+        } catch NativeSourceReadError.timedOut(let source) { check(source == "Reminders" && expired.state.cancelled == 1, "Deadline must release the waiter and cancel the native request.") }
+        expired.deliver([newTask])
+
+        let registrationRace = PendingNativeFetch()
+        let race = Task {
+            let _: [TaskItem] = try await NativeSourceRead.fetchCancellableSnapshot(source: "Reminders", fetch: { callback in
+                withUnsafeCurrentTask { $0?.cancel() }
+                return registrationRace.register(callback)
+            })
+        }
+        do { try await race.value; preconditionFailure("Cancellation during registration succeeded") } catch is CancellationError {}
+        check(registrationRace.state.cancelled == 1, "Cancellation before the native token returns must still cancel that token.")
+        registrationRace.deliver([newTask])
+
+        let success = PendingNativeFetch()
+        let successTask = Task { try await NativeSourceRead.fetchCancellableSnapshot(source: "Reminders", timeout: 0.02, fetch: success.register) }
+        while !success.state.registered { try await Task.sleep(for: .milliseconds(1)) }
+        success.deliver([newTask]); success.deliver(nil)
+        let successful = try await successTask.value
+        try await Task.sleep(for: .milliseconds(30))
+        check(successful.map(\.id) == [newTask.id] && success.state.cancelled == 0, "Successful/duplicate callbacks must not later time out or cancel the provider.")
 
         let retainedHealth = SourceHealth(lastSuccess: oldSuccess, error: "Existing failure", loading: true)
         let failedCalendar = await NativeSourceCollection(snapshot: CalendarSnapshot(sources: [source], events: []), health: retainedHealth).collecting(read: { try await boundary.calendar(from: oldSuccess, to: refreshed) })

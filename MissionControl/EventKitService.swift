@@ -11,14 +11,22 @@ actor EventKitService: NativeSourceReading {
     private struct CompletionRecord {
         let originalID: String
         let originalDue: DateComponents?
-        let nextDue: DateComponents?
-        let detachedID: String?
+        let saved: NativeCompletionSnapshot
+        let detached: NativeCompletionSnapshot?
     }
     private var undoItems: [String: CompletionRecord] = [:]
     private func fetchedReminders(matching predicate: NSPredicate) async throws -> [EKReminder] {
-        try await NativeSourceRead.fetchSnapshot(source: "Reminders") { completion in
-            store.fetchReminders(matching: predicate, completion: completion)
-        }
+        try await NativeSourceRead.fetchCancellableSnapshot(source: "Reminders", fetch: { completion in
+            let token = store.fetchReminders(matching: predicate, completion: completion)
+            return { Task { self.cancelReminderFetch(token) } }
+        })
+    }
+    private func cancelReminderFetch(_ token: Any) {
+        store.cancelFetchRequest(token)
+    }
+    private func completionSnapshot(_ reminder: EKReminder) -> NativeCompletionSnapshot {
+        .init(details: editorDetails(reminder), dueComponents: reminder.dueDateComponents,
+              completed: reminder.isCompleted, completionDate: reminder.completionDate)
     }
     private func allReminders(in calendar: EKCalendar) async throws -> [EKReminder] {
         try await fetchedReminders(matching: store.predicateForReminders(in: [calendar]))
@@ -81,55 +89,71 @@ actor EventKitService: NativeSourceReading {
         }
     }
     func complete(id: String, valid: NativeWriteValidity? = nil, expected: NativeEditDetails? = nil) async throws -> String {
-        try await access(.reminder)
-        guard let item = store.calendarItem(withIdentifier: id) as? EKReminder, !item.isCompleted else { throw IntegrationError.missing }
-        guard item.calendar.allowsContentModifications else { throw IntegrationError.readOnly }
-        let baseline = expected ?? editorDetails(item)
-        guard editorDetails(item) == baseline else { throw IntegrationError.missing }
-        let originalDue = item.dueDateComponents
-        let title = item.title
-        let notes = item.notes
-        let calendar = item.calendar!
-        let wasRecurring = item.hasRecurrenceRules
-        let priorIDs = wasRecurring ? Set(try await allReminders(in: calendar).map(\.calendarItemIdentifier)) : []
-        if let valid {guard await valid() else {throw ActionFailure.message("Account, source or assistant controls changed before completion; nothing completed.")}}
-        try Task.checkCancellation()
-        // Permission/recurrence reads and the main-actor ownership callback can
-        // yield. Re-fetch and compare the complete captured record after all of
-        // them; never complete a newly edited occurrence under an old approval.
-        store.reset()
-        guard let current = store.calendarItem(withIdentifier:id) as? EKReminder,
-              !current.isCompleted, editorDetails(current) == baseline else { throw IntegrationError.missing }
-        guard current.calendar.allowsContentModifications else { throw IntegrationError.readOnly }
-        let saveStarted = Date.now
-        current.isCompleted = true
-        do { try store.save(current, commit: true) } catch { store.reset(); throw error }
-        guard let saved = store.calendarItem(withIdentifier: id) as? EKReminder else { throw IntegrationError.verification }
-        var detachedID: String?
-        if !saved.isCompleted {
-            // EventKit advances the original series and creates a detached completed occurrence.
-            guard wasRecurring, saved.dueDateComponents != originalDue else { throw IntegrationError.verification }
-            let after: [EKReminder]
-            do { after = try await allReminders(in: saved.calendar) }
-            catch { throw IntegrationError.verification }
-            let candidates = after.filter {
-                !priorIDs.contains($0.calendarItemIdentifier) && $0.isCompleted &&
-                $0.dueDateComponents == originalDue && $0.title == title && $0.notes == notes &&
-                ($0.completionDate ?? .distantPast) >= saveStarted.addingTimeInterval(-2)
+        var saveAttempted = false
+        do {
+            try await access(.reminder)
+            guard let item = store.calendarItem(withIdentifier: id) as? EKReminder, !item.isCompleted else { throw IntegrationError.missing }
+            guard item.calendar.allowsContentModifications else { throw IntegrationError.readOnly }
+            let baseline = expected ?? editorDetails(item)
+            guard editorDetails(item) == baseline else { throw IntegrationError.missing }
+            let originalDue = item.dueDateComponents
+            let title = item.title
+            let notes = item.notes
+            let calendar = item.calendar!
+            let wasRecurring = item.hasRecurrenceRules
+            let priorIDs = wasRecurring ? Set(try await allReminders(in: calendar).map(\.calendarItemIdentifier)) : []
+            if let valid {guard await valid() else {throw ActionFailure.message("Account, source or assistant controls changed before completion; nothing completed.")}}
+            try Task.checkCancellation()
+            // Permission/recurrence reads and the main-actor ownership callback can
+            // yield. Re-fetch and compare the complete captured record after all of
+            // them; never complete a newly edited occurrence under an old approval.
+            store.reset()
+            guard let current = store.calendarItem(withIdentifier:id) as? EKReminder,
+                  !current.isCompleted, editorDetails(current) == baseline else { throw IntegrationError.missing }
+            guard current.calendar.allowsContentModifications else { throw IntegrationError.readOnly }
+            let saveStarted = Date.now
+            current.isCompleted = true
+            saveAttempted = true
+            do { try store.save(current, commit: true) } catch { store.reset(); throw error }
+            store.reset()
+            guard let saved = store.calendarItem(withIdentifier: id) as? EKReminder else { throw IntegrationError.verification }
+            let savedSnapshot = completionSnapshot(saved)
+            var detached: NativeCompletionSnapshot?
+            if !saved.isCompleted {
+                // EventKit advances the original series and creates a detached completed occurrence.
+                guard wasRecurring, saved.dueDateComponents != originalDue else { throw IntegrationError.verification }
+                let after: [EKReminder]
+                do { after = try await allReminders(in: saved.calendar) }
+                catch { throw IntegrationError.verification }
+                let candidates = after.filter {
+                    !priorIDs.contains($0.calendarItemIdentifier) && $0.isCompleted &&
+                    $0.dueDateComponents == originalDue && $0.title == title && $0.notes == notes &&
+                    ($0.completionDate ?? .distantPast) >= saveStarted.addingTimeInterval(-2)
+                }
+                guard candidates.count == 1 else { throw IntegrationError.verification }
+                detached = completionSnapshot(candidates[0])
+                guard let unchanged = store.calendarItem(withIdentifier: id) as? EKReminder,
+                      completionSnapshot(unchanged) == savedSnapshot else { throw IntegrationError.verification }
             }
-            guard candidates.count == 1 else { throw IntegrationError.verification }
-            detachedID = candidates[0].calendarItemIdentifier
+            let token = UUID().uuidString
+            undoItems = [token: CompletionRecord(originalID: id, originalDue: originalDue, saved: savedSnapshot, detached: detached)]
+            return token
+        } catch {
+            store.reset()
+            if !saveAttempted { throw NativePreSaveFailure(message: error.localizedDescription) }
+            throw error
         }
-        let token = UUID().uuidString
-        undoItems = [token: CompletionRecord(originalID: id, originalDue: originalDue, nextDue: saved.dueDateComponents, detachedID: detachedID)]
-        return token
     }
     func undo(token: String) async throws {
+        store.reset()
         guard let record = undoItems[token], let item = store.calendarItem(withIdentifier: record.originalID) as? EKReminder else { throw IntegrationError.missing }
         guard item.calendar.allowsContentModifications else { throw IntegrationError.readOnly }
-        if let detachedID = record.detachedID {
-            guard !item.isCompleted, item.dueDateComponents == record.nextDue,
-                  let detached = store.calendarItem(withIdentifier: detachedID) as? EKReminder, detached.isCompleted,
+        let detached = record.detached.flatMap { store.calendarItem(withIdentifier: $0.details.itemID) as? EKReminder }
+        try NativeCompletionRules.validateUndo(saved: record.saved, current: completionSnapshot(item),
+                                              detached: record.detached, currentDetached: detached.map(completionSnapshot))
+        if let detachedID = record.detached?.details.itemID {
+            guard !item.isCompleted, item.dueDateComponents == record.saved.dueComponents,
+                  let detached, detached.isCompleted,
                   detached.dueDateComponents == record.originalDue,
                   detached.calendar.calendarIdentifier == item.calendar.calendarIdentifier else { throw IntegrationError.missing }
             item.dueDateComponents = record.originalDue

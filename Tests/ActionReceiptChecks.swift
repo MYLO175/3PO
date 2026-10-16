@@ -4,10 +4,13 @@ import SwiftData
 @MainActor private final class FictionalWriter: NativeActionWriting {
     var attempts = 0
     var fail = false
+    var failBeforeSave = false
+    var afterPreSaveFailure: (() -> Void)?
     var afterApply: (() -> Void)?
     var resultUndoToken: String?
     func applyTool(_ draft: ActionDraft, reminder: TaskItem?, event: AgendaEvent?, marker: String, allowedCalendars: Set<String>, allowedLists: Set<String>, expectedDetails: NativeEditDetails?, valid: NativeWriteValidity?) async throws -> ActionResult {
         attempts += 1
+        if failBeforeSave { afterPreSaveFailure?(); throw NativePreSaveFailure(message:"Fictional target changed before saving") }
         if fail { throw ActionFailure.message("Fictional uncertain native outcome") }
         afterApply?()
         return .init(message:"Fictional verified action",undoToken:resultUndoToken,itemID:"fictional-native-item")
@@ -158,6 +161,35 @@ import SwiftData
         let originalAfterFailedUndo = try await failedCompletion.performTool(draft,human:human,authorization:human,turnID:undoTurn,model:runtime,calendar:calendars,reminders:reminders)
         check(originalAfterFailedUndo.hasPrefix("Already applied:") && runtime.writer.attempts == attemptsBeforeUndoReceipt)
         check(failedCompletion.receiptSummary(registration:"fixture",turnID:undoTurn).confirmed == 1)
+        let preparedContainer = try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+        var rejectFailureSave = false
+        let preparedRepository = LocalRecordRepository(container:preparedContainer) { _ in if rejectFailureSave {throw Injected.failure} }
+        let preparedActions = AssistantActions(container:preparedContainer,repository:preparedRepository), preparedRuntime = FictionalRuntime(), preparedTurn = UUID()
+        preparedRuntime.writer.failBeforeSave = true
+        do { _ = try await preparedActions.performTool(draft,human:human,authorization:human,turnID:preparedTurn,model:preparedRuntime,calendar:calendars,reminders:reminders);check(false) }
+        catch is NativePreSaveFailure {}
+        check(preparedActions.receiptSummary(registration:"fixture",turnID:preparedTurn).pending == 0)
+        let preservedFailure = ActionReceiptStore(container:preparedContainer)
+        check(preservedFailure.entries.count == 1 && preservedFailure.entries.values.first?.preSaveFailure == "Fictional target changed before saving")
+        let reopenedPrepared = AssistantActions(container:preparedContainer)
+        preparedRuntime.writer.failBeforeSave = false
+        _ = try await reopenedPrepared.performTool(draft,human:human,authorization:human,turnID:preparedTurn,model:preparedRuntime,calendar:calendars,reminders:reminders)
+        let retried = ActionReceiptStore(container:preparedContainer)
+        check(preparedRuntime.writer.attempts == 2 && retried.entries.count == 1)
+        check(retried.entries.values.first?.preSaveFailure == nil && retried.entries.values.first?.preSaveFailureHistory?.count == 1)
+        check(reopenedPrepared.receiptSummary(registration:"fixture",turnID:preparedTurn).confirmed == 1)
+        let failedProofTurn = UUID()
+        let proofActions = AssistantActions(container:preparedContainer,repository:preparedRepository)
+        preparedRuntime.writer.failBeforeSave = true
+        preparedRuntime.writer.afterPreSaveFailure = { rejectFailureSave = true }
+        do { _ = try await proofActions.performTool(draft,human:human,authorization:human,turnID:failedProofTurn,model:preparedRuntime,calendar:calendars,reminders:reminders);check(false) }
+        catch is PANativeActionUncertainty {}
+        rejectFailureSave = false; preparedRuntime.writer.afterPreSaveFailure = nil
+        check(proofActions.receiptSummary(registration:"fixture",turnID:failedProofTurn).pending == 1)
+        let proofReopened = AssistantActions(container:preparedContainer), beforeBlocked = preparedRuntime.writer.attempts
+        do { _ = try await proofReopened.performTool(draft,human:human,authorization:human,turnID:failedProofTurn,model:preparedRuntime,calendar:calendars,reminders:reminders);check(false) }
+        catch is PANativeActionUncertainty {}
+        check(preparedRuntime.writer.attempts == beforeBlocked)
         print("Action receipt checks passed: actual begin failure, no native attempt, later save/reopen, persistent uncertain outcome, completion failure, Undo and corrupt-original preservation.")
     }
 }

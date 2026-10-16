@@ -4,6 +4,24 @@ import Foundation
         var calendar = Calendar(identifier:.gregorian); calendar.timeZone = TimeZone(identifier:"Europe/London")!
         func date(_ day: Int, _ hour: Int = 0) -> Date { calendar.date(from:DateComponents(year:2026,month:10,day:day,hour:hour))! }
         let base = NativeEditDetails(kind:.event,itemID:"stable",occurrenceID:"occurrence",sourceID:"calendar",title:"Same title",notes:"Original notes",start:date(25,1),end:date(25,3),writable:true)
+        let displayed = TaskItem(id:"recurring",listID:"list",title:"Prepare report",due:date(24),hasTime:false,sourceLabel:"Fictional",writable:true,recurring:true,modified:date(23))
+        let displayedDetails = NativeEditDetails(kind:.reminder,itemID:displayed.id,occurrenceID:displayed.id,sourceID:displayed.listID,title:displayed.title,notes:"Exact notes",due:displayed.due,recurring:true,writable:true,modified:displayed.modified)
+        try NativeCompletionRules.validateDisplayed(displayed, details: displayedDetails)
+        func rejectsDisplayed(_ value: NativeEditDetails) { do { try NativeCompletionRules.validateDisplayed(displayed, details:value); preconditionFailure("Stale displayed completion accepted") } catch {} }
+        var advanced = displayedDetails; advanced.due = date(25); rejectsDisplayed(advanced)
+        advanced = displayedDetails; advanced.title = "Changed title"; rejectsDisplayed(advanced)
+        advanced = displayedDetails; advanced.sourceID = "moved-list"; rejectsDisplayed(advanced)
+        advanced = displayedDetails; advanced.modified = date(24); rejectsDisplayed(advanced)
+        let completion = NativeCompletionSnapshot(details:displayedDetails,dueComponents:calendar.dateComponents([.year,.month,.day],from:date(24)),completed:true,completionDate:date(24,10))
+        try NativeCompletionRules.validateUndo(saved:completion,current:completion,detached:nil,currentDetached:nil)
+        func rejectsCompletionUndo(_ current:NativeCompletionSnapshot,_ expectedDetached:NativeCompletionSnapshot? = nil,_ actualDetached:NativeCompletionSnapshot? = nil) {do {try NativeCompletionRules.validateUndo(saved:completion,current:current,detached:expectedDetached,currentDetached:actualDetached);preconditionFailure("Stale completion Undo accepted")} catch {}}
+        var laterCompletion=completion;laterCompletion.completionDate=date(24,11);rejectsCompletionUndo(laterCompletion)
+        laterCompletion=completion;laterCompletion.details.notes="External notes";rejectsCompletionUndo(laterCompletion)
+        laterCompletion=completion;laterCompletion.details.recurrenceRules=[.init(frequency:"weekly")];rejectsCompletionUndo(laterCompletion)
+        laterCompletion=completion;laterCompletion.details.sourceID="moved-list";rejectsCompletionUndo(laterCompletion)
+        rejectsCompletionUndo(completion,completion,nil)
+        laterCompletion=completion;laterCompletion.details.notes="External detached edit";rejectsCompletionUndo(completion,completion,laterCompletion)
+        try NativeCompletionRules.validateUndo(saved:completion,current:completion,detached:completion,currentDetached:completion)
         var draft = base; draft.title = "Updated"; draft.notes = "Updated notes"; try NativeEditRules.validate(draft,baseline:base)
         func rejects(_ value: NativeEditDetails, _ original: NativeEditDetails) { do { try NativeEditRules.validate(value,baseline:original); preconditionFailure("Invalid edit accepted") } catch {} }
         var wrong = draft; wrong.itemID = "duplicate-title-other-ID"; rejects(wrong,base)

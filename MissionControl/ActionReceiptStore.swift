@@ -12,6 +12,10 @@ struct ActionLedgerEntry: Codable {
     var clearedMarker: Bool?
     var turnID: UUID?
     var registration: String?
+    /// A writer's typed proof that no native mutation was attempted. Absence
+    /// retains the original conservative uncertain-operation contract.
+    var preSaveFailure: String?
+    var preSaveFailureHistory: [String]?
 }
 
 /// Durable action history. Claiming storage succeeds before any native operation
@@ -43,12 +47,12 @@ struct ActionLedgerEntry: Codable {
             let saved = try repository.decode("assistantActionLedger", as: [String: ActionLedgerEntry].self) ?? [:]
             let owned = saved.values.filter { $0.registration == registration && $0.turnID == turnID && $0.undone != true }
             return .init(confirmed: owned.filter { $0.result != nil }.count,
-                         pending: owned.filter { $0.result == nil }.count, readable: true)
+                         pending: owned.filter { $0.result == nil && $0.preSaveFailure == nil }.count, readable: true)
         } catch { return .init(confirmed: 0, pending: 0, readable: false) }
     }
     func complete(_ key: String, result: String, itemID: String?, undoToken: String? = nil,
                   fixtureTitle: String? = nil, fixtureNotes: String? = nil) throws {
-        guard var entry = entries[key], entry.result == nil else { throw ActionFailure.message("The native operation's pending receipt is unavailable; check the original before continuing.") }
+        guard var entry = entries[key], entry.result == nil, entry.preSaveFailure == nil else { throw ActionFailure.message("The native operation's pending receipt is unavailable; check the original before continuing.") }
         let before = entries
         entry.result = result; entry.itemID = itemID; entry.undoToken = undoToken
         entry.fixtureTitle = fixtureTitle; entry.fixtureNotes = fixtureNotes
@@ -56,13 +60,24 @@ struct ActionLedgerEntry: Codable {
         do { try save() } catch { entries = before; throw error }
     }
     func begin(_ key: String, turnID: UUID? = nil, registration: String? = nil) throws {
-        if let prior = entries[key], prior.undone != true {
+        if let prior = entries[key], prior.undone != true && prior.preSaveFailure == nil {
             throw ActionFailure.message("This operation already has a receipt. Check the original; no repeated save.")
         }
         let before = entries
-        entries[key] = ActionLedgerEntry(turnID: turnID, registration: registration)
+        var entry = ActionLedgerEntry(turnID: turnID, registration: registration)
+        if let prior = entries[key] {
+            entry.preSaveFailureHistory = prior.preSaveFailureHistory
+            if let failure = prior.preSaveFailure { entry.preSaveFailureHistory = (prior.preSaveFailureHistory ?? []) + [prior.attempted.ISO8601Format() + " " + failure] }
+        }
+        entries[key] = entry
         do { try save() }
         catch { entries = before; throw error }
+    }
+    func failedBeforeSave(_ key: String, failure: NativePreSaveFailure) throws {
+        guard var entry = entries[key], entry.result == nil, entry.preSaveFailure == nil else { throw IntegrationError.verification }
+        let before = entries
+        entry.preSaveFailure = String(failure.message.prefix(1000)); entries[key] = entry
+        do { try save() } catch { entries = before; throw error }
     }
 }
 
