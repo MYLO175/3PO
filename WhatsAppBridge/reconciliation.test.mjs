@@ -52,10 +52,21 @@ test('exact and chat deletions reject old history while allowing new chat messag
 
 test('receipt-only updates and malformed identities do not mutate text; non-text edits remove it',()=>{
   const cache=new ReceivedTextCache();cache.ingest([original()]);
-  cache.update([{key:{remoteJid:'a',id:'same'},update:{status:4}},{key:{id:'same'},update:{message:null}}]);
+  const before=cache.messages;
+  assert.equal(cache.update([{key:{remoteJid:'a',id:'same'},update:{status:4}},{key:{id:'same'},update:{message:null}}]),false);
+  assert.equal(cache.messages,before,'status-only events do not even rebuild the bounded message snapshot');
   assert.equal(cache.messages['a:same'].text,'Original');
   cache.update([{key:{remoteJid:'a',id:'same'},update:{message:{imageMessage:{}}}}]);
   cache.ingest([original()]);assert.equal(cache.messages['a:same'],undefined);
+});
+
+test('a large receipt-only batch requires no persistence or publication',()=>{
+  const messages=Object.fromEntries(Array.from({length:2000},(_,i)=>['a:'+i,{id:'a:'+i,chat:'a',sender:'Fixture',text:'x'.repeat(5000),time:100000,sentByMe:true}]));
+  const cache=new ReceivedTextCache(messages),before=cache.messages;
+  const updates=Array.from({length:2000},(_,i)=>({key:{remoteJid:'a',id:String(i)},update:{status:4}}));
+  assert.equal(cache.update(updates),false);
+  assert.equal(cache.messages,before);
+  assert.equal(Object.keys(cache.entries).length,0);
 });
 
 test('cache bytes, Unicode truncation and replay journal remain bounded',()=>{

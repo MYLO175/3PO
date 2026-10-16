@@ -283,6 +283,10 @@ import SwiftData
         _=try receiptStore.create([.init(registration:"history",kind:.task,title:"New task")],receipt:.init(id:"operation-2000",registration:"history",result:"Saved",itemID:nil))
         precondition(LifeWorkspaceStore(container:receiptContainer).receipt("operation-0",registration:"history") != nil)
         rejects {_=try receiptStore.create([.init(registration:"history",kind:.task,title:"Replay")],receipt:history[0])}
+        let deletedHistory=(0..<5000).map {index -> LifeItem in
+            var item=LifeItem(registration:"archive",kind:.task,title:"Retained \(index)");item.deletedAt = .now;item.deletedRoot=item.id;return item
+        }
+        try LifeWorkspaceRules.validate(LifeWorkspaceState(items:deletedHistory+[.init(registration:"archive",kind:.task,title:"Active task")]))
         try LifeWorkspaceIndexChecks.run()
         print("PASS: project persistence, identity, scope, dates, hierarchy, receipts, corrupt-store preservation, bookmarks, stale notes/Undo, direct folder contents, legacy stages, exact progress, guarded board changes/Undo folder ordering/reload/metadata/Undo/gesture targets, styled/multiple notes/reload/stale edits and note deletion Undo")
     }

@@ -184,7 +184,7 @@ enum LifeWorkspaceRules {
     }
     static func validate(_ state: LifeWorkspaceState) throws {
         func require(_ condition: Bool, _ message: String) throws { if !condition { throw LifeWorkspaceFailure.message(message) } }
-        try require(state.version == 1 && state.items.count <= 5000 && state.links.count <= 10000, "Project storage has an unsupported format or size.")
+        try require(state.version == 1 && state.items.filter{$0.deletedAt == nil}.count <= 5000 && state.links.count <= 10000, "Project storage has an unsupported format or size.")
         try require(Set(state.items.map(\.id)).count == state.items.count && Set(state.links.map(\.id)).count == state.links.count && Set(state.receipts.map(\.id)).count == state.receipts.count, "Duplicate project identities were rejected.")
         let byID = Dictionary(state.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         for receipt in state.receipts { try require(!receipt.id.isEmpty && !receipt.registration.isEmpty && receipt.result.count <= 2000, "An operation receipt is invalid.") }

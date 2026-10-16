@@ -222,7 +222,14 @@ struct CalendarRemovalReviewSession:Identifiable {
             #endif
             let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Mission Control", isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            do { personalStorageLease = try LocalRecordFileLease(url: directory.appendingPathComponent("application-writer.lock")) }
+            do {
+                // Older copies do not know the lease protocol. Refuse an
+                // already running registered copy before opening personal data.
+                guard !NSWorkspace.shared.runningApplications.contains(where: {
+                    $0.bundleIdentifier == "com.mylomichael.missioncontrol" && $0.processIdentifier != ProcessInfo.processInfo.processIdentifier
+                }) else { throw LocalRecordFailure.busy }
+                personalStorageLease = try LocalRecordFileLease(url: directory.appendingPathComponent("application-writer.lock"))
+            }
             catch { storageOwnershipBlocked = true; throw error }
             let configuration = ModelConfiguration(url: directory.appendingPathComponent("Dashboard.store"), cloudKitDatabase: .none)
             container = try ModelContainer(for: CachedDashboard.self, configurations: configuration)

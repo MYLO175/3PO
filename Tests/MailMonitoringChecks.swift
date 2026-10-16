@@ -126,8 +126,8 @@ import Foundation
         var partialIndex=MailIndexState();partialIndex.prepare(accounts:prepared.accounts,now:now,calendar:calendar)
         for (id,error) in prepared.failures {partialIndex.failed(id,detail:error,now:now)}
         assert(partialIndex.available("b",now:now) && !partialIndex.available("a",now:now) && partialIndex.monitors?.contains{$0.accountID == "a"} == true)
-        let removed=try MailDiscovery(accounts:[accounts[1]],errors:[]).collection(retaining:accounts)
-        assert(removed.accounts.map(\.id) == ["b"],"Successfully discovered account removal still takes effect")
+        let removedDiscovery=try MailDiscovery(accounts:[accounts[1]],errors:[]).collection(retaining:accounts)
+        assert(removedDiscovery.accounts.map(\.id) == ["b"],"Successfully discovered account removal still takes effect")
         let legacyPartial=try MailDiscovery(accounts:[accounts[1]],errors:["Account a: Inbox unavailable"]).collection(retaining:accounts)
         assert(legacyPartial.accounts.count == 2 && legacyPartial.healthy.count == 1,"Legacy helper errors retain known failed accounts")
         print("PASS Mail monitoring: legacy migration, late-delivery overlap and arrival watermark, immutable interrupted cursors, bounded rotating audit/history, per-account retry isolation including discovery, offline catch-up, source removal and exact-range reconciliation")

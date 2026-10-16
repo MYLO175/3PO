@@ -72,7 +72,7 @@ async function connect() {
   on('messaging-history.set',({messages,chats,contacts})=>{updateChats(chats);updateContacts(contacts);ingest(messages);});
   on('chats.upsert',updateChats);on('chats.update',updateChats);on('contacts.upsert',updateContacts);on('contacts.update',updateContacts);
   on('lid-mapping.update',({lid,pn})=>{names.mapping(lid,pn);save('names.enc',names.snapshot());emitChats();});
-  on('messages.update',updates=>{cache.update(updates);publishMessages();});
+  on('messages.update',updates=>{if(cache.update(updates))publishMessages();});
   on('messages.delete',event=>{cache.delete(event);publishMessages();});
   on('chats.delete',ids=>{for(const jid of ids??[]){delete state.chats[jid];cache.delete({all:true,jid});}save('chats.enc',state.chats);ingest([]);});
   on('connection.update',async update=>{

@@ -22,6 +22,19 @@ function fixture({names=['Inbox','Sent','Archive'],enabled=true,before=false,aft
 }
 const request={accountID:'fixture-account',messageID:42,expectedInternetMessageID:'fixture@example.invalid'};
 
+test('account discovery returns healthy inboxes and exact failed-account identities together',()=>{
+  const healthyBoxes=[()=>({name:()=> 'Inbox'})];healthyBoxes.name=()=>['Inbox'];
+  const brokenBoxes=[];brokenBoxes.name=()=>[];
+  const accounts=[
+    {enabled:()=>true,id:()=> 'healthy',name:()=> 'Healthy',mailboxes:healthyBoxes},
+    {enabled:()=>true,id:()=> 'broken',name:()=> 'Broken',mailboxes:brokenBoxes}
+  ];
+  const result=reader().probeInboxes({accounts:()=>accounts});
+  assert.deepEqual(Array.from(result.accounts,account=>account.id),['healthy']);
+  assert.deepEqual(Array.from(result.unavailableAccounts,account=>account.id),['broken']);
+  assert.equal(result.errors.length,1);assert.ok(result.accountErrors.broken.startsWith('Account broken:'));
+});
+
 test('actual JXA helper previews exact Inbox/Sent/Archive sources with unchanged unread state and no writes',()=>{
   for(const name of ['Inbox','Sent','Archive'])for(const state of [false,true,0,1]){
     const f=fixture({before:state}),context=reader();

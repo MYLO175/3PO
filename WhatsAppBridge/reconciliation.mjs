@@ -31,6 +31,7 @@ export class ReceivedTextCache {
     this.reconcile();
   }
   update(updates = [], now = Date.now()) {
+    let changed=false;
     for (const { key, update } of updates) {
       const id = keyID(key);
       if (!id || !update || !Object.hasOwn(update, 'message')) continue;
@@ -38,8 +39,10 @@ export class ReceivedTextCache {
       // Revocation is final for this exact message identity, including when the
       // original has not arrived yet. Status/receipt-only updates are ignored.
       if (update.message === null) {
+        if(previous?.kind==='delete')continue;
         this.entries[id] = { kind: 'delete', updatedAt: now };
         delete this.messages[id];
+        changed=true;
         continue;
       }
       if (!update.message || previous?.kind === 'delete') continue;
@@ -47,14 +50,17 @@ export class ReceivedTextCache {
       if (previous && updatedAt < previous.updatedAt) continue;
       const original = this.messages[id];
       const value = textMessage({ key, message: update.message, messageTimestamp: original ? original.time / 1000 : updatedAt / 1000 });
-      this.entries[id] = value ? { kind: 'edit', text: value.text, updatedAt } : { kind: 'delete', updatedAt };
+      const entry=value ? { kind: 'edit', text: value.text, updatedAt } : { kind: 'delete', updatedAt };
+      if(previous?.kind===entry.kind&&previous?.text===entry.text&&previous?.updatedAt===entry.updatedAt)continue;
+      this.entries[id] = entry;changed=true;
       if (original) {
         const revised = this.apply(original);
         if (revised) this.messages[id] = revised;
         else delete this.messages[id];
       }
     }
-    this.reconcile();
+    if(changed)this.reconcile();
+    return changed;
   }
   delete({ keys, jid, all } = {}, now = Date.now()) {
     if (all && typeof jid === 'string') {

@@ -35,6 +35,7 @@ async function exerciseReader(switchAccount=false) {
       setTimeout(async()=>{
         ev.emit('connection.update',{connection:'open'});
         ev.emit('messages.upsert',{messages:[message('a'),message('b')]});
+        for(let receipt=0;receipt<1000;receipt++)ev.emit('messages.update',[{key:{remoteJid:'a',id:'same'},update:{status:4}}]);
         if(index===1){
           ev.emit('connection.update',{qr:'disposable fixture only'});
           ev.emit('messages.update',[{key:{remoteJid:'a',id:'same'},update:{messageTimestamp:200,message:{editedMessage:{message:{conversation:'Corrected'}}}}}]);
@@ -82,6 +83,7 @@ async function exerciseReader(switchAccount=false) {
     child.stdin.write(JSON.stringify({action:'start',directory:join(root,'storage'),key:key.toString('base64')})+'\n');
     await finished;
     const final=events.filter(event=>event.type==='messages').at(-1);
+    assert.ok(events.filter(event=>event.type==='messages').length<10,'receipt-only updates never publish an unchanged complete cache');
     assert.deepEqual(final.messages.map(message=>[message.id,message.text]),switchAccount?[['a:same','Original'],['b:same','Original']]:[['a:same','Corrected']]);
     const snapshot=events.find(event=>event.snapshotID==='fixture-heartbeat');
     assert.deepEqual(snapshot.messages,final.messages);
