@@ -28,7 +28,7 @@ import Observation
     }
     func automatic(_ registration:String)->Bool { readable && state.accounts[registration]?.automatic == true }
     func setAutomatic(_ value:Bool,registration:String) {
-        guard readable,!registration.isEmpty else { return }
+        guard readable,!registration.isEmpty,(state.accounts[registration]?.automatic ?? false) != value else { return }
         let prior=state;state.accounts[registration,default:.init()].automatic=value
         do { try save();revision=UUID();if !value { cancel() } } catch { state=prior;self.error=error.localizedDescription }
     }
@@ -55,17 +55,18 @@ import Observation
         guard !records.isEmpty,let input=try? MemoryReviewRules.input(records,now:now),model.learningBudget.claim(registration,manual:manual,now:model.now(),lane:.maintenance) else { return }
         let prior=state;state.accounts[registration,default:.init()].paused=true;state.accounts[registration]?.lastAttempt=now
         do { try save() } catch { state=prior;self.error=error.localizedDescription;return }
-        let captured=revision,memoryRevision=memory.revision,selectedModel=model.inference.selectedModel
+        let captured=revision,memoryControls=memory.controlsRevision,selectedModel=model.inference.selectedModel
+        let issued=Dictionary(uniqueKeysWithValues:records.map{($0.id,$0)})
         ownedHeartbeatRunID=model.ownedHeartbeatRunID;busy=true;error=nil;status="Reviewing \(records.count) human facts; no edits will be made…"
         task=Task {
             defer { ownedHeartbeatRunID=nil;busy=false }
             do {
                 try model.validateOwnership()
-                guard registration == model.inference.activeID,captured == revision,memoryRevision == memory.revision,selectedModel == model.inference.selectedModel,memory.enabled,memory.learningEnabled,!model.assistant.busy,!model.assistant.hasDraft,!model.writing else { throw MemoryLearningFailure.changed }
+                guard registration == model.inference.activeID,captured == revision,memoryControls == memory.controlsRevision,selectedModel == model.inference.selectedModel,memory.enabled,memory.learningEnabled,!model.assistant.busy,!model.assistant.hasDraft,!model.writing,issued.allSatisfy({id,record in memory.records.contains{$0.id == id && $0 == record && MemoryReviewRules.eligible($0,registration:registration)}}) else { throw MemoryLearningFailure.changed }
                 try model.claimInference()
                 let output=try await model.inference.streamResponse(input:[["role":"user","content":input]],instructions:MemoryReviewRules.instructions,model:selectedModel,purpose:.organisation) { _ in }
                 try model.validateOwnership()
-                guard registration == model.inference.activeID,captured == revision,memoryRevision == memory.revision,selectedModel == model.inference.selectedModel,memory.enabled,memory.learningEnabled,!model.assistant.busy,!model.assistant.hasDraft,!model.writing else { throw MemoryLearningFailure.changed }
+                guard registration == model.inference.activeID,captured == revision,memoryControls == memory.controlsRevision,selectedModel == model.inference.selectedModel,memory.enabled,memory.learningEnabled,!model.assistant.busy,!model.assistant.hasDraft,!model.writing,issued.allSatisfy({id,record in memory.records.contains{$0.id == id && $0 == record && MemoryReviewRules.eligible($0,registration:registration)}}) else { throw MemoryLearningFailure.changed }
                 guard let proposals=MemoryReviewRules.decode(output,records:records,registration:registration,now:now) else { throw MemoryLearningFailure.invalid }
                 let beforeSave=state
                 for proposal in proposals where !state.proposals.contains(where:{$0.id == proposal.id}) { state.proposals.append(proposal) }
