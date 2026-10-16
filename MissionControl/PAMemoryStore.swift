@@ -13,6 +13,10 @@ import SwiftData
     @ObservationIgnored private var restoringSettings = true
     private let container: ModelContainer?
     private var writable = true
+    private var loadedBytes: Data?
+    private var reviewPreferenceMigration: ReviewPreferenceConversion.Receipt?
+    private(set) var reviewPreferenceMigrationReadable = true
+    private(set) var reviewPreferenceMigrationError: String?
     @ObservationIgnored var notebookProjection: ((LifeNotebook,String,UUID?,Bool)->LifeNotebook)?
     @ObservationIgnored var notebookProjectionRevision: (() -> UUID)?
     @ObservationIgnored private var preparedNotebook: (key: NotebookKey, value: LifeNotebook)?
@@ -47,12 +51,29 @@ import SwiftData
         enabled = settings.object(forKey:"paMemoryEnabled") as? Bool ?? true
         learningEnabled = settings.object(forKey:"paMemoryLearningEnabled") as? Bool ?? true
         do {
-            if let record = try LocalRecordRepository.read("paMemory", container: container) {
+            if let container {
+                reviewPreferenceMigration = try ReviewPreferenceConversion.run(repository: LocalRecordRepository(container: container))
+            }
+            loadedBytes = try LocalRecordRepository.read("paMemory", container: container)
+            if let record = loadedBytes {
                 state = try MemoryEnvelope.decode(record)
                 guard Set(records.map(\.id)).count == records.count else { throw MemoryLearningFailure.invalid }
             }
-        } catch { writable = false; self.error = "Memory could not be read. The saved record is preserved; changes are disabled." }
+        } catch {
+            writable = false
+            reviewPreferenceMigrationReadable = false
+            reviewPreferenceMigrationError = "Saved memory or older attention preferences could not be safely converted. Original records are preserved; changes are disabled."
+            self.error = reviewPreferenceMigrationError
+        }
         restoringSettings = false
+    }
+    /// Old advice may retain exact legacy receipts. Validate only the immutable
+    /// conversion proof and unchanged current memory; never retrieve legacy data.
+    func matchesConvertedReviewPreference(id: String, revision: String, registration: String, direction: String) -> Bool {
+        guard reviewPreferenceMigrationReadable, let proof = reviewPreferenceMigration?.items.first(where: {
+            $0.memory.id.uuidString == id && $0.legacyRevision.uuidString == revision && $0.memory.registration == registration && $0.direction == direction
+        }) else { return false }
+        return records.contains { $0 == proof.memory && MemoryRules.usable($0, registration: registration) }
     }
     func items(_ registration: String) -> [PAMemory] { records.filter { $0.registration == registration }.sorted { $0.reviewed > $1.reviewed } }
     func suppressed(_ registration: String) -> Set<String> { state.suppressed[registration] ?? [] }
@@ -307,8 +328,9 @@ import SwiftData
         if cacheable { preparedNotebook = (key,value) }
         return value
     }
-    func notebook(_ registration:String,topic:UUID? = nil,includeTopics:Bool=false,now:Date = .now)->LifeNotebook {
-        prepareNotebook(enabled ? permittedRecords : [],registration:registration,topic:topic,includeTopics:includeTopics,now:now)
+    func notebook(_ registration:String,topic:UUID? = nil,includeTopics:Bool=false,now:Date = .now,includeSources:Bool = true,sourceFilter:((PAMemory)->Bool)? = nil)->LifeNotebook {
+        let candidates = (includeSources ? permittedRecords : records.filter{$0.source == nil}).filter{$0.source == nil || (sourceFilter?($0) ?? true)}
+        return prepareNotebook(enabled ? candidates : [],registration:registration,topic:topic,includeTopics:includeTopics,now:now)
     }
     func selection(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, focus:[LifeArea] = [],includeSources:Bool = true,sourceFilter:((PAMemory)->Bool)? = nil,now:Date = .now) -> MemorySelection {
         guard enabled else { return MemorySelection(records:[],eligibleCount:0) }
@@ -329,8 +351,81 @@ import SwiftData
             for index in state.records.indices where state.records[index].supersededBy == nil && CommitmentRules.groupKey(state.records[index]) == key { state.records[index].commitmentGroupRevision=version }
         }
         do {
-            try LocalRecordRepository(container: container).save(state, key: "paMemory")
+            let data = try LocalRecordCoding.preservingUnknown(state, original: ReviewPreferenceConversion.envelopeOriginal(loadedBytes))
+            try LocalRecordRepository(container: container).write(["paMemory": data], expected: ["paMemory": LocalRecordVersion(loadedBytes)])
+            loadedBytes = data
             revision = UUID(); error = nil; return true
         } catch { state = old; self.error = "Memory change could not be saved."; return false }
+    }
+}
+
+/// A storage conversion, never a second retrieval path. The receipt retains the
+/// original revision/evidence and proves an identical legacy batch was consumed.
+enum ReviewPreferenceConversion {
+    static let legacyKey = "reviewRelevancePreferences"
+    static let receiptKey = "reviewPreferenceConversion.v1"
+    struct Legacy: Codable {
+        var id: UUID
+        var registration: String
+        var topic: String
+        var direction: String
+        var revision: UUID
+        var inactive: Bool
+    }
+    struct Item: Codable {
+        var legacyRevision: UUID
+        var direction: String
+        var memory: PAMemory
+    }
+    struct Receipt: Codable {
+        var version = 1
+        var original: Data
+        var migratedAt: Date
+        var items: [Item]
+    }
+    /// Preserve opaque fields even when converting the old bare memory array.
+    static func envelopeOriginal(_ data: Data?) throws -> Data? {
+        guard let data else { return nil }
+        let value = try JSONSerialization.jsonObject(with: data)
+        guard value is [Any] else { return data }
+        return Data("{\"version\":1,\"records\":".utf8) + data + Data(",\"suppressed\":{}}".utf8)
+    }
+    @MainActor static func run(repository: LocalRecordRepository, now: Date = .now) throws -> Receipt? {
+        let legacyBytes = try repository.read(legacyKey)
+        let receiptBytes = try repository.read(receiptKey)
+        let receipt = try receiptBytes.map { try JSONDecoder().decode(Receipt.self, from: $0) }
+        if let receipt {
+            guard receipt.version == 1, Set(receipt.items.map { $0.memory.id }).count == receipt.items.count else { throw LocalRecordFailure.unsupportedFields }
+        }
+        guard let legacyBytes else { return receipt }
+        let memoryBytes = try repository.read("paMemory")
+        if let receipt {
+            // An identical old backup must not resurrect deleted/edited memories.
+            guard receipt.original == legacyBytes else { throw LocalRecordFailure.changed }
+            try repository.write([:], removing: [legacyKey], expected: [legacyKey: .bytes(legacyBytes), receiptKey: LocalRecordVersion(receiptBytes), "paMemory": LocalRecordVersion(memoryBytes)])
+            return receipt
+        }
+        let values = try JSONDecoder().decode([Legacy].self, from: legacyBytes)
+        guard let rows = try JSONSerialization.jsonObject(with: legacyBytes) as? [[String: Any]], rows.count == values.count,
+              rows.allSatisfy({ Set($0.keys) == Set(["id", "registration", "topic", "direction", "revision", "inactive"]) }),
+              Set(values.map(\.id)).count == values.count,
+              values.allSatisfy({ !$0.registration.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !$0.topic.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.topic.count <= 300 && ["more", "less"].contains($0.direction) }) else { throw LocalRecordFailure.unsupportedFields }
+        var envelope = try memoryBytes.map(MemoryEnvelope.decode) ?? MemoryEnvelope()
+        guard Set(envelope.records.map(\.id)).count == envelope.records.count,
+              Set(envelope.records.map(\.id)).isDisjoint(with: values.map(\.id)) else { throw LocalRecordFailure.changed }
+        let items = values.map { value -> Item in
+            let words = (value.direction == "more" ? "Prioritise information about: " : "Give less attention to routine information about: ") + value.topic
+            var memory = PAMemory(registration: value.registration, text: words, kind: .preference, explicit: true, provenance: "Your earlier Review attention choice (converted locally)", created: now, reviewed: now, retiredAt: value.inactive ? now : nil, evidence: value.topic, certainty: .stated, durability: .stable)
+            memory.id = value.id
+            memory.reviewPreference = true
+            memory.reviewFeedback = words
+            memory.reviewContext = value.topic
+            return Item(legacyRevision: value.revision, direction: value.direction, memory: memory)
+        }
+        envelope.records.append(contentsOf: items.map(\.memory))
+        let proof = Receipt(original: legacyBytes, migratedAt: now, items: items)
+        let data = try LocalRecordCoding.preservingUnknown(envelope, original: envelopeOriginal(memoryBytes))
+        try repository.write(["paMemory": data, receiptKey: JSONEncoder().encode(proof)], removing: [legacyKey], now: now, expected: [legacyKey: .bytes(legacyBytes), "paMemory": LocalRecordVersion(memoryBytes), receiptKey: .missing])
+        return proof
     }
 }

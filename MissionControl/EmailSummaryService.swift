@@ -12,10 +12,8 @@ import SwiftData
     var effort = UserDefaults.standard.string(forKey: "emailSummaryEffort") ?? "medium" { didSet { UserDefaults.standard.set(effort, forKey: "emailSummaryEffort") } }
     private(set) var records: [EmailSummary] = [] {didSet{sourceProjectionRevision &+= 1}}
     @ObservationIgnored private(set) var sourceProjectionRevision=0
-    private(set) var relevancePreferences:[ReviewRelevancePreference]=[]
     private(set) var relevanceReadable=true
     let feedback:ReviewFeedbackJobs
-    private var preferenceUndo:([ReviewRelevancePreference],String,String)?
     var relevanceError:String?
     private var dismissedUndo: (String,String)?
     private var dismissalDate: Date?
@@ -104,38 +102,6 @@ import SwiftData
             if let saved = try LocalRecordRepository.read("emailSummaryRejections", container: container) { rejected = try JSONDecoder().decode([EmailSummaryRejection].self, from: saved) }
             if let saved = try LocalRecordRepository.read("mailHeaderDecisions", container: container) { decisions = try JSONDecoder().decode([EmailHeaderDecision].self,from: saved) }
         } catch { self.error = "Saved email summaries could not be loaded."; paused = true }
-        do {if let saved = try LocalRecordRepository.read("reviewRelevancePreferences", container: container) {let decoded=try JSONDecoder().decode([ReviewRelevancePreference].self,from: saved);guard EmailRelevanceRules.validPreferences(decoded) else {throw SummaryFailure.invalid};relevancePreferences=decoded}}
-        catch {relevanceReadable=false;relevanceError="Saved attention preferences are unavailable. Their storage is preserved."}
-    }
-    func preferences(_ registration:String,query:String? = nil)->[ReviewRelevancePreference] {
-        guard relevanceReadable else {return []}
-        let values=relevancePreferences.filter{$0.registration == registration && !$0.inactive}.sorted{$0.id.uuidString < $1.id.uuidString}
-        guard let query else {return Array(values.prefix(40))}
-        let terms=MemoryRetrieval.tokens(query)
-        return Array(values.filter{!MemoryRetrieval.tokens($0.topic).isDisjoint(with:terms)}.prefix(8))
-    }
-    func preferenceRevision(_ registration:String)->String {EmailNativeEvidence.hash(relevancePreferences.filter{$0.registration == registration}.sorted{$0.id.uuidString < $1.id.uuidString})}
-    func savePreference(_ value:ReviewRelevancePreference,expected:ReviewRelevancePreference?,model:DashboardModel)throws {
-        guard relevanceReadable,value.registration == model.chatGPT.activeID,["more","less"].contains(value.direction),!value.topic.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,value.topic.count <= 300 else {throw ActionFailure.message("The account or preference changed. Nothing was saved.")}
-        let previous=relevancePreferences
-        if let expected {guard expected.registration == value.registration,let current=relevancePreferences.first(where:{$0.id == expected.id}),current == expected,value.id == expected.id else {throw ActionFailure.message("This preference changed. Reopen it before saving.")}}
-        else {guard !relevancePreferences.contains(where:{$0.id == value.id}),preferences(value.registration).count < 40 else {throw ActionFailure.message("Review your existing preferences before adding another.")}}
-        var updated=value;updated.topic=value.topic.trimmingCharacters(in:.whitespacesAndNewlines);updated.revision=UUID()
-        guard EmailRelevanceRules.validPreferences(previous.filter{$0.id != value.id}+[updated]) else {throw ActionFailure.message("Review your existing preferences before restoring or adding another.")}
-        relevancePreferences.removeAll{$0.id == value.id};relevancePreferences.append(updated)
-        do {try savePreferences();preferenceUndo=(previous,value.registration,preferenceRevision(value.registration));relevanceError=nil}
-        catch {relevancePreferences=previous;throw error}
-    }
-    func undoPreference(_ model:DashboardModel)throws {
-        guard let (previous,registration,revision)=preferenceUndo,registration == model.chatGPT.activeID,revision == preferenceRevision(registration) else {throw ActionFailure.message("This preference can no longer be undone.")}
-        let retained=relevancePreferences
-        relevancePreferences=retained.filter{$0.registration != registration}+previous.filter{$0.registration == registration}
-        do {try savePreferences();preferenceUndo=nil;relevanceError=nil} catch {relevancePreferences=retained;throw error}
-    }
-    func canUndoPreference(_ registration:String)->Bool {preferenceUndo?.1 == registration}
-    private func savePreferences()throws {
-        guard relevanceReadable,let container else {throw SummaryFailure.invalid}
-        try LocalRecordRepository(container: container).save(relevancePreferences, key: "reviewRelevancePreferences")
     }
     func feedbackSourceCurrent(_ message:MailMessage,summary:EmailSummary,model:DashboardModel)->Bool {
         guard model.assistant.contextEnabled,summary.registration == model.chatGPT.activeID,!model.assistant.excludedAccounts.contains(message.accountID),model.mailData.accounts.contains(where:{$0.id == message.accountID}),let current=model.mailData.messages.first(where:{$0.id == message.id}),current.accountID == message.accountID,let saved=records.first(where:{$0.id == message.id && $0.registration == summary.registration}),saved.fingerprint == EmailSummary.fingerprint(current) else {return false}
