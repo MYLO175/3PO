@@ -88,13 +88,6 @@ struct EmailSummarySettings: View {
 }
 
 
-struct ReviewPreferenceDraft:Identifiable {
-    var id=UUID()
-    var value:ReviewRelevancePreference
-    var expected:ReviewRelevancePreference?
-    var isCurrent:()->Bool={true}
-    var onSaved:()->Void={}
-}
 struct ReviewFeedbackButton:View {
     @Bindable var model:DashboardModel
     var topic:String
@@ -192,41 +185,10 @@ struct ReviewFeedbackProgressView:View {
         }.font(.caption).controlSize(.small)
     }
 }
-struct ReviewRelevanceEditor:View {
-    @Bindable var model:DashboardModel
-    let draft:ReviewPreferenceDraft
-    @Environment(\.dismiss) private var dismiss
-    @State private var topic:String
-    @State private var direction:String
-    @State private var error:String?
-    init(model:DashboardModel,draft:ReviewPreferenceDraft) {
-        self.model=model;self.draft=draft;_topic=State(initialValue:draft.value.topic);_direction=State(initialValue:draft.value.direction)
-    }
-    var body:some View {
-        VStack(alignment:.leading,spacing:16) {
-            Text("Review preferences").font(.title2.weight(.semibold))
-            Text("Choose the kind of information this applies to. Future reviews and briefs will use your preference.").font(.callout)
-            TextField("Topic or kind of request",text:$topic).textFieldStyle(.roundedBorder).accessibilityLabel("Relevance topic")
-            Picker("Attention",selection:$direction) {Text("Less attention").tag("less");Text("Prioritise").tag("more")}.pickerStyle(.segmented)
-            Text("For example: society treasurer budget requests, or updates about my current engineering project. Other requests from the same sender can still matter.").font(.caption).foregroundStyle(.secondary)
-            if let error {Text(error).foregroundStyle(.orange).font(.caption)}
-            HStack {Button("Cancel") {dismiss()}.keyboardShortcut(.cancelAction);Spacer();Button("Save preference") {
-                do {
-                    guard draft.isCurrent(),draft.value.registration == model.chatGPT.activeID else {throw ActionFailure.message("The item or account changed. Reopen its feedback before saving.")}
-                    var value=draft.value;value.topic=topic;value.direction=direction
-                    try model.emailSummaries.savePreference(value,expected:draft.expected,model:model)
-                    if direction == "less" {draft.onSaved()}
-                    dismiss()
-                } catch {self.error=error.localizedDescription}
-            }.keyboardShortcut(.defaultAction).disabled(topic.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || topic.count > 300)}
-        }.padding(24).frame(width:520)
-    }
-}
 struct ReviewRelevancePreferencesView:View {
     @Bindable var model:DashboardModel
     private let registration:String
     @Environment(\.dismiss) private var dismiss
-    @State private var editing:ReviewPreferenceDraft?
     @State private var editingMemory:PAMemory?
     @State private var addingMemory=false
     @State private var error:String?
@@ -250,22 +212,13 @@ struct ReviewRelevancePreferencesView:View {
                         }.padding(12).background(Color.primary.opacity(0.04),in:RoundedRectangle(cornerRadius:10))
                     }
                     if model.assistant.memory.reviewPreferences(registration,includeRetired:true).isEmpty {Text("Use Feedback on an item to explain what matters to you, or add a preference below.").foregroundStyle(.secondary).padding(.vertical)}
-                    let legacy=model.emailSummaries.relevancePreferences.filter{$0.registration == registration}
-                    if !legacy.isEmpty {
-                        DisclosureGroup("Earlier topic preferences (\(legacy.count))") {
-                            ForEach(legacy) {value in
-                                HStack {VStack(alignment:.leading) {Text(value.topic);Text(value.inactive ? "Inactive" : value.direction == "more" ? "Prioritise" : "Less attention").font(.caption).foregroundStyle(.secondary)};Spacer();Button("Edit") {editing = .init(value:value,expected:value)}}.padding(.vertical,6)
-                            }
-                        }
-                    }
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
-            if let error=error ?? model.emailSummaries.relevanceError {Text(error).font(.caption).foregroundStyle(.orange)}
+            if let error=error ?? model.assistant.memory.reviewPreferenceMigrationError {Text(error).font(.caption).foregroundStyle(.orange)}
             HStack {
                 Button("Add preference…") {addingMemory=true}
-                if model.emailSummaries.canUndoPreference(registration) {Button("Undo last change") {do {try model.emailSummaries.undoPreference(model)} catch {self.error=error.localizedDescription}}}
                 Spacer()
             }
-        }.padding(24).frame(width:620,height:430).sheet(item:$editing) {ReviewRelevanceEditor(model:model,draft:$0)}.sheet(item:$editingMemory) {ReviewFeedbackEditor(model:model,expected:$0)}.sheet(isPresented:$addingMemory) {ReviewFeedbackEditor(model:model)}.onChange(of:model.chatGPT.activeID) {dismiss()}
+        }.padding(24).frame(width:620,height:430).sheet(item:$editingMemory) {ReviewFeedbackEditor(model:model,expected:$0)}.sheet(isPresented:$addingMemory) {ReviewFeedbackEditor(model:model)}.onChange(of:model.chatGPT.activeID) {dismiss()}
     }
 }

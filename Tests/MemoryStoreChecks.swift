@@ -4,7 +4,7 @@ import SwiftData
     @MainActor static func main() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly:true)
         let container = try ModelContainer(for:CachedDashboard.self,configurations:configuration)
-        let store = PAMemoryStore(container:container)
+        var store = PAMemoryStore(container:container)
         let reviewWords="Assessment submission confirmations can stay quiet. Assessment invitations, results and new stages are important to me."
         precondition(store.saveReviewPreference(reviewWords,registration:"review-account"))
         let preference=store.reviewPreferences("review-account")[0]
@@ -21,6 +21,8 @@ import SwiftData
         precondition(reviewReload.retire(revised.id,retired:false,expectedRevision:reviewReload.revision) && reviewReload.reviewPreferences("review-account").count == 1)
         precondition(!reviewReload.saveReviewPreference("",registration:"review-account") && !reviewReload.saveReviewPreference(String(repeating:"x",count:2001),registration:"review-account"))
         precondition(reviewReload.forget(revised.id) && reviewReload.reviewPreferences("review-account").isEmpty)
+        precondition(!store.forget(preference.id)) // A stale owner cannot overwrite the newer correction/Forget.
+        store = PAMemoryStore(container:container)
         precondition(store.forget(preference.id))
         precondition(store.saveReviewPreference("These can stay quiet, but new deadlines matter.",registration:"context-account",about:"Assessment submission confirmations"))
         let contextual=store.reviewPreferences("context-account")[0]
@@ -54,6 +56,7 @@ import SwiftData
         let unavailableRevision = unavailable.revision
         precondition(!unavailable.put(saved) && unavailable.records.isEmpty)
         precondition(unavailable.revision == unavailableRevision)
+        store = PAMemoryStore(container:container)
         let topic = UUID(), otherTopic = UUID()
         let topicEntry = PAMemory(registration:"scope-account",text:"My fictional study project is optics",kind:.context,provenance:"Test",conversationID:topic)
         let sharedEntry = PAMemory(registration:"scope-account",text:"I prefer short answers",kind:.preference,provenance:"Test")
@@ -100,6 +103,7 @@ import SwiftData
         precondition(reloadedHistory.records.allSatisfy{$0.registration != "history"} && reloadedHistory.suppressed("history").isSuperset(of:["original-turn","correction-turn"]))
         precondition(reloadedHistory.restoreForgotten(versions) && reloadedHistory.context("history").map{$0["text"]} == [original.text])
         precondition(!reloadedHistory.restoreForgotten(versions),"Undo cannot duplicate a restored lineage")
+        store = PAMemoryStore(container:container)
         let origin=MemorySourceIdentity(kind:.whatsapp,accountID:"source-account",containerID:"family",itemID:"message-1",linkedIdentity:"linked-test")
         let quote="Alex is starting a robotics project next week."
         let evidence=MemorySourceEvidence(identity:origin,revision:"version-1",label:"The Nest · fictional message",quote:quote,observed:.now,sourceDate:.now)
@@ -123,6 +127,10 @@ import SwiftData
         var same=sourceFact;same.id=UUID()
         precondition(store.putSource(same,sourceText:quote,expectedRevision:afterSource) && store.records.filter{$0.registration == "sources"}.count == 1)
         precondition(store.context("sources").first?["certainty"]?.contains("source interpretation") == true)
+        precondition(store.notebook("sources").eligibleCount == 1)
+        precondition(store.notebook("sources",includeSources:false).eligibleCount == 0)
+        precondition(store.notebook("sources",sourceFilter:{_ in false}).eligibleCount == 0)
+        precondition(store.notebook("sources",sourceFilter:{_ in true}).eligibleCount == 1)
         precondition(store.invalidateSource(origin,registration:"other",previousRevision:"version-1",reason:.deleted) && store.context("sources").count == 1)
         precondition(store.invalidateSource(origin,registration:"sources",previousRevision:"old-version",reason:.changed) && store.context("sources").count == 1)
         precondition(store.invalidateSource(origin,registration:"sources",previousRevision:"version-1",reason:.accessRemoved) && store.context("sources").isEmpty)
