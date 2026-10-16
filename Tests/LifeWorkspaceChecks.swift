@@ -251,6 +251,38 @@ import SwiftData
         rejects { _ = try unavailable.save(root, expected: nil) }
         let preserved = try broken.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first!.data
         precondition(preserved == bytes)
+        // Competing loaded snapshots must reject rather than overwrite newer data.
+        let ownedContainer=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+        let ownerA=LifeWorkspaceStore(container:ownedContainer),ownerB=LifeWorkspaceStore(container:ownedContainer)
+        let firstOwned=try ownerA.save(.init(registration:"owners",kind:.space,title:"First owner"),expected:nil)
+        rejects {_=try ownerB.save(.init(registration:"owners",kind:.space,title:"Stale owner"),expected:nil)}
+        precondition(LifeWorkspaceStore(container:ownedContainer).state.items.map(\.id) == [firstOwned.id])
+        // Preserve future additive metadata at every retained identity, including
+        // nested note formatting, without resurrecting a deliberately nil field.
+        let futureContainer=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+        let futureNote=LifeNote(text:"Future note",formatting:.init(length:11,runs:[.init(location:0,length:11,size:15,bold:true,italic:false)]))
+        let futureItem=LifeItem(registration:"future",kind:.space,title:"Future",additionalNotes:[futureNote])
+        var future=try JSONSerialization.jsonObject(with:JSONEncoder().encode(LifeWorkspaceState(items:[futureItem]))) as! [String:Any]
+        future["futureEnvelope"]="Retain me"
+        var futureItems=future["items"] as! [[String:Any]];futureItems[0]["futureItem"]=["value":42]
+        var futureNotes=futureItems[0]["additionalNotes"] as! [[String:Any]];futureNotes[0]["futureNote"]="Retain note metadata"
+        var format=futureNotes[0]["formatting"] as! [String:Any];format["futureFormatting"]=true
+        futureNotes[0]["formatting"]=format;futureItems[0]["additionalNotes"]=futureNotes;future["items"]=futureItems
+        try LocalRecordRepository(container:futureContainer).write(["lifeWorkspace":JSONSerialization.data(withJSONObject:future)])
+        let futureStore=LifeWorkspaceStore(container:futureContainer)
+        var revisedFuture=futureStore.state.items[0];revisedFuture.title="Ordinary edit"
+        _=try futureStore.save(revisedFuture,expected:revisedFuture.revision)
+        let roundtrip=try JSONSerialization.jsonObject(with:LocalRecordRepository(container:futureContainer).read("lifeWorkspace")!) as! [String:Any]
+        let savedFuture=(roundtrip["items"] as! [[String:Any]])[0],savedFutureNote=(savedFuture["additionalNotes"] as! [[String:Any]])[0]
+        precondition(roundtrip["futureEnvelope"] as? String == "Retain me" && savedFuture["futureItem"] != nil && savedFutureNote["futureNote"] != nil && (savedFutureNote["formatting"] as! [String:Any])["futureFormatting"] as? Bool == true)
+        // Crossing the former history cap must retain every operation identity.
+        let receiptContainer=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+        let history=(0..<2000).map{LifeWorkspaceReceipt(id:"operation-\($0)",registration:"history",result:"Saved",itemID:nil)}
+        try LocalRecordRepository(container:receiptContainer).save(LifeWorkspaceState(receipts:history),key:"lifeWorkspace")
+        let receiptStore=LifeWorkspaceStore(container:receiptContainer)
+        _=try receiptStore.create([.init(registration:"history",kind:.task,title:"New task")],receipt:.init(id:"operation-2000",registration:"history",result:"Saved",itemID:nil))
+        precondition(LifeWorkspaceStore(container:receiptContainer).receipt("operation-0",registration:"history") != nil)
+        rejects {_=try receiptStore.create([.init(registration:"history",kind:.task,title:"Replay")],receipt:history[0])}
         print("PASS: project persistence, identity, scope, dates, hierarchy, receipts, corrupt-store preservation, bookmarks, stale notes/Undo, direct folder contents, legacy stages, exact progress, guarded board changes/Undo folder ordering/reload/metadata/Undo/gesture targets, styled/multiple notes/reload/stale edits and note deletion Undo")
     }
 }

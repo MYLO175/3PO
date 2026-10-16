@@ -120,6 +120,16 @@ import Foundation
         let completedCollection=exhaustedBackoff.available(index:collecting,snapshot:original,excluded:["b"])
         assert(completedCollection.accountIDs == ["a"] && !completedCollection.pending,"Completed background collection clears outdated coverage issues without widening captured account scope")
         assert(MailReviewScope.collected(index:oldIndex,snapshot:original,excluded:[]).accountIDs.isEmpty,"Legacy rows without a successful source receipt are not asserted available")
-        print("PASS Mail monitoring: legacy migration, late-delivery overlap and arrival watermark, immutable interrupted cursors, bounded rotating audit/history, per-account retry isolation, offline catch-up, source removal and exact-range reconciliation")
+        let partial=try JSONDecoder().decode(MailDiscovery.self,from:Data(#"{"accounts":[{"id":"b","title":"Healthy"}],"errors":["Account a: Inbox unavailable"],"unavailableAccounts":[{"id":"a","title":"Unavailable"}],"accountErrors":{"a":"Account a: Inbox unavailable"}}"#.utf8))
+        let prepared=try partial.collection(retaining:accounts)
+        assert(Set(prepared.accounts.map(\.id)) == ["a","b"] && prepared.healthy.map(\.id) == ["b"] && prepared.failures["a"] != nil,"Partial account discovery keeps failed coverage while allowing the healthy lane")
+        var partialIndex=MailIndexState();partialIndex.prepare(accounts:prepared.accounts,now:now,calendar:calendar)
+        for (id,error) in prepared.failures {partialIndex.failed(id,detail:error,now:now)}
+        assert(partialIndex.available("b",now:now) && !partialIndex.available("a",now:now) && partialIndex.monitors?.contains{$0.accountID == "a"} == true)
+        let removed=try MailDiscovery(accounts:[accounts[1]],errors:[]).collection(retaining:accounts)
+        assert(removed.accounts.map(\.id) == ["b"],"Successfully discovered account removal still takes effect")
+        let legacyPartial=try MailDiscovery(accounts:[accounts[1]],errors:["Account a: Inbox unavailable"]).collection(retaining:accounts)
+        assert(legacyPartial.accounts.count == 2 && legacyPartial.healthy.count == 1,"Legacy helper errors retain known failed accounts")
+        print("PASS Mail monitoring: legacy migration, late-delivery overlap and arrival watermark, immutable interrupted cursors, bounded rotating audit/history, per-account retry isolation including discovery, offline catch-up, source removal and exact-range reconciliation")
     }
 }

@@ -115,6 +115,8 @@ struct CalendarRemovalReviewSession:Identifiable {
     }
     #endif
     var storageError: String?
+    private(set) var storageOwnershipBlocked = false
+    @ObservationIgnored private var personalStorageLease: LocalRecordFileLease?
     @ObservationIgnored private lazy var services = ApplicationServices(container: container, nativeSources: injectedNativeSources)
     var weather: WeatherService { get { services.weather } set { services.weather = newValue } }
     var chatGPT: ChatGPTConnection { services.chatGPT }
@@ -196,7 +198,7 @@ struct CalendarRemovalReviewSession:Identifiable {
             return
         }
         #endif
-        defer { chatGPT.usageStore = aiUsage }
+        defer { if !storageOwnershipBlocked { chatGPT.usageStore = aiUsage } }
         // Read all saved filters before observable property setters persist any
         // values; otherwise the first setter erases later filters during init.
         let savedCalendars = Set(UserDefaults.standard.stringArray(forKey: "excludedCalendars") ?? [])
@@ -220,12 +222,15 @@ struct CalendarRemovalReviewSession:Identifiable {
             #endif
             let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Mission Control", isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            do { personalStorageLease = try LocalRecordFileLease(url: directory.appendingPathComponent("application-writer.lock")) }
+            catch { storageOwnershipBlocked = true; throw error }
             let configuration = ModelConfiguration(url: directory.appendingPathComponent("Dashboard.store"), cloudKitDatabase: .none)
             container = try ModelContainer(for: CachedDashboard.self, configurations: configuration)
             restore()
         } catch { storageError = "Local cache unavailable: " + error.localizedDescription }
     }
     func start() {
+        guard !storageOwnershipBlocked else { return }
         guard !started else { return }; started = true
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--preview-review-conversation") || ProcessInfo.processInfo.arguments.contains("--preview-chat-approval") { return }
@@ -612,20 +617,21 @@ struct CalendarRemovalReviewSession:Identifiable {
         defer { mailHealth.loading = false }
         do {
             let discovery = try await mail.discoverAccounts()
-            if !discovery.errors.isEmpty { throw MailServiceError.mail(discovery.errors.joined(separator: "; ")) }
-            let accounts = discovery.accounts
+            let collection = try discovery.collection(retaining:mailData.accounts)
+            let accounts = collection.accounts
             mailIndex.discovered()
             let enabled = Set(accounts.map(\.id))
             mailData = MailSnapshot(messages: mailData.messages.filter { enabled.contains($0.accountID) && $0.received >= Date.now.addingTimeInterval(-30 * 86400) }, accounts: accounts, errors: [])
             mailIndex.prepare(accounts: accounts,lastCheck:mailHealth.lastSuccess)
+            for (id,error) in collection.failures {mailIndex.failed(id,detail:error)}
             persistMailCheckpoint()
             // All accounts get an arrival page before background work. Two arrival
             // pages/account/check; only one history/reconciliation page per five
             // minutes. Never recursively drain or rebuild the month's cache.
-            for account in accounts where mailIndex.available(account.id) {
+            for account in collection.healthy where mailIndex.available(account.id) {
                 if let window = mailIndex.monitor(account.id) { try await readMailPage(window,account:account) }
             }
-            for account in accounts where mailIndex.available(account.id) {
+            for account in collection.healthy where mailIndex.available(account.id) {
                 if let window = mailIndex.monitor(account.id) { try await readMailPage(window,account:account) }
                 if mailIndex.available(account.id), let window = mailIndex.background(account.id) { try await readMailPage(window,account:account) }
             }

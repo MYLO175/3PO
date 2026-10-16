@@ -264,14 +264,17 @@ function runBatch(mail, input) {
 }
 
 function probeInboxes(mail) {
-    const accounts = [], errors = [];
+    const accounts = [], errors = [], unavailableAccounts = [], accountErrors = {};
     mail.accounts().forEach(function(account) {
         if (!account.enabled()) return;
         const id = stringValue(account.id());
         try { accounts.push({ id: id, title: stringValue(account.name()), inbox: stringValue(resolveInbox(mail, account, id).name()) }); }
-        catch (error) { errors.push(accountError(id, error)); }
+        catch (error) {
+            const detail=accountError(id, error);errors.push(detail);accountErrors[id]=detail;
+            unavailableAccounts.push({id:id,title:stringValue(account.name())});
+        }
     });
-    return { accounts: accounts, errors: errors };
+    return { accounts: accounts, errors: errors, unavailableAccounts:unavailableAccounts, accountErrors:accountErrors };
 }
 function probeDates(mail,input) {
     return {checks:mail.accounts().filter(account=>account.enabled()).map(account=>{

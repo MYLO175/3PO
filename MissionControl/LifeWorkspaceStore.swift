@@ -18,6 +18,7 @@ struct LifeWorkspaceEditUndo {
     private let container: ModelContainer?
     private var writable = true
     private var edits: [String:LifeWorkspaceEditUndo] = [:]
+    private var loadedBytes: Data?
     var readOnly: Bool { !writable || container == nil }
     func undoEdit(_ registration: String) -> LifeWorkspaceEditUndo? {
         guard let ticket = edits[registration], state.items.contains(where: { $0.id == ticket.before.id && $0.registration == registration && $0.revision == ticket.savedRevision }), ticket.versions.allSatisfy({ id,version in state.items.contains{$0.id == id && $0.registration == registration && $0.revision == version} }) else { return nil }
@@ -35,7 +36,7 @@ struct LifeWorkspaceEditUndo {
         do {
             if let record = try LocalRecordRepository.read("lifeWorkspace", container: container) {
                 let value = try JSONDecoder().decode(LifeWorkspaceState.self, from: record)
-                try LifeWorkspaceRules.validate(value); state = value
+                try LifeWorkspaceRules.validate(value); state = value; loadedBytes = record
                 if state.items.contains(where:{$0.placement?.status == "running"}) {
                     var recovered=state
                     for index in recovered.items.indices where recovered.items[index].placement?.status == "running" {
@@ -118,7 +119,9 @@ struct LifeWorkspaceEditUndo {
         guard revision == expectedRevision,let root=state.items.first(where:{$0.id == id && $0.registration == registration && $0.deletedAt != nil}) else { throw LifeWorkspaceFailure.message("Deleted branch changed. Reopen Recently deleted.") }
         let batch=root.deletedRoot ?? root.id
         var candidate=state,before:[LifeItem]=[]
-        let ids=Set(state.items.filter{$0.registration == registration && $0.deletedRoot == batch && $0.deletedAt != nil}.map(\.id)).union([id])
+        // A child ID authorises only that subtree, never its unrequested siblings.
+        let subtree = LifeWorkspaceRules.descendants(id, in: state.items).union([id])
+        let ids=Set(state.items.filter{$0.registration == registration && $0.deletedRoot == batch && $0.deletedAt != nil && subtree.contains($0.id)}.map(\.id)).union([id])
         for index in candidate.items.indices where ids.contains(candidate.items[index].id) {
             before.append(candidate.items[index]);candidate.items[index].deletedAt=nil;candidate.items[index].deletedRoot=nil;candidate.items[index].revision=UUID();candidate.items[index].updated = .now
             if let parent=candidate.items[index].parentID,!ids.contains(parent),state.items.first(where:{$0.id == parent})?.deletedAt != nil { candidate.items[index].parentID=nil;candidate.items[index].sortOrder=nil }
@@ -225,15 +228,17 @@ struct LifeWorkspaceEditUndo {
     private func addReceipt(_ receipt: LifeWorkspaceReceipt?, to value: inout LifeWorkspaceState) throws {
         guard let receipt else { return }
         guard !value.receipts.contains(where: { $0.id == receipt.id }) else { throw LifeWorkspaceFailure.message("This operation already has a saved receipt. Read its result before continuing.") }
-        // Bound operation ledger without dropping interrupted/new work.
-        if value.receipts.count >= 2000 { value.receipts.removeFirst(value.receipts.count - 1999) }
+        // Operation identities are durable replay barriers. Result prose may be
+        // compacted separately, but never evict an identity by history length.
         value.receipts.append(receipt)
     }
     private func persist(_ value: LifeWorkspaceState) throws {
         guard writable, let container else { throw LifeWorkspaceFailure.message(error ?? "Project storage is unavailable. Your changes have not been saved.") }
         try LifeWorkspaceRules.validate(value)
         do {
-            try LocalRecordRepository(container: container).save(value, key: "lifeWorkspace")
+            let bytes = try LocalRecordCoding.preservingUnknown(value, original: loadedBytes)
+            try LocalRecordRepository(container: container).write(["lifeWorkspace": bytes], expected: ["lifeWorkspace": LocalRecordVersion(loadedBytes)])
+            loadedBytes = bytes
             state = value; revision = UUID(); error = nil
         } catch { self.error = "Projects could not be saved. Your editing draft is kept."; throw LifeWorkspaceFailure.message(self.error!) }
     }

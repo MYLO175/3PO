@@ -38,6 +38,15 @@ import SwiftData
         let ticket=reloaded.undoEdit(account)!
         if let sibling=ticket.others.first { var edited=reloaded.state.items.first{$0.id == sibling.id}!;let version=edited.revision;edited.title+=" changed";_ = try reloaded.save(edited,expected:version) }
         precondition(reloaded.state.items.contains{$0.id == a.id && $0.notes == "Human content"})
+        let childContainer=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+        let childStore=LifeWorkspaceStore(container:childContainer)
+        let parent=try childStore.save(.init(registration:account,kind:.space,title:"Parent"),expected:nil)
+        let selected=try childStore.save(.init(registration:account,kind:.task,title:"Selected",parentID:parent.id),expected:nil)
+        let sibling=try childStore.save(.init(registration:account,kind:.task,title:"Sibling",parentID:parent.id),expected:nil)
+        try childStore.trash(parent.id,registration:account,keepChildren:false,expectedRevision:childStore.revision)
+        try childStore.restore(selected.id,registration:account,expectedRevision:childStore.revision)
+        precondition(childStore.items(account).map(\.id) == [selected.id] && childStore.items(account)[0].parentID == nil,"Restoring one task never restores unrequested siblings or its deleted parent")
+        precondition(childStore.state.items.first{$0.id == sibling.id}?.deletedAt != nil)
         print("PASS: recovered branch deletion/restore, keep contents, exact structural Undo, persistent sibling order, cycles/stale refusal, tombstone duplicate prevention and human workspace ownership")
     }
 }

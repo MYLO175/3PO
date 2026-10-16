@@ -320,6 +320,23 @@ actor MailService {
 struct MailDiscovery: Decodable, Sendable {
     let accounts: [MailAccount]
     let errors: [String]
+    var unavailableAccounts: [MailAccount]? = nil
+    var accountErrors: [String:String]? = nil
+
+    /// Partial discovery preserves failed identities and cached lanes without
+    /// letting one account withhold the successful accounts' arrival checks.
+    func collection(retaining previous: [MailAccount]) throws -> (accounts:[MailAccount], healthy:[MailAccount], failures:[String:String]) {
+        let known=Dictionary((previous+(unavailableAccounts ?? [])+accounts).map{($0.id,$0)},uniquingKeysWith:{_,new in new})
+        var failures=accountErrors ?? [:]
+        for error in errors {
+            if let id=known.keys.first(where:{error.hasPrefix("Account "+$0+":")}) {failures[id]=error}
+            else if !failures.values.contains(error) {throw MailServiceError.mail(error)}
+        }
+        let healthy=accounts.filter{failures[$0.id] == nil}
+        let retained=known.values.filter{failures[$0.id] != nil}
+        let all=Dictionary((Array(retained)+healthy).map{($0.id,$0)},uniquingKeysWith:{_,new in new}).values.sorted{$0.id < $1.id}
+        return (all,healthy,failures)
+    }
 }
 
 private struct BodyResponse: Decodable {

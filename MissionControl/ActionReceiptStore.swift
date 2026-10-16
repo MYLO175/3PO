@@ -20,17 +20,21 @@ struct ActionLedgerEntry: Codable {
     var entries: [String: ActionLedgerEntry] = [:]
     private(set) var readable = true
     private let repository: LocalRecordRepository?
+    private var loadedBytes: Data?
     init(container: ModelContainer?, repository: LocalRecordRepository? = nil) {
         self.repository = repository ?? container.map { LocalRecordRepository(container: $0) }
         do {
             if let bytes = try self.repository?.read("assistantActionLedger") {
                 entries = try JSONDecoder().decode([String: ActionLedgerEntry].self, from: bytes)
+                loadedBytes = bytes
             }
         } catch { readable = false }
     }
     func save() throws {
         guard readable, let repository else { throw ActionFailure.message("Action storage is unavailable; no write was attempted.") }
-        try repository.save(entries, key: "assistantActionLedger")
+        let bytes = try LocalRecordCoding.preservingUnknown(entries, original: loadedBytes)
+        try repository.write(["assistantActionLedger": bytes], expected: ["assistantActionLedger": LocalRecordVersion(loadedBytes)])
+        loadedBytes = bytes
     }
     /// Counts confirmed outputs from fresh durable bytes, never dirty in-memory completion fields.
     func summary(registration: String, turnID: UUID) -> ActionTurnReceiptSummary {
