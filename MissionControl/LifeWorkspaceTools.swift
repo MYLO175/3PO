@@ -187,8 +187,21 @@ import CryptoKit
         }
         return try json(["resolvedIssuedItems":targets, "proposedBatchStructureData":batch])
     }
-    private func object(_ item: LifeItem) -> [String:Any] {
-        ["id":item.id.uuidString, "title":item.title, "kind":item.kind.workspaceKind.rawValue, "parent":item.parentID?.uuidString as Any? ?? NSNull(), "status":item.status.rawValue, "notes":String(item.notes.prefix(2000)), "notesTruncated":item.notes.count > 2000, "due":item.due as Any? ?? NSNull(), "estimateMinutes":item.estimateMinutes as Any? ?? NSNull(), "areas":item.areas.map(\.rawValue), "ownership":item.ownership ?? "workspace", "deleted":item.deletedAt != nil, "sortOrder":item.sortOrder as Any? ?? NSNull(), "path":LifeItemQuery.path(item, in:store.items(registration, topic:topic, includeTopics:includeTopics)).map(\.title)]
+    private func object(_ item:LifeItem,query:String?=nil)->[String:Any] {
+        let extra=item.additionalNotes ?? []
+        let primary=String(item.notes.prefix(extra.isEmpty ? 2000 : 1000))
+        var budget=2000-primary.count
+        let terms=LifeWorkspaceRules.key(query ?? "").split(separator:" ").map(String.init)
+        let ranked=extra.enumerated().sorted {left,right in
+            func matches(_ note:LifeNote)->Bool {!terms.isEmpty && terms.allSatisfy{LifeWorkspaceRules.key(note.text).contains($0)}}
+            let a=matches(left.element),b=matches(right.element)
+            return a == b ? left.offset < right.offset : a
+        }.map(\.element)
+        let additional:[[String:Any]]=ranked.prefix(6).map {note in
+            let text=String(note.text.prefix(min(500,budget)));budget-=text.count
+            return ["id":note.id.uuidString,"text":text,"truncated":text.count < note.text.count]
+        }
+        return ["id":item.id.uuidString,"title":item.title,"kind":item.kind.workspaceKind.rawValue,"parent":item.parentID?.uuidString as Any? ?? NSNull(),"status":item.status.rawValue,"notes":primary,"notesTruncated":item.notes.count > primary.count,"additionalNotes":additional,"additionalNotesTruncated":extra.count > additional.count,"noteEditing":"notes changes the original note only; additional note cards are edited locally in Projects.","due":item.due as Any? ?? NSNull(),"estimateMinutes":item.estimateMinutes as Any? ?? NSNull(),"areas":item.areas.map(\.rawValue),"ownership":item.ownership ?? "workspace","deleted":item.deletedAt != nil,"sortOrder":item.sortOrder as Any? ?? NSNull(),"path":LifeItemQuery.path(item,in:store.items(registration,topic:topic,includeTopics:includeTopics)).map(\.title)]
     }
     private func resolve(_ reference: LifeReference) -> LifeLinkOption? {
         if reference.kind == .item, let id = UUID(uuidString:reference.id), let item = store.items(registration, topic:topic, includeTopics:includeTopics).first(where: { $0.id == id }) {
@@ -229,7 +242,7 @@ import CryptoKit
             }
             let widgets = model.workspace.selected.widgets.filter { $0.kind == .projects }
             for widget in widgets { issuedWidgets[widget.id] = widget }
-            return try json(["items":returned.map(object), "relationships":relationships, "widgets":widgets.map { ["id":$0.id.uuidString, "view":$0.configuration.projectView ?? "Overview"] }, "coverage":"\(min(60,found.count)) of \(found.count) matching local records, plus issued ancestors. Relationships capped at120; unavailable source identities/content withheld. Local task state is not native completion. Missing records/links are not proof of absence."])
+            return try json(["items":returned.map{object($0,query:text("query"))}, "relationships":relationships, "widgets":widgets.map { ["id":$0.id.uuidString, "view":$0.configuration.projectView ?? "Overview"] }, "coverage":"\(min(60,found.count)) of \(found.count) matching local records, plus issued ancestors. Relationships capped at120; unavailable source identities/content withheld. Local task state is not native completion. Missing records/links are not proof of absence."])
         case "delete_life_item":
             let item=try current(text("id")),summary="Moved “\(item.title)” to Recently deleted. Memory and external sources are retained."
             try store.trash(item.id,registration:registration,keepChildren:args["keepChildren"] as? Bool == true,expectedRevision:store.revision,receipt:.init(id:operationKey,registration:registration,result:summary,itemID:item.id));issued.removeValue(forKey:item.id)
@@ -265,7 +278,7 @@ import CryptoKit
             let summary = "Created \(values.count) local workspace items."
             let saved = try store.create(values, receipt:.init(id:operationKey, registration:registration, result:summary, itemID:values.first?.id))
             for item in saved { issued[item.id] = item }
-            return try json(["saved":true, "result":summary, "items":saved.map(object)])
+            return try json(["saved":true, "result":summary, "items":saved.map{object($0)}])
         case "change_life_item":
             var item = try current(text("id")); let expected = item.revision
             if let title = text("title") { item.title = title.trimmingCharacters(in:.whitespacesAndNewlines) }

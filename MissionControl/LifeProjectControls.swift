@@ -5,6 +5,18 @@ struct LifeProjectDrag {
     static let type=UTType(exportedAs:"com.mylomichael.missioncontrol.life-item")
     var id:UUID;var registration:String;var revision:UUID
 }
+struct LifeFolderDrag {
+    var capture:LifeProjectDrag
+    var page:UUID?
+    var parent:UUID?
+    var peers:[UUID]
+    var frames:[UUID:CGRect]
+    var translation:CGSize
+}
+struct LifeFolderFrames:PreferenceKey {
+    static let defaultValue:[UUID:CGRect]=[:]
+    static func reduce(value:inout [UUID:CGRect],nextValue:()->[UUID:CGRect]) { value.merge(nextValue(),uniquingKeysWith:{$1}) }
+}
 struct LifeBoardDrag {
     var capture:LifeProjectDrag
     var parent:UUID?

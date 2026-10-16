@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 /// Resolve the same canonical IDs counted by the map, preserving workspace order and ownership.
 enum LifeAreaWorkspace {
@@ -23,7 +24,7 @@ struct LifeItemQuery {
                   !unfinished || (item.status != .done && item.status != .archived),
                   dueBefore.map({ limit in item.due.map { $0 <= limit } ?? false }) ?? true,
                   maxMinutes.map({ limit in item.estimateMinutes.map { $0 <= limit } ?? false }) ?? true else { return false }
-            var text = item.title + " " + item.notes, cursor = item.parentID, seen = Set<UUID>()
+            var text = item.title + " " + item.searchableNotes, cursor = item.parentID, seen = Set<UUID>()
             while let id = cursor, seen.insert(id).inserted, let parent = byID[id] { text += " " + parent.title; cursor = parent.parentID }
             let key = LifeWorkspaceRules.key(text)
             return terms.allSatisfy { key.contains($0) }
@@ -99,5 +100,20 @@ enum LifeBoardScrollRules {
         let speed:CGFloat=pointerY < edge ? -(edge-pointerY)/edge : pointerY > height-edge ? (pointerY-height+edge)/edge : 0
         let next=min(max(0,offset+speed*10),max(0,contentHeight-height))
         return next-offset
+    }
+}
+
+/// Insertion feedback uses stationary captured slots, never the translated folder tile.
+struct LifeFolderInsertion:Equatable {
+    var target:UUID
+    var after:Bool
+    var before:UUID?
+}
+enum LifeFolderOrder {
+    static func insertion(at point:CGPoint,dragging id:UUID,orderedIDs:[UUID],frames:[UUID:CGRect])->LifeFolderInsertion? {
+        let peers=orderedIDs.filter{$0 != id}
+        guard let target=peers.first(where:{frames[$0]?.insetBy(dx:-10,dy:0).contains(point) == true}),let frame=frames[target],let index=peers.firstIndex(of:target) else {return nil}
+        let after=point.x >= frame.midX
+        return .init(target:target,after:after,before:after ? peers.dropFirst(index+1).first : target)
     }
 }

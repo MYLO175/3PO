@@ -601,3 +601,19 @@ A manual heartbeat completed its model response but failed while decoding the br
 ## 13 October 2026 — Accepted Review jobs start when idle
 
 The user explicitly removed the Continue queue step. A stopped, failed, uncertain or unanswered Review request must retain its own result rather than saving a registration-wide pause that blocks all later work. The serial idle pump starts accepted queued jobs once the heartbeat, its child services and foreground work have unwound. Legacy pause flags are preserved as compatibility data, without governing new execution. Reopened attempted jobs remain interrupted, working saves remain uncertain and neither is automatically retried. Targeted Stop cancels only its request. Captured account/source/storage guards, verified save receipts, inference availability, sleep and unreadable progress storage retain their existing boundaries. Normal chat typing now interrupts active Review work and gives waiting Review work a two-second grace; automatic heartbeat keeps its separate two-minute quiet period.
+
+
+## 15 October — Projects progress and sibling ordering
+
+Keep folder icons and their descendant progress previews. The current folder's progress is a 144-point, 12-point-thick segmented capsule beside its breadcrumb, with a smaller wrapping fallback. To do is muted red, In progress amber and Done green; exact counts are available on hover and to accessibility, without percentages or a permanent legend. A + in each Board/List stage heading opens the existing task editor with the current parent and stage selected, including empty stages.
+
+Folder-grid dragging now means sibling reordering, with a pointer-following tile and an insertion marker. Captured stationary slot frames avoid feedback from the moving tile. Releasing outside peers is a no-op. Account, page, parent, visible identities, scope and store revision guard a single release save. Reorder preserves parent/placement metadata rather than invoking filing; all affected sibling revisions participate in existing structural Undo. Move earlier/later is available in the context menu; explicit Move and Tree retain filing into another parent. No data schema, native Apple operation, inference or appearance preference changes.
+
+
+## 15 October — Native formatted sticky notes below project work
+
+User direction: folders, then tasks, then multiple notes alongside one another. Note cards show five-line previews and local Show more/Show less; clicking the writing opens its editor, while Notes + adds another note. Use subtle inherited accent shading rather than another set of global appearance choices.
+
+Use NSTextView for selection, IME, typing, spelling, paste and text Undo; a compact toolbar provides sizes/bold/italic/bullets, with Command-B/Command-I and asterisk-Space conversion. Literal bullet prefixes and native paragraph indents continue on Return and end on an empty bullet. Formatting uses optional bounded font runs over authoritative plain text; unsupported pasted colours/graphics are omitted. The old notes field remains the first note, additional cards have stable UUIDs in an optional field, and captured item/account revisions guard every save. Rich editor saves explicitly identify current formatting, so same-length styled edits keep it; plain edits clear stale formatting without deleting sibling notes. No Apple Notes writes or new syncing.
+
+PA read projections include bounded additional-card IDs/text within the existing aggregate 2,000-character note bound, prioritising query matches and labelling truncation. The canonical notebook’s note projection remains 600 characters. Additional-card mutations stay local; existing PA note changes retain original-field semantics. No new inference or source access is introduced.

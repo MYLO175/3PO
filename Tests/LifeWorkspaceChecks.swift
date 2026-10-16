@@ -155,6 +155,94 @@ import SwiftData
         rejects { try LifeTaskStageChange.apply(task.id,stage:.todo,parent:course.id,registration:"fictional-a",permittedIDs:[task.id],expectedRevision:stageRevision,store:store) }
         try store.undo("fictional-a")
         precondition(store.items("fictional-a").first{$0.id == task.id}?.status == beforeStage.status)
+        // Folder reordering retains identities/contents, persists, and supports exact Undo.
+        let orderContainer=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+        let ordering=LifeWorkspaceStore(container:orderContainer)
+        let folder=try ordering.save(LifeItem(registration:"order",kind:.space,title:"Home"),expected:nil)
+        let first=try ordering.save(LifeItem(registration:"order",kind:.project,title:"First",parentID:folder.id,notes:"Preserved",placement:.init(status:"paused",reason:"Keep this receipt",parentPinned:false)),expected:nil)
+        let second=try ordering.save(LifeItem(registration:"order",kind:.space,title:"Second",parentID:folder.id),expected:nil)
+        let third=try ordering.save(LifeItem(registration:"order",kind:.space,title:"Third",parentID:folder.id),expected:nil)
+        let nested=try ordering.save(LifeItem(registration:"order",kind:.task,title:"Nested task",parentID:first.id,status:.done),expected:nil)
+        let peers:Set<UUID>=[first.id,second.id,third.id]
+        let captured=ordering.revision,originalOrder=ordering.state
+        func reorder(_ id:UUID,_ before:UUID?,account:String="order",page:UUID?=nil,ids:Set<UUID>?=nil,revision:UUID?=nil)throws {
+            try LifeFolderReorder.apply(id,before:before,parent:folder.id,capturedPage:folder.id,currentPage:page ?? folder.id,registration:"order",activeRegistration:account,capturedIDs:peers,currentIDs:ids ?? peers,expectedRevision:revision ?? ordering.revision,store:ordering)
+        }
+        rejects {try reorder(third.id,first.id,account:"other")}
+        rejects {try reorder(third.id,first.id,page:first.id)}
+        rejects {try reorder(third.id,first.id,ids:[first.id,second.id])}
+        rejects {try reorder(third.id,nested.id)}
+        precondition(ordering.state == originalOrder,"Account/page/visibility and non-folder targets cannot change folder order")
+        try reorder(third.id,first.id)
+        let reordered=LifeFolderContents.children(of:folder.id,in:ordering.items("order"))
+        precondition(reordered.map(\.id) == [third.id,first.id,second.id])
+        precondition(reordered.first{$0.id == first.id}?.placement == first.placement && reordered.first{$0.id == first.id}?.notes == first.notes)
+        precondition(ordering.state.items.first{$0.id == nested.id} == nested,"Reordering never edits folder contents or task stages")
+        precondition(LifeWorkspaceStore(container:orderContainer).state == ordering.state,"Folder order survives repository reload")
+        rejects {try reorder(second.id,third.id,revision:captured)}
+        try ordering.undo("order")
+        precondition(LifeFolderContents.children(of:folder.id,in:ordering.items("order")).map(\.id) == [first.id,second.id,third.id])
+        precondition(ordering.state.items.first{$0.id == first.id}?.placement == first.placement,"Reorder Undo must not pin or resume a legacy placement request")
+        try reorder(first.id,nil)
+        precondition(LifeFolderContents.children(of:folder.id,in:ordering.items("order")).map(\.id) == [second.id,third.id,first.id])
+        let noOpRevision=ordering.revision
+        try reorder(first.id,nil)
+        precondition(ordering.revision == noOpRevision,"Dropping in the existing slot is a no-op")
+        let directTask=try ordering.save(LifeItem(registration:"order",kind:.task,title:"Sibling task",parentID:folder.id,status:.active),expected:nil)
+        try ordering.move(third.id,registration:"order",parent:folder.id,expectedRevision:ordering.revision)
+        let taskBeforeReorder=ordering.state.items.first{$0.id == directTask.id}!
+        let middleRevision=ordering.revision
+        try reorder(second.id,first.id)
+        precondition(ordering.revision == middleRevision,"An unchanged visible folder order is a no-op even with interleaved tasks")
+        try reorder(first.id,second.id)
+        precondition(ordering.state.items.first{$0.id == directTask.id} == taskBeforeReorder,"Sibling task records/revisions remain byte-exact")
+        var running=ordering.items("order").first{$0.id == first.id}!
+        running.placement = .init(status:"running",reason:"Active placement",parentPinned:false)
+        _=try ordering.save(running,expected:running.revision)
+        // save() deliberately pauses running placement; use the production transition to start it.
+        let paused=ordering.items("order").first{$0.id == first.id}!
+        try ordering.placementStatus(first.id,expected:paused.revision,status:"running",reason:"Active placement")
+        let beforeRunning=ordering.state
+        rejects {try reorder(first.id,nil)}
+        precondition(ordering.state == beforeRunning,"An active placement is never stranded by a reorder")
+        let frames=[first.id:CGRect(x:0,y:0,width:160,height:140),second.id:CGRect(x:180,y:0,width:160,height:140),third.id:CGRect(x:0,y:160,width:160,height:140)]
+        precondition(LifeFolderOrder.insertion(at:CGPoint(x:190,y:60),dragging:first.id,orderedIDs:[first.id,second.id,third.id],frames:frames)?.before == second.id)
+        precondition(LifeFolderOrder.insertion(at:CGPoint(x:330,y:60),dragging:first.id,orderedIDs:[first.id,second.id,third.id],frames:frames)?.before == third.id)
+        precondition(LifeFolderOrder.insertion(at:CGPoint(x:150,y:200),dragging:first.id,orderedIDs:[first.id,second.id,third.id],frames:frames)?.before == nil)
+        precondition(LifeFolderOrder.insertion(at:CGPoint(x:400,y:400),dragging:first.id,orderedIDs:[first.id,second.id,third.id],frames:frames) == nil,"Outside release never saves")
+        // Optional rich text and independent note cards preserve the original plain note.
+        let notesOwner=try store.save(LifeItem(registration:"notes",kind:.space,title:"Notes owner",notes:"Original note"),expected:nil)
+        let styled=LifeNoteFormatting(length:notesOwner.notes.utf16.count,runs:[.init(location:0,length:8,size:22,bold:true,italic:false)])
+        var noteItem=notesOwner;noteItem.notesFormatting=styled
+        let extraNote=LifeNote(text:"Independent sticky note",formatting:.init(length:23,runs:[.init(location:0,length:11,size:15,bold:false,italic:true)]))
+        noteItem.additionalNotes=[extraNote]
+        let savedNotes=try store.save(noteItem,expected:notesOwner.revision)
+        precondition(savedNotes.noteCards.map(\.id) == [notesOwner.id,extraNote.id] && savedNotes.notes == notesOwner.notes)
+        precondition(LifeWorkspaceStore(container:container).state.items.first{$0.id == savedNotes.id} == savedNotes)
+        precondition(LifeItemQuery(query:"sticky").matching(store.items("notes")).map(\.id) == [notesOwner.id])
+        var sameLength=savedNotes;sameLength.notes="Jriginal note"
+        let richSaved=try store.save(sameLength,expected:savedNotes.revision,notesFormattingIsCurrent:true)
+        precondition(richSaved.notesFormatting == styled,"Same-length rich text edits must retain unchanged font runs")
+        var sameExtra=richSaved;sameExtra.additionalNotes?[0].text="Jndependent sticky note"
+        let extraRichSaved=try store.save(sameExtra,expected:richSaved.revision,notesFormattingIsCurrent:true)
+        precondition(extraRichSaved.additionalNotes?[0].formatting == extraNote.formatting)
+        var unrelated=extraRichSaved;unrelated.title="Renamed notes owner"
+        let renamedNotes=try store.save(unrelated,expected:extraRichSaved.revision)
+        precondition(renamedNotes.notesFormatting == styled && renamedNotes.additionalNotes == extraRichSaved.additionalNotes)
+        var staleNotes=savedNotes;staleNotes.notes="Stale overwrite"
+        rejects {_=try store.save(staleNotes,expected:savedNotes.revision)}
+        var plainEdit=renamedNotes;plainEdit.notes="Updated by the plain editor"
+        let plainSaved=try store.save(plainEdit,expected:renamedNotes.revision)
+        precondition(plainSaved.notesFormatting == nil && plainSaved.additionalNotes == extraRichSaved.additionalNotes,"Plain edits clear only stale formatting, retaining sibling notes")
+        var deleteNote=plainSaved;deleteNote.additionalNotes=[]
+        _=try store.save(deleteNote,expected:plainSaved.revision)
+        try store.undo("notes")
+        let restoredNotes=store.items("notes").first{$0.id == notesOwner.id}!
+        precondition(restoredNotes.additionalNotes == extraRichSaved.additionalNotes,"Note deletion Undo restores the same note identities and formatting")
+        var badFormat=restoredNotes;badFormat.notesFormatting=styled
+        rejects {_=try store.save(badFormat,expected:restoredNotes.revision)}
+        var duplicateNote=restoredNotes;duplicateNote.additionalNotes=[extraNote,extraNote]
+        rejects {_=try store.save(duplicateNote,expected:restoredNotes.revision)}
         // Corrupt/unsupported storage stays intact and cannot be replaced by an empty state.
         let broken = try ModelContainer(for: CachedDashboard.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let bytes = Data("{\"version\":99,\"items\":[],\"links\":[],\"receipts\":[]}".utf8)
@@ -163,6 +251,6 @@ import SwiftData
         rejects { _ = try unavailable.save(root, expected: nil) }
         let preserved = try broken.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first!.data
         precondition(preserved == bytes)
-        print("PASS: project persistence, identity, scope, dates, hierarchy, receipts, corrupt-store preservation, bookmarks, stale notes/Undo, direct folder contents, legacy stages, exact progress and guarded board changes/Undo")
+        print("PASS: project persistence, identity, scope, dates, hierarchy, receipts, corrupt-store preservation, bookmarks, stale notes/Undo, direct folder contents, legacy stages, exact progress, guarded board changes/Undo folder ordering/reload/metadata/Undo/gesture targets, styled/multiple notes/reload/stale edits and note deletion Undo")
     }
 }

@@ -54,7 +54,7 @@ extension LifeNotebook {
         result.entities=merged.values.sorted { $0.id < $1.id }
         result.links=links.map { edge in var edge=edge;edge.from=mapping[edge.from] ?? edge.from;edge.to=mapping[edge.to] ?? edge.to;return edge }
         result.anchors=items.map { item in
-            .init(id:"life:"+item.id.uuidString,label:item.title,kind:item.kind.workspaceKind.rawValue,parent:item.parentID.map { "life:"+$0.uuidString },areas:Array(merged["life:"+item.id.uuidString]?.areas ?? []).sorted{$0.rawValue < $1.rawValue},notes:String(item.notes.prefix(600)),path:LifeItemQuery.path(item,in:items).map(\.title),relations:itemLinks.filter{edge in edge.from == item.id && edge.target.kind == .item && items.contains(where:{$0.id.uuidString == edge.target.id})}.map{$0.relation.rawValue+":"+$0.target.id},memoryIDs:merged["life:"+item.id.uuidString]?.memoryIDs ?? [])
+            .init(id:"life:"+item.id.uuidString,label:item.title,kind:item.kind.workspaceKind.rawValue,parent:item.parentID.map { "life:"+$0.uuidString },areas:Array(merged["life:"+item.id.uuidString]?.areas ?? []).sorted{$0.rawValue < $1.rawValue},notes:String(item.searchableNotes.prefix(600)),path:LifeItemQuery.path(item,in:items).map(\.title),relations:itemLinks.filter{edge in edge.from == item.id && edge.target.kind == .item && items.contains(where:{$0.id.uuidString == edge.target.id})}.map{$0.relation.rawValue+":"+$0.target.id},memoryIDs:merged["life:"+item.id.uuidString]?.memoryIDs ?? [])
         }
         for area in Set(result.anchors.flatMap(\.areas)) where !result.notes.contains(where:{$0.area == area}) { result.notes.append(.init(area:area,records:[])) }
         return result

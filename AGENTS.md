@@ -121,3 +121,15 @@ Heartbeat reconsideration may inspect pending proposals as labelled historical d
 - New Review suggestions start unchecked. Existing preselected plans reset once; later deliberate choices remain saved on reopening. Newly generated conversation suggestions also start unchecked.
 - The sheet button says No actions at zero selection, otherwise Approve 1 action / Approve N actions. No actions closes without approving or dismissing the source card; preserve unsent drafts.
 - Collapse duplicate concrete choices from the same exact source snapshot/assessment even when supporting quotations differ. Preserve original proposal/operation IDs and history, distinct destinations/dates/native settings/custom notes, saved/uncertain operations and canonical readback. Do not infer equivalence by title alone or observe streaming text to group rows.
+
+## Recorded Projects design preference — 15 October
+
+- Folder-grid dragging reorders within the current folder, with visible insertion feedback and Move earlier/later menu alternatives. Filing into another folder stays under explicit Move/Tree.
+- Show a short, thick progress bar beside the current breadcrumb, following deeper paths, with red To do, amber In progress and green Done. No visible percentages or permanent legend; exact counts appear on hover. Keep individual folder progress previews.
+- Replace the trailing Add a task field with a + inside each Board/List stage heading, opening a task with that stage and current folder selected.
+
+
+## Recorded space-note preference — 15 October
+
+- Put notes below folders and tasks. Show multiple subtle sticky-note cards alongside one another, with short previews and Show more/Show less. Click the writing to open its editor; a hidden pencil must not be the editing route. The Notes + adds an independent note.
+- Use familiar text-size, bold, italic and bullet controls, Command-B/Command-I, and asterisk then Space for bullets. Native macOS text editing should retain selection, text Undo and ordinary typing. Keep existing notes, stable note identities and account/revision guards.
