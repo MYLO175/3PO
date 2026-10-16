@@ -1,6 +1,14 @@
 # Status
 
-## Current summary — 16 October 2026: shared AI context and canonical preferences
+## Current summary — 16 October 2026: completion confirmations in the pill
+
+Implemented and installed signed code `75e0a82`. Direct UI confirmations now appear inside the existing centred pill with green text, a checkmark and a subtle matching tint. They expire after six seconds, remain account-scoped and never create AI Activity entries. Live work, unresolved attention and storage errors retain priority. The old separate badge is removed; other toolbar action identities/order and Undo behaviour remain.
+
+All 125 Activity checks and the focused workspace/toolbar suite pass. Full signed Xcode Debug build, strict signature, matching signing requirements and all 2,254 candidate/installed file hashes pass. Fictional native light/dark previews confirm the styled message, return to Ready and an Activity dropdown containing no manual confirmation. No personal operation or model request was used for QA.
+
+Fresh idle-quit backup verifies 82 records, 14 support files, preferences and the previous app. All remain exact before launch. Normal relaunch retains all 82 records, 72 byte-exact; nine ordinary source/health/weather/orientation caches change and workspace differs only by today's Calendar mount date and equivalent source-exclusion order. Projects, memory, conversations/drafts, Review/operation/Activity/usage histories and all other preferences remain exact. Native toolbar persistence removes only the obsolete feedback item; all other identities/order match. The original Today page is restored and exactly one installed process runs. Private recovery/readback: `/Users/mylomichael/Library/Application Support/3PO Development Backups/20261016-181737-pill-completion`; build: `/private/tmp/3po-pill-completion-build/build.log`.
+
+## Previous current summary — 16 October 2026: shared AI context and canonical preferences
 
 Implemented and installed signed code `37cca91`. Chat, Review conversations, briefs, source suggestions, email assessment and memory/notebook tools share one local context preparation path. This is ordinary code, not a separate AI: it applies current account/source/Focus choices, selects bounded relevant facts and notebook anchors from one permission-filtered snapshot, and leaves fresh reads to the existing model/tool loop. Optional context traces show preparation purpose, source hints and referential follow-up use without recording reasoning. Stable supplied human facts can be answered directly; an empty memory search advises targeted alternative wording before declaring information absent.
 
@@ -2483,3 +2491,11 @@ The first combined65-suite run passed. Its disposable Calendar harness exposed a
 Private evidence outsideGit: final build`/private/tmp/3po-audit-final-build.log`; final source-free`/private/tmp/missioncontrol-check-y22nquh_`; signed app-memory`/private/tmp/missioncontrol-check-b1n4dadu`; native`/private/tmp/missioncontrol-check-b_iqez5_`; verified recovery/readback`/private/tmp/3po-audit-release-20261016-y5wlom6f`. Fictional UI used disposable in-memory Projects before ordinary startup. All owned test processes were closed before installation; post-launch process/path inspection confirms the single installed normal app.
 
 No schema conversion, receipt expiry, source permission expansion, API-key fallback, new credentials, personal AI test, publication or remote push is part of this batch. Unrelated untracked icon copies are left untouched.
+
+## 16 October 2026: direct-action completion feedback inside the pill
+
+From base `78812c1`, isolated worktree commit `1a90b13` integrates as `75e0a82`, with identical trees. `showFeedback` now publishes an ephemeral account-tagged value to the pill, separate from the Activity store. The existing single cancellable deadline handles both saved AI successes and manual feedback. Newer completions supersede older successes; live action/heartbeat, unresolved questions/failures and storage errors keep priority. The retired toolbar badge no longer polls once a second. Its SwiftUI item ID remains declared; native persistence drops only its empty item, retaining the rest of the human's arrangement.
+
+Validation: 125/125 Activity checks, workspace/toolbar persistence suite, signed Xcode Debug build and strict signature pass. Native fictional light/dark acceptance uses the actual feedback adapter before source/helper/AI startup: green capsule text/icon/tint, exact confirmation, six-second return to Ready, and an empty Activity dropdown while the confirmation is visible. Preview changes only its separate toolbar preference; exact restoration is verified before release. All 82 personal records remain byte-exact throughout preview. No personal Reminder is completed or edited to exercise the visual change.
+
+The installation/readback and recovery evidence are recorded in the current summary. Initial sandbox compiler/runtime-denial attempts are environment failures; the permitted build/check reruns pass. The macOS build succeeds despite the existing unrelated Simulator-version warning. Native operation correctness and actual-model quality are unchanged and are not re-claimed by this presentation-only acceptance.
