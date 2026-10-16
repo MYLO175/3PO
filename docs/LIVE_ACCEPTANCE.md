@@ -1,6 +1,14 @@
 # Installed reliability acceptance
 
-## Latest recorded installed checkpoint — 14 October 2026
+## Latest recorded installed checkpoint — 16 October 2026
+
+Signed main merge `7094634` installs the approved Spaces design and formatted sticky notes alongside the latest Review approval and final-outcome repairs. All10 relevant source-free integration suites and signed disposable consumers194/194 and34/34 pass. Strict signature and all2,254 candidate/installed hashes match. Native normal launch shows Ready; the existing Engineering folder hierarchy/task progress and original note survive, and clicking its writing opens the new formatting editor. Inspection cancels without editing and restores the original Review page.
+
+All82 records survive the full private backup and replacement exactly. After ordinary relaunch,72 remain byte-exact; nine source/weather/health caches refresh and workspace serialises the same source-exclusion membership in another order. Project/notes/task records, saved histories, memory, Review/plans/drafts/actions/Activity/usage and preferences remain exact. Layout/filter/view/bookmark/page choices match after ordering normalisation. Exactly one installed normal process remains. The prior signed app, complete data/settings and verification reports are recoverable privately outside Git.
+
+This is installation/preservation and native display acceptance. Earlier pointer-drag smoothness and sustained background/model/source reliability limits remain; this UI update does not establish unattended reliability duration or create an observation timer/automation.
+
+## Previous recorded installed checkpoint — 14 October 2026
 
 `9ca10c2` repairs feedback invalidation by unrelated EventKit notifications, following unified Review, streaming and concise Activity releases. The existing 3PO installation has recorded signed readback, 2,254 matching files and one explicitly retried feedback submission saved at its original memory identity. All 75 original records remain; protected memory, Activity, usage and other feedback records are exact. These are prior acceptance results from the repair chat, reconciled here without rerunning the app or personal inference. [STATUS](../STATUS.md) and [VALIDATION](../VALIDATION.md) retain the detailed checks and limits.
 
