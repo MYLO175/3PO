@@ -82,9 +82,10 @@ import SwiftData
         let previous=state
         var claim=progress;claim.paused=true;state.scopes[scopeKey]=claim
         do { try save() } catch { state=previous;self.error=error.localizedDescription;return }
-        let memoryRevision=memory.revision,selectedModel=model.inference.selectedModel
-        let sourcesEnabled=assistant.contextEnabled,contextRevision=assistant.contextRevision
-        let existing=memory.context(registration,query:batch.map(\.text).joined(separator:" "),now:model.now()).prefix(12).map{["text":String(($0["text"] ?? "").prefix(500)),"certainty":$0["certainty"] ?? "unknown"]}
+        let selectedModel=model.inference.selectedModel
+        let sourcesEnabled=assistant.contextEnabled,contextRevision=assistant.contextRevision,memoryControls=memory.controlsRevision
+        let selectedMemory=Array(memory.context(registration,query:batch.map(\.text).joined(separator:" "),now:model.now()).prefix(12))
+        let existing=selectedMemory.map{["text":String(($0["text"] ?? "").prefix(500)),"certainty":$0["certainty"] ?? "unknown"]}
         let chats=Set(batch.map(\.chatID)),terms=MemoryRetrieval.tokens(batch.map(\.text).joined(separator:" "))
         let candidates=memory.permittedRecords.filter { record in
             MemoryRules.usable(record,registration:registration,now:model.now()) && !record.explicit && record.sourceTurnID == nil && record.organisation?.manual != true &&
@@ -94,18 +95,28 @@ import SwiftData
             return left == right ? a.reviewed > b.reviewed : left > right
         }
         guard let assessment=SourceContextRules.prepare(batch,recent:recent,existing:existing,candidates:candidates) else { self.error="This source batch exceeded its bounded context window; progress is preserved.";return }
+        // The bounded input builder may trim the tail of existingMemory. Retain
+        // receipts for exactly the supplied prefix before its IDs are shortened away.
+        guard let input=try? JSONSerialization.jsonObject(with:Data(assessment.input.utf8)) as? [String:Any],let supplied=input["existingMemory"] as? [[String:String]],supplied.count <= selectedMemory.count else {self.error="The bounded memory context couldn't be verified; progress is preserved.";return}
+        let memoryDependencies=MemoryDependencyRules.capture(Array(selectedMemory.prefix(supplied.count)))
         ownedHeartbeatRunID=model.ownedHeartbeatRunID;busy=true;error=nil
         task=Task {
             defer { ownedHeartbeatRunID=nil;busy=false }
+            @MainActor func memoryCurrent()->Bool {
+                let current=memory.permittedRecords.filter{MemoryRules.usable($0,registration:registration,now:model.now())}
+                return MemoryDependencyRules.available(memoryDependencies,records:current.map(MemoryRetrieval.record)) && assessment.candidates.allSatisfy {old in
+                    current.first(where:{$0.id == old.id}) == old && memory.sourceIsPermitted(old)
+                }
+            }
             do {
                 try model.validateOwnership()
-                guard scope == model.whatsapp.scope(for:model.inference.activeID),access == model.whatsappLearningAccess,learningAccess == accessSnapshot(model),registration == model.inference.activeID,memoryRevision == memory.revision,
-                      selectedModel == model.inference.selectedModel,memory.enabled,memory.learningEnabled,assistant.contextEnabled,contextRevision == assistant.contextRevision,!assistant.busy,!assistant.hasDraft,!model.writing else { throw MemoryLearningFailure.changed }
+                guard scope == model.whatsapp.scope(for:model.inference.activeID),access == model.whatsappLearningAccess,learningAccess == accessSnapshot(model),registration == model.inference.activeID,memoryCurrent(),
+                      selectedModel == model.inference.selectedModel,memoryControls == memory.controlsRevision,memory.enabled,memory.learningEnabled,assistant.contextEnabled,contextRevision == assistant.contextRevision,!assistant.busy,!assistant.hasDraft,!model.writing else { throw MemoryLearningFailure.changed }
                 try model.claimInference()
                 let output=try await model.inference.streamResponse(input:[["role":"user","content":assessment.input]],instructions:SourceContextRules.instructions+" "+LearningRuntime.inlineSourceOrganisationInstructions,model:selectedModel,purpose:.learning) { _ in }
                 try model.validateOwnership()
                 guard scope == model.whatsapp.scope(for:model.inference.activeID),access == model.whatsappLearningAccess,learningAccess == accessSnapshot(model),registration == model.inference.activeID,
-                      selectedModel == model.inference.selectedModel,memoryRevision == memory.revision,memory.enabled,memory.learningEnabled,
+                      selectedModel == model.inference.selectedModel,memoryControls == memory.controlsRevision,memoryCurrent(),memory.enabled,memory.learningEnabled,
                       sourcesEnabled == assistant.contextEnabled,assistant.contextEnabled,contextRevision == assistant.contextRevision,!assistant.busy,!assistant.hasDraft,!model.writing else { throw MemoryLearningFailure.changed }
                 let fresh=SourceContextRules.recent(model.whatsapp.messages,chats:model.whatsapp.chats,allowed:access.chats,now:model.now(),limit:2000)
                 guard assessment.messages.allSatisfy({item in fresh.contains(where:{$0 == item})}),assessment.candidates.allSatisfy(memory.sourceIsPermitted),
@@ -113,7 +124,9 @@ import SwiftData
                       facts.allSatisfy({SourceContextRules.permitted($0,access:access,linkedIdentity:scope.linkedIdentity,messages:model.whatsapp.messages)}) else { throw MemoryLearningFailure.invalid }
                 let quotes=Dictionary(facts.flatMap(\.allSourceEvidence).compactMap{evidence in model.whatsapp.messages.first(where:{$0.id == evidence.identity.itemID && $0.chat == evidence.identity.containerID}).map{(evidence.identity,$0.text)}},uniquingKeysWith:{first,_ in first})
                 let receipts=batch.map{SourceContextRules.assessmentKey(registration:registration,linkedIdentity:scope.linkedIdentity,message:$0)}
-                guard memory.putSources(facts,evidenceTexts:quotes,expectedRevision:memoryRevision,assessmentIDs:receipts,now:model.now()) else { throw MemoryLearningFailure.storage }
+                // Exact inputs remain current; synchronously merge into the latest
+                // envelope with the existing compare-and-save protection intact.
+                guard memory.putSources(facts,evidenceTexts:quotes,expectedRevision:memory.revision,assessmentIDs:receipts,now:model.now()) else { throw MemoryLearningFailure.storage }
                 let old=state
                 state.scopes[scopeKey]=SourceContextRules.completing(progress,batch:batch,now:model.now())
                 do { try save() } catch { state=old;throw error }

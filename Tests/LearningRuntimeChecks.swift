@@ -12,8 +12,9 @@ import SwiftData
     var calls = 0
     var inputs:[[[String:String]]]=[]
     var onCall: (() -> Void)?
+    var hold: (() async -> Void)?
     func streamResponse(input: [[String:String]], instructions: String, model: String?, effort: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> String {
-        calls += 1;inputs.append(input);onCall?();return answer
+        calls += 1;inputs.append(input);onCall?();if let hold {await hold()};return answer
     }
     func toolResponse(input: [[String:Any]], instructions: String, tools: [[String:Any]], model: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> PAResponse { fatalError("Learning cannot execute foreground tools") }
 }
@@ -301,6 +302,101 @@ import SwiftData
             let paused=SourceContextLearningService(container:isolated);paused.check(r)
             check(p.calls == 3 && !paused.busy,"Grant-change interruption retains the original failed-claim pause across reopen")
         }
-        print("PASS \(count) actual learning-service checks: injected providers/clock, persistence, foreground priority, source/account drift, pauses, explicit recovery; no dashboard, credentials or personal sources.")
+        try await capturedSourceMemoryChecks(now:now,check:check)
+        print("PASS \(count) actual learning-service checks: injected providers/clock, persistence, foreground priority, exact supplied memory/candidate guards, source/account drift, pauses, explicit recovery; no dashboard, credentials or personal sources.")
+    }
+    @MainActor private static func capturedSourceMemoryChecks(now:Date,check:(Bool,String)->Void)async throws {
+        let successful:Set<String>=["unrelated save","unrelated forget","selected organisation","held unrelated save"]
+        let cases=["unrelated save","unrelated forget","selected organisation","held unrelated save","selected changed","selected forgotten","candidate changed","candidate forgotten","candidate corrected","candidate pinned","held selected changed","controls off/on","source changed","Stop"]
+        for lane in ["native","whatsapp"] {
+            for scenario in cases {
+                let suite="3PO.source-dependency-fixture."+UUID().uuidString
+                let settings=UserDefaults(suiteName:suite)!
+                // The fixture owns a separate defaults suite; no app preferences are used.
+                defer {settings.removePersistentDomain(forName:suite)}
+                let isolated=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+                let p=FictionalInference(),m=PAMemoryStore(container:isolated,settings:settings),w=FictionalWhatsApp(),b=LearningBudget(container:isolated)
+                let a=FictionalAssistant(p,memory:m)
+                var clock=now,items:[NativeLearningItem]=[],sourcePermitted=true
+                let r=LearningRuntime(assistant:a,inference:p,learningBudget:b,whatsapp:w,now:{clock},activity:{.init()},writing:{false},sourceRevision:{0},nativeItems:{kind,_ in kind == .reminder && sourcePermitted ? items : nil})
+                let native=NativeSourceLearningService(container:isolated),whatsapp=SourceContextLearningService(container:isolated)
+                let selected=PAMemory(registration:p.activeID,text:"I study optics report preparation.",kind:.context,provenance:"Fictional human")
+                let unrelated=PAMemory(registration:p.activeID,text:"I enjoy woodland walks.",kind:.preference,provenance:"Fictional human")
+                check(m.put(selected) && m.put(unrelated),lane+" seeds independent human context")
+                let oldQuote="Prepare the earlier Zephyr diagram",newQuote="Prepare the updated optics report"
+                let oldDate=clock.addingTimeInterval(-60)
+                let oldEvidence:MemorySourceEvidence
+                if lane == "native" {
+                    items=[.init(identity:.init(kind:.reminder,accountID:"fixture",containerID:"list",itemID:"dependency-item"),revision:"one",label:"Fictional task",text:oldQuote,date:oldDate,changed:oldDate)]
+                    native.setEnabled(true,kind:.reminder,model:r)
+                    m.sourceIsPermitted={native.permits($0,model:r)}
+                    oldEvidence = .init(identity:items[0].identity,revision:items[0].revision,label:items[0].label,quote:oldQuote,observed:oldDate,sourceDate:oldDate)
+                } else {
+                    w.messages=[.init(id:"dependency-old",chat:"chat",sender:"fictional",text:oldQuote,sentByMe:false,time:oldDate.timeIntervalSince1970*1000)]
+                    m.sourceIsPermitted={sourcePermitted && SourceContextRules.permitted($0,access:r.whatsappLearningAccess,linkedIdentity:"fictional-device",messages:w.messages)}
+                    whatsapp.check(r)
+                    let prior=SourceContextRules.recent(w.messages,chats:w.chats,allowed:w.accessValue.chats,now:clock)[0]
+                    oldEvidence = .init(identity:.init(kind:.whatsapp,accountID:"fictional-device",containerID:"chat",itemID:prior.itemID,linkedIdentity:"fictional-device"),revision:prior.revision,label:prior.chatName,quote:oldQuote,observed:oldDate,sourceDate:oldDate)
+                }
+                let candidate=PAMemory(registration:p.activeID,text:"A source requested the earlier Zephyr diagram.",kind:.commitment,explicit:false,provenance:"Fictional source",created:oldDate,reviewed:oldDate,evidence:oldQuote,sourceDate:oldDate,certainty:.inferred,durability:.situational,source:oldEvidence,sourceState:.proposed)
+                check(m.putSource(candidate,sourceText:oldQuote,expectedRevision:m.revision),lane+" seeds an exact source replacement candidate")
+                clock.addTimeInterval(1)
+                var receipt=""
+                if lane == "native" {
+                    items[0].revision="two";items[0].text=newQuote;items[0].changed=clock
+                    receipt=NativeLearningRules.receipt(p.activeID,items[0])
+                    p.answer="{\"facts\":[{\"itemID\":\"\(items[0].id)\",\"text\":\"The reminder now requests the updated optics report\",\"quote\":\"\(newQuote)\",\"kind\":\"commitment\",\"areas\":[],\"updatesMemoryID\":\"\(candidate.id.uuidString)\",\"state\":\"changed\"}]}"
+                } else {
+                    let fresh=WhatsAppReadMessage(id:"dependency-new",chat:"chat",sender:"fictional",text:newQuote,sentByMe:false,time:clock.timeIntervalSince1970*1000)
+                    w.messages.append(fresh)
+                    let target=SourceContextRules.recent([fresh],chats:w.chats,allowed:w.accessValue.chats,now:clock)[0]
+                    receipt=SourceContextRules.assessmentKey(registration:p.activeID,linkedIdentity:"fictional-device",message:target)
+                    p.answer="{\"facts\":[{\"messageID\":\"\(target.id)\",\"text\":\"A later message requests the updated optics report\",\"quote\":\"\(newQuote)\",\"kind\":\"commitment\",\"areas\":[],\"updatesMemoryID\":\"\(candidate.id.uuidString)\",\"state\":\"changed\"}]}"
+                }
+                var mutationSucceeded=true,expectedHumanRecords:[PAMemory]=[]
+                func mutate() {
+                    switch scenario {
+                    case "unrelated save","held unrelated save":mutationSucceeded=m.put(PAMemory(registration:p.activeID,text:"I like fictional ceramics.",kind:.preference,provenance:"Fictional human"))
+                    case "unrelated forget":mutationSucceeded=m.forget(unrelated.id)
+                    case "selected organisation":mutationSucceeded=m.organise(selected.id,value:.init(areas:[.studies],connections:[]),expectedRevision:m.revision)
+                    case "selected changed","held selected changed":var edited=selected;edited.text="I no longer study optics report preparation.";mutationSucceeded=m.put(edited)
+                    case "selected forgotten":mutationSucceeded=m.forget(selected.id)
+                    case "candidate changed":var edited=candidate;edited.text="A human edited the earlier source interpretation.";mutationSucceeded=m.put(edited)
+                    case "candidate forgotten":mutationSucceeded=m.forget(candidate.id)
+                    case "candidate corrected":mutationSucceeded=m.correct(candidate.id,with:PAMemory(registration:p.activeID,text:"This earlier report is superseded by my correction.",kind:.context,provenance:"Fictional human"))
+                    case "candidate pinned":var edited=candidate;edited.organisation = .init(areas:[.studies],connections:[],manual:true);mutationSucceeded=m.put(edited)
+                    case "controls off/on":m.learningEnabled=false;m.learningEnabled=true
+                    case "source changed":if lane == "native" {items[0].revision="three"} else {sourcePermitted=false}
+                    case "Stop":if lane == "native" {native.cancel()} else {whatsapp.cancel()}
+                    default:preconditionFailure("Unknown fixture scenario")
+                    }
+                    expectedHumanRecords=m.records.filter{$0.source == nil}
+                }
+                var release:CheckedContinuation<Void,Never>?
+                if scenario.hasPrefix("held ") {p.hold={await withCheckedContinuation {release=$0}}} else {p.onCall=mutate}
+                if lane == "native" {native.check(r,kind:.reminder)} else {whatsapp.check(r)}
+                if scenario.hasPrefix("held ") {
+                    for _ in 0..<10_000 {if release != nil {break};await Task.yield()}
+                    guard let release else {preconditionFailure("The held source fixture did not reach inference")}
+                    mutate();release.resume()
+                }
+                for _ in 0..<10_000 {if !native.busy && !whatsapp.busy {break};await Task.yield()}
+                let error=lane == "native" ? native.error : whatsapp.error
+                check(mutationSucceeded && p.calls == 1 && !native.busy && !whatsapp.busy,lane+" "+scenario+" executes one real service fixture")
+                if let input=p.inputs.first?.first?["content"],let json=try JSONSerialization.jsonObject(with:Data(input.utf8)) as? [String:Any] {
+                    let existing=json["existingMemory"] as? [[String:String]] ?? [],candidates=json["updatableSourceMemory"] as? [[String:Any]] ?? []
+                    check(existing.contains{$0["text"] == selected.text} && !existing.contains{$0["text"] == candidate.text} && candidates.contains{$0["id"] as? String == candidate.id.uuidString},lane+" "+scenario+" supplies the fact and independent exact candidate")
+                } else {check(false,lane+" produces inspectable fictional input")}
+                if successful.contains(scenario) {
+                    check(error == nil && m.sourceAssessmentDate(receipt) != nil && m.records.first{$0.id == candidate.id}?.supersededBy != nil,lane+" "+scenario+" merges against current memory without losing exact replacement history")
+                    check(m.records.filter{$0.source == nil} == expectedHumanRecords,lane+" "+scenario+" preserves every concurrent human save Forget and organisation change exactly")
+                } else {
+                    check(error != nil && m.sourceAssessmentDate(receipt) == nil && !m.records.contains{$0.supersedes == candidate.id && $0.source != nil},lane+" "+scenario+" rejects late output before saving any assessment receipt")
+                    p.onCall=nil;p.hold=nil;clock.addTimeInterval(1801)
+                    if lane == "native" {let reopened=NativeSourceLearningService(container:isolated);reopened.check(r,kind:.reminder);check(!reopened.busy && p.calls == 1,lane+" "+scenario+" keeps failed claims paused across reopen")}
+                    else {let reopened=SourceContextLearningService(container:isolated);reopened.check(r);check(!reopened.busy && p.calls == 1,lane+" "+scenario+" keeps failed claims paused across reopen")}
+                }
+            }
+        }
     }
 }

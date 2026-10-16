@@ -94,7 +94,7 @@ import SwiftData
             let existing=selectedMemory.map{["text":String(($0["text"] ?? "").prefix(500)),"certainty":$0["certainty"] ?? "unknown"]}
             let coverage=Self.coverage(kind)
             guard let input=try? NativeLearningRules.input(items:batch,candidates:candidates,existing:existing,coverage:coverage) else { error="The bounded input couldn't be prepared. Review once resumes this paused pass.";return }
-            let memoryRevision=memory.revision,permissionRevision=revision,selectedModel=model.inference.selectedModel,contextRevision=assistant.contextRevision
+            let permissionRevision=revision,selectedModel=model.inference.selectedModel,contextRevision=assistant.contextRevision,memoryControls=memory.controlsRevision
             let calendars=assistant.excludedCalendars,lists=assistant.excludedLists,accounts=assistant.excludedAccounts
             ownedHeartbeatRunID=model.ownedHeartbeatRunID;busy=true;activeKind=kind;error=nil
             task=Task {
@@ -110,8 +110,9 @@ import SwiftData
                     guard let current=model.nativeLearningItems(kind) else {return false}
                     let currentMemory=memory.permittedRecords.filter{MemoryRules.usable($0,registration:registration,now:model.now())}.map(MemoryRetrieval.record)
                     return registration == model.inference.activeID && permissionRevision == revision && permittedKind(kind,model:model) &&
-                    selectedModel == model.inference.selectedModel && memoryRevision == memory.revision && memory.enabled && memory.learningEnabled && assistant.contextEnabled && contextRevision == assistant.contextRevision &&
+                    selectedModel == model.inference.selectedModel && memoryControls == memory.controlsRevision && memory.enabled && memory.learningEnabled && assistant.contextEnabled && contextRevision == assistant.contextRevision &&
                     choicesMatch && MemoryDependencyRules.available(memoryDependencies,records:currentMemory) &&
+                    candidates.allSatisfy({old in memory.records.first(where:{$0.id == old.id}) == old && batch.contains{NativeLearningRules.replaceable(old,by:$0,registration:registration,now:model.now())}}) &&
                     !assistant.busy && !assistant.hasDraft && !model.writing && batch.allSatisfy(current.contains)
                 }
                 do {
@@ -122,7 +123,9 @@ import SwiftData
                     guard valid(),let facts=NativeLearningRules.decode(output,items:batch,candidates:candidates,registration:registration,now:model.now()),facts.allSatisfy({permits($0,model:model)}) else { throw MemoryLearningFailure.changed }
                     let texts=Dictionary(batch.map{($0.identity,$0.text)},uniquingKeysWith:{first,_ in first})
                     let replacements=Dictionary(candidates.compactMap{old in old.source.map{(old.id,$0)}},uniquingKeysWith:{first,_ in first})
-                    guard memory.putSources(facts,evidenceTexts:texts,expectedRevision:memoryRevision,assessmentIDs:batch.map{NativeLearningRules.receipt(registration,$0)},replacementSources:replacements,now:model.now()) else { throw MemoryLearningFailure.storage }
+                    // No await follows exact dependency validation. Merge against the
+                    // current envelope so unrelated saves survive, retaining store CAS.
+                    guard memory.putSources(facts,evidenceTexts:texts,expectedRevision:memory.revision,assessmentIDs:batch.map{NativeLearningRules.receipt(registration,$0)},replacementSources:replacements,now:model.now()) else { throw MemoryLearningFailure.storage }
                     let beforeSave=state;state.scopes[key]=NativeLearningRules.completing(progress,items:batch,now:model.now())
                     do { try save() } catch { state=beforeSave;throw error }
                 } catch { self.error=error.localizedDescription }
