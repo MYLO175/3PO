@@ -68,7 +68,12 @@ import SwiftData
         let reloaded=try JSONDecoder().decode(PADiscovery.self,from:JSONEncoder().encode(advice))
         precondition(reloaded.memoryDependencies == dependencies && reloaded.memoryUse == .manualSuggestions && reloaded.sourceAssessmentRevision == "body-one")
         var newer=advice;newer.sourceAssessmentRevision="body-two"
-        precondition(ProactiveRules.unreported([newer],prior:[advice],budget:1).count == 1,"A freshly changed body can be assessed even when its Mail headers are identical")
+        precondition(ProactiveRules.unreported([newer],prior:[advice],budget:1).isEmpty,"An assessment revision alone cannot issue the same pending action again")
+        var changedSource=candidate;changedSource.sourceAssessmentRevision="body-two";changedSource.sourceContentVersion="different-exact-body-content"
+        let changedOutput=#"{"suggestions":[{"mailID":"mail_0","kind":"reminder","message":"Could a diagram reminder help instead?","evidence":"Orion supervision now needs a diagram instead of a prototype."}]}"#
+        changedSource.evidence="Orion supervision now needs a diagram instead of a prototype."
+        let changedAdvice=try ProactiveRules.decode(changedOutput,candidates:[changedSource],registration:registration,scope:"same",now:now)[0]
+        precondition(ProactiveRules.unreported([changedAdvice],prior:[advice],budget:1).count == 1,"Changed exact content with a materially different supported action remains eligible despite identical Mail headers")
         var dismissed=advice;dismissed.dismissed=true
         precondition(ProactiveRules.unreported([advice],prior:[dismissed],budget:1).isEmpty,"No duplicate unchanged advice after dismissal")
         var legacyAdvice=try JSONSerialization.jsonObject(with:JSONEncoder().encode(advice)) as! [String:Any]

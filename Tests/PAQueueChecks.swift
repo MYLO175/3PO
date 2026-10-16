@@ -19,12 +19,19 @@ import SwiftData
         precondition(!PARequestQueue(container:nil).add(registration:"one",topicID:nil,prompt:"Keep my draft"))
         precondition(!reload.add(registration:"",topicID:nil,prompt:"invalid"))
         precondition(!reload.add(registration:"one",topicID:nil,prompt:"  "))
-        for i in 0..<19 { precondition(reload.add(registration:"one",topicID:nil,prompt:"Task \(i)")) }
-        precondition(!reload.add(registration:"one",topicID:nil,prompt:"over limit"))
+        for i in 0..<125 { precondition(reload.add(registration:"one",topicID:nil,prompt:"Task \(i)",focusAreas:[.studies])) }
+        let many=PARequestQueue(container:container)
+        precondition(many.items == reload.items && many.items.count == 127,"More than twenty per account and one hundred total survive reopening with exact IDs/order")
+        precondition(PAQueueRules.next(many.items,registration:"one")?.prompt == "Second task")
+        let retained=Array(many.items.prefix(5))
+        for item in retained {precondition(many.finish(item.id,result:"Fictional completed receipt",needsAnswer:false))}
+        precondition(many.add(registration:"one",topicID:nil,prompt:"Retain completed history"))
+        precondition(retained.allSatisfy{item in many.items.contains{$0.id == item.id && $0.state == .completed && $0.result == "Fictional completed receipt"}},"Admission does not evict completed receipts to make room")
+        precondition(!many.add(registration:"one",topicID:nil,prompt:String(repeating:"x",count:ConversationRules.promptByteLimit+1)),"Per-request bounds remain enforced")
         var greeting=PAQueuedRequest(registration:"one",prompt:"hi just checking stuff");greeting.state = .completed;greeting.result="Hi"
         var answer=PAQueuedRequest(registration:"one",prompt:"Book a trip",focusAreas:[.studies,.career]);answer.state = .needsAnswer
         precondition(PAQueueRules.handoffs([greeting,answer],registration:"one").map(\.id) == [answer.id])
         let captured=try JSONDecoder().decode(PAQueuedRequest.self,from:JSONEncoder().encode(answer));precondition(captured.focusAreas == [.studies,.career])
-        print("PASS: queue persistence, captured topic/account, FIFO, interrupted no-replay state, removal, unavailable storage and bounded admission")
+        print("PASS: uncapped request-count admission/reopen, retained completed receipts, captured topic/account/Focus, FIFO, interrupted no-replay state, removal, unavailable storage and per-request bounds")
     }
 }

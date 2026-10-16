@@ -10,9 +10,10 @@ import SwiftData
     var hasSession = true
     var answer = "{\"memories\":[]}"
     var calls = 0
+    var inputs:[[[String:String]]]=[]
     var onCall: (() -> Void)?
     func streamResponse(input: [[String:String]], instructions: String, model: String?, effort: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> String {
-        calls += 1; onCall?(); return answer
+        calls += 1;inputs.append(input);onCall?();return answer
     }
     func toolResponse(input: [[String:Any]], instructions: String, tools: [[String:Any]], model: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> PAResponse { fatalError("Learning cannot execute foreground tools") }
 }
@@ -102,10 +103,10 @@ import SwiftData
         check(inference.calls == 4 && sources.error == nil, "Actual native learning consumes one permitted cached delta")
         check(budget.receipts("fixture")[.nativeSources] == now, "Native receipt uses the same shared budget and clock")
         now.addTimeInterval(1800); native[0].revision = "two"; native[0].changed = now
-        inference.onCall = { sourceRevision += 1 }
+        inference.onCall = { sourceRevision += 1;native[0].revision = "changed-exact-item" }
         sources.check(runtime, kind:.reminder)
         await wait { sources.busy }
-        check(inference.calls == 5 && sources.error != nil, "Source revision drift rejects native output")
+        check(inference.calls == 5 && sources.error != nil, "An exact assessed-item revision change rejects native output")
         inference.onCall = nil; now.addTimeInterval(1800)
         sources.check(runtime, kind:.reminder)
         check(inference.calls == 5 && !sources.busy, "Failed native claim is never silently replayed")
@@ -176,6 +177,79 @@ import SwiftData
         whatsapp.messages.append(.init(id:"new",chat:"chat",sender:"contact",text:"Please prepare a diagram",sentByMe:false,time:now.timeIntervalSince1970*1000))
         messages.check(owned);await wait{messages.busy}
         check(claims == 3 && messages.error == nil,"Only new inherited WhatsApp deltas run under a persisted owned claim")
+
+        do {
+            let isolated=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+            let p=FictionalInference(),m=PAMemoryStore(container:isolated,settings:settings),w=FictionalWhatsApp()
+            let a=FictionalAssistant(p,memory:m),b=LearningBudget(container:isolated)
+            var clock=now,revision=0,items:[NativeLearningItem]=[]
+            let r=LearningRuntime(assistant:a,inference:p,learningBudget:b,whatsapp:w,now:{clock},activity:{.init()},writing:{false},sourceRevision:{revision},nativeItems:{kind,_ in kind == .mail ? items : nil})
+            let learner=NativeSourceLearningService(container:isolated)
+            learner.setEnabled(true,kind:.mail,model:r)
+            items=[.init(identity:.init(kind:.mail,accountID:"fictional-mail",containerID:"inbox",itemID:"target"),revision:"one",label:"Fictional report",text:"The report needs a prototype",date:clock,changed:clock)]
+            p.answer="{\"facts\":[]}"
+            p.onCall={
+                revision += 1 // An unrelated EventKit notification.
+                items.append(.init(identity:.init(kind:.mail,accountID:"fictional-mail",containerID:"inbox",itemID:"unrelated"),revision:"one",label:"Fictional unrelated message",text:"Another message arrived",date:clock,changed:clock))
+            }
+            learner.check(r,kind:.mail);await wait{learner.busy}
+            check(p.calls == 1 && learner.error == nil,"Unrelated EventKit notifications and unissued Mail arrivals do not discard an unchanged exact assessment")
+            clock.addTimeInterval(1801);items[0].revision="two";items[0].changed=clock
+            p.onCall={items[0].revision="three"}
+            learner.check(r,kind:.mail);await wait{learner.busy}
+            check(p.calls == 2 && learner.error != nil,"Changing the exact issued Mail item still rejects its late assessment")
+            p.onCall=nil;clock.addTimeInterval(1801)
+            let reopened=NativeSourceLearningService(container:isolated)
+            reopened.check(r,kind:.mail)
+            check(p.calls == 2 && !reopened.busy,"An actual exact-source failure remains paused across reopening")
+        }
+        do {
+            let isolated=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+            let p=FictionalInference(),m=PAMemoryStore(container:isolated,settings:settings),w=FictionalWhatsApp()
+            let a=FictionalAssistant(p,memory:m),b=LearningBudget(container:isolated)
+            var clock=now
+            w.accessValue.learnContext=false
+            let r=LearningRuntime(assistant:a,inference:p,learningBudget:b,whatsapp:w,now:{clock},activity:{.init()},writing:{false},sourceRevision:{0},nativeItems:{_,_ in nil},reviewWhatsAppPermission:{true})
+            m.sourceIsPermitted={SourceContextRules.permitted($0,access:r.whatsappLearningAccess,linkedIdentity:"fictional-device",messages:w.messages)}
+            let learner=SourceContextLearningService(container:isolated)
+            w.messages=[.init(id:"old-A",chat:"chat",sender:"fictional",text:"Please prepare the old report",sentByMe:false,time:clock.addingTimeInterval(-21600).timeIntervalSince1970*1000)]
+            learner.check(r)
+            check(p.calls == 0 && !learner.busy,"Initial inherited access establishes a no-inference baseline")
+            var expanded=w.accessValue;expanded.chats.insert("second-chat")
+            w.accessValue=WhatsAppReadRules.recordingLearningAccess(expanded,previous:w.accessValue);w.revision=UUID()
+            w.chats.append(.init(id:"second-chat",name:"Second fictional chat",group:true))
+            w.messages.append(.init(id:"old-B",chat:"second-chat",sender:"fictional",text:"Please prepare the old diagram",sentByMe:false,time:clock.addingTimeInterval(-21600).timeIntervalSince1970*1000))
+            learner.check(r)
+            let expandedReopen=SourceContextLearningService(container:isolated)
+            expandedReopen.check(r)
+            check(p.calls == 0 && !expandedReopen.busy,"Adding a chat baselines its old cached text and persists that boundary across reopen")
+            clock.addTimeInterval(1)
+            let fresh=WhatsAppReadMessage(id:"fresh-B",chat:"second-chat",sender:"fictional",text:"Please prepare a new diagram",sentByMe:false,time:clock.timeIntervalSince1970*1000)
+            w.messages.append(fresh)
+            let freshID=SourceContextRules.recent([fresh],chats:w.chats,allowed:w.accessValue.chats,now:clock)[0].id
+            p.answer="{\"facts\":[{\"messageID\":\"\(freshID)\",\"text\":\"A message requests a new diagram\",\"quote\":\"Please prepare a new diagram\",\"kind\":\"commitment\",\"areas\":[],\"state\":\"proposed\"}]}"
+            expandedReopen.check(r);await wait{expandedReopen.busy}
+            check(p.calls == 1 && expandedReopen.error == nil && m.records.count == 1,"New post-grant messages remain eligible for exact attributed learning")
+            let evidenceBefore=m.records
+            var disabled=w.accessValue;disabled.enabled=false
+            w.accessValue=WhatsAppReadRules.recordingLearningAccess(disabled,previous:w.accessValue)
+            check(m.permittedRecords.isEmpty,"Access withdrawal immediately excludes earlier source facts without deleting them")
+            // No learner/heartbeat check observes the disabled interval.
+            clock.addTimeInterval(1801)
+            w.messages.append(.init(id:"disabled-gap",chat:"second-chat",sender:"fictional",text:"Old text received before access resumes",sentByMe:false,time:clock.addingTimeInterval(-60).timeIntervalSince1970*1000))
+            var resumed=w.accessValue;resumed.enabled=true
+            w.accessValue=WhatsAppReadRules.recordingLearningAccess(resumed,previous:w.accessValue);w.revision=UUID()
+            let resumedReopen=SourceContextLearningService(container:isolated)
+            resumedReopen.check(r)
+            check(p.calls == 1 && !resumedReopen.busy && m.records == evidenceBefore,"A durable access generation baselines old text after an unobserved opt-out/re-enable and reopen, preserving earlier evidence")
+            clock.addTimeInterval(1);w.messages.append(.init(id:"post-resume",chat:"second-chat",sender:"fictional",text:"A genuinely new post-resume message",sentByMe:false,time:clock.timeIntervalSince1970*1000))
+            p.answer="{\"facts\":[]}"
+            resumedReopen.check(r);await wait{resumedReopen.busy}
+            check(p.calls == 2 && resumedReopen.error == nil,"New post-resume deltas still run within the original shared allowance")
+            let saved=try LocalRecordRepository.read("paSourceContextLearning",container:isolated)!
+            let text=String(decoding:saved,as:UTF8.self)
+            check(!text.contains("second-chat") && !text.contains("disabled-gap") && !text.contains("Please prepare"),"Access receipts contain only opaque chat/message membership and revisions")
+        }
         print("PASS \(count) actual learning-service checks: injected providers/clock, persistence, foreground priority, source/account drift, pauses, explicit recovery; no dashboard, credentials or personal sources.")
     }
 }

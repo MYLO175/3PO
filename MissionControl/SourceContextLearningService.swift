@@ -46,17 +46,25 @@ import SwiftData
         guard (try? model.validateOwnership()) != nil else {return}
         let assistant=model.assistant,memory=assistant.memory,registration=model.inference.activeID
         let scope=model.whatsapp.scope(for:registration),access=model.whatsappLearningAccess
-        guard !model.otherWorkBusy(excluding:.whatsapp),readable,!busy,access.enabled,access.learnContext == true,!scope.linkedIdentity.isEmpty,!access.chats.isEmpty,
+        guard readable,!busy,!registration.isEmpty,!scope.linkedIdentity.isEmpty else {return}
+        let scopeKey=key(scope),savedProgress=state.scopes[scopeKey] ?? .init()
+        let learningAccess=SourceContextLearningAccess(permitted:assistant.contextEnabled && access.enabled && access.learnContext == true && !access.chats.isEmpty,chats:Set(access.chats.map(SourceContextRules.chatKey)),revision:access.learningAccessRevision)
+        if !learningAccess.permitted {
+            guard savedProgress.learningAccess != learningAccess else {return}
+            let prior=state;var progress=savedProgress;progress.learningAccess=learningAccess;state.scopes[scopeKey]=progress
+            do {try save()} catch {state=prior;self.error=error.localizedDescription}
+            return
+        }
+        guard !model.otherWorkBusy(excluding:.whatsapp),
               memory.enabled,memory.learningEnabled,assistant.contextEnabled,!assistant.busy,!assistant.hasDraft,!model.writing,
               !model.inference.busy,!model.inference.usagePaused,model.inference.inferenceVerified else { return }
-        let scopeKey=key(scope),savedProgress=state.scopes[scopeKey] ?? .init()
-        guard manual || !savedProgress.paused else { return }
         let recent=SourceContextRules.recent(model.whatsapp.messages,chats:model.whatsapp.chats,allowed:access.chats,now:model.now(),limit:2000)
         var progress=SourceContextRules.collecting(savedProgress,recent:recent,now:model.now())
-        // New inherited review permission starts at today's available cache, never an implicit backfill.
-        if state.scopes[scopeKey] == nil && !manual && model.whatsapp.access(for:registration).learnContext != true {
-            progress.coverage?.baseline=Dictionary(recent.map{($0.id,$0.revision)},uniquingKeysWith:{first,_ in first})
-            progress.coverage?.pending=[]
+        progress=SourceContextRules.reconcilingAccess(progress,previous:savedProgress,current:learningAccess,recent:recent)
+        if savedProgress.paused && !manual {
+            let prior=state;state.scopes[scopeKey]=progress
+            do {try save()} catch {state=prior;self.error=error.localizedDescription}
+            return
         }
         let recovered=recent.filter{memory.sourceAssessmentDate(SourceContextRules.assessmentKey(registration:registration,linkedIdentity:scope.linkedIdentity,message:$0)) != nil && progress.seen[$0.id] != $0.revision}
         if !recovered.isEmpty {
@@ -65,7 +73,7 @@ import SwiftData
         }
         let collected=state;state.scopes[scopeKey]=progress
         do { try save() } catch { state=collected;self.error=error.localizedDescription;return }
-        let batch=SourceContextRules.batch(recent,progress:progress)
+        let batch=SourceContextRules.batch(recent,progress:progress,manual:manual)
         guard !batch.isEmpty,model.learningBudget.claim(registration,manual:manual,now:model.now(),lane:.whatsapp) else { return }
         let previous=state
         var claim=progress;claim.paused=true;state.scopes[scopeKey]=claim

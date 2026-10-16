@@ -82,7 +82,8 @@ import CryptoKit
     }
     func setAccess(_ access: WhatsAppAccess, registration: String) {
         guard let id=WhatsAppReadRules.accessKey(registration:registration,linkedIdentity:linkedIdentity) else { return }
-        var updated=accesses; updated[id]=access
+        var updated=accesses
+        updated[id]=WhatsAppReadRules.recordingLearningAccess(access,previous:accesses[id] ?? .init())
         do {
             try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
             let bytes=try JSONEncoder().encode(updated)

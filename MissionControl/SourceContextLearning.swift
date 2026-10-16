@@ -17,6 +17,13 @@ struct SourceContextProgress:Codable {
     var paused=false
     var oriented=false
     var coverage:SourceContextCoverage? = nil
+    var learningAccess:SourceContextLearningAccess? = nil
+}
+struct SourceContextLearningAccess:Codable,Equatable {
+    var permitted:Bool
+    /// Hashes only; selected chat identities stay in the encrypted source store.
+    var chats:Set<String>
+    var revision:UUID?
 }
 struct SourceContextPending:Codable,Equatable {
     var id:String
@@ -90,8 +97,8 @@ enum SourceContextRules {
                 .init(id:messageKey(chat:$0.chat,item:$0.id),itemID:$0.id,chatID:$0.chat,chatName:String((names[$0.chat] ?? "Selected chat").prefix(120)),sender:String($0.sender.prefix(120)),sentByMe:$0.sentByMe,text:String($0.text.prefix(1200)),date:Date(timeIntervalSince1970:$0.time/1000),revision:revision($0))
             }
     }
-    static func batch(_ recent:[SourceContextMessage],progress:SourceContextProgress)->[SourceContextMessage] {
-        let candidates=recent.filter{progress.seen[$0.id] != $0.revision && progress.coverage?.baseline[$0.id] != $0.revision}
+    static func batch(_ recent:[SourceContextMessage],progress:SourceContextProgress,manual:Bool=false)->[SourceContextMessage] {
+        let candidates=recent.filter{progress.seen[$0.id] != $0.revision && (manual || progress.coverage?.baseline[$0.id] != $0.revision)}
         let groups=Dictionary(grouping:candidates,by:{$0.chatID})
             .mapValues{$0.sorted{$0.date == $1.date ? $0.id < $1.id : $0.date < $1.date}}
         var keys=groups.keys.sorted()
@@ -129,6 +136,23 @@ enum SourceContextRules {
         coverage.assessedDates=coverage.assessedDates.filter{keep.contains($0.key)}
         result.coverage=coverage;return result
     }
+    static func reconcilingAccess(_ original:SourceContextProgress,previous:SourceContextProgress,current:SourceContextLearningAccess,recent:[SourceContextMessage])->SourceContextProgress {
+        var result=original
+        let before=previous.learningAccess
+        let reset=before?.permitted != true || before?.revision != current.revision
+        let added=current.chats.subtracting(before?.chats ?? [])
+        // Exact pending versions were already admitted under earlier permission.
+        // Retain them and every paused claim; new grants do not silently backfill
+        // otherwise untracked historical content, including after reopening.
+        let pending=Dictionary((previous.coverage?.pending ?? []).map{($0.id,$0.revision)},uniquingKeysWith:{first,_ in first})
+        var coverage=result.coverage ?? .init()
+        for item in recent where current.permitted && (reset || added.contains(chatKey(item.chatID))) && result.seen[item.id] != item.revision && pending[item.id] != item.revision {
+            coverage.baseline[item.id]=item.revision
+            coverage.pending.removeAll{$0.id == item.id && $0.revision == item.revision}
+        }
+        result.coverage=coverage;result.learningAccess=current
+        return result
+    }
     static func completing(_ progress:SourceContextProgress,batch:[SourceContextMessage],now:Date)->SourceContextProgress {
         var result=progress,coverage=result.coverage ?? .init()
         for item in batch { result.seen[item.id]=item.revision;coverage.assessedDates[item.id]=item.date }
@@ -136,7 +160,7 @@ enum SourceContextRules {
         coverage.lastChat=batch.last.map{chatKey($0.chatID)};coverage.lastAssessment=now
         result.coverage=coverage;result.oriented=true;result.paused=false;return result
     }
-    private static func chatKey(_ id:String)->String { SHA256.hash(data:Data(id.utf8)).map{String(format:"%02x",$0)}.joined() }
+    static func chatKey(_ id:String)->String { SHA256.hash(data:Data(id.utf8)).map{String(format:"%02x",$0)}.joined() }
     static func messageKey(chat:String,item:String)->String { SHA256.hash(data:Data((chat+"\u{0}"+item).utf8)).map{String(format:"%02x",$0)}.joined() }
     /// Keep eight assessment targets; add bounded same-chat neighbours and latest reports.
     /// Context-only messages never advance the persisted assessment cursor.

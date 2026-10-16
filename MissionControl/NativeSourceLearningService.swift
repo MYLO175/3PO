@@ -89,19 +89,30 @@ import SwiftData
             do { try save() } catch { state=beforeClaim;self.error=error.localizedDescription;return }
             let now=model.now()
             let candidates=Array(memory.records.filter { old in batch.contains{NativeLearningRules.replaceable(old,by:$0,registration:registration,now:now)} }.prefix(8))
-            let existing=Array(memory.context(registration,query:batch.map(\.text).joined(separator:" "),now:model.now()).prefix(12)).map{["text":String(($0["text"] ?? "").prefix(500)),"certainty":$0["certainty"] ?? "unknown"]}
+            let selectedMemory=Array(memory.context(registration,query:batch.map(\.text).joined(separator:" "),now:model.now()).prefix(12))
+            let memoryDependencies=MemoryDependencyRules.capture(selectedMemory)
+            let existing=selectedMemory.map{["text":String(($0["text"] ?? "").prefix(500)),"certainty":$0["certainty"] ?? "unknown"]}
             let coverage=Self.coverage(kind)
             guard let input=try? NativeLearningRules.input(items:batch,candidates:candidates,existing:existing,coverage:coverage) else { error="The bounded input couldn't be prepared. Review once resumes this paused pass.";return }
-            let memoryRevision=memory.revision,permissionRevision=revision,selectedModel=model.inference.selectedModel,contextRevision=assistant.contextRevision,sourceRevision=model.sourceRevision
+            let memoryRevision=memory.revision,permissionRevision=revision,selectedModel=model.inference.selectedModel,contextRevision=assistant.contextRevision
             let calendars=assistant.excludedCalendars,lists=assistant.excludedLists,accounts=assistant.excludedAccounts
             ownedHeartbeatRunID=model.ownedHeartbeatRunID;busy=true;activeKind=kind;error=nil
             task=Task {
                 defer { ownedHeartbeatRunID=nil;busy=false;activeKind=nil }
                 @MainActor func valid()->Bool {
-                    registration == model.inference.activeID && permissionRevision == revision && permittedKind(kind,model:model) &&
+                    let choicesMatch:Bool
+                    switch kind {
+                    case .calendar:choicesMatch=calendars == assistant.excludedCalendars
+                    case .reminder:choicesMatch=lists == assistant.excludedLists
+                    case .mail:choicesMatch=accounts == assistant.excludedAccounts
+                    case .whatsapp:choicesMatch=false
+                    }
+                    guard let current=model.nativeLearningItems(kind) else {return false}
+                    let currentMemory=memory.permittedRecords.filter{MemoryRules.usable($0,registration:registration,now:model.now())}.map(MemoryRetrieval.record)
+                    return registration == model.inference.activeID && permissionRevision == revision && permittedKind(kind,model:model) &&
                     selectedModel == model.inference.selectedModel && memoryRevision == memory.revision && memory.enabled && memory.learningEnabled && assistant.contextEnabled && contextRevision == assistant.contextRevision &&
-                    calendars == assistant.excludedCalendars && lists == assistant.excludedLists && accounts == assistant.excludedAccounts && sourceRevision == model.sourceRevision &&
-                    !assistant.busy && !assistant.hasDraft && !model.writing && model.nativeLearningItems(kind) == items
+                    choicesMatch && MemoryDependencyRules.available(memoryDependencies,records:currentMemory) &&
+                    !assistant.busy && !assistant.hasDraft && !model.writing && batch.allSatisfy(current.contains)
                 }
                 do {
                     try model.validateOwnership();guard valid() else { throw MemoryLearningFailure.changed }

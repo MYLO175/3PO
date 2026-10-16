@@ -19,6 +19,8 @@ struct WhatsAppAccess: Codable, Equatable {
     var includeInBrief: Bool? = nil
     var learnContext: Bool? = nil
     var includeInSuggestions:Bool? = nil
+    /// Durable access changes survive a disabled interval/reopen; no source content.
+    var learningAccessRevision:UUID? = nil
     var briefEnabled: Bool { enabled && includeInBrief == true && !chats.isEmpty }
 }
 struct WhatsAppBriefSnapshot {
@@ -33,6 +35,12 @@ struct WhatsAppSourceScope: Equatable {
     let revision: UUID
 }
 enum WhatsAppReadRules {
+    static func recordingLearningAccess(_ access:WhatsAppAccess,previous:WhatsAppAccess)->WhatsAppAccess {
+        var value=access
+        let changed=access.enabled != previous.enabled || access.chats != previous.chats || access.learnContext != previous.learnContext || access.includeInBrief != previous.includeInBrief || access.includeInSuggestions != previous.includeInSuggestions
+        value.learningAccessRevision=changed ? UUID() : previous.learningAccessRevision
+        return value
+    }
     static func accessKey(registration: String, linkedIdentity: String) -> String? {
         guard !registration.isEmpty, !linkedIdentity.isEmpty else { return nil }
         return registration + ":" + linkedIdentity

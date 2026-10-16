@@ -62,6 +62,17 @@ import Foundation
         var paused=persisted;paused.paused=true
         let roundtrip=try JSONDecoder().decode(SourceContextProgress.self,from:JSONEncoder().encode(paused))
         precondition(roundtrip.paused && roundtrip.coverage?.pending.count == 16,"Interrupted work keeps its pending references")
+        var tracked=roundtrip
+        tracked.learningAccess = .init(permitted:true,chats:Set(["busy","quiet"].map(SourceContextRules.chatKey)),revision:UUID())
+        let newlyAdmitted=SourceContextMessage(id:"opaque-new-chat-message",itemID:"older-message",chatID:"new-chat",chatName:"New fictional chat",sender:"fictional",sentByMe:false,text:"An old responsibility from a newly selected chat",date:now.addingTimeInterval(-3600),revision:"one")
+        let expandedAccess=SourceContextLearningAccess(permitted:true,chats:Set(["busy","quiet","new-chat"].map(SourceContextRules.chatKey)),revision:UUID())
+        let collectedExpanded=SourceContextRules.collecting(tracked,recent:backlogRecent+[newlyAdmitted],now:now)
+        let expanded=SourceContextRules.reconcilingAccess(collectedExpanded,previous:tracked,current:expandedAccess,recent:backlogRecent+[newlyAdmitted])
+        precondition(expanded.paused && expanded.coverage?.pending.count == tracked.coverage?.pending.count,"Scope expansion preserves exact old pending versions and the interrupted-claim pause")
+        precondition(SourceContextRules.batch([newlyAdmitted],progress:expanded).isEmpty,"Newly admitted cached history is baseline, not automatic work")
+        precondition(SourceContextRules.batch([newlyAdmitted],progress:expanded,manual:true).count == 1,"Explicit Review once may inspect a bounded baseline batch")
+        let expandedReload=try JSONDecoder().decode(SourceContextProgress.self,from:JSONEncoder().encode(expanded))
+        precondition(expandedReload.learningAccess == expandedAccess && expandedReload.coverage?.pending.count == 16 && expandedReload.paused,"Opaque access boundaries, pending work and paused claims survive reopening")
         let many=(0..<250).map{index in WhatsAppReadMessage(id:"many-\(index)",chat:"busy",sender:"participant",text:"Update \(index)",sentByMe:false,time:now.addingTimeInterval(Double(-index)).timeIntervalSince1970*1000)}+backlog.filter{$0.chat == "quiet"}
         let fairWindow=SourceContextRules.recent(many,chats:[],allowed:["busy","quiet"],now:now)
         precondition(fairWindow.count == 200 && fairWindow.contains{$0.chatID == "quiet"})

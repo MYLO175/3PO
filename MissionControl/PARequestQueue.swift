@@ -34,15 +34,14 @@ enum PAQueueRules {
         do {
             if let record = try LocalRecordRepository.read("paRequestQueue", container: container) {
                 let values=try JSONDecoder().decode([PAQueuedRequest].self,from: record)
-                guard values.count <= 100, Set(values.map(\.id)).count == values.count else { throw CocoaError(.fileReadCorruptFile) }
+                guard Set(values.map(\.id)).count == values.count else { throw CocoaError(.fileReadCorruptFile) }
                 items=PAQueueRules.recover(values)
             }
         } catch { writable=false; self.error="Saved requests could not be read; the original record is preserved." }
     }
     @discardableResult func add(registration:String,topicID:UUID?,prompt:String,focusAreas:[LifeArea]? = nil,images:[ChatImageAttachment] = [])->Bool {
-        guard !registration.isEmpty, (!prompt.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || !images.isEmpty),images.count <= 4,images.allSatisfy({$0.registration == registration}), ConversationRules.acceptsPrompt(prompt),items.filter({$0.state != .completed}).count < 100,items.filter({$0.registration == registration && $0.state != .completed}).count < 20 else { error="The queue is full or the message is too long. Your draft is kept."; return false }
+        guard !registration.isEmpty, (!prompt.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || !images.isEmpty),images.count <= 4,images.allSatisfy({$0.registration == registration}), ConversationRules.acceptsPrompt(prompt) else { error="The queued message or its images are invalid or too large. Your draft is kept."; return false }
         return change { values in
-            if values.count >= 100,let i=values.firstIndex(where:{$0.state == .completed}) { values.remove(at:i) }
             values.append(.init(registration:registration,topicID:topicID,prompt:prompt,focusAreas:focusAreas,images:images.isEmpty ? nil : images))
         }
     }

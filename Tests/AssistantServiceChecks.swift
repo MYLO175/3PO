@@ -146,10 +146,15 @@ private final class ObservationCounter:@unchecked Sendable {
             withObservationTracking({_ = streamService.conversation(streamID)},onChange:{transcriptChanges.increment()})
             withObservationTracking({_ = streamService.activityContext(streamID)},onChange:{activityChanges.increment()})
         }
-        observeStreaming();streamProvider.afterDelta=observeStreaming
+        let streamingRevision=streamService.transcriptRevision
+        observeStreaming();streamProvider.afterDelta={
+            check(streamService.transcriptRevision == streamingRevision,"Ordinary streamed prose must not invalidate the structural transcript projection")
+            observeStreaming()
+        }
         await until{!streamService.busy}
         check(transcriptChanges.value >= 200,"Each real streamed delta updates the displayed transcript")
         check(activityChanges.value == 0,"Streamed prose never invalidates Activity metadata")
+        check(streamService.transcriptRevision != streamingRevision,"The completed saved response advances the structural transcript revision")
         check(streamService.feed?.turns.last?.content == "Completed fictional streaming response","Removing Activity observation retains the full final response")
         streamProvider.activeID="different-fictional-account"
         check(streamService.activityContext(streamID) == nil && streamService.conversation(streamID) == nil,"Exact context lookup still excludes other accounts")
@@ -199,6 +204,86 @@ private final class ObservationCounter:@unchecked Sendable {
             .init(role: "assistant", content: "Withdrawn fictional source advice", completed: true, deliveryID: "fictional-withdrawn", created: context.now)
         ], isPrimary: true)
         check(assistant.sourceSafeHistory(runtime: context.runtime(), feed: history, topic: nil).map(\.content) == ["Retained fictional human turn"], "Injected delivery support must withdraw stale source advice without discarding human history.")
+
+        for corrected in [true,false] {
+            let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("native-preparation-\(corrected)"))
+            var attempts=0
+            c.configure={session,_ in session.executeBody={call,session in
+                if call.name == "change_reminder" {
+                    attempts += 1
+                    if attempts == 1 {throw NativePreSaveFailure(message:"The exact fictional item needs a fresh read")}
+                    session.receipts.append("Fictional reminder edit verified")
+                    return "{\"verified\":true,\"result\":\"Fictional reminder edit verified\"}"
+                }
+                return "{}"
+            }}
+            let original=tools(["change_reminder"])
+            var retry=tools(["change_reminder"])
+            if !corrected {retry.calls[0].arguments="{\"target\":\"different-sibling\"}"}
+            p.replies=[original,tools(["read_reminders","read_item_details"]),retry,final("Fictional native action answer")]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Update this fictional reminder"),"Known pre-save failure fixture starts")
+            await until{!value.busy}
+            let turn=value.feed!.turns.last!
+            let toolOutputs=p.inputs.flatMap{$0}.compactMap{$0["output"] as? String}
+            check(toolOutputs.contains{output in
+                guard let result=(try? JSONSerialization.jsonObject(with:Data(output.utf8))) as? [String:Any] else {return false}
+                return result["stage"] as? String == "native_preparation" && result["nativeSaveAttempted"] as? Bool == false
+            },"Positive no-save proof is projected separately from uncertain native operations")
+            check(turn.toolErrors?.count == 1 && (turn.unresolvedToolErrors?.isEmpty == true) == corrected,"Only verified recovery of the exact native payload clears its unresolved error; sibling changes retain it")
+        }
+
+        do {
+            let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("exact-source-dependencies"))
+            func sourceFact(_ text:String,_ item:String)->PAMemory {
+                let source=MemorySourceEvidence(identity:.init(kind:.mail,accountID:"fictional-mail",containerID:"inbox",itemID:item),revision:"v1",label:"Fictional source",quote:text,observed:c.now,sourceDate:c.now)
+                return PAMemory(registration:p.activeID,text:text,kind:.context,explicit:false,provenance:"Fictional source",evidence:text,sourceDate:c.now,certainty:.inferred,durability:.situational,source:source)
+            }
+            let selected=sourceFact("Orion coursework needs a prototype","selected"),unrelated=sourceFact("Garden irrigation needs a valve","unrelated")
+            var permitted:Set<UUID>=[selected.id,unrelated.id]
+            value.memory.sourceIsPermitted={permitted.contains($0.id)}
+            check(value.memory.putSources([selected,unrelated],evidenceTexts:[selected.source!.identity:selected.text,unrelated.source!.identity:unrelated.text],expectedRevision:value.memory.revision),"Fictional exact-source facts save with original evidence")
+            p.holdNext=true;p.replies=[final("Selected Orion answer")]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Help with Orion coursework"),"Selected-source request starts")
+            await until{p.waiting}
+            permitted.remove(unrelated.id);p.release();await until{!value.busy}
+            let first=value.feed!.turns.last!
+            check(value.error == nil && first.completed && first.sourceMemoryIDs == [selected.id],"Unrelated source withdrawal neither stops a request nor becomes its dependency")
+            check(value.sourceSafeHistory(runtime:c.runtime(),feed:value.feed!,topic:nil).contains{$0.id == first.id},"A reply remains recallable after unrelated source loss")
+            permitted.remove(selected.id)
+            check(!value.sourceSafeHistory(runtime:c.runtime(),feed:value.feed!,topic:nil).contains{$0.id == first.id},"Selected-source withdrawal still removes dependent reply history")
+            permitted=[selected.id,unrelated.id]
+            c.configure={session,_ in session.executeBody={call,session in
+                if call.name == "read_memory" {session.consultedMemory.insert(unrelated.id)}
+                return "{\"records\":[{\"id\":\"\(unrelated.id.uuidString)\"}]}"
+            }}
+            p.replies=[tools(["read_memory"]),final("Answer using selected and successfully read facts")]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Help with Orion coursework again"),"Additional successful memory-read request starts")
+            await until{!value.busy}
+            let readReply=value.feed!.turns.last!
+            check(Set(readReply.sourceMemoryIDs ?? []) == [selected.id,unrelated.id] && readReply.contextCapture?.consultedMemoryIDs == [unrelated.id],"Actual successful tool reads extend exact reply dependencies beyond initial selection")
+            p.replies=[final("Follow-up using facts supplied by earlier replies")]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Could you continue?"),"A follow-up without a direct memory match starts")
+            await until{!value.busy}
+            let followup=value.feed!.turns.last!
+            check(followup.contextCapture?.memoryIDs.isEmpty == true && Set(followup.sourceMemoryIDs ?? []) == [selected.id,unrelated.id],"Earlier assistant history carries its transitive source dependencies into a new reply even with zero lexical matches")
+            permitted.remove(unrelated.id)
+            check(!value.sourceSafeHistory(runtime:c.runtime(),feed:value.feed!,topic:nil).contains{$0.id == readReply.id},"An additional successfully read source remains a required dependency")
+            check(!value.sourceSafeHistory(runtime:c.runtime(),feed:value.feed!,topic:nil).contains{$0.id == followup.id},"Source withdrawal also removes follow-ups derived indirectly from an earlier source-backed reply")
+            var legacy=first;legacy.sourceMemoryIDs=[selected.id,unrelated.id];legacy.contextCapture?.sourceMemoryDependencyVersion=nil
+            check(ConversationRules.sourceMemoryHistory([legacy],permitted:[selected.id],history:value.feed!.turns).count == 1 && legacy.sourceMemoryIDs == [selected.id,unrelated.id],"Exact saved traces narrow old overcaptured dependencies without rewriting stored history")
+            var legacyFollowup=followup;legacyFollowup.contextCapture?.sourceMemoryDependencyVersion=nil
+            check(ConversationRules.sourceMemoryHistory([legacyFollowup],permitted:[selected.id],history:value.feed!.turns).isEmpty,"Legacy dependency reconstruction retains exact facts consumed through saved earlier history")
+            check(ConversationRules.sourceMemoryHistory([legacy],permitted:[selected.id]).isEmpty,"An incomplete legacy trace retains its conservative gates")
+            legacy.contextCapture=nil
+            check(ConversationRules.sourceMemoryHistory([legacy],permitted:[selected.id]).isEmpty,"Legacy replies without an exact trace retain their conservative source gates")
+            value.memory.enabled=false
+            check(!value.sourceSafeHistory(runtime:c.runtime(),feed:value.feed!,topic:nil).contains{$0.id == first.id},"Disabling saved memory also withdraws its dependent AI history")
+            value.memory.enabled=true
+            p.holdNext=true;p.replies=[final("Must not accept selected-source loss")]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Help with Orion coursework once more"),"Selected-source ownership fixture starts")
+            await until{p.waiting};permitted.remove(selected.id);p.release();await until{!value.busy}
+            check(value.error != nil && value.feed!.turns.last?.completed != true,"Selected-source loss during inference still rejects late output")
+        }
 
         let imageProvider = FictionalInference(), imageContext = FictionalContext()
         let imageAssistant = service(imageProvider, try open("images"))

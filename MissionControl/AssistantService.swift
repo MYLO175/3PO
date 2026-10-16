@@ -86,6 +86,8 @@ import Observation
     var activeID: UUID?
     private var allConversations: [AssistantConversation] = []
     private(set) var activityContexts:[UUID:AssistantActivityContext]=[:]
+    /// Saved/structural chat changes, independent of streamed transcript prose.
+    private(set) var transcriptRevision=UUID()
     private var conversationsWritable = true
     private let container: ModelContainer?
     private let settings: UserDefaults
@@ -319,6 +321,7 @@ import Observation
             feed.turns[63].toolErrors=[PAIntentFailure(reason:"Resolve the opening date before scheduling.").note]
         }
         allConversations=[feed];activeID=feed.id
+        transcriptRevision=UUID()
     }
     #endif
     func deliverPlacement(_ item:LifeItem) {
@@ -473,6 +476,7 @@ import Observation
         guard conversationsWritable, container != nil else { error = "Conversation storage is unavailable; nothing was saved."; return false }
         do {
             try conversationRepository.save(allConversations)
+            transcriptRevision=UUID()
             refreshActivityContexts()
             return true
         } catch { self.error = "Conversation could not be saved: " + error.localizedDescription; return false }
@@ -482,8 +486,8 @@ import Observation
             guard let delivery = turn.deliveryID, !runtime.deliveryAvailable(turn) else { return nil }
             return delivery
         })
-        let permitted=Set(memory.permittedRecords.filter{MemoryRules.usable($0,registration:connection.activeID,now:runtime.clock())}.map(\.id))
-        return ConversationRules.sourceMemoryHistory(ConversationRules.history(feed:feed,topic:topic,excludedDeliveries:excluded),permitted:permitted).map{turn in
+        let permitted=Set((memory.enabled ? memory.permittedRecords : []).filter{MemoryRules.usable($0,registration:connection.activeID,now:runtime.clock())}.map(\.id))
+        return ConversationRules.sourceMemoryHistory(ConversationRules.history(feed:feed,topic:topic,excludedDeliveries:excluded),permitted:permitted,history:feed.turns).map{turn in
             guard turn.role == "assistant" else {return turn}
             var value=turn;value.content=PAIntentFailure.correctedLegacyReply(turn.content,errors:turn.toolErrors)
             if let proposals=turn.actionApprovals {
@@ -525,14 +529,15 @@ import Observation
         let resolutionRevision = owned.resolutionRevision
         let acknowledgementContext = setupMode ? [] : owned.acknowledgements
         let projectRevision = projects.revision
-        let capturedSourceMemoryIDs=memory.permittedRecords.filter{$0.source != nil && MemoryRules.usable($0,registration:registration,now:runtime.clock())}.map(\.id)
         let whatsappScope = owned.whatsappScope
         let weatherScope = owned.weatherScope
         let selectedModel = connection.selectedModel, capturedPreferences = preferences, capturedName = displayName
         let sourceEnabled = contextEnabled, calendars = excludedCalendars, lists = excludedLists, accounts = excludedAccounts
         let notebookContext=memory.notebook(registration,topic:contextID,includeTopics:lifeFocus != nil,now:runtime.clock()).context(query:recallQuery,focus:lifeFocus ?? topic?.notebookAreas ?? [],selectedMemoryIDs:Set(selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))}))
         let notebookIDs=PAContextCapture.notebookIDs(notebookContext)
-        let capture=PAContextCapture(captured:runtime.clock(),model:selectedModel,focusAreas:lifeFocus,memoryIDs:selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))},eligibleMemoryCount:selection.eligibleCount,notebookMemoryIDs:notebookIDs.memories,workspaceIDs:notebookIDs.workspace,historyTurnIDs:replayTurns.map(\.id),excerptedHistoryIDs:replayTurns.filter{turn in permittedHistory.first(where:{$0.id == turn.id})?.content != turn.content}.map(\.id),sourceSnapshotIncluded:sourceEnabled && !setupMode && context != nil,sourceSnapshotBytes:sourceEnabled && !setupMode ? context?.utf8.count ?? 0 : 0,profileSetup:setupMode)
+        let suppliedMemoryIDs=Set(selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))}+notebookIDs.memories)
+        let capturedSourceMemoryIDs=Set(memory.permittedRecords.filter{suppliedMemoryIDs.contains($0.id) && $0.source != nil && MemoryRules.usable($0,registration:registration,now:runtime.clock())}.map(\.id)).union(replayTurns.flatMap{$0.sourceMemoryIDs ?? []})
+        let capture=PAContextCapture(captured:runtime.clock(),model:selectedModel,focusAreas:lifeFocus,memoryIDs:selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))},eligibleMemoryCount:selection.eligibleCount,notebookMemoryIDs:notebookIDs.memories,workspaceIDs:notebookIDs.workspace,historyTurnIDs:replayTurns.map(\.id),excerptedHistoryIDs:replayTurns.filter{turn in permittedHistory.first(where:{$0.id == turn.id})?.content != turn.content}.map(\.id),sourceSnapshotIncluded:sourceEnabled && !setupMode && context != nil,sourceSnapshotBytes:sourceEnabled && !setupMode ? context?.utf8.count ?? 0 : 0,profileSetup:setupMode,sourceMemoryDependencyVersion:1)
         if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) { allConversations[c].turns[t].contextCapture=capture;save() }
         let reviewValid=reviewValidity, submitted=reviewSubmitted
         let instructions = """
@@ -588,9 +593,10 @@ import Observation
             var expectedResolution = resolutionRevision
             var expectedAcknowledgementContext = acknowledgementContext
             var expectedSourceMemoryIDs=Set(capturedSourceMemoryIDs)
+            var replySourceMemoryIDs=capturedSourceMemoryIDs
             let expectedWeather = weatherScope
             @MainActor func owns(_ current:AssistantRuntimeState)->Bool {
-                return reviewValid?() != false && registration == connection.activeID && (setupMode || (expectedAcknowledgements == current.acknowledgementRevision && expectedResolution == current.resolutionRevision)) && (!setupMode || (setupActive(contextID) && profileSession(contextID) == response.profileSessionID)) && selectedModel == connection.selectedModel && capturedPreferences == preferences && capturedName == displayName && expectedMemory == memory.revision && expectedProjects == projects.revision && expectedSourceMemoryIDs == Set(memory.permittedRecords.filter{$0.source != nil && MemoryRules.usable($0,registration:registration,now:runtime.clock())}.map(\.id)) && expectedWeather == current.weatherScope && whatsappScope == current.whatsappScope && topicFocus == (self.conversation(contextID)?.focus ?? "") && topicAreas == (self.conversation(contextID)?.notebookAreas ?? []) && sourceEnabled == contextEnabled && calendars == excludedCalendars && lists == excludedLists && accounts == excludedAccounts
+                return reviewValid?() != false && registration == connection.activeID && (setupMode || (expectedAcknowledgements == current.acknowledgementRevision && expectedResolution == current.resolutionRevision)) && (!setupMode || (setupActive(contextID) && profileSession(contextID) == response.profileSessionID)) && selectedModel == connection.selectedModel && capturedPreferences == preferences && capturedName == displayName && expectedMemory == memory.revision && expectedProjects == projects.revision && expectedSourceMemoryIDs.isSubset(of:Set((memory.enabled ? memory.permittedRecords : []).filter{$0.source != nil && MemoryRules.usable($0,registration:registration,now:runtime.clock())}.map(\.id))) && expectedWeather == current.weatherScope && whatsappScope == current.whatsappScope && topicFocus == (self.conversation(contextID)?.focus ?? "") && topicAreas == (self.conversation(contextID)?.notebookAreas ?? []) && sourceEnabled == contextEnabled && calendars == excludedCalendars && lists == excludedLists && accounts == excludedAccounts
             }
             let validOwnership: NativeWriteValidity = {
                 runtime.withValidation {
@@ -608,7 +614,7 @@ import Observation
                 if let c = allConversations.firstIndex(where:{ $0.id == id }), let t = allConversations[c].turns.firstIndex(where:{ $0.id == response.id }) {
                     var turn=allConversations[c].turns[t]
                     turn.content=text;turn.completed=completed
-                    turn.sourceMemoryIDs=Array(Set(capturedSourceMemoryIDs).union(expectedSourceMemoryIDs)).sorted()
+                    turn.sourceMemoryIDs=replySourceMemoryIDs.sorted()
                     turn.memoryNotes=session.memoryNotes.isEmpty ? nil : Array(session.memoryNotes.suffix(6))
                     turn.contextCapture?.consultedMemoryIDs=session.consultedMemory.sorted{$0.uuidString < $1.uuidString}
                     if turn != allConversations[c].turns[t] {allConversations[c].turns[t]=turn}
@@ -616,6 +622,12 @@ import Observation
             }
             var preparations:[String:[PAReadPrerequisite]]=[:]
             var projectPreparations:[(note:String,requirement:PAProjectPreparation)]=[]
+            var nativePreparations:[(note:String,name:String,arguments:Data)]=[]
+            func nativePreparationArguments(_ call:PAFunctionCall)->Data? {
+                guard ["change_calendar","change_reminder"].contains(call.name),var arguments=(try? JSONSerialization.jsonObject(with:Data(call.arguments.utf8))) as? [String:Any] else {return nil}
+                arguments.removeValue(forKey:"authorization")
+                return try? JSONSerialization.data(withJSONObject:arguments,options:[.sortedKeys])
+            }
             if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {allConversations[c].turns[t].unresolvedToolErrors=[]}
             @MainActor func resolvePreparations(after call:PAFunctionCall) {
                 let readID=(try? PAToolProtocol.arguments(call))?["id"] as? String
@@ -689,6 +701,15 @@ import Observation
                             }
                             else {output = try await executePrepared(call)}
                             succeeded=true
+                            if let arguments=nativePreparationArguments(call),let result=(try? JSONSerialization.jsonObject(with:Data(output.utf8))) as? [String:Any],result["verified"] as? Bool == true {
+                                let recovered=nativePreparations.filter{$0.name == call.name && $0.arguments == arguments}
+                                if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {
+                                    for issue in recovered {
+                                        if let index=allConversations[c].turns[t].unresolvedToolErrors?.firstIndex(of:issue.note) {allConversations[c].turns[t].unresolvedToolErrors?.remove(at:index)}
+                                    }
+                                }
+                                nativePreparations.removeAll{$0.name == call.name && $0.arguments == arguments}
+                            }
                             let matching=projectPreparations.filter{$0.requirement.resolved(by:call,output:output)}
                             let recovered=matching.filter{$0.requirement.exactReferences || matching.count == 1}
                             if !recovered.isEmpty,let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {
@@ -704,7 +725,16 @@ import Observation
                                 queueRunning=false; queuedNeedsAnswer=true
                                 return .stopped
                             }
-                            if call.name.contains("memory") || call.name == "remember_context" { expectedMemory = memory.revision;expectedSourceMemoryIDs=Set(memory.permittedRecords.filter{$0.source != nil && MemoryRules.usable($0,registration:registration,now:runtime.clock())}.map(\.id)) }
+                            let currentSourceMemoryIDs=Set(memory.permittedRecords.filter{$0.source != nil && MemoryRules.usable($0,registration:registration,now:runtime.clock())}.map(\.id))
+                            let readSourceMemoryIDs=session.consultedMemory.intersection(currentSourceMemoryIDs)
+                            replySourceMemoryIDs.formUnion(readSourceMemoryIDs)
+                            if ["save_memory","remember_context","change_memory","organise_memory"].contains(call.name) {
+                                expectedMemory=memory.revision
+                                // A verified memory mutation can retire its old dependency;
+                                // the reply still records every fact actually supplied.
+                                expectedSourceMemoryIDs.formIntersection(currentSourceMemoryIDs)
+                            }
+                            expectedSourceMemoryIDs.formUnion(readSourceMemoryIDs)
                             if LifeWorkspaceTools.names.contains(call.name) { expectedProjects = projects.revision }
                             if call.name == "dismiss_suggestion", let current = runtime.state() {expectedAcknowledgements = current.acknowledgementRevision}
                             if ["dismiss_suggestion","remember_context","change_memory","organise_memory","change_calendar","change_reminder","undo_apple_change"].contains(call.name) || LifeWorkspaceTools.mutations.contains(call.name) , let current = runtime.state() {expectedAcknowledgementContext = current.acknowledgements;expectedResolution = current.resolutionRevision}
@@ -750,6 +780,7 @@ import Observation
                                     var notes=allConversations[c].turns[t].contextCapture?.preparationNotes ?? [];notes.append(note)
                                     allConversations[c].turns[t].contextCapture?.preparationNotes=Array(notes.suffix(6))
                                 }
+                                if error is NativePreSaveFailure,let arguments=nativePreparationArguments(call) {nativePreparations.append((note,call.name,arguments))}
                                 save()
                             }
                             if let failure=error as? PANativeActionUncertainty {
@@ -765,11 +796,12 @@ import Observation
                                 return .stopped
                             }
                             if ["save_memory","remember_context","change_memory","organise_memory"].contains(call.name) { session.memoryNotes.append(String(error.localizedDescription.prefix(500))) }
-                            let guidance=error is PAReadPrerequisite ? PAReadPrerequisite.guidance : error is PAReadPreparationFailure ? PAReadPreparationFailure.guidance : (error as? PAIntentFailure) != nil ? PAIntentFailure.guidance : ["save_memory","remember_context"].contains(call.name)
+                            let guidance=error is NativePreSaveFailure ? "No native save was attempted. For stale or missing targets, read the exact current item and details before preparing a corrected operation. Preserve the requested destination and concrete fields; clarify unavailable essential fields. Retry only after fresh exact data resolves this preparation failure. Do not claim success, infer new authority, or repeat an unresolved operation." : error is PAReadPrerequisite ? PAReadPrerequisite.guidance : error is PAReadPreparationFailure ? PAReadPreparationFailure.guidance : (error as? PAIntentFailure) != nil ? PAIntentFailure.guidance : ["save_memory","remember_context"].contains(call.name)
                                 ? "Do not claim success. If evidence/connection validation failed, correct the exact quote from the current human answer or omit unsupported links. Do not rephrase to bypass disabled, paused, suppressed or unavailable storage; report those limitations. Never repeat a possibly attempted storage save."
                                 : "Do not claim success or repeat a possibly attempted save. Clarify missing information if needed."
                             var failure:[String:Any] = ["error":error.localizedDescription,"verified":false,"instruction":guidance]
                             if error is PAIntentFailure { failure["stage"]="human_intent_check";failure["nativeSaveAttempted"]=false }
+                            if error is NativePreSaveFailure {failure["stage"]="native_preparation";failure["nativeSaveAttempted"]=false}
                             if let requirement=error as? PAReadPrerequisite {failure["stage"]="read_prerequisite";failure["nativeSaveAttempted"]=false;failure["requiredRead"]=requirement.readTool}
                             if let preparation=error as? PAReadPreparationFailure {failure["stage"]="read_preparation";failure["nativeSaveAttempted"]=false;failure["requiredRead"]=preparation.readTool}
                             output = String(data:try JSONSerialization.data(withJSONObject:failure),encoding:.utf8)! }

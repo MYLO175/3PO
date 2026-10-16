@@ -70,6 +70,8 @@ struct PAContextCapture: Codable, Equatable, Identifiable {
     var consultedMemoryIDs: [UUID] = []
     var attemptedTools: [String] = []
     var preparationNotes:[String]? = nil
+    /// Version 1 records initial, successful-read and transitive history dependencies.
+    var sourceMemoryDependencyVersion:Int? = nil
     static func notebookIDs(_ context:String)->(memories:[UUID],workspace:[String]) {
         let object=(try? JSONSerialization.jsonObject(with:Data(context.utf8))) as? [String:Any] ?? [:]
         let areas=object["areas"] as? [[String:Any]] ?? []
@@ -189,8 +191,32 @@ enum ConversationRules {
         if turn.role == "user",let old=previousHuman?.created,date.timeIntervalSince(old) >= 4*3600 { return "Conversation resumed" }
         return nil
     }
-    static func sourceMemoryHistory(_ turns:[AssistantTurn],permitted:Set<UUID>)->[AssistantTurn] {
-        turns.filter{($0.sourceMemoryIDs ?? []).allSatisfy(permitted.contains)}
+    static func sourceMemoryHistory(_ turns:[AssistantTurn],permitted:Set<UUID>,history:[AssistantTurn]=[])->[AssistantTurn] {
+        let byID=Dictionary((history+turns).map{($0.id,$0)},uniquingKeysWith:{_,latest in latest})
+        var memo:[UUID:Set<UUID>]=[:],visiting=Set<UUID>()
+        func dependencies(_ turn:AssistantTurn)->Set<UUID> {
+            if let cached=memo[turn.id] {return cached}
+            let stored=Set(turn.sourceMemoryIDs ?? [])
+            guard !stored.isEmpty,let capture=turn.contextCapture,capture.sourceMemoryDependencyVersion == nil else {return stored}
+            // Reconstruct older overcaptured receipts only from exact saved traces,
+            // including facts supplied indirectly by earlier assistant replies.
+            // Incomplete/cyclic/deep legacy graphs keep their conservative gates.
+            guard visiting.count < 64,visiting.insert(turn.id).inserted else {return stored}
+            defer {visiting.remove(turn.id)}
+            var supplied=Set(capture.memoryIDs+capture.notebookMemoryIDs+capture.consultedMemoryIDs)
+            for id in capture.historyTurnIDs {
+                guard let prior=byID[id] else {return stored}
+                supplied.formUnion(dependencies(prior))
+            }
+            let result=stored.intersection(supplied);memo[turn.id]=result;return result
+        }
+        return turns.compactMap { turn in
+            let required=dependencies(turn)
+            guard required.isSubset(of:permitted) else {return nil}
+            var value=turn
+            if value.sourceMemoryIDs != nil {value.sourceMemoryIDs=required.sorted()}
+            return value
+        }
     }
     static let promptByteLimit = 16_000
     static func acceptsPrompt(_ prompt: String) -> Bool {
