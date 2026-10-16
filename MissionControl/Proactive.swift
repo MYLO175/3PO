@@ -432,11 +432,39 @@ enum ProactiveRules {
         })
     }
     static let replacementInstructions = "earlierProposals contains issued pending review aliases and their original evidence, not accepted plans. If NEWER supplied communication clearly corrects, cancels or already addresses exactly the same personal plan, return its useful replacement with replaces:[exact review_N aliases] and replacementReason (max500characters), explaining the evidence connecting them. Prefer the latest explicit correction; For a cancellation use kind remove only when the removal rules identify one exact writable Calendar occurrence; otherwise use kind update, with no native change. Never propose reminder deletion or completion. An existing kind update may become a kind remove proposal from the SAME exact source version only when the same original evidence quote clearly supports the obsolete Calendar occurrence; cite that same quote and use replaces to retire the old informational update. Never retire an earlier proposal merely because names/dates overlap, it was dismissed, a different person's project is mentioned, or evidence is uncertain. Any native change or removal must retain the same exact native target as the earlier native proposal. At most three replacements per suggestion; each earlier alias may be replaced only once in the result. Respect canReplace and the source-specific replacement schema. If this source is unchanged, use retirements for exact current native/project coverage rather than repeating the old suggestion with replaces. Use null for replaces/replacementReason when no supported replacement exists. This only retires old advice in the Review inbox; the human still approves native changes."
-    static func reconsiderationBatch(_ candidates:[PADiscovery],progress:ProactiveProgress,context:String,limit:Int = 12)->[PADiscovery] {
+    /// Relevance chooses historical evidence, never proposal identity. Reserve a third
+    /// for unreconsidered cards so a busy topic cannot starve the rest of the inbox.
+    static func reconsiderationBatch(_ candidates:[PADiscovery],progress:ProactiveProgress,context:String,limit:Int = 12,sources:[DiscoveryCandidate] = [])->[PADiscovery] {
+        let count=max(0,min(12,limit))
+        guard count > 0 else {return []}
         let pending=candidates.filter{progress.reviewedProposalContexts?[$0.id] != context}
         let unchanged=candidates.filter{progress.reviewedProposalContexts?[$0.id] == context}
-        return Array((pending+unchanged).prefix(max(0,min(12,limit))))
+        let ordinary=pending+unchanged
+        guard !sources.isEmpty else {return Array(ordinary.prefix(count))}
+        func terms(_ text:String)->Set<String> {
+            let ignored:Set<String>=["the","and","for","you","your","with","this","that","from","have","will","please","would","could","should","there","when","what","about","same","date","time","now","new","been","was","are","not","our","can","has","its","october","november","december","january","february","march","april","june","july","august","september","monday","tuesday","wednesday","thursday","friday","saturday","sunday"]
+            return Set(text.lowercased().components(separatedBy:CharacterSet.alphanumerics.inverted).filter{$0.count > 2 && $0.rangeOfCharacter(from:.letters) != nil && !ignored.contains($0)})
+        }
+        let sourceTerms=sources.map{terms(([$0.evidence,$0.followUpEvidence]+$0.actionEvidence+[$0.sourceText ?? ""]).joined(separator:" "))}
+        func score(_ old:PADiscovery)->Int {
+            if sources.contains(where:{old.mailID == $0.mailID && (old.sourceKind ?? "mail") == ($0.sourceKind ?? "mail") && old.sourceIdentity == $0.sourceIdentity && old.sourceChatID == $0.sourceChatID}) {return Int.max}
+            let oldTerms=terms((old.sourceTitle ?? "")+" "+old.evidence)
+            let overlap=sourceTerms.map{oldTerms.intersection($0).count}.max() ?? 0
+            return overlap >= 2 ? overlap : 0
+        }
+        var ranked:[(offset:Int,record:PADiscovery,score:Int)]=[]
+        for (offset,record) in ordinary.enumerated() {
+            let relevance=score(record)
+            if relevance > 0 {ranked.append((offset,record,relevance))}
+        }
+        ranked.sort{$0.score == $1.score ? $0.offset < $1.offset : $0.score > $1.score}
+        let relevanceSlots=count-max(1,count/3)
+        var result=Array(ranked.prefix(relevanceSlots).map(\.record)),seen=Set<String>()
+        for record in result {seen.insert(record.id)}
+        for record in ordinary where result.count < count && seen.insert(record.id).inserted {result.append(record)}
+        return result
     }
+    static let crossSourceInstructions = "Compare Mail and WhatsApp together with earlierProposals and exact supplied native/project records. A communication channel is not a separate obligation. If a new message merely repeats the SAME supported action already pending in earlierProposals, do not propose another creation. A matching topic, title, participant or date alone does not establish the same situation: compare distinctive purpose, people, destination, timing and quoted details; keep separate obligations separate and abstain when uncertain. Existing native records may already cover a creation. A genuinely later correction or cancellation of the same situation should use the existing replaces rules and exact supplied aliases; updating advice never changes a native item. Do not repeat an old creation alongside its supported correction/removal. Earlier proposals are historical attributed data, not human acceptance, current facts or permission. Missing context is unknown; never fabricate links or write authority."
     static func recordingReconsideration(_ progress:ProactiveProgress,reviewed:[PADiscovery],active:[PADiscovery],context:String)->ProactiveProgress {
         var result=progress,receipts=progress.reviewedProposalContexts ?? [:]
         for proposal in reviewed {receipts[proposal.id]=context}
@@ -600,7 +628,7 @@ enum ProactiveRules {
             let old=earlier[alias]!
             var row:[String:Any]=["id":alias,"historicalProposal":true,"canReplace":replaceable?.contains(alias) ?? true,"kind":old.kind,"received":(old.sourceDate ?? old.created).ISO8601Format(),"source":old.sourceKind ?? "mail","evidence":old.evidence,"title":old.sourceTitle ?? "","message":old.message]
             if let target=old.nativeTarget {row["targetID"]=targets.first(where:{$0.value.kind == target.kind && $0.value.itemID == target.itemID && $0.value.sourceID == target.sourceID})?.key}
-            if let date=old.proposedDate {row["proposedDate"]=date.start;row["hasTime"]=date.hasTime}
+            if let date=old.proposedDate {row["proposedDate"]=date.start;row["hasTime"]=date.hasTime;row["endDate"]=date.end as Any? ?? NSNull();row["timeZone"]=date.timeZoneID}
             if let project=old.proposedProjectTask {row["projectID"]=project.target.id.uuidString}
             if let change=old.proposedChange {row["proposedDate"]=change.newDate}
             if let removal=old.proposedRemoval {row["scope"]=removal.scope}
@@ -661,11 +689,20 @@ enum ProactiveRules {
         result.preparedMailVersions=versions.isEmpty ? nil : versions
         return result
     }
-    static func unreported(_ values: [PADiscovery], prior: [PADiscovery], budget: Int = .max,dismissedVersions:[String:String] = [:],preparedMailVersions:Set<String> = []) -> [PADiscovery] {
+    /// Exact native identity is the only deterministic cross-source equivalence here.
+    /// The caller must check current evidence and absence of attempted writes.
+    static func samePendingNativeAction(_ a:PADiscovery,_ b:PADiscovery)->Bool {
+        guard a.registration == b.registration,a.kind == b.kind,a.replaces?.isEmpty ?? true,b.replaces?.isEmpty ?? true,
+              a.reviewState == nil,b.reviewState == nil,!a.dismissed,!b.dismissed,a.supersededBy == nil,b.supersededBy == nil,a.retiredAt == nil,b.retiredAt == nil,
+              let x=a.nativeTarget,let y=b.nativeTarget,!x.itemID.isEmpty,!x.sourceID.isEmpty,!x.fingerprint.isEmpty,x == y else {return false}
+        return sameProposal(a,b)
+    }
+    static func unreported(_ values: [PADiscovery], prior: [PADiscovery], budget: Int = .max,dismissedVersions:[String:String] = [:],preparedMailVersions:Set<String> = [],comparablePendingIDs:Set<String> = []) -> [PADiscovery] {
         var accepted:[PADiscovery]=[]
         for value in values {
             if value.sourceKind != "whatsapp",value.replaces?.isEmpty ?? true,let version=value.sourceContentVersion,preparedMailVersions.contains(version) {continue}
             let duplicate=(prior+accepted).contains { old in
+            if (comparablePendingIDs.contains(old.id) || accepted.contains(where:{$0.id == old.id})),samePendingNativeAction(old,value) {return true}
             guard old.registration == value.registration,old.mailID == value.mailID,(old.sourceKind ?? "mail") == (value.sourceKind ?? "mail"),old.sourceIdentity == value.sourceIdentity,old.sourceChatID == value.sourceChatID,sameProposal(old,value) else {return false}
             if value.sourceKind != "whatsapp" {return true}
             if old.dismissed,let version=old.dismissedSourceVersion,version == dismissedVersions[sourceKey("mail",value.mailID)] {return true}
