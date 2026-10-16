@@ -1,6 +1,14 @@
 # Status
 
-## Current summary — 16 October 2026: completion confirmations in the pill
+## Current summary — 16 October 2026: failed heartbeat Activity
+
+Implemented and installed signed code `1c3b639`. The pill's Activity dropdown includes actual failed/partial heartbeat analysis, labelled Heartbeat failed or Heartbeat partly completed with Open heartbeat for the existing history view. Successful runs, waiting/skipped checks, explicit stops and sleep/closed-laptop interruptions stay hidden. The same five-outcome bound/account filter applies; all underlying history remains. Closed-pill/live-heartbeat status, scheduling, retries and the six-second manual confirmation are unchanged.
+
+All 130 Activity checks pass, including the complete heartbeat status matrix, account separation, retained failure history after a newer success and the existing five-item bound. Signed Xcode Debug build, strict signature, matching signing requirements and all 2,254 candidate/installed file hashes pass. Fictional native acceptance routes six run outcomes through the actual adapter and displays only failed/partial entries; Open heartbeat opens the existing local history. Installed UI confirms an existing saved partial failure appears with its details link, then restores Today. No personal operation, inference or heartbeat retry is triggered for QA.
+
+Fresh idle-quit backup verifies 82 records, 14 support files, preferences and the previous app. Preview and prelaunch installation preserve every record/file/preference exactly. Normal relaunch retains all 82 records, 72 byte-exact; nine ordinary source/health/weather/orientation caches and only current-day Calendar mount/equivalent source-exclusion ordering in workspace change. Projects, memory, conversations/drafts, Review/operation/Activity/usage histories and preferences are exact; exactly one installed process runs. Private recovery/readback: `/Users/mylomichael/Library/Application Support/3PO Development Backups/20261016-182546-heartbeat-failure`; build: `/private/tmp/3po-heartbeat-failure-build/build.log`.
+
+## Previous current summary — 16 October 2026: completion confirmations in the pill
 
 Implemented and installed signed code `75e0a82`. Direct UI confirmations now appear inside the existing centred pill with green text, a checkmark and a subtle matching tint. They expire after six seconds, remain account-scoped and never create AI Activity entries. Live work, unresolved attention and storage errors retain priority. The old separate badge is removed; other toolbar action identities/order and Undo behaviour remain.
 
@@ -2499,3 +2507,9 @@ From base `78812c1`, isolated worktree commit `1a90b13` integrates as `75e0a82`,
 Validation: 125/125 Activity checks, workspace/toolbar persistence suite, signed Xcode Debug build and strict signature pass. Native fictional light/dark acceptance uses the actual feedback adapter before source/helper/AI startup: green capsule text/icon/tint, exact confirmation, six-second return to Ready, and an empty Activity dropdown while the confirmation is visible. Preview changes only its separate toolbar preference; exact restoration is verified before release. All 82 personal records remain byte-exact throughout preview. No personal Reminder is completed or edited to exercise the visual change.
 
 The installation/readback and recovery evidence are recorded in the current summary. Initial sandbox compiler/runtime-denial attempts are environment failures; the permitted build/check reruns pass. The macOS build succeeds despite the existing unrelated Simulator-version warning. Native operation correctness and actual-model quality are unchanged and are not re-claimed by this presentation-only acceptance.
+
+## 16 October 2026: heartbeat failures in the Activity dropdown
+
+From `553b6aa`, worktree `102160e` integrates as `1c3b639` with identical trees. Activity's existing local terminal-history filter now admits heartbeat `.failed` and `.partial` only. Existing sleep/closed-laptop and foreground-cancellation outcomes remain `.interrupted` and hidden; successful/waiting/Stop results also stay out. No record schema, saved outcome, acknowledgement, scheduler or retry changes. Typed run classification is retained rather than inferred from error text.
+
+130/130 focused Activity checks and the signed full build pass. Native fictional preview drives the production adapter with failed, partly failed, successful, sleeping, stopped and waiting runs, retaining all six while showing only the two failures. The existing Open heartbeat route opens local history. All personal records stay exact during preview; only its separate toolbar preference changes and is restored exactly before installation. Installed normal acceptance shows an existing retained partial failure with its correct message/link, without replaying it. Recovery, signature/hash and full protected-data readback are recorded in the current summary.
