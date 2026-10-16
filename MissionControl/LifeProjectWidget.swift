@@ -43,26 +43,26 @@ struct LifeProjectWidget: View {
     @State private var boardScroll=LifeBoardScrollController()
     private var registration: String { previewRegistration ?? model.chatGPT.activeID }
     private var store: LifeWorkspaceStore { model.assistant.projects }
-    private var items: [LifeItem] {
-        let all = store.items(registration,topic:topicScope)
-        guard !focusAreas.isEmpty else { return all }
-        let matching = all.filter { !Set(LifeWorkspaceRules.navigationAreas($0,in:all)).isDisjoint(with:focusAreas) }
-        let included = Set(matching.flatMap { LifeItemQuery.path($0, in:all).map(\.id) })
-        return all.filter { included.contains($0.id) }
+    @State private var projectionCache = LifeProjectProjectionCache()
+    private var index: LifeProjectIndex {
+        projectionCache.value(owner:store,revision:store.revision,registration:registration,topic:topicScope,focusAreas:focusAreas) {
+            store.items(registration,topic:topicScope)
+        }
     }
+    private var items: [LifeItem] { index.items }
     private var savedRoot: UUID? { configuration.wrappedValue.projectRoots?[registration].flatMap(UUID.init(uuidString:)) }
     private var currentID: UUID? { navigation.destination(startingAt:savedRoot) }
-    private var current: LifeItem? { items.first { $0.id == currentID } }
+    private var current: LifeItem? { currentID.flatMap { index.byID[$0] } }
     private var atHome:Bool { current == nil && !unfiled }
     private var presentation: LifeProjectPresentation {
         let saved=currentID.flatMap{configuration.wrappedValue.projectFolderViews?[registration]?[$0.uuidString]}
         return LifeProjectPresentation(rawValue:saved ?? configuration.wrappedValue.projectView ?? "") ?? .overview
     }
     private var unfinished: Bool { configuration.wrappedValue.projectOnlyUnfinished == true }
-    private var children:[LifeItem] { LifeFolderContents.children(of:current?.id,in:items,unfinished:unfinished) }
+    private var children:[LifeItem] { index.children(of:current?.id,unfinished:unfinished) }
     private var folders:[LifeItem] { children.filter{!$0.kind.isWork} }
     private var work:[LifeItem] { children.filter{$0.kind.isWork && $0.status != .archived} }
-    private var looseWork:[LifeItem] { LifeFolderContents.children(of:nil,in:items).filter{$0.kind.isWork} }
+    private var looseWork:[LifeItem] { index.children(of:nil).filter{$0.kind.isWork} }
     private var filtered:[LifeItem] { unfiled ? children.filter{$0.kind.isWork} : atHome ? folders : children }
     private func shows(_ section:ProjectPageSection)->Bool {
         guard let current,!current.kind.isWork else {return true}
@@ -180,7 +180,7 @@ struct LifeProjectWidget: View {
         })
     }
     private var pageProgress:LifeTaskProgress {
-        if let current,!current.kind.isWork { return LifeFolderContents.progress(under:current.id,in:items) }
+        if let current,!current.kind.isWork { return index.progress(under:current.id) }
         return LifeTaskProgress(items:unfiled ? looseWork : [])
     }
     private var pageHeading:some View {
@@ -196,7 +196,7 @@ struct LifeProjectWidget: View {
         }
     }
     private var breadcrumbs:some View {
-        let path=current.map{LifeItemQuery.path($0,in:items)} ?? []
+        let path=current.map{index.path($0)} ?? []
         return ViewThatFits(in:.horizontal) {
             breadcrumbPath(path,compact:false)
             breadcrumbPath(path,compact:true)
@@ -229,7 +229,7 @@ struct LifeProjectWidget: View {
     private func consumeActivityNavigation() {
         guard let request=model.activityNavigation,request.registration == registration,request.widgetID == widgetID,let id=request.projectID else {return}
         model.activityNavigation=nil
-        guard let item=items.first(where:{$0.id == id}) else {notice="This saved project is no longer available.";return}
+        guard let item=index.byID[id] else {notice="This saved project is no longer available.";return}
         open(item)
     }
     private func navigateHome() { navigation.home();unfiled=false;resetPage() }
@@ -306,9 +306,9 @@ struct LifeProjectWidget: View {
         VStack(spacing:12) {
             Image(systemName:item.icon ?? "folder.fill").font(.system(size:48,weight:.regular)).foregroundStyle(palette[.accent].opacity(0.85))
             Text(item.title).font(.callout.weight(.medium)).foregroundStyle(palette[.text]).multilineTextAlignment(.center).lineLimit(3).frame(maxWidth:.infinity)
-            let progress=LifeFolderContents.progress(under:item.id,in:items)
+            let progress=index.progress(under:item.id)
             if progress.total > 0 { LifeTaskProgressView(progress:progress,compact:true).frame(maxWidth:96) }
-            else { let count=LifeFolderContents.children(of:item.id,in:items).count;Text(count == 0 ? "" : "\(count) inside").font(.caption2).foregroundStyle(.secondary) }
+            else { let count=index.children(of:item.id).count;Text(count == 0 ? "" : "\(count) inside").font(.caption2).foregroundStyle(.secondary) }
         }.padding(.vertical,16).padding(.horizontal,8).frame(maxWidth:.infinity,minHeight:140,alignment:.top)
             .background(palette[.input].opacity(folderDrag?.capture.id == item.id ? 0.8 : hoveredFolder == item.id ? 0.35 : 0),in:RoundedRectangle(cornerRadius:12))
             .contentShape(RoundedRectangle(cornerRadius:12))
@@ -387,7 +387,7 @@ struct LifeProjectWidget: View {
         guard !unfiled else { return work }
         var result:[LifeItem]=[]
         func visit(_ parent:UUID?) {
-            for item in LifeFolderContents.children(of:parent,in:items,unfinished:unfinished) {
+            for item in index.children(of:parent,unfinished:unfinished) {
                 let visible=shows(item.kind.isWork ? .tasks : .spaces)
                 if visible {result.append(item)}
                 if !visible || !collapsed(item.id) {visit(item.id)}
@@ -398,12 +398,12 @@ struct LifeProjectWidget: View {
     private var outline:some View {
         LazyVStack(alignment:.leading,spacing:4) {
             ForEach(Array(outlineItems.prefix(120))) { item in
-                let depth=max(0,LifeItemQuery.path(item,in:items).count-(current.map{LifeItemQuery.path($0,in:items).count} ?? 0)-1)
+                let depth=max(0,index.path(item).count-(current.map{index.path($0).count} ?? 0)-1)
                 VStack(spacing:0) {
                     if drag != nil { Rectangle().fill(dropHover == "before:"+item.id.uuidString ? palette[.accent] : palette[.border].opacity(0.4)).frame(height:6)
                         .onDrop(of:[LifeProjectDrag.type],delegate:LifeProjectDrop(target:item.id,parent:item.parentID,before:item.id,drag:$drag,hover:$dropHover,key:"before:"+item.id.uuidString,store:store,activeRegistration:{model.chatGPT.activeID},report:{notice=$0})) }
                     HStack(spacing:5) {
-                        if items.contains(where:{$0.parentID == item.id}) { Button { toggle(item.id) } label:{Image(systemName:collapsed(item.id) ? "chevron.right" : "chevron.down").frame(width:16)}.buttonStyle(.plain).accessibilityLabel((collapsed(item.id) ? "Expand " : "Collapse ")+item.title) }
+                        if !index.children(of:item.id).isEmpty { Button { toggle(item.id) } label:{Image(systemName:collapsed(item.id) ? "chevron.right" : "chevron.down").frame(width:16)}.buttonStyle(.plain).accessibilityLabel((collapsed(item.id) ? "Expand " : "Collapse ")+item.title) }
                         else { Color.clear.frame(width:16,height:1) }
                         card(item)
                     }
@@ -520,7 +520,7 @@ struct LifeProjectWidget: View {
                     HStack(alignment:.top) {
                         VStack(alignment:.leading,spacing:3) {
                             Text(link.relation.title).font(.caption).foregroundStyle(.secondary)
-                            if link.target.kind == .item,let id=UUID(uuidString:link.target.id),let node=items.first(where:{$0.id == id}) { Button(target.title) { open(node) }.buttonStyle(.plain).font(.callout).lineLimit(3) }
+                            if link.target.kind == .item,let id=UUID(uuidString:link.target.id),let node=index.byID[id] { Button(target.title) { open(node) }.buttonStyle(.plain).font(.callout).lineLimit(3) }
                             else { Text(target.title).font(.callout).lineLimit(3).textSelection(.enabled) }
                             Text(target.detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                             if link.inferred == true { Text("PA connection"+(link.reason.map{" · "+$0} ?? "")).font(.caption2).foregroundStyle(.secondary).lineLimit(3) }

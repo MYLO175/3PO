@@ -39,6 +39,87 @@ struct LifeItemQuery {
 }
 
 
+/// One immutable, ordered projection for a Projects widget. Parent and child
+/// lookups are built once; Focus and progress never rebuild an all-item map per row.
+final class LifeProjectIndex {
+    let items: [LifeItem]
+    let byID: [UUID: LifeItem]
+    private let directChildren: [UUID: [LifeItem]]
+    private let roots: [LifeItem]
+    private let progressCounts: [UUID: [Int]]
+
+    init(_ all: [LifeItem], focusAreas: [LifeArea] = []) {
+        let allByID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let focus = Set(focusAreas)
+        if focus.isEmpty { items = all }
+        else {
+            var included = Set<UUID>()
+            for item in all {
+                let path = Self.path(item, byID: allByID)
+                let known = path.flatMap(\.areas)
+                let areas = known.isEmpty ? [item.kind == .course ? LifeArea.studies : item.kind == .project ? .projects : .unsorted] : known
+                if !focus.isDisjoint(with: areas) { included.formUnion(path.map(\.id)) }
+            }
+            items = all.filter { included.contains($0.id) }
+        }
+        byID = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let live = items.filter { $0.deletedAt == nil }
+        let liveIDs = Set(live.map(\.id))
+        roots = live.filter { $0.parentID.map { !liveIDs.contains($0) } ?? true }
+        var children: [UUID: [LifeItem]] = [:]
+        for item in live { if let parent = item.parentID { children[parent, default: []].append(item) } }
+        directChildren = children
+        var counts: [UUID: [Int]] = [:]
+        for item in live where item.kind.isWork {
+            guard let stage = LifeTaskStage.stage(for: item.status), let column = LifeTaskStage.allCases.firstIndex(of: stage) else { continue }
+            var cursor = item.parentID, seen: Set<UUID> = [item.id]
+            while let parent = cursor, seen.insert(parent).inserted {
+                counts[parent, default: [0, 0, 0]][column] += 1
+                cursor = byID[parent]?.parentID
+            }
+        }
+        progressCounts = counts
+    }
+    private static func path(_ item: LifeItem, byID: [UUID: LifeItem]) -> [LifeItem] {
+        var result = [item], cursor = item.parentID, seen: Set<UUID> = [item.id]
+        while let id = cursor, seen.insert(id).inserted, let parent = byID[id] {
+            result.append(parent); cursor = parent.parentID
+        }
+        return result.reversed()
+    }
+    func path(_ item: LifeItem) -> [LifeItem] { Self.path(item, byID: byID) }
+    func children(of parent: UUID?, unfinished: Bool = false) -> [LifeItem] {
+        let values = parent.map { directChildren[$0] ?? [] } ?? roots
+        return unfinished ? values.filter { !$0.kind.isWork || ($0.status != .done && $0.status != .archived) } : values
+    }
+    func progress(under parent: UUID) -> LifeTaskProgress {
+        LifeTaskProgress(counts: progressCounts[parent] ?? [0, 0, 0])
+    }
+}
+
+/// View-owned memoisation is keyed by canonical store ownership and revision,
+/// with account/topic/Focus included before any cached content is returned.
+@MainActor final class LifeProjectProjectionCache {
+    private struct Key: Equatable {
+        var owner: ObjectIdentifier
+        var revision: UUID
+        var registration: String
+        var topic: UUID?
+        var focus: Set<LifeArea>
+    }
+    private var key: Key?
+    private var index: LifeProjectIndex?
+    private(set) var builds = 0
+    func value(owner: AnyObject, revision: UUID, registration: String, topic: UUID?, focusAreas: [LifeArea], load: () -> [LifeItem]) -> LifeProjectIndex {
+        let current = Key(owner: ObjectIdentifier(owner), revision: revision, registration: registration, topic: topic, focus: Set(focusAreas))
+        if key == current, let index { return index }
+        let value = LifeProjectIndex(load(), focusAreas: focusAreas)
+        key = current; index = value; builds += 1
+        return value
+    }
+}
+
+
 /// Browsing is distinct from a widget's saved starting branch. Home/back never edit it.
 struct LifeProjectNavigation:Equatable {
     private(set) var isBrowsing=false
@@ -79,6 +160,7 @@ enum LifeTaskStage:String,CaseIterable,Identifiable {
 }
 struct LifeTaskProgress:Equatable {
     var counts:[Int]
+    fileprivate init(counts:[Int]) { self.counts=counts }
     init(items:[LifeItem]) { counts=LifeTaskStage.allCases.map { stage in items.filter{$0.kind.isWork && $0.deletedAt == nil && LifeTaskStage.stage(for:$0.status) == stage}.count } }
     var total:Int { counts.reduce(0,+) }
     var percentages:[Int] {
