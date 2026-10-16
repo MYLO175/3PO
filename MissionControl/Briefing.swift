@@ -35,6 +35,13 @@ struct BriefingPreparationRecovery {
     private(set) var attempt = 0
     private var changedKinds: Set<String> = []
     private(set) var omittedKinds: Set<String> = []
+    private(set) var usesFreshNativeReads = false
+    mutating func nativeValidationRequiresFresh(capturedRevision:Int,currentRevision:Int)->Bool {
+        // A successful direct validation does not make the collector's older
+        // cache current. Retain this read mode for the owned preparation run.
+        usesFreshNativeReads = usesFreshNativeReads || capturedRevision != currentRevision
+        return usesFreshNativeReads
+    }
     mutating func advance(_ change: BriefingContextChanged) -> Bool {
         guard attempt < 2 else { return false }
         changedKinds.formUnion(change.kinds); attempt += 1

@@ -324,11 +324,11 @@ import EventKit
                     throw CancellationError()
                 }
                 if heartbeat {input["sourceCollectionCoverage"]=model.heartbeatSourceCoverage}
-                var native=try await readNative()
+                var native=try await readNative(forceFresh:recovery.usesFreshNativeReads)
                 input.merge(native.input) { _,new in new };sources += native.sources
                 @MainActor func validateNative() async throws {
                     guard heartbeat || native.revision != model.sourceRevision else { return }
-                    let fresh=try await readNative(forceFresh:native.revision != model.sourceRevision)
+                    let fresh=try await readNative(forceFresh:recovery.nativeValidationRequiresFresh(capturedRevision:native.revision,currentRevision:model.sourceRevision))
                     guard try BriefingRules.sourceSnapshot(native.input,sources:native.sources) == BriefingRules.sourceSnapshot(fresh.input,sources:fresh.sources) else {
                         throw BriefingContextChanged(kinds:["native"])
                     }
