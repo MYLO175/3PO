@@ -132,8 +132,9 @@ import Synchronization
                 let raw:[String:Any]=["id":id,"accountID":original.accountID,"account":original.account,"messageID":index+10,"internetMessageID":id+"@example.invalid","sender":original.sender,"subject":"Other fictional assessment \(index)","received":original.received.addingTimeInterval(Double(index+1)).ISO8601Format(),"unread":true,"replied":false,"flagged":false]
                 let message=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:raw))
                 var summary=request;summary.id=id;summary.message=message;summary.messageReceived=message.received;summary.fingerprint=EmailSummary.fingerprint(message)
-                summary.resolution?.requestVersion=EmailSummary.sourceVersion(message,summary)
-                summary.resolution?.assessmentRevision=summary.adviceRevision(replied:message.replied)
+                let requestVersion=EmailSummary.sourceVersion(message,summary),assessmentRevision=summary.adviceRevision(replied:message.replied)
+                summary.resolution?.requestVersion=requestVersion
+                summary.resolution?.assessmentRevision=assessmentRevision
                 additions.append(summary)
             }
             model.mailData = .init(messages:capturedMail.messages+additions.compactMap(\.message),accounts:capturedMail.accounts,errors:[])
