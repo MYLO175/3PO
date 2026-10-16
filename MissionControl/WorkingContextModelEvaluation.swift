@@ -9,7 +9,7 @@ import SwiftData
         case requestBudget, toolBudget, unavailableTool, ownership, fictionalStore
         var errorDescription: String? {
             switch self {
-            case .requestBudget: return "The overall twelve-request evaluation allowance was reached. No automatic retry."
+            case .requestBudget: return "The overall twenty-request evaluation allowance was reached. No automatic retry."
             case .toolBudget: return "The overall 24-tool evaluation allowance was reached. Nothing executed outside fictional ports."
             case .unavailableTool: return "A tool outside the explicitly permitted read-only fixture schema was requested. Nothing executed."
             case .ownership: return "The configured subscription connection or model changed during evaluation."
@@ -27,7 +27,7 @@ import SwiftData
         guard !registration.isEmpty, model.chatGPT.hasSession, model.chatGPT.inferenceVerified, !model.chatGPT.usagePaused else {
             throw ActionFailure.message("The existing configured subscription connection must be verified and available. No settings were changed.")
         }
-        let allowed: Set<String>=["read_memory","search_mail","read_email","search_whatsapp","read_calendar","read_attention"]
+        let allowed: Set<String>=["read_memory","search_mail","read_email","list_whatsapp_chats","search_whatsapp","read_calendar","read_attention"]
         let definitions=(PAToolProtocol.tools.first?["tools"] as? [[String: Any]] ?? []).filter { allowed.contains($0["name"] as? String ?? "") }
         guard Set(definitions.compactMap { $0["name"] as? String }) == allowed else { throw Failure.unavailableTool }
         let tools: [[String: Any]]=[["type":"namespace","name":"pa","description":"Local personal assistant read tools","tools":definitions]]
@@ -65,6 +65,7 @@ import SwiftData
             var searchRequest:Int?, emailRequest:Int?, messageRequest:Int?
             var memoryIDs=Set<UUID>()
             var memoryQueries:[String]=[],targetedMemoryReads=true
+            var executedQueries:[[String:Any]]=[]
             let prepared=PAWorkingContext.prepare(memory:memory,registration:fictionalOwner,purpose:.conversation,query:scenario.human,includeSources:false,now:now)
             memoryIDs.formUnion(prepared.memoryIDs)
             let context:[String: Any]=[
@@ -81,7 +82,7 @@ import SwiftData
             do {
                 let result=try await PAConversationEngine().run(base:base,allowedTools:allowed,valid:valid,receipts:{[]},infer:{ input, delta in
                     guard valid() else { throw Failure.ownership }
-                    guard requestCount < 12 else { throw Failure.requestBudget }
+                    guard requestCount < 20 else { throw Failure.requestBudget }
                     requestCount += 1
                     visibleEmailIDs=issuedEmailIDs
                     let response=try await model.chatGPT.toolResponse(input:input,instructions:instructions,tools:tools,model:selectedModel,purpose:.diagnostic,onDelta:delta)
@@ -101,6 +102,7 @@ import SwiftData
                     toolCount += 1
                     let arguments=try PAToolProtocol.arguments(call)
                     guard allowed.contains(call.name), call.namespace == "pa" else { throw Failure.unavailableTool }
+                    executedQueries.append(["tool":call.name,"arguments":arguments])
                     let output:[String: Any]
                     switch call.name {
                     case "read_memory":
@@ -126,6 +128,8 @@ import SwiftData
                         }
                         readEmailIDs.insert(id);emailRequest=emailRequest ?? requestCount
                         output=["id":id,"subject":"Lark prototype presentation — arrangements","account":"Fictional university","body":"The Lark prototype presentation submission closes at 16:00 on 21 October 2026. Final timing updates are in our WhatsApp chat Lark Lab; check there for the latest arrangement.","truncated":false,"readOnly":true]
+                    case "list_whatsapp_chats":
+                        output=["chats":[["id":"fictional-lark-lab","name":"Lark Lab"]],"coverage":"Only this explicitly selected fictional chat; cached messages cover14–16 October2026, with partial history."]
                     case "search_whatsapp":
                         let query=(arguments["query"] as? String ?? "").lowercased()
                         let chat=arguments["chat"] as? String
@@ -168,12 +172,12 @@ import SwiftData
                 let uncertainty=["can't","cannot","unclear","not enough","don't know","doesn't","not possible","unable","insufficient","not specified","not clear","no surname","neither","can't tell","cannot tell","not identify","couldn't","can't determine","can't establish"]
                 checks[scenario.id+":reported-uncertainty"]=lower.contains("alex") && uncertainty.contains{lower.contains($0)}
             }
-            rows.append(["scenario":scenario.id,"completed":completed,"requests":requestCount-startRequests,"toolCalls":toolCount-startCalls,"toolNames":names,"reply":String(reply.prefix(2000)),"error":failure as Any? ?? NSNull(),"sourceHints":prepared.sourceHints,"selectedMemoryCount":prepared.memoryIDs.count,"memoryQueries":memoryQueries])
+            rows.append(["scenario":scenario.id,"completed":completed,"requests":requestCount-startRequests,"toolCalls":toolCount-startCalls,"toolNames":names,"reply":String(reply.prefix(2000)),"error":failure as Any? ?? NSNull(),"sourceHints":prepared.sourceHints,"selectedMemoryCount":prepared.memoryIDs.count,"memoryQueries":memoryQueries,"executedQueries":executedQueries])
         }
-        checks["overall:bounded-inference"]=requestCount <= 12 && toolCount <= 24 && observedToolCalls <= 24
+        checks["overall:bounded-inference"]=requestCount <= 20 && toolCount <= 24 && observedToolCalls <= 24
         checks["overall:no-unpermitted-tools"]=rejectedTools == 0 && allNames.allSatisfy{allowed.contains($0)}
         checks["overall:configured-ownership-retained"]=valid()
-        return ["completed":Date.now.ISO8601Format(),"model":selectedModel,"requests":requestCount,"toolCalls":toolCount,"observedToolCalls":observedToolCalls,"toolNames":allNames,"rejectedTools":rejectedTools,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"scenarios":rows,"boundary":"Four fictional scenarios through PAWorkingContext, production PA schema, PAConversationEngine and configured subscription transport. Fixed read-only ports only; no personal source content, PAToolSession, native helpers, app actions or personal memory writes. Answer checks are bounded lexical evidence, not a general semantic-quality guarantee. Maximum twelve requests/24 port calls; an oversized observed call batch is rejected before execution and reported as failed. Failures are reported without automatic retry."]
+        return ["completed":Date.now.ISO8601Format(),"model":selectedModel,"requests":requestCount,"toolCalls":toolCount,"observedToolCalls":observedToolCalls,"toolNames":allNames,"rejectedTools":rejectedTools,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"scenarios":rows,"boundary":"Four fictional scenarios through PAWorkingContext, production PA schema, PAConversationEngine and configured subscription transport. Fixed read-only ports only; no personal source content, PAToolSession, native helpers, app actions or personal memory writes. Answer checks are bounded lexical evidence, not a general semantic-quality guarantee. Maximum twenty requests/24 port calls; an oversized observed call batch is rejected before execution and reported as failed. Failures are reported without automatic retry."]
     }
 }
 #endif
