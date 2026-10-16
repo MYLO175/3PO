@@ -901,6 +901,14 @@ struct CalendarRemovalReviewSession:Identifiable {
             try nativeCreations.complete(request,receipt:receipt)
             showFeedback("Created " + receipt.title + " · " + receipt.destination)
             reconcileVerifiedNativeWrite(request.kind,owner:nativeOwner)
+        } catch let failure as NativePreSaveFailure {
+            do {try nativeCreations.failedBeforeSave(request,failure:failure)}
+            catch {
+                let text="No Apple save was attempted, but its failure checkpoint could not be saved. The pending creation is retained; check it before trying again."
+                writeError=text;throw PANativeActionUncertainty(operationKey:request.key,message:text)
+            }
+            let text=failure.localizedDescription+" No item was created. Correct the form or reload its source, then choose Create again when ready."
+            writeError=text;throw NativePreSaveFailure(message:text)
         } catch {
             let text = error.localizedDescription + " Check Apple Calendar or Reminders before creating another item; this save will not be repeated automatically."
             writeError = text; throw ActionFailure.message(text)

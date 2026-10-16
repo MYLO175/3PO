@@ -243,7 +243,7 @@ struct ReviewPreparedRow:Identifiable {
         if payload.localDraft != nil,let saved=reviewWork.jobs(job.scope.registration).flatMap(\.actions).first(where:{$0.id == action.id && $0.phase == .saved && $0.payload == action.payload}) {return .init(phase:.saved,message:saved.result ?? "Copied reply draft",location:"clipboard")}
         if let request=payload.nativeRequest {
             if let receipt=nativeCreations.receipt(request) {return .init(phase:.saved,message:"Created "+receipt.title,itemID:receipt.itemID,location:request.kind.rawValue)}
-            if nativeCreations.state.claims[request.key] != nil {return .init(phase:.uncertain,message:"This save has an unconfirmed receipt. Check Calendar or Reminders; it will not be repeated.")}
+            if let claim=nativeCreations.state.claims[request.key],!NativeCreationRules.retryAllowed(claim,request:request) {return .init(phase:.uncertain,message:"This save has an unconfirmed receipt. Check Calendar or Reminders; it will not be repeated.")}
             if action.phase == .uncertain {return .init(phase:.failed,message:"No native save was claimed. Reopen this exact plan before retrying.")}
         } else if let item=payload.project,let receipt=assistant.projects.receipt("project-suggestion:"+payload.proposal.id,registration:job.scope.registration) {
             return .init(phase:.saved,message:receipt.result,itemID:receipt.itemID?.uuidString ?? item.id.uuidString,location:"project")

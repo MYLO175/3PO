@@ -47,10 +47,90 @@ import SwiftData
         rejects {try staleOwner.begin(different)}
         let retained=NativeCreationStore(container:ownership)
         precondition(retained.state.claims.count == 1 && retained.state.claims[request.key] != nil,"A stale form owner never overwrites a newer pending native claim")
+        do {
+            let retryStore=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+            let original=NativeCreationRequest(kind:.reminder,registration:"fixture-account",title:"Private original form title",notes:"Private form seed notes",evidence:"Private source quotation")
+            let claims=NativeCreationStore(container:retryStore)
+            try claims.begin(original)
+            let started=claims.state.claims[original.key]!.started
+            try claims.failedBeforeSave(original,failure:.init(message:"The selected destination changed before save"))
+            let known=claims.state.claims[original.key]!
+            precondition(known.started == started && known.receipt == nil && known.preSaveFailure != nil && NativeCreationRules.allowed(claims.state,key:original.key),"Known no-save proof retains the original claim and makes the form manually retryable")
+            rejects {try claims.complete(original,receipt:.init(requestID:original.id,registration:original.registration,kind:original.kind,itemID:"not-saved",title:original.title,destination:"Fictional",created:.now,sourceScope:"fixture"))}
+            let reopened=NativeCreationStore(container:retryStore)
+            precondition(NativeCreationRules.retryAllowed(reopened.state.claims[original.key]!,request:original),"The exact durable no-save proof survives reopening")
+            var differentKind=original;differentKind.kind = .event
+            rejects {try reopened.begin(differentKind)}
+            var editedRequest=original;editedRequest.title="Corrected seed title";editedRequest.notes="Corrected seed notes"
+            var edited=NativeEditDetails(kind:.reminder,itemID:original.id.uuidString,occurrenceID:original.id.uuidString,sourceID:"new-list",title:"Edited human form title",notes:"Edited human notes",writable:true)
+            let baseline=edited;edited.due=instant;edited.hasTime=true
+            try NativeCreationRules.validate(request:editedRequest,baseline:baseline,edited:edited)
+            try reopened.begin(editedRequest)
+            let retried=reopened.state.claims[original.key]!
+            precondition(retried.requestFingerprint == known.requestFingerprint && retried.preSaveFailure == nil && retried.preSaveFailureHistory?.count == 1 && retried.preSaveFailureHistory?.first?.contains("destination changed") == true,"Manual retry keeps the canonical form identity, appends failure history and claims a new pending attempt")
+            rejects {try reopened.begin(original)}
+            try reopened.failedBeforeSave(editedRequest,failure:.init(message:"The corrected destination is temporarily unavailable"))
+            try reopened.begin(editedRequest)
+            precondition(reopened.state.claims[original.key]?.preSaveFailureHistory?.count == 2,"Multiple positively verified no-save attempts preserve each historical failure")
+            let saved=NativeCreationReceipt(requestID:original.id,registration:original.registration,kind:original.kind,itemID:"verified-retry-item",title:edited.title,destination:"Chosen list",created:.now,sourceScope:"fixture")
+            try reopened.complete(editedRequest,receipt:saved)
+            let completedRetry=NativeCreationStore(container:retryStore)
+            precondition(completedRetry.receipt(original) == saved && completedRetry.state.claims[original.key]?.preSaveFailureHistory?.count == 2,"Verified retry readback persists without losing previous failed attempts")
+            rejects {try completedRetry.begin(original)}
+            rejects {try completedRetry.failedBeforeSave(original,failure:.init(message:"Cannot reclassify a completed save"))}
+            let bytes=try LocalRecordRepository.read("nativeCreationClaims",container:retryStore)!
+            let encoded=String(decoding:bytes,as:UTF8.self)
+            precondition(!encoded.contains(original.notes) && !encoded.contains(original.evidence!),"The form identity is opaque rather than another persisted source/seed-content copy")
+        }
+        do {
+            let failedProofStore=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+            var fail=false
+            let repository=LocalRecordRepository(container:failedProofStore,beforeCommit:{_ in if fail {throw CocoaError(.fileWriteUnknown)}})
+            let claims=NativeCreationStore(container:failedProofStore,repository:repository)
+            try claims.begin(request)
+            let pending=claims.state
+            fail=true
+            rejects {try claims.failedBeforeSave(request,failure:.init(message:"Positively no native save"))}
+            precondition(claims.state.claims == pending.claims && !NativeCreationRules.allowed(claims.state,key:request.key),"Failure to persist no-save proof rolls back in-memory eligibility and retains uncertainty")
+            let reopened=NativeCreationStore(container:failedProofStore)
+            precondition(reopened.state.claims[request.key]?.preSaveFailure == nil,"An unsuccessful proof save cannot appear as durable recovery after reopening")
+            rejects {try reopened.begin(request)}
+        }
+        do {
+            let staleProofStore=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+            let first=NativeCreationStore(container:staleProofStore)
+            try first.begin(request)
+            let stale=NativeCreationStore(container:staleProofStore)
+            try first.failedBeforeSave(request,failure:.init(message:"Known no-save"))
+            rejects {try stale.failedBeforeSave(request,failure:.init(message:"Stale owner proof"))}
+            precondition(stale.state.claims[request.key]?.preSaveFailure == nil,"A failed proof CAS does not publish stale recovery state")
+            let retryOwner=NativeCreationStore(container:staleProofStore),staleRetry=NativeCreationStore(container:staleProofStore)
+            try retryOwner.begin(request)
+            rejects {try staleRetry.begin(request)}
+            let durable=NativeCreationStore(container:staleProofStore)
+            precondition(durable.state.claims[request.key]?.preSaveFailure == nil && durable.state.claims[request.key]?.preSaveFailureHistory?.count == 1,"A stale retry never overwrites a newly pending attempt or its failure history")
+        }
+        do {
+            let opaqueStore=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+            let first=NativeCreationStore(container:opaqueStore)
+            try first.begin(request)
+            var envelope=try JSONSerialization.jsonObject(with:JSONEncoder().encode(first.state)) as! [String:Any]
+            envelope["futureEnvelope"]=["keep":"exact"]
+            var rows=envelope["claims"] as! [String:[String:Any]]
+            rows[request.key]?["futureClaim"]=["identity":"retained"]
+            envelope["claims"]=rows
+            try LocalRecordRepository(container:opaqueStore).write(["nativeCreationClaims":JSONSerialization.data(withJSONObject:envelope,options:[.sortedKeys])])
+            let preserved=NativeCreationStore(container:opaqueStore)
+            try preserved.failedBeforeSave(request,failure:.init(message:"Known no-save with future metadata"))
+            try preserved.begin(request)
+            let after=try JSONSerialization.jsonObject(with:LocalRecordRepository.read("nativeCreationClaims",container:opaqueStore)!) as! [String:Any]
+            let afterClaims=after["claims"] as! [String:[String:Any]]
+            precondition((after["futureEnvelope"] as? [String:String])?["keep"] == "exact" && (afterClaims[request.key]?["futureClaim"] as? [String:String])?["identity"] == "retained","No-save proof and manual retry preserve additive opaque envelope/claim metadata")
+        }
         let record = try container.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first!
         let preserved = Data("{\"version\":99,\"claims\":{}}".utf8); record.data = preserved; try container.mainContext.save()
         let unsupported = NativeCreationStore(container:container)
         precondition(!unsupported.readable); rejects { try unsupported.begin(request) }; precondition(record.data == preserved)
-        print("PASS creation identity/title/read-only validation; pending/completed duplicate refusal across reload; registration isolation; unavailable/unknown storage preserved")
+        print("PASS creation identity/form edits, durable known-no-save/manual retry/history, proof-save rollback, stale-proof/retry CAS, opaque metadata, pending/completed refusal across reload, registration isolation and unavailable/unknown storage preservation")
     }
 }

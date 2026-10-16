@@ -32,6 +32,10 @@ struct NativeCreationReceipt: Codable, Equatable {
 struct NativeCreationClaim: Codable, Equatable {
     var started: Date
     var receipt: NativeCreationReceipt?
+    /// Opaque form identity only. Editable fields still use NativeCreationRules.
+    var requestFingerprint:String? = nil
+    var preSaveFailure:String? = nil
+    var preSaveFailureHistory:[String]? = nil
 }
 struct NativeCreationState: Codable {
     var version = 1
@@ -54,5 +58,14 @@ enum NativeCreationRules {
         guard baseline.kind == request.kind, baseline.itemID == request.id.uuidString else { throw IntegrationError.missing }
         try NativeEditRules.validate(edited,baseline:baseline)
     }
-    static func allowed(_ state: NativeCreationState, key: String) -> Bool { state.claims[key] == nil }
+    static func fingerprint(_ request:NativeCreationRequest)->String {
+        ActionRules.key(registration:request.registration,request:request.id.uuidString,selectedTarget:request.kind.rawValue)
+    }
+    static func retryAllowed(_ claim:NativeCreationClaim,request:NativeCreationRequest)->Bool {
+        claim.receipt == nil && claim.preSaveFailure != nil && claim.requestFingerprint == fingerprint(request)
+    }
+    static func allowed(_ state: NativeCreationState, key: String) -> Bool {
+        guard let claim=state.claims[key] else {return true}
+        return claim.receipt == nil && claim.preSaveFailure != nil && claim.requestFingerprint != nil
+    }
 }
