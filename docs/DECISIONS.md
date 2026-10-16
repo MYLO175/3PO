@@ -1,5 +1,15 @@
 # Decisions
 
+## 16 October: repair exact ownership and expensive projections
+
+The human approved working through the code audit, beginning with the highest-priority bugs and Projects performance, while preserving existing data and features. Keep canonical schemas and identities; strengthen existing writers instead of replacing the app architecture.
+
+Use an application lease and serialized compare-before-save for loaded Projects/native claim/operation states. Preserve opaque additive metadata by typed identity, including UUID casing; refuse ambiguous metadata transformations or numeric round trips rather than silently changing saved information. Keep operation identities beyond presentation-history limits. Older binaries cannot be retrofitted with the protocol, so the integration owner must still verify one normal installed process.
+
+Completion binds to the displayed reminder; Undo binds to exact post-save snapshots. A typed, durably recorded pre-save failure is distinct from an uncertain save and may support precise correction. Never release an ambiguous operation barrier. Source permission is purpose-specific: new WhatsApp grants baseline existing content, and source-memory dependencies track supplied facts and transitive reply context. Retain conservative legacy gates when exact reconstruction is impossible.
+
+Cache immutable Projects projections by revision and scope. Preserve exact outputs and interaction guards while removing repeated whole-collection lookup construction. Treat performance measurements, deterministic regression checks, signed build, fictional UI and installed acceptance as separate evidence.
+
 ## 15 October: Review defaults to no approval
 
 Replace Done with No actions or Approve N actions so the consequence is explicit. New actions are unchecked; version3 resets older implicit selections once and preserves later human choices. Keep draft retention and the exact queue/receipt contract.

@@ -1,5 +1,11 @@
 # Next improvements
 
+## 16 October audit follow-through
+
+The approved repair batch addresses the concrete correctness defects and the indexed Projects/transcript performance paths described in [the audit](CODE_AUDIT_2026-10-16.md). Retain the original assessment as the pre-repair record; STATUS/VALIDATION distinguish the candidate's focused, combined, build and installed acceptance.
+
+Further architectural work remains separate: Projects still encodes its complete envelope on each mutation, and opaque-field preservation adds conservative compatibility checks. Independently keyed items/notes with atomic receipts would reduce write amplification, but need an additive, fully recoverable migration and matched measurements. Other measured follow-through includes main-thread streaming validation cost, capability/prompt size and serial authorization calls, held-out retrieval usefulness, and an optimized signed acceptance configuration. Delivery-heavy chat histories still require current support/expiry checks for their delivered rows; do not cache evidence indefinitely to improve a timing result.
+
 16 October follow-up: optional Spaces/Tasks/Notes sections and available-room note previews are implemented, merged and installed as9ff1554 with current project/settings preservation. Older pages show all sections; hiding is reversible presentation only. See STATUS/VALIDATION for current build, UI and installation evidence. Optional note reordering/colours remain future ideas.
 
 16 October: the Spaces/notes worktree is integrated and installed with exact project/settings preservation. Relevant combined checks and existing native UI acceptance pass; hands-on folder-drag smoothness remains an explicit acceptance limit. Optional note reordering/colours remain future ideas. See STATUS/VALIDATION for the installed checkpoint.

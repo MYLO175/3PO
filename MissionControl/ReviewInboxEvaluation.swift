@@ -5,6 +5,12 @@ import SwiftUI
 import EventKit
 
 @MainActor enum ReviewInboxEvaluation {
+    static func runReminderCompletion(_ model:DashboardModel) async throws->[String:Any] {
+        guard EKEventStore.authorizationStatus(for:.reminder) == .fullAccess else {throw IntegrationError.denied("existing Reminders access; no permission prompt or fixture started")}
+        let result=try await model.eventKit.validateDisposableReminders()
+        let checks=["ordinary completion and Undo":result.contains("PASS duplicate-title"),"recurring completion and Undo":result.contains("PASS recurring"),"fixture cleanup":result.hasSuffix("Disposable items cleaned up.")]
+        return ["checks":checks,"passed":checks.values.filter{$0}.count,"total":checks.count,"requests":0,"cleanupError":checks["fixture cleanup"] == true ? "" : result,"result":result,"storage":"Disposable in-memory application state before normal source startup. Only freshly UUID-marked native Reminder fixtures are changed."]
+    }
     static func mailPreparationChecks() throws->[String:Bool] {
         let cache=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
         var service=ProactiveService(container:cache),checks:[String:Bool]=[:]
@@ -347,6 +353,7 @@ import EventKit
         return model.proactive.state.records[0]
     }
     static func runCalendarRemoval(_ model:DashboardModel)async throws->[String:Any] {
+        if ProcessInfo.processInfo.arguments.contains("--removal-native") {return try await runNativeCalendarRemoval(model)}
         let owner=model.chatGPT.activeID,selected=model.chatGPT.selectedModel,preferences=NSDictionary(dictionary:UserDefaults.standard.dictionaryRepresentation())
         let preferenceDomain=Bundle.main.bundleIdentifier ?? "com.mylomichael.missioncontrol"
         let savedPreferences=NSDictionary(dictionary:UserDefaults.standard.persistentDomain(forName:preferenceDomain) ?? [:])
@@ -438,52 +445,6 @@ import EventKit
         checks["pending receipt survives reopening and refuses replay"]=model.proactive.state.records[0].reviewState == "pending" && !model.proactive.canReview(record.id,model:model)
         try model.proactive.abortReview(record.id,registration:owner);model.calendarData=calendar
         checks["proven pre-removal refusal can restore review"]=model.proactive.canReview(record.id,model:model)
-        if ProcessInfo.processInfo.arguments.contains("--removal-native") {
-            let fixture=try await model.eventKit.makeRemovalFixture()
-            do {
-                let original=try await model.eventKit.removalFixtureEvent(fixture,key:"single")
-                let removal=try seedRemoval(model,event:original)
-                let baseline=try await model.eventKit.editSession(.event(original)).item
-                do {try await model.saveCalendarRemoval(removal,baseline:baseline,selectedModel:"different-model",sourceScope:model.proactive.scope(model));checks["captured model change refuses removal"]=false}
-                catch {checks["captured model change refuses removal"]=true}
-                do {try await model.saveCalendarRemoval(removal,baseline:baseline,selectedModel:selected,sourceScope:"changed-controls");checks["captured source control change refuses removal"]=false}
-                catch {checks["captured source control change refuses removal"]=true}
-                do {_=try await model.eventKit.deleteItem(baseline:baseline,scope:.occurrence,valid:{false},claim:{});checks["revoked validity refuses deletion before claim"]=false}
-                catch is NativePreSaveFailure {checks["revoked validity refuses deletion before claim"]=true}
-                model.proactive.dismiss(removal,model:model)
-                checks["native Dismiss preserves all event fields"]=try await model.eventKit.editSession(.event(original)).item == baseline
-                model.proactive.undo(model)
-                let claim:NativeWriteClaim = {try await model.eventKit.changeRemovalFixture(fixture,key:"single")}
-                do {_=try await model.eventKit.deleteItem(baseline:baseline,scope:.occurrence,claim:claim);checks["external notes change during claim prevents removal"]=false}
-                catch is NativePreSaveFailure {checks["external notes change during claim prevents removal"]=true}
-                await model.approveDiscovery(removal)
-                checks["old proposal refuses externally changed event"]=model.proactive.state.records[0].reviewState == nil && model.reviewApprovalError != nil
-                let changed=try await model.eventKit.removalFixtureEvent(fixture,key:"single")
-                let fresh=try seedRemoval(model,event:changed)
-                await model.approveDiscovery(fresh)
-                checks["Approve verifies native absence and persists receipt"]=try await model.eventKit.removalFixtureCount(fixture,key:"single") == 0 && model.proactive.state.records[0].reviewState == "approved"
-                await model.approveDiscovery(fresh)
-                checks["repeated Approve does not replay removal"]=try await model.eventKit.removalFixtureCount(fixture,key:"single") == 0 && !model.writing
-                let recurring=try await model.eventKit.removalFixtureEvent(fixture,key:"repeat",index:1)
-                let repeatingRecord=try seedRemoval(model,event:recurring)
-                await model.approveDiscovery(repeatingRecord)
-                let repeatCount=try await model.eventKit.removalFixtureCount(fixture,key:"repeat")
-                checks["repeating event opens exact occurrence review before removal"]=model.calendarRemovalReview?.baseline.recurring == true && model.proactive.state.records[0].reviewState == nil && repeatCount == 3
-                if let session=model.calendarRemovalReview {
-                    try await model.saveCalendarRemoval(session.record,baseline:session.baseline,selectedModel:session.selectedModel,sourceScope:session.sourceScope,occurrenceConfirmed:true)
-                    checks["approved repeat removes only selected occurrence"]=try await model.eventKit.removalFixtureCount(fixture,key:"repeat") == 2 && model.proactive.state.records[0].reviewState == "approved"
-                    let first=try await model.eventKit.removalFixtureEvent(fixture,key:"repeat",index:0),last=try await model.eventKit.removalFixtureEvent(fixture,key:"repeat",index:1)
-                    checks["earlier and later occurrences retain their dates"]=first.start < recurring.start && last.start > recurring.start
-                    model.calendarRemovalReview=nil
-                }
-                let allDay=try await model.eventKit.removalFixtureEvent(fixture,key:"allDay")
-                let allDayRecord=try seedRemoval(model,event:allDay)
-                await model.approveDiscovery(allDayRecord)
-                checks["all-day removal preserves native inclusive date semantics"]=try await model.eventKit.removalFixtureCount(fixture,key:"allDay") == 0 && model.proactive.state.records[0].reviewState == "approved"
-            } catch {failure=error.localizedDescription}
-            do {try await model.eventKit.removeRemovalFixture(fixture);checks["fixture calendar and all remaining events cleaned"]=true}
-            catch {cleanupError=error.localizedDescription;checks["fixture calendar and all remaining events cleaned"]=false}
-        }
         if ProcessInfo.processInfo.arguments.contains("--removal-model") {
             do {let quality=try await runCalendarRemovalModel(model);checks.merge(quality){_,new in new}}
             catch {checks["model comparison decoded supported proposals"]=false;failure=error.localizedDescription}
@@ -501,6 +462,59 @@ import EventKit
         checks["account model and preferences unchanged"]=owner == model.chatGPT.activeID && selected == model.chatGPT.selectedModel && changedPreferenceKeys.allSatisfy{$0 == "METAL_DEVICE_WRAPPER_TYPE"} && savedPreferences.isEqual(to:UserDefaults.standard.persistentDomain(forName:preferenceDomain) ?? [:])
         checks["removal creates no normal chat message"]=model.assistant.feed?.turns.isEmpty ?? true
         return ["checks":checks,"passed":checks.values.filter{$0}.count,"total":checks.count,"error":failure,"cleanupError":cleanupError,"changedPreferenceKeys":changedPreferenceKeys,"AIRequests":ProcessInfo.processInfo.arguments.contains("--removal-model") ? 1 : 0,"storage":"Disposable SwiftData and fictional Mail; optional exact UUID fixture calendar under existing permission. No normal source startup or personal event mutation."]
+    }
+    // Keep fictional Review preparation separate from native exact-occurrence checks.
+    // Prepared human approval does not depend on the selected inference model.
+    static func runNativeCalendarRemoval(_ model:DashboardModel)async throws->[String:Any] {
+        let owner=model.chatGPT.activeID,selected=model.chatGPT.selectedModel
+        let preferenceDomain=Bundle.main.bundleIdentifier ?? "com.mylomichael.missioncontrol"
+        let savedPreferences=NSDictionary(dictionary:UserDefaults.standard.persistentDomain(forName:preferenceDomain) ?? [:])
+        var checks:[String:Bool]=[:],failure="",cleanupError=""
+        let fixture=try await model.eventKit.makeRemovalFixture()
+        do {
+            let original=try await model.eventKit.removalFixtureEvent(fixture,key:"single")
+            let removal=try seedRemoval(model,event:original)
+            let baseline=try await model.eventKit.editSession(.event(original)).item
+            do {try await model.saveCalendarRemoval(removal,baseline:baseline,selectedModel:selected,sourceScope:model.proactive.scope(model),additionalValidity:{false});checks["withdrawn captured ownership refuses removal"]=false}
+            catch {checks["withdrawn captured ownership refuses removal"]=true}
+            do {_=try await model.eventKit.deleteItem(baseline:baseline,scope:.occurrence,valid:{false},claim:{});checks["revoked validity refuses deletion before claim"]=false}
+            catch is NativePreSaveFailure {checks["revoked validity refuses deletion before claim"]=true}
+            model.proactive.dismiss(removal,model:model)
+            checks["native Dismiss preserves all event fields"]=try await model.eventKit.editSession(.event(original)).item == baseline
+            model.proactive.undo(model)
+            let claim:NativeWriteClaim = {try await model.eventKit.changeRemovalFixture(fixture,key:"single")}
+            do {_=try await model.eventKit.deleteItem(baseline:baseline,scope:.occurrence,claim:claim);checks["external notes change during claim prevents removal"]=false}
+            catch is NativePreSaveFailure {checks["external notes change during claim prevents removal"]=true}
+            await model.approveDiscovery(removal)
+            checks["old proposal refuses externally changed event"]=model.proactive.state.records[0].reviewState == nil && model.reviewApprovalError != nil
+            let changed=try await model.eventKit.removalFixtureEvent(fixture,key:"single")
+            let fresh=try seedRemoval(model,event:changed)
+            await model.approveDiscovery(fresh)
+            checks["Approve verifies native absence and persists receipt"]=try await model.eventKit.removalFixtureCount(fixture,key:"single") == 0 && model.proactive.state.records[0].reviewState == "approved"
+            await model.approveDiscovery(fresh)
+            checks["repeated Approve does not replay removal"]=try await model.eventKit.removalFixtureCount(fixture,key:"single") == 0 && !model.writing
+            let recurring=try await model.eventKit.removalFixtureEvent(fixture,key:"repeat",index:1)
+            let repeatingRecord=try seedRemoval(model,event:recurring)
+            await model.approveDiscovery(repeatingRecord)
+            let repeatCount=try await model.eventKit.removalFixtureCount(fixture,key:"repeat")
+            checks["repeating event opens exact occurrence review before removal"]=model.calendarRemovalReview?.baseline.recurring == true && model.proactive.state.records[0].reviewState == nil && repeatCount == 3
+            if let session=model.calendarRemovalReview {
+                try await model.saveCalendarRemoval(session.record,baseline:session.baseline,selectedModel:session.selectedModel,sourceScope:session.sourceScope,occurrenceConfirmed:true)
+                checks["approved repeat removes only selected occurrence"]=try await model.eventKit.removalFixtureCount(fixture,key:"repeat") == 2 && model.proactive.state.records[0].reviewState == "approved"
+                let first=try await model.eventKit.removalFixtureEvent(fixture,key:"repeat",index:0),last=try await model.eventKit.removalFixtureEvent(fixture,key:"repeat",index:1)
+                checks["earlier and later occurrences retain their dates"]=first.start < recurring.start && last.start > recurring.start
+                model.calendarRemovalReview=nil
+            }
+            let allDay=try await model.eventKit.removalFixtureEvent(fixture,key:"allDay")
+            let allDayRecord=try seedRemoval(model,event:allDay)
+            await model.approveDiscovery(allDayRecord)
+            checks["all-day removal preserves native inclusive date semantics"]=try await model.eventKit.removalFixtureCount(fixture,key:"allDay") == 0 && model.proactive.state.records[0].reviewState == "approved"
+        } catch {failure=error.localizedDescription}
+        do {try await model.eventKit.removeRemovalFixture(fixture);checks["fixture calendar and all remaining events cleaned"]=true}
+        catch {cleanupError=error.localizedDescription;checks["fixture calendar and all remaining events cleaned"]=false}
+        checks["account model and preferences unchanged"]=owner == model.chatGPT.activeID && selected == model.chatGPT.selectedModel && savedPreferences.isEqual(to:UserDefaults.standard.persistentDomain(forName:preferenceDomain) ?? [:])
+        checks["removal creates no normal chat message"]=model.assistant.feed?.turns.isEmpty ?? true
+        return ["checks":checks,"passed":checks.values.filter{$0}.count,"total":checks.count,"error":failure,"cleanupError":cleanupError,"AIRequests":0,"storage":"Disposable UUID Calendar fixture and in-memory app storage; no personal event mutation."]
     }
     static func runCalendarRemovalModel(_ model:DashboardModel)async throws->[String:Bool] {
         let record=try seedRemoval(model),event=model.calendarData.events[0],now=Date.now

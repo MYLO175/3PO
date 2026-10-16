@@ -245,6 +245,13 @@ struct CalendarRemovalReviewSession:Identifiable {
         if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") || ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") || ProcessInfo.processInfo.arguments.contains("--preview-memory-review") || ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") {return}
         if ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") {
             Task {
+                if ProcessInfo.processInfo.arguments.contains("--reminder-completion-native") {
+                    let report:[String:Any]
+                    do {report=try await ReviewInboxEvaluation.runReminderCompletion(self)}
+                    catch {report=["error":error.localizedDescription,"cleanupError":"Native completion check did not finish."]}
+                    if let data=try? JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-reminder-completion-evaluation.json"),options:.atomic)}
+                    NSApp.terminate(nil);return
+                }
                 let result:[String:Any]
                 let resolutionOnly=ProcessInfo.processInfo.arguments.contains("--email-resolution-only")
                 let removalOnly=ProcessInfo.processInfo.arguments.contains("--calendar-removal-only")

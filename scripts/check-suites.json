@@ -11,7 +11,7 @@
     },
     "native": {
       "automatic": false,
-      "description": "Integration-owner disposable UUID Calendar fixtures under existing permissions; creates, edits and removes test records. Explicitly separate from source-free checks. Requires --candidate-binary with a signed DEBUG protocol handshake; runs only the listed exact modes."
+      "description": "Integration-owner disposable UUID Calendar/Reminder fixtures under existing permissions; creates, edits, completes, undoes and removes test records. Explicitly separate from source-free checks. Requires --candidate-binary with a signed DEBUG protocol handshake; runs only the listed exact modes."
     },
     "model": {
       "automatic": false,
@@ -663,6 +663,14 @@
         "integration-owner startup/output audit",
         "signed DEBUG candidate"
       ]
+    },
+    {
+      "id": "native-reminder-completion",
+      "tier": "native",
+      "arguments": ["--validate-review-inbox", "--reminder-completion-native"],
+      "report": "missioncontrol-reminder-completion-evaluation.json",
+      "effects": ["signed DEBUG app launch", "disposable SwiftData", "disposable native Reminder completion, Undo and cleanup"],
+      "requires": ["integration-owner startup/output audit", "signed DEBUG candidate"]
     },
     {
       "id": "native-removal",
