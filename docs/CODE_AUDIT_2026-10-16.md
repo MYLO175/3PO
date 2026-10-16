@@ -235,3 +235,16 @@ Temporary artifacts are outside Git and may be removed by system cleanup:
 - [Chat projection benchmark](/private/tmp/3po-audit-chat-projection.swift).
 
 The existing untracked duplicate icon image was present before the audit and was left untouched.
+
+
+## Follow-up — background jobs and unrelated changes
+
+The same broad-cancellation pattern also affected brief preparation, Review discovery, email classification/drafts, explicit feedback, source learning and memory organisation/maintenance. Repairs distinguish captured authority and controls from supplied evidence and presentation metadata. Tests hold fictional inference open, change one input, then exercise the actual production consumer.
+
+- Briefs retain exact email-confirmation receipts rather than a whole completion-history stamp. Newly completed unrelated work cannot invalidate a modern brief; older briefs without these receipts retain their conservative legacy check. Historical dismissal availability/name projection is not a human setting. Actual Dismiss/Undo remains guarded. Notification delivery controls do not cancel heartbeat analysis; genuine analysis settings still do.
+- EventKit notifications are hints to recheck admitted native content. Canonical identities, full fields, exclusions and existing bounds still matter; row ordering and temporary source aliases do not. Brief preparation keeps verified direct-read mode while a collector cache catches up. Reads require existing permission and do not prompt for background access.
+- Review validates supplied memory/project/completion/source snapshots rather than whole-store scheduling fingerprints. Older proposal comparison is historical input: stale replacements/retirements are rejected per referenced row without discarding supported fresh siblings. Retirement needs unchanged issued proposals and current coverage; fresh advice/replacements retain their current evidence contract.
+- Email assessment and drafts validate supplied facts/projects/policies and exact message/assessment state. Explicit feedback did not receive general memory, so an unrelated memory edit cannot cancel its interpretation. Exact source, account, model, Stop and final-save ownership remain.
+- Native/WhatsApp learning validates the selected facts and issued replacement candidates. Maintenance/organisation validates its exact issued human records and eligibility/manual pins. Unrelated saves merge into the current envelope synchronously; loaded-byte compare-and-save still rejects a separate stale writer. Failed claims remain paused and uncertain operations are never replayed.
+
+Memory controls have their own generation: disabling and re-enabling memory or learning still revokes the captured job even if the final Boolean matches. Assigning an unchanged setting does nothing. This adds no routing AI, model retry, broader access or new automatic lane. Sustained real source traffic/sleep/wake and semantic model quality remain separate acceptance.

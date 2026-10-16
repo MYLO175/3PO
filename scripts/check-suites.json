@@ -372,6 +372,20 @@
       ]
     },
     {
+      "id": "memory-organisation-runtime",
+      "tier": "source-free",
+      "script": "scripts/test-memory-organisation-runtime.sh",
+      "effects": [
+        "fictional values",
+        "disposable SwiftData",
+        "isolated preferences",
+        "held inference callbacks"
+      ],
+      "requires": [
+        "Xcode"
+      ]
+    },
+    {
       "id": "memory-quality",
       "tier": "source-free",
       "script": "scripts/test-memory-quality.sh",

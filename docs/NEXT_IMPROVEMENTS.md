@@ -333,3 +333,10 @@ Next acceptance priorities: an actual missed-heartbeat reopen/wake while permitt
 
 
 8 October scheduled-recovery correction: the next fresh heartbeat can recover failed child stages and update the brief; the independent morning timer is removed. Next validate genuine consecutive provider failures, one catch-up after a real sleep/wake, daily allowance rollover and source traffic during requests. Fictional storage/timing checks cannot establish real unattended scheduling or successful provider availability. Failed foreground writes/queues remain explicitly continued.
+
+
+## 16 October — background cancellation follow-up
+
+Supplied-dependency guards now replace broad in-flight memory/project/completion invalidation in briefs, Review, email and learning. Historical Review rows are isolated, equivalent native sync notifications survive canonical reread, and notification delivery settings no longer cancel analysis. This addresses deterministic unnecessary failures, not every possible provider/source failure.
+
+Next reliability acceptance is sustained real Mail/WhatsApp/native traffic during scheduled heartbeats, including sleep/wake and permission withdrawal. Measure retained useful work, genuine stale-result rejection and failed-claim recovery without replaying personal failures. Keep source-wide CAS for genuine structural writes; the retained legacy project-placement path still reasons over a whole notebook/workspace and is not a newly enabled automatic feature. Broader semantic episode identity, per-message batch influence and smaller independently keyed storage remain separate architecture work.
