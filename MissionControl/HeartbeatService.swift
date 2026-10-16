@@ -579,7 +579,7 @@ import SwiftData
         checks["unreadable original cache is preserved"] = try badStore.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first?.data == badData
         // Exercise the real orchestration with injected source-free children,
         // including failures which used to prevent the brief from ever running.
-        for scenario in ["email failure","feedback failure","suggestions failure","learning failure","missing sources","foreground stop","successful cycle","capped email failure"] {
+        for scenario in ["email failure","feedback failure","suggestions failure","learning failure","missing sources","foreground stop","successful cycle","notification toggle","no-op controls","capped email failure"] {
             let cycleStore=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
             let cycle=HeartbeatService(container:cycleStore,settings:validationSettings,clock:{now},deviceState:{device})
             cycle.dailyCallLimit=0

@@ -3,6 +3,7 @@ import CryptoKit
 import Observation
 import SwiftData
 import UserNotifications
+import EventKit
 
 @MainActor @Observable final class BriefingService {
     var enabled = UserDefaults.standard.bool(forKey: "dailyBriefingEnabled") { didSet { UserDefaults.standard.set(enabled, forKey: "dailyBriefingEnabled") } }
@@ -247,6 +248,7 @@ import UserNotifications
                 let memoryCapture = recovery.omittedKinds.contains("memory") ? AutomaticMemoryCapture(records:[],dependencies:[],eligibleCount:0) : model.automaticMemory(.brief,mailAccounts:recovery.omittedKinds.contains("mail") ? [] : mailReview?.accountIDs,whatsappReady:whatsappReady && !recovery.omittedKinds.contains("whatsapp"))
                 let memorySnapshot = memoryCapture.records
                 let memoryEnabled = model.assistant.memory.enabled
+                let calendarAuthorization=EKEventStore.authorizationStatus(for:.event),reminderAuthorization=EKEventStore.authorizationStatus(for:.reminder)
                 var resolutionReceipts:[BriefingResolutionReceipt]=[]
                 let calendars = model.assistant.excludedCalendars, lists = model.assistant.excludedLists, accounts = model.assistant.excludedAccounts
                 let emailsWereEnabled = model.emailSummaries.enabled
@@ -269,6 +271,7 @@ import UserNotifications
                         (memoryEnabled == model.assistant.memory.enabled,"memory controls"),
                         (model.assistant.memory.reviewPreferenceMigrationReadable,"saved attention preferences"),
                         (contextWasEnabled == model.assistant.contextEnabled,"source access"),
+                        (!heartbeat || (calendarAuthorization == EKEventStore.authorizationStatus(for:.event) && reminderAuthorization == EKEventStore.authorizationStatus(for:.reminder)),"native permissions"),
                         (calendars == model.assistant.excludedCalendars && lists == model.assistant.excludedLists && accounts == model.assistant.excludedAccounts,"source selection"),
                         (emailsWereEnabled == model.emailSummaries.enabled,"email access"),
                         (recovery.omittedKinds.contains("mail") || (mailReview.map{$0.accountIDs.isSubset(of:$0.available(index:model.mailIndex,snapshot:model.mailData,excluded:model.assistant.excludedAccounts).accountIDs)} ?? true),"checked Mail coverage"),
@@ -295,6 +298,7 @@ import UserNotifications
                         if contextWasEnabled {
                             let start = Calendar.current.startOfDay(for: now), end = Calendar.current.date(byAdding: .day, value: 7, to: start)!
                             do {
+                                if heartbeat && forceFresh && EKEventStore.authorizationStatus(for:.event) != .fullAccess {throw ActionFailure.message("Calendar permission is unavailable; background validation does not request access.")}
                                 let calendar = heartbeat && !forceFresh ? try model.heartbeatCalendar() : try await model.nativeSources.calendar(from: start, to: end)
                                 let events = calendar.events.filter { !calendars.contains($0.calendarID) && $0.start < end && $0.end >= start }
                                 nativeInput["calendar"] = events.prefix(60).enumerated().map { ["id":"calendar_\($0.offset)","title":$0.element.title,"start":$0.element.allDay ? DateRules.localDate($0.element.start) : DateRules.localTimestamp($0.element.start),"end":$0.element.allDay ? DateRules.localDate($0.element.end) : DateRules.localTimestamp($0.element.end),"allDay":$0.element.allDay,"source":$0.element.sourceLabel] as [String:Any] }
@@ -302,6 +306,7 @@ import UserNotifications
                                 nativeInput["calendarCoverage"] = "Next seven days, at most 60 events."
                             } catch { nativeInput["calendarError"] = error.localizedDescription }
                             do {
+                                if heartbeat && forceFresh && EKEventStore.authorizationStatus(for:.reminder) != .fullAccess {throw ActionFailure.message("Reminders permission is unavailable; background validation does not request access.")}
                                 let snapshot = heartbeat && !forceFresh ? try model.heartbeatReminders() : try await model.nativeSources.reminders()
                                 let reminders = snapshot.reminders.filter { !lists.contains($0.listID) }
                                 nativeInput["reminders"] = reminders.prefix(80).enumerated().map { ["id":"reminder_\($0.offset)","title":$0.element.title,"due":DateRules.reminderDue($0.element),"hasTime":$0.element.hasTime,"source":$0.element.sourceLabel] }
