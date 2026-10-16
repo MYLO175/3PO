@@ -7,8 +7,10 @@ import SwiftData
     var records: [PAMemory] { state.records }
     private(set) var error: String?
     private(set) var revision = UUID()
-    var enabled = true { didSet { if !restoringSettings { settings.set(enabled,forKey:"paMemoryEnabled"); revision = UUID() } } }
-    var learningEnabled = true { didSet { if !restoringSettings { settings.set(learningEnabled,forKey:"paMemoryLearningEnabled");revision = UUID() } } }
+    /// Human controls have their own generation; ordinary fact saves do not revoke an owned job.
+    private(set) var controlsRevision = UUID()
+    var enabled = true { didSet { if !restoringSettings && enabled != oldValue { settings.set(enabled,forKey:"paMemoryEnabled"); revision = UUID(); controlsRevision = UUID() } } }
+    var learningEnabled = true { didSet { if !restoringSettings && learningEnabled != oldValue { settings.set(learningEnabled,forKey:"paMemoryLearningEnabled");revision = UUID();controlsRevision = UUID() } } }
     private let settings: UserDefaults
     @ObservationIgnored private var restoringSettings = true
     private let container: ModelContainer?

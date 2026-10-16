@@ -2,6 +2,18 @@ import Foundation
 import SwiftData
 @main struct Checks {
     @MainActor static func main() throws {
+        let controlSuite="fictional-memory-controls-"+UUID().uuidString
+        let controlSettings=UserDefaults(suiteName:controlSuite)!
+        defer {controlSettings.removePersistentDomain(forName:controlSuite)}
+        let controls=PAMemoryStore(container:nil,settings:controlSettings),initialControls=controls.controlsRevision
+        let enabled=controls.enabled,learning=controls.learningEnabled
+        controls.enabled=enabled;controls.learningEnabled=learning
+        precondition(controls.controlsRevision == initialControls,"No-op memory settings retain ownership")
+        controls.enabled.toggle();controls.enabled.toggle()
+        precondition(controls.controlsRevision != initialControls && controls.enabled == enabled,"Off/on recall changes still revoke captured jobs")
+        let recallControls=controls.controlsRevision
+        controls.learningEnabled.toggle();controls.learningEnabled.toggle()
+        precondition(controls.controlsRevision != recallControls && controls.learningEnabled == learning,"Off/on learning changes still revoke captured jobs")
         let configuration = ModelConfiguration(isStoredInMemoryOnly:true)
         let container = try ModelContainer(for:CachedDashboard.self,configurations:configuration)
         var store = PAMemoryStore(container:container)
