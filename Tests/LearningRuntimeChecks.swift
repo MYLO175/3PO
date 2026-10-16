@@ -250,6 +250,57 @@ import SwiftData
             let text=String(decoding:saved,as:UTF8.self)
             check(!text.contains("second-chat") && !text.contains("disabled-gap") && !text.contains("Please prepare"),"Access receipts contain only opaque chat/message membership and revisions")
         }
+        do {
+            let isolated=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+            let p=FictionalInference(),m=PAMemoryStore(container:isolated,settings:settings),w=FictionalWhatsApp()
+            let a=FictionalAssistant(p,memory:m),b=LearningBudget(container:isolated)
+            var clock=now,heartbeatWhatsApp=true,epoch:UUID?=nil
+            w.accessValue.learnContext=false
+            let r=LearningRuntime(assistant:a,inference:p,learningBudget:b,whatsapp:w,now:{clock},activity:{.init()},writing:{false},sourceRevision:{0},nativeItems:{_,_ in nil},reviewWhatsAppPermission:{heartbeatWhatsApp},reviewWhatsAppRevision:{epoch})
+            w.messages=[.init(id:"global-old",chat:"chat",sender:"fictional",text:"An old cached project request",sentByMe:false,time:clock.addingTimeInterval(-3600).timeIntervalSince1970*1000)]
+            let initial=SourceContextLearningService(container:isolated)
+            initial.check(r)
+            check(p.calls == 0 && r.whatsappLearningAccess.learnContext == true,"Global heartbeat permission admits learning with an initial no-inference baseline")
+            heartbeatWhatsApp=false;epoch=UUID()
+            clock.addTimeInterval(1801)
+            w.messages.append(.init(id:"global-disabled-gap",chat:"chat",sender:"fictional",text:"A request received before the global grant resumes",sentByMe:false,time:clock.addingTimeInterval(-60).timeIntervalSince1970*1000))
+            // No learner check observes the disabled interval; its source choices
+            // and source-specific permission generation remain unchanged.
+            heartbeatWhatsApp=true;epoch=UUID()
+            let resumed=SourceContextLearningService(container:isolated)
+            resumed.check(r)
+            check(p.calls == 0 && !resumed.busy,"An unobserved global off/on interval is baselined across learner reopening")
+            let persisted=try LocalRecordRepository(container:isolated).decode("paSourceContextLearning",as:SourceContextState.self)!
+            check(persisted.scopes.values.first?.learningAccess?.reviewRevision == epoch,"The inherited global grant is retained as an opaque exact access receipt")
+            clock.addTimeInterval(1)
+            w.messages.append(.init(id:"global-new",chat:"chat",sender:"fictional",text:"A new post-grant project request",sentByMe:false,time:clock.timeIntervalSince1970*1000))
+            p.answer="{\"facts\":[]}"
+            let unchanged=SourceContextLearningService(container:isolated)
+            unchanged.check(r);await wait{unchanged.busy}
+            check(p.calls == 1 && unchanged.error == nil,"An unchanged persisted grant does not rebaseline a genuinely new delta after reopen")
+            var explicit=w.accessValue;explicit.learnContext=true
+            w.accessValue=WhatsAppReadRules.recordingLearningAccess(explicit,previous:w.accessValue)
+            let independentlyAllowed=SourceContextLearningService(container:isolated)
+            independentlyAllowed.check(r)
+            check(r.whatsappReviewLearningRevision == nil && p.calls == 1,"Explicit source-learning permission is independent of the global heartbeat grant")
+            heartbeatWhatsApp=false;epoch=UUID();clock.addTimeInterval(1801)
+            w.messages.append(.init(id:"explicit-new",chat:"chat",sender:"fictional",text:"A new independently permitted request",sentByMe:false,time:clock.timeIntervalSince1970*1000))
+            let explicitReopen=SourceContextLearningService(container:isolated)
+            explicitReopen.check(r);await wait{explicitReopen.busy}
+            check(p.calls == 2 && explicitReopen.error == nil,"Changing the heartbeat flag does not reset an independent explicit source grant or lose its new deltas")
+            var inherited=w.accessValue;inherited.learnContext=false
+            w.accessValue=WhatsAppReadRules.recordingLearningAccess(inherited,previous:w.accessValue)
+            heartbeatWhatsApp=true;epoch=UUID()
+            let late=SourceContextLearningService(container:isolated);late.check(r)
+            clock.addTimeInterval(1801)
+            w.messages.append(.init(id:"late-global",chat:"chat",sender:"fictional",text:"A request whose grant changes during inference",sentByMe:false,time:clock.timeIntervalSince1970*1000))
+            p.onCall={epoch=UUID()}
+            late.check(r);await wait{late.busy}
+            check(p.calls == 3 && late.error != nil,"A changed inherited grant rejects late output even when effective Boolean access ends unchanged")
+            p.onCall=nil;clock.addTimeInterval(1801)
+            let paused=SourceContextLearningService(container:isolated);paused.check(r)
+            check(p.calls == 3 && !paused.busy,"Grant-change interruption retains the original failed-claim pause across reopen")
+        }
         print("PASS \(count) actual learning-service checks: injected providers/clock, persistence, foreground priority, source/account drift, pauses, explicit recovery; no dashboard, credentials or personal sources.")
     }
 }

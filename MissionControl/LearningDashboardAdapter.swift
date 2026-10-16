@@ -35,7 +35,7 @@ extension WhatsAppService: WhatsAppLearningReading {}
                 guard let self else {return false}
                 let access=self.whatsapp.access(for:self.chatGPT.activeID)
                 return access.briefEnabled || access.includeInSuggestions == true || self.heartbeat.whatsappEnabled
-            })
+            },reviewWhatsAppRevision:{[weak self] in self?.heartbeat.whatsappLearningAccessRevision})
     }
 }
 

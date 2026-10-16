@@ -5,7 +5,15 @@ import SwiftData
 @MainActor @Observable final class HeartbeatService {
     var enabled:Bool {didSet {guard !restoringSettings else {return};settings.set(enabled,forKey:"paHeartbeatEnabled");controlsRevision=UUID();if !enabled {cancel()}}}
     var notificationsEnabled:Bool {didSet {guard !restoringSettings else {return};settings.set(notificationsEnabled,forKey:"paHeartbeatNotifications");controlsRevision=UUID()}}
-    var whatsappEnabled:Bool {didSet {guard !restoringSettings else {return};settings.set(whatsappEnabled,forKey:"paHeartbeatWhatsApp");controlsRevision=UUID();cancel()}}
+    var whatsappEnabled:Bool {didSet {
+        guard !restoringSettings,whatsappEnabled != oldValue else {return}
+        settings.set(whatsappEnabled,forKey:"paHeartbeatWhatsApp")
+        let revision=UUID();whatsappLearningAccessRevision=revision
+        settings.set(revision.uuidString,forKey:"paHeartbeatWhatsAppLearningAccessRevision")
+        controlsRevision=UUID();cancel()
+    }}
+    /// A durable permission boundary, independent of ordinary heartbeat timing edits.
+    private(set) var whatsappLearningAccessRevision:UUID?
     var intervalMinutes:Int {didSet {guard !restoringSettings else {return};if ![15,30,60,120].contains(intervalMinutes) {intervalMinutes=60};settings.set(intervalMinutes,forKey:"paHeartbeatMinutes");controlsRevision=UUID();cancel()}}
     var dailyCallLimit:Int {didSet {guard !restoringSettings else {return};let bounded=PAHeartbeatRules.callLimit(dailyCallLimit);if bounded != dailyCallLimit {dailyCallLimit=bounded};settings.set(dailyCallLimit,forKey:"paHeartbeatCallLimit");controlsRevision=UUID();cancel()}}
     @ObservationIgnored private var restoringSettings=true
@@ -159,6 +167,7 @@ import SwiftData
         enabled=settings.object(forKey:"paHeartbeatEnabled") == nil || settings.bool(forKey:"paHeartbeatEnabled")
         notificationsEnabled=settings.object(forKey:"paHeartbeatNotifications") == nil || settings.bool(forKey:"paHeartbeatNotifications")
         whatsappEnabled=settings.object(forKey:"paHeartbeatWhatsApp") == nil || settings.bool(forKey:"paHeartbeatWhatsApp")
+        whatsappLearningAccessRevision=settings.string(forKey:"paHeartbeatWhatsAppLearningAccessRevision").flatMap(UUID.init(uuidString:))
         let minutes=settings.object(forKey:"paHeartbeatMinutes") as? Int ?? PAHeartbeatRules.defaultMinutes
         intervalMinutes=[15,30,60,120].contains(minutes) ? minutes : 60
         dailyCallLimit=PAHeartbeatRules.callLimit(settings.object(forKey:"paHeartbeatCallLimit") as? Int)

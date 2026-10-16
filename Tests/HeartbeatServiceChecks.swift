@@ -93,6 +93,27 @@ import SwiftData
         let beforeDomain=settings.persistentDomain(forName:suite) ?? [:]
         let service=make(world,container)
         check(NSDictionary(dictionary:beforeDomain).isEqual(to:settings.persistentDomain(forName:suite) ?? [:]),"Construction must not write default controls")
+        do {
+            let epochSuite=suite+".learning-access",epochSettings=UserDefaults(suiteName:suite+".learning-access")!
+            defer {epochSettings.removePersistentDomain(forName:epochSuite)}
+            let epochStore=try store()
+            let access=HeartbeatService(container:epochStore,settings:epochSettings,clock:{world.now},deviceState:{world.device})
+            check(access.whatsappLearningAccessRevision == nil,"Legacy/default heartbeat controls have no manufactured learning epoch")
+            let initial=NSDictionary(dictionary:epochSettings.persistentDomain(forName:epochSuite) ?? [:])
+            access.whatsappEnabled=true
+            check(access.whatsappLearningAccessRevision == nil && initial.isEqual(to:epochSettings.persistentDomain(forName:epochSuite) ?? [:]),"Assigning unchanged WhatsApp permission writes no new grant or settings")
+            access.whatsappEnabled=false
+            let withdrawn=access.whatsappLearningAccessRevision
+            check(withdrawn != nil,"Actual global WhatsApp withdrawal records a durable permission boundary")
+            access.whatsappEnabled=true
+            let resumed=access.whatsappLearningAccessRevision
+            check(resumed != nil && resumed != withdrawn,"An unobserved global off/on interval still has a new grant generation")
+            access.intervalMinutes=30;access.dailyCallLimit=24;access.notificationsEnabled=false
+            access.whatsappEnabled=true
+            check(access.whatsappLearningAccessRevision == resumed,"Timing, allowance, notification and unchanged-permission edits cannot reset source-learning baselines")
+            let reopened=HeartbeatService(container:epochStore,settings:epochSettings,clock:{world.now},deviceState:{world.device})
+            check(reopened.whatsappEnabled && reopened.whatsappLearningAccessRevision == resumed,"The exact global learning grant survives reopening without starting a job")
+        }
         service.intervalMinutes=30
         check(settings.integer(forKey:"paHeartbeatMinutes") == 30,"Explicit controls use the injected suite")
         service.intervalMinutes=60

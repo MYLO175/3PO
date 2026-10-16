@@ -23,6 +23,10 @@ import SwiftData
         } catch { readable=false;self.error="Source-learning progress could not be read; its saved record is preserved." }
     }
     private func key(_ scope:WhatsAppSourceScope)->String { SourceContextRules.scopeKey(scope.registration+":"+scope.linkedIdentity) }
+    private func accessSnapshot(_ model:LearningRuntime)->SourceContextLearningAccess {
+        let access=model.whatsappLearningAccess
+        return .init(permitted:model.assistant.contextEnabled && access.enabled && access.learnContext == true && !access.chats.isEmpty,chats:Set(access.chats.map(SourceContextRules.chatKey)),revision:access.learningAccessRevision,reviewRevision:model.whatsappReviewLearningRevision)
+    }
     func lastAssessment(_ model:LearningRuntime)->Date {
         let scope=model.whatsapp.scope(for:model.inference.activeID),access=model.whatsappLearningAccess
         guard access.enabled,access.learnContext == true,state.scopes[key(scope)]?.paused != true else { return .distantFuture }
@@ -48,7 +52,7 @@ import SwiftData
         let scope=model.whatsapp.scope(for:registration),access=model.whatsappLearningAccess
         guard readable,!busy,!registration.isEmpty,!scope.linkedIdentity.isEmpty else {return}
         let scopeKey=key(scope),savedProgress=state.scopes[scopeKey] ?? .init()
-        let learningAccess=SourceContextLearningAccess(permitted:assistant.contextEnabled && access.enabled && access.learnContext == true && !access.chats.isEmpty,chats:Set(access.chats.map(SourceContextRules.chatKey)),revision:access.learningAccessRevision)
+        let learningAccess=accessSnapshot(model)
         if !learningAccess.permitted {
             guard savedProgress.learningAccess != learningAccess else {return}
             let prior=state;var progress=savedProgress;progress.learningAccess=learningAccess;state.scopes[scopeKey]=progress
@@ -95,12 +99,12 @@ import SwiftData
             defer { ownedHeartbeatRunID=nil;busy=false }
             do {
                 try model.validateOwnership()
-                guard scope == model.whatsapp.scope(for:model.inference.activeID),access == model.whatsappLearningAccess,registration == model.inference.activeID,memoryRevision == memory.revision,
+                guard scope == model.whatsapp.scope(for:model.inference.activeID),access == model.whatsappLearningAccess,learningAccess == accessSnapshot(model),registration == model.inference.activeID,memoryRevision == memory.revision,
                       selectedModel == model.inference.selectedModel,memory.enabled,memory.learningEnabled,assistant.contextEnabled,contextRevision == assistant.contextRevision,!assistant.busy,!assistant.hasDraft,!model.writing else { throw MemoryLearningFailure.changed }
                 try model.claimInference()
                 let output=try await model.inference.streamResponse(input:[["role":"user","content":assessment.input]],instructions:SourceContextRules.instructions+" "+LearningRuntime.inlineSourceOrganisationInstructions,model:selectedModel,purpose:.learning) { _ in }
                 try model.validateOwnership()
-                guard scope == model.whatsapp.scope(for:model.inference.activeID),access == model.whatsappLearningAccess,registration == model.inference.activeID,
+                guard scope == model.whatsapp.scope(for:model.inference.activeID),access == model.whatsappLearningAccess,learningAccess == accessSnapshot(model),registration == model.inference.activeID,
                       selectedModel == model.inference.selectedModel,memoryRevision == memory.revision,memory.enabled,memory.learningEnabled,
                       sourcesEnabled == assistant.contextEnabled,assistant.contextEnabled,contextRevision == assistant.contextRevision,!assistant.busy,!assistant.hasDraft,!model.writing else { throw MemoryLearningFailure.changed }
                 let fresh=SourceContextRules.recent(model.whatsapp.messages,chats:model.whatsapp.chats,allowed:access.chats,now:model.now(),limit:2000)

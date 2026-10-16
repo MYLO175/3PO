@@ -24,6 +24,7 @@ struct SourceContextLearningAccess:Codable,Equatable {
     /// Hashes only; selected chat identities stay in the encrypted source store.
     var chats:Set<String>
     var revision:UUID?
+    var reviewRevision:UUID? = nil
 }
 struct SourceContextPending:Codable,Equatable {
     var id:String
@@ -139,7 +140,7 @@ enum SourceContextRules {
     static func reconcilingAccess(_ original:SourceContextProgress,previous:SourceContextProgress,current:SourceContextLearningAccess,recent:[SourceContextMessage])->SourceContextProgress {
         var result=original
         let before=previous.learningAccess
-        let reset=before?.permitted != true || before?.revision != current.revision
+        let reset=before?.permitted != true || before?.revision != current.revision || before?.reviewRevision != current.reviewRevision
         let added=current.chats.subtracting(before?.chats ?? [])
         // Exact pending versions were already admitted under earlier permission.
         // Retain them and every paused claim; new grants do not silently backfill

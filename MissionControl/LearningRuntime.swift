@@ -54,6 +54,7 @@ struct HeartbeatLearningResult {
     let ownership:LearningOwnership?
     private let reviewNativePermission:(MemorySourceKind)->Bool
     private let reviewWhatsAppPermission:()->Bool
+    private let reviewWhatsAppRevision:()->UUID?
     var ownedHeartbeatRunID:String? {ownership?.runID}
     func validateOwnership() throws {try Task.checkCancellation();try ownership?.validate()}
     func claimInference() throws {try validateOwnership();try ownership?.claim();try validateOwnership()}
@@ -62,6 +63,13 @@ struct HeartbeatLearningResult {
         var access=whatsapp.access(for:inference.activeID)
         if assistant.contextEnabled && access.enabled && !access.chats.isEmpty && reviewWhatsAppPermission() {access.learnContext=true}
         return access
+    }
+    var whatsappReviewLearningRevision:UUID? {
+        let access=whatsapp.access(for:inference.activeID)
+        // These independent source choices already admit learning. A heartbeat
+        // toggle cannot revoke their grant or manufacture a new baseline.
+        guard assistant.contextEnabled,access.enabled,!access.chats.isEmpty,access.learnContext != true,!access.briefEnabled,access.includeInSuggestions != true else {return nil}
+        return reviewWhatsAppRevision()
     }
     private let activity: () -> LearningActivity
     private let isWriting: () -> Bool
@@ -74,9 +82,9 @@ struct HeartbeatLearningResult {
     init(assistant: any LearningAssistantReading, inference: any PAInferenceConnection, learningBudget: LearningBudget, whatsapp: any WhatsAppLearningReading,
          now: @escaping () -> Date = { .now }, activity: @escaping () -> LearningActivity, writing: @escaping () -> Bool,
          sourceRevision: @escaping () -> Int, nativeItems: @escaping (MemorySourceKind, Date) -> [NativeLearningItem]?,
-         ownership:LearningOwnership? = nil,reviewNativePermission:@escaping (MemorySourceKind)->Bool = {_ in false},reviewWhatsAppPermission:@escaping ()->Bool = {false}) {
+         ownership:LearningOwnership? = nil,reviewNativePermission:@escaping (MemorySourceKind)->Bool = {_ in false},reviewWhatsAppPermission:@escaping ()->Bool = {false},reviewWhatsAppRevision:@escaping ()->UUID? = {nil}) {
         self.assistant = assistant; self.inference = inference; self.learningBudget = learningBudget; self.whatsapp = whatsapp
-        self.ownership=ownership;self.reviewNativePermission=reviewNativePermission;self.reviewWhatsAppPermission=reviewWhatsAppPermission
+        self.ownership=ownership;self.reviewNativePermission=reviewNativePermission;self.reviewWhatsAppPermission=reviewWhatsAppPermission;self.reviewWhatsAppRevision=reviewWhatsAppRevision
         self.now = now; self.activity = activity; self.isWriting = writing; self.revision = sourceRevision; self.cachedNativeItems = nativeItems
     }
 }
