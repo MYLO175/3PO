@@ -61,7 +61,7 @@ struct CalendarRemovalReviewSession:Identifiable {
     var selectedMessage: MailMessage?
     var editTarget: NativeEditTarget?
     var calendarRemovalReview:CalendarRemovalReviewSession?
-    var nativeWriteNotice: String?
+    private(set) var nativeWriteFeedback: AIActivityFeedback?
     var preview = ""
     var previewLoading = false
     var previewError: String?
@@ -74,7 +74,6 @@ struct CalendarRemovalReviewSession:Identifiable {
     var undoToken: String? { didSet { completionUndoDate = undoToken == nil ? nil : .now } }
     private var completionUndoDate: Date?
     private var editUndo: NativeEditUndo?
-    var feedbackDate: Date?
     var undoTitle = ""
     var validationReport: String?
     #if DEBUG
@@ -902,7 +901,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         let ownedStorage=nativeOwner.storage,sourceScope=proactive.sourceSettingsScope(self)
         try NativeCreationRules.validate(request:request,baseline:baseline,edited:edited)
         try nativeCreations.begin(request)
-        writeError = nil; nativeWriteNotice = nil
+        writeError = nil; nativeWriteFeedback = nil
         do {
             let receipt = try await eventKit.createItem(request:request,baseline:baseline,edited:edited,scope:sourceScope,valid:{request.registration == self.chatGPT.activeID && ownedStorage == self.nativeCollectionScope.storage && (!self.assistant.busy || (acceptedSnapshot != nil && self.reviewConversationOwnsAssistant)) && (additionalValidity?() ?? true) && (acceptedSnapshot.map(self.acceptedPreparedApproval) ?? (request.discoveryID.map{self.currentPreparedApproval($0,registration:request.registration,snapshot:request.discoveryApproval)} ?? true))})
             try nativeCreations.complete(request,receipt:receipt)
@@ -969,7 +968,7 @@ struct CalendarRemovalReviewSession:Identifiable {
     }
     func clearNativeEditUndo() { editUndo=nil }
     func recordAssistantEditUndo(_ receipt: NativeEditUndo) { editUndo = receipt; widgetCalendars.invalidate() }
-    func showFeedback(_ text: String) { nativeWriteNotice = text; feedbackDate = .now }
+    func showFeedback(_ text: String) { nativeWriteFeedback = .init(registration:chatGPT.activeID,message:text) }
     var latestUndo: String? {
         UndoOrder.latest(layout:workspace.canUndo ? workspace.undoDate : nil,completion:undoToken == nil ? nil : completionUndoDate,edit:editUndo?.created,email:emailSummaries.undoDate(chatGPT.activeID),discovery:proactive.undoDate(chatGPT.activeID),question:memoryLearning.undoDate(chatGPT.activeID),project:assistant.projects.undoDate(chatGPT.activeID),memoryReview:memoryMaintenance.undoDate(chatGPT.activeID),reviewQuestion:briefings.undoQuestionDate(chatGPT.activeID),activity:aiActivity.undoDate(chatGPT.activeID))
     }

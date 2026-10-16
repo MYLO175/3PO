@@ -149,9 +149,26 @@ struct AIActivityRecord: Codable, Equatable, Identifiable {
     var date: Date { finished ?? created }
 }
 
+/// Ephemeral feedback from a direct UI action, never an AI Activity record.
+struct AIActivityFeedback: Equatable {
+    var registration: String
+    var message: String
+    var date: Date = .now
+    var expiry: Date { date.addingTimeInterval(AIActivityPillRules.successDuration) }
+}
+
 /// A local display choice; this never changes a saved outcome or resumes work.
 enum AIActivityPillRules {
     static let successDuration:TimeInterval = 6
+    static func feedback(_ feedback:AIActivityFeedback?,displayed:AIActivityRecord?,registration:String,now:Date = .now)->AIActivityFeedback? {
+        guard let feedback,feedback.registration == registration,now >= feedback.date,now < feedback.expiry else {return nil}
+        // Running work and unresolved attention retain priority. A newer AI
+        // completion can supersede an earlier manual-action confirmation.
+        if let displayed {
+            guard displayed.state == .succeeded,feedback.date >= displayed.date else {return nil}
+        }
+        return feedback
+    }
     static func displayed(_ records:[AIActivityRecord],current:AIActivityRecord?,registration:String,now:Date = .now)->AIActivityRecord? {
         if let current,current.registration == registration,current.state == .running {return current}
         let outcomes=records.filter{$0.registration == registration && $0.kind != .heartbeat && $0.state.isTerminal && !AIActivitySummary.contextOnly($0)}.sorted {

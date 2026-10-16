@@ -70,8 +70,18 @@ import Foundation
             check(AIActivitySummary.text("Space created: Orion follow-up",compact:true) == "Space created","Prepared space success uses a short label")
             check(AIActivitySummary.recent([record("ghost",state:.running)],current:nil,registration:"account-a").isEmpty,"Saved running rows need an exact live owner")
             check(AIActivitySummary.recent([record("other",registration:"account-b",state:.succeeded)],current:nil,registration:"account-a").isEmpty,"Recent activity stays account scoped")
-
-
+            let feedback=AIActivityFeedback(registration:"account-a",message:"Completed: Claim my refund",date:date.addingTimeInterval(61))
+            func confirmation(_ displayed:AIActivityRecord?=nil,_ offset:Double=62,_ registration:String="account-a")->AIActivityFeedback? {
+                AIActivityPillRules.feedback(feedback,displayed:displayed,registration:registration,now:date.addingTimeInterval(offset))
+            }
+            check(confirmation()?.message == feedback.message,"Direct UI completion appears in the idle pill")
+            check(confirmation(success) != nil,"A newer direct UI confirmation supersedes an older AI success")
+            check(confirmation(record("newer",state:.succeeded,offset:55)) == nil,"Newer AI completion supersedes earlier direct feedback")
+            check(confirmation(running) == nil && confirmation(record("live-heartbeat",state:.running,kind:.heartbeat)) == nil,"Direct feedback never hides live work or heartbeat")
+            check(confirmation(failure) == nil && confirmation(question) == nil,"Direct feedback never hides unresolved failure or question attention")
+            check(confirmation(nil,66.999) != nil && confirmation(nil,67) == nil,"Direct completion expires after exactly six seconds")
+            check(confirmation(nil,60) == nil && confirmation(nil,600) == nil,"Future or expired feedback never flashes on reopening")
+            check(confirmation(nil,62,"account-b") == nil,"A direct completion cannot leak into another account")
         }
         var bytes: Data?
         var writes = 0

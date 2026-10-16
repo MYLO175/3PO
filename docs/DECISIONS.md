@@ -1,5 +1,9 @@
 # Decisions
 
+## 16 October: put direct-action confirmations inside the pill
+
+Move the separate green toolbar confirmation into the existing centred pill. Show the exact confirmation with green text, a checkmark and a subtle matching tint for six seconds, then return to its normal status. This is account-scoped, in-memory feedback from a direct UI action, never a new AI Activity record. Running work, unresolved attention and storage errors retain priority; newer completions replace older messages. Reuse one cancellable expiry wakeup and keep the old toolbar item identity empty so saved arrangements survive.
+
 ## 16 October: simplify existing AI context and convert old preferences
 
 The human approved shared information gathering for chat, Review and briefs, stronger useful retrieval/connections and faithful conversion or justified removal of old records. Keep the current product surfaces and existing AI/tool loop. One deterministic context path prepares bounded facts/preferences/notebook data under purpose-specific permissions; the model chooses permitted reads and reasons over the returned evidence. No separate routing model, expanded source access or new hosted retrieval provider.

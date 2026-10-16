@@ -245,6 +245,11 @@ private extension ReviewWorkPhase {var isFinished:Bool {self != .running && self
 #if DEBUG
 @MainActor enum AIActivityWorkPreview {
     static func seed(_ model:DashboardModel) {
+        if ProcessInfo.processInfo.arguments.contains("--pill-feedback-preview") {
+            model.showFeedback("Completed: Claim my refund")
+            precondition(model.aiActivity.state.records.isEmpty,"Manual feedback must not enter AI Activity")
+            return
+        }
         let registration=model.chatGPT.activeID,conversation=model.assistant.openPA() ?? UUID()
         _=model.aiActivity.upsert(.init(id:"chat:"+UUID().uuidString,registration:registration,kind:.chat,state:.succeeded,title:"3PO chat",message:"Hello! How can I help?",destination:.assistant(targetID:conversation.uuidString)))
         model.assistantActivityFinished(.init(registration:registration,conversationID:conversation,humanTurnID:UUID(),responseTurnID:UUID(),phase:"completed",message:"This ordinary greeting must stay out of activity",receipts:[],errors:[]))
@@ -270,7 +275,7 @@ struct DashboardAIActivityPill:View {
     var palette:WorkspacePalette
     var openChat:()->Void
     var body:some View {
-        AIActivityPill(store:model.aiActivity,registration:model.chatGPT.activeID,current:model.currentAIActivity,palette:palette,openChat:openChat,openDestination:model.openAIActivityDestination,isVisible:model.activityVisible,relatedDestinations:model.relatedActivityDestinations,presentation:model.activityPresentation)
+        AIActivityPill(store:model.aiActivity,registration:model.chatGPT.activeID,current:model.currentAIActivity,feedback:model.nativeWriteFeedback,palette:palette,openChat:openChat,openDestination:model.openAIActivityDestination,isVisible:model.activityVisible,relatedDestinations:model.relatedActivityDestinations,presentation:model.activityPresentation)
             .task {model.syncFeedbackActivity()}
             .onChange(of:model.chatGPT.activeID) {model.syncFeedbackActivity();model.scheduleReviewWork()}
             .onChange(of:model.emailSummaries.feedback.records) {model.syncFeedbackActivity()}

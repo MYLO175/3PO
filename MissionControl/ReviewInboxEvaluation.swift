@@ -1069,6 +1069,7 @@ struct ReviewInboxPreview:View {
     var body:some View {
         VStack {Text("Fictional review inbox · disposable storage · no Apple writes").font(.caption);if ready {
             if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {WorkspaceView(model:model)} else {PATasksView(model:model)}
+            if ProcessInfo.processInfo.arguments.contains("--pill-feedback-preview") {Button("Show completion message") {model.showFeedback("Completed: Claim my refund")}}
             if model.briefings.undoQuestionDate(model.chatGPT.activeID) != nil {Button("Undo question dismissal") {model.briefings.undoQuestion(model.chatGPT.activeID)}};if model.proactive.canUndo {Button("Undo dismissed fixture") {model.proactive.undo(model)}};if model.emailSummaries.canUndoDismiss {Button("Undo email dismissal") {model.emailSummaries.undoDismiss(model)}}
         } }
             .padding(16).frame(width:ProcessInfo.processInfo.arguments.contains("--navigation-preview") ? 1120 : ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 840 : 600,height:ProcessInfo.processInfo.arguments.contains("--navigation-preview") ? 820 : ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 780 : 660)

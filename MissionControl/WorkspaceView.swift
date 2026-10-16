@@ -104,11 +104,8 @@ struct WorkspaceView: View {
             EmptyView()
         }.customizationBehavior(.disabled).sharedBackgroundVisibility(.hidden)
         ToolbarItem(id:"feedback") {
-            TimelineView(.periodic(from:.now,by:1)) { context in
-                if let notice = model.nativeWriteNotice, let date = model.feedbackDate, context.date.timeIntervalSince(date) < 8 {
-                    Label(notice,systemImage:"checkmark.circle.fill").labelStyle(.titleAndIcon).font(.caption).foregroundStyle(.green).lineLimit(1).frame(maxWidth:170).help(notice).padding(.horizontal,8).padding(.vertical,4).background(.green.opacity(0.07),in:Capsule())
-                }
-            }
+            // Retain the saved toolbar identity; feedback now lives in the pill.
+            EmptyView()
         }.customizationBehavior(.disabled).sharedBackgroundVisibility(.hidden)
         ToolbarItem(id:"assistant",placement:.principal) {
             DashboardAIActivityPill(model:model,palette:palette,openChat:showAssistant).frame(height:46,alignment:.center)

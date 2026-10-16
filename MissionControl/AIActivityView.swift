@@ -5,6 +5,7 @@ struct AIActivityPill: View {
     var store: AIActivityStore
     var registration: String
     var current: AIActivityRecord?
+    var feedback: AIActivityFeedback? = nil
     var palette: WorkspacePalette
     var openChat: () -> Void
     var openDestination: (AIActivityDestination) -> Void
@@ -24,20 +25,22 @@ struct AIActivityPill: View {
             if let saved=saved.first(where:{$0.id == current.id}) {current.acknowledged=saved.acknowledged}
             return current
         }()
-        let displayed=AIActivityPillRules.displayed(saved,current:active,registration:registration,now:max(outcomeClock,.now))
-        let expiry=displayed.flatMap{$0.state == .succeeded ? $0.date.addingTimeInterval(AIActivityPillRules.successDuration) : nil}
+        let now=max(outcomeClock,.now)
+        let displayed=AIActivityPillRules.displayed(saved,current:active,registration:registration,now:now)
+        let confirmation=store.error == nil ? AIActivityPillRules.feedback(feedback,displayed:displayed,registration:registration,now:now) : nil
+        let expiry=confirmation?.expiry ?? displayed.flatMap{$0.state == .succeeded ? $0.date.addingTimeInterval(AIActivityPillRules.successDuration) : nil}
         let attention = saved.contains{$0.needsAttention} || store.error != nil
-        let success=active == nil && displayed?.state == .succeeded
+        let success=confirmation != nil || active == nil && displayed?.state == .succeeded
         let failed=active == nil && displayed?.state.isFailure == true
         let successColour=scheme == .dark ? Color(red:0.44,green:0.83,blue:0.55) : Color(red:0.10,green:0.43,blue:0.22)
         let statusColour:Color=success ? successColour : failed ? .red : active == nil && (displayed?.needsAttention == true || store.error != nil) ? .orange : palette[.text]
         let progress:Double?=nil
-        let message=store.error ?? displayed.map{AIActivityPresentation.message($0,compact:true)} ?? "3PO is ready"
+        let message=store.error ?? confirmation.map{PAProse.display($0.message)} ?? displayed.map{AIActivityPresentation.message($0,compact:true)} ?? "3PO is ready"
         let accessibilityStatus=message+(progress.map{". \(Int($0*100)) percent progress."} ?? "")+(attention ? ". An outcome needs attention." : "")
         HStack(spacing: 0) {
             Button(action: openChat) {
                 ZStack {
-                    Circle().fill(palette[.accent].opacity(0.13))
+                    Circle().fill((success ? successColour : palette[.accent]).opacity(0.13))
                     if let progress {
                         Circle().stroke(palette[.accent].opacity(0.18), lineWidth: 2)
                         Circle().trim(from: 0, to: progress)
@@ -46,7 +49,7 @@ struct AIActivityPill: View {
                     }
                     Image(systemName: "bubble.left.and.bubble.right.fill")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(palette[.accent])
+                        .foregroundStyle(success ? successColour : palette[.accent])
                 }.frame(width: 29, height: 29).contentShape(Circle())
             }
             .buttonStyle(.plain)
@@ -78,6 +81,7 @@ struct AIActivityPill: View {
             }
         }
         .padding(4)
+        .background(success ? successColour.opacity(0.08) : .clear, in: Capsule())
         .background(palette[.widget].opacity(0.92), in: Capsule())
         .overlay(Capsule().stroke(success ? successColour.opacity(0.4) : failed ? Color.red.opacity(0.45) : attention ? Color.orange.opacity(0.55) : palette[.text].opacity(0.13), lineWidth: 0.75))
         .task(id:expiry) {
