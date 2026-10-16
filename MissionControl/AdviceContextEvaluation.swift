@@ -340,6 +340,7 @@ import Synchronization
         let capture=model.automaticMemory(.brief)
         var checks=fingerprintCacheChecks(model)
         checks.merge(try await feedbackRefreshChecks(model),uniquingKeysWith:{$1})
+        checks.merge(try await ReviewInferenceGuardEvaluation.run(),uniquingKeysWith:{$1})
         checks.merge(try await capturedEmailContextChecks(model),uniquingKeysWith:{$1})
         checks.merge(try navigationStorageChecks(),uniquingKeysWith:{$1})
         checks["human-only store avoids source projection"]=humanOnlySkippedProjection

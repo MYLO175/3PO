@@ -357,14 +357,14 @@ import SwiftData
     func prepareReply(_ message:MailMessage,summary:EmailSummary,model:DashboardModel) {
         guard !busy,!model.assistant.busy,!model.chatGPT.busy,!model.projectPlacement.busy,!model.writing,!model.proactive.busy,!model.briefings.busy,!model.memoryLearning.busy,!model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy,
               model.assistant.contextEnabled,model.chatGPT.inferenceVerified,!model.chatGPT.usagePaused,summary.registration == model.chatGPT.activeID,EmailReplyDraftRules.canReply(summary,message:message),summary.replyDraft == nil,!model.assistant.excludedAccounts.contains(message.accountID),current(message,model:model)?.created == summary.created else { return }
-        let registration=model.chatGPT.activeID,selectedModel=model.chatGPT.selectedModel,memoryEnabled=model.assistant.memory.enabled
+        let registration=model.chatGPT.activeID,selectedModel=model.chatGPT.selectedModel,memoryControls=model.assistant.memory.controlsRevision
         let storage=model.container.map(ObjectIdentifier.init)
         busy=true;error=nil
         task=Task {
             defer { busy=false }
             var suppliedMemory:[[String:String]]=[]
             @MainActor func valid()->Bool {
-                registration == model.chatGPT.activeID && !model.assistant.busy && !model.writing && selectedModel == model.chatGPT.selectedModel && memoryEnabled == model.assistant.memory.enabled && storage == model.container.map(ObjectIdentifier.init) && humanMemoryContextAvailable(suppliedMemory,model:model,includeTopics:true) && feedbackSourceCurrent(message,summary:summary,model:model) && current(message,model:model)?.created == summary.created && current(message,model:model)?.replyDraft == nil && current(message,model:model)?.dismissed != true && !(model.mailData.messages.first(where:{$0.id == message.id}) ?? message).replied
+                registration == model.chatGPT.activeID && !model.assistant.busy && !model.writing && selectedModel == model.chatGPT.selectedModel && memoryControls == model.assistant.memory.controlsRevision && storage == model.container.map(ObjectIdentifier.init) && humanMemoryContextAvailable(suppliedMemory,model:model,includeTopics:true) && feedbackSourceCurrent(message,summary:summary,model:model) && current(message,model:model)?.created == summary.created && current(message,model:model)?.replyDraft == nil && current(message,model:model)?.dismissed != true && !(model.mailData.messages.first(where:{$0.id == message.id}) ?? message).replied
             }
             do {
                 let body=try await model.mail.body(accountID:message.accountID,messageID:message.messageID,expectedInternetMessageID:message.internetMessageID,mailboxName:message.mailboxName)
@@ -420,12 +420,12 @@ import SwiftData
         guard model.assistant.memory.reviewPreferenceMigrationReadable, (!model.heartbeat.busy || heartbeat), enabled, !paused, !model.chatGPT.usagePaused, !busy, !model.chatGPT.busy,!model.projectPlacement.busy, !model.assistant.busy, !model.briefings.busy, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing, model.chatGPT.inferenceVerified else { return }
         let registration = model.chatGPT.activeID, selectedModel = modelID.isEmpty ? model.chatGPT.selectedModel : modelID, selectedEffort = effort
         let requestedModel = modelID
-        let controls=model.heartbeat.controlsRevision,day=BriefingRules.day(.now),memoryEnabled=model.assistant.memory.enabled
+        let controls=model.heartbeat.controlsRevision,day=BriefingRules.day(.now),memoryControls=model.assistant.memory.controlsRevision
         let storage=model.container.map(ObjectIdentifier.init)
         @MainActor func validateWork() throws {
             try Task.checkCancellation()
             if heartbeat {try heartbeatRequest!.validate()}
-            guard registration == model.chatGPT.activeID,storage == model.container.map(ObjectIdentifier.init),memoryEnabled == model.assistant.memory.enabled else {throw ActionFailure.message("Email account, storage or memory controls changed. Completed assessments are saved.")}
+            guard registration == model.chatGPT.activeID,storage == model.container.map(ObjectIdentifier.init),memoryControls == model.assistant.memory.controlsRevision else {throw ActionFailure.message("Email account, storage or memory controls changed. Completed assessments are saved.")}
             guard !model.assistant.busy,!model.chatGPT.busy,!model.projectPlacement.busy,!model.writing,
                   !model.briefings.busy,!model.proactive.busy,!model.sourceLearning.busy,!model.nativeSourceLearning.busy,
                   !model.memoryMaintenance.busy,!model.memoryLearning.busy,!model.lifeOrganisation.busy else {throw CancellationError()}

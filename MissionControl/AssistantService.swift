@@ -526,7 +526,7 @@ import Observation
         let topicAreas=topic?.notebookAreas ?? []
         let lifeFocus=response.focusAreas
         let memoryRevision = memory.revision
-        let memoryEnabled = memory.enabled, learningEnabled = memory.learningEnabled
+        let memoryControls = memory.controlsRevision
         let acknowledgementRevision = owned.acknowledgementRevision
         let resolutionContext = setupMode || !contextEnabled ? [] : Array(owned.resolvedRequests.prefix(24))
         let whatsappScope = owned.whatsappScope
@@ -631,7 +631,7 @@ import Observation
                 guard !setupMode || (setupActive(contextID) && profileSession(contextID) == response.profileSessionID) else {return reject("the setup session changed")}
                 guard selectedModel == connection.selectedModel else {return reject("the selected AI model changed")}
                 guard capturedPreferences == preferences && capturedName == displayName else {return reject("the assistant settings changed")}
-                guard memoryEnabled == memory.enabled && learningEnabled == memory.learningEnabled else {return reject("the memory controls changed")}
+                guard memoryControls == memory.controlsRevision else {return reject("the memory controls changed")}
                 if expectedMemory != memory.revision {
                     guard expectedBeliefs == currentBeliefs(Set(expectedBeliefs.keys)) else {return reject("a memory supplied to this request changed or became unavailable")}
                     expectedMemory=memory.revision

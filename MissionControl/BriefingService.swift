@@ -247,7 +247,7 @@ import EventKit
                 let contextWasEnabled = model.assistant.contextEnabled
                 let memoryCapture = recovery.omittedKinds.contains("memory") ? AutomaticMemoryCapture(records:[],dependencies:[],eligibleCount:0) : model.automaticMemory(.brief,mailAccounts:recovery.omittedKinds.contains("mail") ? [] : mailReview?.accountIDs,whatsappReady:whatsappReady && !recovery.omittedKinds.contains("whatsapp"))
                 let memorySnapshot = memoryCapture.records
-                let memoryEnabled = model.assistant.memory.enabled
+                let memoryEnabled = model.assistant.memory.enabled,memoryControls=model.assistant.memory.controlsRevision
                 let calendarAuthorization=EKEventStore.authorizationStatus(for:.event),reminderAuthorization=EKEventStore.authorizationStatus(for:.reminder)
                 var resolutionReceipts:[BriefingResolutionReceipt]=[]
                 let calendars = model.assistant.excludedCalendars, lists = model.assistant.excludedLists, accounts = model.assistant.excludedAccounts
@@ -268,7 +268,7 @@ import EventKit
                         (weatherScope == model.weather.scope,"weather permissions"),
                         (whatsappAccess.briefEnabled == model.whatsapp.access(for:registration).briefEnabled && (!whatsappAccess.briefEnabled || whatsappScope == model.whatsapp.scope(for:model.chatGPT.activeID)),"WhatsApp connection or selection"),
                         (model.assistant.contextEnabled && (heartbeat || manual || enabled),"brief access"),
-                        (memoryEnabled == model.assistant.memory.enabled,"memory controls"),
+                        (memoryControls == model.assistant.memory.controlsRevision,"memory controls"),
                         (model.assistant.memory.reviewPreferenceMigrationReadable,"saved attention preferences"),
                         (contextWasEnabled == model.assistant.contextEnabled,"source access"),
                         (!heartbeat || (calendarAuthorization == EKEventStore.authorizationStatus(for:.event) && reminderAuthorization == EKEventStore.authorizationStatus(for:.reminder)),"native permissions"),

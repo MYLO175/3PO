@@ -992,6 +992,14 @@
       "effects": [
         "Configured subscription model on four fictional scenarios; maximum20 requests/24 read-only fixture calls; no personal source content or native writes"
       ]
+    },
+    {
+      "id": "review-inference-guards",
+      "tier": "source-free",
+      "script": "scripts/test-review-inference-guards.sh",
+      "effects": [
+        "fictional captured Review input receipts; no app, model or source reads"
+      ]
     }
   ]
 }

@@ -188,7 +188,9 @@ struct CalendarRemovalReviewSession:Identifiable {
     private var started = false
     private var sample: Bool { ProcessInfo.processInfo.arguments.contains("--sample") }
 
+    @ObservationIgnored private var loadingFilters = true
     init(nativeSources: (any NativeSourceReading)? = nil) {
+        defer {loadingFilters=false}
         injectedNativeSources = nativeSources
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--preview-review-conversation") || ProcessInfo.processInfo.arguments.contains("--preview-chat-approval") {
@@ -1078,6 +1080,7 @@ struct CalendarRemovalReviewSession:Identifiable {
     var visibleReminders: [TaskItem] { reminderData.reminders.filter { !excludedLists.contains($0.listID) } }
     var visibleMessages: [MailMessage] { mailData.messages.filter { !excludedAccounts.contains($0.accountID) }.sorted { $0.received > $1.received } }
     private func saveFilters() {
+        guard !loadingFilters else {return}
         UserDefaults.standard.set(Array(excludedCalendars), forKey: "excludedCalendars")
         UserDefaults.standard.set(Array(excludedLists), forKey: "excludedLists")
         UserDefaults.standard.set(Array(excludedAccounts), forKey: "excludedAccounts")

@@ -315,7 +315,7 @@ private final class ObservationCounter:@unchecked Sendable {
         check(setup.error?.contains("memory setup") == true && setupContext.sessions.last?.calls.isEmpty == true, "Setup restrictions must stop unsupported execution in the actual service.")
         check(setup.learningTurns().count == 1, "Human setup answers remain available while controls remain excluded.")
 
-        for change in ["Stop", "account", "model", "source", "memory"] {
+        for change in ["Stop", "account", "model", "source", "memory", "memory-reset", "learning-reset"] {
             let p = FictionalInference(), c = FictionalContext(), store = try open("ownership-" + change)
             let value = service(p, store)
             p.holdNext = true; p.replies = [tools(["read_memory"])]
@@ -326,6 +326,8 @@ private final class ObservationCounter:@unchecked Sendable {
             case "account": p.activeID = "another-fictional-owner"
             case "model": p.selectedModel = "another-fictional-model"
             case "source": c.state.weatherScope = "changed-fictional-weather"
+            case "memory-reset":value.memory.enabled.toggle();value.memory.enabled.toggle()
+            case "learning-reset":value.memory.learningEnabled.toggle();value.memory.learningEnabled.toggle()
             default: value.memory.enabled = false
             }
             p.release()
