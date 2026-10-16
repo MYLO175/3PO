@@ -120,6 +120,33 @@ import Synchronization
         checks["later submission removes original assessment from active email/review/brief"] = !model.emailSummaries.highlights(model).contains{$0.0.id == original.id} && !model.reviewInbox.emails.contains{$0.0.id == original.id} && !model.briefings.currentEmails(model).contains{$0.0.id == original.id}
         checks["new assessment stage stays actionable and counts once"] = model.reviewInbox.pendingCount == 1 && model.reviewInbox.emails.map{$0.0.id} == ["assessment-next-stage"]
         checks["resolved assessment leaves inspectable exact two-message history"] = model.reviewInbox.resolved.count == 1 && model.reviewInbox.resolved[0].2 == request.resolution
+        let capturedResolutions=model.emailSummaries.resolutionContext(model)
+        checks["exact supplied confirmation context is initially available"] = !capturedResolutions.isEmpty && model.emailSummaries.resolutionContextAvailable(capturedResolutions,model:model)
+        checks["exact confirmation context retains purpose-specific Mail access"] = !model.emailSummaries.resolutionContextAvailable(capturedResolutions,model:model,mailAccounts:[],use:.brief)
+        do {
+            let capturedMail=model.mailData
+            defer {model.mailData=capturedMail;try? model.emailSummaries.seedAdviceFixture(saved)}
+            var additions:[EmailSummary]=[]
+            for index in 0..<30 {
+                let id="unrelated-confirmation-request-\(index)"
+                let raw:[String:Any]=["id":id,"accountID":original.accountID,"account":original.account,"messageID":index+10,"internetMessageID":id+"@example.invalid","sender":original.sender,"subject":"Other fictional assessment \(index)","received":original.received.addingTimeInterval(Double(index+1)).ISO8601Format(),"unread":true,"replied":false,"flagged":false]
+                let message=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:raw))
+                var summary=request;summary.id=id;summary.message=message;summary.messageReceived=message.received;summary.fingerprint=EmailSummary.fingerprint(message)
+                summary.resolution?.requestVersion=EmailSummary.sourceVersion(message,summary)
+                summary.resolution?.assessmentRevision=summary.adviceRevision(replied:message.replied)
+                additions.append(summary)
+            }
+            model.mailData = .init(messages:capturedMail.messages+additions.compactMap(\.message),accounts:capturedMail.accounts,errors:[])
+            try model.emailSummaries.seedAdviceFixture(saved+additions)
+            checks["confirmation fixture actually crowds supplied row outside presentation cap"] = model.emailSummaries.resolutionContext(model).count == 24 && !model.emailSummaries.resolutionContext(model).contains(capturedResolutions[0])
+            checks["new unrelated confirmations cannot revoke supplied exact context"] = model.emailSummaries.resolutionContextAvailable(capturedResolutions,model:model)
+            additions[0].resolution?.reason="Unrelated comparison wording changed."
+            try model.emailSummaries.seedAdviceFixture(saved+additions)
+            checks["unrelated confirmation edits cannot revoke supplied exact context"] = model.emailSummaries.resolutionContextAvailable(capturedResolutions,model:model)
+            var edited=saved;edited[edited.firstIndex{$0.id == request.id}!].resolution?.reason="The supplied comparison wording changed."
+            try model.emailSummaries.seedAdviceFixture(edited+additions)
+            checks["changed supplied confirmation row rejects its earlier context"] = !model.emailSummaries.resolutionContextAvailable(capturedResolutions,model:model)
+        }
         let pa: [String:Any] = try model.assistant.snapshot(model).flatMap{try JSONSerialization.jsonObject(with:Data($0.utf8)) as? [String:Any]} ?? [:]
         checks["PA receives completed communication context without stale request"] = (pa["savedEmailSummaries"] as? [[String:Any]])?.contains{$0["id"] as? String == original.id} == false && (pa["resolvedEmailRequests"] as? [[String:Any]])?.first?["confirmationQuote"] as? String == confirmation.evidence
         checks["follow-up retention excludes addressed email obligation"] = !model.emailSummaries.memories(model).contains{$0.0.id == original.id}
@@ -148,6 +175,7 @@ import Synchronization
         checks["pending native change remains available for outcome checking"] = model.proactive.visible(pending,model:model) && !model.proactive.canReview(pending.id,model:model)
         try model.emailSummaries.observeBodyVersion(confirmation.message!,hash:"observed-corrected-confirmation",model:model)
         checks["observed body correction immediately withdraws completion before failed reassessment"] = model.emailSummaries.resolved(model).isEmpty && model.emailSummaries.highlights(model).contains{$0.0.id == original.id}
+        checks["observed source correction invalidates exact supplied confirmation context"] = !model.emailSummaries.resolutionContextAvailable(capturedResolutions,model:model)
         let reopenedService=try model.emailSummaries.reopenedResolutionFixture()
         checks["observed drift persists through reopen without new AI output"] = reopenedService.records.first{$0.id == confirmation.id}?.observedBodyFingerprint == "observed-corrected-confirmation" && reopenedService.resolved(model).isEmpty && reopenedService.highlights(model).contains{$0.0.id == original.id} && reopenedService.records.first{$0.id == original.id}?.resolution == request.resolution
         try model.emailSummaries.observeBodyVersion(confirmation.message!,hash:confirmation.bodyFingerprint!,model:model)
@@ -214,7 +242,8 @@ import Synchronization
     }
     private static func feedbackRefreshChecks(_ model:DashboardModel)async throws->[String:Bool] {
         let mail=model.mailData,summaries=model.emailSummaries.records,usage=model.aiUsage.state.records.count
-        defer {model.mailData=mail;try? model.emailSummaries.seedAdviceFixture(summaries)}
+        var addedMemories:[UUID]=[]
+        defer {model.mailData=mail;try? model.emailSummaries.seedAdviceFixture(summaries);for id in addedMemories {_=model.assistant.memory.forget(id)}}
         let body="Fictional routine newsletter with optional events.",registration=model.chatGPT.activeID
         let fields:[String:Any]=["id":"feedback-refresh-fixture","accountID":"fictional-mail","account":"Fictional Mail","messageID":1,"internetMessageID":"feedback-refresh@example.invalid","sender":"Fictional newsletter","subject":"Optional events","received":Date.now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
         let message=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:fields))
@@ -223,21 +252,72 @@ import Synchronization
         try model.emailSummaries.seedAdviceFixture([summary])
         let source=ReviewFeedbackEmail(message:message,summary:summary)
         var checks:[String:Bool]=[:]
-        for phase in ["body read","inference"] {
+        for phase in ["body read","inference","memory during body read","memory during inference"] {
             let current=model.emailSummaries.feedbackOwnershipGuard(source,model:model,isCurrent:{true})
             var reads=0,requests=0
+            func addMemory()throws {
+                let memory=PAMemory(registration:registration,text:"Fictional unrelated preference "+UUID().uuidString,kind:.preference,provenance:"Fictional human")
+                guard model.assistant.memory.put(memory) else {throw SummaryFailure.invalid};addedMemories.append(memory.id)
+            }
             let result=try await ReviewFeedbackRules.prepare(source,words:"These can stay quiet",about:message.subject,model:model.chatGPT.selectedModel,isCurrent:current,readBody:{
                 reads += 1;await Task.yield()
                 if phase == "body read" {model.sourceRevision += 1}
+                if phase == "memory during body read" {try addMemory()}
                 return body
             },infer:{_ in
                 requests += 1;await Task.yield()
                 if phase == "inference" {model.sourceRevision += 1}
+                if phase == "memory during inference" {try addMemory()}
                 return "{\"rule\":\"Routine fictional newsletters can stay quiet.\"}"
             })
-            checks["actual feedback guard tolerates EventKit change during "+phase]=reads == 2 && requests == 1 && result.bodyFingerprint == summary.bodyFingerprint
+            checks["actual feedback guard tolerates unrelated change during "+phase]=reads == 2 && requests == 1 && result.bodyFingerprint == summary.bodyFingerprint
         }
         checks["feedback refresh regressions use no subscription inference"]=usage == model.aiUsage.state.records.count
+        return checks
+    }
+    private static func capturedEmailContextChecks(_ model:DashboardModel)async throws->[String:Bool] {
+        let memory=model.assistant.memory,projects=model.assistant.projects,registration=model.chatGPT.activeID,usage=model.aiUsage.state.records.count
+        let originalMemoryIDs=Set(memory.records.map(\.id)),originalProjectIDs=Set(projects.state.items.map(\.id))
+        defer {
+            for record in memory.records where !originalMemoryIDs.contains(record.id) {_=memory.forget(record.id)}
+            for item in projects.items(registration,includeTopics:true) where !originalProjectIDs.contains(item.id) {try? projects.trash(item.id,registration:registration,keepChildren:false,expectedRevision:projects.revision)}
+        }
+        let fields:[String:Any]=["id":"captured-context-fixture","accountID":"fictional-mail","account":"Fictional Mail","messageID":1,"internetMessageID":"captured-context@example.invalid","sender":"Fictional engineer","subject":"Zephyr resonator","received":Date.now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
+        let message=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:fields))
+        let fact=PAMemory(registration:registration,text:"I am building the Zephyr resonator.",kind:.context,provenance:"Fictional human")
+        guard memory.put(fact) else {throw SummaryFailure.invalid}
+        let project=try projects.save(LifeItem(registration:registration,kind:.space,title:"Zephyr resonator",status:.active),expected:nil)
+        let header=model.emailSummaries.relevanceContext(message,model:model,header:true),body=model.emailSummaries.relevanceContext(message,model:model,body:"Please review the Zephyr resonator.")
+        var checks=["actual email captures include the relevant human fact and project":header.memories.contains{$0["id"] == fact.id.uuidString} && header.workspace.contains{$0["id"] == "life:"+project.id.uuidString} && !body.memoryReceipts.isEmpty]
+        @MainActor func held(_ valid:@escaping ()->Bool,change:()throws->Void)async throws->Bool {
+            var release:CheckedContinuation<Void,Never>?
+            let task=Task { @MainActor in await withCheckedContinuation {release=$0};return valid() }
+            while release == nil {await Task.yield()}
+            do {try change()} catch {release?.resume();_=await task.value;throw error}
+            release?.resume();return await task.value
+        }
+        checks["held email input survives unrelated memory project and EventKit changes"]=try await held({model.emailSummaries.relevanceContextAvailable(header,model:model,header:true) && model.emailSummaries.relevanceContextAvailable(body,model:model)},change:{
+            guard memory.put(PAMemory(registration:registration,text:"I like fictional woodland walks.",kind:.preference,provenance:"Fictional human")) else {throw SummaryFailure.invalid}
+            _=try projects.save(LifeItem(registration:registration,kind:.space,title:"Fictional pottery",status:.active),expected:nil)
+            model.sourceRevision += 1
+        })
+        checks["held email input survives newly selected facts crowding its header window"]=try await held({model.emailSummaries.relevanceContextAvailable(header,model:model,header:true)},change:{
+            for _ in 0..<8 {guard memory.put(PAMemory(registration:registration,text:fact.text,kind:.context,provenance:"Fictional human")) else {throw SummaryFailure.invalid}}
+        })
+        checks["crowding fixture actually changes the newly retrieved header window"]=header.memories != model.emailSummaries.relevanceContext(message,model:model,header:true).memories
+        let preferenceStamp=model.emailSummaries.reviewPreferenceStamp(message,model:model,evidence:"Please review the Zephyr resonator.")
+        checks["new applicable Review preference cannot be stamped as already assessed"] = !(try await held({preferenceStamp == model.emailSummaries.reviewPreferenceStamp(message,model:model,evidence:"Please review the Zephyr resonator.")},change:{guard memory.saveReviewPreference("Prioritise messages about my Zephyr resonator.",registration:registration,about:"Zephyr resonator") else {throw SummaryFailure.invalid}}))
+        checks["selected human-memory bookkeeping does not revoke email input"]=try await held({model.emailSummaries.relevanceContextAvailable(body,model:model)},change:{guard memory.put(fact) else {throw SummaryFailure.invalid}})
+        var changed=fact;changed.text="I stopped building the Zephyr resonator."
+        checks["held email input rejects a changed supplied human belief"] = !(try await held({model.emailSummaries.relevanceContextAvailable(body,model:model)},change:{guard memory.put(changed) else {throw SummaryFailure.invalid}}))
+        guard memory.put(fact) else {throw SummaryFailure.invalid}
+        var edited=project;edited.notes="New exact supplied project context"
+        checks["held email input rejects a changed supplied project"] = !(try await held({model.emailSummaries.relevanceContextAvailable(body,model:model)},change:{_=try projects.save(edited,expected:project.revision)}))
+        let humanRows=[MemoryRetrieval.record(fact)]
+        checks["reply draft selected facts remain available after unrelated changes"]=model.emailSummaries.humanMemoryContextAvailable(humanRows,model:model,includeTopics:true)
+        _=memory.forget(fact.id)
+        checks["reply draft rejects forgotten supplied human facts"] = !model.emailSummaries.humanMemoryContextAvailable(humanRows,model:model,includeTopics:true)
+        checks["email context dependency checks make zero inference requests"]=usage == model.aiUsage.state.records.count
         return checks
     }
     static func run(_ model:DashboardModel)async throws->[String:Any] {
@@ -260,6 +340,7 @@ import Synchronization
         let capture=model.automaticMemory(.brief)
         var checks=fingerprintCacheChecks(model)
         checks.merge(try await feedbackRefreshChecks(model),uniquingKeysWith:{$1})
+        checks.merge(try await capturedEmailContextChecks(model),uniquingKeysWith:{$1})
         checks.merge(try navigationStorageChecks(),uniquingKeysWith:{$1})
         checks["human-only store avoids source projection"]=humanOnlySkippedProjection
         projectionCalls=0
@@ -391,7 +472,7 @@ import Synchronization
         checks["saved brief keeps current acknowledgement support"] = model.briefings.current(model)?.id == acknowledgedBrief.id
         var changedAssessment=summary;changedAssessment.bodyFingerprint="fictional-body-v2"
         try model.emailSummaries.seedAdviceFixture([changedAssessment])
-        checks["changed negative-context source withholds saved advice but keeps history"] = model.briefings.current(model) == nil && model.briefings.savedToday(model)?.id == acknowledgedBrief.id && model.reviewAcknowledgements().isEmpty
+        checks["changed historical negative context preserves an unrelated saved brief"] = model.briefings.current(model)?.id == acknowledgedBrief.id && model.briefings.savedToday(model)?.id == acknowledgedBrief.id && model.reviewAcknowledgements().isEmpty
         try model.emailSummaries.seedAdviceFixture([summary])
         model.proactive.undo(model)
         checks["Undo restores concern and original human-choice revision"] = !model.acknowledgedEmail(message,summary) && model.reviewAcknowledgementRevision == beforeAcknowledgement && model.briefings.currentEmails(model).count == 1
@@ -434,7 +515,7 @@ import Synchronization
         checks["header relevance retrieves current project even without matching human facts"] = projectContext.workspace.contains{$0["id"] == "life:"+project.id.uuidString} && projectContext.memories.isEmpty
         let relevantHuman=PAMemory(registration:registration,text:"I am building the Orion prototype this term.",kind:.context,provenance:"Fictional human",evidence:"I am building the Orion prototype this term.")
         guard store.put(relevantHuman) else {throw SummaryFailure.invalid}
-        checks["captured feedback ownership rejects memory change"] = !memoryFeedbackOwner()
+        checks["captured feedback ownership tolerates memory never supplied to interpretation"] = memoryFeedbackOwner()
         let relevanceContext=model.emailSummaries.relevanceContext(message,model:model,body:quote)
         checks["email life context selects matching human facts without source facts or biography"] = relevanceContext.memories.contains{$0["id"] == relevantHuman.id.uuidString} && !relevanceContext.memories.contains{$0["id"] == fact.id.uuidString || $0["id"] == human.id.uuidString}
         let supported=try EmailRelevanceRules.validated(.init(reason:"Matches current Orion work",evidence:quote,memoryIDs:[relevantHuman.id.uuidString],workspaceIDs:["life:"+project.id.uuidString],preferenceIDs:[]),context:relevanceContext,message:message,body:quote)
