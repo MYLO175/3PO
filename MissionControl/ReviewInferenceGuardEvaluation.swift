@@ -22,10 +22,11 @@ import Foundation
     var gate:CheckedContinuation<Void,Never>?
     var calls=0
     var input:[String:Any]=[:]
+    var response=#"{"suggestions":[],"projectTasks":[],"handled":[],"resolved":[],"retirements":[]}"#
     func infer(_ input:[String:Any])async->PAResponse {
         calls += 1;self.input=input
         await withCheckedContinuation{gate=$0}
-        return .init(text:"",output:[],calls:[.init(id:"fictional-preparation",name:ProactiveResultRules.toolName,namespace:"pa",arguments:#"{"suggestions":[],"projectTasks":[],"handled":[],"resolved":[],"retirements":[]}"#)])
+        return .init(text:"",output:[],calls:[.init(id:"fictional-preparation",name:ProactiveResultRules.toolName,namespace:"pa",arguments:response)])
     }
     func release() {gate?.resume();gate=nil}
 }
@@ -36,7 +37,7 @@ import Foundation
     static func run()async throws->[String:Bool] {
         guard ["--validate-advice-context","--validate-review-inbox"].contains(where:ProcessInfo.processInfo.arguments.contains) else {throw IntegrationError.verification}
         var checks:[String:Bool]=[:]
-        let modes=["unrelated-memory","selected-memory","unrelated-project","selected-project","native-hint","native-change","native-addition","native-after-cap","native-outside-window","native-repeated-hints","completion-health","completion-change","mail-flags","unrelated-assessment","selected-assessment","historical-ack-display","historical-ack-support","human-dismiss","pending-change","permission","account","model","stop"]
+        let modes=["unrelated-memory","selected-memory","unrelated-project","selected-project","native-hint","native-change","native-addition","native-after-cap","native-outside-window","native-repeated-hints","completion-health","completion-change","mail-flags","unrelated-assessment","selected-assessment","historical-ack-display","historical-ack-support","human-dismiss","pending-change","permission","account","model","stop","memory-controls-cycle","learning-controls-cycle","historical-row-current","historical-row-source-stale","historical-row-changed","historical-row-retire-stale-source","historical-row-retire-changed"]
         for mode in modes {
             let now=Date.now,reader=ReviewGuardNativeFixture(now:Date.now),hold=ReviewGuardHold(),model=DashboardModel(nativeSources:reader)
             model.chatGPT.activeID="fictional-review-guard-"+mode;model.chatGPT.inferenceVerified=true;model.chatGPT.selectedModel="fictional-model"
@@ -55,11 +56,25 @@ import Foundation
                 var historical=EmailSummary(id:old.id,registration:owner,fingerprint:EmailSummary.fingerprint(old),summary:"Older concern",attention:false,reason:"Older concern",evidence:"Older appointment",bodyFingerprint:"old-body",message:old,dismissed:true,worthReading:false)
                 historical.dismissedSourceVersion=ReviewAcknowledgementRules.emailVersion(old,historical);summaries.append(historical);messages.append(old)
             }
+            if mode.hasPrefix("historical-row") {
+                let old=try mail(["id":"fictional-old-source","messageID":2,"internetMessageID":"old-source@example.invalid","subject":"Earlier Orion prototype","received":now.addingTimeInterval(-86400).ISO8601Format()])
+                let historical=EmailSummary(id:old.id,registration:owner,fingerprint:EmailSummary.fingerprint(old),summary:quote,attention:false,reason:"Earlier historical context",evidence:quote,bodyFingerprint:"old-source-body",message:old,worthReading:true,needsReply:false)
+                summaries.append(historical);messages.append(old)
+            }
             model.mailData = .init(messages:messages,accounts:[.init(id:message.accountID,title:"Fictional Mail")],errors:[],timedOut:false)
             try model.emailSummaries.seedAdviceFixture(summaries)
             if mode == "pending-change" {
                 let pending=PADiscovery(id:"fictional-pending",registration:owner,mailID:message.id,kind:"update",message:"Original pending concern",evidence:quote,created:now,scope:model.proactive.scope(model),sourceRevision:summary.fingerprint,sourceTitle:message.subject,sourceAssessmentRevision:summary.adviceRevision(replied:false))
                 try model.proactive.seedAdviceFixture([pending],model:model)
+            }
+            if mode.hasPrefix("historical-row") {
+                let old=summaries[1],oldMessage=messages[1]
+                let pending=PADiscovery(id:"fictional-historical-pending",registration:owner,mailID:old.id,kind:"reminder",message:"Original pending Orion concern",evidence:quote,created:now.addingTimeInterval(-86400),scope:model.proactive.scope(model),sourceRevision:old.fingerprint,sourceTitle:"Prepare Orion prototype",sourceAssessmentRevision:old.adviceRevision(replied:false),sourceDate:oldMessage.received)
+                try model.proactive.seedAdviceFixture([pending],model:model)
+                let fresh:[String:Any]=["mailID":"mail_0","kind":"update","message":"Fresh independent prototype information.","evidenceID":"mail_0:primary"]
+                let replacement:[String:Any]=["mailID":"mail_0","kind":"reminder","title":"Updated prototype reminder","message":"A later source updates this exact earlier prototype concern.","evidenceID":"mail_0:primary","replaces":["review_0"],"replacementReason":"The newer prototype message updates the earlier concern."]
+                let retirement:[[String:Any]]=mode.contains("retire") ? [["reviewID":"review_0","targetID":"reminder_0","reason":"The exact issued prototype reminder already covers this proposed reminder."]] : []
+                hold.response=String(decoding:try JSONSerialization.data(withJSONObject:["suggestions":[fresh,replacement],"projectTasks":[],"handled":[],"resolved":[],"retirements":retirement]),as:UTF8.self)
             }
             if mode == "native-after-cap" {
                 let first=reader.calendarValue.events[0]
@@ -72,6 +87,11 @@ import Foundation
             guard hold.gate != nil else {throw ActionFailure.message("Fictional Review \(mode) did not reach the held inference: \(model.proactive.error ?? model.proactive.sourceReadError ?? "not started")")}
             checks["Review \(mode) uses actual selected memory"]=(hold.input["paMemory"] as? String)?.contains(fact.id.uuidString) == true
             switch mode {
+            case "memory-controls-cycle":store.enabled=false;store.enabled=true
+            case "learning-controls-cycle":let original=store.learningEnabled;store.learningEnabled.toggle();store.learningEnabled=original
+            case "historical-row-current":break
+            case "historical-row-source-stale","historical-row-retire-stale-source":summaries[1].observedBodyFingerprint="changed-historical-body";try model.emailSummaries.seedAdviceFixture(summaries)
+            case "historical-row-changed","historical-row-retire-changed":var changed=model.proactive.state.records;changed[0].message="Newer pending snapshot must be retained";try model.proactive.seedAdviceFixture(changed,model:model)
             case "unrelated-memory":_=store.put(.init(registration:owner,text:"Garden irrigation needs a valve.",kind:.context,provenance:"Fictional human"))
             case "selected-memory":var changed=fact;changed.text="The Orion prototype now uses six sensors.";_=store.put(changed)
             case "unrelated-project":_=try model.assistant.projects.save(.init(registration:owner,kind:.space,title:"Garden irrigation"),expected:nil)
@@ -99,9 +119,31 @@ import Foundation
             hold.release()
             for _ in 0..<40_000 {if !model.proactive.busy {break};await Task.yield()}
             guard !model.proactive.busy else {throw ActionFailure.message("Fictional Review \(mode) did not settle.")}
-            let rejected=["selected-memory","selected-project","native-change","native-addition","completion-change","selected-assessment","human-dismiss","pending-change","permission","account","model","stop"].contains(mode)
+            let rejected=["selected-memory","selected-project","native-change","native-addition","completion-change","selected-assessment","human-dismiss","permission","account","model","stop","memory-controls-cycle","learning-controls-cycle"].contains(mode)
             checks["Review \(mode) preserves exact relevant guards without unrelated cancellation"]=(model.proactive.error != nil) == rejected
             checks["Review \(mode) has one fictional inference and no subscription calls"]=hold.calls == 1 && model.aiUsage.state.records.isEmpty
+            if !rejected {
+                let progress=model.proactive.state.accounts[owner]
+                checks["Review \(mode) commits its completed comparison"]=progress?.paused == false
+                checks["Review \(mode) retains completion fingerprint or explicit row diagnostics"]=progress?.fingerprint != nil || progress?.validationIssues?.isEmpty == false
+            }
+            if mode.hasPrefix("historical-row") {
+                let saved=model.proactive.state.records
+                let fresh=saved.first{$0.mailID == message.id && $0.kind == "update"}
+                checks["Review \(mode) preserves supported fresh sibling"]=fresh != nil && fresh?.comparisonSourceIDs?.isEmpty != false && fresh?.whatsappDependencies?.isEmpty != false
+                checks["Review \(mode) retains historical canonical identity"]=saved.contains{$0.id == "fictional-historical-pending" && $0.mailID == "fictional-old-source"}
+                if mode == "historical-row-current" {
+                    let replacement=saved.first{$0.replaces == ["fictional-historical-pending"]}
+                    checks["Review actual replacement retains only its claimed prior source"]=replacement?.comparisonSourceIDs == ["fictional-historical-pending"] && saved.first{$0.id == "fictional-historical-pending"}?.supersededBy == replacement?.id
+                    summaries[1].observedBodyFingerprint="later-historical-source-loss";try model.emailSummaries.seedAdviceFixture(summaries)
+                    checks["Review unrelated fresh output survives later historical source loss"]=fresh.map{model.proactive.reviewEvidenceAvailable($0.id,model:model)} == true
+                    checks["Review claimed replacement keeps its exact historical support"]=replacement.map{!model.proactive.reviewEvidenceAvailable($0.id,model:model)} == true
+                } else {
+                    checks["Review \(mode) rejects stale replacement with diagnostics"]=saved.allSatisfy{$0.replaces?.contains("fictional-historical-pending") != true} && model.proactive.state.accounts[owner]?.validationIssues?.isEmpty == false
+                    let historical=saved.first{$0.id == "fictional-historical-pending"}
+                    checks["Review \(mode) retires only an unchanged exact proposal"]=mode == "historical-row-retire-stale-source" ? historical?.retiredAt != nil : historical?.retiredAt == nil && historical?.supersededBy == nil
+                }
+            }
             if mode == "native-repeated-hints" {checks["Review bounds repeated unchanged native hints"]=reader.calendarReads == 4}
         }
         return checks

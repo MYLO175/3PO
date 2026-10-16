@@ -11,6 +11,20 @@ enum ReviewInferenceGuard {
     static func available(_ captured:[String:String],current:[String:String])->Bool {
         captured.allSatisfy{current[$0.key] == $0.value}
     }
+    /// A historical row can author a replacement only while its exact issued
+    /// snapshot and purpose-specific support remain usable. Unreferenced rows
+    /// never become dependencies of otherwise fresh output.
+    static func eligibleHistorical(_ captured:[String:String],current:[String:String],permitted:Set<String>)->Set<String> {
+        Set(captured.keys.filter{permitted.contains($0) && current[$0] == captured[$0]})
+    }
+    static func comparisonDependencies(fresh:[WhatsAppWindowDependency],replaced:[String],prior:[String:[WhatsAppWindowDependency]])->[WhatsAppWindowDependency] {
+        var result:[WhatsAppWindowDependency]=[],seen=Set<String>()
+        for value in fresh where seen.insert(value.chatID).inserted {result.append(value)}
+        for id in Set(replaced).sorted() {
+            for value in (prior[id] ?? []).sorted(by:{$0.chatID < $1.chatID}) where seen.insert(value.chatID).inserted {result.append(value)}
+        }
+        return result
+    }
     /// Native absence/duplicate reasoning uses the whole admitted bounded set:
     /// a newly admitted row matters, whereas an excluded or after-cap row does not.
     static func nativeAvailable(_ captured:[String:String],current:[String:String])->Bool {captured == current}

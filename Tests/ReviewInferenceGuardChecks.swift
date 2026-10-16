@@ -45,6 +45,17 @@ import Foundation
         check(ReviewInferenceGuard.available(["project:A":"version-1"],current:["project:A":"version-1","project:B":"new"]),"An unrelated project revision is irrelevant")
         check(!ReviewInferenceGuard.available(["project:A":"version-1"],current:["project:A":"version-2"]),"Supplied project payload remains guarded")
         check(!ReviewInferenceGuard.available(["proposal:A":"version-1"],current:[:]),"A supplied pending proposal must remain the same captured record")
+        let currentHistorical=["old-a":"v1","old-b":"v2"]
+        check(ReviewInferenceGuard.eligibleHistorical(["old-a":"v1","old-b":"v1"],current:currentHistorical,permitted:["old-a","old-b"]) == ["old-a"],"An altered historical row loses only its own replacement authority")
+        check(ReviewInferenceGuard.eligibleHistorical(["old-a":"v1"],current:currentHistorical,permitted:[]).isEmpty,"Withdrawn historical support cannot author replacements")
+        let fresh=WhatsAppWindowDependency(chatID:"fresh",linkedIdentity:"device",fingerprint:"fresh-window")
+        let oldA=WhatsAppWindowDependency(chatID:"old-a",linkedIdentity:"device",fingerprint:"old-a-window")
+        let oldB=WhatsAppWindowDependency(chatID:"old-b",linkedIdentity:"device",fingerprint:"old-b-window")
+        let prior=["proposal-a":[oldA],"proposal-b":[oldB]]
+        check(ReviewInferenceGuard.comparisonDependencies(fresh:[fresh],replaced:[],prior:prior) == [fresh],"Unreferenced historical WhatsApp rows cannot poison fresh advice")
+        check(ReviewInferenceGuard.comparisonDependencies(fresh:[fresh],replaced:["proposal-a"],prior:prior) == [fresh,oldA],"A replacement retains precisely its claimed prior conversation context")
+        check(ReviewInferenceGuard.comparisonDependencies(fresh:[fresh],replaced:["proposal-a","proposal-a"],prior:prior) == [fresh,oldA],"Repeated prior aliases do not duplicate source receipts")
+        check(ReviewInferenceGuard.comparisonDependencies(fresh:[fresh,oldA],replaced:["proposal-a"],prior:prior) == [fresh,oldA],"Fresh same-chat windows remain canonical and are not widened")
         print("PASS Review inference receipts: \(count) checks; exact native/source/occurrence/completion and supplied rows, irrelevant additions/bookkeeping, no AI or native access.")
     }
 }
