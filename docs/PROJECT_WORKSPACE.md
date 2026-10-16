@@ -75,3 +75,9 @@ Use an item’s context menu or detail menu for **Move**, **Delete** and **Match
 Delete moves an item to **Recently deleted**, preserving its identities, notes, relationships and descendants. For a folder you can retain its contents in the old parent instead. Restore brings back the same records; if the former parent remains deleted, the restored branch goes home. There is no permanent purge control. Automatic placement cannot resurrect deleted matching anchors/projects, and restored placement stays paused until you choose to continue.
 
 A heartbeat may propose a new project in PA chat or Review inbox. **Review space** opens an editable space form. Only Save creates it, with a receipt and exact source pointer; merely receiving the suggestion does not. A previously saved proposal displays Created, preventing another copy.
+
+## Page sections and note previews — 16 October
+
+Inside a space, open the top three-dot menu → **Show on this page** to toggle **Spaces**, **Tasks** and **Notes** independently. These are presentation choices saved with each widget, separately for every account/folder. All sections start visible in older layouts. Hiding keeps the underlying spaces/tasks/notes, progress, identities and PA access intact; return to the same menu to show them again. Home retains its folder-first navigation.
+
+Notes follow visible folders/tasks. Their previews share the remaining viewport height across card rows and expand when the window grows or sections above are hidden. Short notes show fully. Only content exceeding the available preview height gets Show more/Show less; expansion remains local and note text still opens the editor. Scrolling does not change the size budget.

@@ -14,6 +14,7 @@ struct LifeNotesSection:View {
     @Bindable var model:DashboardModel
     let item:LifeItem
     var availableWidth:CGFloat
+    var availableHeight:CGFloat
     var edit:(LifeNoteEditing)->Void
     @Environment(\.workspacePalette) private var palette
     @State private var error:String?
@@ -33,9 +34,9 @@ struct LifeNotesSection:View {
                         .background(palette[.accent].opacity(0.06),in:RoundedRectangle(cornerRadius:12))
                 }.buttonStyle(.plain).frame(maxWidth:320).disabled(model.assistant.projects.readOnly || item.registration != model.chatGPT.activeID)
             } else {
-                LazyVGrid(columns:[GridItem(.adaptive(minimum:min(240,max(100,availableWidth)),maximum:360),spacing:14,alignment:.top)],alignment:.leading,spacing:14) {
+                LazyVGrid(columns:[GridItem(.adaptive(minimum:ProjectNotesLayout.minimumWidth(availableWidth),maximum:360),spacing:14,alignment:.top)],alignment:.leading,spacing:14) {
                     ForEach(item.noteCards) { note in
-                        LifeNoteCard(note:note,edit:{edit(.init(item:item,noteID:note.id))},remove:{remove(note)})
+                        LifeNoteCard(note:note,previewLimit:ProjectNotesLayout.previewHeight(availableHeight:availableHeight,width:availableWidth,count:item.noteCards.count),edit:{edit(.init(item:item,noteID:note.id))},remove:{remove(note)})
                     }
                 }
             }
@@ -54,26 +55,25 @@ struct LifeNotesSection:View {
 
 private struct LifeNoteCard:View {
     let note:LifeNote
+    var previewLimit:CGFloat
     var edit:()->Void
     var remove:()->Void
     @Environment(\.workspacePalette) private var palette
     @State private var expanded=false
     @State private var naturalHeight:CGFloat=0
-    @State private var previewHeight:CGFloat=0
     private var text:Text {Text(AttributedString(LifeNoteText.attributed(note.text,formatting:note.formatting)))}
     var body:some View {
         VStack(alignment:.leading,spacing:10) {
             Button(action:edit) {
-                text.foregroundStyle(palette[.text].opacity(0.9)).lineLimit(expanded ? nil : 5)
-                    .onGeometryChange(for:CGFloat.self) {$0.size.height} action:{if !expanded {previewHeight=$0}}
-                    .background(alignment:.topLeading) {
-                        text.fixedSize(horizontal:false,vertical:true).hidden()
-                            .onGeometryChange(for:CGFloat.self) {$0.size.height} action:{naturalHeight=$0}
-                    }
+                text.foregroundStyle(palette[.text].opacity(0.9)).fixedSize(horizontal:false,vertical:true)
+                    .frame(maxWidth:.infinity,alignment:.leading)
+                    .onGeometryChange(for:CGFloat.self) {$0.size.height} action:{naturalHeight=$0}
+                    .frame(height:expanded || naturalHeight == 0 ? nil : min(naturalHeight,previewLimit),alignment:.topLeading)
+                    .clipped()
                     .frame(maxWidth:.infinity,minHeight:64,alignment:.topLeading).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityLabel("Edit note").accessibilityValue(note.text).help("Click to edit note")
             HStack {
-                if expanded || naturalHeight > previewHeight+1 {
+                if naturalHeight > previewLimit+1 {
                     Button(expanded ? "Show less" : "Show more") {expanded.toggle()}.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer(minLength:0)

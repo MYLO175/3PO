@@ -136,6 +136,12 @@ enum WidgetKind: String, Codable, CaseIterable {
     }
 }
 
+enum ProjectPageSection:String,CaseIterable,Identifiable {
+    case spaces,tasks,notes
+    var id:String {rawValue}
+    var title:String {switch self {case .spaces:"Spaces";case .tasks:"Tasks";case .notes:"Notes"}}
+}
+
 struct WidgetConfiguration: Codable, Equatable {
     var sourceExclusions: Set<String> = []
     var date: Date = .now
@@ -161,6 +167,18 @@ struct WidgetConfiguration: Codable, Equatable {
     /// Widget-local presentation, separately remembered for each account's folder.
     var projectFolderViews:[String:[String:String]]? = nil
     var projectOnlyUnfinished: Bool? = nil
+    /// Account/folder presentation only. Unknown section names survive later edits.
+    var projectHiddenSections:[String:[String:[String]]]? = nil
+    func showsProjectSection(_ section:ProjectPageSection,registration:String,folder:UUID)->Bool {
+        !(projectHiddenSections?[registration]?[folder.uuidString] ?? []).contains(section.rawValue)
+    }
+    mutating func setProjectSection(_ section:ProjectPageSection,visible:Bool,registration:String,folder:UUID) {
+        var accounts=projectHiddenSections ?? [:]
+        var folders=accounts[registration] ?? [:]
+        var hidden=Set(folders[folder.uuidString] ?? [])
+        if visible {hidden.remove(section.rawValue)} else {hidden.insert(section.rawValue)}
+        folders[folder.uuidString]=hidden.sorted();accounts[registration]=folders;projectHiddenSections=accounts
+    }
 }
 
 struct GridRect: Codable, Equatable {

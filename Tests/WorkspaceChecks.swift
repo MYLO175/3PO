@@ -3,8 +3,33 @@ import CoreGraphics
 
 @main
 struct WorkspaceChecks {
+    static func projectPageChecks() throws {
+        let folder=UUID(),sibling=UUID()
+        var config=WidgetConfiguration();config.projectView="Board";config.sourceExclusions=["native-source"]
+        let original=try JSONEncoder().encode(config)
+        let legacy=try JSONDecoder().decode(WidgetConfiguration.self,from:original)
+        precondition(legacy.projectHiddenSections == nil && ProjectPageSection.allCases.allSatisfy{legacy.showsProjectSection($0,registration:"a",folder:folder)})
+        config.setProjectSection(.tasks,visible:false,registration:"a",folder:folder)
+        config.setProjectSection(.notes,visible:false,registration:"a",folder:folder)
+        let restored=try JSONDecoder().decode(WidgetConfiguration.self,from:JSONEncoder().encode(config))
+        precondition(!restored.showsProjectSection(.tasks,registration:"a",folder:folder) && !restored.showsProjectSection(.notes,registration:"a",folder:folder))
+        precondition(restored.showsProjectSection(.spaces,registration:"a",folder:folder) && restored.showsProjectSection(.tasks,registration:"a",folder:sibling) && restored.showsProjectSection(.tasks,registration:"b",folder:folder))
+        config.projectHiddenSections?["a"]?[folder.uuidString]?.append("future-section")
+        config.setProjectSection(.tasks,visible:true,registration:"a",folder:folder)
+        precondition(config.showsProjectSection(.tasks,registration:"a",folder:folder) && !config.showsProjectSection(.notes,registration:"a",folder:folder))
+        precondition(config.projectHiddenSections?["a"]?[folder.uuidString]?.contains("future-section") == true && config.sourceExclusions == legacy.sourceExclusions && config.projectView == legacy.projectView)
+        config.setProjectSection(.spaces,visible:false,registration:"a",folder:folder)
+        precondition(!config.showsProjectSection(.spaces,registration:"a",folder:folder),"All sections can be hidden and independently restored")
+        let roomy=ProjectNotesLayout.previewHeight(availableHeight:700,width:1000,count:3)
+        let crowded=ProjectNotesLayout.previewHeight(availableHeight:100,width:1000,count:3)
+        let stacked=ProjectNotesLayout.previewHeight(availableHeight:700,width:300,count:3)
+        precondition(roomy > 500 && crowded >= 96 && crowded < roomy && stacked < roomy,"Notes use spare page height and share it across grid rows")
+        precondition(ProjectNotesLayout.previewHeight(availableHeight:-300,width:240,count:1) == crowded,"A crowded page keeps a readable preview even below the fold")
+        print("Project section persistence, legacy defaults, account/folder isolation and responsive notes passed")
+    }
     static func main() throws {
         try savedThemeChecks()
+        try projectPageChecks()
         var folderConfig=WidgetConfiguration();folderConfig.projectView="Overview";folderConfig.projectFolderViews=["fictional-a":["folder-1":"Board","folder-2":"List"],"fictional-b":["folder-1":"Outline"]]
         let folderRestored=try JSONDecoder().decode(WidgetConfiguration.self,from:JSONEncoder().encode(folderConfig))
         precondition(folderRestored == folderConfig && folderRestored.projectFolderViews?["fictional-a"]?["folder-1"] == "Board")

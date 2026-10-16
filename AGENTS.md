@@ -133,3 +133,8 @@ Heartbeat reconsideration may inspect pending proposals as labelled historical d
 
 - Put notes below folders and tasks. Show multiple subtle sticky-note cards alongside one another, with short previews and Show more/Show less. Click the writing to open its editor; a hidden pencil must not be the editing route. The Notes + adds an independent note.
 - Use familiar text-size, bold, italic and bullet controls, Command-B/Command-I, and asterisk then Space for bullets. Native macOS text editing should retain selection, text Undo and ordinary typing. Keep existing notes, stable note identities and account/revision guards.
+
+## Recorded space-page refinement — 16 October
+
+- Inside each space, the top three-dot menu offers independent Spaces, Tasks and Notes visibility. Hiding preserves content and progress. Save choices with the widget’s account/folder presentation settings and retain visible defaults for older pages.
+- Notes should use available page space; show Show more only when the note overflows its responsive preview, rather than always shortening at five lines. Keep folders, tasks and then notes, click-to-edit and the native formatting controls.

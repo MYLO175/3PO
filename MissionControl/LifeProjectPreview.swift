@@ -12,7 +12,7 @@ import AppKit
         project.notesFormatting = .init(length:project.notes.utf16.count,runs:[.init(location:0,length:16,size:22,bold:true,italic:false)])
         project.additionalNotes=[
             .init(text:"Ideas to explore\n•\tTry a smaller sensor\n•\tCompare two capture angles\n•\tKeep the setup repeatable"),
-            .init(text:"Meeting notes\nBring the prototype and the latest measurements.\nDiscuss what made the baseline reliable.\nAgree the next experiment.\nRecord uncertainties and follow-up questions.\nKeep this fictional note available without pushing the task board down the page.\nThis final line is visible after Show more.")
+            .init(text:"Meeting notes\nBring the prototype and the latest measurements.\nDiscuss what made the baseline reliable.\nAgree the next experiment.\nRecord uncertainties and follow-up questions.\nKeep this fictional note available without pushing the task board down the page.\nThis final line stays visible when the page has room.")
         ]
         let research = LifeItem(registration:registration, kind:.section, title:"Research", parentID:project.id, areas:[.studies])
         let paper = LifeItem(registration:registration, kind:.task, title:"Read the baseline paper", parentID:research.id, status:.done, due:"2026-10-08", estimateMinutes:45)
@@ -45,6 +45,10 @@ import AppKit
     static func render(_ model: DashboardModel) async {
         guard let (registration,university,engineering,project) = seed(model) else { return }
         let previews:[(String,CGFloat,CGFloat,String,String,UUID?)]=[
+            ("notes-roomy",1100,1200,"dark","Overview",project.id),
+            ("notes-only",740,900,"light","Overview",project.id),
+            ("folders-only",900,650,"dark","Overview",engineering.id),
+            ("tasks-only",900,650,"dark","Overview",project.id),
             ("notes-dark",1100,940,"dark","Overview",project.id),
             ("wide-dark",1100,650,"dark","Overview",engineering.id),
             ("deep-dark",900,500,"dark","Overview",project.id),
@@ -66,6 +70,10 @@ import AppKit
             var overrides = WorkspaceColorOverrides(); overrides.profiles = WorkspaceColorTheme.threePO.profiles
             let palette = WorkspacePalette.resolved(raw:overrides.encoded, mode:mode, theme:"warm", accent:"sage")
             var config = WidgetConfiguration(); config.projectRoots = [registration:root?.uuidString ?? ""]; config.projectView = view
+            if let root {
+                let hidden:[ProjectPageSection]=name == "folders-only" ? [.tasks,.notes] : name == "tasks-only" ? [.spaces,.notes] : name == "notes-only" ? [.spaces,.tasks] : []
+                for section in hidden {config.setProjectSection(section,visible:false,registration:registration,folder:root)}
+            }
             let widget = view == "LifeMap" ? AnyView(PALifeMapWidget(model:model,configuration:.constant(config))) : AnyView(LifeProjectWidget(model:model, configuration:.constant(config), previewRegistration:registration))
             let content = widget
                 .padding(16).frame(width:width,height:height).foregroundStyle(palette[.text]).background(palette[.widget],in:RoundedRectangle(cornerRadius:16))

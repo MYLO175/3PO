@@ -33,3 +33,16 @@ struct WorkspaceGeometry {
         return GridRect(x:max(0,min(12-origin.w,Int((value.minX/xStep).rounded()))),y:max(0,min(rows-origin.h,Int((value.minY/yStep).rounded()))),w:origin.w,h:origin.h)
     }
 }
+
+/// Allocate the remaining page height across note rows. A crowded page keeps a
+/// readable preview; measuring the content above Notes makes scrolling irrelevant.
+enum ProjectNotesLayout {
+    static let spacing:CGFloat=14
+    static func minimumWidth(_ width:CGFloat)->CGFloat {min(240,max(100,width))}
+    static func previewHeight(availableHeight:CGFloat,width:CGFloat,count:Int)->CGFloat {
+        let columns=max(1,Int((max(0,width)+spacing)/(minimumWidth(width)+spacing)))
+        let rows=max(1,Int(ceil(Double(count)/Double(columns))))
+        // Notes heading/top padding: 48. Card padding, options and gap: 60.
+        return max(96,(availableHeight-48-spacing*CGFloat(rows-1))/CGFloat(rows)-60)
+    }
+}

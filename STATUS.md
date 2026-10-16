@@ -1,6 +1,15 @@
 # Status
 
-## Current summary — 16 October 2026
+## Current summary — 16 October 2026: optional space sections
+
+Implemented in the isolated Projects worktree from main `fd5e986`: Show on this page in the top three-dot menu independently toggles Spaces, Tasks and Notes, remembered per widget/account/folder with visible legacy defaults. Hiding changes presentation only; data and progress remain. Board/List/Tree/Deadlines honour the choices, and Tree traverses hidden collapsed ancestors so visible tasks remain accessible.
+
+Notes use the remaining viewport height, shared across card rows, rather than five-line previews. Short/roomy notes show fully, with Show more/Show less only on measured rich-text overflow. The size budget measures content above Notes independently of scroll position. Native note formatting/account/revision saves are unchanged.
+
+Focused workspace and native-note suites pass; the signed Xcode build and strict signature pass. Fictional native renders cover roomy/crowded and narrow/wide light/dark layouts, folder-only/task-only/notes-only pages. Interactive acceptance verifies Tasks/Notes hiding, independent choices in another space, navigation retention, short notes without expansion controls, actual overflowing-note expansion/collapse, and Tree tasks surviving hidden collapsed ancestors. Read-only review found no concrete regression. Pointer scrolling reports the existing noWindowsAvailable automation limitation; rendered width variants and deterministic geometry cover sizing, but continuous hands-on resize/scroll smoothness is not claimed. Preview leaves personal preferences exact. Integration/install pending at this checkpoint; no personal content was edited for QA.
+
+
+## Previous current summary — 16 October 2026
 
 Spaces design and formatted sticky notes are merged into main and installed as signed code `7094634`, retaining the newer Review approval/final-action fixes. The app opens normally; the existing Engineering space shows retained folders/task progress, breadcrumb progress and stage + controls, with the original note at the bottom. Clicking its text opens the native formatting editor; Cancel preserves it. The original Review inbox page is restored after inspection.
 
