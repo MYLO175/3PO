@@ -70,6 +70,14 @@ import Foundation
             check(AIActivitySummary.text("Space created: Orion follow-up",compact:true) == "Space created","Prepared space success uses a short label")
             check(AIActivitySummary.recent([record("ghost",state:.running)],current:nil,registration:"account-a").isEmpty,"Saved running rows need an exact live owner")
             check(AIActivitySummary.recent([record("other",registration:"account-b",state:.succeeded)],current:nil,registration:"account-a").isEmpty,"Recent activity stays account scoped")
+            let failedHeartbeat=record("failed-heartbeat",state:.failed,kind:.heartbeat,offset:95)
+            let partialHeartbeat=record("partial-heartbeat",state:.partial,kind:.heartbeat,offset:94)
+            let heartbeatHistory=AIActivityStatus.allCases.map{record("heartbeat-"+$0.rawValue,state:$0,kind:.heartbeat)}
+            check(Set(AIActivitySummary.recent(heartbeatHistory,current:nil,registration:"account-a").map(\.state)) == [.failed,.partial],"Only failed/partial heartbeat analysis enters Activity; success, sleep, Stop, waiting and stale running outcomes stay hidden")
+            check(AIActivitySummary.recent([failedHeartbeat,partialHeartbeat,heartbeat],current:nil,registration:"account-a").map(\.id) == [failedHeartbeat.id,partialHeartbeat.id],"Newer successful heartbeat stays hidden without erasing earlier failure history")
+            check(AIActivitySummary.recent([failedHeartbeat,partialHeartbeat],current:nil,registration:"account-b").isEmpty,"Heartbeat failures remain account scoped")
+            check(AIActivitySummary.recent(history+[failedHeartbeat,partialHeartbeat,heartbeat],current:nil,registration:"account-a").count == 5,"Heartbeat failures share the existing five-outcome Activity bound")
+            check(pill([failedHeartbeat,partialHeartbeat]) == nil,"Heartbeat failure history does not replace the existing closed-pill status policy")
             let feedback=AIActivityFeedback(registration:"account-a",message:"Completed: Claim my refund",date:date.addingTimeInterval(61))
             func confirmation(_ displayed:AIActivityRecord?=nil,_ offset:Double=62,_ registration:String="account-a")->AIActivityFeedback? {
                 AIActivityPillRules.feedback(feedback,displayed:displayed,registration:registration,now:date.addingTimeInterval(offset))

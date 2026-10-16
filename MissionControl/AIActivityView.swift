@@ -110,7 +110,7 @@ struct AIActivityView: View {
     @Environment(\.colorScheme) private var scheme
     private var visibleCurrent: AIActivityRecord? { current.flatMap { $0.kind != .heartbeat && $0.registration == registration && isVisible($0) ? $0 : nil } }
     private var records: [AIActivityRecord] {
-        let saved = store.records(registration).filter{$0.kind != .heartbeat && isVisible($0)}.map(presentation)
+        let saved = store.records(registration).filter{isVisible($0)}.map(presentation)
         return AIActivitySummary.recent(saved,current:visibleCurrent,registration:registration)
     }
     var body: some View {
@@ -171,8 +171,8 @@ private enum AIActivityPresentation {
         let message=AIActivitySummary.text(PAProse.display(record.message),compact:compact && record.state == .succeeded)
         let text=message.isEmpty ? PAProse.display(record.title) : message
         switch record.state {
-        case .failed:return prefixed("Failed",text:text)
-        case .partial:return prefixed("Partly completed",text:text)
+        case .failed:return prefixed(record.kind == .heartbeat ? "Heartbeat failed" : "Failed",text:text)
+        case .partial:return prefixed(record.kind == .heartbeat ? "Heartbeat partly completed" : "Partly completed",text:text)
         case .interrupted:return prefixed("Interrupted",text:text)
         case .uncertain:return prefixed("Save needs checking",text:text)
         case .needsAnswer:return prefixed("Needs your answer",text:text)

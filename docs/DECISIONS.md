@@ -1,5 +1,9 @@
 # Decisions
 
+## 16 October: include failed heartbeats in the pill's Activity list
+
+The Activity dropdown now includes saved heartbeat analysis failures and partial failures alongside its existing five recent outcomes, with an Open heartbeat link. Successful, waiting, stopped and sleep/closed-laptop interruption outcomes stay out. Use the captured typed outcome, never prose matching or a new inference. Retain all underlying history and account filtering; a later successful run does not erase an earlier failure. The closed pill continues to show live heartbeats under its existing status policy.
+
 ## 16 October: put direct-action confirmations inside the pill
 
 Move the separate green toolbar confirmation into the existing centred pill. Show the exact confirmation with green text, a checkmark and a subtle matching tint for six seconds, then return to its normal status. This is account-scoped, in-memory feedback from a direct UI action, never a new AI Activity record. Running work, unresolved attention and storage errors retain priority; newer completions replace older messages. Reuse one cancellable expiry wakeup and keep the old toolbar item identity empty so saved arrangements survive.

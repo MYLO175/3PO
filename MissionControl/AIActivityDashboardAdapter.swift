@@ -245,6 +245,25 @@ private extension ReviewWorkPhase {var isFinished:Bool {self != .running && self
 #if DEBUG
 @MainActor enum AIActivityWorkPreview {
     static func seed(_ model:DashboardModel) {
+        if ProcessInfo.processInfo.arguments.contains("--heartbeat-failure-preview") {
+            let registration=model.chatGPT.activeID,now=Date.now
+            let runs:[(String,String,Bool,String?)]=[
+                ("failed","failed",false,"Fictional provider unavailable; no brief was saved."),
+                ("partial","failed",true,"Fictional memory analysis failed; the completed brief is saved."),
+                ("succeeded","idle",true,nil),
+                ("sleep","suspended",false,"The Mac went to sleep or the laptop closed."),
+                ("stopped","interrupted",false,"Stopped before the remaining work finished."),
+                ("waiting","waiting",false,nil)
+            ]
+            for (index,value) in runs.enumerated() {
+                let run=PAReviewRun(id:"fictional-heartbeat-"+value.0,started:now.addingTimeInterval(Double(index)-20),finished:now.addingTimeInterval(Double(index)-10),manual:false,phase:value.1,detail:"Fictional heartbeat",briefUpdated:value.2,failure:value.3)
+                model.heartbeatActivityFinished(registration,run)
+            }
+            let saved=model.aiActivity.records(registration)
+            precondition(saved.count == runs.count,"All heartbeat outcomes remain saved")
+            precondition(Set(AIActivitySummary.recent(saved,current:nil,registration:registration).map(\.id)) == ["heartbeat:fictional-heartbeat-failed","heartbeat:fictional-heartbeat-partial"],"Only actual failed/partial heartbeats appear in Activity")
+            return
+        }
         if ProcessInfo.processInfo.arguments.contains("--pill-feedback-preview") {
             model.showFeedback("Completed: Claim my refund")
             precondition(model.aiActivity.state.records.isEmpty,"Manual feedback must not enter AI Activity")

@@ -146,3 +146,7 @@ Heartbeat reconsideration may inspect pending proposals as labelled historical d
 - Share the retrieval process across those consumers. This is ordinary app code around the existing AI/tools, not an extra AI agent. Memory includes life facts, ongoing responsibilities, projects and preferences; preferences are one category.
 - Prefer converting obsolete records into the canonical format rather than keeping a permanent runtime adapter. The human permits removal of older records that genuinely no longer fit. Preserve meaning, account, identity, evidence/history and operation uncertainty where still applicable; perform justified conversion/removal transactionally with a recovery backup and readback.
 - Long-term memory should retain concise useful knowledge and evidence references, not duplicate whole emails/messages. Source caches remain separate. Similarity can find candidates; it does not prove two people/events/obligations are identical or authorise writes.
+
+## Recorded heartbeat Activity refinement — 16 October
+
+- The pill's Activity dropdown includes actual heartbeat failures and partial failures. Successful runs and skipped/waiting/sleep/closed-laptop interruptions stay out. Preserve the saved history, account scope and existing live-heartbeat pill status; opening Activity makes no AI/source read or retry.

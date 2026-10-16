@@ -58,6 +58,8 @@ Acceptance still distinguishes source-free/native UI checks from provider timing
 
 16 October direct-action confirmation refinement: manual completion/edit/Undo feedback now appears briefly inside the existing pill with green text, checkmark and tint. Its account-scoped in-memory message expires after six seconds and never creates Activity history; existing work/attention priority and saved toolbar identity remain.
 
+16 October heartbeat Activity refinement: the pill's dropdown includes actual failed/partial heartbeat analysis, with a link to the existing heartbeat details. Successful, waiting, stopped and sleep/closed-laptop outcomes remain excluded. This filters stored typed outcomes without altering scheduling, retries or history.
+
 ## Conversational Review and one AI activity pill
 
 Approved for integration on 13 October after the user compared the [scripted trial](REVIEW_CONVERSATION_TRIAL.md). The installed implementation contains saved source/account-scoped conversations, explicit real-assistant planning, exact selected-action approval by a direct tick or ordinary reply, durable heartbeat-to-Review scheduling, receipt-based completion counts and a centred palette-aware status pill. AI Activity shows work, including typed actions started from chat, and excludes ordinary conversation-only replies. It retains failure details and conversation navigation. The current dropdown has five recent tasks and no acknowledgement controls; complete stored history and acknowledgement fields remain preserved. Bounded installation and native acceptance evidence is recorded in STATUS; broader acceptance below remains open.

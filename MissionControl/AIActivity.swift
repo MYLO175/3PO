@@ -190,7 +190,9 @@ enum AIActivitySummary {
         return reads.contains(text(record.message))
     }
     static func recent(_ records:[AIActivityRecord],current:AIActivityRecord?,registration:String)->[AIActivityRecord] {
-        var values=records.filter{$0.registration == registration && $0.kind != .heartbeat && $0.state.isTerminal && ![.replied,.resolved].contains($0.state) && !contextOnly($0)}
+        // Sleep/closed-laptop suspensions and foreground cancellation are
+        // interrupted/stopped outcomes, distinct from an actual analysis failure.
+        var values=records.filter{$0.registration == registration && ($0.kind != .heartbeat || [.failed,.partial].contains($0.state)) && $0.state.isTerminal && ![.replied,.resolved].contains($0.state) && !contextOnly($0)}
         if let current,current.registration == registration,current.kind != .heartbeat,current.state == .running {
             values.removeAll{$0.id == current.id};values.append(current)
         }
