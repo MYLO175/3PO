@@ -325,6 +325,10 @@ import Synchronization
         guard ProcessInfo.processInfo.arguments.contains("--validate-advice-context"),model.assistant.memory.enabled,model.assistant.contextEnabled else {
             throw ActionFailure.message("This check requires the existing memory/source context settings to be on. No settings were changed.")
         }
+        // Fictional summary seeding clears its persisted error. Preserve the
+        // installed diagnostic even when a held validation throws.
+        let savedSummaryError=UserDefaults.standard.object(forKey:"emailSummaryError")
+        defer {UserDefaults.standard.set(savedSummaryError,forKey:"emailSummaryError")}
         let registration=model.chatGPT.activeID,now=Date.now,store=model.assistant.memory
         let identity=MemorySourceIdentity(kind:.calendar,accountID:"fictional-provider",containerID:"fictional-study",itemID:"fictional-orion")
         let quote="Prepare four sensors for the Orion supervision."
