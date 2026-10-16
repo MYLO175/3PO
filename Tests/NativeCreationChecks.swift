@@ -40,6 +40,13 @@ import SwiftData
         var otherAccount = request; otherAccount.registration = "other-account"; try completed.begin(otherAccount)
         let unavailable = NativeCreationStore(container:nil)
         rejects { try unavailable.begin(request) }; precondition(unavailable.state.claims.isEmpty)
+        let ownership=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+        let firstOwner=NativeCreationStore(container:ownership),staleOwner=NativeCreationStore(container:ownership)
+        try firstOwner.begin(request)
+        let different=NativeCreationRequest(kind:.reminder,registration:"fixture-account",title:"Other request")
+        rejects {try staleOwner.begin(different)}
+        let retained=NativeCreationStore(container:ownership)
+        precondition(retained.state.claims.count == 1 && retained.state.claims[request.key] != nil,"A stale form owner never overwrites a newer pending native claim")
         let record = try container.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first!
         let preserved = Data("{\"version\":99,\"claims\":{}}".utf8); record.data = preserved; try container.mainContext.save()
         let unsupported = NativeCreationStore(container:container)

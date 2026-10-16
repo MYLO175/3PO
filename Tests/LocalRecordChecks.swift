@@ -61,6 +61,20 @@ import SwiftData
         check(probe() == 23,"A second process cannot acquire the personal-store lease")
         withExtendedLifetime(lease) {};lease=nil
         check(probe() == 0,"Exit/release permits a subsequent owner without deleting the lock inode")
+        struct Run:Codable {var location:Int;var length:Int}
+        struct Formatting:Codable {var runs:[Run]}
+        let opaqueRuns=Data(#"{"runs":[{"location":0,"length":5,"futureAnnotation":"left"},{"location":5,"length":5,"futureAnnotation":"right"}]}"#.utf8)
+        let remaining=try LocalRecordCoding.preservingUnknown(Formatting(runs:[.init(location:5,length:5)]),original:opaqueRuns)
+        let restoredRuns=(try JSONSerialization.jsonObject(with:remaining) as! [String:Any])["runs"] as! [[String:Any]]
+        check(restoredRuns[0]["futureAnnotation"] as? String == "right","Removing an id-less row must not transfer another row's opaque metadata")
+        do {_=try LocalRecordCoding.preservingUnknown(Formatting(runs:[.init(location:9,length:5)]),original:opaqueRuns);fatalError("Ambiguous opaque row edit accepted")}
+        catch LocalRecordFailure.unsupportedFields {}
+        struct Known:Codable {var known:Int}
+        for number in ["1e127","1e-128","123456789012345678901234567890123456789"] {
+            do {_=try LocalRecordCoding.preservingUnknown(Known(known:2),original:Data(("{\"known\":1,\"future\":"+number+"}").utf8));fatalError("Opaque numeric drift accepted")}
+            catch LocalRecordFailure.unsupportedFields {}
+        }
+        _=try LocalRecordCoding.preservingUnknown(Known(known:2),original:Data(#"{"known":1,"future":1e3}"#.utf8))
         print("Local record checks passed: failed updates/inserts/deletes, later save and reopen, atomic related records, other-owner isolation and unreadable legacy preservation.")
     }
 }

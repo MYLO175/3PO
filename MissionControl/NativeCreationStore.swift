@@ -6,10 +6,11 @@ import SwiftData
     private(set) var state = NativeCreationState()
     private(set) var readable = true
     private let container: ModelContainer?
+    private var loadedBytes:Data?
     init(container: ModelContainer?) {
         self.container = container
         do {
-            if let record = try LocalRecordRepository.read("nativeCreationClaims", container: container) { state = try JSONDecoder().decode(NativeCreationState.self,from: record); guard state.version == 1 else { throw IntegrationError.verification } }
+            if let record = try LocalRecordRepository.read("nativeCreationClaims", container: container) { state = try JSONDecoder().decode(NativeCreationState.self,from: record); guard state.version == 1 else { throw IntegrationError.verification };loadedBytes=record }
         } catch { readable = false }
     }
     func receipt(_ request: NativeCreationRequest) -> NativeCreationReceipt? { state.claims[request.key]?.receipt }
@@ -28,6 +29,8 @@ import SwiftData
     }
     private func save() throws {
         guard let container else { throw IntegrationError.verification }
-        try LocalRecordRepository(container: container).save(state, key: "nativeCreationClaims")
+        let bytes=try LocalRecordCoding.preservingUnknown(state,original:loadedBytes)
+        try LocalRecordRepository(container:container).write(["nativeCreationClaims":bytes],expected:["nativeCreationClaims":LocalRecordVersion(loadedBytes)])
+        loadedBytes=bytes
     }
 }

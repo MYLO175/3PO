@@ -40,6 +40,14 @@ import SwiftData
         enum Injected: Error { case failure }
         func check(_ value: Bool) { precondition(value) }
         let container = try ModelContainer(for: CachedDashboard.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let ownershipContainer=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+        let ownerA=ActionReceiptStore(container:ownershipContainer),ownerB=ActionReceiptStore(container:ownershipContainer)
+        let ownerTurn=UUID()
+        try ownerA.begin("owner-A",turnID:ownerTurn,registration:"owner")
+        do {try ownerB.begin("owner-B",turnID:UUID(),registration:"owner");check(false)}
+        catch LocalRecordFailure.changed {}
+        let ownershipReload=ActionReceiptStore(container:ownershipContainer)
+        check(Set(ownershipReload.entries.keys) == ["owner-A"] && ownershipReload.summary(registration:"owner",turnID:ownerTurn).pending == 1)
         let repository = LocalRecordRepository(container: container)
         var fail = true
         let injected = LocalRecordRepository(container: container) { _ in if fail { throw Injected.failure } }
@@ -119,7 +127,7 @@ import SwiftData
         check(duplicate.hasPrefix("Already applied:") && runtime.writer.attempts == 2)
         check(reopenedActions.receiptSummary(registration:"fixture",turnID:successRequest).confirmed == 1)
         check(reopenedActions.receiptSummary(registration:"other-owner",turnID:successRequest).confirmed == 0)
-        let failedCompletion = AssistantActions(container:actionContainer,repository:actionFailure)
+        var failedCompletion = AssistantActions(container:actionContainer,repository:actionFailure)
         let completionRequest = UUID()
         runtime.writer.afterApply = { failActionSave = true }
         let feedbacksBefore = runtime.feedbacks
@@ -152,6 +160,11 @@ import SwiftData
         check(durablePending.receiptSummary(registration:"fixture",turnID:batchTurn).confirmed == 3)
         let undoTurn = UUID()
         runtime.writer.resultUndoToken = "fictional-undo-token"
+        let attemptsBeforeStale=runtime.writer.attempts
+        do {_=try await failedCompletion.performTool(draft,human:human,authorization:human,turnID:undoTurn,model:runtime,calendar:calendars,reminders:reminders);check(false)}
+        catch LocalRecordFailure.changed {}
+        precondition(runtime.writer.attempts == attemptsBeforeStale,"A stale loaded action owner cannot overwrite a newer ledger or start a native write")
+        failedCompletion=AssistantActions(container:actionContainer,repository:actionFailure)
         _ = try await failedCompletion.performTool(draft,human:human,authorization:human,turnID:undoTurn,model:runtime,calendar:calendars,reminders:reminders)
         let attemptsBeforeUndoReceipt = runtime.writer.attempts
         failActionSave = true

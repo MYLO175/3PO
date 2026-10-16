@@ -264,8 +264,8 @@ import SwiftData
         let futureItem=LifeItem(registration:"future",kind:.space,title:"Future",additionalNotes:[futureNote])
         var future=try JSONSerialization.jsonObject(with:JSONEncoder().encode(LifeWorkspaceState(items:[futureItem]))) as! [String:Any]
         future["futureEnvelope"]="Retain me"
-        var futureItems=future["items"] as! [[String:Any]];futureItems[0]["futureItem"]=["value":42]
-        var futureNotes=futureItems[0]["additionalNotes"] as! [[String:Any]];futureNotes[0]["futureNote"]="Retain note metadata"
+        var futureItems=future["items"] as! [[String:Any]];futureItems[0]["futureItem"]=["value":42];futureItems[0]["id"]=futureItem.id.uuidString.lowercased()
+        var futureNotes=futureItems[0]["additionalNotes"] as! [[String:Any]];futureNotes[0]["futureNote"]="Retain note metadata";futureNotes[0]["id"]=futureNote.id.uuidString.lowercased()
         var format=futureNotes[0]["formatting"] as! [String:Any];format["futureFormatting"]=true
         futureNotes[0]["formatting"]=format;futureItems[0]["additionalNotes"]=futureNotes;future["items"]=futureItems
         try LocalRecordRepository(container:futureContainer).write(["lifeWorkspace":JSONSerialization.data(withJSONObject:future)])

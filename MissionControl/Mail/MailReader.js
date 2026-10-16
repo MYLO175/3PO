@@ -271,7 +271,8 @@ function probeInboxes(mail) {
         try { accounts.push({ id: id, title: stringValue(account.name()), inbox: stringValue(resolveInbox(mail, account, id).name()) }); }
         catch (error) {
             const detail=accountError(id, error);errors.push(detail);accountErrors[id]=detail;
-            unavailableAccounts.push({id:id,title:stringValue(account.name())});
+            let title=id;try {title=stringValue(account.name())||id;}catch (_){}
+            unavailableAccounts.push({id:id,title:title});
         }
     });
     return { accounts: accounts, errors: errors, unavailableAccounts:unavailableAccounts, accountErrors:accountErrors };

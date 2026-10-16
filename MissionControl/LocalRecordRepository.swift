@@ -3,11 +3,12 @@ import SwiftData
 import Darwin
 
 enum LocalRecordFailure: LocalizedError {
-    case busy, changed
+    case busy, changed, unsupportedFields
     var errorDescription: String? {
         switch self {
         case .busy: return "Another copy of 3PO is using this storage. Close it before continuing."
         case .changed: return "Saved data changed in another owner. Reopen it before saving; no changes were written."
+        case .unsupportedFields: return "This edit cannot safely preserve fields saved by another version of 3PO. The original data is kept."
         }
     }
 }
@@ -44,10 +45,10 @@ enum LocalRecordCoding {
         let old = try JSONSerialization.jsonObject(with: original)
         return try JSONSerialization.data(withJSONObject: merge(value, encoded: new, old: old), options: [.sortedKeys])
     }
-    private static func merge(_ value: Any, encoded: Any, old: Any?) -> Any {
+    private static func merge(_ value: Any, encoded: Any, old: Any?) throws -> Any {
         let mirror = Mirror(reflecting: value)
         if mirror.displayStyle == .optional, let child = mirror.children.first {
-            return merge(child.value, encoded: encoded, old: old)
+            return try merge(child.value, encoded: encoded, old: old)
         }
         if let values = encoded as? [Any], mirror.displayStyle == .collection {
             let prior = old as? [Any] ?? [], children = Array(mirror.children)
@@ -55,12 +56,39 @@ enum LocalRecordCoding {
                 guard let id = (row as? [String: Any])?["id"] as? String else { return nil }
                 return (id, row)
             }, uniquingKeysWith: { first, _ in first })
-            return values.enumerated().map { index, row in
+            let byUUID = Dictionary(byID.compactMap { key, row -> (UUID, Any)? in
+                UUID(uuidString:key).map{($0,row)}
+            }, uniquingKeysWith: { first, _ in first })
+            let idless=prior.compactMap{$0 as? [String:Any]}.filter{$0["id"] == nil}
+            let known=Set(children.first.map{Mirror(reflecting:$0.value).children.compactMap(\.label)} ?? [])
+            let opaque=idless.contains{!Set($0.keys).isSubset(of:known)}
+            var idlessMatches:[Data:[[String:Any]]]=[:]
+            if opaque {
+                for row in idless {
+                    let key=try JSONSerialization.data(withJSONObject:row.filter{known.contains($0.key)},options:[.sortedKeys])
+                    idlessMatches[key,default:[]].append(row)
+                }
+            }
+            return try values.enumerated().map { index, row in
                 let previous: Any?
                 if let id = (row as? [String: Any])?["id"] as? String {
-                    previous = byID[id]
+                    // UUID casing is a JSON representation detail. String
+                    // operation keys remain exact and case-sensitive.
+                    let typedID = index < children.count ? Mirror(reflecting:children[index].value).children.first{$0.label == "id"}?.value as? UUID : nil
+                    previous = typedID.flatMap{byUUID[$0]} ?? byID[id]
+                } else if let object=row as? [String:Any],index < children.count {
+                    // Id-less rows (font runs/placement choices) cannot inherit
+                    // opaque metadata from a different index after insertion,
+                    // removal or reordering. Match exact known content or refuse
+                    // an ambiguous transformation, retaining the original bytes.
+                    if opaque {
+                        let key=try JSONSerialization.data(withJSONObject:object,options:[.sortedKeys])
+                        let matches=idlessMatches[key] ?? []
+                        guard matches.count == 1 else {throw LocalRecordFailure.unsupportedFields}
+                        previous=matches.first
+                    } else {previous=index < prior.count ? prior[index] : nil}
                 } else { previous = index < prior.count ? prior[index] : nil }
-                return index < children.count ? merge(children[index].value, encoded: row, old: previous) : row
+                return try index < children.count ? merge(children[index].value, encoded: row, old: previous) : row
             }
         }
         guard var result = encoded as? [String: Any] else { return encoded }
@@ -70,7 +98,7 @@ enum LocalRecordCoding {
             for child in mirror.children {
                 let pair = Array(Mirror(reflecting: child.value).children)
                 if pair.count == 2, let key = pair[0].value as? String, let row = result[key] {
-                    result[key] = merge(pair[1].value, encoded: row, old: prior[key])
+                    result[key] = try merge(pair[1].value, encoded: row, old: prior[key])
                 }
             }
             return result
@@ -78,7 +106,7 @@ enum LocalRecordCoding {
         let known = Set(mirror.children.compactMap(\.label))
         for (key, row) in prior where !known.contains(key) && result[key] == nil { result[key] = row }
         for child in mirror.children {
-            if let key = child.label, let row = result[key] { result[key] = merge(child.value, encoded: row, old: prior[key]) }
+            if let key = child.label, let row = result[key] { result[key] = try merge(child.value, encoded: row, old: prior[key]) }
         }
         return result
     }
@@ -104,12 +132,26 @@ enum LocalRecordCoding {
                     let trailing = digits.reversed().prefix { $0 == 48 }.count
                     let fraction = mantissa.firstIndex(of: ".").map { mantissa.distance(from: mantissa.index(after: $0), to: mantissa.endIndex) } ?? 0
                     guard let exponent = parts.count == 1 ? 0 : Int(parts[1]), (-128...127).contains(exponent),
-                          digits.count - trailing <= 38, (-128...127).contains(exponent - fraction + trailing) else { throw LocalRecordFailure.changed }
+                          digits.count - trailing <= 38, (-128...127).contains(exponent - fraction + trailing) else { throw LocalRecordFailure.unsupportedFields }
+                    if parts.count > 1 || digits.count > 15 {
+                        let parsed=try JSONSerialization.jsonObject(with:Data(("["+token+"]").utf8))
+                        let encoded=try JSONSerialization.data(withJSONObject:parsed)
+                        let output=String(decoding:encoded,as:UTF8.self).dropFirst().dropLast().trimmingCharacters(in:.whitespacesAndNewlines)
+                        guard normalizedNumber(token) == normalizedNumber(output) else {throw LocalRecordFailure.unsupportedFields}
+                    }
                 }
                 index = end; continue
             }
             index += 1
         }
+    }
+    private static func normalizedNumber(_ token:String)->String {
+        let parts=token.split{$0 == "e" || $0 == "E"},mantissa=parts[0]
+        let fraction=mantissa.firstIndex(of:".").map{mantissa.distance(from:mantissa.index(after:$0),to:mantissa.endIndex)} ?? 0
+        let digits=Array(mantissa.utf8.filter{(48...57).contains($0)}).drop{$0 == 48}
+        guard !digits.isEmpty else {return "0"}
+        let trailing=digits.reversed().prefix{$0 == 48}.count
+        return (mantissa.hasPrefix("-") ? "-" : "")+String(decoding:digits.dropLast(trailing),as:UTF8.self)+"@"+String((parts.count > 1 ? Int(parts[1])! : 0)-fraction+trailing)
     }
 }
 
