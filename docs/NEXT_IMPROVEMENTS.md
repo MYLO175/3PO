@@ -1,6 +1,6 @@
 # Next improvements
 
-16 October follow-up: optional Spaces/Tasks/Notes sections and available-room note previews are implemented in the isolated Projects worktree. Older pages show all sections; hiding is reversible presentation only. See STATUS/VALIDATION for current build, UI and installation evidence. Optional note reordering/colours remain future ideas.
+16 October follow-up: optional Spaces/Tasks/Notes sections and available-room note previews are implemented, merged and installed as9ff1554 with current project/settings preservation. Older pages show all sections; hiding is reversible presentation only. See STATUS/VALIDATION for current build, UI and installation evidence. Optional note reordering/colours remain future ideas.
 
 16 October: the Spaces/notes worktree is integrated and installed with exact project/settings preservation. Relevant combined checks and existing native UI acceptance pass; hands-on folder-drag smoothness remains an explicit acceptance limit. Optional note reordering/colours remain future ideas. See STATUS/VALIDATION for the installed checkpoint.
 

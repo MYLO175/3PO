@@ -1,6 +1,6 @@
 # Mission Control specification
 
-16 October follow-up: add page-specific Spaces/Tasks/Notes visibility in the three-dot menu, preserving content and progress. Replace fixed five-line notes with a preview that uses the remaining viewport space and only offers Show more on actual overflow. Implemented in the isolated Projects worktree; validation and installation are recorded in STATUS.
+16 October follow-up: add page-specific Spaces/Tasks/Notes visibility in the three-dot menu, preserving content and progress. Replace fixed five-line notes with a preview that uses the remaining viewport space and only offers Show more on actual overflow. Implemented in the isolated Projects worktree, merged into main and installed as9ff1554 with current data/settings preserved; exact evidence is recorded in STATUS.
 
 15 October Review approval refinement: start new actions unchecked and replace Done with No actions / Approve 1 action / Approve N actions. Reset legacy automatic selections once, retain later manual selections and drafts. Collapse exact-source duplicate concrete choices while preserving history, distinct settings/destinations and save identities.
 
