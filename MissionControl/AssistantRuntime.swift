@@ -5,8 +5,8 @@ import Foundation
 struct AssistantRuntimeState {
     var attentionPreferencesReadable: Bool
     var acknowledgementRevision: String
-    var resolutionRevision: String
-    var acknowledgements: [ReviewAcknowledgement]
+    /// All current exact confirmations; presentation caps must not evict an owned receipt.
+    var resolvedRequests: [[String:String]]
     var whatsappScope: WhatsAppSourceScope
     var weatherScope: String
 }
@@ -38,6 +38,7 @@ struct AssistantToolRequest {
     var reminders: ReminderSnapshot { get }
     var itemDetails: [String: NativeEditDetails] { get }
     var consultedMemory: Set<UUID> { get }
+    var consultedWorkspace: Set<UUID> { get }
     var receipts: [String] { get }
     var confirmedActionCount:Int {get}
     var pendingNativeActionCount:Int {get}
@@ -78,6 +79,7 @@ struct ReviewActionExecution {
 }
 
 @MainActor extension AssistantToolSession {
+    var consultedWorkspace:Set<UUID> { [] }
     var confirmedActionCount:Int {receipts.count}
     var pendingNativeActionCount:Int {0}
     var actionReceiptsReadable:Bool {true}

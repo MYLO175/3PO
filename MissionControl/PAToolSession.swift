@@ -34,6 +34,8 @@ import Foundation
     private var issuedWhatsApp: [String:LifeReference] = [:]
     private var preparingApprovals=false
     private var executingApproval=false
+    private var notebookWorkspace:Set<UUID> = []
+    var consultedWorkspace:Set<UUID> { Set(life.issued.keys).union(notebookWorkspace) }
     private var issuedLifeMail = Set<String>()
     private var whatsappSearch: WhatsAppSearchCursor?
     private let evaluationMemory:PAMemoryStore?
@@ -393,6 +395,7 @@ import Foundation
             let notebook=memory.notebook(registration,topic:topicID,includeTopics:focusAreas != nil)
             issuedMemory.formUnion(selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))})
             let notes=try JSONSerialization.jsonObject(with:Data(working.notebook.utf8)) as! [String:Any]
+            notebookWorkspace.formUnion(PAContextCapture.notebookIDs(working.notebook).workspace.compactMap{UUID(uuidString:$0.replacingOccurrences(of:"life:",with:""))})
             for area in notes["areas"] as? [[String:Any]] ?? [] { issuedMemory.formUnion((area["facts"] as? [[String:String]] ?? []).compactMap{$0["id"].flatMap(UUID.init(uuidString:))}) }
             consultedMemory.formUnion(selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))})
             for area in notes["areas"] as? [[String:Any]] ?? [] { consultedMemory.formUnion((area["facts"] as? [[String:String]] ?? []).compactMap{$0["id"].flatMap(UUID.init(uuidString:))}) }

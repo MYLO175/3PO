@@ -30,9 +30,9 @@ import Foundation
 
         var owned = true; executed = 0
         do {
-            _ = try await engine.run(base: base, valid: { owned }, receipts: { [] }, infer: { _, _ in owned = false; return tools(call("late")) }, execute: { _ in executed += 1; return .output("wrong", succeeded: true) }, progress: { _ in }, partial: { _ in }, toolRound: {}, attempted: { _ in }, toolFinished: {})
+            _ = try await engine.run(base: base, valid: { owned }, invalidationReason: {"the selected AI model changed"}, receipts: { [] }, infer: { _, _ in owned = false; return tools(call("late")) }, execute: { _ in executed += 1; return .output("wrong", succeeded: true) }, progress: { _ in }, partial: { _ in }, toolRound: {}, attempted: { _ in }, toolFinished: {})
             check(false)
-        } catch { check(executed == 0 && error.localizedDescription.contains("Configuration changed")) }
+        } catch { check(executed == 0 && error.localizedDescription.contains("the selected AI model changed") && error.localizedDescription.contains("No new tool executed")) }
 
         requested = 0; executed = 0
         let stopped = try await engine.run(base: base, valid: { true }, receipts: { [] }, infer: { _, _ in requested += 1; return tools(call("question")) }, execute: { _ in executed += 1; return .stopped }, progress: { _ in }, partial: { _ in }, toolRound: {}, attempted: { _ in }, toolFinished: {})

@@ -2,6 +2,8 @@
 
 ## 16 October: improve existing AI experience
 
+Foreground cancellation now compares supplied context rather than whole memory/Projects stores or unrelated resolution/display projections. Focused race tests and installed acceptance are recorded in STATUS/VALIDATION; sustained source traffic remains a separate check.
+
 Shared context preparation and canonical Review preference conversion now replace divergent retrieval paths/legacy preference editing. Local matching handles selected grammatical variants and explicitly supported abbreviations; the existing AI can use targeted alternative search wording. Related pending Mail/WhatsApp concerns receive bounded comparison priority, and exact native changes/removals coalesce only with current identical baselines. STATUS/VALIDATION distinguish offline, signed, actual-model and installed acceptance.
 
 Remaining: general semantic paraphrase recall, durable evidence-linked cross-source situation understanding beyond issued proposal/native anchors, and robust identity for arbitrary fresh creations. Measure misses and false links on held-out cases before adding an embedding runtime or persistent situation model. Keep current screens and features while improving correctness, latency and understandable evidence. Topic pages, additional agents and broader source/history ingestion are not part of this increment.

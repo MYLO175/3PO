@@ -1,5 +1,9 @@
 # Decisions
 
+## 16 October: validate supplied context rather than unrelated store churn
+
+Foreground inference owns exact supplied belief fingerprints, project records/ancestors, confirmations and successful subsequent reads. Whole memory/Projects revisions are cache invalidation hints, not independent cancellation authority. Keep human acknowledgement revisions, memory controls, account/model/Focus/source permissions, and current supporting-source availability. Historical acknowledgement projections may change display names or lose old support without blocking unrelated fresh work. Resolution validation bypasses presentation caps and never adopts unsupplied dependencies after a mutation. Verified self-authored changes can update only the owned context; mutation-return memory IDs remain separate from successful-read traces. Genuine rejection reports a bounded reason with no source text or tool arguments.
+
 ## 16 October: include failed heartbeats in the pill's Activity list
 
 The Activity dropdown now includes saved heartbeat analysis failures and partial failures alongside its existing five recent outcomes, with an Open heartbeat link. Successful, waiting, stopped and sleep/closed-laptop interruption outcomes stay out. Use the captured typed outcome, never prose matching or a new inference. Retain all underlying history and account filtering; a later successful run does not erase an earlier failure. The closed pill continues to show live heartbeats under its existing status policy.

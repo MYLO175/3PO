@@ -16,7 +16,7 @@ enum PAEngineResult {
     typealias Execution = (PAFunctionCall) async throws -> PAEngineToolResult
 
     func run(base: [[String: Any]], allowedTools: Set<String>? = nil,
-             valid: @escaping () -> Bool, receipts: () -> [String],
+             valid: @escaping () -> Bool, invalidationReason: () -> String = {"the request context changed"}, receipts: () -> [String],
              infer: Inference, execute: Execution,
              progress: (String) -> Void, partial: @escaping (String) -> Void,
              toolRound: () -> Void, attempted: (PAFunctionCall) -> Void,
@@ -24,7 +24,7 @@ enum PAEngineResult {
         var run = PAForegroundRun(), firstRound = true
         while true {
             try Task.checkCancellation()
-            guard valid() else { throw ActionFailure.message("Account, memory, topic or sources changed; remaining task stopped.") }
+            guard valid() else { throw ActionFailure.message("The request stopped because \(invalidationReason()). Remaining work was stopped.") }
             let input = try run.input(base: base, receipts: receipts())
             progress(firstRound ? "Thinking…" : "Working on your request…")
             firstRound = false
@@ -42,13 +42,13 @@ enum PAEngineResult {
                 throw error
             }
             try Task.checkCancellation()
-            guard valid() else { throw ActionFailure.message("Configuration changed during inference; no new tool executed.") }
+            guard valid() else { throw ActionFailure.message("The request stopped because \(invalidationReason()). No new tool executed.") }
             if response.calls.isEmpty { return .completed(response.text) }
             var items = response.output, results: [[String: Any]] = [], successes = 0
             toolRound()
             for call in response.calls {
                 try Task.checkCancellation()
-                guard valid() else { throw ActionFailure.message("Configuration changed; remaining task stopped.") }
+                guard valid() else { throw ActionFailure.message("The request stopped because \(invalidationReason()). Remaining work was stopped.") }
                 try run.accept(call)
                 if let allowedTools, !allowedTools.contains(call.name) {
                     throw ActionFailure.message("That action is unavailable in memory setup. Use your PA chat for tasks.")
@@ -62,7 +62,7 @@ enum PAEngineResult {
                     output = value
                     if succeeded { successes += 1 }
                 }
-                guard valid() else { throw ActionFailure.message("Configuration changed during tool execution; check any saved receipt before repeating.") }
+                guard valid() else { throw ActionFailure.message("The request stopped because \(invalidationReason()). Check any saved receipt before repeating.") }
                 items.append(["type": "function_call_output", "call_id": call.id, "output": output])
                 results.append(["name": call.name, "arguments": (try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8))) ?? call.arguments, "output": output])
                 toolFinished()

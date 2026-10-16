@@ -1,5 +1,11 @@
 # How 3PO works: detailed reference
 
+## 16 October: foreground replies survive unrelated refreshes
+
+A reply checks the memories and project items actually supplied to it, including later tool reads and relevant project ancestors. Adding or changing an unrelated fact/project no longer cancels inference. The same applies to unrelated email confirmations: exact supplied confirmations stay checked even when new records move them beyond the normal display limit. Historical dismissal text and recovered contact names are not configuration changes; actual Dismiss/Undo choices still invalidate captured context.
+
+Changing a supplied belief, project or confirmation, withdrawing a supporting source, changing accounts/model/permissions/Focus, or pressing Stop retains the existing safeguards. Exact native targets, save receipts and uncertain-operation rules are unchanged. A genuine inference cancellation now names the category that changed instead of only saying Configuration changed. This does not automatically retry failed requests or replay any action.
+
 ## 16 October: one context path and one memory store
 
 Chat, Review conversations and briefs now prepare relevant memory through the same local code. This preparation is not another AI. It filters records by the current account, permitted sources and usability, then selects relevant facts and related notebook anchors within each purpose's existing budget. It does not read Mail or WhatsApp itself. The existing AI sees those selected facts and uses its existing tools when it needs current source details. Naming email points it toward email; asking broadly can start with relevant memory and expand to permitted sources when needed. A stable human fact already supplied in context can be answered directly. An empty memory search advises trying another targeted wording before claiming nothing is known.

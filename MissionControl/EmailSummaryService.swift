@@ -205,8 +205,8 @@ import SwiftData
             return (message,summary,value)
         }
     }
-    func resolutionContext(_ model:DashboardModel,mailAccounts:Set<String>? = nil,use:AutomaticMemoryUse? = nil,whatsappReady:Bool = true)->[[String:String]] {
-        resolved(model,mailAccounts:mailAccounts,use:use,whatsappReady:whatsappReady).prefix(24).map {message,summary,value in
+    func resolutionContext(_ model:DashboardModel,mailAccounts:Set<String>? = nil,use:AutomaticMemoryUse? = nil,whatsappReady:Bool = true,limit:Int = 24)->[[String:String]] {
+        resolved(model,mailAccounts:mailAccounts,use:use,whatsappReady:whatsappReady).prefix(max(0,limit)).map {message,summary,value in
             ["requestID":message.id,"accountID":message.accountID,"subject":message.subject,"requestQuote":value.requestQuote,"confirmationID":value.confirmation.messageID,"confirmationQuote":value.confirmation.quote,"reason":value.reason,"status":"The earlier email request is addressed by this later confirmation. This is email attention metadata; Apple items were not changed."]
         }
     }

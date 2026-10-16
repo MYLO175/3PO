@@ -54,6 +54,7 @@ private final class ObservationCounter:@unchecked Sendable {
     var reminders = ReminderSnapshot(sources: [], reminders: [])
     var itemDetails: [String: NativeEditDetails] = [:]
     var consultedMemory: Set<UUID> = []
+    var consultedWorkspace: Set<UUID> = []
     var receipts: [String] = []
     private(set) var actionCountReads=0
     var confirmedActionCount:Int {actionCountReads += 1;return receipts.count}
@@ -75,7 +76,8 @@ private final class ObservationCounter:@unchecked Sendable {
 
 @MainActor private final class FictionalContext {
     let now = Date.now.addingTimeInterval(3600)
-    var state = AssistantRuntimeState(attentionPreferencesReadable: true, acknowledgementRevision: "ack-1", resolutionRevision: "resolution-1", acknowledgements: [], whatsappScope: .init(registration: "fictional-owner", linkedIdentity: "fictional-device", revision: UUID()), weatherScope: "fictional-weather")
+    var state = AssistantRuntimeState(attentionPreferencesReadable: true, acknowledgementRevision: "ack-1", resolvedRequests: [], whatsappScope: .init(registration: "fictional-owner", linkedIdentity: "fictional-device", revision: UUID()), weatherScope: "fictional-weather")
+    var acknowledgements:[ReviewAcknowledgement] = []
     var sourceCalls = 0
     var afterCalls = 0
     var requests: [AssistantToolRequest] = []
@@ -324,13 +326,115 @@ private final class ObservationCounter:@unchecked Sendable {
             case "account": p.activeID = "another-fictional-owner"
             case "model": p.selectedModel = "another-fictional-model"
             case "source": c.state.weatherScope = "changed-fictional-weather"
-            default: _ = value.memory.put(PAMemory(registration: p.activeID, text: "A newly revised fictional fact", kind: .context, explicit: true, provenance: "Fictional human"))
+            default: value.memory.enabled = false
             }
             p.release()
             await until { !value.busy }
+            if change == "memory" {value.memory.enabled=true}
             check(c.sessions.first?.calls.isEmpty == true && value.error != nil, "\(change) must reject late tools and retain a visible stop/failure.")
             let saved = try ConversationRepository(container: try open("ownership-" + change)).load()
             check(saved.first?.turns.contains(where: { $0.role == "user" && $0.content == "Fictional owned request" }) == true, "\(change) must retain the prepared human request after reopen.")
+        }
+
+        // Real service pauses in transport while independent collection/local edits occur.
+        for mode in ["ack-title","ack-support","resolution-added","resolution-crowded","resolution-changed","resolution-lost","human-dismiss","whatsapp-account","unrelated-memory","selected-memory","unrelated-project","selected-project"] {
+            let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("context-churn-"+mode))
+            let fact=PAMemory(registration:p.activeID,text:"Orion prototype needs a small motor",kind:.context,explicit:true,provenance:"Fictional human")
+            check(value.memory.put(fact),"Context churn fixture saves its selected fact")
+            let item=LifeItem(registration:p.activeID,kind:.space,title:"Orion prototype")
+            _=try value.projects.create([item],receipt:.init(id:"fixture-"+mode,registration:p.activeID,result:"Fictional space",itemID:item.id))
+            c.acknowledgements=[.init(id:"dismissed-fictional",kind:"email",sourceID:"fictional-email",title:"Cached name",concern:"Historical dismissed concern")]
+            let resolved=["requestID":"fictional-request","accountID":"fictional-mail","confirmationID":"fictional-confirmation","confirmationQuote":"Received"]
+            if mode.hasPrefix("resolution-") && mode != "resolution-added" {c.state.resolvedRequests=[resolved]}
+            p.holdNext=true;p.replies=[tools(["read_memory"]),final("Orion answer retained")]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Tell me about the Orion prototype"),"Context churn request starts")
+            await until{p.waiting}
+            switch mode {
+            case "ack-title":c.acknowledgements[0].title="Recovered display name"
+            case "ack-support":c.acknowledgements=[]
+            case "resolution-added":c.state.resolvedRequests=[resolved]
+            case "resolution-crowded":c.state.resolvedRequests=(0..<30).map{["requestID":"unrelated-\($0)","accountID":"fictional-mail"]}+[resolved]
+            case "resolution-changed":c.state.resolvedRequests[0]["confirmationQuote"]="Changed confirmation"
+            case "resolution-lost":c.state.resolvedRequests=[]
+            case "human-dismiss":c.state.acknowledgementRevision="ack-human-changed"
+            case "whatsapp-account":c.state.whatsappScope = .init(registration:p.activeID,linkedIdentity:"different-fictional-device",revision:UUID())
+            case "unrelated-memory":_=value.memory.put(PAMemory(registration:p.activeID,text:"Garden irrigation uses a valve",kind:.context,explicit:true,provenance:"Fictional human"))
+            case "selected-memory":var changed=fact;changed.text="Orion prototype now needs a large motor";_=value.memory.put(changed)
+            case "unrelated-project":_=try value.projects.save(LifeItem(registration:p.activeID,kind:.space,title:"Garden irrigation"),expected:nil)
+            default:var changed=item;changed.notes="The prototype scope changed";_=try value.projects.save(changed,expected:item.revision)
+            }
+            p.release();await until{!value.busy}
+            let rejected=["resolution-changed","resolution-lost","human-dismiss","whatsapp-account","selected-memory","selected-project"].contains(mode)
+            check((value.error != nil) == rejected,"\(mode) distinguishes supplied-context changes from unrelated collection")
+            check(rejected ? c.sessions[0].calls.isEmpty : c.sessions[0].calls == ["read_memory"],"\(mode) validates before executing any late tool")
+            if rejected {check(value.error?.contains("because") == true,"Real invalidation names the changed context rather than a generic configuration failure")}
+            else {check(value.feed!.turns.last?.completed == true,"Unrelated churn keeps the completed reply")}
+        }
+        for kind in ["memory","project"] {
+            let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("read-dependency-"+kind))
+            let fact=PAMemory(registration:p.activeID,text:"Garden irrigation needs a valve",kind:.context,explicit:true,provenance:"Fictional human")
+            check(value.memory.put(fact),"Read dependency fixture saves its initially unrelated fact")
+            let item=LifeItem(registration:p.activeID,kind:.space,title:"Garden irrigation")
+            _=try value.projects.create([item],receipt:.init(id:"read-dependency-"+kind,registration:p.activeID,result:"Fictional space",itemID:item.id))
+            c.configure={session,_ in session.executeBody={_,session in
+                if kind == "memory" {session.consultedMemory.insert(fact.id)} else {session.consultedWorkspace.insert(item.id)}
+                p.holdNext=true
+                return "{}"
+            }}
+            p.replies=[tools([kind == "memory" ? "read_memory" : "read_life_items"]),tools(["change_reminder"])]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Tell me about the Orion prototype"),"Additional read request starts without a lexical match")
+            await until{p.waiting}
+            if kind == "memory" {var changed=fact;changed.text="The irrigation valve has changed";_=value.memory.put(changed)}
+            else {var changed=item;changed.notes="Changed after read";_=try value.projects.save(changed,expected:item.revision)}
+            p.release();await until{!value.busy}
+            check(value.error != nil && c.sessions[0].calls.count == 1,"A changed \(kind) actually supplied by a tool blocks the next late action")
+        }
+
+        for name in ["remember_context","change_memory"] {
+            let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("mutation-dependency-"+name))
+            let saved=PAMemory(registration:p.activeID,text:"Orion prototype uses a motor",kind:.context,explicit:true,provenance:"Fictional human")
+            c.configure={session,_ in session.executeBody={_,_ in
+                precondition(value.memory.put(saved))
+                p.holdNext=true
+                return "{\"saved\":true,\"id\":\"\(saved.id.uuidString)\"}"
+            }}
+            p.replies=[tools([name]),tools(["change_reminder"])]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Remember the Orion prototype details"),"Mutation-return dependency fixture starts")
+            await until{p.waiting}
+            var changed=saved;changed.text="Orion prototype needs a revised motor";_=value.memory.put(changed)
+            p.release();await until{!value.busy}
+            check(value.error != nil && c.sessions[0].calls == [name],"A changed canonical memory returned by \(name) blocks the next action")
+            check(value.feed!.turns.last?.contextCapture?.consultedMemoryIDs.isEmpty == true,"Mutation-issued memory IDs remain separate from successful-read traces")
+        }
+        for supplied in [false,true] {
+            let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("resolution-tool-\(supplied)"))
+            let row=["requestID":"fictional-request","accountID":"fictional-mail","confirmationQuote":"Received"]
+            c.configure={session,_ in session.executeBody={_,_ in
+                c.state.resolvedRequests=[row];p.holdNext=true
+                return supplied ? String(data:try JSONSerialization.data(withJSONObject:["resolvedEmailRequests":[row]]),encoding:.utf8)! : "{\"saved\":true}"
+            }}
+            let name=supplied ? "read_attention" : "remember_context"
+            p.replies=[tools([name]),final("Fictional answer")]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Help with the Orion prototype"),"Resolution-tool fixture starts")
+            await until{p.waiting}
+            c.state.resolvedRequests[0]["confirmationQuote"]="Changed"
+            p.release();await until{!value.busy}
+            check((value.error != nil) == supplied,"Only an actually supplied tool confirmation becomes a later dependency")
+        }
+
+        for selected in [false,true] {
+            let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("project-link-churn-\(selected)"))
+            let orion=LifeItem(registration:p.activeID,kind:.space,title:"Orion prototype"),garden=LifeItem(registration:p.activeID,kind:.space,title:"Garden irrigation")
+            _=try value.projects.create([orion,garden],receipt:.init(id:"project-link-churn",registration:p.activeID,result:"Fictional spaces"))
+            let owner=selected ? orion : garden
+            let edge=try value.projects.link(.init(registration:p.activeID,from:owner.id,relation:.related,target:.init(kind:.item,id:(selected ? garden : orion).id.uuidString)),expected:owner.revision)
+            p.holdNext=true;p.replies=[tools(["change_reminder"]),final("Fictional answer")]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Tell me about the Orion prototype"),"Project link-churn request starts")
+            await until{p.waiting}
+            try value.projects.unlink(edge.id,registration:p.activeID,expectedRevision:value.projects.revision)
+            p.release();await until{!value.busy}
+            check((value.error != nil) == selected,"Only changed relationships of supplied project owners stop inference")
+            check(selected ? c.sessions[0].calls.isEmpty : c.sessions[0].calls == ["change_reminder"],"Changed supplied links reject late writes while unrelated links do not")
         }
 
         let queuedProvider = FictionalInference(), queuedContext = FictionalContext()

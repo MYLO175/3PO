@@ -95,8 +95,7 @@ extension DashboardModel {
             return nativeLearningValidation.withSnapshot { [self] in
                 AssistantRuntimeState(attentionPreferencesReadable: self.assistant.memory.reviewPreferenceMigrationReadable,
                          acknowledgementRevision: self.reviewAcknowledgementRevision,
-                         resolutionRevision: self.emailSummaries.resolutionRevision(self),
-                         acknowledgements: self.reviewAcknowledgements(),
+                         resolvedRequests: self.emailSummaries.resolutionContext(self,limit:Int.max),
                          whatsappScope: self.whatsapp.scope(for: self.chatGPT.activeID), weatherScope: self.weather.scope)
             }
         }, sourceSnapshot: { [weak self] in
