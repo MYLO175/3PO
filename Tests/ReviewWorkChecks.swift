@@ -15,6 +15,7 @@ import Foundation
     var held:CheckedContinuation<Void,Never>?
     var conversationHeld:CheckedContinuation<Void,Never>?
     var converseCalls=0
+    var conversationModels:[String]=[]
     var cancels=0
     var performResult=ReviewWorkActionResult(phase:.saved,message:"Verified fictional save",itemID:"item",location:"Example")
     var conversationResult=ReviewWorkConversationResult(phase:.completed,message:"Reply ready",confirmedActions:0)
@@ -43,7 +44,7 @@ import Foundation
             if self.canonicalOnReturn {self.canonical[action.id]=self.performResult}
             return self.performResult
         },inspect:{_,action in self.canonical[action.id]},converse:{job,valid in
-            self.converseCalls += 1
+            self.converseCalls += 1;self.conversationModels.append(job.scope.model)
             if self.hold {self.hold=false;await withCheckedContinuation {self.conversationHeld=$0}}
             return self.conversationResult
         },cancelConversation:{self.cancels += 1},changed:{value in
@@ -118,7 +119,9 @@ import Foundation
                 default:w.permitted=false
                 }
                 w.release();await until{!s.busy}
-                check(mode == .approval && ["model","sourceChoices"].contains(change) ? s.job(job.id)?.phase == .completed : s.job(job.id)?.phase != .completed,"Late \(mode.rawValue) result is withheld after \(change) changes without a canonical receipt")
+                check(["model","sourceChoices"].contains(change) ? s.job(job.id)?.phase == .completed : s.job(job.id)?.phase != .completed,"Late \(mode.rawValue) result retains captured defaults and rejects unavailable ownership after \(change)")
+                check(s.job(job.id)?.scope == job.scope,"Captured \(mode.rawValue) model/source defaults remain stored after \(change)")
+                if mode == .conversation {check(w.conversationModels == [job.scope.model],"Conversation executes only its captured model after \(change)")}
             }
         }
         do {
@@ -179,8 +182,9 @@ import Foundation
             w.failNext=true;w.release();await until{!s.busy}
             check(w.calls == ["a"],"One failed confirmed-result checkpoint stops remaining native actions")
         }
+        for mode in [ReviewWorkMode.approval,.conversation] {
         for change in ["model","sourceChoices","storage","permission"] {
-            let w=ReviewWorkFixture(),s=w.make(),job=w.job();_=s.submit(job)
+            let w=ReviewWorkFixture(),s=w.make(),job=w.job(mode:mode);_=s.submit(job)
             switch change {
             case "model":w.scope.model="model-b"
             case "sourceChoices":w.scope.sourceChoices="sources-b"
@@ -189,7 +193,21 @@ import Foundation
             }
             s.drive(w.runtime())
             await until{!s.busy}
-            check(["model","sourceChoices"].contains(change) ? s.job(job.id)?.phase == .completed : w.calls.isEmpty && s.job(job.id)?.phase == .failed,"Queued \(change) change rejects that request before action")
+            check(["model","sourceChoices"].contains(change) ? s.job(job.id)?.phase == .completed : w.calls.isEmpty && w.converseCalls == 0 && s.job(job.id)?.phase == .failed,"Queued \(mode.rawValue) retains captured defaults and rejects unavailable ownership after \(change)")
+            if mode == .conversation,["model","sourceChoices"].contains(change) {check(w.conversationModels == [job.scope.model] && s.job(job.id)?.scope == job.scope,"Queued conversation keeps its submitted model without retargeting")}
+        }
+        }
+        for mode in [ReviewWorkMode.approval,.conversation] {
+            let w=ReviewWorkFixture(),s=w.make(),job=w.job(mode:mode);w.hold=true
+            _=s.submit(job);s.drive(w.runtime());await until{w.held != nil || w.conversationHeld != nil}
+            s.setDraft("Independent unsent reply",registration:job.scope.registration,conversation:job.conversationID)
+            w.ready=false
+            w.scope.model="next-model";w.scope.sourceChoices="new-unrelated-source-defaults"
+            check(s.job(job.id)?.phase == .running && w.cancels == 0,"Editing a saved draft and changing start readiness do not Stop \(mode.rawValue)")
+            w.release();await until{!s.busy}
+            check(s.job(job.id)?.phase == .completed && s.draft(job.scope.registration,conversation:job.conversationID) == "Independent unsent reply","Held \(mode.rawValue) finishes with the independent draft intact")
+            let reopened=ReviewWorkService(load:{w.bytes},persist:{try w.persist($0)})
+            check(reopened.job(job.id)?.phase == .completed && reopened.draft(job.scope.registration,conversation:job.conversationID) == "Independent unsent reply","Completed \(mode.rawValue) and unsent draft survive reopening")
         }
         do {
             let w=ReviewWorkFixture(),s=w.make(),job=w.job(mode:.conversation);_=s.submit(job);w.conversationResult = .init(phase:.needsAnswer,message:"Which deadline?")

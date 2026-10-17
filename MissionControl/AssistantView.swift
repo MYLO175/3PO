@@ -104,9 +104,9 @@ struct AssistantPanel: View {
     private var errorHere: Bool { assistant.errorProfileSessionID == nil && (assistant.errorConversationID == nil || (assistant.errorConversationID == selectedID && assistant.errorTopicID == selectedTopicID)) }
     private var draft: Binding<String> {
         Binding(get:{ if let widgetID { return assistant.drafts.text(registration:model.chatGPT.activeID,widget:widgetID,conversation:draftKey) }; return assistant.draft },set:{ text in
-            model.emailSummaries.cancelReviewFeedback()
-            model.reviewWork.interruptForForeground(model.chatGPT.activeID)
-            model.heartbeat.userStartedTyping()
+            let current=widgetID.map{assistant.drafts.text(registration:model.chatGPT.activeID,widget:$0,conversation:draftKey)} ?? assistant.draft
+            guard text != current else {return}
+            model.heartbeat.noteDraftEditing()
             if let widgetID { assistant.drafts.set(text,registration:model.chatGPT.activeID,widget:widgetID,conversation:draftKey) } else { assistant.draft = text }
         })
     }
@@ -128,7 +128,6 @@ struct AssistantPanel: View {
     @State private var imageError:String?
     @State private var composerHeight:CGFloat=22
     private func pasteImage(_ board:NSPasteboard) {
-        model.emailSummaries.cancelReviewFeedback()
         let registration=model.chatGPT.activeID,key=draftKey,widget=imageDraftWidget
         var added:[ChatImageAttachment]=[]
         do {
@@ -136,16 +135,15 @@ struct AssistantPanel: View {
             added=try assistant.images.paste(board,registration:registration)
             guard attachedImages.count+added.count <= ChatImageStore.maxImages else { throw ChatImageFailure.size }
             guard assistant.drafts.setImages(attachedImages+added,registration:registration,widget:widget,conversation:key) else { throw ChatImageFailure.storage }
-            imageError=nil;model.memoryLearning.cancel();model.sourceLearning.cancel();model.nativeSourceLearning.cancel();model.memoryMaintenance.cancel();model.proactive.cancel();model.reviewWork.interruptForForeground(model.chatGPT.activeID);model.heartbeat.userStartedTyping()
+            imageError=nil;model.heartbeat.noteDraftEditing()
         } catch { added.forEach(assistant.images.discard);imageError=error.localizedDescription }
     }
     private func removeImage(_ image:ChatImageAttachment) {
         if assistant.drafts.setImages(attachedImages.filter{$0.id != image.id},registration:model.chatGPT.activeID,widget:imageDraftWidget,conversation:draftKey) {
-            assistant.images.discard(image);imageError=nil
+            assistant.images.discard(image);imageError=nil;model.heartbeat.noteDraftEditing()
         }
     }
     private func send() {
-        model.emailSummaries.cancelReviewFeedback()
         let attachments=attachedImages
         let value = draft.wrappedValue, contextID = selectedTopicID, key = draftKey, registration = model.chatGPT.activeID
         if assistant.send(model:model,topicID:contextID,prompt:value,focusAreas:focusAreas,images:attachments) {
@@ -159,7 +157,6 @@ struct AssistantPanel: View {
     private func showDraft() {
         assistant.drafts.show(registration:model.chatGPT.activeID,widget:imageDraftWidget,conversation:draftKey)
         imageError=nil
-        if !composerEmpty { model.memoryLearning.cancel();model.sourceLearning.cancel();model.nativeSourceLearning.cancel();model.memoryMaintenance.cancel(); model.proactive.cancel();model.reviewWork.interruptForForeground(model.chatGPT.activeID);model.heartbeat.userStartedTyping() }
     }
     @State private var dictation = DictationService()
     @State private var showDictation = false
@@ -429,9 +426,7 @@ struct AssistantPanel: View {
         .onChange(of:selectedTopicID) { showProfileSetup=false; showDraft() }
         .onChange(of:model.chatGPT.activeID) { assistant.drafts.flush(); assistant.openPA(); showMemory = false; inspectingContext=nil;showProfileSetup=false;sourceDiscovery=nil; showDraft() }
         .onChange(of:sourceDiscovery.map{model.proactive.visible($0,model:model)}) { _,available in if available == false {sourceDiscovery=nil} }
-        .onChange(of:draft.wrappedValue) { _, draft in
-            if !draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && model.memoryLearning.busy { model.memoryLearning.cancel() }
-        }.onChange(of:model.chatGPT.usagePaused) { _, paused in
+        .onChange(of:model.chatGPT.usagePaused) { _, paused in
             if !paused, assistant.error?.contains("subscription_sharing_usage_limit_exceeded") == true { assistant.error = nil }
         }.sheet(item:$reviewingProject) { record in
             LifeItemEditor(model:model,item:.init(registration:record.registration,kind:.space,title:String((record.sourceTitle ?? "New space").prefix(160)),notes:record.evidence),close:{reviewingProject=nil},reviewedSuggestion:record)
