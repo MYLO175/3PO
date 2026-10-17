@@ -23,6 +23,23 @@ import Foundation
         assert(grant.learningAccessRevision != nil)
         let unchangedGrant=WhatsAppReadRules.recordingLearningAccess(grant,previous:grant)
         assert(unchangedGrant.learningAccessRevision == grant.learningAccessRevision,"Saving unchanged choices preserves the durable grant boundary")
+        var readRevisions=WhatsAppReadAccessRevisions()
+        let owner="fictional-owner:device",other="another-owner:device"
+        var readAccess=WhatsAppAccess(enabled:true,chats:["selected"],includeInBrief:true,learnContext:true,includeInSuggestions:true)
+        let beforeReads=Dictionary(uniqueKeysWithValues:WhatsAppReadPurpose.allCases.map{($0,readRevisions.revision(key:owner,purpose:$0))})
+        let previousRead=readAccess;readAccess.learnContext=false
+        readRevisions.record(key:owner,previous:previousRead,current:readAccess)
+        for purpose in WhatsAppReadPurpose.allCases {assert(readRevisions.revision(key:owner,purpose:purpose) == beforeReads[purpose],"Learning permission does not cancel an independent read")}
+        readRevisions.record(key:other,previous:.init(),current:readAccess)
+        for purpose in WhatsAppReadPurpose.allCases {assert(readRevisions.revision(key:owner,purpose:purpose) == beforeReads[purpose],"Another account's choices do not cancel this account's reads")}
+        let beforeBriefChoice=readAccess;readAccess.includeInBrief=false
+        readRevisions.record(key:owner,previous:beforeBriefChoice,current:readAccess)
+        assert(readRevisions.revision(key:owner,purpose:.conversation) == beforeReads[.conversation] && readRevisions.revision(key:owner,purpose:.suggestions) == beforeReads[.suggestions],"Brief permission changes do not revoke chat or Review permission")
+        assert(readRevisions.revision(key:owner,purpose:.brief) != beforeReads[.brief],"Actual brief permission withdrawal revokes its captured job")
+        let beforeWithdrawal=readAccess;readAccess.enabled=false
+        readRevisions.record(key:owner,previous:beforeWithdrawal,current:readAccess)
+        readRevisions.record(key:owner,previous:readAccess,current:beforeWithdrawal)
+        for purpose in WhatsAppReadPurpose.allCases {assert(readRevisions.revision(key:owner,purpose:purpose) != beforeReads[purpose],"Withdraw/re-enable retains the permission-revocation boundary")}
         var withdrawn=grant;withdrawn.enabled=false
         withdrawn=WhatsAppReadRules.recordingLearningAccess(withdrawn,previous:grant)
         let resumed=WhatsAppReadRules.recordingLearningAccess(grant,previous:withdrawn)

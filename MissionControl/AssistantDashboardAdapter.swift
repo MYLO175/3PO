@@ -118,7 +118,7 @@ extension DashboardModel {
             return nativeLearningValidation.withSnapshot { [self] in
                 AssistantRuntimeState(attentionPreferencesReadable: self.assistant.memory.reviewPreferenceMigrationReadable,
                          resolvedRequests: self.emailSummaries.resolutionContext(self,limit:Int.max),
-                         whatsappScope: self.whatsapp.scope(for: self.chatGPT.activeID), weatherScope: self.weather.scope,weatherSupplied:self.weather.enabled && self.weather.allowed && self.weather.forecast?.usable() == true)
+                         whatsappScope: self.whatsapp.scope(for: self.chatGPT.activeID,purpose:.conversation), weatherScope: self.weather.scope,weatherSupplied:self.weather.enabled && self.weather.allowed && self.weather.forecast?.usable() == true)
             }
         }, sourceSnapshot: { [weak self] in
             guard let self else { return nil }

@@ -255,7 +255,7 @@ import EventKit
                 try Task.checkCancellation()
                 let now=Date.now
                 guard registration == model.chatGPT.activeID, !model.assistant.busy, !model.chatGPT.busy else { throw ActionFailure.message("The account or active work changed before preparation; update the brief again.") }
-                let weatherScope = self.weatherScope(model)
+                var suppliedWeatherScope:String?
                 let contextWasEnabled = model.assistant.contextEnabled
                 let memoryCapture = recovery.omittedKinds.contains("memory") ? AutomaticMemoryCapture(records:[],dependencies:[],eligibleCount:0) : model.automaticMemory(.brief,mailAccounts:recovery.omittedKinds.contains("mail") ? [] : mailReview?.accountIDs,whatsappReady:whatsappReady && !recovery.omittedKinds.contains("whatsapp"))
                 let memorySnapshot = memoryCapture.records
@@ -264,7 +264,7 @@ import EventKit
                 var resolutionReceipts:[BriefingResolutionReceipt]=[]
                 let calendars = model.assistant.excludedCalendars, lists = model.assistant.excludedLists, accounts = model.assistant.excludedAccounts
                 let emailsWereEnabled = model.emailSummaries.enabled
-                let whatsappScope=model.whatsapp.scope(for:registration)
+                let whatsappScope=model.whatsapp.scope(for:registration,purpose:.brief)
                 let whatsappIdentity=model.whatsapp.linkedIdentity
                 let whatsappAccess=model.whatsapp.access(for:registration)
                 let acknowledgementRevision=model.reviewAcknowledgementRevision
@@ -274,8 +274,8 @@ import EventKit
                         (registration == model.chatGPT.activeID,"account"),
                         (!heartbeat || (model.heartbeat.busy && model.heartbeat.deviceAvailable && heartbeatControls == model.heartbeat.controlsRevision && (manual || model.heartbeat.enabled)),"heartbeat ownership"),
                         (calendar.timeZone == Calendar.current.timeZone,"local timezone"),
-                        (weatherScope == self.weatherScope(model),"weather permissions"),
-                        (whatsappAccess.briefEnabled == model.whatsapp.access(for:registration).briefEnabled && (!whatsappAccess.briefEnabled || whatsappScope == model.whatsapp.scope(for:model.chatGPT.activeID)),"WhatsApp connection or selection"),
+                        (suppliedWeatherScope.map{$0 == self.weatherScope(model)} ?? true,"weather permissions"),
+                        (whatsappAccess.briefEnabled == model.whatsapp.access(for:registration).briefEnabled && (!whatsappAccess.briefEnabled || whatsappScope == model.whatsapp.scope(for:model.chatGPT.activeID,purpose:.brief)),"WhatsApp connection or selection"),
                         (model.assistant.contextEnabled && (heartbeat || manual || enabled),"brief access"),
                         (memoryUseRevision == model.assistant.memory.useRevision,"memory use"),
                         (model.assistant.memory.reviewPreferenceMigrationReadable,"saved attention preferences"),
@@ -350,6 +350,7 @@ import EventKit
                         #endif
                         if !heartbeat {await model.weather.prepareForBrief()}
                         input["localWeather"] = model.weather.context(now:now)
+                        if let weather=input["localWeather"] as? [String:Any],weather["days"] != nil {suppliedWeatherScope=self.weatherScope(model)}
                         if model.weather.enabled, model.weather.allowed, let forecast = model.weather.forecast, forecast.usable(now:now) { sources.append(.init(id:"weather_0",label:"Nearby forecast · Open-Meteo",kind:"weather",date:forecast.fetched,originalID:nil)) }
                     }
                     await supplyWeather()

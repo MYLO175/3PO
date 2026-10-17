@@ -344,6 +344,10 @@ import Synchronization
         guard store.putSources([fact],evidenceTexts:[identity:quote],expectedRevision:store.revision) else { throw SummaryFailure.invalid }
         let capture=model.automaticMemory(.brief)
         var checks=fingerprintCacheChecks(model)
+        let heartbeatAdapter=HeartbeatDashboardAdapter.runtime(model),beforeWrite=heartbeatAdapter.environment()
+        let wasWriting=model.writing;model.writing=true
+        let duringWrite=heartbeatAdapter.environment();model.writing=wasWriting
+        checks["native writing blocks new heartbeat admission without revoking the current AI owner"] = duringWrite.workBusy && duringWrite.foregroundBusy == beforeWrite.foregroundBusy
         checks.merge(try await feedbackRefreshChecks(model),uniquingKeysWith:{$1})
         checks.merge(try await ReviewInferenceGuardEvaluation.run(),uniquingKeysWith:{$1})
         checks.merge(try await ForegroundInteractionEvaluation.run(),uniquingKeysWith:{$1})

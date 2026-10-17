@@ -42,6 +42,7 @@ struct AssistantToolRequest {
     var consultedMemory: Set<UUID> { get }
     var consultedWorkspace: Set<UUID> { get }
     var suppliedWeatherScope:String? {get}
+    var suppliedWhatsAppScope:WhatsAppSourceScope? {get}
     var receipts: [String] { get }
     var confirmedActionCount:Int {get}
     var pendingNativeActionCount:Int {get}
@@ -87,6 +88,7 @@ struct ReviewActionExecution {
     var pendingNativeActionCount:Int {0}
     var actionReceiptsReadable:Bool {true}
     var suppliedWeatherScope:String? {nil}
+    var suppliedWhatsAppScope:WhatsAppSourceScope? {nil}
 }
 
 struct AssistantTurnOutcome {

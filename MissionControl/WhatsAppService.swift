@@ -38,6 +38,7 @@ import CryptoKit
     }
     var accessRevision = UUID()
     private(set) var choicesRevision = UUID()
+    @ObservationIgnored private var readAccessRevisions=WhatsAppReadAccessRevisions()
     private var accesses: [String:WhatsAppAccess] = [:]
     var coverage = "No WhatsApp data received."
     #if DEBUG
@@ -77,13 +78,19 @@ import CryptoKit
     func access(for registration: String) -> WhatsAppAccess {
         WhatsAppReadRules.access(accesses,registration:registration,linkedIdentity:linkedIdentity)
     }
-    func scope(for registration: String) -> WhatsAppSourceScope {
-        .init(registration:registration,linkedIdentity:linkedIdentity,revision:accessRevision)
+    func scope(for registration: String,purpose:WhatsAppReadPurpose? = nil) -> WhatsAppSourceScope {
+        let revision:UUID
+        if let purpose,let key=WhatsAppReadRules.accessKey(registration:registration,linkedIdentity:linkedIdentity) {
+            revision=readAccessRevisions.revision(key:key,purpose:purpose)
+        } else {revision=accessRevision}
+        return .init(registration:registration,linkedIdentity:linkedIdentity,revision:revision)
     }
     func setAccess(_ access: WhatsAppAccess, registration: String) {
         guard let id=WhatsAppReadRules.accessKey(registration:registration,linkedIdentity:linkedIdentity) else { return }
+        let previous=accesses[id] ?? .init(),revised=WhatsAppReadRules.recordingLearningAccess(access,previous:previous)
+        guard revised != previous else {return}
         var updated=accesses
-        updated[id]=WhatsAppReadRules.recordingLearningAccess(access,previous:accesses[id] ?? .init())
+        updated[id]=revised
         do {
             try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
             let bytes=try JSONEncoder().encode(updated)
@@ -92,6 +99,7 @@ import CryptoKit
             try sealed.write(to:path,options:.atomic)
             try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:path.path)
             accesses=updated;accessRevision=UUID();choicesRevision=UUID()
+            readAccessRevisions.record(key:id,previous:previous,current:revised)
         } catch { status="Could not save WhatsApp source choices; previous choices retained." }
     }
     func refreshSnapshot() async -> Bool {

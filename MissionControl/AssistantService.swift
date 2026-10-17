@@ -528,7 +528,6 @@ import Observation
         let memoryRevision = memory.revision
         let memoryControls = memory.useRevision
         let resolutionContext = setupMode || !contextEnabled ? [] : Array(owned.resolvedRequests.prefix(24))
-        let whatsappScope = owned.whatsappScope
         let weatherScope = owned.weatherScope
         let selectedModel = reviewModel ?? connection.selectedModel, capturedPreferences = preferences, capturedName = displayName
         let sourceEnabled = contextEnabled, calendars = excludedCalendars, lists = excludedLists, accounts = excludedAccounts
@@ -620,6 +619,7 @@ import Observation
             var expectedSourceMemoryIDs=Set(capturedSourceMemoryIDs)
             var replySourceMemoryIDs=capturedSourceMemoryIDs
             var expectedWeather:String? = sourceEnabled && !setupMode && context != nil && owned.weatherSupplied ? weatherScope : nil
+            var expectedWhatsApp:WhatsAppSourceScope?
             @MainActor func owns(_ current:AssistantRuntimeState)->Bool {
                 func reject(_ reason:String)->Bool {invalidationReason=reason;return false}
                 guard reviewValid?() != false else {return reject("this Review request or its source access changed")}
@@ -643,7 +643,7 @@ import Observation
                 guard expectedSourceMemoryIDs.isSubset(of:usable) else {return reject("supporting source memory became unavailable")}
                 guard Set(expectedBeliefs.keys).isSubset(of:usable) else {return reject("a memory supplied to this request became unavailable")}
                 guard expectedWeather.map({$0 == current.weatherScope}) ?? true else {return reject("access to the supplied weather changed")}
-                guard whatsappScope == current.whatsappScope else {return reject("the WhatsApp account or access choices changed")}
+                guard expectedWhatsApp.map({$0 == current.whatsappScope}) ?? true else {return reject("access to the supplied WhatsApp context changed")}
                 guard (!sourceEnabled || contextEnabled) && calendars.isSuperset(of:excludedCalendars) && lists.isSuperset(of:excludedLists) && accounts.isSuperset(of:excludedAccounts) else {return reject("source access was withdrawn")}
                 return true
             }
@@ -746,6 +746,7 @@ import Observation
                             else {output = try await executePrepared(call)}
                             succeeded=true
                             if expectedWeather == nil {expectedWeather=session.suppliedWeatherScope}
+                            if expectedWhatsApp == nil {expectedWhatsApp=session.suppliedWhatsAppScope}
                             if let arguments=nativePreparationArguments(call),let result=(try? JSONSerialization.jsonObject(with:Data(output.utf8))) as? [String:Any],result["verified"] as? Bool == true {
                                 let recovered=nativePreparations.filter{$0.name == call.name && $0.arguments == arguments}
                                 if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {

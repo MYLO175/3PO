@@ -751,7 +751,7 @@ struct CalendarRemovalReviewSession:Identifiable {
               let target=dateReviewTarget(current) else {return}
         let review:NativeDateReview
         switch target {case .reviewEvent(_,let value),.reviewReminder(_,let value):review=value;default:return}
-        heartbeat.cancel();emailSummaries.cancelReviewFeedback()
+        // Exact native/project evidence is rechecked by running AI consumers.
         approvingDiscoveryID=record.id;reviewApprovalError=nil;reviewApprovalErrorID=nil;reviewApprovalErrorAccount=nil;writing=true
         defer {writing=false;approvingDiscoveryID=nil}
         do {
@@ -778,7 +778,7 @@ struct CalendarRemovalReviewSession:Identifiable {
               let removal=current.proposedRemoval,removal.valid,
               let event=(paOrientation?.calendar ?? calendarData).events.first(where:{$0.id == removal.target.itemID}) else {return}
         let selectedModel=chatGPT.selectedModel,sourceScope=proactive.sourceSettingsScope(self)
-        heartbeat.cancel();emailSummaries.cancelReviewFeedback()
+        // Exact native/project evidence is rechecked by running AI consumers.
         approvingDiscoveryID=record.id;reviewApprovalError=nil;reviewApprovalErrorID=nil;reviewApprovalErrorAccount=nil;writing=true
         defer {writing=false;approvingDiscoveryID=nil}
         do {
@@ -816,7 +816,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         guard !sample,!writing,(!assistant.busy || (reviewConversationOwnsAssistant && additionalValidity?() == true)),additionalValidity?() ?? true,!baseline.recurring || occurrenceConfirmed else {throw ActionFailure.message("Review the exact occurrence before removing a repeating event.")}
         try validateCalendarRemoval(record,baseline:baseline)
         let registration=record.registration,nativeOwner=nativeCollectionScope
-        heartbeat.cancel();emailSummaries.cancelReviewFeedback()
+        // Exact native/project evidence is rechecked by running AI consumers.
         writing=true;writeError=nil;defer {writing=false}
         var claimed=false
         do {
@@ -875,7 +875,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         if let parent=value.parentID {
             guard assistant.projects.items(value.registration,includeTopics:true).contains(where:{$0.id == parent && $0.conversationID == value.conversationID && !$0.kind.isWork && $0.ownership != "life" && $0.status != .archived}) else {throw LifeWorkspaceFailure.message("The chosen destination is no longer an available space. Choose another destination.")}
         }
-        heartbeat.cancel();emailSummaries.cancelReviewFeedback()
+        // Exact native/project evidence is rechecked by running AI consumers.
         var item=value;item.humanEvidence="Accepted a reviewed PA " + item.kind.title.lowercased() + " suggestion."
         let reference:LifeReference?
         if proposal.sourceKind == "whatsapp",let chat=proposal.sourceChatID,let message=proposal.sourceMessageID,let identity=proposal.sourceIdentity,let version=proposal.sourceRevision {
@@ -894,7 +894,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         guard !sample, !writing, (!assistant.busy || (acceptedSnapshot != nil && reviewConversationOwnsAssistant && additionalValidity?() == true)), request.registration == chatGPT.activeID,additionalValidity?() ?? true else { throw ActionFailure.message("Another change or account switch is in progress; reopen the form when ready.") }
         if request.requiresDateSelection && !dateSelected { throw ActionFailure.message("Choose the event's date and time before creating it.") }
         // The explicit action owns the foreground; saved context is not re-analysed.
-        heartbeat.cancel();emailSummaries.cancelReviewFeedback()
+        // Exact native/project evidence is rechecked by running AI consumers.
         writing=true;defer {writing=false}
         if let discovery=request.discoveryID {
             guard acceptedSnapshot.map(acceptedPreparedApproval) ?? (currentPreparedApproval(discovery,registration:request.registration,snapshot:request.discoveryApproval) && proactive.canReview(discovery,model:self)) else {throw ActionFailure.message("This suggestion changed or already has a save recorded. Reopen it before creating anything.")}
@@ -936,7 +936,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {throw ActionFailure.message("Fictional preview is read-only; no Apple write.")}
         #endif
         guard !sample, !writing, (!assistant.busy || (review != nil && reviewConversationOwnsAssistant && validity?() == true)) else { throw ActionFailure.message("Another change is in progress; wait before saving.") }
-        heartbeat.cancel();emailSummaries.cancelReviewFeedback()
+        // Exact native/project evidence is rechecked by running AI consumers.
         writing = true; writeError = nil
         defer { writing = false }
         let nativeOwner=nativeCollectionScope

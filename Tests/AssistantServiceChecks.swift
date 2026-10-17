@@ -57,6 +57,7 @@ private final class ObservationCounter:@unchecked Sendable {
     var consultedMemory: Set<UUID> = []
     var consultedWorkspace: Set<UUID> = []
     var suppliedWeatherScope:String?
+    var suppliedWhatsAppScope:WhatsAppSourceScope?
     var receipts: [String] = []
     private(set) var actionCountReads=0
     var confirmedActionCount:Int {actionCountReads += 1;return receipts.count}
@@ -395,6 +396,19 @@ private final class ObservationCounter:@unchecked Sendable {
             check(revoked ? value.error != nil && p.inputs.count == 1 : value.error == nil && value.feed?.turns.last?.actionResult?.phase == "completed","Fresh weather access may be granted, but supplied weather permission cannot be withdrawn")
         }
 
+        for revoked in [false,true] {
+            let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("whatsapp-tool-"+String(revoked)))
+            c.configure={session,_ in session.executeBody={_,session in
+                session.suppliedWhatsAppScope=c.state.whatsappScope
+                if revoked {c.state.whatsappScope = .init(registration:p.activeID,linkedIdentity:"withdrawn-after-read",revision:UUID())}
+                return "{\"messages\":[{\"text\":\"Fictional\"}]}"
+            }}
+            p.holdNext=true;p.replies=[tools(["search_whatsapp"]),final("Requested fictional message found")]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Read the requested WhatsApp message"),"WhatsApp tool fixture starts")
+            await until{p.waiting};c.state.whatsappScope = .init(registration:p.activeID,linkedIdentity:"current-device-before-first-read",revision:UUID());p.release();await until{!value.busy}
+            check(revoked ? value.error != nil && p.inputs.count == 1 : value.error == nil && value.feed?.turns.last?.actionResult?.phase == "completed","Fresh WhatsApp read captures its own permission, which cannot be withdrawn after supply")
+        }
+
         // Dismiss/Undo is attention metadata, not revocation of an unrelated
         // human instruction. Exercise the actual engine through save and reopen.
         for mode in ["dismiss-before-tool","undo-before-tool","dismiss-during-stream","dismiss-during-read","dismiss-after-save","review-dismiss"] {
@@ -478,7 +492,7 @@ private final class ObservationCounter:@unchecked Sendable {
             default:var changed=item;changed.notes="The prototype scope changed";_=try value.projects.save(changed,expected:item.revision)
             }
             p.release();await until{!value.busy}
-            let rejected=["resolution-changed","resolution-lost","whatsapp-account","selected-memory","selected-project"].contains(mode)
+            let rejected=["resolution-changed","resolution-lost","selected-memory","selected-project"].contains(mode)
             check((value.error != nil) == rejected,"\(mode) distinguishes supplied-context changes from unrelated collection")
             check(rejected ? c.sessions[0].calls.isEmpty : c.sessions[0].calls == ["read_memory"],"\(mode) validates before executing any late tool")
             if rejected {check(value.error?.contains("because") == true,"Real invalidation names the changed context rather than a generic configuration failure")}

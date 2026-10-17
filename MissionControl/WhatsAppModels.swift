@@ -34,7 +34,25 @@ struct WhatsAppSourceScope: Equatable {
     let linkedIdentity: String
     let revision: UUID
 }
+enum WhatsAppReadPurpose:String,CaseIterable {case conversation,brief,suggestions}
+/// Request ownership follows the relevant account and read permission. Learning
+/// and another consumer's opt-ins do not revoke an already permitted read.
+struct WhatsAppReadAccessRevisions {
+    private var values:[String:UUID]=[:]
+    func revision(key:String,purpose:WhatsAppReadPurpose)->UUID {values[key+":"+purpose.rawValue] ?? UUID(uuidString:"00000000-0000-0000-0000-000000000000")!}
+    mutating func record(key:String,previous:WhatsAppAccess,current:WhatsAppAccess) {
+        for purpose in WhatsAppReadPurpose.allCases where !WhatsAppReadRules.sameReadAccess(previous,current,purpose:purpose) {values[key+":"+purpose.rawValue]=UUID()}
+    }
+}
 enum WhatsAppReadRules {
+    static func sameReadAccess(_ left:WhatsAppAccess,_ right:WhatsAppAccess,purpose:WhatsAppReadPurpose)->Bool {
+        guard left.enabled == right.enabled,left.chats == right.chats else {return false}
+        switch purpose {
+        case .conversation:return true
+        case .brief:return (left.includeInBrief == true) == (right.includeInBrief == true)
+        case .suggestions:return (left.includeInSuggestions == true) == (right.includeInSuggestions == true)
+        }
+    }
     static func recordingLearningAccess(_ access:WhatsAppAccess,previous:WhatsAppAccess)->WhatsAppAccess {
         var value=access
         let changed=access.enabled != previous.enabled || access.chats != previous.chats || access.learnContext != previous.learnContext || access.includeInBrief != previous.includeInBrief || access.includeInSuggestions != previous.includeInSuggestions
