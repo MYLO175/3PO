@@ -661,3 +661,10 @@ Keep scheduling fingerprints separate from in-flight evidence. Briefs, Review, e
 Historical Review comparisons are labelled prior output. Isolate stale replacement/retirement rows rather than making every earlier proposal an authority dependency of fresh advice. Fresh outputs retain current selected memory/source windows; referenced replacements add only their own historical dependencies. Retirement retains unchanged proposal identity and current native/project coverage. Human Dismiss/Undo remains a real revision; historical display/name/support churn does not.
 
 Use a distinct memory controls generation to catch off/on races and ignore no-op assignments. Learning validates exact issued candidates, then merges synchronously into current memory under existing loaded-byte CAS. Keep paused attempted claims, Stop, account/model/source choices and uncertain-write barriers. Notification delivery changes affect delivery at the delivery boundary, not analysis ownership. No automatic inference replay, storage reset or additional model call is introduced.
+
+
+## 17 October — attention metadata does not own a foreground request
+
+The previous cancellation repair deliberately retained a whole-account human-dismissal stamp. A later screenshot and held reminder-creation fixture show that gate is still too broad: dismissing an unrelated card revokes a clear instruction before its first tool, and a dismissal after a verified save can prevent the completed reply. Remove that equality from the shared chat/Review conversation ownership predicate, including its self-authored dismissal adoption. Current exact dismissal tools and native/project authority, target revisions, receipts, uncertainty and readback remain.
+
+Use captured attention as input context, with current state on a subsequent read. Foreground execution does not restore inbox cards. Brief preparation also finishes its captured attention snapshot; the saved stamp continues to guard reuse as current advice. This separates completing an owned request from changing its input retrospectively, with no extra AI, feature, automatic replay or personal-state migration.

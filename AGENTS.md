@@ -150,3 +150,8 @@ Heartbeat reconsideration may inspect pending proposals as labelled historical d
 ## Recorded heartbeat Activity refinement — 16 October
 
 - The pill's Activity dropdown includes actual heartbeat failures and partial failures. Successful runs and skipped/waiting/sleep/closed-laptop interruptions stay out. Preserve the saved history, account scope and existing live-heartbeat pill status; opening Activity makes no AI/source read or retry.
+
+
+## Recorded independent Review interaction — 17 October
+
+- Ordinary Review Dismiss/Undo interaction must not cancel an independent foreground chat or Review conversation. Attention metadata is captured input, not authority over an understood human instruction. Preserve the newer human choice and exact save/readback; never replay an attempted operation to recover its reply. Account/source access withdrawal, Stop and exact edited-target conflicts retain their guards. Brief preparation may finish its captured snapshot; changed attention still governs its eligibility for new advice.

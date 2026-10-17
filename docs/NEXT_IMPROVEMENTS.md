@@ -340,3 +340,8 @@ Next acceptance priorities: an actual missed-heartbeat reopen/wake while permitt
 Supplied-dependency guards now replace broad in-flight memory/project/completion invalidation in briefs, Review, email and learning. Historical Review rows are isolated, equivalent native sync notifications survive canonical reread, and notification delivery settings no longer cancel analysis. This addresses deterministic unnecessary failures, not every possible provider/source failure.
 
 Next reliability acceptance is sustained real Mail/WhatsApp/native traffic during scheduled heartbeats, including sleep/wake and permission withdrawal. Measure retained useful work, genuine stale-result rejection and failed-claim recovery without replaying personal failures. Keep source-wide CAS for genuine structural writes; the retained legacy project-placement path still reasons over a whole notebook/workspace and is not a newly enabled automatic feature. Broader semantic episode identity, per-message batch influence and smaller independently keyed storage remain separate architecture work.
+
+
+## 17 October — independent interaction regression
+
+A retained whole-account Dismiss/Undo gate caused another foreground failure. Held reminder creation and Review conversation checks now cover that real interaction, including streaming and a dismissal after save. Keep testing ordinary UI changes at actual inference/save boundaries rather than treating every changed human-facing projection as job ownership. Exact target/access/Stop conflicts remain necessary. No new product feature is introduced.

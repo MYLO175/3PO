@@ -676,3 +676,10 @@ Native handled associations require an outstanding action, exact current evidenc
 An AI request checks the information it was actually given. Editing an unrelated memory, saving another project, recording another completed request or receiving an unchanged Calendar sync no longer discards otherwise valid background work. Briefs save compact exact confirmation receipts; Review, email and learning retain their supplied fact/source/item identities. Temporary source labels and ordering are not content changes.
 
 Account, selected model, human source choices, permissions, Stop, foreground ownership and the exact supplied facts/targets remain binding. Turning memory off and on invalidates an in-flight request. Changing notification delivery alone does not cancel heartbeat analysis. Review can reject a stale historical replacement while keeping independent fresh suggestions. Learning merges a valid result with unrelated local changes, with the final storage conflict check intact. A failed or uncertain old request is not automatically retried by these fixes.
+
+
+## Using Review while the AI works
+
+Dismissing a Review card, or undoing that dismissal, does not cancel an independent chat or Review conversation. The current request keeps its captured context and human instruction. A later attention read uses current choices; a dismissal stays saved and does not mean an Apple task is complete. Exact operation checks still prevent saving over an item you changed manually.
+
+Brief preparation can finish its dated input snapshot when attention changes. The saved brief retains its original attention stamp, so old attention is not silently presented to another AI request as current advice. This does not add a retry, reset history or rerun an old failed instruction.
