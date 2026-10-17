@@ -38,6 +38,13 @@ import Foundation
     private var preparingApprovals=false
     private var executingApproval=false
     private var notebookWorkspace:Set<UUID> = []
+    static func attentionUsesWhatsApp(_ model:DashboardModel,brief:DailyBriefing? = nil,discoveries:[PADiscovery] = [],acknowledgements:[ReviewAcknowledgement])->Bool {
+        func uses(_ brief:DailyBriefing)->Bool {brief.sources.contains{$0.kind == "whatsapp"} || brief.whatsappDependencies?.isEmpty == false}
+        if brief.map(uses) == true || discoveries.contains(where:{$0.sourceKind == "whatsapp" || $0.whatsappDependencies?.isEmpty == false}) {return true}
+        let ids=Set(acknowledgements.map(\.id))
+        if model.proactive.state.records.contains(where:{ids.contains("discovery:"+$0.id) && ($0.sourceKind == "whatsapp" || $0.whatsappDependencies?.isEmpty == false)}) {return true}
+        return (model.briefings.state.reviewQuestions ?? []).contains{ids.contains("question:"+$0.id) && uses($0.snapshot)}
+    }
     var consultedWorkspace:Set<UUID> { Set(life.issued.keys).union(notebookWorkspace) }
     private var issuedLifeMail = Set<String>()
     private var whatsappSearch: WhatsAppSearchCursor?
@@ -371,8 +378,9 @@ import Foundation
             for pair in summaries.prefix(40) {issuedEmailDismissalVersions[pair.1.id]=ReviewAcknowledgementRules.emailVersion(pair.0,pair.1)}
             for record in discoveries.prefix(10) {issuedDiscoveryDismissals[record.id]=record}
             let brief = model.briefings.current(model)
-            if !model.whatsapp.linkedIdentity.isEmpty && model.whatsapp.access(for:registration).enabled {suppliedWhatsAppScope=model.whatsapp.scope(for:registration,purpose:.conversation)}
-            return try json(["resolvedEmailRequests":model.emailSummaries.resolutionContext(model),"reviewAcknowledgements":try JSONSerialization.jsonObject(with:JSONEncoder().encode(model.reviewAcknowledgements())),"brief":brief?.message ?? "No saved brief for today", "briefCoverage":brief?.coverage ?? "Unavailable", "emailCoverage":model.emailSummaries.coverage(model),"emails":summaries.prefix(40).map { ["id":$0.1.id,"subject":$0.0.subject,"account":$0.0.account,"summary":$0.1.summary,"category":EmailHighlightRules.category($0.1,replied:$0.0.replied),"evidence":$0.1.evidence] },"suggestions":discoveries.prefix(10).map { ["id":$0.id,"kind":$0.kind,"message":$0.message,"evidence":$0.evidence] }])
+            let acknowledgements=model.reviewAcknowledgements()
+            if Self.attentionUsesWhatsApp(model,brief:brief,discoveries:Array(discoveries.prefix(10)),acknowledgements:acknowledgements) {suppliedWhatsAppScope=model.whatsapp.scope(for:registration,purpose:.conversation)}
+            return try json(["resolvedEmailRequests":model.emailSummaries.resolutionContext(model),"reviewAcknowledgements":try JSONSerialization.jsonObject(with:JSONEncoder().encode(acknowledgements)),"brief":brief?.message ?? "No saved brief for today", "briefCoverage":brief?.coverage ?? "Unavailable", "emailCoverage":model.emailSummaries.coverage(model),"emails":summaries.prefix(40).map { ["id":$0.1.id,"subject":$0.0.subject,"account":$0.0.account,"summary":$0.1.summary,"category":EmailHighlightRules.category($0.1,replied:$0.0.replied),"evidence":$0.1.evidence] },"suggestions":discoveries.prefix(10).map { ["id":$0.id,"kind":$0.kind,"message":$0.message,"evidence":$0.evidence] }])
         case "dismiss_suggestion":
             try PAToolProtocol.evidence(text("authorization"),human:human)
             let id = text("id")!, kind = text("kind")!

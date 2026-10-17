@@ -83,6 +83,7 @@ extension AssistantService {
         } else {
             calendarCoverage="Cached dashboard snapshot; \(calendarCount) enabled cached events. The collected window is unavailable here. Event details are omitted; use read_calendar for the requested dates."
         }
+        let acknowledgements=model.reviewAcknowledgements()
         let value:[String:Any] = [
             "now":DateRules.localTimestamp(now),"timezone":TimeZone.current.identifier,"localWeather":model.weather.context(),
             "calendarStatus":model.paOrientation == nil ? model.calendarHealth.detail : model.paOrientationHealth.detail,
@@ -93,7 +94,8 @@ extension AssistantService {
             "reminderSources":lists.prefix(60).map{["id":$0.id,"name":$0.label,"writable":$0.writable] as [String:Any]},
             "mailStatus":model.mailHealth.detail,"mailCoverage":model.mailCoverage,"mailHeaderCount":model.mailData.messages.filter{!excludedAccounts.contains($0.accountID)}.count,
             "mailAccounts":accounts.prefix(30).map{["id":$0.id,"name":$0.title]},
-            "reviewAcknowledgements":(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(model.reviewAcknowledgements()))) ?? [],
+            "reviewAcknowledgements":(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(acknowledgements))) ?? [],
+            "whatsappContextSupplied":PAToolSession.attentionUsesWhatsApp(model,acknowledgements:acknowledgements),
             "resolvedEmailRequests":model.emailSummaries.resolutionContext(model),
             "coverage":"Initial source orientation only. Source IDs/names above are metadata, not issued mutation destinations or item IDs. Use read_calendar/read_reminders for actual relevant items and fresh writable sources, read_attention for saved brief/assessments/suggestions, and selective search_mail/read_email for emails. Never infer an empty source from omitted details. All normal source permissions and write checks still apply."
         ]

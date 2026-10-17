@@ -40,6 +40,10 @@ import Foundation
         readRevisions.record(key:owner,previous:beforeWithdrawal,current:readAccess)
         readRevisions.record(key:owner,previous:readAccess,current:beforeWithdrawal)
         for purpose in WhatsAppReadPurpose.allCases {assert(readRevisions.revision(key:owner,purpose:purpose) != beforeReads[purpose],"Withdraw/re-enable retains the permission-revocation boundary")}
+        let capturedIdentity=WhatsAppSourceScope(registration:owner,linkedIdentity:"device",revision:readRevisions.revision(key:owner,purpose:.conversation),identityRevision:readRevisions.identityRevision)
+        readRevisions.invalidateIdentity();readRevisions.invalidateIdentity()
+        let relinkedIdentity=WhatsAppSourceScope(registration:owner,linkedIdentity:"device",revision:readRevisions.revision(key:owner,purpose:.conversation),identityRevision:readRevisions.identityRevision)
+        assert(capturedIdentity != relinkedIdentity,"Disconnect/relink to the same identity must never restore an old read owner")
         var withdrawn=grant;withdrawn.enabled=false
         withdrawn=WhatsAppReadRules.recordingLearningAccess(withdrawn,previous:grant)
         let resumed=WhatsAppReadRules.recordingLearningAccess(grant,previous:withdrawn)

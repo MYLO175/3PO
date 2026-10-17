@@ -33,12 +33,15 @@ struct WhatsAppSourceScope: Equatable {
     let registration: String
     let linkedIdentity: String
     let revision: UUID
+    var identityRevision:UUID? = nil
 }
 enum WhatsAppReadPurpose:String,CaseIterable {case conversation,brief,suggestions}
 /// Request ownership follows the relevant account and read permission. Learning
 /// and another consumer's opt-ins do not revoke an already permitted read.
 struct WhatsAppReadAccessRevisions {
     private var values:[String:UUID]=[:]
+    private(set) var identityRevision=UUID()
+    mutating func invalidateIdentity() {identityRevision=UUID()}
     func revision(key:String,purpose:WhatsAppReadPurpose)->UUID {values[key+":"+purpose.rawValue] ?? UUID(uuidString:"00000000-0000-0000-0000-000000000000")!}
     mutating func record(key:String,previous:WhatsAppAccess,current:WhatsAppAccess) {
         for purpose in WhatsAppReadPurpose.allCases where !WhatsAppReadRules.sameReadAccess(previous,current,purpose:purpose) {values[key+":"+purpose.rawValue]=UUID()}

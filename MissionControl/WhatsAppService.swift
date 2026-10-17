@@ -17,7 +17,7 @@ import CryptoKit
     }
     var chats: [WhatsAppChat] = []
     var linkedIdentity = "" {
-        didSet { windowFingerprints.removeAll(keepingCapacity:true) }
+        didSet { windowFingerprints.removeAll(keepingCapacity:true);if linkedIdentity != oldValue {readAccessRevisions.invalidateIdentity()} }
     }
     @ObservationIgnored private var windowFingerprints:[String:String]=[:]
     #if DEBUG
@@ -78,12 +78,12 @@ import CryptoKit
     func access(for registration: String) -> WhatsAppAccess {
         WhatsAppReadRules.access(accesses,registration:registration,linkedIdentity:linkedIdentity)
     }
-    func scope(for registration: String,purpose:WhatsAppReadPurpose? = nil) -> WhatsAppSourceScope {
-        let revision:UUID
-        if let purpose,let key=WhatsAppReadRules.accessKey(registration:registration,linkedIdentity:linkedIdentity) {
-            revision=readAccessRevisions.revision(key:key,purpose:purpose)
-        } else {revision=accessRevision}
-        return .init(registration:registration,linkedIdentity:linkedIdentity,revision:revision)
+    func scope(for registration: String) -> WhatsAppSourceScope {
+        .init(registration:registration,linkedIdentity:linkedIdentity,revision:accessRevision)
+    }
+    func scope(for registration:String,purpose:WhatsAppReadPurpose)->WhatsAppSourceScope {
+        let key=WhatsAppReadRules.accessKey(registration:registration,linkedIdentity:linkedIdentity) ?? registration
+        return .init(registration:registration,linkedIdentity:linkedIdentity,revision:readAccessRevisions.revision(key:key,purpose:purpose),identityRevision:readAccessRevisions.identityRevision)
     }
     func setAccess(_ access: WhatsAppAccess, registration: String) {
         guard let id=WhatsAppReadRules.accessKey(registration:registration,linkedIdentity:linkedIdentity) else { return }

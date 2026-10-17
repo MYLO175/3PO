@@ -619,7 +619,8 @@ import Observation
             var expectedSourceMemoryIDs=Set(capturedSourceMemoryIDs)
             var replySourceMemoryIDs=capturedSourceMemoryIDs
             var expectedWeather:String? = sourceEnabled && !setupMode && context != nil && owned.weatherSupplied ? weatherScope : nil
-            var expectedWhatsApp:WhatsAppSourceScope?
+            let initialSourceContext=context.flatMap{try? JSONSerialization.jsonObject(with:Data($0.utf8)) as? [String:Any]}
+            var expectedWhatsApp:WhatsAppSourceScope? = sourceEnabled && initialSourceContext?["whatsappContextSupplied"] as? Bool == true ? owned.whatsappScope : nil
             @MainActor func owns(_ current:AssistantRuntimeState)->Bool {
                 func reject(_ reason:String)->Bool {invalidationReason=reason;return false}
                 guard reviewValid?() != false else {return reject("this Review request or its source access changed")}
