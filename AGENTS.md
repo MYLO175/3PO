@@ -159,3 +159,5 @@ Heartbeat reconsideration may inspect pending proposals as labelled historical d
 ## Recorded captured-job continuity — 17 October
 
 - Ordinary user edits across the app should not cancel an owned AI job unless they make its work unavailable, conflicting or impossible. Capture model, writing settings, name and relevance Focus for the current request; subsequent choices apply to subsequent work. Scheduling and presentation changes, opening a saved draft, independent learning permissions and unrelated proposal edits are not Stop. Keep explicit Stop, account/storage ownership, source-access withdrawal, exact edited-target/readback/uncertain-save checks, sleep and actual provider unavailability. Preserve current human edits when merging completed output and never replay an attempted operation to recover a reply.
+
+- This captured-job direction supersedes earlier broad default-model equality and draft-typing cancellation rules. Initial scheduling may wait for a draft/active provider; an already owned job uses captured settings. Exact permission/evidence/operation conflicts and explicit Stop remain authoritative.
