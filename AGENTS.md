@@ -155,3 +155,7 @@ Heartbeat reconsideration may inspect pending proposals as labelled historical d
 ## Recorded independent Review interaction — 17 October
 
 - Ordinary Review Dismiss/Undo interaction must not cancel an independent foreground chat or Review conversation. Attention metadata is captured input, not authority over an understood human instruction. Preserve the newer human choice and exact save/readback; never replay an attempted operation to recover its reply. Account/source access withdrawal, Stop and exact edited-target conflicts retain their guards. Brief preparation may finish its captured snapshot; changed attention still governs its eligibility for new advice.
+
+## Recorded captured-job continuity — 17 October
+
+- Ordinary user edits across the app should not cancel an owned AI job unless they make its work unavailable, conflicting or impossible. Capture model, writing settings, name and relevance Focus for the current request; subsequent choices apply to subsequent work. Scheduling and presentation changes, opening a saved draft, independent learning permissions and unrelated proposal edits are not Stop. Keep explicit Stop, account/storage ownership, source-access withdrawal, exact edited-target/readback/uncertain-save checks, sleep and actual provider unavailability. Preserve current human edits when merging completed output and never replay an attempted operation to recover a reply.
