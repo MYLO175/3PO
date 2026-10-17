@@ -63,8 +63,8 @@ import EventKit
         if !sourceEvidenceAvailable(record,model:model) || !model.whatsappDependenciesAvailable(record.whatsappDependencies,use:.brief) { return "A supplied message, conversation or assessment has changed or is unavailable. Update the brief for current advice." }
         return nil
     }
-    /// Exact supplied beliefs/confirmations and human dismissal choices, never a new retrieval selection.
-    func contextEvidenceChanges(memoryEnabled:Bool,memory:[MemoryDependency],resolutions:[BriefingResolutionReceipt],acknowledgements:String,model:DashboardModel,mailAccounts:Set<String>?=nil,whatsappReady:Bool=true)->Set<String> {
+    /// Exact supplied beliefs/confirmations; attention metadata stays in the captured snapshot.
+    func contextEvidenceChanges(memoryEnabled:Bool,memory:[MemoryDependency],resolutions:[BriefingResolutionReceipt],model:DashboardModel,mailAccounts:Set<String>?=nil,whatsappReady:Bool=true)->Set<String> {
         var changed=Set<String>()
         if memoryEnabled != model.assistant.memory.enabled || !model.memoryDependenciesAvailable(memory,use:.brief) {changed.insert("memory")}
         // Attention choices belong to the captured brief snapshot, not its
@@ -283,7 +283,7 @@ import EventKit
                         throw BriefingContextChanged(kinds:Set(changed.map{$0 == "checked Mail coverage" ? "mail" : "memory"}))
                     }
                     guard changed.isEmpty else { throw ActionFailure.message("Preparation stopped because \(changed.joined(separator:", ")) changed. No outdated brief was saved; prepare again.") }
-                    let evidenceChanges=contextEvidenceChanges(memoryEnabled:memoryEnabled,memory:memoryCapture.dependencies,resolutions:resolutionReceipts,acknowledgements:acknowledgementRevision,model:model,mailAccounts:mailReview?.accountIDs,whatsappReady:whatsappReady && !recovery.omittedKinds.contains("whatsapp"))
+                    let evidenceChanges=contextEvidenceChanges(memoryEnabled:memoryEnabled,memory:memoryCapture.dependencies,resolutions:resolutionReceipts,model:model,mailAccounts:mailReview?.accountIDs,whatsappReady:whatsappReady && !recovery.omittedKinds.contains("whatsapp"))
                     if !evidenceChanges.isEmpty {throw BriefingContextChanged(kinds:evidenceChanges)}
                 }
                 var sources: [BriefingSource] = [], input: [String:Any] = BriefingRules.clockInput(now,calendar:calendar)
@@ -558,7 +558,7 @@ import EventKit
         guard model.assistant.memory.put(selected) else {throw SummaryFailure.invalid}
         let dependency=MemoryDependencyRules.capture([MemoryRetrieval.record(selected)])
         let acknowledgement=model.reviewAcknowledgementRevision,memoryEnabled=model.assistant.memory.enabled
-        func changedEvidence()->Set<String> {service.contextEvidenceChanges(memoryEnabled:memoryEnabled,memory:dependency,resolutions:[],acknowledgements:acknowledgement,model:model)}
+        func changedEvidence()->Set<String> {service.contextEvidenceChanges(memoryEnabled:memoryEnabled,memory:dependency,resolutions:[],model:model)}
         checks["actual brief guard accepts captured human belief"] = changedEvidence().isEmpty
         let unrelated=PAMemory(registration:owner,text:"Fictional garden irrigation needs a valve",kind:.context,explicit:true,provenance:"Fictional validation")
         guard model.assistant.memory.put(unrelated) else {throw SummaryFailure.invalid}
@@ -569,13 +569,20 @@ import EventKit
         guard model.assistant.memory.put(revised) else {throw SummaryFailure.invalid}
         checks["actual brief guard rejects changed supplied belief"] = changedEvidence() == ["memory"]
         guard model.assistant.memory.put(selected) else {throw SummaryFailure.invalid}
-        checks["actual brief preparation survives independent Dismiss and Undo choices"] = service.contextEvidenceChanges(memoryEnabled:memoryEnabled,memory:dependency,resolutions:[],acknowledgements:"changed-human-choice",model:model).isEmpty
+        let originalBriefings=model.briefings,originalQuestions=service.state.reviewQuestions
+        model.briefings=service
+        let beforeChoice=model.reviewAcknowledgementRevision
+        service.state.reviewQuestions?[0].dismissed=true
+        checks["actual brief preparation survives independent Dismiss choices"] = beforeChoice != model.reviewAcknowledgementRevision && changedEvidence().isEmpty
+        service.state.reviewQuestions=originalQuestions
+        checks["actual brief preparation survives independent Undo choices"] = beforeChoice == model.reviewAcknowledgementRevision && changedEvidence().isEmpty
+        model.briefings=originalBriefings
         var currentSnapshot=morning;currentSnapshot.memoryDependencies=dependency;currentSnapshot.emailResolutionReceipts=[];currentSnapshot.reviewAcknowledgementRevision=acknowledgement
         currentSnapshot.reviewAcknowledgementReceipts=[.init(id:"historical-display-no-longer-projected",revision:"historical-only")]
         checks["saved modern brief does not depend on historical dismissal display projections"] = service.freshnessNote(currentSnapshot,model:model) == nil
         _=model.assistant.memory.forget(selected.id)
         checks["actual brief guard rejects forgotten supplied belief"] = changedEvidence() == ["memory"]
-        checks["omitted optional memory supplies no belief dependency"] = service.contextEvidenceChanges(memoryEnabled:memoryEnabled,memory:[],resolutions:[],acknowledgements:acknowledgement,model:model).isEmpty
+        checks["omitted optional memory supplies no belief dependency"] = service.contextEvidenceChanges(memoryEnabled:memoryEnabled,memory:[],resolutions:[],model:model).isEmpty
         _=model.assistant.memory.forget(unrelated.id)
         checks["fictional storage diagnostic does not change settings"] = preferences.isEqual(to:UserDefaults.standard.dictionaryRepresentation())
         return checks

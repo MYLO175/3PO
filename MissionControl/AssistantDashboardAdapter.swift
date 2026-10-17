@@ -94,7 +94,6 @@ extension DashboardModel {
             guard let self else { return nil }
             return nativeLearningValidation.withSnapshot { [self] in
                 AssistantRuntimeState(attentionPreferencesReadable: self.assistant.memory.reviewPreferenceMigrationReadable,
-                         acknowledgementRevision: self.reviewAcknowledgementRevision,
                          resolvedRequests: self.emailSummaries.resolutionContext(self,limit:Int.max),
                          whatsappScope: self.whatsapp.scope(for: self.chatGPT.activeID), weatherScope: self.weather.scope)
             }

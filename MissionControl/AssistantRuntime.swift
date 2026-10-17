@@ -4,8 +4,6 @@ import Foundation
 /// specific receipts and projections, not references to the application's services.
 struct AssistantRuntimeState {
     var attentionPreferencesReadable: Bool
-    /// Attention metadata; never foreground job or native-write ownership.
-    var acknowledgementRevision: String
     /// All current exact confirmations; presentation caps must not evict an owned receipt.
     var resolvedRequests: [[String:String]]
     var whatsappScope: WhatsAppSourceScope

@@ -76,7 +76,8 @@ private final class ObservationCounter:@unchecked Sendable {
 
 @MainActor private final class FictionalContext {
     let now = Date.now.addingTimeInterval(3600)
-    var state = AssistantRuntimeState(attentionPreferencesReadable: true, acknowledgementRevision: "ack-1", resolvedRequests: [], whatsappScope: .init(registration: "fictional-owner", linkedIdentity: "fictional-device", revision: UUID()), weatherScope: "fictional-weather")
+    var state = AssistantRuntimeState(attentionPreferencesReadable: true, resolvedRequests: [], whatsappScope: .init(registration: "fictional-owner", linkedIdentity: "fictional-device", revision: UUID()), weatherScope: "fictional-weather")
+    var attentionRevision="ack-1"
     var acknowledgements:[ReviewAcknowledgement] = []
     var sourceCalls = 0
     var afterCalls = 0
@@ -84,7 +85,7 @@ private final class ObservationCounter:@unchecked Sendable {
     var sessions: [FictionalTools] = []
     var configure: ((FictionalTools, AssistantToolRequest) -> Void)?
     func runtime() -> AssistantRuntime {
-        .init(clock: { self.now }, state: { self.state }, sourceSnapshot: { self.sourceCalls += 1; return "Fictional cached context" }, deliveryAvailable: { $0.deliveryID != "fictional-withdrawn" }, tools: { request in
+        .init(clock: { self.now }, state: { self.state }, sourceSnapshot: { self.sourceCalls += 1; return "Fictional cached context\n" + String(decoding:try! JSONEncoder().encode(self.acknowledgements),as:UTF8.self) }, deliveryAvailable: { $0.deliveryID != "fictional-withdrawn" }, tools: { request in
             let session = FictionalTools()
             self.configure?(session, request)
             self.requests.append(request); self.sessions.append(session)
@@ -345,13 +346,13 @@ private final class ObservationCounter:@unchecked Sendable {
             let repository=LocalRecordRepository(container:container),receipt="Fictional reminder created and verified"
             let dismissal=ReviewAcknowledgement(id:"email:fictional-unrelated",kind:"email",sourceID:"fictional-unrelated",title:"Unrelated newsletter",concern:"Already seen",acknowledgedAt:c.now)
             var writes=0,streamed=0,changed=false
-            let originalRevision=c.state.acknowledgementRevision
+            let originalRevision=c.attentionRevision
             if mode == "undo-before-tool" {c.acknowledgements=[dismissal]}
             func changeAttention() {
                 guard !changed else {return};changed=true
-                c.state.acknowledgementRevision=mode == "undo-before-tool" ? "ack-empty" : "ack-new-dismissal"
+                c.attentionRevision=mode == "undo-before-tool" ? "ack-empty" : "ack-new-dismissal"
                 c.acknowledgements=mode == "undo-before-tool" ? [] : [dismissal]
-                check(c.state.acknowledgementRevision != originalRevision,"Fixture changes actual captured attention revision")
+                check(c.attentionRevision != originalRevision,"Fixture changes the independent attention revision")
             }
             c.configure={session,_ in session.executeBody={call,session in
                 if call.name == "read_reminders" {
@@ -413,7 +414,7 @@ private final class ObservationCounter:@unchecked Sendable {
             case "resolution-crowded":c.state.resolvedRequests=(0..<30).map{["requestID":"unrelated-\($0)","accountID":"fictional-mail"]}+[resolved]
             case "resolution-changed":c.state.resolvedRequests[0]["confirmationQuote"]="Changed confirmation"
             case "resolution-lost":c.state.resolvedRequests=[]
-            case "human-dismiss":c.state.acknowledgementRevision="ack-human-changed"
+            case "human-dismiss":c.attentionRevision="ack-human-changed"
             case "whatsapp-account":c.state.whatsappScope = .init(registration:p.activeID,linkedIdentity:"different-fictional-device",revision:UUID())
             case "unrelated-memory":_=value.memory.put(PAMemory(registration:p.activeID,text:"Garden irrigation uses a valve",kind:.context,explicit:true,provenance:"Fictional human"))
             case "selected-memory":var changed=fact;changed.text="Orion prototype now needs a large motor";_=value.memory.put(changed)
