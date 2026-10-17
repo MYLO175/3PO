@@ -338,6 +338,61 @@ private final class ObservationCounter:@unchecked Sendable {
             check(saved.first?.turns.contains(where: { $0.role == "user" && $0.content == "Fictional owned request" }) == true, "\(change) must retain the prepared human request after reopen.")
         }
 
+        // Dismiss/Undo is attention metadata, not revocation of an unrelated
+        // human instruction. Exercise the actual engine through save and reopen.
+        for mode in ["dismiss-before-tool","undo-before-tool","dismiss-during-stream","dismiss-during-read","dismiss-after-save","review-dismiss"] {
+            let p=FictionalInference(),c=FictionalContext(),container=try open("dismiss-reminder-"+mode),value=service(p,container)
+            let repository=LocalRecordRepository(container:container),receipt="Fictional reminder created and verified"
+            let dismissal=ReviewAcknowledgement(id:"email:fictional-unrelated",kind:"email",sourceID:"fictional-unrelated",title:"Unrelated newsletter",concern:"Already seen",acknowledgedAt:c.now)
+            var writes=0,streamed=0,changed=false
+            let originalRevision=c.state.acknowledgementRevision
+            if mode == "undo-before-tool" {c.acknowledgements=[dismissal]}
+            func changeAttention() {
+                guard !changed else {return};changed=true
+                c.state.acknowledgementRevision=mode == "undo-before-tool" ? "ack-empty" : "ack-new-dismissal"
+                c.acknowledgements=mode == "undo-before-tool" ? [] : [dismissal]
+                check(c.state.acknowledgementRevision != originalRevision,"Fixture changes actual captured attention revision")
+            }
+            c.configure={session,_ in session.executeBody={call,session in
+                if call.name == "read_reminders" {
+                    if mode == "dismiss-during-read" {changeAttention()}
+                    return "{\"reminders\":[],\"coverage\":\"Fictional enabled list\"}"
+                }
+                precondition(call.name == "change_reminder")
+                writes += 1
+                try repository.save(["title":"Follow up with fictional insurer","due":DateRules.localDate(c.now.addingTimeInterval(7*86400)),"operation":"fictional-owned-creation"],key:"fictionalReminder")
+                session.receipts.append(receipt)
+                if mode == "dismiss-after-save" {changeAttention()}
+                return "{\"verified\":true,\"id\":\"fictional-owned-reminder\"}"
+            }}
+            p.holdNext=mode.contains("before-tool") || mode == "review-dismiss"
+            p.replies=mode == "dismiss-during-read" ? [tools(["read_reminders"]),tools(["change_reminder"]),final(receipt)] : [tools(["change_reminder"]),final(receipt)]
+            if mode == "dismiss-during-stream" {
+                p.deltas=Array(repeating:"Working ",count:200)
+                p.afterDelta={streamed += 1;if streamed == 1 {changeAttention()}}
+            }
+            let review=mode == "review-dismiss",id:UUID
+            if review {
+                id=value.openReview(key:"fictional-owned-request",title:"Fictional source",sourceKind:"mail",accountID:"fictional-mail",messageID:"fictional-owned-source",identity:nil,chatID:nil,seeds:[])!
+                value.draft="Retained general draft"
+                check(value.sendReview(runtime:c.runtime(),conversationID:id,prompt:"Add a reminder for next week",humanTurnID:UUID(),responseTurnID:UUID(),query:"Add a reminder",submitted:c.now,focusAreas:[],valid:{true}),"Review conversation starts the exact owned request")
+            } else {
+                id=value.openPA()!
+                check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Add a reminder for next week"),"Reminder request starts before independent Review interaction")
+            }
+            if p.holdNext || p.waiting {await until{p.waiting};changeAttention();p.release()}
+            await until{!value.busy}
+            check(changed && value.error == nil,"\(mode) must not abort the current human instruction")
+            check(writes == 1 && c.sessions[0].receipts == [receipt],"\(mode) completes exactly one verified reminder operation")
+            check(value.conversation(id)?.turns.last?.content == receipt && value.conversation(id)?.turns.last?.actionResult?.phase == "completed","\(mode) saves the verified completed reply")
+            check(c.acknowledgements == (mode == "undo-before-tool" ? [] : [dismissal]),"\(mode) preserves the independent attention choice")
+            let reopened=service(p,try open("dismiss-reminder-"+mode))
+            let persisted:[String:String]?=try repository.decode("fictionalReminder")
+            check(persisted?["operation"] == "fictional-owned-creation" && reopened.conversation(id)?.turns.last?.actionResult?.phase == "completed","\(mode) retains exact save and outcome across reopen")
+            if review {check(value.draft == "Retained general draft","Review completion preserves the general unsent draft")}
+            if mode == "dismiss-during-stream" {check(streamed == 400,"Dismiss during partial streaming retains both completed transport rounds")}
+        }
+
         // Real service pauses in transport while independent collection/local edits occur.
         for mode in ["ack-title","ack-support","resolution-added","resolution-crowded","resolution-changed","resolution-lost","human-dismiss","whatsapp-account","unrelated-memory","selected-memory","unrelated-project","selected-project"] {
             let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("context-churn-"+mode))
@@ -366,7 +421,7 @@ private final class ObservationCounter:@unchecked Sendable {
             default:var changed=item;changed.notes="The prototype scope changed";_=try value.projects.save(changed,expected:item.revision)
             }
             p.release();await until{!value.busy}
-            let rejected=["resolution-changed","resolution-lost","human-dismiss","whatsapp-account","selected-memory","selected-project"].contains(mode)
+            let rejected=["resolution-changed","resolution-lost","whatsapp-account","selected-memory","selected-project"].contains(mode)
             check((value.error != nil) == rejected,"\(mode) distinguishes supplied-context changes from unrelated collection")
             check(rejected ? c.sessions[0].calls.isEmpty : c.sessions[0].calls == ["read_memory"],"\(mode) validates before executing any late tool")
             if rejected {check(value.error?.contains("because") == true,"Real invalidation names the changed context rather than a generic configuration failure")}

@@ -527,7 +527,6 @@ import Observation
         let lifeFocus=response.focusAreas
         let memoryRevision = memory.revision
         let memoryControls = memory.controlsRevision
-        let acknowledgementRevision = owned.acknowledgementRevision
         let resolutionContext = setupMode || !contextEnabled ? [] : Array(owned.resolvedRequests.prefix(24))
         let whatsappScope = owned.whatsappScope
         let weatherScope = owned.weatherScope
@@ -607,7 +606,6 @@ import Observation
             }
             // Validate the facts/items actually supplied, not whole-store revision churn.
             var expectedMemory = memoryRevision
-            var expectedAcknowledgements = acknowledgementRevision
             var expectedResolutions = resolutionContext
             var expectedBeliefs = capturedBeliefs
             var expectedProjectItems = capturedProjectItems
@@ -626,7 +624,8 @@ import Observation
                 func reject(_ reason:String)->Bool {invalidationReason=reason;return false}
                 guard reviewValid?() != false else {return reject("this Review request or its source access changed")}
                 guard registration == connection.activeID else {return reject("the connected account changed")}
-                guard setupMode || expectedAcknowledgements == current.acknowledgementRevision else {return reject("your Review dismissal choices changed")}
+                // Dismiss/Undo changes attention metadata. The captured human
+                // instruction and exact operation guards retain their authority.
                 guard setupMode || expectedResolutions.allSatisfy({current.resolvedRequests.contains($0)}) else {return reject("an email confirmation supplied to this request changed or became unavailable")}
                 guard !setupMode || (setupActive(contextID) && profileSession(contextID) == response.profileSessionID) else {return reject("the setup session changed")}
                 guard selectedModel == connection.selectedModel else {return reject("the selected AI model changed")}
@@ -795,7 +794,6 @@ import Observation
                             if call.name == "read_attention",let supplied=(try? JSONSerialization.jsonObject(with:Data(output.utf8))) as? [String:Any],let rows=supplied["resolvedEmailRequests"] as? [[String:String]] {
                                 for row in rows where !expectedResolutions.contains(row) {expectedResolutions.append(row)}
                             }
-                            if call.name == "dismiss_suggestion", let current = runtime.state() {expectedAcknowledgements = current.acknowledgementRevision}
                             if ["dismiss_suggestion","remember_context","change_memory","organise_memory","change_calendar","change_reminder","undo_apple_change"].contains(call.name) || LifeWorkspaceTools.mutations.contains(call.name) , let current = runtime.state() {expectedResolutions.removeAll{!current.resolvedRequests.contains($0)}}
                             if ["search_mail","continue_mail"].contains(call.name) {
                                 toolMail = session.mailCursor; toolMailRegistration = registration; mailSearchConversationID = id; mailSearchTopicID = contextID; mailSearchTurnID = response.id
