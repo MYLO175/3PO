@@ -243,7 +243,7 @@ import SwiftData
         lostService.check(runtime:lostNative.runtime());await until{!lostService.busy}
         check(lostService.state.accounts[owner]?.pending == true && lostService.state.accounts[owner]?.reviews?.last?.steps?.first(where:{$0.id == "suggestions"})?.status == "waiting","A child's late native read failure cannot be labelled a completed comparison")
 
-        for change in ["notifications","unchanged controls","interval","model","draft editing"] {
+        for change in ["notifications","unchanged controls","interval","model","draft editing","source scope"] {
             let stable=FictionalHeartbeatWorld(),stableStore=try store(),stableService=make(stable,stableStore)
             stable.holdStage="email"
             stableService.check(runtime:stable.runtime());await until{stable.waiting}
@@ -252,6 +252,7 @@ import SwiftData
             else if change == "interval" {stableService.intervalMinutes=30}
             else if change == "model" {stable.environment.model="new-fictional-model"}
             else if change == "draft editing" {stableService.noteDraftEditing()}
+            else if change == "source scope" {stable.environment.scope="changed-independent-sources"}
             else {
                 let enabled=stableService.enabled,minutes=stableService.intervalMinutes,limit=stableService.dailyCallLimit
                 stableService.enabled=enabled;stableService.intervalMinutes=minutes;stableService.dailyCallLimit=limit
@@ -273,14 +274,22 @@ import SwiftData
                 check(stable.prepareCount == started && !stableService.busy,"Actual draft editing still defers a new due automatic heartbeat")
             }
         }
-        for change in ["owner","scope","controls","enabled off","midnight","foreground","context","usage","typing","stop"] {
+        let isolated=FictionalHeartbeatWorld(),isolatedStore=try store(),isolatedService=make(isolated,isolatedStore)
+        isolated.holdStage="email"
+        isolatedService.check(runtime:isolated.runtime());await until{isolated.waiting}
+        isolated.environment.scope="a-source-used-only-by-the-child-changed";isolated.failureStage="email"
+        isolated.release();await until{!isolatedService.busy}
+        let isolatedRun=isolatedService.state.accounts[owner]?.reviews?.last
+        check(isolated.stages == ["email","suggestions","brief"] && isolatedService.state.accounts[owner]?.calls == 3,"A child reports its own selected-source conflict without stopping unaffected sibling stages")
+        check(isolatedRun?.steps?.first{$0.id == "email"}?.status == "failed" && isolatedRun?.outcome() == "Partly completed" && isolatedRun?.briefUpdated == true,"The same run retains the source-specific failure and completed brief honestly")
+        check(isolatedService.state.accounts[owner]?.pending == true && isolatedService.state.accounts[owner]?.retryReason == "failure" && isolated.cancelCount == 0,"Source failure remains pending for a fresh scheduled run without replay or global cancellation")
+        for change in ["owner","controls","enabled off","midnight","foreground","context","usage","typing","stop"] {
             let late=FictionalHeartbeatWorld(),lateStore=try store(),lateService=make(late,lateStore)
             late.holdStage="email"
             lateService.check(runtime:late.runtime());await until{late.waiting}
             let request=late.capturedRequest!
             switch change {
             case "owner":late.environment.registration="another-fictional-owner"
-            case "scope":late.environment.scope="changed-permissions"
             case "controls":lateService.dailyCallLimit=lateService.dailyCallLimit == 8 ? 16 : 8
             case "enabled off":lateService.enabled=false
             case "midnight":late.now=late.now.addingTimeInterval(86400)

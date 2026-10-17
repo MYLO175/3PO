@@ -260,13 +260,12 @@ import SwiftData
                 try Task.checkCancellation()
                 guard (manual || enabled),controls == controlsRevision,registration == runtime.environment().registration,day == BriefingRules.day(clock()),
                       PAHeartbeatRules.canPrepareSources(settings:settings,currentSettings:runtime.environment().sourceSettings,choices:choices,currentChoices:runtime.environment().whatsappChoices,identity:identity,currentIdentity:runtime.environment().whatsappIdentity) else { throw ActionFailure.message("Background-review account, day or source choices changed; no assessment started.") }
-                // The helper authenticates its saved identity during cold-start
-                // collection. Capture its verified scope before the first AI job.
-                // Changed user choices or a previously known identity still stop.
-                let scope=runtime.environment().scope
+                // Each child captures its own supplied source scope and validates
+                // current access before saving. Broad source-choice changes must
+                // not revoke unrelated stages in this scheduling run.
                 capturedEligibility={
                     let current=runtime.environment()
-                    return current.permitted && current.registration == registration && current.scope == scope && current.contextEnabled && current.inferenceVerified && !current.usagePaused && !current.foregroundBusy
+                    return current.permitted && current.registration == registration && current.contextEnabled && current.inferenceVerified && !current.usagePaused && !current.foregroundBusy
                 }
                 @MainActor func requireOwned() throws {
                     try Task.checkCancellation()
@@ -578,7 +577,7 @@ import SwiftData
         checks["unreadable original cache is preserved"] = try badStore.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first?.data == badData
         // Exercise the real orchestration with injected source-free children,
         // including failures which used to prevent the brief from ever running.
-        for scenario in ["email failure","feedback failure","suggestions failure","learning failure","missing sources","foreground stop","successful cycle","notification toggle","no-op controls","interval change","model change","draft editing","capped email failure"] {
+        for scenario in ["email failure","feedback failure","suggestions failure","learning failure","missing sources","foreground stop","successful cycle","notification toggle","no-op controls","interval change","model change","draft editing","source scope change","source failure isolation","capped email failure"] {
             let cycleStore=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
             let cycle=HeartbeatService(container:cycleStore,settings:validationSettings,clock:{now},deviceState:{device})
             cycle.dailyCallLimit=0
@@ -610,11 +609,12 @@ import SwiftData
                     try request.validate()
                     checks["notification delivery changes retain the running analysis owner"] = cycle.controlsRevision == previous
                 }
-                if scenario == "interval change" || scenario == "model change" || scenario == "draft editing" {
+                if ["interval change","model change","draft editing","source scope change","source failure isolation"].contains(scenario) {
                     let previous=cycle.controlsRevision
                     if scenario == "interval change" {cycle.intervalMinutes=30}
                     if scenario == "model change" {env.model="new-fictional-model"}
                     if scenario == "draft editing" {cycle.noteDraftEditing()}
+                    if scenario == "source scope change" || scenario == "source failure isolation" {env.scope="changed-independent-sources"}
                     await Task.yield();try request.validate()
                     checks["ordinary \(scenario) retains the running scheduler owner"]=cycle.controlsRevision == previous
                 }
@@ -626,7 +626,7 @@ import SwiftData
                     try request.validate()
                     checks["no-op heartbeat controls retain the running analysis owner"] = cycle.controlsRevision == previous
                 }
-                return .init(failure:scenario == "email failure" || scenario == "capped email failure" ? "fixture transport failure" : nil)
+                return .init(failure:scenario == "email failure" || scenario == "capped email failure" || scenario == "source failure isolation" ? "fixture transport failure" : nil)
             }
             ports.learning={request in
                 try request.validate();order.append("learning")
@@ -652,6 +652,7 @@ import SwiftData
                     let failedStage=scenario == "feedback failure" ? "feedback" : scenario == "email failure" ? "email" : scenario == "learning failure" ? "learning" : "suggestions"
                     checks["orchestration retains exact failed stage and schedules fresh recovery: \(scenario)"] = history?.steps?.first{$0.id == failedStage}?.status == "failed" && history?.outcome() == "Partly completed" && saved?.retryAfter == now.addingTimeInterval(Double(cycle.intervalMinutes)*60) && saved?.pending == true
                 }
+                if scenario == "source failure isolation" {checks["one child source failure survives a changed parent scope without blocking the brief"]=history?.steps?.first{$0.id == "email"}?.status == "failed" && history?.outcome() == "Partly completed" && saved?.pending == true}
                 if scenario == "missing sources" {checks["missing native cache does not start suggestions or block cached brief"] = !order.contains("suggestions") && history?.steps?.first{$0.id == "sources"}?.status == "waiting"}
                 if scenario == "successful cycle" {checks["full orchestration records all six stages in order"] = order == ["snapshots","feedback","email","learning","suggestions","brief"] && history?.outcome() == "Completed"}
             }
