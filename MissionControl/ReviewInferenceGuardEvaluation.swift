@@ -49,7 +49,7 @@ import Foundation
     static func run()async throws->[String:Bool] {
         guard ["--validate-advice-context","--validate-review-inbox"].contains(where:ProcessInfo.processInfo.arguments.contains) else {throw IntegrationError.verification}
         var checks:[String:Bool]=[:]
-        let modes=["unrelated-memory","selected-memory","unrelated-project","selected-project","native-hint","native-change","native-addition","native-after-cap","native-outside-window","native-repeated-hints","completion-health","completion-change","mail-flags","unrelated-assessment","selected-assessment","historical-ack-display","historical-ack-support","human-dismiss","unrelated-dismiss","selected-source-dismiss","individual-dismiss","undo-independent","pending-change","permission","account","model","stop","memory-controls-cycle","learning-controls-cycle","preferences","draft editing","historical-row-current","historical-row-source-stale","historical-row-changed","historical-row-retire-stale-source","historical-row-retire-changed"]
+        let modes=["unrelated-memory","selected-memory","unrelated-project","selected-project","native-hint","native-change","writing","writing-native-change","native-addition","native-after-cap","native-outside-window","native-repeated-hints","completion-health","completion-change","mail-flags","unrelated-assessment","selected-assessment","historical-ack-display","historical-ack-support","human-dismiss","unrelated-dismiss","selected-source-dismiss","individual-dismiss","undo-independent","pending-change","permission","account","model","stop","memory-controls-cycle","learning-controls-cycle","preferences","draft editing","historical-row-current","historical-row-source-stale","historical-row-changed","historical-row-retire-stale-source","historical-row-retire-changed"]
         for mode in modes {
             let now=Date.now,reader=ReviewGuardNativeFixture(now:Date.now),hold=ReviewGuardHold(),model=DashboardModel(nativeSources:reader)
             model.chatGPT.activeID="fictional-review-guard-"+mode;model.chatGPT.inferenceVerified=true;model.chatGPT.selectedModel="fictional-model"
@@ -157,6 +157,8 @@ import Foundation
             case "selected-project":var changed=project;changed.title="Orion changed plan";_=try model.assistant.projects.save(changed,expected:project.revision)
             case "native-hint":model.sourceRevision += 1
             case "native-change":reader.calendarValue.events[0].start += 900;model.sourceRevision += 1
+            case "writing":model.writing=true
+            case "writing-native-change":model.writing=true;reader.calendarValue.events[0].start += 900;model.sourceRevision += 1
             case "native-addition":var added=reader.calendarValue.events[0];added.id="fictional-added";reader.calendarValue.events.append(added);model.sourceRevision += 1
             case "native-after-cap":reader.calendarValue.events[205].title="Changed after cap";model.sourceRevision += 1
             case "native-outside-window":var added=reader.calendarValue.events[0];added.id="fictional-outside";added.start=now.addingTimeInterval(100*86400);added.end=added.start.addingTimeInterval(3600);reader.calendarValue.events.append(added);model.sourceRevision += 1
@@ -180,7 +182,7 @@ import Foundation
             hold.release()
             for _ in 0..<40_000 {if !model.proactive.busy {break};await Task.yield()}
             guard !model.proactive.busy else {throw ActionFailure.message("Fictional Review \(mode) did not settle.")}
-            let rejected=["selected-memory","selected-project","native-change","native-addition","completion-change","selected-assessment","permission","account","stop","memory-controls-cycle"].contains(mode)
+            let rejected=["selected-memory","selected-project","native-change","writing-native-change","native-addition","completion-change","selected-assessment","permission","account","stop","memory-controls-cycle"].contains(mode)
             checks["Review \(mode) preserves exact relevant guards without unrelated cancellation"]=(model.proactive.error != nil) == rejected
             checks["Review \(mode) has one fictional inference and no subscription calls"]=hold.calls == 1 && model.aiUsage.state.records.isEmpty
             if !rejected {
@@ -211,7 +213,7 @@ import Foundation
                     checks["Review Undo does not replay old output or start another request"]=hold.calls == 1 && saved.count == 2
                 }
             }
-            if ["model","preferences","draft editing","learning-controls-cycle"].contains(mode) {
+            if ["model","preferences","draft editing","learning-controls-cycle","writing"].contains(mode) {
                 checks["Review \(mode) completes the captured input once"]=hold.calls == 1 && hold.selectedModel == "fictional-model" && model.proactive.state.accounts[owner]?.fingerprint != nil && model.proactive.state.accounts[owner]?.paused == false
                 checks["Review \(mode) retains captured writing preferences"]=hold.input["preferences"] as? String == "Fictional concise prototype guidance"
                 if mode == "preferences" {checks["Review does not overwrite newer writing preferences"]=model.assistant.preferences == "New fictional preference for subsequent jobs"}
@@ -234,6 +236,8 @@ import Foundation
                     checks["Review \(mode) retires only an unchanged exact proposal"]=mode == "historical-row-retire-stale-source" ? historical?.retiredAt != nil : historical?.retiredAt == nil && historical?.supersededBy == nil
                 }
             }
+            if mode == "writing" {checks["Review independent native writing does not revoke the captured comparison"]=model.writing && model.proactive.error == nil && model.proactive.state.accounts[owner]?.fingerprint != nil}
+            if mode == "writing-native-change" {checks["Review concurrent native writing preserves exact supplied native validation"]=model.writing && model.proactive.state.records.isEmpty && model.proactive.error?.contains("Calendar occurrence") == true}
             if mode == "native-repeated-hints" {checks["Review bounds repeated unchanged native hints"]=reader.calendarReads == 4}
         }
         checks.merge(try await briefContinuity(),uniquingKeysWith:{$1})
@@ -241,7 +245,7 @@ import Foundation
     }
     private static func briefContinuity()async throws->[String:Bool] {
         var checks:[String:Bool]=[:]
-        for mode in ["prompt","preferences","model","draft editing","learning controls","memory controls","stop","account","source access"] {
+        for mode in ["prompt","preferences","model","draft editing","writing","learning controls","memory controls","stop","account","source access"] {
             let reader=ReviewGuardNativeFixture(now:.now),model=DashboardModel(nativeSources:reader),hold=ReviewBriefGuardHold()
             let suite="BriefCapturedInput-"+UUID().uuidString
             // Use a fresh named settings domain; never change personal controls.
@@ -262,6 +266,7 @@ import Foundation
             case "preferences":model.assistant.preferences="New preferences for the next fictional job"
             case "model":model.chatGPT.selectedModel="fictional-next-model"
             case "draft editing":model.assistant.draft="Retained unsent fictional draft";model.heartbeat.noteDraftEditing()
+            case "writing":model.writing=true
             case "learning controls":let original=model.assistant.memory.learningEnabled;model.assistant.memory.learningEnabled.toggle();model.assistant.memory.learningEnabled=original
             case "memory controls":model.assistant.memory.enabled=false;model.assistant.memory.enabled=true
             case "account":model.chatGPT.activeID="fictional-different-account"
@@ -279,6 +284,7 @@ import Foundation
             if mode == "prompt" {checks["Brief merge preserves the newer saved prompt"]=service.writingPrompt(owner).text == "New prompt for the next fictional brief"}
             if mode == "preferences" {checks["Brief merge preserves newer writing preferences"]=model.assistant.preferences == "New preferences for the next fictional job"}
             if mode == "draft editing" {checks["Brief merge retains the independent unsent draft"]=model.assistant.draft == "Retained unsent fictional draft"}
+            if mode == "writing" {checks["Brief independent native writing preserves supplied-data validation without cancellation"]=model.writing && service.error == nil && saved?.message == "Fictional captured prototype brief"}
             if ["prompt","preferences","model"].contains(mode) {
                 service.check(model,manual:true,live:true)
                 for _ in 0..<40_000 {if hold.gate != nil || !service.busy {break};await Task.yield()}

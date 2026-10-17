@@ -254,7 +254,7 @@ import EventKit
             do {
                 try Task.checkCancellation()
                 let now=Date.now
-                guard registration == model.chatGPT.activeID, !model.assistant.busy, !model.chatGPT.busy, !model.writing else { throw ActionFailure.message("The account or active work changed before preparation; update the brief again.") }
+                guard registration == model.chatGPT.activeID, !model.assistant.busy, !model.chatGPT.busy else { throw ActionFailure.message("The account or active work changed before preparation; update the brief again.") }
                 let weatherScope = self.weatherScope(model)
                 let contextWasEnabled = model.assistant.contextEnabled
                 let memoryCapture = recovery.omittedKinds.contains("memory") ? AutomaticMemoryCapture(records:[],dependencies:[],eligibleCount:0) : model.automaticMemory(.brief,mailAccounts:recovery.omittedKinds.contains("mail") ? [] : mailReview?.accountIDs,whatsappReady:whatsappReady && !recovery.omittedKinds.contains("whatsapp"))
@@ -284,7 +284,7 @@ import EventKit
                         (calendars == model.assistant.excludedCalendars && lists == model.assistant.excludedLists && accounts == model.assistant.excludedAccounts,"source selection"),
                         (emailsWereEnabled == model.emailSummaries.enabled,"email access"),
                         (recovery.omittedKinds.contains("mail") || (mailReview.map{$0.accountIDs.isSubset(of:$0.available(index:model.mailIndex,snapshot:model.mailData,excluded:model.assistant.excludedAccounts).accountIDs)} ?? true),"checked Mail coverage"),
-                        (!model.writing && !model.assistant.busy,"active PA work")
+                        (!model.assistant.busy,"active PA work")
                     ]
                     let changed=checks.filter { !$0.0 }.map { $0.1 }
                     if !changed.isEmpty,Set(changed).isSubset(of:["PA memory or evidence","checked Mail coverage"]) {

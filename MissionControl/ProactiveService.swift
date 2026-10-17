@@ -391,7 +391,7 @@ struct ProactiveReviewContext {
                     whatsapp.allSatisfy{original in model.whatsapp.messages.contains{$0.id == original.itemID && $0.chat == original.chatID && SourceContextRules.revision($0) == original.revision}} &&
                     memoryUseRevision == assistant.memory.useRevision && model.memoryDependenciesAvailable(memoryCapture.dependencies,use:memoryUse) &&
                     currentEmailInputs() &&
-                    !assistant.busy && !model.writing && !model.chatGPT.busy && !model.projectPlacement.busy && !model.briefings.busy && !model.sourceLearning.busy && !model.nativeSourceLearning.busy && !model.memoryMaintenance.busy && !model.memoryLearning.busy && !model.lifeOrganisation.busy && !model.emailSummaries.busy
+                    !assistant.busy && !model.chatGPT.busy && !model.projectPlacement.busy && !model.briefings.busy && !model.sourceLearning.busy && !model.nativeSourceLearning.busy && !model.memoryMaintenance.busy && !model.memoryLearning.busy && !model.lifeOrganisation.busy && !model.emailSummaries.busy
                 }
                 @MainActor func validateSuppliedRows()throws {
                     let currentProjects=Dictionary(uniqueKeysWithValues:assistant.projects.items(registration,includeTopics:true).filter{suppliedProjectIDs.contains($0.id.uuidString)}.map{($0.id.uuidString,ReviewInferenceGuard.fingerprint($0))})
@@ -443,7 +443,7 @@ struct ProactiveReviewContext {
                 let data = try JSONSerialization.data(withJSONObject:input,options:[.sortedKeys]), fingerprint = SHA256.hash(data:data).map { String(format:"%02x",$0) }.joined()
                 try Task.checkCancellation()
                 guard currentEmailInputs() else { throw ActionFailure.message("A supplied email or its assessment changed before discovery; no request sent.") }
-                guard BriefingRules.day(.now) == day,enabled, (!heartbeat || ((manual || model.heartbeat.enabled) && heartbeatRevision == model.heartbeat.controlsRevision)), scope == self.scope(model), waScope == model.whatsapp.scope(for:registration), whatsappWindow.map({$0 == ProactiveRules.whatsappWindow(model.whatsapp.messages,chats:whatsappChats,identity:waScope.linkedIdentity)}) ?? true, whatsapp.allSatisfy({ original in model.whatsapp.messages.contains { $0.id == original.itemID && $0.chat == original.chatID && SourceContextRules.revision($0) == original.revision } }), registration == model.chatGPT.activeID, memoryUseRevision == assistant.memory.useRevision && model.memoryDependenciesAvailable(memoryCapture.dependencies,use:memoryUse), !assistant.busy, !model.writing, !model.chatGPT.busy,!model.projectPlacement.busy, !model.briefings.busy, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.memoryLearning.busy, !model.emailSummaries.busy else { return }
+                guard BriefingRules.day(.now) == day,enabled, (!heartbeat || ((manual || model.heartbeat.enabled) && heartbeatRevision == model.heartbeat.controlsRevision)), scope == self.scope(model), waScope == model.whatsapp.scope(for:registration), whatsappWindow.map({$0 == ProactiveRules.whatsappWindow(model.whatsapp.messages,chats:whatsappChats,identity:waScope.linkedIdentity)}) ?? true, whatsapp.allSatisfy({ original in model.whatsapp.messages.contains { $0.id == original.itemID && $0.chat == original.chatID && SourceContextRules.revision($0) == original.revision } }), registration == model.chatGPT.activeID, memoryUseRevision == assistant.memory.useRevision && model.memoryDependenciesAvailable(memoryCapture.dependencies,use:memoryUse), !assistant.busy, !model.chatGPT.busy,!model.projectPlacement.busy, !model.briefings.busy, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.memoryLearning.busy, !model.emailSummaries.busy else { return }
                 guard manual || progress.fingerprint != fingerprint else { return }
                 if heartbeat { try heartbeatRequest!.claim() }
                 let previous = state
@@ -468,7 +468,7 @@ struct ProactiveReviewContext {
                 let result=try await infer()
                 try Task.checkCancellation()
                 if heartbeat {try heartbeatRequest!.validate()}
-                guard !assistant.busy,!model.writing,
+                guard !assistant.busy,
                       !model.chatGPT.busy,!model.projectPlacement.busy,!model.briefings.busy,!model.sourceLearning.busy,
                       !model.nativeSourceLearning.busy,!model.memoryMaintenance.busy,!model.memoryLearning.busy,
                       !model.lifeOrganisation.busy,!model.emailSummaries.busy else {throw CancellationError()}
