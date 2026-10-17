@@ -67,7 +67,8 @@ import EventKit
     func contextEvidenceChanges(memoryEnabled:Bool,memory:[MemoryDependency],resolutions:[BriefingResolutionReceipt],acknowledgements:String,model:DashboardModel,mailAccounts:Set<String>?=nil,whatsappReady:Bool=true)->Set<String> {
         var changed=Set<String>()
         if memoryEnabled != model.assistant.memory.enabled || !model.memoryDependenciesAvailable(memory,use:.brief) {changed.insert("memory")}
-        if acknowledgements != model.reviewAcknowledgementRevision {changed.insert("review")}
+        // Attention choices belong to the captured brief snapshot, not its
+        // execution ownership. Saved-current recall still checks their stamp.
         if !resolutions.isEmpty && !BriefingResolutionReceipt.available(resolutions,rows:model.emailSummaries.resolutionContext(model,mailAccounts:mailAccounts,use:.brief,whatsappReady:whatsappReady,limit:Int.max)) {changed.insert("mail")}
         return changed
     }
@@ -568,7 +569,7 @@ import EventKit
         guard model.assistant.memory.put(revised) else {throw SummaryFailure.invalid}
         checks["actual brief guard rejects changed supplied belief"] = changedEvidence() == ["memory"]
         guard model.assistant.memory.put(selected) else {throw SummaryFailure.invalid}
-        checks["actual brief guard still rejects changed human dismissal choices"] = service.contextEvidenceChanges(memoryEnabled:memoryEnabled,memory:dependency,resolutions:[],acknowledgements:"changed-human-choice",model:model) == ["review"]
+        checks["actual brief preparation survives independent Dismiss and Undo choices"] = service.contextEvidenceChanges(memoryEnabled:memoryEnabled,memory:dependency,resolutions:[],acknowledgements:"changed-human-choice",model:model).isEmpty
         var currentSnapshot=morning;currentSnapshot.memoryDependencies=dependency;currentSnapshot.emailResolutionReceipts=[];currentSnapshot.reviewAcknowledgementRevision=acknowledgement
         currentSnapshot.reviewAcknowledgementReceipts=[.init(id:"historical-display-no-longer-projected",revision:"historical-only")]
         checks["saved modern brief does not depend on historical dismissal display projections"] = service.freshnessNote(currentSnapshot,model:model) == nil
