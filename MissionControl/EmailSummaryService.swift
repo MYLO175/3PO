@@ -48,14 +48,14 @@ import SwiftData
     /// Capture feedback ownership and choices, not EventKit's collection revision.
     /// Calendar/Reminders notifications can arrive while an unchanged email is interpreted.
     func feedbackOwnershipGuard(_ source:ReviewFeedbackEmail,model:DashboardModel,isCurrent:@escaping ()->Bool)->()->Bool {
-        let registration=model.chatGPT.activeID,selected=model.chatGPT.selectedModel,generation=reviewFeedbackGeneration
-        let settings=model.proactive.sourceSettingsScope(model),storage=model.container.map(ObjectIdentifier.init)
+        let registration=model.chatGPT.activeID,generation=reviewFeedbackGeneration
+        let storage=model.container.map(ObjectIdentifier.init)
         return {
-            generation == self.reviewFeedbackGeneration && registration == model.chatGPT.activeID && selected == model.chatGPT.selectedModel && storage == model.container.map(ObjectIdentifier.init) && settings == model.proactive.sourceSettingsScope(model) && model.assistant.memory.canSaveReviewPreference && self.feedbackSourceCurrent(source.message,summary:source.summary,model:model) && isCurrent()
+            generation == self.reviewFeedbackGeneration && registration == model.chatGPT.activeID && storage == model.container.map(ObjectIdentifier.init) && self.enabled && model.assistant.memory.canSaveReviewPreference && self.feedbackSourceCurrent(source.message,summary:source.summary,model:model) && isCurrent()
         }
     }
     /// Explicitly submitted feedback; a heartbeat may own one deferred interpretation.
-    func interpretReviewFeedback(_ source:ReviewFeedbackEmail,words:String,about:String,model:DashboardModel,heartbeatRequest:HeartbeatChildRequest?=nil,isCurrent:@escaping ()->Bool)async throws->ReviewFeedbackInterpretation {
+    func interpretReviewFeedback(_ source:ReviewFeedbackEmail,words:String,about:String,model:DashboardModel,inferenceModel:String?=nil,heartbeatRequest:HeartbeatChildRequest?=nil,isCurrent:@escaping ()->Bool)async throws->ReviewFeedbackInterpretation {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {
             guard ProcessInfo.processInfo.arguments.contains("--feedback-preview") else {throw ActionFailure.message("Fictional preview uses no Mail reads or inference. Nothing was saved.")}
@@ -70,12 +70,12 @@ import SwiftData
         guard !busy,!model.chatGPT.busy,!model.assistant.busy,!model.writing,(!model.heartbeat.busy || (heartbeatRequest?.runID == model.heartbeat.ownedRunID && feedback.ownedHeartbeatRunID == heartbeatRequest?.runID)),!model.proactive.busy,!model.briefings.busy,!model.memoryLearning.busy,!model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy,!model.projectPlacement.busy,!model.lifeOrganisation.busy else {throw ActionFailure.message("Wait for the current PA operation to finish, then save your feedback.")}
         guard model.heartbeat.deviceAvailable,model.chatGPT.inferenceVerified,!model.chatGPT.usagePaused,model.assistant.memory.canSaveReviewPreference else {throw ActionFailure.message("PA interpretation is unavailable right now. Your feedback is retained; reconnect or save only your words.")}
         try heartbeatRequest?.validate()
-        let selected=model.chatGPT.selectedModel,ownershipCurrent=feedbackOwnershipGuard(source,model:model,isCurrent:isCurrent)
+        let selected=inferenceModel ?? model.chatGPT.selectedModel,ownershipCurrent=feedbackOwnershipGuard(source,model:model,isCurrent:isCurrent)
         busy=true
         defer {busy=false;reviewFeedbackTask=nil}
         let operation=Task {
             try await ReviewFeedbackRules.prepare(source,words:words,about:about,model:selected,isCurrent:{
-                !Task.isCancelled && ownershipCurrent() && model.heartbeat.deviceAvailable && !model.assistant.busy && !model.writing && model.chatGPT.inferenceVerified && !model.chatGPT.usagePaused
+                !Task.isCancelled && ownershipCurrent() && model.heartbeat.deviceAvailable && !model.assistant.busy && model.chatGPT.inferenceVerified && !model.chatGPT.usagePaused
             },readBody:{try heartbeatRequest?.validate();return try await model.mail.body(accountID:source.message.accountID,messageID:source.message.messageID,expectedInternetMessageID:source.message.internetMessageID,mailboxName:source.message.mailboxName)},infer:{input in
                 try heartbeatRequest?.validate()
                 try heartbeatRequest?.claim()
@@ -357,14 +357,14 @@ import SwiftData
     func prepareReply(_ message:MailMessage,summary:EmailSummary,model:DashboardModel) {
         guard !busy,!model.assistant.busy,!model.chatGPT.busy,!model.projectPlacement.busy,!model.writing,!model.proactive.busy,!model.briefings.busy,!model.memoryLearning.busy,!model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy,
               model.assistant.contextEnabled,model.chatGPT.inferenceVerified,!model.chatGPT.usagePaused,summary.registration == model.chatGPT.activeID,EmailReplyDraftRules.canReply(summary,message:message),summary.replyDraft == nil,!model.assistant.excludedAccounts.contains(message.accountID),current(message,model:model)?.created == summary.created else { return }
-        let registration=model.chatGPT.activeID,selectedModel=model.chatGPT.selectedModel,memoryControls=model.assistant.memory.controlsRevision
+        let registration=model.chatGPT.activeID,selectedModel=model.chatGPT.selectedModel,memoryControls=model.assistant.memory.useRevision
         let storage=model.container.map(ObjectIdentifier.init)
         busy=true;error=nil
         task=Task {
             defer { busy=false }
             var suppliedMemory:[[String:String]]=[]
             @MainActor func valid()->Bool {
-                registration == model.chatGPT.activeID && !model.assistant.busy && !model.writing && selectedModel == model.chatGPT.selectedModel && memoryControls == model.assistant.memory.controlsRevision && storage == model.container.map(ObjectIdentifier.init) && humanMemoryContextAvailable(suppliedMemory,model:model,includeTopics:true) && feedbackSourceCurrent(message,summary:summary,model:model) && current(message,model:model)?.created == summary.created && current(message,model:model)?.replyDraft == nil && current(message,model:model)?.dismissed != true && !(model.mailData.messages.first(where:{$0.id == message.id}) ?? message).replied
+                registration == model.chatGPT.activeID && !model.assistant.busy && memoryControls == model.assistant.memory.useRevision && storage == model.container.map(ObjectIdentifier.init) && humanMemoryContextAvailable(suppliedMemory,model:model,includeTopics:true) && feedbackSourceCurrent(message,summary:summary,model:model) && current(message,model:model)?.created == summary.created && current(message,model:model)?.replyDraft == nil && current(message,model:model)?.dismissed != true && !(model.mailData.messages.first(where:{$0.id == message.id}) ?? message).replied
             }
             do {
                 let body=try await model.mail.body(accountID:message.accountID,messageID:message.messageID,expectedInternetMessageID:message.internetMessageID,mailboxName:message.mailboxName)
@@ -419,14 +419,13 @@ import SwiftData
         if resume { paused = false; error = nil }
         guard model.assistant.memory.reviewPreferenceMigrationReadable, (!model.heartbeat.busy || heartbeat), enabled, !paused, !model.chatGPT.usagePaused, !busy, !model.chatGPT.busy,!model.projectPlacement.busy, !model.assistant.busy, !model.briefings.busy, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing, model.chatGPT.inferenceVerified else { return }
         let registration = model.chatGPT.activeID, selectedModel = modelID.isEmpty ? model.chatGPT.selectedModel : modelID, selectedEffort = effort
-        let requestedModel = modelID
-        let controls=model.heartbeat.controlsRevision,day=BriefingRules.day(.now),memoryControls=model.assistant.memory.controlsRevision
+        let controls=model.heartbeat.controlsRevision,day=BriefingRules.day(.now),memoryControls=model.assistant.memory.useRevision
         let storage=model.container.map(ObjectIdentifier.init)
         @MainActor func validateWork() throws {
             try Task.checkCancellation()
             if heartbeat {try heartbeatRequest!.validate()}
-            guard registration == model.chatGPT.activeID,storage == model.container.map(ObjectIdentifier.init),memoryControls == model.assistant.memory.controlsRevision else {throw ActionFailure.message("Email account, storage or memory controls changed. Completed assessments are saved.")}
-            guard !model.assistant.busy,!model.chatGPT.busy,!model.projectPlacement.busy,!model.writing,
+            guard registration == model.chatGPT.activeID,storage == model.container.map(ObjectIdentifier.init),memoryControls == model.assistant.memory.useRevision else {throw ActionFailure.message("Email account, storage or memory controls changed. Completed assessments are saved.")}
+            guard !model.assistant.busy,!model.chatGPT.busy,!model.projectPlacement.busy,
                   !model.briefings.busy,!model.proactive.busy,!model.sourceLearning.busy,!model.nativeSourceLearning.busy,
                   !model.memoryMaintenance.busy,!model.memoryLearning.busy,!model.lifeOrganisation.busy else {throw CancellationError()}
         }
@@ -443,7 +442,7 @@ import SwiftData
             var phase = "Preparing summary batch"
             do {
                 try validateWork()
-                guard registration == model.chatGPT.activeID, !model.assistant.busy, !model.chatGPT.busy,!model.projectPlacement.busy, !model.writing, requestedModel == modelID, selectedEffort == effort, selectedModel == (modelID.isEmpty ? model.chatGPT.selectedModel : modelID) else { return }
+                guard registration == model.chatGPT.activeID, !model.assistant.busy, !model.chatGPT.busy,!model.projectPlacement.busy else { return }
                 let messages = monitored(model).filter(permitted)
                 let unknown = Array(messages.filter { message in current(message,model:model) == nil && !decisions.contains { $0.id == message.id && $0.registration == registration && $0.fingerprint == EmailSummary.fingerprint(message) && ($0.reviewPreferenceRevision == reviewPreferenceStamp(message,model:model) || message.received < Date.now.addingTimeInterval(-30*86400)) } }.prefix(20))
                 if !unknown.isEmpty {
@@ -456,7 +455,7 @@ import SwiftData
                     let output = try await model.chatGPT.streamResponse(input:[["role":"user","content":input]],instructions:MailMonitoringRules.headerInstructions+" "+EmailRelevanceRules.instructions,model:selectedModel,effort:selectedEffort,purpose:.emailReview) { _ in }
                     try Task.checkCancellation()
                     try validateWork()
-                    guard requestedModel == modelID, selectedEffort == effort, selectedModel == (modelID.isEmpty ? model.chatGPT.selectedModel : modelID), enabled, !paused, registration == model.chatGPT.activeID, unknown.allSatisfy(permitted) else { return }
+                    guard enabled, !paused, registration == model.chatGPT.activeID, unknown.allSatisfy(permitted) else { return }
                     guard contexts.values.allSatisfy({relevanceContextAvailable($0,model:model,header:true)}),aliases.allSatisfy({preferenceStamps[$0.key] == (reviewPreferenceStamp($0.value,model:model) ?? "")}) else {return}
                     let selected = try MailMonitoringRules.selections(output,allowed:Set(aliases.keys))
                     let previous = decisions
@@ -483,7 +482,7 @@ import SwiftData
                     try Task.checkCancellation()
                     guard permitted(message) else {continue}
                     try validateWork()
-                    guard requestedModel == modelID, selectedEffort == effort, selectedModel == (modelID.isEmpty ? model.chatGPT.selectedModel : modelID), enabled, !paused, registration == model.chatGPT.activeID, !model.assistant.excludedAccounts.contains(message.accountID), !model.chatGPT.busy,!model.projectPlacement.busy, !model.assistant.busy, !model.briefings.busy, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing else { return }
+                    guard enabled, !paused, registration == model.chatGPT.activeID, !model.assistant.excludedAccounts.contains(message.accountID), !model.chatGPT.busy,!model.projectPlacement.busy, !model.assistant.busy, !model.briefings.busy, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.memoryLearning.busy, !model.proactive.busy else { return }
                     phase = "Reading Mail body"
                     let body: String
                     do { body = try await model.mail.body(accountID:message.accountID,messageID:message.messageID,expectedInternetMessageID:message.internetMessageID,mailboxName:message.mailboxName) }
@@ -498,7 +497,7 @@ import SwiftData
                     }
                     try Task.checkCancellation()
                     guard permitted(message) else {continue}
-                    guard requestedModel == modelID, selectedEffort == effort, selectedModel == (modelID.isEmpty ? model.chatGPT.selectedModel : modelID), enabled, !paused, !model.assistant.excludedAccounts.contains(message.accountID), registration == model.chatGPT.activeID, !model.assistant.busy, !model.chatGPT.busy,!model.projectPlacement.busy, !model.briefings.busy, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.memoryLearning.busy, !model.proactive.busy, !model.writing else { return }
+                    guard enabled, !paused, !model.assistant.excludedAccounts.contains(message.accountID), registration == model.chatGPT.activeID, !model.assistant.busy, !model.chatGPT.busy,!model.projectPlacement.busy, !model.briefings.busy, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.memoryLearning.busy, !model.proactive.busy else { return }
                     let bodyHash = EmailSummary.fingerprintBody(body)
                     try observeBodyVersion(message,hash:bodyHash,model:model)
                     if var saved = current(message, model: model), saved.bodyFingerprint == bodyHash, saved.worthReading != nil, saved.needsReply != nil,!actionEvidenceNeedsRecheck(saved,message:message,model:model),!preferenceNeedsRecheck(saved,message:message,model:model),!(saved.completionEvidenceChecked != true && mightConfirmOutstanding(message,model:model)) {
@@ -511,7 +510,7 @@ import SwiftData
                             let text=try await model.chatGPT.streamResponse(input:[["role":"user","content":input]],instructions:EmailReplyDraftRules.instructions,model:selectedModel,effort:selectedEffort,purpose:.replyDraft){_ in}
                             try Task.checkCancellation()
                             try validateWork()
-                            guard permitted(message),registration == model.chatGPT.activeID,humanMemoryContextAvailable(memory,model:model),enabled,!paused,requestedModel == modelID,selectedEffort == effort,selectedModel == (modelID.isEmpty ? model.chatGPT.selectedModel : modelID),let unchanged=current(message,model:model),EmailNativeEvidence.hash(unchanged) == EmailNativeEvidence.hash(saved) else {return}
+                            guard permitted(message),registration == model.chatGPT.activeID,humanMemoryContextAvailable(memory,model:model),enabled,!paused,let unchanged=current(message,model:model),EmailNativeEvidence.hash(unchanged) == EmailNativeEvidence.hash(saved) else {return}
                             saved.replyDraft=try EmailReplyDraftRules.decode(text);saved.replyDraftCheckedBody=bodyHash
                         }
                         // Truncated or uncertain drafts are checked once per body, never retried every interval.
@@ -536,7 +535,7 @@ import SwiftData
                     try Task.checkCancellation()
                     try validateWork()
                     guard permitted(message) else {return}
-                    guard requestedModel == modelID, selectedEffort == effort, selectedModel == (modelID.isEmpty ? model.chatGPT.selectedModel : modelID), enabled, !paused, registration == model.chatGPT.activeID, !model.assistant.excludedAccounts.contains(message.accountID) else { return }
+                    guard enabled, !paused, registration == model.chatGPT.activeID, !model.assistant.excludedAccounts.contains(message.accountID) else { return }
                     guard relevanceContextAvailable(relevanceContext,model:model),preferenceStamp == reviewPreferenceStamp(message,model:model,evidence:excerpt) else { return }
                     phase = "Validating completed summary"
                     let decoded: EmailSummary

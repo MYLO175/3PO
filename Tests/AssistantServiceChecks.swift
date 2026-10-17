@@ -24,13 +24,14 @@ private final class ObservationCounter:@unchecked Sendable {
     private(set) var inputs: [[[String: Any]]] = []
     private(set) var instructions: [String] = []
     private(set) var purposes: [AIRequestPurpose] = []
+    private(set) var models:[String] = []
     var waiting: Bool { held != nil }
     func release() { let value = held; held = nil; value?.resume() }
     func streamResponse(input: [[String: String]], instructions: String, model: String?, effort: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> String {
         preconditionFailure("These assistant fixtures must use completed tool transport.")
     }
     func toolResponse(input: [[String: Any]], instructions: String, tools: [[String: Any]], model: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> PAResponse {
-        inputs.append(input); self.instructions.append(instructions); purposes.append(purpose)
+        inputs.append(input); self.instructions.append(instructions); purposes.append(purpose);models.append(model)
         for text in deltas {onDelta(text);afterDelta?()}
         if holdNext {
             holdNext = false
@@ -55,6 +56,8 @@ private final class ObservationCounter:@unchecked Sendable {
     var itemDetails: [String: NativeEditDetails] = [:]
     var consultedMemory: Set<UUID> = []
     var consultedWorkspace: Set<UUID> = []
+    var suppliedWeatherScope:String?
+    var suppliedWhatsAppScope:WhatsAppSourceScope?
     var receipts: [String] = []
     private(set) var actionCountReads=0
     var confirmedActionCount:Int {actionCountReads += 1;return receipts.count}
@@ -316,7 +319,7 @@ private final class ObservationCounter:@unchecked Sendable {
         check(setup.error?.contains("memory setup") == true && setupContext.sessions.last?.calls.isEmpty == true, "Setup restrictions must stop unsupported execution in the actual service.")
         check(setup.learningTurns().count == 1, "Human setup answers remain available while controls remain excluded.")
 
-        for change in ["Stop", "account", "model", "source", "memory", "memory-reset", "learning-reset"] {
+        for change in ["Stop", "account", "source", "memory", "memory-reset"] {
             let p = FictionalInference(), c = FictionalContext(), store = try open("ownership-" + change)
             let value = service(p, store)
             p.holdNext = true; p.replies = [tools(["read_memory"])]
@@ -325,10 +328,8 @@ private final class ObservationCounter:@unchecked Sendable {
             switch change {
             case "Stop": value.cancel()
             case "account": p.activeID = "another-fictional-owner"
-            case "model": p.selectedModel = "another-fictional-model"
             case "source": c.state.weatherScope = "changed-fictional-weather"
             case "memory-reset":value.memory.enabled.toggle();value.memory.enabled.toggle()
-            case "learning-reset":value.memory.learningEnabled.toggle();value.memory.learningEnabled.toggle()
             default: value.memory.enabled = false
             }
             p.release()
@@ -337,6 +338,75 @@ private final class ObservationCounter:@unchecked Sendable {
             check(c.sessions.first?.calls.isEmpty == true && value.error != nil, "\(change) must reject late tools and retain a visible stop/failure.")
             let saved = try ConversationRepository(container: try open("ownership-" + change)).load()
             check(saved.first?.turns.contains(where: { $0.role == "user" && $0.content == "Fictional owned request" }) == true, "\(change) must retain the prepared human request after reopen.")
+        }
+
+        // Changing future defaults is not Stop. Hold real service inference,
+        // finish one verified operation, then prove the next request uses them.
+        for change in ["model","preferences","name","focus","learning","learning-cycle","weather-unused","source-grant"] {
+            settings.set(true,forKey:"paMemoryLearningEnabled")
+            let p=FictionalInference(),c=FictionalContext(),store=try open("captured-default-"+change),value=service(p,store)
+            let originalModel=p.selectedModel,originalPreferences=value.preferences,originalName=value.displayName
+            if change == "weather-unused" {c.state.weatherSupplied=false}
+            if change == "source-grant" {value.excludedCalendars=["fictional-excluded"];value.excludedLists=["fictional-excluded"];value.excludedAccounts=["fictional-excluded"]}
+            var writes=0
+            c.configure={session,_ in session.executeBody={call,session in
+                check(call.name == "change_reminder","Captured-default fixture executes only the requested operation")
+                writes += 1;session.receipts.append("Created fictional requested reminder")
+                return "{\"verified\":true}"
+            }}
+            p.holdNext=true;p.replies=[tools(["change_reminder"]),final("Requested reminder created")]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Add the requested reminder",focusAreas:[.studies]),"\(change) captured-default fixture starts")
+            await until{p.waiting}
+            switch change {
+            case "model":p.selectedModel="next-request-model"
+            case "preferences":value.preferences="Next request should use different writing instructions."
+            case "name":value.displayName="Next request name"
+            case "focus":value.standaloneFocusSelections[p.activeID]=[LifeArea.career.rawValue]
+            case "learning":value.memory.learningEnabled=false
+            case "weather-unused":c.state.weatherScope="new-unsupplied-weather"
+            case "source-grant":value.excludedCalendars=[];value.excludedLists=[];value.excludedAccounts=[]
+            default:value.memory.learningEnabled=false;value.memory.learningEnabled=true
+            }
+            p.release();await until{!value.busy}
+            let turn=value.feed!.turns.last!
+            check(value.error == nil && turn.actionResult?.phase == "completed" && writes == 1,"\(change) must finish the captured instruction exactly once")
+            check(p.models == [originalModel,originalModel] && c.requests.first?.inferenceModel == originalModel,"\(change) cannot retarget later transport rounds or tool intent checks")
+            check(p.instructions.count == 2 && p.instructions[0] == p.instructions[1] && p.instructions[0].contains(originalPreferences) && p.instructions[0].contains(originalName),"\(change) keeps the original instructions throughout its tool loop")
+            check(turn.focusAreas == [.studies] && turn.contextCapture?.model == originalModel,"\(change) retains exact captured Focus and model provenance")
+            let reopened=service(p,store)
+            check(reopened.feed?.turns.last?.actionResult == turn.actionResult,"\(change) completed outcome survives reopening")
+            p.replies=[final("Next request finished")]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"A new independent request",focusAreas:[.career]),"\(change) next request starts normally")
+            await until{!value.busy}
+            check(p.models.last == p.selectedModel && p.instructions.last?.contains(value.preferences) == true && p.instructions.last?.contains(value.displayName) == true && value.feed?.turns.last?.focusAreas == [.career],"\(change) future choices apply to the next request")
+        }
+
+        for revoked in [false,true] {
+            let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("weather-tool-"+String(revoked)))
+            c.state.weatherSupplied=false
+            c.configure={session,_ in session.executeBody={call,session in
+                check(call.name == "read_weather","Weather dependency is issued only by the weather read")
+                session.suppliedWeatherScope=c.state.weatherScope
+                if revoked {c.state.weatherScope="withdrawn-after-read"}
+                return "{\"days\":[{\"conditions\":\"Fictional\"}]}"
+            }}
+            p.holdNext=true;p.replies=[tools(["read_weather"]),final("The fictional forecast is available")]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Read the current forecast"),"Weather tool fixture starts")
+            await until{p.waiting};c.state.weatherScope="permission-granted-before-first-read";p.release();await until{!value.busy}
+            check(revoked ? value.error != nil && p.inputs.count == 1 : value.error == nil && value.feed?.turns.last?.actionResult?.phase == "completed","Fresh weather access may be granted, but supplied weather permission cannot be withdrawn")
+        }
+
+        for revoked in [false,true] {
+            let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("whatsapp-tool-"+String(revoked)))
+            c.configure={session,_ in session.executeBody={_,session in
+                session.suppliedWhatsAppScope=c.state.whatsappScope
+                if revoked {c.state.whatsappScope = .init(registration:p.activeID,linkedIdentity:"withdrawn-after-read",revision:UUID())}
+                return "{\"messages\":[{\"text\":\"Fictional\"}]}"
+            }}
+            p.holdNext=true;p.replies=[tools(["search_whatsapp"]),final("Requested fictional message found")]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Read the requested WhatsApp message"),"WhatsApp tool fixture starts")
+            await until{p.waiting};c.state.whatsappScope = .init(registration:p.activeID,linkedIdentity:"current-device-before-first-read",revision:UUID());p.release();await until{!value.busy}
+            check(revoked ? value.error != nil && p.inputs.count == 1 : value.error == nil && value.feed?.turns.last?.actionResult?.phase == "completed","Fresh WhatsApp read captures its own permission, which cannot be withdrawn after supply")
         }
 
         // Dismiss/Undo is attention metadata, not revocation of an unrelated
@@ -422,7 +492,7 @@ private final class ObservationCounter:@unchecked Sendable {
             default:var changed=item;changed.notes="The prototype scope changed";_=try value.projects.save(changed,expected:item.revision)
             }
             p.release();await until{!value.busy}
-            let rejected=["resolution-changed","resolution-lost","whatsapp-account","selected-memory","selected-project"].contains(mode)
+            let rejected=["resolution-changed","resolution-lost","selected-memory","selected-project"].contains(mode)
             check((value.error != nil) == rejected,"\(mode) distinguishes supplied-context changes from unrelated collection")
             check(rejected ? c.sessions[0].calls.isEmpty : c.sessions[0].calls == ["read_memory"],"\(mode) validates before executing any late tool")
             if rejected {check(value.error?.contains("because") == true,"Real invalidation names the changed context rather than a generic configuration failure")}
@@ -616,7 +686,7 @@ private final class ObservationCounter:@unchecked Sendable {
                 check(saved.first?.turns.last?.content == "Fictional creation completed","Recovered creation reply must survive reopening")
             }
         }
-        for interruption in ["Stop","account","model","permission","filters","context"] {
+        for interruption in ["Stop","account","permission","filters","context"] {
             let p=FictionalInference(),c=FictionalContext()
             settings.set(true,forKey:"assistantContextEnabled")
             let value=service(p,try open("preparation-interruption-"+interruption))
@@ -627,7 +697,6 @@ private final class ObservationCounter:@unchecked Sendable {
                     switch interruption {
                     case "Stop":value.cancel()
                     case "account":p.activeID="changed-owner"
-                    case "model":p.selectedModel="changed-model"
                     case "permission":value.contextEnabled=false
                     case "filters":value.excludedCalendars.insert(destination.id)
                     default:c.state.weatherScope="changed-context"

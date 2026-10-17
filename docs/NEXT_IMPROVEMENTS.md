@@ -345,3 +345,7 @@ Next reliability acceptance is sustained real Mail/WhatsApp/native traffic durin
 ## 17 October — independent interaction regression
 
 A retained whole-account Dismiss/Undo gate caused another foreground failure. Held reminder creation and Review conversation checks now cover that real interaction, including streaming and a dismissal after save. Keep testing ordinary UI changes at actual inference/save boundaries rather than treating every changed human-facing projection as job ownership. Exact target/access/Stop conflicts remain necessary. No new product feature is introduced.
+
+### 17 October reliability follow-through: captured jobs
+
+Implemented and installed the [app-wide AI continuity audit](JOB_CONTINUITY_AUDIT_2026-10-17.md): future defaults/drafts/scheduling and independent edits no longer revoke the repaired owned jobs. Exact permissions/evidence/operation conflicts remain. Bounded held-request tests, signed consumers and native fixtures are separately recorded in STATUS/VALIDATION; sustained real source/provider traffic and OS sleep/wake remain acceptance work, not a new feature request.

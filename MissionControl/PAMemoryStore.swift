@@ -9,7 +9,9 @@ import SwiftData
     private(set) var revision = UUID()
     /// Human controls have their own generation; ordinary fact saves do not revoke an owned job.
     private(set) var controlsRevision = UUID()
-    var enabled = true { didSet { if !restoringSettings && enabled != oldValue { settings.set(enabled,forKey:"paMemoryEnabled"); revision = UUID(); controlsRevision = UUID() } } }
+    /// Reading saved memory is independent of permission to learn new facts.
+    private(set) var useRevision = UUID()
+    var enabled = true { didSet { if !restoringSettings && enabled != oldValue { settings.set(enabled,forKey:"paMemoryEnabled"); revision = UUID(); controlsRevision = UUID();useRevision = UUID() } } }
     var learningEnabled = true { didSet { if !restoringSettings && learningEnabled != oldValue { settings.set(learningEnabled,forKey:"paMemoryLearningEnabled");revision = UUID();controlsRevision = UUID() } } }
     private let settings: UserDefaults
     @ObservationIgnored private var restoringSettings = true

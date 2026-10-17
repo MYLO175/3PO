@@ -14,6 +14,7 @@ import SwiftData
     var briefID:String?
     var prepareCount=0
     var stages:[String]=[]
+    var stageModels:[String:String]=[:]
     var claims=0
     var verifiedPersistedClaims=0
     var cancelCount=0
@@ -37,6 +38,7 @@ import SwiftData
     func release() {let continuation=held;held=nil;continuation?.resume()}
     func stage(_ name:String,_ request:HeartbeatChildRequest) async throws->HeartbeatChildResult {
         stages.append(name);capturedRequest=request
+        let capturedModel=environment.model
         for _ in 0..<(name == "brief" ? briefClaims : 1) {
             try request.claim()
             claims += 1
@@ -48,6 +50,7 @@ import SwiftData
         // before its polling loop cancels those tasks, so validate before saving.
         try request.validate()
         if failureStage == name {return .init(failure:"Fictional \(name) interruption")}
+        stageModels[name]=capturedModel
         if name == "email" {activity.emailDrafts += 1;activity.handled += 1}
         if name == "suggestions" {activity.preparedItems += 1;activity.whatsappDrafts += 1}
         if name == "brief" {briefID=fakeBriefID ? "older-fictional-run" : request.runID;activity.questions += 1}
@@ -240,12 +243,16 @@ import SwiftData
         lostService.check(runtime:lostNative.runtime());await until{!lostService.busy}
         check(lostService.state.accounts[owner]?.pending == true && lostService.state.accounts[owner]?.reviews?.last?.steps?.first(where:{$0.id == "suggestions"})?.status == "waiting","A child's late native read failure cannot be labelled a completed comparison")
 
-        for change in ["notifications","unchanged controls"] {
+        for change in ["notifications","unchanged controls","interval","model","draft editing","source scope"] {
             let stable=FictionalHeartbeatWorld(),stableStore=try store(),stableService=make(stable,stableStore)
             stable.holdStage="email"
             stableService.check(runtime:stable.runtime());await until{stable.waiting}
             let revision=stableService.controlsRevision,request=stable.capturedRequest!
             if change == "notifications" {stableService.notificationsEnabled.toggle()}
+            else if change == "interval" {stableService.intervalMinutes=30}
+            else if change == "model" {stable.environment.model="new-fictional-model"}
+            else if change == "draft editing" {stableService.noteDraftEditing()}
+            else if change == "source scope" {stable.environment.scope="changed-independent-sources"}
             else {
                 let enabled=stableService.enabled,minutes=stableService.intervalMinutes,limit=stableService.dailyCallLimit
                 stableService.enabled=enabled;stableService.intervalMinutes=minutes;stableService.dailyCallLimit=limit
@@ -254,17 +261,37 @@ import SwiftData
             check(({do{try request.validate();return true}catch{return false}})(),"\(change) preserves held child ownership")
             stable.release();await until{!stableService.busy}
             check(stable.stages == ["email","suggestions","brief"] && stableService.state.accounts[owner]?.assessed != nil && stableService.state.accounts[owner]?.calls == 3,"\(change) completes the same owned heartbeat")
+            check(stable.cancelCount == 0 && stableService.state.accounts[owner]?.reviews?.last?.outcome() == "Completed","\(change) retains a completed run without cancelling its children")
+            if change == "interval" {
+                let saved=stableService.state.accounts[owner]!
+                check(PAHeartbeatRules.nextReview(saved,now:stable.now,minutes:stableService.intervalMinutes) == stable.now.addingTimeInterval(1800),"The new interval applies to the next due time")
+            }
+            if change == "model" {check(stable.stageModels["email"] == "fictional-model" && stable.stageModels["suggestions"] == "new-fictional-model" && stable.stageModels["brief"] == "new-fictional-model","Each started child keeps its actual model; later jobs capture the newer choice")}
+            if change == "draft editing" {
+                stable.holdStage=nil;stable.now=stable.now.addingTimeInterval(3600);stableService.noteDraftEditing()
+                let started=stable.prepareCount
+                stableService.check(runtime:stable.runtime());await Task.yield()
+                check(stable.prepareCount == started && !stableService.busy,"Actual draft editing still defers a new due automatic heartbeat")
+            }
         }
-        for change in ["owner","model","scope","controls","midnight","foreground","context","usage","typing","stop"] {
+        let isolated=FictionalHeartbeatWorld(),isolatedStore=try store(),isolatedService=make(isolated,isolatedStore)
+        isolated.holdStage="email"
+        isolatedService.check(runtime:isolated.runtime());await until{isolated.waiting}
+        isolated.environment.scope="a-source-used-only-by-the-child-changed";isolated.failureStage="email"
+        isolated.release();await until{!isolatedService.busy}
+        let isolatedRun=isolatedService.state.accounts[owner]?.reviews?.last
+        check(isolated.stages == ["email","suggestions","brief"] && isolatedService.state.accounts[owner]?.calls == 3,"A child reports its own selected-source conflict without stopping unaffected sibling stages")
+        check(isolatedRun?.steps?.first{$0.id == "email"}?.status == "failed" && isolatedRun?.outcome() == "Partly completed" && isolatedRun?.briefUpdated == true,"The same run retains the source-specific failure and completed brief honestly")
+        check(isolatedService.state.accounts[owner]?.pending == true && isolatedService.state.accounts[owner]?.retryReason == "failure" && isolated.cancelCount == 0,"Source failure remains pending for a fresh scheduled run without replay or global cancellation")
+        for change in ["owner","controls","enabled off","midnight","foreground","context","usage","typing","stop"] {
             let late=FictionalHeartbeatWorld(),lateStore=try store(),lateService=make(late,lateStore)
             late.holdStage="email"
             lateService.check(runtime:late.runtime());await until{late.waiting}
             let request=late.capturedRequest!
             switch change {
             case "owner":late.environment.registration="another-fictional-owner"
-            case "model":late.environment.model="different-model"
-            case "scope":late.environment.scope="changed-permissions"
-            case "controls":lateService.intervalMinutes=lateService.intervalMinutes == 30 ? 60 : 30
+            case "controls":lateService.dailyCallLimit=lateService.dailyCallLimit == 8 ? 16 : 8
+            case "enabled off":lateService.enabled=false
             case "midnight":late.now=late.now.addingTimeInterval(86400)
             case "foreground":late.environment.foregroundBusy=true
             case "context":late.environment.contextEnabled=false
@@ -278,6 +305,7 @@ import SwiftData
             check(try late.repository.read("fictionalChildReceipt") == nil,"Late \(change) cannot save child output")
             check(late.stages == ["email"] && lateService.state.accounts[owner]?.assessed == nil && lateService.state.accounts[owner]?.calls == 1,"Late \(change) cannot complete or continue a captured run")
             check(lateService.state.accounts["another-fictional-owner"] == nil,"Captured work is never retargeted")
+            if change == "enabled off" {lateService.enabled=true}
         }
         for stage in ["suggestions","brief"] {
             let interrupted=FictionalHeartbeatWorld(),interruptedStore=try store(),interruptedService=make(interrupted,interruptedStore)

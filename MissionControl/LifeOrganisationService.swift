@@ -5,7 +5,7 @@ import SwiftData
 /// Classification of already-saved human facts only. No source scan, fact rewrite or Apple operation.
 @MainActor @Observable final class LifeOrganisationService {
     var automatic = true {
-        didSet { if !restoringSettings,automatic != oldValue { settings.set(automatic,forKey:"paNotebookOrganisationEnabled"); if !automatic { cancel() } } }
+        didSet { if !restoringSettings,automatic != oldValue { settings.set(automatic,forKey:"paNotebookOrganisationEnabled"); if !automatic,automaticJob { cancel() } } }
     }
     private let settings: UserDefaults
     @ObservationIgnored private var restoringSettings = true
@@ -14,6 +14,7 @@ import SwiftData
     private(set) var error:String?
     private(set) var status=""
     private var task:Task<Void,Never>?
+    private var automaticJob=false
     func cancelAndWait(heartbeatRunID:String) async {guard ownedHeartbeatRunID == heartbeatRunID else {return};let active=task;active?.cancel();await active?.value}
     private var state=LifeOrganisationState()
     private let container:ModelContainer?
@@ -45,7 +46,7 @@ import SwiftData
               !registration.isEmpty else { return }
         let accountScopes:[UUID?]=[nil]+assistant.topics.sorted{$0.id.uuidString < $1.id.uuidString}.map{Optional($0.id)}
         let requestedScopes:[UUID?]=manual && topic != nil ? [nil,topic] : accountScopes
-        let selectedModel=model.inference.selectedModel,capturedTopics=Set(assistant.topics.map(\.id)),enabledAtStart=automatic
+        let selectedModel=model.inference.selectedModel,enabledAtStart=automatic
         if manual {
             let old=state
             for scope in requestedScopes {
@@ -63,15 +64,15 @@ import SwiftData
         guard LifeOrganisationBatch.allowed(state.accounts[registration] ?? .init(),now:model.now(),manual:manual) else { return }
         guard requestedScopes.contains(where:{ !batch(memory,registration:registration,topic:$0,now:model.now()).isEmpty }) else { return }
         guard model.learningBudget.claim(registration,manual:manual,now:model.now(),lane:.organisation) else { return }
-        ownedHeartbeatRunID=model.ownedHeartbeatRunID;busy=true;error=nil
+        ownedHeartbeatRunID=model.ownedHeartbeatRunID;automaticJob = !manual;busy=true;error=nil
         task=Task {
-            defer { ownedHeartbeatRunID=nil;busy=false }
+            defer { ownedHeartbeatRunID=nil;automaticJob=false;busy=false }
             do {
                 var total=0,passes=0
                 for _ in 0..<(manual ? 4 : 1) {
                     try model.validateOwnership()
-                    guard memory.enabled,memory.learningEnabled,registration == model.inference.activeID,selectedModel == model.inference.selectedModel,
-                          (manual || automatic == enabledAtStart),Set(assistant.topics.map(\.id)) == capturedTopics,!assistant.busy,!model.writing,(manual || !assistant.hasDraft) else { throw MemoryLearningFailure.changed }
+                    guard memory.enabled,memory.learningEnabled,registration == model.inference.activeID,
+                          (manual || automatic == enabledAtStart),!assistant.busy else { throw MemoryLearningFailure.changed }
                     guard let scope=requestedScopes.first(where:{ !batch(memory,registration:registration,topic:$0,now:model.now()).isEmpty }) else { break }
                     let records=batch(memory,registration:registration,topic:scope,now:model.now()),memoryControls=memory.controlsRevision
                     let issued=Dictionary(uniqueKeysWithValues:records.map{($0.id,$0)})
@@ -84,8 +85,8 @@ import SwiftData
                     try model.claimInference()
                     let output=try await model.inference.streamResponse(input:[["role":"user","content":LifeOrganisationRules.input(records)]],instructions:LifeOrganisationRules.instructions,model:selectedModel,purpose:.organisation) { _ in }
                     try model.validateOwnership()
-                    guard memoryControls == memory.controlsRevision,memory.enabled,memory.learningEnabled,registration == model.inference.activeID,selectedModel == model.inference.selectedModel,
-                          (manual || automatic == enabledAtStart),Set(assistant.topics.map(\.id)) == capturedTopics,!assistant.busy,!model.writing,(manual || !assistant.hasDraft),
+                    guard memoryControls == memory.controlsRevision,memory.enabled,memory.learningEnabled,registration == model.inference.activeID,
+                          (manual || automatic == enabledAtStart),!assistant.busy,
                           issued.allSatisfy({id,record in memory.records.contains{$0.id == id && $0 == record && $0.source == nil && $0.organisation?.manual != true && MemoryRules.usable($0,registration:registration,now:model.now())}}) else { throw MemoryLearningFailure.changed }
                     guard let entries=LifeOrganisationRules.decode(output,records:records) else { throw MemoryLearningFailure.invalid }
                     // The issued records were revalidated above without yielding. The store

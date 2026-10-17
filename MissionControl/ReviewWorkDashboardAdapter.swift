@@ -129,7 +129,7 @@ struct ReviewPreparedRow:Identifiable {
             var payload=ReviewPreparedPayload(proposal:record,approval:approval,source:reviewSource(record))
             if let removal=record.proposedRemoval {
                 guard removal.valid,let event=(paOrientation?.calendar ?? calendarData).events.first(where:{$0.id == removal.target.itemID}) else {throw ActionFailure.message("The exact Calendar occurrence is unavailable. Ask below for a current alternative.")}
-                let session=try await preparedReviewSession(.event(event))
+                let session=try await preparedReviewSession(.event(event),source:reviewSource(record))
                 try validateCalendarRemoval(record,baseline:session.item)
                 payload.nativeBaseline=session.item;payload.nativeOperation="remove";payload.nativeScope=NativeChangeScope.occurrence.rawValue
                 row.title="Remove: "+removal.target.title;row.destination="Calendar · Only this occurrence"
@@ -138,7 +138,7 @@ struct ReviewPreparedRow:Identifiable {
                 guard let target=dateReviewTarget(record) else {throw ActionFailure.message("The exact item or proposed date changed. Ask below for a current alternative.")}
                 let review:NativeDateReview
                 switch target {case .reviewEvent(_,let value),.reviewReminder(_,let value):review=value;default:throw ActionFailure.message("No exact native date change was captured.")}
-                let session=try await preparedReviewSession(target),edited=try review.applying(to:session.item)
+                let session=try await preparedReviewSession(target,source:reviewSource(record)),edited=try review.applying(to:session.item)
                 payload.nativeBaseline=session.item;payload.nativeFields=edited;payload.nativeOperation="change";payload.nativeScope=(edited.kind == .reminder && session.item.recurring ? NativeChangeScope.reminderSeries : .occurrence).rawValue
                 row.title="Update: "+session.item.title;row.destination=edited.kind == .event ? "Calendar · Only this occurrence" : session.item.recurring ? "Reminders · Repeating reminder" : "Reminders"
                 let old=session.item.kind == .event ? session.item.start : session.item.due,new=edited.kind == .event ? edited.start : edited.due
@@ -168,7 +168,7 @@ struct ReviewPreparedRow:Identifiable {
                 session=try await eventKit.creationSession(request)
                 #endif
                 try Task.checkCancellation()
-                guard scope == reviewWorkScope(),capturedDraft || currentPreparedApproval(record) else {throw ActionFailure.message("The account, destination choices or suggestion changed while preparing this plan.")}
+                guard scope.registration == chatGPT.activeID,scope.storage == reviewStorageIdentity,payload.source.map(reviewPermits) == true,capturedDraft || currentPreparedApproval(record) else {throw ActionFailure.message("The account, source access, storage or suggestion changed while preparing this plan.")}
                 let fields=NativeCreationRules.applyingSuggestion(request,to:session.item)
                 guard let destination=session.sources.first(where:{$0.id == fields.sourceID && $0.writable}),!(request.kind == .event ? assistant.excludedCalendars : assistant.excludedLists).contains(destination.id) else {throw ActionFailure.message("Choose an enabled writable destination before approving this action.")}
                 payload.nativeRequest=request;payload.nativeFields=fields
@@ -193,7 +193,7 @@ struct ReviewPreparedRow:Identifiable {
         } catch {row.error=error.localizedDescription}
         return row
     }
-    private func preparedReviewSession(_ target:NativeEditTarget) async throws->NativeEditSession {
+    private func preparedReviewSession(_ target:NativeEditTarget,source:ReviewWorkSource) async throws->NativeEditSession {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") || (ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") && !ProcessInfo.processInfo.arguments.contains("--removal-native")) {
             guard let session=ReviewInboxEvaluation.previewSession(target) else {throw ActionFailure.message("No fictional native session is available; live source access is disabled.")}
@@ -201,7 +201,10 @@ struct ReviewPreparedRow:Identifiable {
         }
         #endif
         let scope=reviewWorkScope(),session=try await eventKit.editSession(target)
-        try Task.checkCancellation();guard scope == reviewWorkScope() else {throw ActionFailure.message("The account or source choices changed while opening this plan.")};return session
+        try Task.checkCancellation()
+        guard scope.registration == chatGPT.activeID,scope.storage == reviewStorageIdentity,reviewPermits(source),
+              !(session.item.kind == .event ? assistant.excludedCalendars : assistant.excludedLists).contains(session.item.sourceID) else {throw ActionFailure.message("The account, source access, storage or exact native destination changed while opening this plan.")}
+        return session
     }
     /// The accepted displayed creation is the authority. Background reassessment
     /// cannot substitute another payload or veto it through an evidence revision.
@@ -298,7 +301,7 @@ struct ReviewPreparedRow:Identifiable {
                     let classification=self.classifyAssistantOutcome(outcome)
                     continuation.resume(returning:.init(phase:classification.phase,message:classification.message,confirmedActions:classification.actions,error:classification.error))
                 }
-                let accepted=self.assistant.sendReview(runtime:runtime,conversationID:job.conversationID,prompt:job.human,humanTurnID:job.humanTurnID,responseTurnID:job.responseTurnID,query:job.source.title+" "+job.human,sourceContext:String(decoding:(try? JSONEncoder().encode(job.source)) ?? Data(),as:UTF8.self),humanControl:job.humanControl == true,selectionContext:self.reviewSelectionContext(job),submitted:job.created,focusAreas:job.focusAreas.compactMap(LifeArea.init(rawValue:)),valid:{valid() && self.heartbeat.deviceAvailable})
+                let accepted=self.assistant.sendReview(runtime:runtime,conversationID:job.conversationID,prompt:job.human,humanTurnID:job.humanTurnID,responseTurnID:job.responseTurnID,query:job.source.title+" "+job.human,sourceContext:String(decoding:(try? JSONEncoder().encode(job.source)) ?? Data(),as:UTF8.self),humanControl:job.humanControl == true,selectionContext:self.reviewSelectionContext(job),submitted:job.created,focusAreas:job.focusAreas.compactMap(LifeArea.init(rawValue:)),capturedModel:job.scope.model,valid:{valid() && self.heartbeat.deviceAvailable})
                 if !accepted {continuation.resume(returning:.init(phase:.failed,message:self.assistant.error ?? "The assistant is unavailable. Your Review reply is retained.",error:self.assistant.error))}
             }
         },cancelConversation:{self.assistant.cancel()},changed:{self.reviewJobChanged($0)})
@@ -383,6 +386,7 @@ struct ReviewPreparedRow:Identifiable {
         }
         let job=ReviewWorkJob(conversationID:conversationID,scope:reviewWorkScope(),source:source,mode:concreteApproval ? .approval : .conversation,human:text,humanControl:humanControl ? true : nil,selectionActive:selectionActive ? true : nil,focusAreas:focus.map(\.rawValue),actions:actions)
         guard reviewWork.submit(job) else {return false}
+        if !assistant.busy,!chatGPT.busy {foregroundSendStarted(interruptReview:false)}
         reviewJobChanged(job);scheduleReviewWork();return true
     }
 }

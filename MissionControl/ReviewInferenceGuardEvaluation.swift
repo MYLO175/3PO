@@ -22,11 +22,23 @@ import Foundation
     var gate:CheckedContinuation<Void,Never>?
     var calls=0
     var input:[String:Any]=[:]
+    var selectedModel=""
     var response=#"{"suggestions":[],"projectTasks":[],"handled":[],"resolved":[],"retirements":[]}"#
-    func infer(_ input:[String:Any])async->PAResponse {
-        calls += 1;self.input=input
+    func infer(_ input:[String:Any],model:String)async->PAResponse {
+        calls += 1;self.input=input;selectedModel=model
         await withCheckedContinuation{gate=$0}
         return .init(text:"",output:[],calls:[.init(id:"fictional-preparation",name:ProactiveResultRules.toolName,namespace:"pa",arguments:response)])
+    }
+    func release() {gate?.resume();gate=nil}
+}
+@MainActor private final class ReviewBriefGuardHold {
+    var gate:CheckedContinuation<Void,Never>?,calls=0
+    var input:[String:Any]=[:],prompt="",preferences="",selectedModel=""
+    func infer(_ input:[String:Any],prompt:String,preferences:String,model:String)async->PAResponse {
+        calls += 1;self.input=input;self.prompt=prompt;self.preferences=preferences;selectedModel=model
+        await withCheckedContinuation{gate=$0}
+        let response=#"{"message":"Fictional captured prototype brief","items":[{"text":"Fictional prototype review.","sourceIDs":["calendar_0"]}],"question":null}"#
+        return .init(text:"",output:[],calls:[.init(id:"fictional-brief-result",name:BriefingRules.resultTool,namespace:"pa",arguments:response)])
     }
     func release() {gate?.resume();gate=nil}
 }
@@ -37,10 +49,16 @@ import Foundation
     static func run()async throws->[String:Bool] {
         guard ["--validate-advice-context","--validate-review-inbox"].contains(where:ProcessInfo.processInfo.arguments.contains) else {throw IntegrationError.verification}
         var checks:[String:Bool]=[:]
-        let modes=["unrelated-memory","selected-memory","unrelated-project","selected-project","native-hint","native-change","native-addition","native-after-cap","native-outside-window","native-repeated-hints","completion-health","completion-change","mail-flags","unrelated-assessment","selected-assessment","historical-ack-display","historical-ack-support","human-dismiss","unrelated-dismiss","selected-source-dismiss","individual-dismiss","undo-independent","pending-change","permission","account","model","stop","memory-controls-cycle","learning-controls-cycle","historical-row-current","historical-row-source-stale","historical-row-changed","historical-row-retire-stale-source","historical-row-retire-changed"]
+        let modes=["unrelated-memory","selected-memory","unrelated-project","selected-project","native-hint","native-change","writing","writing-native-change","native-addition","native-after-cap","native-outside-window","native-repeated-hints","completion-health","completion-change","mail-flags","unrelated-assessment","selected-assessment","historical-ack-display","historical-ack-support","human-dismiss","unrelated-dismiss","selected-source-dismiss","individual-dismiss","undo-independent","pending-change","permission","account","model","stop","memory-controls-cycle","learning-controls-cycle","preferences","draft editing","historical-row-current","historical-row-source-stale","historical-row-changed","historical-row-retire-stale-source","historical-row-retire-changed"]
         for mode in modes {
             let now=Date.now,reader=ReviewGuardNativeFixture(now:Date.now),hold=ReviewGuardHold(),model=DashboardModel(nativeSources:reader)
             model.chatGPT.activeID="fictional-review-guard-"+mode;model.chatGPT.inferenceVerified=true;model.chatGPT.selectedModel="fictional-model"
+            let suite="ReviewCapturedInput-"+UUID().uuidString
+            let settings=UserDefaults(suiteName:suite)!
+            settings.set(true,forKey:"assistantContextEnabled")
+            settings.set("Fictional concise prototype guidance",forKey:"assistantPreferences")
+            defer {settings.removePersistentDomain(forName:suite)}
+            model.assistant=AssistantService(connection:model.chatGPT,container:model.container,settings:settings)
             let owner=model.chatGPT.activeID,store=model.assistant.memory
             guard model.assistant.contextEnabled,store.enabled,model.emailSummaries.enabled,model.proactive.enabled else {throw ActionFailure.message("The fictional Review guard evaluation requires existing source/memory controls to be enabled; none were changed.")}
             let json:[String:Any]=["id":"fictional-mail","accountID":"fictional-account","account":"Fictional Mail","messageID":1,"internetMessageID":"fictional-mail@example.invalid","sender":"Fictional tutor","subject":"Orion prototype","received":now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
@@ -113,7 +131,7 @@ import Foundation
                 reader.calendarValue.events += (1...205).map{index in var item=first;item.id="fictional-later-\(index)";item.start=now.addingTimeInterval(Double(index+1)*3600);item.end=item.start.addingTimeInterval(1800);return item}
             }
             model.proactive.evaluationNativeAccess={true}
-            model.proactive.evaluationInference={await hold.infer($0)}
+            model.proactive.evaluationInference={await hold.infer($0,model:$1)}
             model.proactive.check(model,manual:true)
             for _ in 0..<40_000 {if hold.gate != nil || !model.proactive.busy {break};await Task.yield()}
             guard hold.gate != nil else {throw ActionFailure.message("Fictional Review \(mode) did not reach the held inference: \(model.proactive.error ?? model.proactive.sourceReadError ?? "not started")")}
@@ -139,6 +157,8 @@ import Foundation
             case "selected-project":var changed=project;changed.title="Orion changed plan";_=try model.assistant.projects.save(changed,expected:project.revision)
             case "native-hint":model.sourceRevision += 1
             case "native-change":reader.calendarValue.events[0].start += 900;model.sourceRevision += 1
+            case "writing":model.writing=true
+            case "writing-native-change":model.writing=true;reader.calendarValue.events[0].start += 900;model.sourceRevision += 1
             case "native-addition":var added=reader.calendarValue.events[0];added.id="fictional-added";reader.calendarValue.events.append(added);model.sourceRevision += 1
             case "native-after-cap":reader.calendarValue.events[205].title="Changed after cap";model.sourceRevision += 1
             case "native-outside-window":var added=reader.calendarValue.events[0];added.id="fictional-outside";added.start=now.addingTimeInterval(100*86400);added.end=added.start.addingTimeInterval(3600);reader.calendarValue.events.append(added);model.sourceRevision += 1
@@ -155,12 +175,14 @@ import Foundation
             case "permission":model.proactive.evaluationNativeAccess={false}
             case "account":model.chatGPT.activeID="fictional-foreign-owner"
             case "model":model.chatGPT.selectedModel="fictional-new-model"
+            case "preferences":model.assistant.preferences="New fictional preference for subsequent jobs"
+            case "draft editing":model.assistant.draft="An independent unsent draft";model.heartbeat.noteDraftEditing()
             default:model.proactive.cancel()
             }
             hold.release()
             for _ in 0..<40_000 {if !model.proactive.busy {break};await Task.yield()}
             guard !model.proactive.busy else {throw ActionFailure.message("Fictional Review \(mode) did not settle.")}
-            let rejected=["selected-memory","selected-project","native-change","native-addition","completion-change","selected-assessment","permission","account","model","stop","memory-controls-cycle","learning-controls-cycle"].contains(mode)
+            let rejected=["selected-memory","selected-project","native-change","writing-native-change","native-addition","completion-change","selected-assessment","permission","account","stop","memory-controls-cycle"].contains(mode)
             checks["Review \(mode) preserves exact relevant guards without unrelated cancellation"]=(model.proactive.error != nil) == rejected
             checks["Review \(mode) has one fictional inference and no subscription calls"]=hold.calls == 1 && model.aiUsage.state.records.isEmpty
             if !rejected {
@@ -191,6 +213,12 @@ import Foundation
                     checks["Review Undo does not replay old output or start another request"]=hold.calls == 1 && saved.count == 2
                 }
             }
+            if ["model","preferences","draft editing","learning-controls-cycle","writing"].contains(mode) {
+                checks["Review \(mode) completes the captured input once"]=hold.calls == 1 && hold.selectedModel == "fictional-model" && model.proactive.state.accounts[owner]?.fingerprint != nil && model.proactive.state.accounts[owner]?.paused == false
+                checks["Review \(mode) retains captured writing preferences"]=hold.input["preferences"] as? String == "Fictional concise prototype guidance"
+                if mode == "preferences" {checks["Review does not overwrite newer writing preferences"]=model.assistant.preferences == "New fictional preference for subsequent jobs"}
+                if mode == "draft editing" {checks["Review preserves an independent unsent draft"]=model.assistant.draft == "An independent unsent draft"}
+            }
             if mode.hasPrefix("historical-row") {
                 let saved=model.proactive.state.records
                 let fresh=saved.first{$0.mailID == message.id && $0.kind == "update"}
@@ -208,7 +236,64 @@ import Foundation
                     checks["Review \(mode) retires only an unchanged exact proposal"]=mode == "historical-row-retire-stale-source" ? historical?.retiredAt != nil : historical?.retiredAt == nil && historical?.supersededBy == nil
                 }
             }
+            if mode == "writing" {checks["Review independent native writing does not revoke the captured comparison"]=model.writing && model.proactive.error == nil && model.proactive.state.accounts[owner]?.fingerprint != nil}
+            if mode == "writing-native-change" {checks["Review concurrent native writing preserves exact supplied native validation"]=model.writing && model.proactive.state.records.isEmpty && model.proactive.error?.contains("Calendar occurrence") == true}
             if mode == "native-repeated-hints" {checks["Review bounds repeated unchanged native hints"]=reader.calendarReads == 4}
+        }
+        checks.merge(try await briefContinuity(),uniquingKeysWith:{$1})
+        return checks
+    }
+    private static func briefContinuity()async throws->[String:Bool] {
+        var checks:[String:Bool]=[:]
+        for mode in ["prompt","preferences","model","draft editing","writing","learning controls","memory controls","stop","account","source access"] {
+            let reader=ReviewGuardNativeFixture(now:.now),model=DashboardModel(nativeSources:reader),hold=ReviewBriefGuardHold()
+            let suite="BriefCapturedInput-"+UUID().uuidString
+            // Use a fresh named settings domain; never change personal controls.
+            let isolated=UserDefaults(suiteName:suite)!
+            isolated.set(true,forKey:"assistantContextEnabled");isolated.set("Fictional original preferences",forKey:"assistantPreferences")
+            defer {isolated.removePersistentDomain(forName:suite)}
+            model.chatGPT.activeID="fictional-brief-"+mode;model.chatGPT.selectedModel="fictional-original-model";model.chatGPT.inferenceVerified=true
+            model.assistant=AssistantService(connection:model.chatGPT,container:model.container,settings:isolated)
+            let service=model.briefings,owner=model.chatGPT.activeID
+            let originalPrompt=service.writingPrompt(owner)
+            service.evaluationWeather={ ("fictional-no-weather",["status":"Fictional fixture supplies no weather"]) }
+            service.evaluationInference={await hold.infer($0,prompt:$1,preferences:$2,model:$3)}
+            service.check(model,manual:true,live:true)
+            for _ in 0..<40_000 {if hold.gate != nil || !service.busy {break};await Task.yield()}
+            guard hold.gate != nil else {throw ActionFailure.message("Fictional brief \(mode) did not reach held inference: \(service.error ?? "not started")")}
+            switch mode {
+            case "prompt":try service.saveWritingPrompt("New prompt for the next fictional brief",expected:originalPrompt,model:model)
+            case "preferences":model.assistant.preferences="New preferences for the next fictional job"
+            case "model":model.chatGPT.selectedModel="fictional-next-model"
+            case "draft editing":model.assistant.draft="Retained unsent fictional draft";model.heartbeat.noteDraftEditing()
+            case "writing":model.writing=true
+            case "learning controls":let original=model.assistant.memory.learningEnabled;model.assistant.memory.learningEnabled.toggle();model.assistant.memory.learningEnabled=original
+            case "memory controls":model.assistant.memory.enabled=false;model.assistant.memory.enabled=true
+            case "account":model.chatGPT.activeID="fictional-different-account"
+            case "source access":model.assistant.contextEnabled=false
+            default:service.cancel()
+            }
+            hold.release()
+            for _ in 0..<40_000 {if !service.busy {break};await Task.yield()}
+            guard !service.busy else {throw ActionFailure.message("Fictional brief \(mode) did not settle")}
+            let rejected=["memory controls","stop","account","source access"].contains(mode)
+            let saved=service.state.updatedBriefs?[owner]
+            checks["Brief \(mode) preserves actual ownership and access conflicts"]=rejected ? saved == nil && service.error != nil : saved?.message == "Fictional captured prototype brief" && service.error == nil && service.state.overviewPaused == false
+            checks["Brief \(mode) keeps one captured model request without subscription access"]=hold.calls == 1 && hold.selectedModel == "fictional-original-model" && model.aiUsage.state.records.isEmpty
+            checks["Brief \(mode) uses captured prompt and preferences"]=hold.prompt == originalPrompt.text && hold.preferences == "Fictional original preferences"
+            if mode == "prompt" {checks["Brief merge preserves the newer saved prompt"]=service.writingPrompt(owner).text == "New prompt for the next fictional brief"}
+            if mode == "preferences" {checks["Brief merge preserves newer writing preferences"]=model.assistant.preferences == "New preferences for the next fictional job"}
+            if mode == "draft editing" {checks["Brief merge retains the independent unsent draft"]=model.assistant.draft == "Retained unsent fictional draft"}
+            if mode == "writing" {checks["Brief independent native writing preserves supplied-data validation without cancellation"]=model.writing && service.error == nil && saved?.message == "Fictional captured prototype brief"}
+            if ["prompt","preferences","model"].contains(mode) {
+                service.check(model,manual:true,live:true)
+                for _ in 0..<40_000 {if hold.gate != nil || !service.busy {break};await Task.yield()}
+                guard hold.gate != nil else {throw ActionFailure.message("The next fictional brief \(mode) did not reach inference")}
+                checks["Brief \(mode) applies new choices only to the next explicit refresh"]=hold.calls == 2 && hold.selectedModel == model.chatGPT.selectedModel && hold.prompt == service.writingPrompt(owner).text && hold.preferences == model.assistant.preferences
+                hold.release()
+                for _ in 0..<40_000 {if !service.busy {break};await Task.yield()}
+                checks["Brief next explicit \(mode) refresh completes once"] = !service.busy && service.error == nil && hold.calls == 2
+            }
         }
         return checks
     }

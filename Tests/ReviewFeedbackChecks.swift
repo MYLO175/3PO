@@ -11,7 +11,8 @@ enum ReviewFeedbackChecks {
         func matches(_ summary:EmailSummary,settings:String="allowed",model:String="model")->Bool {captured.matches(message:message,summary:summary,registration:source.summary.registration,model:model,sourceRevision:99,sourceSettings:settings)}
         var dismissed=summary;dismissed.dismissed=true;dismissed.dismissedAt = .now
         precondition(matches(dismissed),"Dismiss and unrelated collection revision changes preserve accepted feedback")
-        precondition(!matches(dismissed,settings:"revoked") && !matches(dismissed,model:"other"),"Captured source choices and model remain exact")
+        precondition(matches(dismissed,settings:"different unrelated sources") && matches(dismissed,model:"other"),"Aggregate source settings and future default models do not revoke an exact queued submission")
+        precondition(captured.model == "model","The queued submission retains its captured inference model")
         var changed=summary;changed.bodyFingerprint="changed"
         precondition(!matches(changed),"Changed source body rejects queued feedback")
         changed=summary;changed.summary="A different assessment"

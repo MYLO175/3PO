@@ -10,11 +10,27 @@ extension AssistantService {
         sendProfile(runtime: model.assistantRuntime(), topic: topic, answer: answer, control: control)
     }
     @discardableResult func send(model: DashboardModel, topicID: UUID?, prompt: String, focusAreas: [LifeArea]? = nil, images: [ChatImageAttachment] = []) -> Bool {
-        model.reviewWork.interruptForForeground(model.chatGPT.activeID)
+        // An active assistant already owns the serial queue, including Review.
+        // A running background provider call retains the existing disabled-Send
+        // contract: keep the draft rather than cancel it before a send can start.
+        guard busy || !connection.busy else {return false}
+        if !busy,foregroundInputValid(prompt,images:images),topicID == nil || topics.contains(where:{$0.id == topicID}) {model.foregroundSendStarted()}
         return send(runtime: model.assistantRuntime(), topicID: topicID, prompt: prompt, focusAreas: focusAreas, images: images)
     }
-    func send(model: DashboardModel) { model.reviewWork.interruptForForeground(model.chatGPT.activeID);send(runtime: model.assistantRuntime()) }
-    func send(context: String?, model: DashboardModel) { model.reviewWork.interruptForForeground(model.chatGPT.activeID);send(context: context, runtime: model.assistantRuntime()) }
+    private func foregroundInputValid(_ prompt:String,images attachments:[ChatImageAttachment]=[])->Bool {
+        (!prompt.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || !attachments.isEmpty) && ConversationRules.acceptsPrompt(prompt) &&
+        !connection.usagePaused && connection.hasSession && connection.inferenceVerified && (try? images.validate(attachments,registration:connection.activeID)) != nil
+    }
+    func send(model: DashboardModel) {
+        guard busy || !connection.busy else {return}
+        if !busy,foregroundInputValid(draft) {model.foregroundSendStarted()}
+        send(runtime: model.assistantRuntime())
+    }
+    func send(context: String?, model: DashboardModel) {
+        guard busy || !connection.busy else {return}
+        if !busy,foregroundInputValid(draft) {model.foregroundSendStarted()}
+        send(context: context, runtime: model.assistantRuntime())
+    }
     func resumeQueue(model: DashboardModel) { resumeQueue(runtime: model.assistantRuntime()) }
     func sourceSafeHistory(_ model: DashboardModel, feed: AssistantConversation, topic: AssistantConversation?) -> [AssistantTurn] {
         sourceSafeHistory(runtime: model.assistantRuntime(), feed: feed, topic: topic)
@@ -67,6 +83,7 @@ extension AssistantService {
         } else {
             calendarCoverage="Cached dashboard snapshot; \(calendarCount) enabled cached events. The collected window is unavailable here. Event details are omitted; use read_calendar for the requested dates."
         }
+        let acknowledgements=model.reviewAcknowledgements()
         let value:[String:Any] = [
             "now":DateRules.localTimestamp(now),"timezone":TimeZone.current.identifier,"localWeather":model.weather.context(),
             "calendarStatus":model.paOrientation == nil ? model.calendarHealth.detail : model.paOrientationHealth.detail,
@@ -77,7 +94,8 @@ extension AssistantService {
             "reminderSources":lists.prefix(60).map{["id":$0.id,"name":$0.label,"writable":$0.writable] as [String:Any]},
             "mailStatus":model.mailHealth.detail,"mailCoverage":model.mailCoverage,"mailHeaderCount":model.mailData.messages.filter{!excludedAccounts.contains($0.accountID)}.count,
             "mailAccounts":accounts.prefix(30).map{["id":$0.id,"name":$0.title]},
-            "reviewAcknowledgements":(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(model.reviewAcknowledgements()))) ?? [],
+            "reviewAcknowledgements":(try? JSONSerialization.jsonObject(with:JSONEncoder().encode(acknowledgements))) ?? [],
+            "whatsappContextSupplied":PAToolSession.attentionUsesWhatsApp(model,acknowledgements:acknowledgements),
             "resolvedEmailRequests":model.emailSummaries.resolutionContext(model),
             "coverage":"Initial source orientation only. Source IDs/names above are metadata, not issued mutation destinations or item IDs. Use read_calendar/read_reminders for actual relevant items and fresh writable sources, read_attention for saved brief/assessments/suggestions, and selective search_mail/read_email for emails. Never infer an empty source from omitted details. All normal source permissions and write checks still apply."
         ]
@@ -87,6 +105,13 @@ extension AssistantService {
 }
 
 extension DashboardModel {
+    /// Only a submitted foreground instruction takes priority. Editing or
+    /// revealing a saved draft never calls this handover.
+    func foregroundSendStarted(interruptReview:Bool=true) {
+        memoryLearning.cancel();sourceLearning.cancel();nativeSourceLearning.cancel();memoryMaintenance.cancel();lifeOrganisation.cancel()
+        proactive.cancel();emailSummaries.cancelReviewFeedback();heartbeat.userStartedTyping()
+        if interruptReview {reviewWork.interruptForForeground(chatGPT.activeID)}
+    }
     /// Desktop composition only. A foreground turn consumes snapshots and typed
     /// tools; it never receives the dashboard itself.
     func assistantRuntime() -> AssistantRuntime {
@@ -95,7 +120,7 @@ extension DashboardModel {
             return nativeLearningValidation.withSnapshot { [self] in
                 AssistantRuntimeState(attentionPreferencesReadable: self.assistant.memory.reviewPreferenceMigrationReadable,
                          resolvedRequests: self.emailSummaries.resolutionContext(self,limit:Int.max),
-                         whatsappScope: self.whatsapp.scope(for: self.chatGPT.activeID), weatherScope: self.weather.scope)
+                         whatsappScope: self.whatsapp.scope(for: self.chatGPT.activeID,purpose:.conversation), weatherScope: self.weather.scope,weatherSupplied:self.weather.enabled && self.weather.allowed && self.weather.forecast?.usable() == true)
             }
         }, sourceSnapshot: { [weak self] in
             guard let self else { return nil }
@@ -114,7 +139,7 @@ extension DashboardModel {
         }, tools: { [self] request in
             PAToolSession(model: self, human: request.human, humanContext: request.humanContext,
                           topicID: request.topicID, turnID: request.turnID, mail: request.mail as? MailLookup,
-                          history: request.history, focusAreas: request.focusAreas)
+                          history: request.history, focusAreas: request.focusAreas,inferenceModel:request.inferenceModel)
         }, afterTurn: { [weak self] in
             guard let self else { return }
             if !reviewWork.busy {projectPlacement.check(self)}
@@ -135,8 +160,7 @@ extension DashboardModel {
     }
     func approveChatActions(conversationID:UUID,responseID:UUID) {
         guard !assistant.busy,!chatGPT.busy,heartbeat.deviceAvailable else {return}
-        memoryLearning.cancel();sourceLearning.cancel();nativeSourceLearning.cancel();memoryMaintenance.cancel()
-        proactive.cancel();reviewWork.interruptForForeground(chatGPT.activeID);heartbeat.userStartedTyping()
+        foregroundSendStarted()
         var runtime=assistantRuntime()
         if let job=reviewWork.jobs(chatGPT.activeID,conversation:conversationID).first(where:{$0.responseTurnID == responseID && $0.mode == .conversation && $0.phase == .needsAnswer}) {
             let eventID="review:"+job.id.uuidString+":"+responseID.uuidString

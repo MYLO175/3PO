@@ -245,6 +245,18 @@
       ]
     },
     {
+      "id": "life-relationship-tools",
+      "tier": "source-free",
+      "script": "scripts/test-life-relationship-tools.sh",
+      "effects": [
+        "fictional values",
+        "disposable SwiftData"
+      ],
+      "requires": [
+        "Xcode"
+      ]
+    },
+    {
       "id": "life-placement",
       "tier": "source-free",
       "script": "scripts/test-life-placement.sh",

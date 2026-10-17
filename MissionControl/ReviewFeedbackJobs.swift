@@ -26,8 +26,7 @@ struct ReviewFeedbackJob:Codable,Identifiable,Equatable {
     /// Presentation changes (including Dismiss) and unrelated collection revisions
     /// do not revoke an accepted submission; its actual source and choices do.
     func matches(message:MailMessage,summary:EmailSummary,registration:String,model:String,sourceRevision:Int,sourceSettings:String)->Bool {
-        self.registration == registration && summary.registration == registration && self.model == model &&
-        (self.sourceSettings.map{$0 == sourceSettings} ?? (self.sourceRevision == sourceRevision)) &&
+        self.registration == registration && summary.registration == registration && !self.model.isEmpty &&
         messageID == message.id && accountID == message.accountID && headerFingerprint == EmailSummary.fingerprint(message) &&
         summary.fingerprint == headerFingerprint && bodyFingerprint == summary.bodyFingerprint &&
         (summary.observedBodyFingerprint == nil || summary.observedBodyFingerprint == summary.bodyFingerprint) &&

@@ -344,6 +344,16 @@ import Synchronization
         guard store.putSources([fact],evidenceTexts:[identity:quote],expectedRevision:store.revision) else { throw SummaryFailure.invalid }
         let capture=model.automaticMemory(.brief)
         var checks=fingerprintCacheChecks(model)
+        let heartbeatAdapter=HeartbeatDashboardAdapter.runtime(model),beforeWrite=heartbeatAdapter.environment()
+        let wasWriting=model.writing;model.writing=true
+        let duringWrite=heartbeatAdapter.environment();model.writing=wasWriting
+        checks["native writing blocks new heartbeat admission without revoking the current AI owner"] = duringWrite.workBusy && duringWrite.foregroundBusy == beforeWrite.foregroundBusy
+        let mailAttention=PADiscovery(id:"fixture-mail-attention",registration:registration,mailID:"fixture-mail",kind:"reminder",message:"Fictional request",evidence:"Fictional evidence",created:now,scope:"fictional")
+        var whatsappAttention=mailAttention;whatsappAttention.sourceKind="whatsapp"
+        checks["Mail-only attention does not acquire WhatsApp permission dependencies"] = !PAToolSession.attentionUsesWhatsApp(model,discoveries:[mailAttention],acknowledgements:[])
+        checks["actual returned WhatsApp attention retains its permission dependency"] = PAToolSession.attentionUsesWhatsApp(model,discoveries:[whatsappAttention],acknowledgements:[])
+        let whatsappBrief=DailyBriefing(id:"fixture-wa-brief",registration:registration,day:BriefingRules.day(now),created:now,items:[],sources:[.init(id:"whatsapp_0",label:"Fictional chat",kind:"whatsapp",date:now)],coverage:"Fictional",message:"Fictional chat context")
+        checks["attention binds permission to actual saved brief source provenance"] = PAToolSession.attentionUsesWhatsApp(model,brief:whatsappBrief,acknowledgements:[])
         checks.merge(try await feedbackRefreshChecks(model),uniquingKeysWith:{$1})
         checks.merge(try await ReviewInferenceGuardEvaluation.run(),uniquingKeysWith:{$1})
         checks.merge(try await ForegroundInteractionEvaluation.run(),uniquingKeysWith:{$1})

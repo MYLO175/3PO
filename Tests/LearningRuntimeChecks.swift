@@ -10,11 +10,12 @@ import SwiftData
     var hasSession = true
     var answer = "{\"memories\":[]}"
     var calls = 0
+    var requestedModels:[String]=[]
     var inputs:[[[String:String]]]=[]
     var onCall: (() -> Void)?
     var hold: (() async -> Void)?
     func streamResponse(input: [[String:String]], instructions: String, model: String?, effort: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> String {
-        calls += 1;inputs.append(input);onCall?();if let hold {await hold()};return answer
+        calls += 1;requestedModels.append(model ?? "");inputs.append(input);onCall?();if let hold {await hold()};return answer
     }
     func toolResponse(input: [[String:Any]], instructions: String, tools: [[String:Any]], model: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> PAResponse { fatalError("Learning cannot execute foreground tools") }
 }
@@ -303,11 +304,80 @@ import SwiftData
             check(p.calls == 3 && !paused.busy,"Grant-change interruption retains the original failed-claim pause across reopen")
         }
         try await capturedSourceMemoryChecks(now:now,check:check)
+        try await conversationContextChecks(now:now,check:check)
         print("PASS \(count) actual learning-service checks: injected providers/clock, persistence, foreground priority, exact supplied memory/candidate guards, source/account drift, pauses, explicit recovery; no dashboard, credentials or personal sources.")
     }
+    @MainActor private static func conversationContextChecks(now:Date,check:(Bool,String)->Void)async throws {
+        let successes:Set<String>=["unrelated save","unrelated Forget","questions disabled","model changed","draft opened","unrelated native edit"]
+        let scenarios=["unrelated save","unrelated Forget","questions disabled","model changed","draft opened","unrelated native edit","supplied changed","supplied forgotten","history changed","batch suppressed","memory off/on","learning off/on","context off/on","Stop","external writer"]
+        for scenario in scenarios {
+            let suite="3PO.conversation-context-fixture."+UUID().uuidString,settings=UserDefaults(suiteName:suite)!
+            defer {settings.removePersistentDomain(forName:suite)}
+            let container=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+            let p=FictionalInference(),m=PAMemoryStore(container:container,settings:settings),w=FictionalWhatsApp(),budget=LearningBudget(container:container)
+            let a=FictionalAssistant(p,memory:m),learner=MemoryLearningService(container:container,settings:settings)
+            var clock=now,nativeWriting=false
+            let runtime=LearningRuntime(assistant:a,inference:p,learningBudget:budget,whatsapp:w,now:{clock},activity:{.init()},writing:{nativeWriting},sourceRevision:{0},nativeItems:{_,_ in nil})
+            let selected=PAMemory(registration:p.activeID,text:"I study optics report preparation.",kind:.context,provenance:"Fictional human")
+            let unrelated=PAMemory(registration:p.activeID,text:"I enjoy woodland walks.",kind:.context,provenance:"Fictional human",sourceTurnID:"another-turn")
+            check(m.put(selected) && m.put(unrelated),scenario+" seeds bounded conversation context")
+            let firstQuote="I study optics and prepare reports.",newQuote="I prefer a quiet study room."
+            a.turns=[.init(id:"learn-target",text:firstQuote+" "+newQuote,created:clock),.init(id:"question-target",text:"I might take the optics workshop next term.",created:clock)]
+            let old=PAMemory(registration:p.activeID,text:"Previously studied optics reports",kind:.context,explicit:false,provenance:"Fictional earlier learning",sourceTurnID:"learn-target",evidence:firstQuote)
+            check(m.put(old),scenario+" seeds earlier belief")
+            var correction=old;correction.id=UUID();correction.text="The earlier optics report plan was corrected."
+            check(m.correct(old.id,with:correction),scenario+" preserves exact superseded history")
+            let historical=m.records.first{$0.id == old.id}!
+            var suppressionTarget=PAMemory(registration:p.activeID,text:"A retired provisional statement",kind:.context,explicit:false,provenance:"Fictional earlier learning",sourceTurnID:"learn-target")
+            suppressionTarget.retiredAt=clock
+            if scenario == "batch suppressed" {check(m.put(suppressionTarget),scenario+" seeds an unselected turn-suppression target")}
+            p.answer=String(decoding:try JSONSerialization.data(withJSONObject:["memories":[["turnID":"learn-target","text":"Prefers a quiet study room","kind":"preference","evidence":newQuote]],"question":["turnID":"question-target","text":"Should I keep the optics workshop as a tentative plan?","evidence":"I might take the optics workshop next term."]]),as:UTF8.self)
+            var release:CheckedContinuation<Void,Never>?
+            p.hold={await withCheckedContinuation {release=$0}}
+            learner.check(runtime)
+            for _ in 0..<10_000 {if release != nil {break};await Task.yield()}
+            guard let release else {preconditionFailure("Conversation fixture did not reach held inference")}
+            var mutation=true
+            switch scenario {
+            case "unrelated save":mutation=m.put(PAMemory(registration:p.activeID,text:"I like fictional pottery.",kind:.preference,provenance:"Fictional human"))
+            case "unrelated Forget":mutation=m.forget(unrelated.id)
+            case "questions disabled":learner.questionsEnabled=false
+            case "model changed":p.selectedModel="future-model"
+            case "draft opened":a.hasDraft=true
+            case "unrelated native edit":nativeWriting=true
+            case "supplied changed":var edited=selected;edited.text="I now study mirrors instead of optics reports.";mutation=m.put(edited)
+            case "supplied forgotten":mutation=m.forget(selected.id)
+            case "history changed":var edited=historical;edited.text="The historical source wording was edited.";mutation=m.put(edited)
+            case "batch suppressed":mutation=m.forget(suppressionTarget.id)
+            case "memory off/on":m.enabled=false;m.enabled=true
+            case "learning off/on":m.learningEnabled=false;m.learningEnabled=true
+            case "context off/on":a.contextEnabled=false;a.contextRevision=UUID();a.contextEnabled=true;a.contextRevision=UUID()
+            case "Stop":learner.cancel()
+            case "external writer":mutation=PAMemoryStore(container:container,settings:settings).put(PAMemory(registration:p.activeID,text:"A separate writer saved this garden plan.",kind:.context,provenance:"Fictional human"))
+            default:preconditionFailure("Unknown conversation fixture")
+            }
+            let recordsAfterMutation=m.records
+            release.resume()
+            for _ in 0..<10_000 {if !learner.busy {break};await Task.yield()}
+            check(mutation && !learner.busy && p.calls == 1 && p.requestedModels == ["fictional"],scenario+" completes one bounded held conversation assessment")
+            let learned=m.records.first{$0.text == "Prefers a quiet study room"}
+            if successes.contains(scenario) {
+                check(learner.error == nil && learned?.sourceTurnID == "learn-target",scenario+" saves the supported fact against current state")
+                check(recordsAfterMutation.allSatisfy{m.records.contains($0)},scenario+" preserves every concurrent saved record and historical version")
+                check((learner.state.questions ?? []).count == (scenario == "questions disabled" ? 0 : 1),scenario+" question policy affects only a new question")
+            } else {
+                check(learner.error != nil && learned == nil,scenario+" rejects only the conflicting or revoked assessment")
+                p.hold=nil;p.onCall=nil;a.hasDraft=false;nativeWriting=false;clock.addTimeInterval(1801)
+                let reopened=MemoryLearningService(container:container,settings:settings);reopened.check(runtime)
+                check(!reopened.busy && p.calls == 1 && reopened.state.accounts[p.activeID]?.paused == true,scenario+" preserves the attempted failure pause across reopening")
+                if scenario == "external writer" {check(PAMemoryStore(container:container,settings:settings).records.contains{$0.text == "A separate writer saved this garden plan."},scenario+" retains the external writer's data under CAS rejection")}
+            }
+            if scenario != "external writer" {check(PAMemoryStore(container:container,settings:settings).records == m.records,scenario+" preserves canonical storage readback")}
+        }
+    }
     @MainActor private static func capturedSourceMemoryChecks(now:Date,check:(Bool,String)->Void)async throws {
-        let successful:Set<String>=["unrelated save","unrelated forget","selected organisation","held unrelated save"]
-        let cases=["unrelated save","unrelated forget","selected organisation","held unrelated save","selected changed","selected forgotten","candidate changed","candidate forgotten","candidate corrected","candidate pinned","held selected changed","controls off/on","source changed","Stop"]
+        let successful:Set<String>=["unrelated save","unrelated forget","selected organisation","held unrelated save","model changed","draft opened","other-kind enabled","other-kind disabled","unrelated native edit"]
+        let cases=["unrelated save","unrelated forget","selected organisation","held unrelated save","selected changed","selected forgotten","candidate changed","candidate forgotten","candidate corrected","candidate pinned","held selected changed","controls off/on","source changed","model changed","draft opened","other-kind enabled","other-kind disabled","active-kind disabled","unrelated native edit","Stop"]
         for lane in ["native","whatsapp"] {
             for scenario in cases {
                 let suite="3PO.source-dependency-fixture."+UUID().uuidString
@@ -317,8 +387,8 @@ import SwiftData
                 let isolated=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
                 let p=FictionalInference(),m=PAMemoryStore(container:isolated,settings:settings),w=FictionalWhatsApp(),b=LearningBudget(container:isolated)
                 let a=FictionalAssistant(p,memory:m)
-                var clock=now,items:[NativeLearningItem]=[],sourcePermitted=true
-                let r=LearningRuntime(assistant:a,inference:p,learningBudget:b,whatsapp:w,now:{clock},activity:{.init()},writing:{false},sourceRevision:{0},nativeItems:{kind,_ in kind == .reminder && sourcePermitted ? items : nil})
+                var clock=now,items:[NativeLearningItem]=[],sourcePermitted=true,nativeWriting=false
+                let r=LearningRuntime(assistant:a,inference:p,learningBudget:b,whatsapp:w,now:{clock},activity:{.init()},writing:{nativeWriting},sourceRevision:{0},nativeItems:{kind,_ in kind == .reminder && sourcePermitted ? items : nil})
                 let native=NativeSourceLearningService(container:isolated),whatsapp=SourceContextLearningService(container:isolated)
                 let selected=PAMemory(registration:p.activeID,text:"I study optics report preparation.",kind:.context,provenance:"Fictional human")
                 let unrelated=PAMemory(registration:p.activeID,text:"I enjoy woodland walks.",kind:.preference,provenance:"Fictional human")
@@ -353,6 +423,7 @@ import SwiftData
                     receipt=SourceContextRules.assessmentKey(registration:p.activeID,linkedIdentity:"fictional-device",message:target)
                     p.answer="{\"facts\":[{\"messageID\":\"\(target.id)\",\"text\":\"A later message requests the updated optics report\",\"quote\":\"\(newQuote)\",\"kind\":\"commitment\",\"areas\":[],\"updatesMemoryID\":\"\(candidate.id.uuidString)\",\"state\":\"changed\"}]}"
                 }
+                if scenario == "other-kind disabled" {native.setEnabled(true,kind:.mail,model:r)}
                 var mutationSucceeded=true,expectedHumanRecords:[PAMemory]=[]
                 func mutate() {
                     switch scenario {
@@ -366,6 +437,12 @@ import SwiftData
                     case "candidate corrected":mutationSucceeded=m.correct(candidate.id,with:PAMemory(registration:p.activeID,text:"This earlier report is superseded by my correction.",kind:.context,provenance:"Fictional human"))
                     case "candidate pinned":var edited=candidate;edited.organisation = .init(areas:[.studies],connections:[],manual:true);mutationSucceeded=m.put(edited)
                     case "controls off/on":m.learningEnabled=false;m.learningEnabled=true
+                    case "model changed":p.selectedModel="future-model"
+                    case "unrelated native edit":nativeWriting=true
+                    case "draft opened":a.hasDraft=true
+                    case "other-kind enabled":native.setEnabled(true,kind:.mail,model:r)
+                    case "other-kind disabled":native.setEnabled(false,kind:.mail,model:r)
+                    case "active-kind disabled":if lane == "native" {native.setEnabled(false,kind:.reminder,model:r)} else {w.accessValue.enabled=false}
                     case "source changed":if lane == "native" {items[0].revision="three"} else {sourcePermitted=false}
                     case "Stop":if lane == "native" {native.cancel()} else {whatsapp.cancel()}
                     default:preconditionFailure("Unknown fixture scenario")
@@ -382,7 +459,7 @@ import SwiftData
                 }
                 for _ in 0..<10_000 {if !native.busy && !whatsapp.busy {break};await Task.yield()}
                 let error=lane == "native" ? native.error : whatsapp.error
-                check(mutationSucceeded && p.calls == 1 && !native.busy && !whatsapp.busy,lane+" "+scenario+" executes one real service fixture")
+                check(mutationSucceeded && p.calls == 1 && p.requestedModels == ["fictional"] && !native.busy && !whatsapp.busy,lane+" "+scenario+" executes one real service fixture")
                 if let input=p.inputs.first?.first?["content"],let json=try JSONSerialization.jsonObject(with:Data(input.utf8)) as? [String:Any] {
                     let existing=json["existingMemory"] as? [[String:String]] ?? [],candidates=json["updatableSourceMemory"] as? [[String:Any]] ?? []
                     check(existing.contains{$0["text"] == selected.text} && !existing.contains{$0["text"] == candidate.text} && candidates.contains{$0["id"] as? String == candidate.id.uuidString},lane+" "+scenario+" supplies the fact and independent exact candidate")

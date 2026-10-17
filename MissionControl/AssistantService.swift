@@ -28,6 +28,7 @@ import Observation
     private var reviewSourceContext:String?
     private var reviewQuery:String?
     private var reviewSubmitted:Date?
+    private var reviewModel:String?
     private var reviewValidity:(@MainActor ()->Bool)?
     private var sendingProfile=false
     private var sendingProfileControl=false
@@ -71,7 +72,7 @@ import Observation
     private(set) var mailSearchConversationID: UUID?
     private(set) var mailSearchTurnID: UUID?
     private(set) var contextRevision = UUID()
-    var contextEnabled = false { didSet { if !restoringSettings { settings.set(contextEnabled, forKey: "assistantContextEnabled");contextRevision = UUID() } } }
+    var contextEnabled = false { didSet { if !restoringSettings && contextEnabled != oldValue { settings.set(contextEnabled, forKey: "assistantContextEnabled");contextRevision = UUID() } } }
     var displayName = PAIdentity.name(nil) { didSet { if !restoringSettings { settings.set(displayName,forKey:"paDisplayName") } } }
     var standaloneFocusSelections:[String:[String]] = [:] {
         didSet { if !restoringSettings { settings.set(standaloneFocusSelections,forKey:"paLifeFocusSelections") } }
@@ -217,12 +218,12 @@ import Observation
         allConversations[index].turns.append(.init(id:turnID,role:human ? "user" : "assistant",content:text,completed:true))
         guard save() else {allConversations=previous;return false};return true
     }
-    @discardableResult func sendReview(runtime:AssistantRuntime,conversationID:UUID,prompt:String,humanTurnID:UUID,responseTurnID:UUID,query:String,sourceContext:String = "",humanControl:Bool=false,selectionContext:String="",submitted:Date,focusAreas:[LifeArea],valid:@escaping @MainActor ()->Bool)->Bool {
+    @discardableResult func sendReview(runtime:AssistantRuntime,conversationID:UUID,prompt:String,humanTurnID:UUID,responseTurnID:UUID,query:String,sourceContext:String = "",humanControl:Bool=false,selectionContext:String="",submitted:Date,focusAreas:[LifeArea],capturedModel:String? = nil,valid:@escaping @MainActor ()->Bool)->Bool {
         guard !busy,!connection.busy,valid(),conversation(conversationID)?.reviewKey != nil,ConversationRules.acceptsPrompt(prompt) else {return false}
         let selected=activeID,previousDraft=draft,topic=activeTopicID,focus=activeFocusAreas
         activeID=conversationID;draft=prompt;activeTopicID=nil;activeFocusAreas=focusAreas
-        reviewHumanTurnID=humanTurnID;reviewResponseTurnID=responseTurnID;reviewQuery=query;reviewHumanControl=humanControl;reviewSelectionContext=selectionContext;reviewSourceContext=sourceContext;reviewSubmitted=submitted;reviewValidity=valid
-        defer {activeID=selected;draft=previousDraft;activeTopicID=topic;activeFocusAreas=focus;reviewHumanTurnID=nil;reviewResponseTurnID=nil;reviewQuery=nil;reviewHumanControl=false;reviewSelectionContext="";reviewSourceContext=nil;reviewSubmitted=nil;reviewValidity=nil}
+        reviewHumanTurnID=humanTurnID;reviewResponseTurnID=responseTurnID;reviewQuery=query;reviewHumanControl=humanControl;reviewSelectionContext=selectionContext;reviewSourceContext=sourceContext;reviewSubmitted=submitted;reviewModel=capturedModel;reviewValidity=valid
+        defer {activeID=selected;draft=previousDraft;activeTopicID=topic;activeFocusAreas=focus;reviewHumanTurnID=nil;reviewResponseTurnID=nil;reviewQuery=nil;reviewHumanControl=false;reviewSelectionContext="";reviewSourceContext=nil;reviewSubmitted=nil;reviewModel=nil;reviewValidity=nil}
         send(runtime:runtime)
         return busy
     }
@@ -523,14 +524,12 @@ import Observation
         let workingContext=PAWorkingContext.prepare(memory:memory,registration:connection.activeID,purpose:setupMode ? .setup : isReviewTurn ? .reviewConversation : .conversation,query:recallQuery,previousHuman:replayTurns.last(where:{$0.role == "user" && $0.id != currentUserID})?.content,conversationID:contextID,includeTopics:response.focusAreas != nil,focus:response.focusAreas ?? topic?.notebookAreas ?? [],now:runtime.clock())
         let selection=workingContext.selection
         let memorySnapshot = sharedMemoryContext(selection), topicFocus = topic?.focus ?? "", registration = connection.activeID
-        let topicAreas=topic?.notebookAreas ?? []
         let lifeFocus=response.focusAreas
         let memoryRevision = memory.revision
-        let memoryControls = memory.controlsRevision
+        let memoryControls = memory.useRevision
         let resolutionContext = setupMode || !contextEnabled ? [] : Array(owned.resolvedRequests.prefix(24))
-        let whatsappScope = owned.whatsappScope
         let weatherScope = owned.weatherScope
-        let selectedModel = connection.selectedModel, capturedPreferences = preferences, capturedName = displayName
+        let selectedModel = reviewModel ?? connection.selectedModel, capturedPreferences = preferences, capturedName = displayName
         let sourceEnabled = contextEnabled, calendars = excludedCalendars, lists = excludedLists, accounts = excludedAccounts
         let notebookContext=workingContext.notebook
         let notebookIDs=PAContextCapture.notebookIDs(notebookContext)
@@ -571,7 +570,7 @@ import Observation
         """
         let reusableMail = toolMailRegistration == registration && mailSearchConversationID == id && mailSearchTopicID == contextID ? toolMail : nil
         let humanContext = history.filter { $0["role"] == "user" }.suffix(8).compactMap { $0["content"] }.joined(separator:"\n")
-        let session = runtime.tools(.init(registration:registration,human:prompt,humanContext:humanContext,topicID:contextID,turnID:currentUserID,mail:reusableMail,history:history,focusAreas:lifeFocus))
+        let session = runtime.tools(.init(registration:registration,human:prompt,humanContext:humanContext,topicID:contextID,turnID:currentUserID,mail:reusableMail,history:history,focusAreas:lifeFocus,inferenceModel:selectedModel))
         var nativeOutcomeUnconfirmed=false
         var reviewConfirmed:[String:String]=[:]
         @MainActor func confirmedReceipts()->[String] {session.receipts+reviewConfirmed.keys.sorted().compactMap{reviewConfirmed[$0]}}
@@ -619,7 +618,9 @@ import Observation
             var invalidationReason = "the request context changed"
             var expectedSourceMemoryIDs=Set(capturedSourceMemoryIDs)
             var replySourceMemoryIDs=capturedSourceMemoryIDs
-            let expectedWeather = weatherScope
+            var expectedWeather:String? = sourceEnabled && !setupMode && context != nil && owned.weatherSupplied ? weatherScope : nil
+            let initialSourceContext=context.flatMap{try? JSONSerialization.jsonObject(with:Data($0.utf8)) as? [String:Any]}
+            var expectedWhatsApp:WhatsAppSourceScope? = sourceEnabled && initialSourceContext?["whatsappContextSupplied"] as? Bool == true ? owned.whatsappScope : nil
             @MainActor func owns(_ current:AssistantRuntimeState)->Bool {
                 func reject(_ reason:String)->Bool {invalidationReason=reason;return false}
                 guard reviewValid?() != false else {return reject("this Review request or its source access changed")}
@@ -628,9 +629,9 @@ import Observation
                 // instruction and exact operation guards retain their authority.
                 guard setupMode || expectedResolutions.allSatisfy({current.resolvedRequests.contains($0)}) else {return reject("an email confirmation supplied to this request changed or became unavailable")}
                 guard !setupMode || (setupActive(contextID) && profileSession(contextID) == response.profileSessionID) else {return reject("the setup session changed")}
-                guard selectedModel == connection.selectedModel else {return reject("the selected AI model changed")}
-                guard capturedPreferences == preferences && capturedName == displayName else {return reject("the assistant settings changed")}
-                guard memoryControls == memory.controlsRevision else {return reject("the memory controls changed")}
+                // These instructions/model/Focus belong to this turn; changing
+                // future defaults does not revoke the captured human request.
+                guard memoryControls == memory.useRevision else {return reject("the memory-use permission changed")}
                 if expectedMemory != memory.revision {
                     guard expectedBeliefs == currentBeliefs(Set(expectedBeliefs.keys)) else {return reject("a memory supplied to this request changed or became unavailable")}
                     expectedMemory=memory.revision
@@ -642,10 +643,9 @@ import Observation
                 let usable=Set((memory.enabled ? memory.permittedRecords : []).filter{MemoryRules.usable($0,registration:registration,now:runtime.clock())}.map(\.id))
                 guard expectedSourceMemoryIDs.isSubset(of:usable) else {return reject("supporting source memory became unavailable")}
                 guard Set(expectedBeliefs.keys).isSubset(of:usable) else {return reject("a memory supplied to this request became unavailable")}
-                guard expectedWeather == current.weatherScope else {return reject("the weather permission or controls changed")}
-                guard whatsappScope == current.whatsappScope else {return reject("the WhatsApp account or access choices changed")}
-                guard topicFocus == (self.conversation(contextID)?.focus ?? "") && topicAreas == (self.conversation(contextID)?.notebookAreas ?? []) else {return reject("the conversation Focus changed")}
-                guard sourceEnabled == contextEnabled && calendars == excludedCalendars && lists == excludedLists && accounts == excludedAccounts else {return reject("the source access choices changed")}
+                guard expectedWeather.map({$0 == current.weatherScope}) ?? true else {return reject("access to the supplied weather changed")}
+                guard expectedWhatsApp.map({$0 == current.whatsappScope}) ?? true else {return reject("access to the supplied WhatsApp context changed")}
+                guard (!sourceEnabled || contextEnabled) && calendars.isSuperset(of:excludedCalendars) && lists.isSuperset(of:excludedLists) && accounts.isSuperset(of:excludedAccounts) else {return reject("source access was withdrawn")}
                 return true
             }
             let validOwnership: NativeWriteValidity = {
@@ -746,6 +746,8 @@ import Observation
                             }
                             else {output = try await executePrepared(call)}
                             succeeded=true
+                            if expectedWeather == nil {expectedWeather=session.suppliedWeatherScope}
+                            if expectedWhatsApp == nil {expectedWhatsApp=session.suppliedWhatsAppScope}
                             if let arguments=nativePreparationArguments(call),let result=(try? JSONSerialization.jsonObject(with:Data(output.utf8))) as? [String:Any],result["verified"] as? Bool == true {
                                 let recovered=nativePreparations.filter{$0.name == call.name && $0.arguments == arguments}
                                 if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {

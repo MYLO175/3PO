@@ -214,15 +214,16 @@ struct ReviewWorkConversationResult {
         }
     }
     private func matchesScope(_ job:ReviewWorkJob,_ scope:ReviewWorkScope)->Bool {
-        if job.mode == .approval {return job.scope.registration == scope.registration && job.scope.storage == scope.storage}
-        return job.scope == scope
+        // Model and relevance/source defaults belong to the captured request.
+        // Exact source access is checked independently by runtime.permits.
+        job.scope.registration == scope.registration && job.scope.storage == scope.storage
     }
     func drive(_ runtime:ReviewWorkRuntime) {
         guard readable,task == nil,activeID == nil,runtime.ready() else {return}
         let scope=runtime.scope()
         guard let job=state.jobs.first(where:{$0.scope.registration == scope.registration && $0.phase == .queued}) else {return}
         guard matchesScope(job,scope),runtime.permits(job.source) else {
-            _=update(job.id){$0.phase = .failed;$0.error="The account, model, source choices or storage changed. Reopen this Review conversation before continuing.";$0.finished = .now}
+            _=update(job.id){$0.phase = .failed;$0.error="The account, source access or storage changed. Reopen this Review conversation before continuing.";$0.finished = .now}
             if let value=self.job(job.id) {runtime.changed(value)};return
         }
         guard update(job.id,{$0.phase = .running;$0.error=nil;$0.finished=nil}) else {return}

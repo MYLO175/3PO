@@ -65,28 +65,41 @@ import SwiftData
             let before=model.reviewAcknowledgementRevision
             let tools=ForegroundInteractionTools(container)
             var runtime=model.assistantRuntime();runtime.tools={_ in tools};runtime.afterTurn={}
+            // This fixture supplies no weather and has no location tool. Keep
+            // its weather port fictional too: macOS may finish initialising
+            // native permission asynchronously during the first desktop model.
+            let desktopState=runtime.state
+            runtime.state={
+                guard var state=desktopState() else {return nil}
+                state.weatherScope="fictional-no-weather"
+                return state
+            }
             let id:UUID
             if mode == "review-dismiss" {
                 id=assistant.openReview(key:"fictional-requested-source",title:"Requested source",sourceKind:"mail",accountID:"fictional-mail",messageID:"fictional-other-source",identity:nil,chatID:nil,seeds:[])!
                 assistant.draft="Retained general draft"
-                guard assistant.sendReview(runtime:runtime,conversationID:id,prompt:"Add a reminder for next week",humanTurnID:UUID(),responseTurnID:UUID(),query:"Requested reminder",submitted:.now,focusAreas:[],valid:{true}) else {throw IntegrationError.verification}
+                guard assistant.sendReview(runtime:runtime,conversationID:id,prompt:"Add a reminder for next week",humanTurnID:UUID(),responseTurnID:UUID(),query:"Requested reminder",submitted:.now,focusAreas:[],valid:{true}) else {throw ActionFailure.message("Fictional \(mode) could not start: \(assistant.error ?? "no request")")}
             } else {
                 id=assistant.openPA()!
-                guard assistant.send(runtime:runtime,topicID:nil,prompt:"Add a reminder for next week") else {throw IntegrationError.verification}
+                guard assistant.send(runtime:runtime,topicID:nil,prompt:"Add a reminder for next week") else {throw ActionFailure.message("Fictional \(mode) could not start: \(assistant.error ?? "no request")")}
             }
             for _ in 0..<40000 {if provider.held != nil || !assistant.busy {break};await Task.yield()}
-            guard provider.held != nil else {throw IntegrationError.verification}
+            guard provider.held != nil else {throw ActionFailure.message("Fictional \(mode) did not reach inference: \(assistant.error ?? "no active request")")}
             if mode == "chat-undo" {model.emailSummaries.undoDismiss(model)} else {dismiss()}
             let changed=model.reviewAcknowledgementRevision,saved=ReviewInferenceGuard.fingerprint(model.emailSummaries.records)
             provider.release()
             for _ in 0..<40000 {if !assistant.busy {break};await Task.yield()}
             let turn=assistant.conversation(id)?.turns.last
             let persisted:[String:String]?=try tools.repository.decode("fictionalInteractionReminder")
+            if assistant.error != nil || tools.writes != 1 || provider.calls != 2 {
+                let detail="Fictional foreground \(mode): calls=\(provider.calls), writes=\(tools.writes), phase=\(turn?.actionResult?.phase ?? "missing"), error=\(assistant.error ?? "none")\n"
+                FileHandle.standardError.write(Data(detail.utf8))
+            }
             checks["Foreground \(mode) exercises the actual changed desktop acknowledgement"]=before != changed
             checks["Foreground \(mode) completes the owned reminder request"] = !assistant.busy && assistant.error == nil && turn?.actionResult?.phase == "completed"
             checks["Foreground \(mode) saves exactly once with verified receipt"]=tools.writes == 1 && tools.receipts.count == 1 && persisted?["operation"] == "exact-owned-creation"
             checks["Foreground \(mode) preserves exact unrelated dismissal timestamp and source version"]=ReviewInferenceGuard.fingerprint(model.emailSummaries.records) == saved && model.reviewAcknowledgementRevision == changed
-            checks["Foreground \(mode) preserves completion across reopening"]=AssistantService(connection:provider,container:container,settings:settings,imageDirectory:images).conversation(id)?.turns.last?.actionResult == turn?.actionResult
+            checks["Foreground \(mode) preserves completion across reopening"]=turn?.actionResult?.phase == "completed" && AssistantService(connection:provider,container:container,settings:settings,imageDirectory:images).conversation(id)?.turns.last?.actionResult == turn?.actionResult
             checks["Foreground \(mode) makes no subscription request"]=provider.calls == 2 && model.aiUsage.state.records.isEmpty
             if mode == "review-dismiss" {checks["Foreground Review interaction retains the unsent general draft"]=assistant.draft == "Retained general draft"}
         }

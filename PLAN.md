@@ -1,5 +1,13 @@
 # Mission Control specification
 
+## 17 October: app-wide owned-job continuity
+
+The human extended the request beyond Review: ordinary edits should only stop affected AI work when authority, exact conflicts or feasibility prevent completion. Completed and installed as signed code `3bef5e9`: captured model/style/Focus, draft/scheduling independence, exact memory and relationship dependencies, native-edit continuity and account/purpose source clocks. Existing permissions, Stop, provider/sleep/usage, save uncertainty and readback remain. No new product feature or automatic replay. [Audit](docs/JOB_CONTINUITY_AUDIT_2026-10-17.md) and STATUS/VALIDATION distinguish implementation, bounded tests, installation and sustained acceptance.
+
+## 17 October: keep independent Review interactions from cancelling requests
+
+The latest screenshot proves the remaining global human Dismiss/Undo gate still aborts unrelated foreground requests. Remove attention-only changes from chat/Review conversation, background Review and brief-preparation ownership. Preserve the latest exact dismissal during background merge, current-advice freshness and exact action/permission/Stop/uncertain-save guards. Implemented, validated and installed as signed code `802d460`; no new feature, extra AI call or failed-request replay. Current evidence and retained-data verification are in STATUS/VALIDATION.
+
 ## 16 October: prevent unrelated background cancellation
 
 Completed reliability follow-up: briefs, Review, email and learning validate supplied evidence independently of unrelated memory/project/completion updates. Equivalent native sync hints and notification delivery controls preserve analysis. Stale historical Review rows are isolated from supported fresh siblings. Exact authority, current evidence, Stop, native readback/uncertainty and storage CAS remain; attempted failures are not replayed. Implementation, signed checks and data-preserving installation are recorded in STATUS/VALIDATION. This adds no product feature or automatic lane. Sustained real source traffic/sleep/wake remains acceptance work.

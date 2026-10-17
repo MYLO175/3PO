@@ -9,7 +9,7 @@ extension EmailSummaryService {
         return true
     }
     private func feedbackSource(_ job:ReviewFeedbackJob,model:DashboardModel)->ReviewFeedbackEmail? {
-        guard let message=model.mailData.messages.first(where:{$0.id == job.messageID && $0.accountID == job.accountID}),let summary=current(message,model:model),job.matches(message:message,summary:summary,registration:model.chatGPT.activeID,model:model.chatGPT.selectedModel,sourceRevision:model.sourceRevision,sourceSettings:model.proactive.sourceSettingsScope(model)),feedbackSourceCurrent(message,summary:summary,model:model) else {return nil}
+        guard enabled,let message=model.mailData.messages.first(where:{$0.id == job.messageID && $0.accountID == job.accountID}),let summary=current(message,model:model),job.matches(message:message,summary:summary,registration:model.chatGPT.activeID,model:model.chatGPT.selectedModel,sourceRevision:model.sourceRevision,sourceSettings:model.proactive.sourceSettingsScope(model)),feedbackSourceCurrent(message,summary:summary,model:model) else {return nil}
         return .init(message:message,summary:summary)
     }
     func feedbackMemory(_ job:ReviewFeedbackJob,model:DashboardModel)->PAMemory? {
@@ -60,7 +60,7 @@ extension EmailSummaryService {
         },ready:{self.feedbackReady(model,request:request)},prepare:{job in
             guard let source=self.feedbackSource(job,model:model) else {throw ReviewFeedbackFailure.message("The email changed. Your feedback is retained.")}
             completionGuard=(job.id,self.reviewFeedbackGeneration)
-            return try await self.interpretReviewFeedback(source,words:job.words,about:job.about,model:model,heartbeatRequest:request,isCurrent:{self.feedbackSource(job,model:model) != nil})
+            return try await self.interpretReviewFeedback(source,words:job.words,about:job.about,model:model,inferenceModel:job.model,heartbeatRequest:request,isCurrent:{self.feedbackSource(job,model:model) != nil})
         },commit:{job,interpretation in
             if let request {try request.validate()}
             #if DEBUG
@@ -68,7 +68,7 @@ extension EmailSummaryService {
             #else
             let fictional=false
             #endif
-            guard completionGuard?.id == job.id,completionGuard?.generation == self.reviewFeedbackGeneration,!model.assistant.busy,!model.writing,model.heartbeat.deviceAvailable,(fictional || model.chatGPT.inferenceVerified),!model.chatGPT.usagePaused,model.assistant.memory.canSaveReviewPreference else {throw ReviewFeedbackFailure.message("Feedback was interrupted or memory storage is unavailable. No preference was saved; your feedback is retained.")}
+            guard completionGuard?.id == job.id,completionGuard?.generation == self.reviewFeedbackGeneration,!model.assistant.busy,model.heartbeat.deviceAvailable,(fictional || model.chatGPT.inferenceVerified),!model.chatGPT.usagePaused,model.assistant.memory.canSaveReviewPreference else {throw ReviewFeedbackFailure.message("Feedback was interrupted or memory storage is unavailable. No preference was saved; your feedback is retained.")}
             guard model.assistant.memory.saveReviewPreference(job.words,registration:job.registration,about:job.about,interpretation:interpretation,id:job.memoryID) else {throw ReviewFeedbackFailure.message(model.assistant.memory.error ?? "The preference could not be saved. Your feedback is retained.")}
             guard self.feedbackMemory(job,model:model)?.reviewInterpretation == interpretation else {throw ReviewFeedbackFailure.message("The saved preference could not be verified. Inspect memory before retrying.")}
         },alreadySaved:{job in self.feedbackMemory(job,model:model) != nil})

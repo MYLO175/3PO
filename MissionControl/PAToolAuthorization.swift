@@ -3,7 +3,7 @@ import Foundation
 /// A source-free check separates human intent from the model's source-reading context.
 /// This is semantic validation, not a command-word/first-word gate.
 @MainActor enum PAToolAuthorization {
-    static func check(call: PAFunctionCall, args: [String:Any], human: String, history: [[String:String]], target: String?, model: DashboardModel) async throws -> Bool {
+    static func check(call: PAFunctionCall, args: [String:Any], human: String, history: [[String:String]], target: String?, model: DashboardModel,inferenceModel:String? = nil) async throws -> Bool {
         let mutating = LifeWorkspaceTools.mutations.contains(call.name) || call.name == "remember_context" || ["change_calendar","change_reminder","change_memory","undo_apple_change","dismiss_suggestion","execute_review_actions"].contains(call.name) || call.name == "save_memory"
         guard mutating else { return true }
         if ["save_memory","remember_context"].contains(call.name) {
@@ -28,7 +28,7 @@ import Foundation
         struct Decision: Decodable { var authorized: Bool; var reason: String;var organisationValid:Bool? }
         let decision:Decision
         do {
-            let answer = try await model.chatGPT.streamResponse(input:[["role":"user","content":value]],instructions:instructions,purpose:.intentCheck) { _ in }
+            let answer = try await model.chatGPT.streamResponse(input:[["role":"user","content":value]],instructions:instructions,model:inferenceModel,purpose:.intentCheck) { _ in }
             decision = try JSONDecoder().decode(Decision.self,from:Data(answer.utf8))
         } catch is CancellationError {throw CancellationError()}
         catch {throw PAIntentFailure(reason:error.localizedDescription,kind:.unavailable)}

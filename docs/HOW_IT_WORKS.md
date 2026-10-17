@@ -683,3 +683,11 @@ Account, selected model, human source choices, permissions, Stop, foreground own
 Dismissing a Review card, or undoing that dismissal, does not cancel an independent chat or Review conversation. The current request keeps its captured context and human instruction. A later attention read uses current choices; a dismissal stays saved and does not mean an Apple task is complete. Exact operation checks still prevent saving over an item you changed manually.
 
 Brief preparation can finish its dated input snapshot when attention changes. The saved brief retains its original attention stamp, so old attention is not silently presented to another AI request as current advice. This does not add a retry, reset history or rerun an old failed instruction.
+
+Background Review finishes as well. Before saving its result, it checks the latest exact dismissal state: rows for a newly dismissed email stay out, while independent sources and distinct sibling actions can still be saved. A dismissed message can still serve as truthful confirmation evidence for a different request; dismissal does not change what it says. Existing Dismiss/Undo state is merged, not overwritten by the older input snapshot.
+
+## 17 October: changing settings while AI is working
+
+A running request keeps the model, name, writing instructions and Focus it started with. New choices apply to later work. Editing or reopening a draft, changing the heartbeat interval, learning options or an unrelated project/memory record is not Stop. Completed learning merges into the newer saved state rather than overwriting it. Read-only memory use and permission to learn are separate.
+
+Source permissions attach to the relevant account, purpose and data actually supplied. A forecast or WhatsApp tool read can add a dependency later in the request; an unused connector adds none. Disconnect/relink and actual access withdrawal remain guarded. Exact source/item conflicts affect the supported output or operation, while the heartbeat can finish independent stages. Actual Send still uses serial foreground ownership; a draft waits if a background provider call is active. [Audit and verification](JOB_CONTINUITY_AUDIT_2026-10-17.md).
