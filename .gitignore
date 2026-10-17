@@ -8,6 +8,7 @@ xcuserdata/
 *.jpg
 *.json
 !project.json
+!scripts/checks/check-suites.json
 
 # Public app artwork
 !MissionControl/Resources/AppIcon.png

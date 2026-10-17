@@ -25,3 +25,5 @@ Private evidence: combined affected suites `/private/tmp/missioncontrol-check-6e
 ## Earlier engineering evidence
 
 [October status history](docs/history/status/2026-10.md) preserves the earlier dated sections in full.
+
+Final integration verification caught the relocated JSON suite manifest being omitted by the repository ignore rule. An explicit exception now tracks `scripts/checks/check-suites.json`; every mapped destination is verified in the committed index as well as on disk. The restored manifest is the exact path-translated definition used by the passing70-suite run.
