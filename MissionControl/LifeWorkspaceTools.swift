@@ -9,15 +9,17 @@ import CryptoKit
     let includeTopics: Bool
     let turnID: UUID
     private(set) var issued: [UUID:LifeItem] = [:]
-    private var issuedLinks: [UUID:UUID] = [:]
+    private var issuedLinks: [UUID:LifeItemLink] = [:]
     private var issuedWidgets: [UUID:WidgetPlacement] = [:]
     private let evaluationStore: LifeWorkspaceStore?
     private var store: LifeWorkspaceStore { evaluationStore ?? model.assistant.projects }
     private var approvalReferenceIDs = Set<UUID>()
     struct Capture: Codable {
         var issued: [UUID:LifeItem]
+        // Retained for approvals saved before exact relationship captures.
         var links: [UUID:UUID]
         var widgets: [UUID:WidgetPlacement]
+        var exactRelationships: [UUID:LifeItemLink]? = nil
     }
     init(model: DashboardModel, registration: String, topic: UUID?, includeTopics: Bool, turnID: UUID, evaluationStore: LifeWorkspaceStore? = nil) {
         self.evaluationStore = evaluationStore
@@ -81,10 +83,10 @@ import CryptoKit
         var references = try exactReferences(call,args:args)
         if call.name == "unlink_life_item" {
             guard let id = (args["id"] as? String).flatMap(UUID.init(uuidString:)),
-                  let link = store.state.links.first(where: { $0.id == id && $0.registration == registration && (includeTopics || $0.conversationID == nil || $0.conversationID == topic) }),
-                  issuedLinks[id].map({ $0 == store.revision }) ?? true else { throw LifeWorkspaceFailure.message("Read the exact current relationship before removing it.") }
+                  let link = currentRelationship(id),
+                  issuedLinks[id].map({ $0 == link }) ?? true else { throw LifeWorkspaceFailure.message("Read the exact current relationship before removing it.") }
             references[link.from] = false
-            issuedLinks[id] = store.revision
+            issuedLinks[id] = link
         }
         for (id,parent) in references {
             guard let item = all.first(where: { $0.id == id }),
@@ -123,7 +125,7 @@ import CryptoKit
             return left.uuidString < right.uuidString
         }
         let retained = Dictionary(uniqueKeysWithValues:ordered.prefix(80).compactMap { id in issued[id].map { (id,$0) } })
-        return .init(issued:retained,links:issuedLinks,widgets:issuedWidgets)
+        return .init(issued:retained,links:[:],widgets:issuedWidgets,exactRelationships:issuedLinks)
     }
     /// Approval adopts only captured identities. A creation's destination keeps
     /// its identity when descriptive fields change; edits retain exact revisions.
@@ -144,17 +146,29 @@ import CryptoKit
                 throw LifeWorkspaceFailure.message("The approved project target changed or is unavailable. Review its current state before saving.")
             }
         }
+        let restoredLinks: [UUID:LifeItemLink]
+        if let exact = value.exactRelationships {
+            restoredLinks = exact.filter { id, link in link.id == id && currentRelationship(id) == link }
+        } else {
+            // Old approvals contain no relationship payload. Their original store
+            // stamp must still match before adopting any current exact identity.
+            restoredLinks = value.links.reduce(into:[:]) { result, entry in
+                if entry.value == store.revision, let link = currentRelationship(entry.key) { result[entry.key] = link }
+            }
+        }
         if call.name == "unlink_life_item" {
-            guard let id = (args["id"] as? String).flatMap(UUID.init(uuidString:)),value.links[id] == store.revision,
-                  let link = store.state.links.first(where: { $0.id == id && $0.registration == registration && (includeTopics || $0.conversationID == nil || $0.conversationID == topic) }),restored[link.from] != nil else { throw LifeWorkspaceFailure.message("The approved relationship changed or is unavailable.") }
+            guard let id = (args["id"] as? String).flatMap(UUID.init(uuidString:)),let link = restoredLinks[id],restored[link.from] != nil else { throw LifeWorkspaceFailure.message("The approved relationship changed or is unavailable.") }
         }
         if call.name == "show_project_view" {
             guard let id = (args["widget"] as? String).flatMap(UUID.init(uuidString:)),let captured = value.widgets[id],model.workspace.selected.widgets.contains(captured),captured.kind == .projects else { throw LifeWorkspaceFailure.message("The approved Projects widget changed or is unavailable.") }
         }
         issued = restored
-        issuedLinks = value.links.filter { $0.value == store.revision }
+        issuedLinks = restoredLinks
         issuedWidgets = value.widgets.filter { model.workspace.selected.widgets.contains($0.value) }
         approvalReferenceIDs = Set(references.keys)
+    }
+    private func currentRelationship(_ id: UUID) -> LifeItemLink? {
+        store.state.links.first { $0.id == id && $0.registration == registration && (includeTopics || $0.conversationID == nil || $0.conversationID == topic) }
     }
     private func current(_ text: String?) throws -> LifeItem {
         guard let id = text.flatMap(UUID.init(uuidString:)), let issued = issued[id],
@@ -179,7 +193,7 @@ import CryptoKit
         if args.count == 1, args["authorization"] != nil, let ticket = store.undoEdit(registration) {
             targets.append(["undoItemID":ticket.before.id.uuidString, "titleData":ticket.before.title, "kind":ticket.before.kind.workspaceKind.rawValue])
         }
-        if let id = (args["id"] as? String).flatMap(UUID.init(uuidString:)), issuedLinks[id] != nil, let link = store.state.links.first(where: { $0.id == id && $0.registration == registration }), let owner = issued[link.from] {
+        if let id = (args["id"] as? String).flatMap(UUID.init(uuidString:)), let link = currentRelationship(id), issuedLinks[id] == link, let owner = issued[link.from] {
             targets.append(["relationshipID":link.id.uuidString, "ownerTitleData":owner.title, "relation":link.relation.rawValue, "kind":link.target.kind.rawValue])
         }
         let batch: [[String:Any]] = (args["items"] as? [[String:Any]] ?? []).enumerated().map { index, entry in
@@ -233,7 +247,7 @@ import CryptoKit
             let links = store.state.links.filter { issued[$0.from] != nil && $0.registration == registration && (includeTopics || $0.conversationID == nil || $0.conversationID == topic) }.prefix(120)
             var relationships: [[String:Any]] = []
             for link in links {
-                issuedLinks[link.id] = store.revision
+                issuedLinks[link.id] = link
                 if let target = resolve(link.target) {
                     relationships.append(["id":link.id.uuidString, "from":link.from.uuidString, "relation":link.relation.rawValue, "targetKind":link.target.kind.rawValue, "targetID":link.target.id, "targetData":target.title, "coverage":target.detail])
                 } else {
@@ -304,12 +318,15 @@ import CryptoKit
             }
             let summary = "Linked “\(owner.title)” without changing its source."
             let link = try store.link(.init(registration:registration, conversationID:owner.conversationID, from:owner.id, relation:LifeRelation(rawValue:text("relation")!)!, target:target), expected:owner.revision, receipt:.init(id:operationKey, registration:registration, result:summary, itemID:owner.id))
-            issuedLinks[link.id] = store.revision
+            issuedLinks[link.id] = link
             return try json(["saved":true, "result":summary, "relationshipID":link.id.uuidString])
         case "unlink_life_item":
-            guard let id = text("id").flatMap(UUID.init(uuidString:)), let expected = issuedLinks[id] else { throw LifeWorkspaceFailure.message("Read the exact current relationship before removing it.") }
+            guard let id = text("id").flatMap(UUID.init(uuidString:)), let link = issuedLinks[id], currentRelationship(id) == link else { throw LifeWorkspaceFailure.message("Read the exact current relationship before removing it.") }
+            _ = try current(link.from.uuidString)
             let summary = "Removed the relationship. Both endpoints are retained."
-            try store.unlink(id, registration:registration, expectedRevision:expected, receipt:.init(id:operationKey, registration:registration, result:summary, itemID:nil))
+            // Exact issued inputs were checked synchronously above. Retain the
+            // store's loaded-byte CAS without depending on unrelated local edits.
+            try store.unlink(id, registration:registration, expectedRevision:store.revision, receipt:.init(id:operationKey, registration:registration, result:summary, itemID:nil))
             return try json(["saved":true, "result":summary])
         case "show_project_view":
             guard evaluationStore == nil else { throw LifeWorkspaceFailure.message("Disposable evaluations cannot change your dashboard.") }
