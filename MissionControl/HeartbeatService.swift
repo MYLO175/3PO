@@ -14,7 +14,7 @@ import SwiftData
     }}
     /// A durable permission boundary, independent of ordinary heartbeat timing edits.
     private(set) var whatsappLearningAccessRevision:UUID?
-    var intervalMinutes:Int {didSet {guard !restoringSettings else {return};if ![15,30,60,120].contains(intervalMinutes) {intervalMinutes=60};guard intervalMinutes != oldValue else {return};settings.set(intervalMinutes,forKey:"paHeartbeatMinutes");controlsRevision=UUID();cancel()}}
+    var intervalMinutes:Int {didSet {guard !restoringSettings else {return};if ![15,30,60,120].contains(intervalMinutes) {intervalMinutes=60};guard intervalMinutes != oldValue else {return};settings.set(intervalMinutes,forKey:"paHeartbeatMinutes")}}
     var dailyCallLimit:Int {didSet {guard !restoringSettings else {return};let bounded=PAHeartbeatRules.callLimit(dailyCallLimit);if bounded != dailyCallLimit {dailyCallLimit=bounded};guard dailyCallLimit != oldValue else {return};settings.set(dailyCallLimit,forKey:"paHeartbeatCallLimit");controlsRevision=UUID();cancel()}}
     @ObservationIgnored private var restoringSettings=true
     @ObservationIgnored private let settings:UserDefaults
@@ -25,7 +25,7 @@ import SwiftData
     }
     func claimCall(_ registration:String) throws {
         let day=BriefingRules.day(clock())
-        guard deviceAvailable,capturedPowerRevision == powerRevision,busy,registration == capturedRegistration,state.accounts[registration]?.phase == "assessing",day == capturedDay,controlsRevision == capturedControls,task?.isCancelled != true,!composerActive,capturedEligibility?() != false else { throw ActionFailure.message("Background-review device, account, day, controls or foreground ownership changed before inference.") }
+        guard deviceAvailable,capturedPowerRevision == powerRevision,busy,registration == capturedRegistration,state.accounts[registration]?.phase == "assessing",day == capturedDay,controlsRevision == capturedControls,task?.isCancelled != true,capturedEligibility?() != false else { throw ActionFailure.message("Background-review device, account, day, controls or foreground ownership changed before inference.") }
         let prior=state.accounts[registration] ?? .init()
         state.accounts[registration]=try PAHeartbeatRules.claim(prior,day:day,limit:dailyCallLimit)
         do { try save() } catch { state.accounts[registration]=prior;throw error }
@@ -185,7 +185,9 @@ import SwiftData
     var composerActive: Bool { lastTyping.map { clock().timeIntervalSince($0) < 120 } ?? false }
     // Accepted Review jobs need a short typing grace, not the automatic heartbeat's two-minute quiet window.
     var reviewComposerActive: Bool { lastTyping.map { clock().timeIntervalSince($0) < 2 } ?? false }
-    func userStartedTyping() { lastTyping = clock(); cancel() }
+    /// Draft editing defers the next automatic run; it does not stop captured work.
+    func noteDraftEditing() {lastTyping=clock()}
+    func userStartedTyping() {noteDraftEditing();cancel()}
     func cancel() { task?.cancel() }
     func cancelAndWait() async {
         let active=task
@@ -202,7 +204,7 @@ import SwiftData
         guard manual || (!composerActive && environment.contextEnabled && environment.inferenceVerified && !environment.usagePaused) else {return}
         // Let foreground work win; this local due check never runs inference.
         guard !environment.workBusy else { return }
-        let controls=controlsRevision,day=BriefingRules.day(clock()),selectedModel=environment.model
+        let controls=controlsRevision,day=BriefingRules.day(clock())
         let power=powerRevision
         let settings=environment.sourceSettings,choices=environment.whatsappChoices,identity=environment.whatsappIdentity
         let runID=UUID().uuidString
@@ -252,24 +254,24 @@ import SwiftData
                 let sources=try await runtime.prepareSources(.init(registration:registration,whatsappEnabled:whatsappEnabled,clock:clock,validate:{
                     try Task.checkCancellation()
                     let current=runtime.environment()
-                    guard self.capturedRunID == runID,self.deviceAvailable,power == self.powerRevision,(manual || self.enabled),controls == self.controlsRevision,registration == current.registration,day == BriefingRules.day(self.clock()),selectedModel == current.model,PAHeartbeatRules.canPrepareSources(settings:settings,currentSettings:current.sourceSettings,choices:choices,currentChoices:current.whatsappChoices,identity:identity,currentIdentity:current.whatsappIdentity) else {throw ActionFailure.message("Background-review account, model, device or source choices changed during source preparation.")}
+                    guard self.capturedRunID == runID,self.deviceAvailable,power == self.powerRevision,(manual || self.enabled),controls == self.controlsRevision,registration == current.registration,day == BriefingRules.day(self.clock()),PAHeartbeatRules.canPrepareSources(settings:settings,currentSettings:current.sourceSettings,choices:choices,currentChoices:current.whatsappChoices,identity:identity,currentIdentity:current.whatsappIdentity) else {throw ActionFailure.message("Background-review account, device or source choices changed during source preparation.")}
                 }))
                 let wantsWhatsApp=sources.wantsWhatsApp,whatsappReady=sources.whatsappReady
                 try Task.checkCancellation()
-                guard (manual || enabled),controls == controlsRevision,registration == runtime.environment().registration,day == BriefingRules.day(clock()),selectedModel == runtime.environment().model,
-                      PAHeartbeatRules.canPrepareSources(settings:settings,currentSettings:runtime.environment().sourceSettings,choices:choices,currentChoices:runtime.environment().whatsappChoices,identity:identity,currentIdentity:runtime.environment().whatsappIdentity) else { throw ActionFailure.message("Background-review account, model, day or source choices changed; no assessment started.") }
+                guard (manual || enabled),controls == controlsRevision,registration == runtime.environment().registration,day == BriefingRules.day(clock()),
+                      PAHeartbeatRules.canPrepareSources(settings:settings,currentSettings:runtime.environment().sourceSettings,choices:choices,currentChoices:runtime.environment().whatsappChoices,identity:identity,currentIdentity:runtime.environment().whatsappIdentity) else { throw ActionFailure.message("Background-review account, day or source choices changed; no assessment started.") }
                 // The helper authenticates its saved identity during cold-start
                 // collection. Capture its verified scope before the first AI job.
                 // Changed user choices or a previously known identity still stop.
                 let scope=runtime.environment().scope
                 capturedEligibility={
                     let current=runtime.environment()
-                    return current.permitted && current.registration == registration && current.model == selectedModel && current.scope == scope && current.contextEnabled && current.inferenceVerified && !current.usagePaused && !current.foregroundBusy
+                    return current.permitted && current.registration == registration && current.scope == scope && current.contextEnabled && current.inferenceVerified && !current.usagePaused && !current.foregroundBusy
                 }
                 @MainActor func requireOwned() throws {
                     try Task.checkCancellation()
                     if self.task?.isCancelled == true {throw CancellationError()}
-                    guard self.capturedRunID == runID,self.deviceAvailable,power == self.powerRevision,(manual || self.enabled),controls == self.controlsRevision,day == BriefingRules.day(self.clock()),self.capturedEligibility?() == true,!self.composerActive else {
+                    guard self.capturedRunID == runID,self.deviceAvailable,power == self.powerRevision,(manual || self.enabled),controls == self.controlsRevision,day == BriefingRules.day(self.clock()),self.capturedEligibility?() == true else {
                         throw ActionFailure.message("Background-review ownership or foreground availability changed; completed work retained.")
                     }
                 }
@@ -287,14 +289,14 @@ import SwiftData
                 let pendingSources=runtime.pending(mailReview,whatsappReady,nativeReady).any
                 var availableAccount=account;availableAccount.pending=pendingSources
                 let assess=PAHeartbeatRules.needsAssessment(availableAccount,fingerprint:fingerprint,manual:manual,pendingSources:pendingSources)
-                guard assess,runtime.environment().contextEnabled,runtime.environment().inferenceVerified,!runtime.environment().usagePaused,!composerActive else {
+                guard assess,runtime.environment().contextEnabled,runtime.environment().inferenceVerified,!runtime.environment().usagePaused else {
                     if !assess { status="Background review checked; no new source material." }
                     else { status="Context prepared; AI assessment waits for enabled context, allowance and an idle composer." }
                     account = assess ? PAHeartbeatRules.deferred(account,now:clock(),reason:.foreground) : PAHeartbeatRules.quiet(account,fingerprint:fingerprint,ready:mailReview.accountIDs,pending:mailReview.pending || !nativeReady || (wantsWhatsApp && !whatsappReady))
                     if mailReview.pending || !nativeReady || (wantsWhatsApp && !whatsappReady) {status += " " + waitingStatus(accounts:runtime.currentSources(whatsappReady).accounts,mailReview:mailReview,nativeReady:nativeReady,whatsappWaiting:wantsWhatsApp && !whatsappReady)}
                     state.accounts[registration]=account; try save();return
                 }
-                guard !runtime.environment().workBusy,!composerActive else { account=PAHeartbeatRules.deferred(account,now:clock(),reason:.foreground);state.accounts[registration]=account;try save();status="Context prepared; pending AI assessment waits for foreground work.";return }
+                guard !runtime.environment().workBusy else { account=PAHeartbeatRules.deferred(account,now:clock(),reason:.foreground);state.accounts[registration]=account;try save();status="Context prepared; pending AI assessment waits for foreground work.";return }
                 guard PAHeartbeatRules.canClaim(account,day:BriefingRules.day(clock()),limit:dailyCallLimit) else { throw HeartbeatBudgetExhausted() }
                 account.phase="assessing"; state.accounts[registration]=account; try save()
                 status="Reviewing your enabled context…"
@@ -319,7 +321,6 @@ import SwiftData
                 account=state.accounts[registration] ?? account
                 account=PAHeartbeatRules.collectingMail(account,enabled:enabledMail,ready:mailReview.accountIDs,issues:mailReview.issues,now:clock())
                 state.accounts[registration]=account;try save()
-                guard (manual || enabled),PAHeartbeatRules.canContinue(owner:registration,currentOwner:runtime.environment().registration,controls:controls,currentControls:controlsRevision,scope:scope,currentScope:runtime.environment().scope,day:day,currentDay:BriefingRules.day(clock()),model:selectedModel,currentModel:runtime.environment().model) else { throw ActionFailure.message("Background-review ownership or source choices changed; completed assessments retained.") }
                 if runtime.environment().emailEnabled,let error=email.failure {
                     stageFailures.append("Email review: "+String(error.prefix(400)))
                     try step("email","failed",error)
@@ -342,7 +343,6 @@ import SwiftData
                 let suggestions=nativeReady ? try await runtime.suggestions(.init(registration:registration,manual:manual,runID:runID,mailReview:mailReview,whatsappReady:whatsappReady,claim:{try self.claimCall(registration,runID:runID)},validate:{try requireOwned()})) : .init()
                 if nativeReady,suggestions.nativeUnavailable {nativeReady=false}
                 try requireOwned()
-                guard PAHeartbeatRules.canContinue(owner:registration,currentOwner:runtime.environment().registration,controls:controls,currentControls:controlsRevision,scope:scope,currentScope:runtime.environment().scope,day:day,currentDay:BriefingRules.day(clock()),model:selectedModel,currentModel:runtime.environment().model) else { throw ActionFailure.message("Background-review ownership changed; completed source work retained.") }
                 if nativeReady,runtime.environment().proposalsEnabled,let error=suggestions.failure {
                     stageFailures.append("Suggestions: "+String(error.prefix(400)))
                     try step("suggestions","failed",error)
@@ -359,7 +359,6 @@ import SwiftData
                 mailReview=runtime.availableMail(mailReview)
                 reviewedMail=mailReview
                 try step("brief","done")
-                guard PAHeartbeatRules.canContinue(owner:registration,currentOwner:runtime.environment().registration,controls:controls,currentControls:controlsRevision,scope:scope,currentScope:runtime.environment().scope,day:day,currentDay:BriefingRules.day(clock()),model:selectedModel,currentModel:runtime.environment().model) else {throw ActionFailure.message("Heartbeat ownership changed; completed work retained.")}
                 let pending=runtime.pending(mailReview,whatsappReady,nativeReady),pendingAccounts=pending.mailAccounts
                 account=PAHeartbeatRules.clearWait(state.accounts[registration] ?? account);account.phase="idle";account.assessed = clock()
                 account=PAHeartbeatRules.collectingMail(account,enabled:enabledMail,ready:mailReview.accountIDs,issues:mailReview.issues,now:clock())
@@ -451,7 +450,7 @@ import SwiftData
         service.capturedControls=UUID();checks["changed controls cannot claim a late request"] = refused();service.capturedControls=service.controlsRevision;service.capturedPowerRevision=service.powerRevision
         let stopped=Task<Void,Never>{};stopped.cancel();service.task=stopped
         checks["cancelled parent cannot claim a late child request"] = refused();service.task=nil
-        service.lastTyping=now;checks["foreground typing blocks a late request"] = refused();service.lastTyping=nil
+        service.noteDraftEditing();checks["draft editing defers future automatic work without revoking captured ownership"] = service.composerActive && service.capturedControls == service.controlsRevision;service.lastTyping=nil
         now=now.addingTimeInterval(86400);checks["midnight cannot charge a captured job to a new day"] = refused();now=now.addingTimeInterval(-86400)
         service.busy=false;checks["finished job cannot claim another request"] = refused()
         let restored=HeartbeatService(container:store,settings:validationSettings,clock:{now},deviceState:{device})
@@ -579,7 +578,7 @@ import SwiftData
         checks["unreadable original cache is preserved"] = try badStore.mainContext.fetch(FetchDescriptor<CachedDashboard>()).first?.data == badData
         // Exercise the real orchestration with injected source-free children,
         // including failures which used to prevent the brief from ever running.
-        for scenario in ["email failure","feedback failure","suggestions failure","learning failure","missing sources","foreground stop","successful cycle","notification toggle","no-op controls","capped email failure"] {
+        for scenario in ["email failure","feedback failure","suggestions failure","learning failure","missing sources","foreground stop","successful cycle","notification toggle","no-op controls","interval change","model change","draft editing","capped email failure"] {
             let cycleStore=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
             let cycle=HeartbeatService(container:cycleStore,settings:validationSettings,clock:{now},deviceState:{device})
             cycle.dailyCallLimit=0
@@ -610,6 +609,14 @@ import SwiftData
                     await Task.yield()
                     try request.validate()
                     checks["notification delivery changes retain the running analysis owner"] = cycle.controlsRevision == previous
+                }
+                if scenario == "interval change" || scenario == "model change" || scenario == "draft editing" {
+                    let previous=cycle.controlsRevision
+                    if scenario == "interval change" {cycle.intervalMinutes=30}
+                    if scenario == "model change" {env.model="new-fictional-model"}
+                    if scenario == "draft editing" {cycle.noteDraftEditing()}
+                    await Task.yield();try request.validate()
+                    checks["ordinary \(scenario) retains the running scheduler owner"]=cycle.controlsRevision == previous
                 }
                 if scenario == "no-op controls" {
                     let previous=cycle.controlsRevision
