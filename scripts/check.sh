@@ -17,7 +17,7 @@ import tempfile
 import time
 
 repository = Path.cwd()
-manifest_path = repository / 'scripts/check-suites.json'
+manifest_path = repository / 'scripts/checks/check-suites.json'
 manifest = json.loads(manifest_path.read_text())
 
 class CandidateCheckError(RuntimeError):
@@ -167,7 +167,7 @@ if not candidate_tier and args.candidate_binary:
 
 # Newly added component scripts must be deliberately audited and listed, never silently omitted.
 known_scripts = {suite['script'] for suite in all_suites if 'script' in suite}
-component_scripts = {'scripts/' + path.name for path in (repository / 'scripts').glob('test*.sh') if path.name != 'test-env.sh'}
+component_scripts = {str(path.relative_to(repository)) for path in (repository / 'scripts/checks').glob('test*.sh')} | {'scripts/test.sh'}
 unlisted = component_scripts - known_scripts
 missing_scripts = known_scripts - component_scripts
 if not candidate_tier and (unlisted or missing_scripts):

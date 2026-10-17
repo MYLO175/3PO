@@ -8,9 +8,9 @@
 </p>
 
 <p align="center">
-  <a href="docs/FEATURES.md">Explore the features</a> ·
-  <a href="docs/ARCHITECTURE.md">Understand the architecture</a> ·
-  <a href="docs/GETTING_STARTED.md">Build and get started</a> ·
+  <a href="docs/guides/FEATURES.md">Explore the features</a> ·
+  <a href="docs/architecture/ARCHITECTURE.md">Understand the architecture</a> ·
+  <a href="docs/guides/GETTING_STARTED.md">Build and get started</a> ·
   <a href="docs/README.md">Documentation</a>
 </p>
 
@@ -31,7 +31,7 @@
 - **Keep useful knowledge.** Inspect facts, corrections and evidence; preview which memories a question retrieves; connect memory to your existing projects.
 - **Make supported changes.** Native Calendar/Reminders operations and local project edits check exact identities, current revisions and saved results.
 
-Read the [feature guide](docs/FEATURES.md) for controls, examples and the limits of each feature.
+Read the [feature guide](docs/guides/FEATURES.md) for controls, examples and the limits of each feature.
 
 ## How the pieces fit
 
@@ -49,7 +49,7 @@ flowchart LR
 
 The app owns continuity, source permissions, evidence and action checks. The model supplies language and reasoning through a replaceable inference boundary. **Apple apps remain the source of truth.** Background proposals need human approval before native changes; imported messages and memory never independently authorise a write.
 
-The [architecture guide](docs/ARCHITECTURE.md) follows a message, a heartbeat and a native edit through the actual components, then explains storage and recovery.
+The [architecture guide](docs/architecture/ARCHITECTURE.md) follows a message, a heartbeat and a native edit through the actual components, then explains storage and recovery.
 
 ## A useful distinction: refresh versus heartbeat
 
@@ -59,40 +59,48 @@ The [architecture guide](docs/ARCHITECTURE.md) follows a message, a heartbeat an
 | **Run heartbeat** · ⌘R | Reviews already collected communications, prepares suggestions and updates the brief | Yes, when connected and permitted |
 | **Send a PA message** | Works on your explicit request with relevant context and local tools | Yes |
 
-Mail collects independently, normally polling every five minutes. A heartbeat uses collected Mail rather than forcing another poll. Scheduled work waits during system sleep, closed-lid operation or dark wake and checks once when due after full wake. Completed work survives a failed run; the next interval starts a fresh cycle. [Background behaviour](docs/FEATURES.md#heartbeat-and-background-work) explains the controls and recovery.
+Mail collects independently, normally polling every five minutes. A heartbeat uses collected Mail rather than forcing another poll. Scheduled work waits during system sleep, closed-lid operation or dark wake and checks once when due after full wake. Completed work survives a failed run; the next interval starts a fresh cycle. [Background behaviour](docs/guides/FEATURES.md#heartbeat-and-background-work) explains the controls and recovery.
 
 ## Build and explore
 
-Requires macOS 26+, Xcode at `/Applications/Xcode.app`, Python 3, npm and a development Node installation. Initial dependency/runtime downloads need internet. The current signing team is developer-specific; see [setup and signing](docs/GETTING_STARTED.md#build-from-source) before building on another Mac.
+Requires macOS 26+, Xcode at `/Applications/Xcode.app`, Python 3, npm and a development Node installation. Initial dependency/runtime downloads need internet. The current signing team is developer-specific; see [setup and signing](docs/guides/GETTING_STARTED.md#build-from-source) before building on another Mac.
 
 ```sh
 MISSIONCONTROL_BUILD_ROOT=/private/tmp/3po-docs-example ./scripts/build.sh
 open /private/tmp/3po-docs-example/derived-data/Build/Products/Debug/3PO.app --args --sample
 ```
 
-The explicit build root makes the output predictable; by default each build gets a unique temporary directory. `--sample` opens a fictional DEBUG dashboard with normal source collection and automatic scheduling bypassed. It still shares existing app storage and Keychain. For normal use and account/source setup, follow [Getting started](docs/GETTING_STARTED.md). The build bundles a checksum-pinned Node runtime for optional WhatsApp, so the installed app does not need a separate Node installation.
+The explicit build root makes the output predictable; by default each build gets a unique temporary directory. `--sample` opens a fictional DEBUG dashboard with normal source collection and automatic scheduling bypassed. It still shares existing app storage and Keychain. For normal use and account/source setup, follow [Getting started](docs/guides/GETTING_STARTED.md). The build bundles a checksum-pinned Node runtime for optional WhatsApp, so the installed app does not need a separate Node installation.
 
 ## Privacy and control
 
 Mail and WhatsApp are **read-only**. Reply drafts stay local for review, editing, saving and copying. Calendar, Reminders, Mail Automation and optional location/dictation use macOS permissions. Separate AI/source controls determine which personal context can be sent to the connected provider. Memory use, source learning and background work have their own controls. Review permission may also enable bounded source learning under the global controls; newly permitted sources baseline existing content.
 
-Local records live under `~/Library/Application Support/Mission Control`; credentials and encryption keys use Keychain. WhatsApp sessions, messages, names and source choices are encrypted locally. This does not mean every SwiftData record is encrypted. Personal records, credentials, caches, QR codes and screenshots stay outside Git. The optional WhatsApp connector uses unofficial Baileys and can break or face restrictions. [Privacy and source boundaries](docs/PRIVACY.md) explains storage and what leaves the Mac.
+Local records live under `~/Library/Application Support/Mission Control`; credentials and encryption keys use Keychain. WhatsApp sessions, messages, names and source choices are encrypted locally. This does not mean every SwiftData record is encrypted. Personal records, credentials, caches, QR codes and screenshots stay outside Git. The optional WhatsApp connector uses unofficial Baileys and can break or face restrictions. [Privacy and source boundaries](docs/guides/PRIVACY.md) explains storage and what leaves the Mac.
 
 ## What has been verified
 
 The latest recorded installed checkpoint is the 14 October feedback repair (`9ca10c2`), following unified Review, concise Activity and streaming improvements. Signed checks, state preservation and one explicit feedback recovery are recorded. **Several days of reliable ordinary use remain unverified.** A passing fixture, a build, installation and actual-model quality are separate claims. Memory retrieval is currently lexical with typed links; broad semantic/paraphrase recall and local offline inference remain future work.
 
-See [Validation](VALIDATION.md) for the current evidence index, [Live acceptance](docs/LIVE_ACCEPTANCE.md) for outstanding observation, and [Next improvements](docs/NEXT_IMPROVEMENTS.md) for product gaps. Concurrent feature work is documented only after its committed checkpoint.
+See [Validation](VALIDATION.md) for the current evidence index, [Live acceptance](docs/development/LIVE_ACCEPTANCE.md) for outstanding observation, and [Next improvements](docs/planning/NEXT_IMPROVEMENTS.md) for product gaps. Concurrent feature work is documented only after its committed checkpoint.
 
 ## Read or contribute
 
 | To understand… | Start here |
 | --- | --- |
-| The product and its controls | [Feature guide](docs/FEATURES.md) |
-| Services, data flow and ownership | [Architecture](docs/ARCHITECTURE.md) |
-| Memory selection, evidence and corrections | [Memory and context](docs/MEMORY_AND_CONTEXT.md) |
-| Spaces, tasks, notes and links | [Project workspace](docs/PROJECT_WORKSPACE.md) |
-| Setup, checks and source navigation | [Getting started](docs/GETTING_STARTED.md) · [Developer guide](docs/DEVELOPMENT.md) |
+| The product and its controls | [Feature guide](docs/guides/FEATURES.md) |
+| Services, data flow and ownership | [Architecture](docs/architecture/ARCHITECTURE.md) |
+| Memory selection, evidence and corrections | [Memory and context](docs/architecture/MEMORY_AND_CONTEXT.md) |
+| Spaces, tasks, notes and links | [Project workspace](docs/architecture/PROJECT_WORKSPACE.md) |
+| Setup, checks and source navigation | [Getting started](docs/guides/GETTING_STARTED.md) · [Developer guide](docs/development/DEVELOPMENT.md) |
 | The full reading map | [Documentation index](docs/README.md) |
 
-Before editing, read [AGENTS](AGENTS.md) and the [development workflow](docs/DEVELOPMENT_WORKFLOW.md). Concurrent writers use separate worktrees; one integration owner validates and installs against personal data. AGENTS governs development, while the shipped assistant's behaviour lives in application code and runtime prompts.
+Before editing, read [AGENTS](AGENTS.md) and the [development workflow](docs/development/DEVELOPMENT_WORKFLOW.md). Concurrent writers use separate worktrees; one integration owner validates and installs against personal data. AGENTS governs development, while the shipped assistant's behaviour lives in application code and runtime prompts.
+
+## Repository layout
+
+`MissionControl/` groups app code by responsibility: App, Dashboard, Assistant, Memory, Projects, Review, Background, Sources, Widgets, Infrastructure and Development. `Tests/` follows the same areas. `WhatsAppBridge/` remains its own helper package.
+
+Use `scripts/build.sh` and `scripts/check.sh` from the repository root. Component checks live in `scripts/checks/`; project generation, assets and packaging helpers have their own script folders. [The developer guide](docs/development/DEVELOPMENT.md) explains the commands, and [the organisation guide](docs/development/REPOSITORY_ORGANISATION_PLAN.md) lists source ownership and relocation details.
+
+[Documentation](docs/README.md) is grouped into guides, architecture, development, planning, audits and history. Root STATUS, PLAN and VALIDATION remain current entry points and link to preserved historical records.
