@@ -13,7 +13,7 @@ import Observation
     private(set) var busy=false
     private(set) var error:String?
     private(set) var status="Review useful human facts for possible duplicates, conflicts or obsolete provisional context."
-    private var revision=UUID()
+    private var automaticRegistration:String?
     private var undoID:String?
     private var dismissalDate:Date?
     func undoDate(_ registration:String)->Date? { state.proposals.contains{$0.id == undoID && $0.registration == registration && $0.dismissed} ? dismissalDate : nil }
@@ -30,7 +30,7 @@ import Observation
     func setAutomatic(_ value:Bool,registration:String) {
         guard readable,!registration.isEmpty,(state.accounts[registration]?.automatic ?? false) != value else { return }
         let prior=state;state.accounts[registration,default:.init()].automatic=value
-        do { try save();revision=UUID();if !value { cancel() } } catch { state=prior;self.error=error.localizedDescription }
+        do { try save();if !value,automaticRegistration == registration { cancel() } } catch { state=prior;self.error=error.localizedDescription }
     }
     func proposals(_ memory:PAMemoryStore,registration:String)->[MemoryReviewProposal] {
         state.proposals.filter{!$0.dismissed && MemoryReviewRules.current($0,records:memory.records,registration:registration)}.sorted{$0.created > $1.created}
@@ -38,12 +38,12 @@ import Observation
     func dismiss(_ id:String,registration:String) {
         guard let index=state.proposals.firstIndex(where:{$0.id == id && $0.registration == registration}) else { return }
         let prior=state;state.proposals[index].dismissed=true
-        do { try save();revision=UUID();undoID=id;dismissalDate = .now } catch { state=prior;self.error=error.localizedDescription }
+        do { try save();undoID=id;dismissalDate = .now } catch { state=prior;self.error=error.localizedDescription }
     }
     func undo(_ registration:String) {
         guard let index=state.proposals.firstIndex(where:{$0.id == undoID && $0.registration == registration && $0.dismissed}) else { return }
         let prior=state;state.proposals[index].dismissed=false
-        do { try save();revision=UUID();undoID=nil;dismissalDate=nil } catch { state=prior;self.error=error.localizedDescription }
+        do { try save();undoID=nil;dismissalDate=nil } catch { state=prior;self.error=error.localizedDescription }
     }
     func paused(_ registration:String)->Bool { state.accounts[registration]?.paused == true }
     func check(_ model:LearningRuntime,manual:Bool=false) {
@@ -55,18 +55,18 @@ import Observation
         guard !records.isEmpty,let input=try? MemoryReviewRules.input(records,now:now),model.learningBudget.claim(registration,manual:manual,now:model.now(),lane:.maintenance) else { return }
         let prior=state;state.accounts[registration,default:.init()].paused=true;state.accounts[registration]?.lastAttempt=now
         do { try save() } catch { state=prior;self.error=error.localizedDescription;return }
-        let captured=revision,memoryControls=memory.controlsRevision,selectedModel=model.inference.selectedModel
+        let memoryControls=memory.controlsRevision,selectedModel=model.inference.selectedModel
         let issued=Dictionary(uniqueKeysWithValues:records.map{($0.id,$0)})
-        ownedHeartbeatRunID=model.ownedHeartbeatRunID;busy=true;error=nil;status="Reviewing \(records.count) human facts; no edits will be made…"
+        ownedHeartbeatRunID=model.ownedHeartbeatRunID;automaticRegistration=manual ? nil : registration;busy=true;error=nil;status="Reviewing \(records.count) human facts; no edits will be made…"
         task=Task {
-            defer { ownedHeartbeatRunID=nil;busy=false }
+            defer { ownedHeartbeatRunID=nil;automaticRegistration=nil;busy=false }
             do {
                 try model.validateOwnership()
-                guard registration == model.inference.activeID,captured == revision,memoryControls == memory.controlsRevision,selectedModel == model.inference.selectedModel,memory.enabled,memory.learningEnabled,!model.assistant.busy,!model.assistant.hasDraft,!model.writing,issued.allSatisfy({id,record in memory.records.contains{$0.id == id && $0 == record && MemoryReviewRules.eligible($0,registration:registration)}}) else { throw MemoryLearningFailure.changed }
+                guard registration == model.inference.activeID,(manual || automatic(registration)),memoryControls == memory.controlsRevision,memory.enabled,memory.learningEnabled,!model.assistant.busy,!model.writing,issued.allSatisfy({id,record in memory.records.contains{$0.id == id && $0 == record && MemoryReviewRules.eligible($0,registration:registration)}}) else { throw MemoryLearningFailure.changed }
                 try model.claimInference()
                 let output=try await model.inference.streamResponse(input:[["role":"user","content":input]],instructions:MemoryReviewRules.instructions,model:selectedModel,purpose:.organisation) { _ in }
                 try model.validateOwnership()
-                guard registration == model.inference.activeID,captured == revision,memoryControls == memory.controlsRevision,selectedModel == model.inference.selectedModel,memory.enabled,memory.learningEnabled,!model.assistant.busy,!model.assistant.hasDraft,!model.writing,issued.allSatisfy({id,record in memory.records.contains{$0.id == id && $0 == record && MemoryReviewRules.eligible($0,registration:registration)}}) else { throw MemoryLearningFailure.changed }
+                guard registration == model.inference.activeID,(manual || automatic(registration)),memoryControls == memory.controlsRevision,memory.enabled,memory.learningEnabled,!model.assistant.busy,!model.writing,issued.allSatisfy({id,record in memory.records.contains{$0.id == id && $0 == record && MemoryReviewRules.eligible($0,registration:registration)}}) else { throw MemoryLearningFailure.changed }
                 guard let proposals=MemoryReviewRules.decode(output,records:records,registration:registration,now:now) else { throw MemoryLearningFailure.invalid }
                 let beforeSave=state
                 for proposal in proposals where !state.proposals.contains(where:{$0.id == proposal.id}) { state.proposals.append(proposal) }

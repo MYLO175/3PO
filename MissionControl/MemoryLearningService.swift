@@ -70,13 +70,13 @@ import SwiftData
             defer { ownedHeartbeatRunID=nil;busy = false }
             do {
                 try model.validateOwnership()
-                guard !assistant.busy, !assistant.hasDraft, !model.writing, registration == model.inference.activeID, selectedModel == model.inference.selectedModel else { throw MemoryLearningFailure.changed }
+                guard !assistant.busy, !model.writing, registration == model.inference.activeID else { throw MemoryLearningFailure.changed }
                 let input = try MemoryLearningRules.input(turns:batch,existing:existing,timezone:TimeZone.current.identifier,questionAllowed:questionAllowed)
                 try model.claimInference()
                 let output = try await model.inference.streamResponse(input:[["role":"user","content":input]],instructions:MemoryLearningRules.instructions,model:selectedModel,purpose:.learning) { _ in }
                 try model.validateOwnership()
-                guard registration == model.inference.activeID, selectedModel == model.inference.selectedModel, memory.enabled, memory.learningEnabled, assistant.contextEnabled,
-                      questionsEnabled == self.questionsEnabled, !assistant.busy, !assistant.hasDraft, !model.writing, memoryState.records == memory.state.records, memoryState.suppressed == memory.state.suppressed else { throw MemoryLearningFailure.changed }
+                guard registration == model.inference.activeID, memory.enabled, memory.learningEnabled, assistant.contextEnabled,
+                      questionsEnabled == self.questionsEnabled, !assistant.busy, !model.writing, memoryState.records == memory.state.records, memoryState.suppressed == memory.state.suppressed else { throw MemoryLearningFailure.changed }
                 let assessment = try MemoryLearningRules.assessment(output,turns:batch,questionAllowed:questionAllowed)
                 let learned = assessment.memories
                 guard memory.merge(learned,registration:registration,sourceDates:Dictionary(batch.filter(\.dateKnown).map { ($0.id,$0.created) },uniquingKeysWith:{ first,_ in first }),sourceTopics:Dictionary(batch.compactMap { turn in turn.conversationID.map { (turn.id,$0) } },uniquingKeysWith:{ first,_ in first }),now:model.now()) else { throw MemoryLearningFailure.storage }

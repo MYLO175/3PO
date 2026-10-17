@@ -9,7 +9,7 @@ extension EmailSummaryService {
         return true
     }
     private func feedbackSource(_ job:ReviewFeedbackJob,model:DashboardModel)->ReviewFeedbackEmail? {
-        guard let message=model.mailData.messages.first(where:{$0.id == job.messageID && $0.accountID == job.accountID}),let summary=current(message,model:model),job.matches(message:message,summary:summary,registration:model.chatGPT.activeID,model:model.chatGPT.selectedModel,sourceRevision:model.sourceRevision,sourceSettings:model.proactive.sourceSettingsScope(model)),feedbackSourceCurrent(message,summary:summary,model:model) else {return nil}
+        guard enabled,let message=model.mailData.messages.first(where:{$0.id == job.messageID && $0.accountID == job.accountID}),let summary=current(message,model:model),job.matches(message:message,summary:summary,registration:model.chatGPT.activeID,model:model.chatGPT.selectedModel,sourceRevision:model.sourceRevision,sourceSettings:model.proactive.sourceSettingsScope(model)),feedbackSourceCurrent(message,summary:summary,model:model) else {return nil}
         return .init(message:message,summary:summary)
     }
     func feedbackMemory(_ job:ReviewFeedbackJob,model:DashboardModel)->PAMemory? {
@@ -60,7 +60,7 @@ extension EmailSummaryService {
         },ready:{self.feedbackReady(model,request:request)},prepare:{job in
             guard let source=self.feedbackSource(job,model:model) else {throw ReviewFeedbackFailure.message("The email changed. Your feedback is retained.")}
             completionGuard=(job.id,self.reviewFeedbackGeneration)
-            return try await self.interpretReviewFeedback(source,words:job.words,about:job.about,model:model,heartbeatRequest:request,isCurrent:{self.feedbackSource(job,model:model) != nil})
+            return try await self.interpretReviewFeedback(source,words:job.words,about:job.about,model:model,inferenceModel:job.model,heartbeatRequest:request,isCurrent:{self.feedbackSource(job,model:model) != nil})
         },commit:{job,interpretation in
             if let request {try request.validate()}
             #if DEBUG

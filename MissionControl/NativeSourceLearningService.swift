@@ -8,6 +8,8 @@ import SwiftData
     private(set) var error:String?
     private(set) var revision=UUID()
     private(set) var activeKind:MemorySourceKind?
+    private var activeRegistration:String?
+    private var permissionRevisions:[String:UUID]=[:]
     private var state=NativeLearningState()
     private var readable=true
     private var task:Task<Void,Never>?
@@ -38,7 +40,11 @@ import SwiftData
             for item in items { progress.baseline[item.id]=item.revision;progress.pending?.removeValue(forKey:item.id) }
         }
         state.scopes[key]=progress
-        do { try save();revision=UUID();cancel();error=nil } catch { state=prior;self.error=error.localizedDescription }
+        do {
+            try save();revision=UUID();permissionRevisions[key]=UUID()
+            if activeKind == kind,activeRegistration == model.inference.activeID {cancel()}
+            error=nil
+        } catch { state=prior;self.error=error.localizedDescription }
     }
     func lastAssessment(_ registration:String)->Date {
         NativeLearningRules.kinds.compactMap { kind -> Date? in
@@ -94,11 +100,11 @@ import SwiftData
             let existing=selectedMemory.map{["text":String(($0["text"] ?? "").prefix(500)),"certainty":$0["certainty"] ?? "unknown"]}
             let coverage=Self.coverage(kind)
             guard let input=try? NativeLearningRules.input(items:batch,candidates:candidates,existing:existing,coverage:coverage) else { error="The bounded input couldn't be prepared. Review once resumes this paused pass.";return }
-            let permissionRevision=revision,selectedModel=model.inference.selectedModel,contextRevision=assistant.contextRevision,memoryControls=memory.controlsRevision
+            let permissionRevision=permissionRevisions[key],selectedModel=model.inference.selectedModel,contextRevision=assistant.contextRevision,memoryControls=memory.controlsRevision
             let calendars=assistant.excludedCalendars,lists=assistant.excludedLists,accounts=assistant.excludedAccounts
-            ownedHeartbeatRunID=model.ownedHeartbeatRunID;busy=true;activeKind=kind;error=nil
+            ownedHeartbeatRunID=model.ownedHeartbeatRunID;busy=true;activeKind=kind;activeRegistration=registration;error=nil
             task=Task {
-                defer { ownedHeartbeatRunID=nil;busy=false;activeKind=nil }
+                defer { ownedHeartbeatRunID=nil;busy=false;activeKind=nil;activeRegistration=nil }
                 @MainActor func valid()->Bool {
                     let choicesMatch:Bool
                     switch kind {
@@ -109,11 +115,11 @@ import SwiftData
                     }
                     guard let current=model.nativeLearningItems(kind) else {return false}
                     let currentMemory=memory.permittedRecords.filter{MemoryRules.usable($0,registration:registration,now:model.now())}.map(MemoryRetrieval.record)
-                    return registration == model.inference.activeID && permissionRevision == revision && permittedKind(kind,model:model) &&
-                    selectedModel == model.inference.selectedModel && memoryControls == memory.controlsRevision && memory.enabled && memory.learningEnabled && assistant.contextEnabled && contextRevision == assistant.contextRevision &&
+                    return registration == model.inference.activeID && permissionRevision == permissionRevisions[key] && permittedKind(kind,model:model) &&
+                    memoryControls == memory.controlsRevision && memory.enabled && memory.learningEnabled && assistant.contextEnabled && contextRevision == assistant.contextRevision &&
                     choicesMatch && MemoryDependencyRules.available(memoryDependencies,records:currentMemory) &&
                     candidates.allSatisfy({old in memory.records.first(where:{$0.id == old.id}) == old && batch.contains{NativeLearningRules.replaceable(old,by:$0,registration:registration,now:model.now())}}) &&
-                    !assistant.busy && !assistant.hasDraft && !model.writing && batch.allSatisfy(current.contains)
+                    !assistant.busy && !model.writing && batch.allSatisfy(current.contains)
                 }
                 do {
                     try model.validateOwnership();guard valid() else { throw MemoryLearningFailure.changed }

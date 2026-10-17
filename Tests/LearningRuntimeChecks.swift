@@ -10,11 +10,12 @@ import SwiftData
     var hasSession = true
     var answer = "{\"memories\":[]}"
     var calls = 0
+    var requestedModels:[String]=[]
     var inputs:[[[String:String]]]=[]
     var onCall: (() -> Void)?
     var hold: (() async -> Void)?
     func streamResponse(input: [[String:String]], instructions: String, model: String?, effort: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> String {
-        calls += 1;inputs.append(input);onCall?();if let hold {await hold()};return answer
+        calls += 1;requestedModels.append(model ?? "");inputs.append(input);onCall?();if let hold {await hold()};return answer
     }
     func toolResponse(input: [[String:Any]], instructions: String, tools: [[String:Any]], model: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> PAResponse { fatalError("Learning cannot execute foreground tools") }
 }
@@ -306,8 +307,8 @@ import SwiftData
         print("PASS \(count) actual learning-service checks: injected providers/clock, persistence, foreground priority, exact supplied memory/candidate guards, source/account drift, pauses, explicit recovery; no dashboard, credentials or personal sources.")
     }
     @MainActor private static func capturedSourceMemoryChecks(now:Date,check:(Bool,String)->Void)async throws {
-        let successful:Set<String>=["unrelated save","unrelated forget","selected organisation","held unrelated save"]
-        let cases=["unrelated save","unrelated forget","selected organisation","held unrelated save","selected changed","selected forgotten","candidate changed","candidate forgotten","candidate corrected","candidate pinned","held selected changed","controls off/on","source changed","Stop"]
+        let successful:Set<String>=["unrelated save","unrelated forget","selected organisation","held unrelated save","model changed","draft opened","other-kind enabled","other-kind disabled"]
+        let cases=["unrelated save","unrelated forget","selected organisation","held unrelated save","selected changed","selected forgotten","candidate changed","candidate forgotten","candidate corrected","candidate pinned","held selected changed","controls off/on","source changed","model changed","draft opened","other-kind enabled","other-kind disabled","active-kind disabled","Stop"]
         for lane in ["native","whatsapp"] {
             for scenario in cases {
                 let suite="3PO.source-dependency-fixture."+UUID().uuidString
@@ -353,6 +354,7 @@ import SwiftData
                     receipt=SourceContextRules.assessmentKey(registration:p.activeID,linkedIdentity:"fictional-device",message:target)
                     p.answer="{\"facts\":[{\"messageID\":\"\(target.id)\",\"text\":\"A later message requests the updated optics report\",\"quote\":\"\(newQuote)\",\"kind\":\"commitment\",\"areas\":[],\"updatesMemoryID\":\"\(candidate.id.uuidString)\",\"state\":\"changed\"}]}"
                 }
+                if scenario == "other-kind disabled" {native.setEnabled(true,kind:.mail,model:r)}
                 var mutationSucceeded=true,expectedHumanRecords:[PAMemory]=[]
                 func mutate() {
                     switch scenario {
@@ -366,6 +368,11 @@ import SwiftData
                     case "candidate corrected":mutationSucceeded=m.correct(candidate.id,with:PAMemory(registration:p.activeID,text:"This earlier report is superseded by my correction.",kind:.context,provenance:"Fictional human"))
                     case "candidate pinned":var edited=candidate;edited.organisation = .init(areas:[.studies],connections:[],manual:true);mutationSucceeded=m.put(edited)
                     case "controls off/on":m.learningEnabled=false;m.learningEnabled=true
+                    case "model changed":p.selectedModel="future-model"
+                    case "draft opened":a.hasDraft=true
+                    case "other-kind enabled":native.setEnabled(true,kind:.mail,model:r)
+                    case "other-kind disabled":native.setEnabled(false,kind:.mail,model:r)
+                    case "active-kind disabled":if lane == "native" {native.setEnabled(false,kind:.reminder,model:r)} else {w.accessValue.enabled=false}
                     case "source changed":if lane == "native" {items[0].revision="three"} else {sourcePermitted=false}
                     case "Stop":if lane == "native" {native.cancel()} else {whatsapp.cancel()}
                     default:preconditionFailure("Unknown fixture scenario")
@@ -382,7 +389,7 @@ import SwiftData
                 }
                 for _ in 0..<10_000 {if !native.busy && !whatsapp.busy {break};await Task.yield()}
                 let error=lane == "native" ? native.error : whatsapp.error
-                check(mutationSucceeded && p.calls == 1 && !native.busy && !whatsapp.busy,lane+" "+scenario+" executes one real service fixture")
+                check(mutationSucceeded && p.calls == 1 && p.requestedModels == ["fictional"] && !native.busy && !whatsapp.busy,lane+" "+scenario+" executes one real service fixture")
                 if let input=p.inputs.first?.first?["content"],let json=try JSONSerialization.jsonObject(with:Data(input.utf8)) as? [String:Any] {
                     let existing=json["existingMemory"] as? [[String:String]] ?? [],candidates=json["updatableSourceMemory"] as? [[String:Any]] ?? []
                     check(existing.contains{$0["text"] == selected.text} && !existing.contains{$0["text"] == candidate.text} && candidates.contains{$0["id"] as? String == candidate.id.uuidString},lane+" "+scenario+" supplies the fact and independent exact candidate")
