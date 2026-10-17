@@ -119,7 +119,7 @@ import SwiftData
                     memoryControls == memory.controlsRevision && memory.enabled && memory.learningEnabled && assistant.contextEnabled && contextRevision == assistant.contextRevision &&
                     choicesMatch && MemoryDependencyRules.available(memoryDependencies,records:currentMemory) &&
                     candidates.allSatisfy({old in memory.records.first(where:{$0.id == old.id}) == old && batch.contains{NativeLearningRules.replaceable(old,by:$0,registration:registration,now:model.now())}}) &&
-                    !assistant.busy && !model.writing && batch.allSatisfy(current.contains)
+                    !assistant.busy && batch.allSatisfy(current.contains)
                 }
                 do {
                     try model.validateOwnership();guard valid() else { throw MemoryLearningFailure.changed }

@@ -72,7 +72,7 @@ import SwiftData
                 for _ in 0..<(manual ? 4 : 1) {
                     try model.validateOwnership()
                     guard memory.enabled,memory.learningEnabled,registration == model.inference.activeID,
-                          (manual || automatic == enabledAtStart),!assistant.busy,!model.writing else { throw MemoryLearningFailure.changed }
+                          (manual || automatic == enabledAtStart),!assistant.busy else { throw MemoryLearningFailure.changed }
                     guard let scope=requestedScopes.first(where:{ !batch(memory,registration:registration,topic:$0,now:model.now()).isEmpty }) else { break }
                     let records=batch(memory,registration:registration,topic:scope,now:model.now()),memoryControls=memory.controlsRevision
                     let issued=Dictionary(uniqueKeysWithValues:records.map{($0.id,$0)})
@@ -86,7 +86,7 @@ import SwiftData
                     let output=try await model.inference.streamResponse(input:[["role":"user","content":LifeOrganisationRules.input(records)]],instructions:LifeOrganisationRules.instructions,model:selectedModel,purpose:.organisation) { _ in }
                     try model.validateOwnership()
                     guard memoryControls == memory.controlsRevision,memory.enabled,memory.learningEnabled,registration == model.inference.activeID,
-                          (manual || automatic == enabledAtStart),!assistant.busy,!model.writing,
+                          (manual || automatic == enabledAtStart),!assistant.busy,
                           issued.allSatisfy({id,record in memory.records.contains{$0.id == id && $0 == record && $0.source == nil && $0.organisation?.manual != true && MemoryRules.usable($0,registration:registration,now:model.now())}}) else { throw MemoryLearningFailure.changed }
                     guard let entries=LifeOrganisationRules.decode(output,records:records) else { throw MemoryLearningFailure.invalid }
                     // The issued records were revalidated above without yielding. The store

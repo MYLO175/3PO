@@ -68,7 +68,7 @@ extension EmailSummaryService {
             #else
             let fictional=false
             #endif
-            guard completionGuard?.id == job.id,completionGuard?.generation == self.reviewFeedbackGeneration,!model.assistant.busy,!model.writing,model.heartbeat.deviceAvailable,(fictional || model.chatGPT.inferenceVerified),!model.chatGPT.usagePaused,model.assistant.memory.canSaveReviewPreference else {throw ReviewFeedbackFailure.message("Feedback was interrupted or memory storage is unavailable. No preference was saved; your feedback is retained.")}
+            guard completionGuard?.id == job.id,completionGuard?.generation == self.reviewFeedbackGeneration,!model.assistant.busy,model.heartbeat.deviceAvailable,(fictional || model.chatGPT.inferenceVerified),!model.chatGPT.usagePaused,model.assistant.memory.canSaveReviewPreference else {throw ReviewFeedbackFailure.message("Feedback was interrupted or memory storage is unavailable. No preference was saved; your feedback is retained.")}
             guard model.assistant.memory.saveReviewPreference(job.words,registration:job.registration,about:job.about,interpretation:interpretation,id:job.memoryID) else {throw ReviewFeedbackFailure.message(model.assistant.memory.error ?? "The preference could not be saved. Your feedback is retained.")}
             guard self.feedbackMemory(job,model:model)?.reviewInterpretation == interpretation else {throw ReviewFeedbackFailure.message("The saved preference could not be verified. Inspect memory before retrying.")}
         },alreadySaved:{job in self.feedbackMemory(job,model:model) != nil})

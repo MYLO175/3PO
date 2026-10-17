@@ -111,13 +111,13 @@ import SwiftData
             do {
                 try model.validateOwnership()
                 guard scope == model.whatsapp.scope(for:model.inference.activeID),access == model.whatsappLearningAccess,learningAccess == accessSnapshot(model),registration == model.inference.activeID,memoryCurrent(),
-                      memoryControls == memory.controlsRevision,memory.enabled,memory.learningEnabled,assistant.contextEnabled,contextRevision == assistant.contextRevision,!assistant.busy,!model.writing else { throw MemoryLearningFailure.changed }
+                      memoryControls == memory.controlsRevision,memory.enabled,memory.learningEnabled,assistant.contextEnabled,contextRevision == assistant.contextRevision,!assistant.busy else { throw MemoryLearningFailure.changed }
                 try model.claimInference()
                 let output=try await model.inference.streamResponse(input:[["role":"user","content":assessment.input]],instructions:SourceContextRules.instructions+" "+LearningRuntime.inlineSourceOrganisationInstructions,model:selectedModel,purpose:.learning) { _ in }
                 try model.validateOwnership()
                 guard scope == model.whatsapp.scope(for:model.inference.activeID),access == model.whatsappLearningAccess,learningAccess == accessSnapshot(model),registration == model.inference.activeID,
                       memoryControls == memory.controlsRevision,memoryCurrent(),memory.enabled,memory.learningEnabled,
-                      sourcesEnabled == assistant.contextEnabled,assistant.contextEnabled,contextRevision == assistant.contextRevision,!assistant.busy,!model.writing else { throw MemoryLearningFailure.changed }
+                      sourcesEnabled == assistant.contextEnabled,assistant.contextEnabled,contextRevision == assistant.contextRevision,!assistant.busy else { throw MemoryLearningFailure.changed }
                 let fresh=SourceContextRules.recent(model.whatsapp.messages,chats:model.whatsapp.chats,allowed:access.chats,now:model.now(),limit:2000)
                 guard assessment.messages.allSatisfy({item in fresh.contains(where:{$0 == item})}),assessment.candidates.allSatisfy(memory.sourceIsPermitted),
                       let facts=SourceContextRules.decode(output,messages:assessment.messages,registration:registration,linkedIdentity:scope.linkedIdentity,now:model.now(),candidates:assessment.candidates,assessing:Set(batch.map(\.id))),

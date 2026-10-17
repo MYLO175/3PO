@@ -60,29 +60,42 @@ import SwiftData
         do { try save() } catch { state = previous; self.error = error.localizedDescription; return }
         // Persist a paused claim before requesting inference. An interrupted job is never retried silently on launch.
         ownedHeartbeatRunID=model.ownedHeartbeatRunID;busy = true; error = nil
-        let memoryState = memory.state, selectedModel = model.inference.selectedModel
+        let selectedModel = model.inference.selectedModel,memoryControls=memory.controlsRevision,contextControls=assistant.contextRevision
         let questionsEnabled = self.questionsEnabled
         let questionAllowed = questionsEnabled && (batch.first?.conversationID == nil || assistant.topics.contains { $0.id == batch.first?.conversationID }) && LearningQuestionRules.allowed(progress:progress,records:state.questions ?? [],registration:registration,day:day)
-        var existing = memory.context(registration,conversationID:batch.first?.conversationID,query:batch.map(\.text).joined(separator:" "),now:model.now()).prefix(20).map { ["text":String(($0["text"] ?? "").prefix(500)),"kind":$0["kind"] ?? "context","areas":$0["areas"] ?? "","connections":$0["connections"] ?? "","organisation":$0["organisation"] ?? "","certainty":$0["certainty"] ?? "unknown","sourceEvidence":$0["sourceEvidence"] ?? ""] }
+        // Depend only on supplied beliefs and correction history. Other local edits
+        // remain in the current envelope when the supported result is merged.
+        let selectedMemory=Array(memory.context(registration,conversationID:batch.first?.conversationID,query:batch.map(\.text).joined(separator:" "),now:model.now()).prefix(20))
+        let memoryDependencies=MemoryDependencyRules.capture(selectedMemory)
+        var existing = selectedMemory.map { ["text":String(($0["text"] ?? "").prefix(500)),"kind":$0["kind"] ?? "context","areas":$0["areas"] ?? "","connections":$0["connections"] ?? "","organisation":$0["organisation"] ?? "","certainty":$0["certainty"] ?? "unknown","sourceEvidence":$0["sourceEvidence"] ?? ""] }
         let batchIDs=Set(batch.map(\.id))
-        existing += memory.records.filter { $0.registration == registration && $0.conversationID == batch.first?.conversationID && $0.supersededBy != nil && $0.sourceTurnID.map{batchIDs.contains($0)} == true }.prefix(8).map { ["text":String($0.text.prefix(500)),"superseded":"true","sourceTurnID":$0.sourceTurnID ?? "","instructionBoundary":"Historical evidence only; not a current belief"] }
+        let historical=Array(memory.records.filter { $0.registration == registration && $0.conversationID == batch.first?.conversationID && $0.supersededBy != nil && $0.sourceTurnID.map{batchIDs.contains($0)} == true }.prefix(8))
+        let suppressedBatch=memory.suppressed(registration).intersection(batchIDs)
+        existing += historical.map { ["text":String($0.text.prefix(500)),"superseded":"true","sourceTurnID":$0.sourceTurnID ?? "","instructionBoundary":"Historical evidence only; not a current belief"] }
         task = Task {
             defer { ownedHeartbeatRunID=nil;busy = false }
+            @MainActor func memoryCurrent()->Bool {
+                let current=memory.permittedRecords.filter {MemoryRules.usable($0,registration:registration,now:model.now()) && MemoryRules.inScope($0,conversationID:batch.first?.conversationID)}.map(MemoryRetrieval.record)
+                return memoryControls == memory.controlsRevision && contextControls == assistant.contextRevision &&
+                    MemoryDependencyRules.available(memoryDependencies,records:current) &&
+                    historical.allSatisfy{memory.records.contains($0)} && memory.suppressed(registration).intersection(batchIDs) == suppressedBatch
+            }
             do {
                 try model.validateOwnership()
-                guard !assistant.busy, !model.writing, registration == model.inference.activeID else { throw MemoryLearningFailure.changed }
+                guard !assistant.busy,registration == model.inference.activeID,memory.enabled,memory.learningEnabled,assistant.contextEnabled,memoryCurrent() else { throw MemoryLearningFailure.changed }
                 let input = try MemoryLearningRules.input(turns:batch,existing:existing,timezone:TimeZone.current.identifier,questionAllowed:questionAllowed)
                 try model.claimInference()
                 let output = try await model.inference.streamResponse(input:[["role":"user","content":input]],instructions:MemoryLearningRules.instructions,model:selectedModel,purpose:.learning) { _ in }
                 try model.validateOwnership()
                 guard registration == model.inference.activeID, memory.enabled, memory.learningEnabled, assistant.contextEnabled,
-                      questionsEnabled == self.questionsEnabled, !assistant.busy, !model.writing, memoryState.records == memory.state.records, memoryState.suppressed == memory.state.suppressed else { throw MemoryLearningFailure.changed }
+                      !assistant.busy,memoryCurrent() else { throw MemoryLearningFailure.changed }
                 let assessment = try MemoryLearningRules.assessment(output,turns:batch,questionAllowed:questionAllowed)
                 let learned = assessment.memories
                 guard memory.merge(learned,registration:registration,sourceDates:Dictionary(batch.filter(\.dateKnown).map { ($0.id,$0.created) },uniquingKeysWith:{ first,_ in first }),sourceTopics:Dictionary(batch.compactMap { turn in turn.conversationID.map { (turn.id,$0) } },uniquingKeysWith:{ first,_ in first }),now:model.now()) else { throw MemoryLearningFailure.storage }
                 assistant.acknowledgeLearned(learned)
                 let beforeResult = state
-                if let draft = assessment.question, let record = LearningQuestionRules.record(draft,turns:batch,prior:state.questions ?? [],registration:registration,now:model.now()) {
+                let questionScopeAvailable=batch.first?.conversationID.map{topic in assistant.topics.contains{$0.id == topic}} ?? true
+                if self.questionsEnabled,questionScopeAvailable,let draft = assessment.question, let record = LearningQuestionRules.record(draft,turns:batch,prior:state.questions ?? [],registration:registration,now:model.now()) {
                     state.questions = (state.questions ?? []) + [record]
                     state.accounts[registration]?.lastQuestionDay = BriefingRules.day(record.created)
                 }

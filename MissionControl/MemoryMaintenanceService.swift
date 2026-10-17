@@ -62,11 +62,11 @@ import Observation
             defer { ownedHeartbeatRunID=nil;automaticRegistration=nil;busy=false }
             do {
                 try model.validateOwnership()
-                guard registration == model.inference.activeID,(manual || automatic(registration)),memoryControls == memory.controlsRevision,memory.enabled,memory.learningEnabled,!model.assistant.busy,!model.writing,issued.allSatisfy({id,record in memory.records.contains{$0.id == id && $0 == record && MemoryReviewRules.eligible($0,registration:registration)}}) else { throw MemoryLearningFailure.changed }
+                guard registration == model.inference.activeID,(manual || automatic(registration)),memoryControls == memory.controlsRevision,memory.enabled,memory.learningEnabled,!model.assistant.busy,issued.allSatisfy({id,record in memory.records.contains{$0.id == id && $0 == record && MemoryReviewRules.eligible($0,registration:registration)}}) else { throw MemoryLearningFailure.changed }
                 try model.claimInference()
                 let output=try await model.inference.streamResponse(input:[["role":"user","content":input]],instructions:MemoryReviewRules.instructions,model:selectedModel,purpose:.organisation) { _ in }
                 try model.validateOwnership()
-                guard registration == model.inference.activeID,(manual || automatic(registration)),memoryControls == memory.controlsRevision,memory.enabled,memory.learningEnabled,!model.assistant.busy,!model.writing,issued.allSatisfy({id,record in memory.records.contains{$0.id == id && $0 == record && MemoryReviewRules.eligible($0,registration:registration)}}) else { throw MemoryLearningFailure.changed }
+                guard registration == model.inference.activeID,(manual || automatic(registration)),memoryControls == memory.controlsRevision,memory.enabled,memory.learningEnabled,!model.assistant.busy,issued.allSatisfy({id,record in memory.records.contains{$0.id == id && $0 == record && MemoryReviewRules.eligible($0,registration:registration)}}) else { throw MemoryLearningFailure.changed }
                 guard let proposals=MemoryReviewRules.decode(output,records:records,registration:registration,now:now) else { throw MemoryLearningFailure.invalid }
                 let beforeSave=state
                 for proposal in proposals where !state.proposals.contains(where:{$0.id == proposal.id}) { state.proposals.append(proposal) }

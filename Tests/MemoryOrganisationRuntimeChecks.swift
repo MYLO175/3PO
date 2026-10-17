@@ -31,7 +31,7 @@ import SwiftData
     @MainActor static func main() async throws {
         var count=0
         func check(_ condition:Bool,_ message:String) {precondition(condition,message);count += 1}
-        let cases=["unrelated addition","unrelated edit","other account addition","no-op controls","no-op service controls","service disabled","supplied edit","supplied forget","supplied retirement","supplied pin","memory disabled","learning disabled","memory off and on","learning off and on","model changed","draft opened","unrelated topic added","account changed","owner ended","foreground started","Stop"]
+        let cases=["unrelated addition","unrelated edit","other account addition","no-op controls","no-op service controls","service disabled","supplied edit","supplied forget","supplied retirement","supplied pin","memory disabled","learning disabled","memory off and on","learning off and on","model changed","draft opened","unrelated topic added","unrelated native edit","account changed","owner ended","foreground started","Stop"]
         for lane in ["organisation","maintenance"] {
             for scenario in cases+(lane == "maintenance" ? ["proposal dismissed","proposal Undo","other account toggle"] : []) {
                 let label=lane+": "+scenario,suite="3PO.memory-organisation-check."+UUID().uuidString
@@ -40,9 +40,9 @@ import SwiftData
                 let container=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
                 let inference=OrganisationInference(),memory=PAMemoryStore(container:container,settings:settings)
                 let assistant=OrganisationAssistant(inference,memory:memory),budget=LearningBudget(container:container)
-                var now=Date.now,owned=true
+                var now=Date.now,owned=true,nativeWriting=false
                 let owner=inference.activeID
-                let runtime=LearningRuntime(assistant:assistant,inference:inference,learningBudget:budget,whatsapp:OrganisationWhatsApp(),now:{now},activity:{.init()},writing:{false},sourceRevision:{0},nativeItems:{_,_ in nil},ownership:.init(runID:"fictional-owned-heartbeat",validate:{if !owned {throw MemoryLearningFailure.changed}},claim:{}))
+                let runtime=LearningRuntime(assistant:assistant,inference:inference,learningBudget:budget,whatsapp:OrganisationWhatsApp(),now:{now},activity:{.init()},writing:{nativeWriting},sourceRevision:{0},nativeItems:{_,_ in nil},ownership:.init(runID:"fictional-owned-heartbeat",validate:{if !owned {throw MemoryLearningFailure.changed}},claim:{}))
                 let issued=(0..<8).map{index in PAMemory(registration:owner,text:"Optics sample \(index) requires a lens",kind:.context,explicit:true,provenance:"Fictional validation",created:now.addingTimeInterval(-100),reviewed:now.addingTimeInterval(-100))}
                 for record in issued {check(memory.put(record),label+" seed saved")}
                 let unissued=PAMemory(registration:owner,text:"Garden irrigation valve",kind:.context,explicit:true,provenance:"Fictional validation",created:now.addingTimeInterval(-50),reviewed:now.addingTimeInterval(-50))
@@ -84,6 +84,7 @@ import SwiftData
                     case "learning off and on":memory.learningEnabled=false;memory.learningEnabled=true
                     case "model changed":inference.selectedModel="changed-model"
                     case "draft opened":assistant.hasDraft=true
+                    case "unrelated native edit":nativeWriting=true
                     case "unrelated topic added":assistant.topics.append(.init(accountID:owner,title:"Another saved topic"))
                     case "proposal dismissed":maintenance.dismiss(preparedProposal!.id,registration:owner)
                     case "proposal Undo":maintenance.undo(owner)
@@ -99,7 +100,7 @@ import SwiftData
                 func busy()->Bool {lane == "organisation" ? organisation.busy : maintenance.busy}
                 for _ in 0..<10000 {if !busy(){break};await Task.yield()}
                 check(!busy() && inference.calls == 1 && inference.requestedModels == ["fictional-model"],label+" bounded inference retains captured model")
-                let success=["unrelated addition","unrelated edit","other account addition","no-op controls","no-op service controls","model changed","draft opened","unrelated topic added","proposal dismissed","proposal Undo","other account toggle"].contains(scenario)
+                let success=["unrelated addition","unrelated edit","other account addition","no-op controls","no-op service controls","model changed","draft opened","unrelated topic added","proposal dismissed","proposal Undo","other account toggle","unrelated native edit"].contains(scenario)
                 let error=lane == "organisation" ? organisation.error : maintenance.error
                 check((error == nil) == success,label+" exact outcome")
                 if success {
