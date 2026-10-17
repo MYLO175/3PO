@@ -10,6 +10,7 @@ import Foundation
     let focusAreas:[LifeArea]?
     let turnID: UUID
     let registration: String
+    let inferenceModel:String
     let localMail: MailLookup
     var mailCursor: any AssistantMailCursor { localMail }
     var calendar = CalendarSnapshot(sources:[],events:[])
@@ -165,10 +166,10 @@ import Foundation
         return .init(toolName:call.name,arguments:try json(args),snapshot:encoded,outline:outline,details:details)
     }
     private var memory:PAMemoryStore { evaluationMemory ?? model.assistant.memory }
-    init(model: DashboardModel, human: String, humanContext: String, topicID: UUID?, turnID: UUID, mail: MailLookup? = nil, history: [[String:String]] = [], evaluationMemory:PAMemoryStore? = nil, evaluationProjects:LifeWorkspaceStore? = nil,focusAreas:[LifeArea]? = nil) {
+    init(model: DashboardModel, human: String, humanContext: String, topicID: UUID?, turnID: UUID, mail: MailLookup? = nil, history: [[String:String]] = [], evaluationMemory:PAMemoryStore? = nil, evaluationProjects:LifeWorkspaceStore? = nil,focusAreas:[LifeArea]? = nil,inferenceModel:String? = nil) {
         self.evaluationMemory=evaluationMemory;self.evaluationProjects=evaluationProjects;self.focusAreas=focusAreas
         self.localMail = mail ?? MailLookup(); self.history = history
-        self.model = model; self.human = human; self.humanContext = humanContext; self.topicID = topicID; self.turnID = turnID; registration = model.chatGPT.activeID
+        self.model = model;self.inferenceModel=inferenceModel ?? model.chatGPT.selectedModel; self.human = human; self.humanContext = humanContext; self.topicID = topicID; self.turnID = turnID; registration = model.chatGPT.activeID
         if evaluationMemory == nil && evaluationProjects == nil {
             emails = Dictionary(uniqueKeysWithValues:model.mailData.messages.filter { !model.assistant.excludedAccounts.contains($0.accountID) }.map { ($0.id,$0) })
         }
@@ -232,7 +233,7 @@ import Foundation
         let organisationAccepted: Bool
         do {
             if preparingApprovals,Self.approvableTools.contains(call.name) {throw PAIntentFailure(reason:"Review the remaining proposed changes together.")}
-            organisationAccepted=executingApproval ? true : try await PAToolAuthorization.check(call:call,args:args,human:human,history:history,target:target,model:model)
+            organisationAccepted=executingApproval ? true : try await PAToolAuthorization.check(call:call,args:args,human:human,history:history,target:target,model:model,inferenceModel:inferenceModel)
         }
         catch is CancellationError { throw CancellationError() }
         catch {

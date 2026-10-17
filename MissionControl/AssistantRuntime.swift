@@ -19,6 +19,7 @@ struct AssistantToolRequest {
     var mail: (any AssistantMailCursor)?
     var history: [[String: String]]
     var focusAreas: [LifeArea]?
+    var inferenceModel:String? = nil
 }
 
 /// Read-only cursor presentation. Source searching remains inside the turn's tool
