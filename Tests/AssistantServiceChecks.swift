@@ -56,6 +56,7 @@ private final class ObservationCounter:@unchecked Sendable {
     var itemDetails: [String: NativeEditDetails] = [:]
     var consultedMemory: Set<UUID> = []
     var consultedWorkspace: Set<UUID> = []
+    var suppliedWeatherScope:String?
     var receipts: [String] = []
     private(set) var actionCountReads=0
     var confirmedActionCount:Int {actionCountReads += 1;return receipts.count}
@@ -340,10 +341,12 @@ private final class ObservationCounter:@unchecked Sendable {
 
         // Changing future defaults is not Stop. Hold real service inference,
         // finish one verified operation, then prove the next request uses them.
-        for change in ["model","preferences","name","focus","learning","learning-cycle"] {
+        for change in ["model","preferences","name","focus","learning","learning-cycle","weather-unused","source-grant"] {
             settings.set(true,forKey:"paMemoryLearningEnabled")
             let p=FictionalInference(),c=FictionalContext(),store=try open("captured-default-"+change),value=service(p,store)
             let originalModel=p.selectedModel,originalPreferences=value.preferences,originalName=value.displayName
+            if change == "weather-unused" {c.state.weatherSupplied=false}
+            if change == "source-grant" {value.excludedCalendars=["fictional-excluded"];value.excludedLists=["fictional-excluded"];value.excludedAccounts=["fictional-excluded"]}
             var writes=0
             c.configure={session,_ in session.executeBody={call,session in
                 check(call.name == "change_reminder","Captured-default fixture executes only the requested operation")
@@ -359,6 +362,8 @@ private final class ObservationCounter:@unchecked Sendable {
             case "name":value.displayName="Next request name"
             case "focus":value.standaloneFocusSelections[p.activeID]=[LifeArea.career.rawValue]
             case "learning":value.memory.learningEnabled=false
+            case "weather-unused":c.state.weatherScope="new-unsupplied-weather"
+            case "source-grant":value.excludedCalendars=[];value.excludedLists=[];value.excludedAccounts=[]
             default:value.memory.learningEnabled=false;value.memory.learningEnabled=true
             }
             p.release();await until{!value.busy}
@@ -373,6 +378,21 @@ private final class ObservationCounter:@unchecked Sendable {
             check(value.send(runtime:c.runtime(),topicID:nil,prompt:"A new independent request",focusAreas:[.career]),"\(change) next request starts normally")
             await until{!value.busy}
             check(p.models.last == p.selectedModel && p.instructions.last?.contains(value.preferences) == true && p.instructions.last?.contains(value.displayName) == true && value.feed?.turns.last?.focusAreas == [.career],"\(change) future choices apply to the next request")
+        }
+
+        for revoked in [false,true] {
+            let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("weather-tool-"+String(revoked)))
+            c.state.weatherSupplied=false
+            c.configure={session,_ in session.executeBody={call,session in
+                check(call.name == "read_weather","Weather dependency is issued only by the weather read")
+                session.suppliedWeatherScope=c.state.weatherScope
+                if revoked {c.state.weatherScope="withdrawn-after-read"}
+                return "{\"days\":[{\"conditions\":\"Fictional\"}]}"
+            }}
+            p.holdNext=true;p.replies=[tools(["read_weather"]),final("The fictional forecast is available")]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Read the current forecast"),"Weather tool fixture starts")
+            await until{p.waiting};c.state.weatherScope="permission-granted-before-first-read";p.release();await until{!value.busy}
+            check(revoked ? value.error != nil && p.inputs.count == 1 : value.error == nil && value.feed?.turns.last?.actionResult?.phase == "completed","Fresh weather access may be granted, but supplied weather permission cannot be withdrawn")
         }
 
         // Dismiss/Undo is attention metadata, not revocation of an unrelated

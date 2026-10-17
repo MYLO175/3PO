@@ -72,7 +72,7 @@ import Observation
     private(set) var mailSearchConversationID: UUID?
     private(set) var mailSearchTurnID: UUID?
     private(set) var contextRevision = UUID()
-    var contextEnabled = false { didSet { if !restoringSettings { settings.set(contextEnabled, forKey: "assistantContextEnabled");contextRevision = UUID() } } }
+    var contextEnabled = false { didSet { if !restoringSettings && contextEnabled != oldValue { settings.set(contextEnabled, forKey: "assistantContextEnabled");contextRevision = UUID() } } }
     var displayName = PAIdentity.name(nil) { didSet { if !restoringSettings { settings.set(displayName,forKey:"paDisplayName") } } }
     var standaloneFocusSelections:[String:[String]] = [:] {
         didSet { if !restoringSettings { settings.set(standaloneFocusSelections,forKey:"paLifeFocusSelections") } }
@@ -619,7 +619,7 @@ import Observation
             var invalidationReason = "the request context changed"
             var expectedSourceMemoryIDs=Set(capturedSourceMemoryIDs)
             var replySourceMemoryIDs=capturedSourceMemoryIDs
-            let expectedWeather = weatherScope
+            var expectedWeather:String? = sourceEnabled && !setupMode && context != nil && owned.weatherSupplied ? weatherScope : nil
             @MainActor func owns(_ current:AssistantRuntimeState)->Bool {
                 func reject(_ reason:String)->Bool {invalidationReason=reason;return false}
                 guard reviewValid?() != false else {return reject("this Review request or its source access changed")}
@@ -642,9 +642,9 @@ import Observation
                 let usable=Set((memory.enabled ? memory.permittedRecords : []).filter{MemoryRules.usable($0,registration:registration,now:runtime.clock())}.map(\.id))
                 guard expectedSourceMemoryIDs.isSubset(of:usable) else {return reject("supporting source memory became unavailable")}
                 guard Set(expectedBeliefs.keys).isSubset(of:usable) else {return reject("a memory supplied to this request became unavailable")}
-                guard expectedWeather == current.weatherScope else {return reject("the weather permission or controls changed")}
+                guard expectedWeather.map({$0 == current.weatherScope}) ?? true else {return reject("access to the supplied weather changed")}
                 guard whatsappScope == current.whatsappScope else {return reject("the WhatsApp account or access choices changed")}
-                guard sourceEnabled == contextEnabled && calendars == excludedCalendars && lists == excludedLists && accounts == excludedAccounts else {return reject("the source access choices changed")}
+                guard (!sourceEnabled || contextEnabled) && calendars.isSuperset(of:excludedCalendars) && lists.isSuperset(of:excludedLists) && accounts.isSuperset(of:excludedAccounts) else {return reject("source access was withdrawn")}
                 return true
             }
             let validOwnership: NativeWriteValidity = {
@@ -745,6 +745,7 @@ import Observation
                             }
                             else {output = try await executePrepared(call)}
                             succeeded=true
+                            if expectedWeather == nil {expectedWeather=session.suppliedWeatherScope}
                             if let arguments=nativePreparationArguments(call),let result=(try? JSONSerialization.jsonObject(with:Data(output.utf8))) as? [String:Any],result["verified"] as? Bool == true {
                                 let recovered=nativePreparations.filter{$0.name == call.name && $0.arguments == arguments}
                                 if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {
