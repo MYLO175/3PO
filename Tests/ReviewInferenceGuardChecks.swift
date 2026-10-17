@@ -56,6 +56,28 @@ import Foundation
         check(ReviewInferenceGuard.comparisonDependencies(fresh:[fresh],replaced:["proposal-a"],prior:prior) == [fresh,oldA],"A replacement retains precisely its claimed prior conversation context")
         check(ReviewInferenceGuard.comparisonDependencies(fresh:[fresh],replaced:["proposal-a","proposal-a"],prior:prior) == [fresh,oldA],"Repeated prior aliases do not duplicate source receipts")
         check(ReviewInferenceGuard.comparisonDependencies(fresh:[fresh,oldA],replaced:["proposal-a"],prior:prior) == [fresh,oldA],"Fresh same-chat windows remain canonical and are not widened")
+        let output:[String:Any]=["suggestions":[["mailID":"mail_0","kind":"update"],["mailID":"mail_1","kind":"reminder"],["mailID":"wa_0","kind":"reply"]],"handled":[["mailID":"mail_0"],["mailID":"mail_1"]],"resolved":[["mailID":"mail_0","confirmationID":"mail_1"],["mailID":"mail_1","confirmationID":"mail_0"]],"retirements":[["reviewID":"review_0"],["reviewID":"review_1"]]]
+        let response=String(decoding:try JSONSerialization.data(withJSONObject:output),as:UTF8.self)
+        let filtered=try ReviewInferenceGuard.currentAttentionRows(response,dismissedSources:["mail_0"],dismissedReviews:["review_0"])
+        let object=try JSONSerialization.jsonObject(with:Data(filtered.response.utf8)) as! [String:Any]
+        check((object["suggestions"] as? [[String:String]])?.map{$0["mailID"]!} == ["mail_1","wa_0"],"A dismissed Mail source withholds only its own suggestions")
+        check((object["handled"] as? [[String:String]])?.map{$0["mailID"]!} == ["mail_1"],"A dismissed request cannot acquire new handling metadata")
+        let resolved=object["resolved"] as? [[String:String]]
+        check(resolved?.count == 1 && resolved?.first?["confirmationID"] == "mail_0","Dismiss does not invalidate truthful confirmation evidence for another request")
+        check((object["retirements"] as? [[String:String]])?.map{$0["reviewID"]!} == ["review_1"],"Whole-source dismissal withholds only that source's issued retirements")
+        check(!filtered.limited,"A short completed output stays uncapped")
+        let unchanged=try ReviewInferenceGuard.currentAttentionRows(response,dismissedSources:[])
+        check(unchanged.response == response,"An unrelated Dismiss needs no response rewrite")
+        var capped=output;capped["suggestions"]=Array(repeating:["mailID":"mail_0","kind":"update"],count:24)
+        let cappedResponse=String(decoding:try JSONSerialization.data(withJSONObject:capped),as:UTF8.self)
+        let cappedFiltered=try ReviewInferenceGuard.currentAttentionRows(cappedResponse,dismissedSources:["mail_0"])
+        let cappedObject=try JSONSerialization.jsonObject(with:Data(cappedFiltered.response.utf8)) as! [String:Any]
+        check(cappedFiltered.limited && (cappedObject["suggestions"] as? [[String:String]])?.isEmpty == true,"Filtering a dismissed source cannot hide the original result's24row truncation")
+        var invalid=output;invalid["suggestions"]=[["kind":"update"],["mailID":"unknown","kind":"update"]]
+        let invalidResponse=String(decoding:try JSONSerialization.data(withJSONObject:invalid),as:UTF8.self)
+        let preserved=try ReviewInferenceGuard.currentAttentionRows(invalidResponse,dismissedSources:["mail_0"])
+        let preservedObject=try JSONSerialization.jsonObject(with:Data(preserved.response.utf8)) as! [String:Any]
+        check((preservedObject["suggestions"] as? [[String:String]])?.count == 2,"Unassociated malformed rows remain available for existing strict diagnostics")
         print("PASS Review inference receipts: \(count) checks; exact native/source/occurrence/completion and supplied rows, irrelevant additions/bookkeeping, no AI or native access.")
     }
 }

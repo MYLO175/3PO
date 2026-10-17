@@ -25,6 +25,23 @@ enum ReviewInferenceGuard {
         }
         return result
     }
+    /// Apply the latest exact human acknowledgements to a validated completed
+    /// envelope. A dismissed request is withheld, while sibling sources and a
+    /// dismissed message's use as truthful confirmation evidence remain intact.
+    static func currentAttentionRows(_ response:String,dismissedSources:Set<String>,dismissedReviews:Set<String> = [])throws->(response:String,limited:Bool) {
+        guard var object=try JSONSerialization.jsonObject(with:Data(response.utf8)) as? [String:Any],
+              let suggestions=object["suggestions"] as? [[String:Any]] else {throw CocoaError(.fileReadCorruptFile)}
+        let limited=suggestions.count >= 24
+        guard !dismissedSources.isEmpty || !dismissedReviews.isEmpty else {return (response,limited)}
+        for section in ["suggestions","handled","resolved"] {
+            guard let rows=object[section] as? [[String:Any]] else {throw CocoaError(.fileReadCorruptFile)}
+            object[section]=rows.filter{row in !((row["mailID"] as? String).map(dismissedSources.contains) ?? false)}
+        }
+        if let rows=object["retirements"] as? [[String:Any]] {
+            object["retirements"]=rows.filter{row in !((row["reviewID"] as? String).map(dismissedReviews.contains) ?? false)}
+        }
+        return (String(decoding:try JSONSerialization.data(withJSONObject:object,options:.sortedKeys),as:UTF8.self),limited)
+    }
     /// Native absence/duplicate reasoning uses the whole admitted bounded set:
     /// a newly admitted row matters, whereas an excluded or after-cap row does not.
     static func nativeAvailable(_ captured:[String:String],current:[String:String])->Bool {captured == current}

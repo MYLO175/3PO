@@ -37,7 +37,7 @@ import Foundation
     static func run()async throws->[String:Bool] {
         guard ["--validate-advice-context","--validate-review-inbox"].contains(where:ProcessInfo.processInfo.arguments.contains) else {throw IntegrationError.verification}
         var checks:[String:Bool]=[:]
-        let modes=["unrelated-memory","selected-memory","unrelated-project","selected-project","native-hint","native-change","native-addition","native-after-cap","native-outside-window","native-repeated-hints","completion-health","completion-change","mail-flags","unrelated-assessment","selected-assessment","historical-ack-display","historical-ack-support","human-dismiss","pending-change","permission","account","model","stop","memory-controls-cycle","learning-controls-cycle","historical-row-current","historical-row-source-stale","historical-row-changed","historical-row-retire-stale-source","historical-row-retire-changed"]
+        let modes=["unrelated-memory","selected-memory","unrelated-project","selected-project","native-hint","native-change","native-addition","native-after-cap","native-outside-window","native-repeated-hints","completion-health","completion-change","mail-flags","unrelated-assessment","selected-assessment","historical-ack-display","historical-ack-support","human-dismiss","unrelated-dismiss","selected-source-dismiss","individual-dismiss","undo-independent","pending-change","permission","account","model","stop","memory-controls-cycle","learning-controls-cycle","historical-row-current","historical-row-source-stale","historical-row-changed","historical-row-retire-stale-source","historical-row-retire-changed"]
         for mode in modes {
             let now=Date.now,reader=ReviewGuardNativeFixture(now:Date.now),hold=ReviewGuardHold(),model=DashboardModel(nativeSources:reader)
             model.chatGPT.activeID="fictional-review-guard-"+mode;model.chatGPT.inferenceVerified=true;model.chatGPT.selectedModel="fictional-model"
@@ -50,7 +50,25 @@ import Foundation
             let fact=PAMemory(registration:owner,text:"The Orion prototype uses four sensors.",kind:.context,provenance:"Fictional human")
             guard store.put(fact) else {throw IntegrationError.verification}
             let project=try model.assistant.projects.save(.init(registration:owner,kind:.space,title:"Orion prototype",status:.active),expected:nil)
+            let siblingQuote="Water the garden seedlings with two litres."
+            if mode == "individual-dismiss" {summary.actionEvidence=[quote,"Calibrate the Orion prototype sensors."]}
             var summaries=[summary],messages=[message]
+            var dismissedSummary:EmailSummary?,dismissedProposal:PADiscovery?,restoredProposal:PADiscovery?
+            if ["unrelated-dismiss","selected-source-dismiss","undo-independent"].contains(mode) {
+                let other=try mail(["id":"fictional-garden-mail","messageID":2,"internetMessageID":"garden@example.invalid","subject":"Garden seedlings","received":now.addingTimeInterval(-86400).ISO8601Format()])
+                let sibling=EmailSummary(id:other.id,registration:owner,fingerprint:EmailSummary.fingerprint(other),summary:siblingQuote,attention:mode == "selected-source-dismiss",reason:"Garden seedlings",evidence:siblingQuote,bodyFingerprint:"garden-body",message:other,worthReading:false,needsReply:false,actionEvidence:[siblingQuote],actionEvidenceVersion:EmailSummary.actionEvidenceVersion)
+                summaries.append(sibling);messages.append(other)
+                let fresh:[String:Any]=["mailID":"mail_0","kind":"update","message":"Fresh independent prototype information.","evidenceID":"mail_0:primary"]
+                var rows=[fresh]
+                var handled:[[String:Any]]=[]
+                var resolved:[[String:Any]]=[]
+                if mode == "selected-source-dismiss" {
+                    rows.append(["mailID":"mail_1","kind":"update","message":"The garden seedlings need watering.","evidenceID":"mail_1:primary"])
+                    handled=[["mailID":"mail_0","targetID":"reminder_0","requestEvidenceID":"mail_0:primary","allActionsAddressed":true,"reason":"The supplied prototype reminder covers this request."]]
+                    resolved=[["mailID":"mail_0","confirmationID":"mail_1","requestEvidenceID":"mail_0:primary","confirmationEvidenceID":"mail_1:primary","allActionsAddressed":true,"reason":"Dismissal must not turn a garden message into prototype completion."]]
+                }
+                hold.response=String(decoding:try JSONSerialization.data(withJSONObject:["suggestions":rows,"projectTasks":[],"handled":handled,"resolved":resolved,"retirements":[]]),as:UTF8.self)
+            }
             if mode.hasPrefix("historical-ack") {
                 let old=try mail(["id":"fictional-old-mail","messageID":2,"internetMessageID":"old@example.invalid","subject":"Older unrelated appointment"])
                 var historical=EmailSummary(id:old.id,registration:owner,fingerprint:EmailSummary.fingerprint(old),summary:"Older concern",attention:false,reason:"Older concern",evidence:"Older appointment",bodyFingerprint:"old-body",message:old,dismissed:true,worthReading:false)
@@ -63,6 +81,20 @@ import Foundation
             }
             model.mailData = .init(messages:messages,accounts:[.init(id:message.accountID,title:"Fictional Mail")],errors:[],timedOut:false)
             try model.emailSummaries.seedAdviceFixture(summaries)
+            if mode == "individual-dismiss" || mode == "undo-independent" {
+                let original=mode == "individual-dismiss" ? summary : summaries[1]
+                let originalMessage=mode == "individual-dismiss" ? message : messages[1]
+                let pending=PADiscovery(id:"fictional-dismissed-pending",registration:owner,mailID:original.id,kind:"reminder",message:"Original pending concern",evidence:original.evidence,created:now.addingTimeInterval(-86400),scope:model.proactive.scope(model),sourceRevision:original.fingerprint,sourceTitle:mode == "individual-dismiss" ? "Prepare Orion prototype" : "Water garden seedlings",sourceAssessmentRevision:original.adviceRevision(replied:false),sourceDate:originalMessage.received,sourceContentVersion:ReviewAcknowledgementRules.emailVersion(originalMessage,original))
+                try model.proactive.seedAdviceFixture([pending],model:model)
+                if mode == "undo-independent" {
+                    restoredProposal=model.proactive.state.records.first
+                    model.proactive.dismiss(ProactiveRules.reviewProjection(model.proactive.state.records[0]),model:model)
+                } else {
+                    let duplicate:[String:Any]=["mailID":"mail_0","kind":"reminder","title":"Prepare Orion prototype","message":"Original pending concern","evidenceID":"mail_0:action_0"]
+                    let sibling:[String:Any]=["mailID":"mail_0","kind":"reminder","title":"Calibrate Orion sensors","message":"Calibrate the prototype sensors.","evidenceID":"mail_0:action_1"]
+                    hold.response=String(decoding:try JSONSerialization.data(withJSONObject:["suggestions":[duplicate,sibling],"projectTasks":[],"handled":[],"resolved":[],"retirements":[]]),as:UTF8.self)
+                }
+            }
             if mode == "pending-change" {
                 let pending=PADiscovery(id:"fictional-pending",registration:owner,mailID:message.id,kind:"update",message:"Original pending concern",evidence:quote,created:now,scope:model.proactive.scope(model),sourceRevision:summary.fingerprint,sourceTitle:message.subject,sourceAssessmentRevision:summary.adviceRevision(replied:false))
                 try model.proactive.seedAdviceFixture([pending],model:model)
@@ -87,6 +119,15 @@ import Foundation
             guard hold.gate != nil else {throw ActionFailure.message("Fictional Review \(mode) did not reach the held inference: \(model.proactive.error ?? model.proactive.sourceReadError ?? "not started")")}
             checks["Review \(mode) uses actual selected memory"]=(hold.input["paMemory"] as? String)?.contains(fact.id.uuidString) == true
             switch mode {
+            case "unrelated-dismiss","selected-source-dismiss":
+                let target=mode == "unrelated-dismiss" ? summaries[1] : summary
+                let source=mode == "unrelated-dismiss" ? messages[1] : message
+                model.emailSummaries.dismiss(source.id,model:model,expectedRegistration:owner,expectedVersion:ReviewAcknowledgementRules.emailVersion(source,target))
+                dismissedSummary=model.emailSummaries.records.first{$0.id == source.id}
+            case "individual-dismiss":
+                model.proactive.dismiss(ProactiveRules.reviewProjection(model.proactive.state.records[0]),model:model)
+                dismissedProposal=model.proactive.state.records.first
+            case "undo-independent":model.proactive.undo(model)
             case "memory-controls-cycle":store.enabled=false;store.enabled=true
             case "learning-controls-cycle":let original=store.learningEnabled;store.learningEnabled.toggle();store.learningEnabled=original
             case "historical-row-current":break
@@ -119,13 +160,36 @@ import Foundation
             hold.release()
             for _ in 0..<40_000 {if !model.proactive.busy {break};await Task.yield()}
             guard !model.proactive.busy else {throw ActionFailure.message("Fictional Review \(mode) did not settle.")}
-            let rejected=["selected-memory","selected-project","native-change","native-addition","completion-change","selected-assessment","human-dismiss","permission","account","model","stop","memory-controls-cycle","learning-controls-cycle"].contains(mode)
+            let rejected=["selected-memory","selected-project","native-change","native-addition","completion-change","selected-assessment","permission","account","model","stop","memory-controls-cycle","learning-controls-cycle"].contains(mode)
             checks["Review \(mode) preserves exact relevant guards without unrelated cancellation"]=(model.proactive.error != nil) == rejected
             checks["Review \(mode) has one fictional inference and no subscription calls"]=hold.calls == 1 && model.aiUsage.state.records.isEmpty
             if !rejected {
                 let progress=model.proactive.state.accounts[owner]
                 checks["Review \(mode) commits its completed comparison"]=progress?.paused == false
                 checks["Review \(mode) retains completion fingerprint or explicit row diagnostics"]=progress?.fingerprint != nil || progress?.validationIssues?.isEmpty == false
+            }
+            if ["unrelated-dismiss","selected-source-dismiss","individual-dismiss","undo-independent"].contains(mode) {
+                let saved=model.proactive.state.records,progress=model.proactive.state.accounts[owner]
+                checks["Review \(mode) completes without attention-only diagnostics"]=progress?.paused == false && progress?.fingerprint != nil && progress?.validationIssues?.isEmpty != false
+                if let dismissedSummary {
+                    let current=model.emailSummaries.records.first{$0.id == dismissedSummary.id}
+                    checks["Review \(mode) preserves the exact latest whole-email Dismiss"]=current.map{ReviewInferenceGuard.fingerprint($0)} == ReviewInferenceGuard.fingerprint(dismissedSummary) && current?.dismissed == true
+                }
+                if mode == "unrelated-dismiss" || mode == "undo-independent" {
+                    checks["Review \(mode) saves the independent fresh source"]=saved.contains{$0.mailID == message.id && $0.kind == "update"}
+                }
+                if mode == "selected-source-dismiss" {
+                    checks["Review selected-source Dismiss withholds only that source's returned proposals"]=saved.allSatisfy{$0.mailID != message.id} && saved.contains{$0.mailID == messages[1].id}
+                    checks["Review selected-source Dismiss cannot acquire handling or resolution"]=model.emailSummaries.records.first{$0.id == message.id}.map{$0.handling == nil && $0.resolution == nil} == true
+                }
+                if let dismissedProposal {
+                    checks["Review individual Dismiss keeps its original canonical record"]=saved.first{$0.id == dismissedProposal.id} == dismissedProposal && dismissedProposal.dismissed
+                    checks["Review individual Dismiss suppresses only the typed duplicate"]=saved.count == 2 && saved.contains{$0.sourceTitle == "Calibrate Orion sensors" && !$0.dismissed} && saved.filter{$0.sourceTitle == "Prepare Orion prototype"}.count == 1
+                }
+                if let restoredProposal {
+                    checks["Review Undo retains only the explicitly restored original identity"]=saved.first{$0.id == restoredProposal.id} == restoredProposal && saved.filter{$0.mailID == restoredProposal.mailID}.count == 1
+                    checks["Review Undo does not replay old output or start another request"]=hold.calls == 1 && saved.count == 2
+                }
             }
             if mode.hasPrefix("historical-row") {
                 let saved=model.proactive.state.records
