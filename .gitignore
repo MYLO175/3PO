@@ -42,3 +42,17 @@ WhatsAppBridge/Runtime/
 .agents/
 .codex/
 .aws/
+
+# Personal planning, agent instructions and development records stay local.
+/AGENTS.md
+/PLAN.md
+/STATUS.md
+/VALIDATION.md
+/docs/archive/
+/docs/audits/
+/docs/history/
+/docs/planning/
+/docs/development/DEVELOPMENT_WORKFLOW.md
+/docs/development/LIVE_ACCEPTANCE.md
+/docs/development/REPOSITORY_ORGANISATION_PLAN.md
+/docs/development/repository-file-map.csv

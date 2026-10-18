@@ -51,7 +51,7 @@ This DEBUG sample dashboard bypasses normal source collection, helper connection
 
 ## Configure normal use
 
-For an existing personal installation, follow the [release workflow](../development/DEVELOPMENT_WORKFLOW.md#integrate-and-release) before replacing it: one integration owner, an idle quit, complete recoverable backup and signed readback. For a first normal launch, open the built app without `--sample`.
+For an existing installation, follow [Updating an existing installation](../development/DEVELOPMENT.md#updating-an-existing-installation): quit the app, make a complete recoverable backup, and verify the signed replacement and saved records. For a first normal launch, open the built app without `--sample`.
 
 1. **Choose native sources.** Grant Calendar/Reminders permissions and Mail Automation only for the integrations you want. Check source status and source filters. Denied/unavailable access is different from an empty source.
 2. **Connect the assistant.** In Settings, use **Continue with ChatGPT** and the app's registration flow. Pick a model offered by the connected account, then choose **Check account access · 1 request** to verify inference. Sign-in/model discovery alone is not an inference check. Credentials stay in Keychain; there is no API-key fallback.
@@ -86,4 +86,4 @@ Optional WhatsApp requires a human-scanned QR code and explicit chat selection. 
 | A submitted preference is still pending | It normally waits for the next heartbeat; Process now requests priority. Never-started jobs remain queued after reopening; attempted/interrupted jobs need explicit retry |
 | A native save has an uncertain outcome | Inspect the retained operation receipt and verify the outcome before another attempt |
 
-Don't treat unavailable source coverage as proof that there is nothing to do. Exact known limitations and acceptance evidence are in [Validation](../../VALIDATION.md) and [Live acceptance](../development/LIVE_ACCEPTANCE.md).
+Don't treat unavailable source coverage as proof that there is nothing to do. The [feature guide](FEATURES.md) explains source and behaviour limits; the [developer guide](../development/DEVELOPMENT.md#choose-the-right-checks) explains verification tiers.

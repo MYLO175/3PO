@@ -53,7 +53,7 @@ The first preparation retains separate supported actions and destinations. Cappe
 Legacy completed-pass receipts can migrate only when their saved assessed version and existing proposal match the current exact source assessment, independently of old context revision. A legacy proposal alone cannot prove all siblings were prepared, so incomplete or unverifiable historical batches retain action-level deduplication. Receipts contain hashes, no duplicated email text, and outlive ordinary source-cache pruning.
 
 
-For a simple product tour, start with **[Features](../guides/FEATURES.md)**. This reference retains detailed interactions and contracts, including dated refinements. [Architecture](ARCHITECTURE.md) explains the component boundaries; [Validation](../../VALIDATION.md) records what has actually been checked.
+For a simple product tour, start with **[Features](../guides/FEATURES.md)**. This reference retains detailed interactions and contracts, including dated refinements. [Architecture](ARCHITECTURE.md) explains the component boundaries; the [developer guide](../development/DEVELOPMENT.md#choose-the-right-checks) explains the verification tiers.
 
 [Documentation](../README.md) · [Getting started](../guides/GETTING_STARTED.md) · [Memory](MEMORY_AND_CONTEXT.md) · [Projects](PROJECT_WORKSPACE.md)
 
@@ -116,10 +116,6 @@ Within one synchronous runtime validation decision, native consumers share one c
 
 This describes the connected integration candidate. Installation and native live acceptance are recorded separately in STATUS; complete extraction of every supported source date is still a model-quality question.
 
-## Separate conversational Review trial
-
-A DEBUG [interactive trial](../archive/trials/REVIEW_CONVERSATION_TRIAL.md) explores one explanation with several project/Calendar actions and a centred AI activity pill. Its Review replies wait behind a simulated heartbeat, remain outside general Chat and report per-action outcomes. It uses in-memory fictional data and scripted replies and remains a historical comparison for the connected candidate above.
-
 ## 13 October: detailed date rejection diagnostics
 
 Heartbeat history identifies each withheld action and its captured source title, proposed start/end, date-only/timed flag, timezone and exact rejection reason. Bounded account-owned metadata retains canonical source/evidence IDs but no source bodies, model messages or raw response. Details are selectable and snapshotted into the original run; a later skipped comparison cannot repeat the old warning as new work. Historical generic warnings remain unchanged because rejected values were never retained. Cross-entry replacement/handled conflicts now identify the affected row as well.
@@ -167,12 +163,12 @@ Sources allowed for review can also teach memory when memory learning is enabled
 
 ## Compound email suggestions
 
-Email assessment can retain up to twelve separate exact quotes for requirements, deadlines and scheduling windows. Review can show separate Calendar and project-task suggestions on the same email card, using an issued existing space and its revision. Review forms carry supported dates; project tasks retain exact timed wording in notes. Adjust with assistant adds the human variation to the visible assistant draft. Approvals recheck source evidence and use normal saved receipts; reading or suggesting never creates an item. See [implementation and acceptance](../planning/EMAIL_ACTIONS_PLAN.md).
+Email assessment can retain up to twelve separate exact quotes for requirements, deadlines and scheduling windows. Review can show separate Calendar and project-task suggestions on the same email card, using an issued existing space and its revision. Review forms carry supported dates; project tasks retain exact timed wording in notes. Adjust with assistant adds the human variation to the visible assistant draft. Approvals recheck source evidence and use normal saved receipts; reading or suggesting never creates an item.
 
 
-For current component ownership and the path from a message to a verified answer, start with [Architecture](ARCHITECTURE.md). The [reliability checklist](../planning/RELIABILITY_IMPLEMENTATION.md) distinguishes implementation from completed acceptance.
+For current component ownership and the path from a message to a verified answer, start with [Architecture](ARCHITECTURE.md). The [developer guide](../development/DEVELOPMENT.md#choose-the-right-checks) explains what each verification tier establishes.
 
-The reliability candidate separates conversation execution, learning, heartbeat orchestration, source reads and keyed storage from dashboard presentation. Background stages capture an exact heartbeat run; cancellation or changed ownership rejects results before saving, while earlier completed work remains. Construction loads settings without writing fallback defaults. The installed candidate passes preservation and normal relaunch checks; sustained acceptance remains open in LIVE_ACCEPTANCE and STATUS.
+The runtime separates conversation execution, learning, heartbeat orchestration, source reads and keyed storage from dashboard presentation. Background stages capture an exact heartbeat run; cancellation or changed ownership rejects results before saving, while earlier completed work remains. Construction loads settings without writing fallback defaults. Deterministic checks and builds do not establish sustained real-world reliability.
 
 Mission Control combines a custom dashboard with a personal assistant. Apple Calendar, Reminders and Mail remain the original sources. The assistant can retrieve information, remember useful context, suggest work and carry out supported Calendar/Reminders changes through local tools.
 
@@ -288,7 +284,7 @@ Selected source context is sent to subscription inference when the corresponding
 
 For the concise memory model, see [Memory and context](MEMORY_AND_CONTEXT.md): collect, remember, connect, recall, maintain. Current human context can be retired/restored locally without deleting evidence or projects. Saved project bindings now participate in recall across renames/corrections, and unpinned human-fact classifications can be reconsidered after 30 days within the existing learning allowance. This does not enable broader source learning or automatic semantic deletion/consolidation.
 
-There are separate checks for compilation, signing, deterministic fixtures, process launch, actual subscription-model quality and live interface/source behaviour. The manually invoked fictional notebook evaluation checks typed identity, areas, evidence-backed recall, unknown information and natural correction intent. It also exercises the production memory-only setup tools with a disposable in-memory database. It never stores fiction in your profile or sends real sources. Some graph/setup/queue interaction checks remain pending because app control was unavailable. [STATUS](../../STATUS.md) is the record of results and limits, not merely intended behaviour.
+There are separate checks for compilation, signing, deterministic fixtures, process launch, actual subscription-model quality and live interface/source behaviour. The manually invoked fictional notebook evaluation checks typed identity, areas, evidence-backed recall, unknown information and natural correction intent. It also exercises the production memory-only setup tools with a disposable in-memory database. It never stores fiction in your profile or sends real sources. The [developer guide](../development/DEVELOPMENT.md#choose-the-right-checks) describes the check tiers and their effects; fictional evaluation alone does not prove sustained live behaviour.
 
 Memory tool failures now appear in **Memory tool notes** on the relevant reply or interview. Supporting quotes preserve the actual current human wording while tolerating formatting differences. Unsupported graph-link evidence can be omitted independently of a fact, but facts and retained relationships still need human-statement validation. Old failures cannot be reconstructed if their tool details were never saved.
 
@@ -450,7 +446,7 @@ This coverage queue applies to source learning, not every WhatsApp suggestion/br
 
 Settings → Memory separates source access from default-off Calendar/Reminders/Mail learning. New opt-ins baseline existing coverage; Review once explicitly assesses one bounded batch. Native learning uses fresh cached 90-day Calendar orientation, incomplete Reminders and exact retained quotes from recently assessed Mail; it never fetches bodies/history or starts inference on Refresh. Current provider IDs/revisions and source selection gate recall. Native edits preserve prior versions even when start/due/received dates stay equal or move earlier; unstable/ambiguous IDs abstain. All learned source claims remain attributed/provisional.
 
-Memory → Review shows bounded duplicate/conflict/retirement suggestions with evidence. Weekly background review is independent/off by default and shares the existing four-pass/day learning budget. Review now is explicit. No suggestion edits or deletes facts, merges projects or resolves a real task; inspect/correct facts or explicitly retire old provisional context, with Restore available. A record change invalidates the suggestion. Dismissal has account-owned one-level Undo, including normal app Undo ordering. [Memory and context](MEMORY_AND_CONTEXT.md) describes storage and actual coverage; [STATUS](../../STATUS.md) records validation.
+Memory → Review shows bounded duplicate/conflict/retirement suggestions with evidence. Weekly background review is independent/off by default and shares the existing four-pass/day learning budget. Review now is explicit. No suggestion edits or deletes facts, merges projects or resolves a real task; inspect/correct facts or explicitly retire old provisional context, with Restore available. A record change invalidates the suggestion. Dismissal has account-owned one-level Undo, including normal app Undo ordering. [Memory and context](MEMORY_AND_CONTEXT.md) describes storage and actual coverage; the [developer guide](../development/DEVELOPMENT.md#choose-the-right-checks) explains the checks.
 
 
 ## 7 October — Source-aware advice and its evidence
@@ -690,4 +686,4 @@ Background Review finishes as well. Before saving its result, it checks the late
 
 A running request keeps the model, name, writing instructions and Focus it started with. New choices apply to later work. Editing or reopening a draft, changing the heartbeat interval, learning options or an unrelated project/memory record is not Stop. Completed learning merges into the newer saved state rather than overwriting it. Read-only memory use and permission to learn are separate.
 
-Source permissions attach to the relevant account, purpose and data actually supplied. A forecast or WhatsApp tool read can add a dependency later in the request; an unused connector adds none. Disconnect/relink and actual access withdrawal remain guarded. Exact source/item conflicts affect the supported output or operation, while the heartbeat can finish independent stages. Actual Send still uses serial foreground ownership; a draft waits if a background provider call is active. [Audit and verification](../audits/JOB_CONTINUITY_AUDIT_2026-10-17.md).
+Source permissions attach to the relevant account, purpose and data actually supplied. A forecast or WhatsApp tool read can add a dependency later in the request; an unused connector adds none. Disconnect/relink and actual access withdrawal remain guarded. Exact source/item conflicts affect the supported output or operation, while the heartbeat can finish independent stages. Actual Send still uses serial foreground ownership; a draft waits if a background provider call is active.

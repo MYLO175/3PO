@@ -78,11 +78,11 @@ Mail and WhatsApp are **read-only**. Reply drafts stay local for review, editing
 
 Local records live under `~/Library/Application Support/Mission Control`; credentials and encryption keys use Keychain. WhatsApp sessions, messages, names and source choices are encrypted locally. This does not mean every SwiftData record is encrypted. Personal records, credentials, caches, QR codes and screenshots stay outside Git. The optional WhatsApp connector uses unofficial Baileys and can break or face restrictions. [Privacy and source boundaries](docs/guides/PRIVACY.md) explains storage and what leaves the Mac.
 
-## What has been verified
+## Checks and current limits
 
-The latest recorded installed checkpoint is the 14 October feedback repair (`9ca10c2`), following unified Review, concise Activity and streaming improvements. Signed checks, state preservation and one explicit feedback recovery are recorded. **Several days of reliable ordinary use remain unverified.** A passing fixture, a build, installation and actual-model quality are separate claims. Memory retrieval is currently lexical with typed links; broad semantic/paraphrase recall and local offline inference remain future work.
+The repository includes deterministic checks with fictional data, alongside separate signed-app, native-fixture and model-evaluation tiers. A passing fixture, build, installation and actual-model quality are separate claims; source-free checks do not establish sustained reliability in ordinary use. The [developer guide](docs/development/DEVELOPMENT.md#choose-the-right-checks) explains how to run and interpret them.
 
-See [Validation](VALIDATION.md) for the current evidence index, [Live acceptance](docs/development/LIVE_ACCEPTANCE.md) for outstanding observation, and [Next improvements](docs/planning/NEXT_IMPROVEMENTS.md) for product gaps. Concurrent feature work is documented only after its committed checkpoint.
+Memory retrieval currently uses local lexical selection and typed links. Broad semantic/paraphrase recall and local offline inference are not implemented.
 
 ## Read or contribute
 
@@ -95,12 +95,12 @@ See [Validation](VALIDATION.md) for the current evidence index, [Live acceptance
 | Setup, checks and source navigation | [Getting started](docs/guides/GETTING_STARTED.md) · [Developer guide](docs/development/DEVELOPMENT.md) |
 | The full reading map | [Documentation index](docs/README.md) |
 
-Before editing, read [AGENTS](AGENTS.md) and the [development workflow](docs/development/DEVELOPMENT_WORKFLOW.md). Concurrent writers use separate worktrees; one integration owner validates and installs against personal data. AGENTS governs development, while the shipped assistant's behaviour lives in application code and runtime prompts.
+The shipped assistant's behaviour lives in application code and runtime prompts. The developer guide maps those components and their checks.
 
 ## Repository layout
 
 `MissionControl/` groups app code by responsibility: App, Dashboard, Assistant, Memory, Projects, Review, Background, Sources, Widgets, Infrastructure and Development. `Tests/` follows the same areas. `WhatsAppBridge/` remains its own helper package.
 
-Use `scripts/build.sh` and `scripts/check.sh` from the repository root. Component checks live in `scripts/checks/`; project generation, assets and packaging helpers have their own script folders. [The developer guide](docs/development/DEVELOPMENT.md) explains the commands, and [the organisation guide](docs/development/REPOSITORY_ORGANISATION_PLAN.md) lists source ownership and relocation details.
+Use `scripts/build.sh` and `scripts/check.sh` from the repository root. Component checks live in `scripts/checks/`; project generation, assets and packaging helpers have their own script folders. [The developer guide](docs/development/DEVELOPMENT.md) explains the commands and maps the main components.
 
-[Documentation](docs/README.md) is grouped into guides, architecture, development, planning, audits and history. Root STATUS, PLAN and VALIDATION remain current entry points and link to preserved historical records.
+[Documentation](docs/README.md) is grouped into setup and feature guides, architecture references and build/test documentation.

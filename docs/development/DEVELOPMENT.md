@@ -1,12 +1,12 @@
 # Developer guide
 
-**Start from the current checkpoint, keep ownership narrow, and verify the effects your change actually has.** This page maps the code and tools. [AGENTS](../../AGENTS.md) and [Development workflow](DEVELOPMENT_WORKFLOW.md) govern development and concurrent writers.
+**Find the component, build the app and run the relevant checks.** This page maps the source code, build tools and verification tiers.
 
 [Documentation](../README.md) · [Architecture](../architecture/ARCHITECTURE.md) · [Getting started](../guides/GETTING_STARTED.md)
 
-## Before changing anything
+## App data and test isolation
 
-Read the top of [Status](../../STATUS.md), then inspect Git status and active worktrees/chats. Use an isolated worktree when another writer owns the primary checkout. Agree deliverable, permitted files, base commit and shared contracts. Worktrees share app storage, Keychain, Apple accounts and the installed app, so only the integration owner performs personal-data release/acceptance.
+Builds from separate checkouts still share the app's bundle identity, storage, Keychain and Apple permissions. Use fictional fixtures for isolated service checks and avoid running two normal app copies against the same personal store.
 
 Documentation-only work needs link, consistency and presentation checks; it does not require an app build or new model/native requests.
 
@@ -63,7 +63,7 @@ Open the generated Xcode project for source editing. A compile does not install,
 | `native` | Disposable UUID Calendar fixtures under existing permissions, with verified cleanup | Supported real EventKit behaviour on the candidate |
 | `model` | Fictional input through the configured subscription; consumes requests | Narrow actual-model quality for the named cases |
 
-Candidate example, for the integration owner:
+Signed DEBUG candidate example:
 
 ```sh
 ./scripts/check.sh --tier app-memory \
@@ -79,13 +79,11 @@ Use native/model tiers only for their documented effects and authorised scope. T
 - **Native writes:** prepared creation approval validates human-approved concrete payload, account/source access, destination and duplicate/uncertain receipts, without broad evidence reconstruction. Existing-item edits/removals retain exact issued target, scope and current fields/full revision. Persist pending receipts and verify readback.
 - **Background work:** capture run ownership before yielding; claim before inference and revalidate before save. Review automatically runs accepted never-started jobs when idle; the general delegated queue keeps explicit continuation. Explicit feedback uses next-heartbeat/Process now scheduling and exact email/source-choice ownership. Preserve completed receipts, reject late cancelled output and never replay attempted/uncertain work.
 - **Activity:** observe stable work metadata, not streaming prose. Display-only progress must not fetch native receipts; final completion remains receipt-backed. Preserve the single local success-expiry wakeup.
-- **Appearance:** retain interaction, navigation, draft, geometry and toolbar identities; coordinate views owned by other streams.
+- **Appearance:** retain interaction, navigation, draft, geometry and toolbar identities.
 - **Storage:** edit only owned keys atomically; preserve legacy/unknown supported data and refuse corrupt-state overwrite.
 
-## Document and publish a checkpoint
+## Updating an existing installation
 
-Keep behaviour in Features and the relevant detailed guide, architecture ownership in Architecture, choices in Decisions, scope in Plan and gaps in Next improvements. Record actual validation/install evidence separately in Status and Validation, with the current summary first.
+Quit the existing app and make a recoverable backup of its complete store and supporting files before replacing it. Preserve the bundle, registration, helper and Keychain identities. Verify the replacement's signature and saved records, and run only one normal copy against personal data.
 
-Review the exact staged diff and outgoing history before publication. Stage only owned files; never include another chat's unfinished code, credentials, personal source text, caches or diagnostic images. Verify remote commit identity after a normal push. Repository publication is separate from installation and does not change GitHub visibility.
-
-Only the integration owner handles signed release, complete private backup, replacement/readback and real-use acceptance. [Development workflow](DEVELOPMENT_WORKFLOW.md#integrate-and-release) covers the full process.
+Building and publishing source code do not install or launch a candidate. Documentation-only changes need link and consistency checks; app builds and source/model requests are unnecessary for those edits.

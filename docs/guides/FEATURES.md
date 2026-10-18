@@ -140,4 +140,4 @@ Automatic learning retains global controls, review-permission inheritance or exp
 
 The app is a personal development project. Build/signature/installation, deterministic rules, fictional model checks and several days of real use prove different things. The latest candidate's sustained acceptance is still open. Semantic paraphrase recall, broader cross-source episode understanding, local offline inference and phone support remain future work.
 
-[Validation](../../VALIDATION.md) records actual checks. [Live acceptance](../development/LIVE_ACCEPTANCE.md) tracks remaining real use. [Next improvements](../planning/NEXT_IMPROVEMENTS.md) separates product gaps from delivered features.
+The [developer guide](../development/DEVELOPMENT.md#choose-the-right-checks) explains the available checks and their limits. Passing a fixture or build does not establish sustained real-world reliability.

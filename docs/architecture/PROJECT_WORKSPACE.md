@@ -48,7 +48,7 @@ Records are scoped to the active registration; legacy topic scopes remain isolat
 
 Normal refresh, source reception and widget display never enqueue project inference. New spaces save directly in the chosen home without an automatic placement request. The PA can create or file spaces/tasks when you ask. Existing older placement requests remain inspectable and resumable; see below. Existing separately opted-in memory/source learning is unchanged. Source-driven association proposals, ongoing background project maintenance, semantic aliases/consolidation, finer Focus selection, file attachments and richer schedules remain future units. This increment provides an editable shared structure and source pointers, not a claim that the PA understands every part of your life.
 
-Validation evidence and installed/live boundaries are in [STATUS](../../STATUS.md). All test projects use fictional data in disposable storage.
+Project checks use fictional data in disposable storage. The [developer guide](../development/DEVELOPMENT.md#choose-the-right-checks) explains how these checks differ from real-source and model evaluation.
 
 
 ## Memory links and older placement requests

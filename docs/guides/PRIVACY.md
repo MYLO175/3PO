@@ -42,8 +42,8 @@ Personal stores, auth/session files, credentials, QR codes, source bodies, cache
 
 ## Updates and recoverable changes
 
-Updates retain the stable bundle ID `com.mylomichael.missioncontrol`, storage/registration/helper/Keychain identities and saved records. One integration owner backs up the complete personal store and supporting files while the app is quit, then verifies the signed replacement and record preservation. A worktree does not isolate personal data.
+Updates retain the stable bundle ID `com.mylomichael.missioncontrol`, storage/registration/helper/Keychain identities and saved records. Back up the complete personal store and supporting files while the app is quit, then verify the signed replacement and record preservation. A worktree does not isolate personal data.
 
 Memory corrections retain version history; retirement excludes outdated human context from recall while retaining evidence. Forget is separate. Recently deleted Projects records restore their original identities. Supported app Undo is one-level per category; native deletion, creation and unsupported series changes do not offer general app Undo. An uncertain native write keeps its pending receipt for outcome checking rather than replay.
 
-Current validation and limitations are in [Validation](../../VALIDATION.md). The implementation contracts are in [Memory and context](../architecture/MEMORY_AND_CONTEXT.md), [Project workspace](../architecture/PROJECT_WORKSPACE.md) and [Architecture](../architecture/ARCHITECTURE.md).
+The [developer guide](../development/DEVELOPMENT.md#choose-the-right-checks) explains verification and its limits. The implementation contracts are in [Memory and context](../architecture/MEMORY_AND_CONTEXT.md), [Project workspace](../architecture/PROJECT_WORKSPACE.md) and [Architecture](../architecture/ARCHITECTURE.md).

@@ -4,7 +4,7 @@
 
 [Documentation](../README.md) · [Feature guide](../guides/FEATURES.md) · [Source map](../development/DEVELOPMENT.md#find-your-way-around-the-code)
 
-This guide describes the committed implementation through 14 October. Installation and focused checks are recorded separately from sustained acceptance in [Validation](../../VALIDATION.md) and [Live acceptance](../development/LIVE_ACCEPTANCE.md).
+This guide explains the service boundaries and data flow. The [developer guide](../development/DEVELOPMENT.md#choose-the-right-checks) distinguishes deterministic checks, signed-app checks and real-source/model evaluation.
 
 ## The system at a glance
 
@@ -192,16 +192,16 @@ Projects creates only Space and Task. Local task progress does not complete an A
 | macOS Keychain | ChatGPT registration credentials and WhatsApp encryption key | Stable account/service identities preserved across updates |
 | Encrypted local WhatsApp files | Linked session, received text, names and source choices | Key held separately in Keychain; no other app's session reused |
 | System preferences | App and appearance controls | Separate from repository and build output |
-| Private development backups | Complete store/support files and previous signed candidate | Integration-owner release recovery; outside Git |
+| Private development backups | Complete store/support files and previous signed candidate | Local release recovery; outside Git |
 
 `LocalRecordRepository` operates on exact keys using a fresh SwiftData context for each operation. Related changes save atomically; a failed write cannot flush another owner's pending state. Corrupt or unsupported records are preserved and block the affected operation.
 
 `ConversationRepository` keeps an index, metadata and changed 64-turn chunks in one atomic update. Migration preserves the original legacy conversation bytes and supported unknown fields. The legacy record is pre-migration history, not a backup of later conversation edits. Missing/corrupt/future indexes, stale owners and namespace collisions refuse unsafe fallback. Restoring a store needs a compatible current reader or a full compatible backup.
 
-Only the integration owner replaces/runs candidates against personal data, after an idle quit and complete recoverable backup. Worktrees isolate code, not Keychain, Apple accounts, app storage or installation. [Privacy](../guides/PRIVACY.md) and [Development workflow](../development/DEVELOPMENT_WORKFLOW.md) expand these boundaries.
+Updating an existing installation requires an idle quit, complete recoverable backup and verification of the signed replacement and saved records. Worktrees isolate code, not Keychain, Apple accounts, app storage or installation. See [Privacy](../guides/PRIVACY.md) and [Updating an existing installation](../development/DEVELOPMENT.md#updating-an-existing-installation).
 
 ## What the checks establish
 
 Source-free checks use fictional ports and private disposable storage. Signed candidate app-memory, native-fixture and configured-model tiers remain separate. An early signed protocol handshake rejects unsupported/Release diagnostic candidates before normal startup.
 
-Build, signature, model quality, installation, native UI, preservation and sustained operation are distinct evidence. Simulated sleep/clock cases do not establish a physical lid cycle or several days of ordinary use. Exact results belong in [Validation](../../VALIDATION.md), remaining live gates in [Live acceptance](../development/LIVE_ACCEPTANCE.md), and future semantic/local-model work in [Next improvements](../planning/NEXT_IMPROVEMENTS.md).
+Build, signature, model quality, installation, native UI, preservation and sustained operation are distinct evidence. Simulated sleep/clock cases do not establish a physical lid cycle or several days of ordinary use. The [verification tiers](../development/DEVELOPMENT.md#choose-the-right-checks) describe the effects and scope of each kind of check.
