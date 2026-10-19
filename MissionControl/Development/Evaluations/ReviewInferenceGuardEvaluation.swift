@@ -50,7 +50,7 @@ import Foundation
         guard ["--validate-advice-context","--validate-review-inbox"].contains(where:ProcessInfo.processInfo.arguments.contains) else {throw IntegrationError.verification}
         var checks:[String:Bool]=[:]
         let modes=["unrelated-memory","selected-memory","unrelated-project","selected-project","native-hint","native-change","writing","writing-native-change","native-addition","native-after-cap","native-outside-window","native-repeated-hints","completion-health","completion-change","mail-flags","unrelated-assessment","selected-assessment","historical-ack-display","historical-ack-support","human-dismiss","unrelated-dismiss","selected-source-dismiss","individual-dismiss","undo-independent","pending-change","permission","account","model","stop","memory-controls-cycle","learning-controls-cycle","preferences","draft editing","historical-row-current","historical-row-source-stale","historical-row-changed","historical-row-retire-stale-source","historical-row-retire-changed"]
-        for mode in modes {
+        for mode in modes + ["nested-projects","selected-nested-project"] {
             let now=Date.now,reader=ReviewGuardNativeFixture(now:Date.now),hold=ReviewGuardHold(),model=DashboardModel(nativeSources:reader)
             model.chatGPT.activeID="fictional-review-guard-"+mode;model.chatGPT.inferenceVerified=true;model.chatGPT.selectedModel="fictional-model"
             let suite="ReviewCapturedInput-"+UUID().uuidString
@@ -68,6 +68,13 @@ import Foundation
             let fact=PAMemory(registration:owner,text:"The Orion prototype uses four sensors.",kind:.context,provenance:"Fictional human")
             guard store.put(fact) else {throw IntegrationError.verification}
             let project=try model.assistant.projects.save(.init(registration:owner,kind:.space,title:"Orion prototype",status:.active),expected:nil)
+            var nestedItems:[LifeItem]=[]
+            if mode == "nested-projects" || mode == "selected-nested-project" {
+                let child=try model.assistant.projects.save(.init(registration:owner,kind:.space,title:"Orion sensors",parentID:project.id),expected:nil)
+                let grandchild=try model.assistant.projects.save(.init(registration:owner,kind:.space,title:"Orion calibration",parentID:child.id),expected:nil)
+                let task=try model.assistant.projects.save(.init(registration:owner,kind:.task,title:"Calibrate sensors",parentID:grandchild.id),expected:nil)
+                nestedItems=[child,grandchild,task]
+            }
             let siblingQuote="Water the garden seedlings with two litres."
             if mode == "individual-dismiss" {summary.actionEvidence=[quote,"Calibrate the Orion prototype sensors."]}
             var summaries=[summary],messages=[message]
@@ -136,7 +143,15 @@ import Foundation
             for _ in 0..<40_000 {if hold.gate != nil || !model.proactive.busy {break};await Task.yield()}
             guard hold.gate != nil else {throw ActionFailure.message("Fictional Review \(mode) did not reach the held inference: \(model.proactive.error ?? model.proactive.sourceReadError ?? "not started")")}
             checks["Review \(mode) uses actual selected memory"]=(hold.input["paMemory"] as? String)?.contains(fact.id.uuidString) == true
+            if !nestedItems.isEmpty {
+                let rows=(hold.input["lifeStructure"] as? [String:Any])?["items"] as? [[String:Any]] ?? []
+                let ids=rows.compactMap{$0["id"] as? String}
+                checks["Review \(mode) supplies nested spaces and tasks once"]=ids.count == 4 && Set(ids) == Set(([project]+nestedItems).map{$0.id.uuidString})
+                checks["Review \(mode) preserves exact nested parent bindings"]=nestedItems.allSatisfy {item in rows.contains{($0["id"] as? String) == item.id.uuidString && ($0["parent"] as? String) == item.parentID?.uuidString}}
+            }
             switch mode {
+            case "nested-projects":break
+            case "selected-nested-project":var changed=nestedItems[1];changed.notes="Changed while comparison was suspended";_=try model.assistant.projects.save(changed,expected:changed.revision)
             case "unrelated-dismiss","selected-source-dismiss":
                 let target=mode == "unrelated-dismiss" ? summaries[1] : summary
                 let source=mode == "unrelated-dismiss" ? messages[1] : message
@@ -182,7 +197,7 @@ import Foundation
             hold.release()
             for _ in 0..<40_000 {if !model.proactive.busy {break};await Task.yield()}
             guard !model.proactive.busy else {throw ActionFailure.message("Fictional Review \(mode) did not settle.")}
-            let rejected=["selected-memory","selected-project","native-change","writing-native-change","native-addition","completion-change","selected-assessment","permission","account","stop","memory-controls-cycle"].contains(mode)
+            let rejected=["selected-memory","selected-project","selected-nested-project","native-change","writing-native-change","native-addition","completion-change","selected-assessment","permission","account","stop","memory-controls-cycle"].contains(mode)
             checks["Review \(mode) preserves exact relevant guards without unrelated cancellation"]=(model.proactive.error != nil) == rejected
             checks["Review \(mode) has one fictional inference and no subscription calls"]=hold.calls == 1 && model.aiUsage.state.records.isEmpty
             if !rejected {

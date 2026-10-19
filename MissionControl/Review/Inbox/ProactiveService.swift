@@ -347,7 +347,9 @@ struct ProactiveReviewContext {
                 let relevant=lifeItems.filter{!$0.kind.isWork && $0.ownership != "life" && $0.status != .archived && (score($0) > 0 || priorProjectIDs.contains($0.id))}.sorted{score($0) == score($1) ? $0.id.uuidString < $1.id.uuidString : score($0) > score($1)}.prefix(12)
                 let projectTargets=Dictionary(uniqueKeysWithValues:relevant.map{($0.id.uuidString,DiscoveryProjectTarget(id:$0.id,revision:$0.revision,title:$0.title,conversationID:$0.conversationID))})
                 let parentIDs=Set(relevant.map(\.id))
-                let projected=Array(relevant)+lifeItems.filter{$0.parentID.map{parentIDs.contains($0)} == true}.sorted{$0.id.uuidString < $1.id.uuidString}.prefix(60)
+                // A relevant nested space is already supplied above. Do not append
+                // it again as a child of another relevant space.
+                let projected=Array(relevant)+lifeItems.filter{!parentIDs.contains($0.id) && $0.parentID.map{parentIDs.contains($0)} == true}.sorted{$0.id.uuidString < $1.id.uuidString}.prefix(60)
                 var lifeRows:[[String:Any]]=[]
                 for item in projected {
                     let row:[String:Any]=["id":item.id.uuidString,"title":item.title,"kind":item.kind.workspaceKind.rawValue,"parent":item.parentID?.uuidString as Any? ?? NSNull(),"status":item.status.rawValue,"due":item.due as Any? ?? NSNull(),"notes":String(item.notes.prefix(400))]

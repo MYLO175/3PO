@@ -1,5 +1,9 @@
 # How 3PO works: detailed reference
 
+## 19 October: nested project context
+
+Heartbeat and manual Review comparison supply each relevant space once, even when its parent is also relevant. Direct children already selected as relevant spaces are excluded from the additional child list before its existing cap. Project IDs, parent bindings, content limits and exact supplied-record checks remain intact; the projection never changes saved projects.
+
 ## 16 October: foreground replies survive unrelated refreshes
 
 A reply checks the memories and project items actually supplied to it, including later tool reads and relevant project ancestors. Adding or changing an unrelated fact/project no longer cancels inference. The same applies to unrelated email confirmations: exact supplied confirmations stay checked even when new records move them beyond the normal display limit. Historical dismissal text and recovered contact names are not configuration changes; actual Dismiss/Undo choices still invalidate captured context.
