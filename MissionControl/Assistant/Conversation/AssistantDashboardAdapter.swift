@@ -156,6 +156,9 @@ extension DashboardModel {
             guard let self else { return false }
             return self.contextKnowledgeAvailable(registration: registration, versions: versions)
         }
+        runtime.ownedPageKnowledgeAvailable = { [weak self] registration, versions, ignored in
+            self?.contextKnowledgeAvailable(registration: registration, versions: versions, ignoring: ignored) ?? false
+        }
         runtime.ownedContextReferences = { [weak self] registration, keys in
             self?.contextReferencesForOwnedChanges(registration: registration, keys: keys) ?? keys
         }

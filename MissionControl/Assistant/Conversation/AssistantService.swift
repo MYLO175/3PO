@@ -638,7 +638,7 @@ import Observation
                 // future defaults does not revoke the captured human request.
                 guard memoryControls == memory.useRevision else {return reject("the memory-use permission changed")}
                 guard pageContext.current(ignoring: ownedPageChanges), session.pageContextAvailable,
-                      runtime.pageKnowledgeAvailable(registration, historicalPageVersions.filter { !ownedPageChanges.contains($0.key) }) else { return reject("knowledge supplied by a context page changed or became unavailable") }
+                      (runtime.ownedPageKnowledgeAvailable?(registration, historicalPageVersions, ownedPageChanges) ?? runtime.pageKnowledgeAvailable(registration, historicalPageVersions.filter { !ownedPageChanges.contains($0.key) })) else { return reject("knowledge supplied by a context page changed or became unavailable") }
                 if expectedMemory != memory.revision {
                     guard expectedBeliefs == currentBeliefs(Set(expectedBeliefs.keys)) else {return reject("a memory supplied to this request changed or became unavailable")}
                     expectedMemory=memory.revision

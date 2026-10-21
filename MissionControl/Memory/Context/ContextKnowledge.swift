@@ -237,17 +237,17 @@ import EventKit
                    let project = record.projectID, ignoredProjects.contains(project.uuidString) { return false }
                 return true
             }
-            let current = self.contextDependencyVersions(registration: registration, records: self.contextKnowledge(registration: registration, topic: topic, includeTopics: includeTopics, allowedMemoryIDs: allowedMemoryIDs, retainingReferences: retained))
+            let current = self.contextDependencyVersions(registration: registration, records: self.contextKnowledge(registration: registration, topic: topic, includeTopics: includeTopics, allowedMemoryIDs: allowedMemoryIDs, retainingReferences: retained), ignoring: ignored)
             return filtered.allSatisfy { current[$0.contextKey] == $0.revision }
         })
     }
 
-    func contextKnowledgeAvailable(registration: String, versions: [String: String]) -> Bool {
+    func contextKnowledgeAvailable(registration: String, versions: [String: String], ignoring: Set<String> = []) -> Bool {
         guard !versions.isEmpty else { return true }
         guard assistant.memory.enabled, registration == chatGPT.activeID else { return false }
         let records = contextKnowledge(registration: registration, retainingReferences: versions)
-        let current = contextDependencyVersions(registration: registration, records: records)
-        return versions.allSatisfy { current[$0.key] == $0.value }
+        let current = contextDependencyVersions(registration: registration, records: records, ignoring: ignoring)
+        return versions.allSatisfy { ignoring.contains($0.key) || current[$0.key] == $0.value }
     }
 
     /// Human edits can make new information relevant to the next assessment. Generated page
@@ -270,10 +270,14 @@ import EventKit
     private func reviewInstructionRevision(_ registration: String) -> String {
         ContextKnowledgeRules.fingerprint(ContextKnowledgeRules.json(emailSummaries.policy(registration).input))
     }
-    private func contextDependencyVersions(registration: String, records: [ContextKnowledgeRecord]) -> [String: String] {
+    private func contextDependencyVersions(registration: String, records: [ContextKnowledgeRecord], ignoring: Set<String> = []) -> [String: String] {
         var current = Dictionary(records.map { ($0.reference.contextKey, $0.reference.revision) }, uniquingKeysWith: { first, _ in first })
         // Text versions are independently checked even when this job itself retires a supporting project/fact.
-        for page in contextPages.pages(registration: registration) where page.owner == .human { current["page:" + page.id] = page.revision.uuidString }
+        for page in contextPages.pages(registration: registration) where page.owner == .human {
+            if page.references.allSatisfy({ ignoring.contains($0.contextKey) || current[$0.contextKey] == $0.revision }) {
+                current["page:" + page.id] = page.revision.uuidString
+            } else { current.removeValue(forKey: "page:" + page.id) }
+        }
         if briefings.writingPromptReadable { current["instruction:brief"] = briefInstructionRevision(registration) }
         if emailSummaries.reviewPolicies.readable { current["instruction:review"] = reviewInstructionRevision(registration) }
         if contextPages.isReadable && assistant.contextEnabled && contextCalendarAllowed {

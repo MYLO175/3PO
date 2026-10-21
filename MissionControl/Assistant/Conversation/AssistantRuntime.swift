@@ -79,6 +79,7 @@ struct AssistantToolRequest {
     var afterTurn: () -> Void
     var contextPages: (String, String?, UUID?, Bool, Bool) -> AssistantPageContext = { _,_,_,_,_ in .init() }
     var pageKnowledgeAvailable: (String, [String: String]) -> Bool = { _,_ in true }
+    var ownedPageKnowledgeAvailable: ((String, [String: String], Set<String>) -> Bool)?
     var ownedContextReferences: (String, Set<String>) -> Set<String> = { _, keys in keys }
     /// Exact dependencies a supported memory mutation may retire, captured before it removes its lineage.
     var memoryMutationReferences: (String, PAFunctionCall) -> Set<String> = { _, _ in [] }

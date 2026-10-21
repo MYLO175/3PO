@@ -1,5 +1,25 @@
 # Memory and context in 3PO
 
+## Context pages and working changes
+
+Open **PA menu → Memory → Context pages** to inspect readable Markdown pages alongside the original facts. Pages live in the existing local data store with stable account/project identities, exact supporting references and version history. Markdown is the readable body; the surrounding records carry provenance, permissions and save receipts. There is no separate folder of loose files to keep in sync.
+
+Ordinary chat receives a small everyday overview, a compact directory and relevant changes waiting for consolidation. The assistant can read a particular page, search for a relevant page or continue a long page in bounded excerpts. Topic and project pages help it find context as the notebook grows. Missing or unavailable context stays unknown. Original facts and evidence remain separately retrievable; a short summary does not replace them.
+
+An idle, permitted heartbeat updates affected pages with one bounded synthesis request. Each page records the exact inputs successfully considered, separately from the shared working-change checkpoint. Work deferred by input or request bounds remains pending. An unchanged page needs no synthesis. Eligible collected source deltas have an independent page cursor: ordinary source learning can finish first without hiding a change. Existing baselines, paused failed claims, source choices and global memory controls still apply. Collection and opening the page browser make no inference requests or source refreshes.
+
+Human writing and generated summaries have separate owners. The browser edits everyday context, independent notes and descriptions of existing projects. Generated pages offer **Add context** without turning model prose into a human assertion. Source reports keep attribution and uncertainty. Source changes, corrections, Forget and access withdrawal remove unsupported summaries from future AI context. Saved history remains local; Restore creates a new version and does not restore withdrawn evidence or replay an operation. Pausing memory use leaves source-free human notes locally readable and editable.
+
+Feature instructions use their own authoritative controls in the same browser:
+
+- **Brief instructions** opens the existing brief-writing prompt.
+- **Review guidance** combines an editable, versioned selection policy with the current canonical feedback preferences. Feedback retains the original human words and its existing editable interpretation; it is not copied into a second preference store. Routine broadcasts and marketing stay quiet unless supported personal relevance or explicit human priorities justify informational reading. A new direct personal request remains eligible.
+- **Calendar guide** describes each exact permitted calendar, bound to its account/provider identity. Fresh calendar reads include the guide to help choose a destination for a human-requested event. A description never authorises an action.
+
+When understanding an existing project would materially help, consolidation can offer one neutral purpose question in Review. Questions follow the optional learning-question control, preserve exact project identity and do not repeat after dismissal or an answer. An answer becomes editable human project context; it does not rewrite project notes or create a task. Dismiss supports local Undo.
+
+Page and instruction reads capture the versions actually supplied. Editing unrelated data does not cancel a request; changing supplied knowledge or withdrawing its access does. A request can finish its own verified memory/project change while still rejecting an independent edit of the supplied human page. These are context checks, separate from the exact authority and readback required by native actions. Saved Review cards and dated briefs keep their existing prepared-display rules.
+
 ## Shared working context — 16 October 2026
 
 Chat, Review conversation, memory/notebook tools, source suggestions, email assessment and briefs now use one local working-context preparation path. It makes no model call or source read. Each purpose retains its existing account/Focus/source choices and budgets: ordinary40 records/20KB, email header2/body6 human-origin facts, and bounded notebook anchors drawn from the same selected IDs. Selection and notebook share one permission-filtered snapshot. Inactive Projects are excluded before the email anchor budget is applied. Memory-off also withdraws historical preference-backed relevance.
@@ -76,7 +96,8 @@ The interpretation stores header and exact identity/version receipts, not the em
 | Organisation | Optional areas and typed endpoints referring to the fact's existing connections | Navigation and recall metadata. Manual organisation is pinned; organisation cannot invent a fact. |
 | Workspace | `LifeWorkspaceStore` human-owned spaces (with optional notes), tasks and exact source pointers; legacy kinds retained | Editable durable content, with hierarchy/order/tombstones. Mentioning a project is not permission to create one. |
 | Notebook / map | `LifeNotebook` plus canonical workspace-anchor projection | Derived usable facts and exact workspace identities. It is rebuilt locally, not another independently editable memory database. |
-| Working context | Request-local selection, notebook notes, dialogue, preferences, cached snapshot and tool results | Bounded information for one request; ownership is captured before inference and checked before outputs/actions. |
+| Context pages | Versioned `ContextPage` Markdown, exact supporting references and per-page progress | Human writing and generated projections have separate ownership. A page cannot override canonical evidence, permissions or action receipts. |
+| Working context | Request-local selection, notebook notes, relevant context pages and pending changes, dialogue, preferences, cached snapshot and tool results | Bounded information for one request; ownership is captured before inference and checked before outputs/actions. |
 | Reply trace | Optional `AssistantTurn.contextCapture` | IDs/counts for inspection; separate from source-dependency guards and action receipts. |
 
 ```mermaid
