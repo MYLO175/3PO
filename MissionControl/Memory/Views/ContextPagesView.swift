@@ -115,7 +115,7 @@ struct ContextPagesView: View {
                             Label(ContextPagesAccess.projectLabel(item, all: projects), systemImage: "folder")
                             let id = ContextPage.stableID(registration: registration, kind: .project, key: item.id.uuidString)
                             let page = pages.first { $0.id == id }
-                            Text(page.map { ContextPagesAccess.eligible($0, model: model, registration: registration, records: records) ? "Saved context page" : "Supporting context unavailable" } ?? "Awaiting first page")
+                            Text(model.contextPages.identityStatus(id: id, registration: registration) == .preserved ? "Saved page needs a compatible version" : page.map { ContextPagesAccess.eligible($0, model: model, registration: registration, records: records) ? "Saved context page" : "Supporting context unavailable" } ?? "Awaiting first page")
                                 .font(.caption2).foregroundStyle(.secondary)
                         }.padding(.vertical, 3).tag(ContextPageDestination.project(item.id))
                     }
@@ -229,7 +229,7 @@ struct ContextPagesView: View {
     private func featureInstructions(_ feature: ContextFeature, pages: [ContextPage], records: [ContextKnowledgeRecord]) -> some View {
         let id = ContextPage.stableID(registration: registration, kind: .instruction, key: feature.rawValue)
         let page = pages.first { $0.id == id }
-        let available = page.map { ContextPagesAccess.eligible($0, model: model, registration: registration, records: records) } ?? true
+        let available = model.contextPages.identityStatus(id: id, registration: registration) != .preserved && (page.map { ContextPagesAccess.eligible($0, model: model, registration: registration, records: records) } ?? true)
         let currentText = model.featureInstruction(feature, registration: registration).text
         return VStack(alignment: .leading, spacing: 16) {
             HStack {
@@ -311,6 +311,7 @@ struct ContextPagesView: View {
                 ForEach(sources) { source in
                     let id = ContextPage.stableID(registration: registration, kind: .calendarPurpose, key: model.calendarPageKey(source))
                     let page = model.contextPages.page(id: id, registration: registration)
+                    let preserved = model.contextPages.identityStatus(id: id, registration: registration) == .preserved
                     GroupBox {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
@@ -320,7 +321,7 @@ struct ContextPagesView: View {
                                 }
                                 Spacer()
                                 Button(page == nil ? "Describe…" : "Edit purpose…") { editor = .calendar(source, page: page, model: model, registration: registration) }
-                                    .disabled(!model.contextPages.canSave || page.map { $0.owner != .human } == true)
+                                    .disabled(!model.contextPages.canSave || preserved || page.map { $0.owner != .human } == true)
                                 if let page { Button("History…") { history = .init(page: page) } }
                             }
                             if let page, page.owner == .human, ContextPagesAccess.eligible(page, model: model, registration: registration, records: []) {
@@ -330,7 +331,7 @@ struct ContextPagesView: View {
                                     Spacer()
                                     Button("Forget purpose…", role: .destructive) { forgetting = page }.controlSize(.small).disabled(!model.contextPages.canSave)
                                 }
-                            } else { Text("Not described. 3PO will not infer a purpose from the calendar's name.").font(.callout).foregroundStyle(.secondary) }
+                            } else { Text(preserved ? "This saved guide needs a compatible version of 3PO. Its original text is preserved." : "Not described. 3PO will not infer a purpose from the calendar's name.").font(.callout).foregroundStyle(.secondary) }
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
@@ -339,6 +340,7 @@ struct ContextPagesView: View {
     }
     private func openOverview() {
         let id = ContextPage.stableID(registration: registration, kind: .overview, key: "everyday")
+        guard model.contextPages.identityStatus(id: id, registration: registration) != .preserved else { error = "This saved page needs a compatible version of 3PO. Its original data is preserved."; return }
         if let page = model.contextPages.page(id: id, registration: registration) {
             guard page.owner == .human, ContextPagesAccess.eligible(page, model: model, registration: registration, records: model.contextKnowledge(registration: registration, includeTopics: false, purpose: .inspection)) else { error = "The existing overview cannot be edited as a human page. Add a separate context note."; return }
             editor = .existing(page)
@@ -390,7 +392,7 @@ private struct ContextMaintenanceStatusView: View {
         let checkpoint = model.contextPages.checkpoint(registration: registration)
         let pending = ContextWorkingProjection(records: records, checkpoint: checkpoint)
         let maintained = pages.filter { $0.owner == .generated }
-        let awaiting = projects.filter { item in !pages.contains { $0.kind == .project && $0.key == item.id.uuidString } }.count
+        let awaiting = projects.filter { item in model.contextPages.identityStatus(id: ContextPage.stableID(registration: registration, kind: .project, key: item.id.uuidString), registration: registration) == .missing }.count
         let unavailable = maintained.filter { !ContextPagesAccess.eligible($0, model: model, registration: registration, records: records) }.count
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .top, spacing: 10) {
@@ -542,6 +544,7 @@ private struct ContextPageEditRequest: Identifiable {
         let reference = ContextPagesAccess.projectIdentity(current)
         let key = "project-purpose:" + current.id.uuidString
         let id = ContextPage.stableID(registration: registration, kind: .note, key: key)
+        guard model.contextPages.identityStatus(id: id, registration: registration) != .preserved else { throw ContextPageFailure.unsupportedPage }
         let page = model.contextPages.page(id: id, registration: registration)
         guard page?.owner == nil || page?.owner == .human else { throw ContextPageFailure.unsupportedPage }
         if let page {

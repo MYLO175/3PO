@@ -12,6 +12,7 @@ import SwiftData
         checks.merge(try await pageReadChecks(), uniquingKeysWith: { $1 })
         checks.merge(try instructionChecks(), uniquingKeysWith: { $1 })
         checks.merge(try emailPageChecks(), uniquingKeysWith: { $1 })
+        checks.merge(try primaryContextChecks(), uniquingKeysWith: { $1 })
         checks.merge(try await ownedMutationChecks(), uniquingKeysWith: { $1 })
         return checks
     }
@@ -131,6 +132,42 @@ import SwiftData
         return checks
     }
 
+    private static func primaryContextChecks() throws -> [String: Bool] {
+        let fixture = try ContextPagesFixture()
+        defer { fixture.clean() }
+        let model = fixture.model, registration = fixture.registration
+        let fact = PAMemory(registration: registration, text: "I research light propagation using repeatable measurements.", kind: .context, provenance: "Fictional human fixture")
+        guard model.assistant.memory.put(fact) else { throw IntegrationError.verification }
+        let reference = ContextPageReference(kind: "memory", key: fact.id.uuidString, revision: MemoryDependencyRules.fingerprint(MemoryRetrieval.record(fact)))
+        let topic = try model.contextPages.save(.init(registration: registration, kind: .topic, key: "cobalt", owner: .generated,
+            title: "Cobalt optics", synopsis: "Cobalt calibration context", markdown: "The Cobalt optics work compares repeatable measurements of light propagation.", references: [reference]), expectedRevision: nil)
+        _ = try model.contextPages.save(.init(registration: registration, kind: .overview, key: "maintained", owner: .generated,
+            title: "Everyday overview", markdown: "The human researches light propagation.", references: [reference]), expectedRevision: nil)
+        _ = try model.contextPages.save(.init(registration: registration, kind: .overview, key: "everyday", owner: .human,
+            title: "Everyday context", markdown: "Prefer practical explanations."), expectedRevision: nil)
+        let ordinary = model.captureContextPages(registration: registration, query: "Cobalt optics", includeTopics: false, everyday: true)
+        let broad = try object(ordinary.text)
+        let automatic = model.automaticMemory(.brief, query: "Cobalt optics")
+        var checks: [String: Bool] = [:]
+        checks["Primary context separate orientation allowance retains a relevant topic beside two overviews"] = ordinary.pageIDs.contains(topic.id) && ordinary.pageIDs.count == 3
+        checks["Primary context automatic pages resolve support beyond old lexical fact selection"] = automatic.records.isEmpty && automatic.contextPageDependencies[reference.contextKey] == reference.revision && automatic.pageContext.contains("Cobalt optics")
+        checks["Primary context preserves captured feature purpose for later dependency checks"] = automatic.contextPageDependencies["context-purpose:brief"] == "1" && model.contextPageDependenciesAvailable(automatic.contextPageDependencies, registration: registration)
+        checks["Primary context ordinary chat automatically receives human feature guidance"] = (broad["featureInstructions"] as? [[String: String]])?.count == ContextFeature.allCases.count
+        let email = model.captureContextPages(registration: registration, query: "Cobalt optics", includeTopics: false, purpose: .email)
+        let emailObject = try object(email.text)
+        checks["Primary context email resolves all relevant human support without raw working context"] = email.pageIDs.contains(topic.id) && ((emailObject["workingChanges"] as? [[String: String]]) ?? []).isEmpty
+        let defaultGuidance = model.captureContextPages(registration: registration, query: nil, pageID: "instructions:projects")
+        let instruction = try model.contextPages.save(.init(registration: registration, kind: .instruction, key: ContextFeature.projects.rawValue, owner: .human,
+            title: ContextFeature.projects.title, markdown: "Keep Cobalt experiment work in its existing project space."), expectedRevision: nil)
+        let guidance = model.captureContextPages(registration: registration, query: nil, pageID: "instructions:projects")
+        checks["Primary context edited feature guidance replaces default and invalidates prior capture"] = !defaultGuidance.current() && guidance.current() && guidance.text.contains("existing project space")
+        checks["Primary context feature instructions never enter fact extraction or generated page evidence"] = !model.contextKnowledge(registration: registration, purpose: .maintenance).contains { $0.reference.key == instruction.id } && !model.contextConsolidation.targets(model, registration: registration).flatMap(\.records).contains { $0.reference.key == instruction.id }
+        model.chatGPT.activeID = "fictional-other-context-owner"
+        checks["Primary context source-free policies remain account scoped"] = !guidance.current() && !ordinary.current()
+        checks["Primary context inspection and captures make no model or source calls"] = fixture.provider.calls == 0 && fixture.sources.reads == 0 && model.aiUsage.state.records.isEmpty
+        return checks
+    }
+
     private static func humanEvidenceChecks() throws -> [String: Bool] {
         var checks: [String: Bool] = [:]
         for operation in ["forget", "correct"] {
@@ -218,11 +255,20 @@ import SwiftData
         for index in 0..<22 {
             guard model.assistant.memory.put(.init(registration: registration, text: "Cobalt pending fact \(index): " + String(repeating: "\"\\🌱", count: 300), kind: .context, provenance: "Fictional fixture")) else { throw IntegrationError.verification }
         }
+        for feature in ContextFeature.allCases {
+            _ = try model.contextPages.save(.init(registration: registration, kind: .instruction, key: feature.rawValue, owner: .human,
+                title: feature.title, markdown: String(repeating: "\"\\🌱", count: 1700)), expectedRevision: nil)
+        }
         let broad = model.captureContextPages(registration: registration, query: nil, everyday: true)
         let broadObject = try object(broad.text)
         let directory = broadObject["directory"] as? [[String: String]] ?? []
         checks["Context pages ordinary whole payload stays bounded with directory and pending changes"] = broad.text.utf8.count <= 20_000 && broadObject["unavailable"] == nil && !directory.isEmpty
         checks["Context pages directory reports stored pages omitted by its input bound"] = (broadObject["directoryCount"] as? Int ?? 0) > directory.count
+        let policies = broadObject["featureInstructions"] as? [[String: String]] ?? []
+        checks["Context pages large feature policies retain bounded orientation and explicit continuation"] = policies.count == 3 && policies.allSatisfy { $0["partial"] == "true" && $0["readMore"]?.hasPrefix("instructions:") == true } && !broad.pageIDs.isEmpty
+        let visibleChanges = broadObject["workingChanges"] as? [[String: String]] ?? []
+        let suppliedMemory = Set(visibleChanges.compactMap { $0["id"] })
+        checks["Context pages omitted working rows do not retain hidden memory dependencies"] = broad.referenceVersions.keys.filter { $0.hasPrefix("memory:") }.allSatisfy { suppliedMemory.contains($0) }
         var edited = page; edited.markdown += "\nIndependent human edit"
         _ = try model.contextPages.save(edited, expectedRevision: page.revision)
         checks["Context pages actual read tool rejects later human-page edit"] = !tools.pageContextAvailable

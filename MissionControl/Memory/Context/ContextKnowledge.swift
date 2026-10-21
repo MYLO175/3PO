@@ -34,11 +34,15 @@ import EventKit
                                  purpose: purpose, mailAccounts: mailAccounts, whatsappReady: whatsappReady)
         }
     }
-    func featureInstruction(_ feature: ContextFeature, registration: String) -> (text: String, reference: ContextPageReference) {
+    func featureInstruction(_ feature: ContextFeature, registration: String) -> (text: String, reference: ContextPageReference, available: Bool) {
         let id = ContextPage.stableID(registration: registration, kind: .instruction, key: feature.rawValue)
+        let identity = contextPages.identityStatus(id: id, registration: registration)
+        guard identity == .missing || identity == .available else {
+            return ("", .init(kind: "instruction", key: feature.rawValue, revision: identity == .preserved ? "preserved" : "unavailable"), false)
+        }
         let saved = contextPages.page(id: id, registration: registration)
-        let text = saved?.owner == .human ? saved!.markdown : feature.defaultText
-        return (text, .init(kind: "instruction", key: feature.rawValue, revision: saved?.revision.uuidString ?? ContextKnowledgeRules.fingerprint(text)))
+        let text = saved?.owner == .human ? saved!.markdown : feature == .assistant ? assistant.preferences : feature.defaultText
+        return (text, .init(kind: "instruction", key: feature.rawValue, revision: saved?.revision.uuidString ?? ContextKnowledgeRules.fingerprint(text)), true)
     }
     /// Current eligibility is evaluated before every projection, including after source withdrawal.
     func contextKnowledge(registration: String, topic: UUID? = nil, includeTopics: Bool = true,
@@ -105,7 +109,17 @@ import EventKit
                 $0.role == "user" && $0.completed && $0.profileControl != true && $0.deliveryID == nil && !suppressedTurns.contains($0.id.uuidString) &&
                 (includeTopics || $0.contextID == nil || $0.contextID == topic)
             }.sorted { ($0.created ?? .distantPast) > ($1.created ?? .distantPast) }
-            let referencedHuman = Set(contextPages.pages(registration: registration).flatMap(\.references).filter { $0.kind == "human" }.map(\.key)).union(retainingReferences.keys.filter { $0.hasPrefix("human:") }.map { String($0.dropFirst(6)) })
+            var referencedHuman = Set<String>(), referencedActions = Set<String>()
+            for page in contextPages.pages(registration: registration) {
+                for reference in page.references + (page.processedReferences ?? []) {
+                    if reference.kind == "human" { referencedHuman.insert(reference.key) }
+                    if reference.kind == "action" { referencedActions.insert(reference.key) }
+                }
+            }
+            for key in retainingReferences.keys {
+                if key.hasPrefix("human:") { referencedHuman.insert(String(key.dropFirst(6))) }
+                if key.hasPrefix("action:") { referencedActions.insert(String(key.dropFirst(7))) }
+            }
             let retainedTurns = Array(turns.prefix(32)) + turns.dropFirst(32).filter { referencedHuman.contains($0.id.uuidString) }
             var seen = Set<UUID>()
             for turn in retainedTurns where seen.insert(turn.id).inserted {
@@ -116,13 +130,13 @@ import EventKit
             let actions = assistant.conversations.flatMap(\.turns).filter {
                 $0.completed && $0.actionResult?.succeeded == true && (includeTopics || $0.contextID == nil || $0.contextID == topic)
             }.sorted { ($0.created ?? .distantPast) > ($1.created ?? .distantPast) }
+            let retainedActions = Array(actions.prefix(24)) + actions.dropFirst(24).filter { referencedActions.contains($0.id.uuidString) }
             seen.removeAll()
-            for turn in actions where seen.insert(turn.id).inserted {
+            for turn in retainedActions where seen.insert(turn.id).inserted {
                 let canonical = ContextKnowledgeRules.json(["confirmedActions": turn.actionResult!.confirmedActions, "receipts": turn.actionResult!.receipts] as [String: Any])
                 let text = ContextKnowledgeRules.actionText(confirmed:turn.actionResult!.confirmedActions,receipts:turn.actionResult!.receipts)
                 records.append(.init(reference: .init(kind: "action", key: turn.id.uuidString, revision: ContextKnowledgeRules.fingerprint(canonical)),
                                      title: "Verified app action (historical outcome)", text: String(text.prefix(2000)), date: turn.created ?? .distantPast))
-                if seen.count >= 24 { break }
             }
         }
         // Resolve readable human pages after canonical facts and retained conversation evidence.
@@ -152,7 +166,7 @@ import EventKit
     /// Small directory and current changes are computed locally; browsing never creates saved projects/pages.
     func captureContextPages(registration: String, query: String?, topic: UUID? = nil, includeTopics: Bool = true,
                              everyday: Bool = false, pageID: String? = nil, allowedMemoryIDs: Set<UUID>? = nil, pageOffset: Int = 0,
-                             purpose: ContextKnowledgePurpose = .conversation, mailAccounts: Set<String>? = nil, whatsappReady: Bool = true) -> AssistantPageContext {
+                             purpose: ContextKnowledgePurpose = .conversation, mailAccounts: Set<String>? = nil, whatsappReady: Bool = true, includeSourceChanges: Bool = true) -> AssistantPageContext {
         guard assistant.memory.enabled, registration == chatGPT.activeID else { return .init() }
         let records = contextKnowledge(registration: registration, topic: topic, includeTopics: includeTopics, allowedMemoryIDs: allowedMemoryIDs, purpose: purpose, mailAccounts: mailAccounts, whatsappReady: whatsappReady)
         let pages = contextPages.pages(registration: registration)
@@ -165,7 +179,7 @@ import EventKit
         func relevant(_ record: ContextKnowledgeRecord) -> Bool {
             effectiveQuery == nil || !terms.isDisjoint(with: MemoryRetrieval.tokens(record.title + " " + record.text))
         }
-        let working = records.filter { purpose.includesWorkingChanges && pageID?.hasPrefix("instructions:") != true && prior[$0.reference.contextKey] != $0.reference.revision && $0.reference.kind != "projectIdentity" && relevant($0) }
+        let working = records.filter { purpose.includesWorkingChanges && (includeSourceChanges || ($0.reference.kind != "whatsapp" && !$0.reference.kind.hasPrefix("native-"))) && pageID?.hasPrefix("instructions:") != true && prior[$0.reference.contextKey] != $0.reference.revision && $0.reference.kind != "projectIdentity" && relevant($0) }
             .sorted { $0.date == $1.date ? $0.reference.contextKey < $1.reference.contextKey : $0.date > $1.date }
         var selected = visible.filter { page in
             if let pageID { return page.id == pageID }
@@ -184,10 +198,11 @@ import EventKit
         var payload: [String: Any] = ["pages": [], "workingChanges": [], "lastConsolidation": checkpoint?.updated.ISO8601Format() ?? "Not yet consolidated",
             "coverage": "Bounded current permitted knowledge. Pages retain exact support. Pending changes are available before heartbeat consolidation. Missing context is unknown. App action receipts describe only verified historical operations, never current external completion."]
         var supplied: [ContextPageReference] = [], suppliedPages: [ContextPage] = []
+        var directoryBindings: [String: [ContextPageReference]] = [:]
         let maximumBytes = pageID == nil ? 20_000 : 32_000
         var rows: [[String: String]] = []
         for page in selected {
-            let excerpt = ContextKnowledgeRules.excerpt(page.markdown, offset: pageID == nil ? 0 : pageOffset, limit: pageID == nil ? 1800 : 4000)
+            let excerpt = ContextKnowledgeRules.excerpt(page.markdown, offset: pageID == nil ? 0 : pageOffset, limit: pageID == nil ? (everyday && page.kind == .overview ? 600 : 1800) : 4000)
             let row = ["id": page.id, "title": page.title, "markdown": excerpt.text, "updated": page.updated.ISO8601Format(), "owner": page.owner.rawValue,
                        "offset": String(pageID == nil ? 0 : pageOffset), "nextOffset": excerpt.next.map(String.init) ?? "end", "totalCharacters": String(excerpt.total)]
             var candidate = payload; candidate["pages"] = rows + [row]
@@ -228,6 +243,7 @@ import EventKit
             for entry in directory.sorted(by: { $0.row["title", default: ""] < $1.row["title", default: ""] }) {
                 guard ContextKnowledgeRules.json(included + [entry.row]).utf8.count <= 4000 else { continue }
                 included.append(entry.row); supplied += entry.references
+                if let id = entry.row["id"] { directoryBindings[id] = entry.references }
             }
             payload["directory"] = included; payload["directoryCount"] = directory.count
         }
@@ -258,7 +274,9 @@ import EventKit
                 payload["feedback"] = feedbackRows; payload["feedbackCount"] = feedback.count
             } else if pageID == "instructions:calendars" { return calendarPurposeCapture(sources: calendarData.sources, registration: registration) }
             else if let feature = ContextFeature(rawValue: String(pageID.dropFirst("instructions:".count))), pageID.hasPrefix("instructions:") {
+                guard contextPages.isReadable else { return .init(text: ContextKnowledgeRules.json(["unavailable": "Saved feature instructions could not be read. Original data is preserved."])) }
                 let guidance = featureInstruction(feature, registration: registration)
+                guard guidance.available else { return .init(text: ContextKnowledgeRules.json(["unavailable": "This saved instruction page needs a compatible version of 3PO. Its original data is preserved."])) }
                 let excerpt = ContextKnowledgeRules.excerpt(guidance.text, offset: pageOffset, limit: 4000)
                 payload["instructions"] = ["purpose": feature.title, "markdown": excerpt.text, "nextOffset": excerpt.next.map(String.init) ?? "end", "totalCharacters": String(excerpt.total)]
                 supplied.append(guidance.reference)
@@ -273,11 +291,53 @@ import EventKit
             }
         }
         if everyday && pageID == nil && contextPages.isReadable {
-            payload["featureInstructions"] = ContextFeature.allCases.map { feature -> [String: String] in
+            var policies: [[String: String]] = []
+            for feature in ContextFeature.allCases {
                 let guidance = featureInstruction(feature, registration: registration)
-                supplied.append(guidance.reference)
-                return ["feature": feature.rawValue, "markdown": String(guidance.text.prefix(900)), "readMore": "instructions:" + feature.rawValue]
+                var text = ContextKnowledgeRules.bytePrefix(guidance.text, maximumBytes: 900)
+                func row() -> [String: String] {
+                    ["feature": feature.rawValue, "markdown": text, "readMore": "instructions:" + feature.rawValue,
+                     "partial": String(text.count < guidance.text.count), "available": String(guidance.available)]
+                }
+                while ContextKnowledgeRules.json(policies + [row()]).utf8.count > 4000 && !text.isEmpty { text = String(text.dropLast(min(64, text.count))) }
+                policies.append(row()); supplied.append(guidance.reference)
             }
+            payload["featureInstructions"] = policies
+        }
+        if pageID == nil {
+            // Keep orientation and policy available even with large Unicode/escaped notes.
+            // Omitted optional rows cannot leave hidden evidence dependencies behind.
+            let initialChangeKeys = Set(changes.compactMap { $0["id"] })
+            let initialDirectoryReferences: [ContextPageReference] = directoryBindings.values.flatMap { $0 }
+            let initialDirectoryKeys = Set(initialDirectoryReferences.map(\.contextKey))
+            let initialPageReferences = suppliedPages.flatMap { page in page.references + (page.owner == .human ? [.init(kind: "page", key: page.id, revision: page.revision.uuidString)] : []) }
+            let initialPageKeys = Set(initialPageReferences.map(\.contextKey))
+            let fixedReferences = supplied.filter { !initialChangeKeys.contains($0.contextKey) && !initialDirectoryKeys.contains($0.contextKey) && !initialPageKeys.contains($0.contextKey) }
+            var directory = payload["directory"] as? [[String: String]] ?? []
+            func updateRows() {
+                payload["pages"] = rows; payload["workingChanges"] = changes
+                payload["workingChangesOmittedCount"] = max(0, working.count - changes.count)
+                if payload["directory"] != nil { payload["directory"] = directory }
+            }
+            updateRows()
+            while ContextKnowledgeRules.json(payload).utf8.count > maximumBytes && !changes.isEmpty { changes.removeLast(); updateRows() }
+            while ContextKnowledgeRules.json(payload).utf8.count > maximumBytes,
+                  let index = rows.indices.filter({ rows[$0]["markdown", default: ""].count > 160 }).max(by: { rows[$0]["markdown", default: ""].utf8.count < rows[$1]["markdown", default: ""].utf8.count }) {
+                let text = rows[index]["markdown", default: ""]
+                let shorter = String(text.prefix(max(160, text.count / 2)))
+                rows[index]["markdown"] = shorter
+                rows[index]["nextOffset"] = String((Int(rows[index]["offset"] ?? "0") ?? 0) + shorter.count)
+                updateRows()
+            }
+            while ContextKnowledgeRules.json(payload).utf8.count > maximumBytes && !directory.isEmpty { directory.removeLast(); updateRows() }
+            while ContextKnowledgeRules.json(payload).utf8.count > maximumBytes && rows.count > 1 { rows.removeLast(); updateRows() }
+            let keptPageIDs = Set(rows.compactMap { $0["id"] })
+            suppliedPages.removeAll { !keptPageIDs.contains($0.id) }
+            let pageReferences = suppliedPages.flatMap { page in page.references + (page.owner == .human ? [.init(kind: "page", key: page.id, revision: page.revision.uuidString)] : []) }
+            let keptChangeKeys = Set(changes.compactMap { $0["id"] })
+            let changeReferences = working.filter { keptChangeKeys.contains($0.reference.contextKey) }.map(\.reference)
+            let directoryReferences = directory.flatMap { directoryBindings[$0["id"] ?? ""] ?? [] }
+            supplied = fixedReferences + pageReferences + changeReferences + directoryReferences
         }
         // The final encoded object, including instructions and the directory, has one whole-payload bound.
         if ContextKnowledgeRules.json(payload).utf8.count > maximumBytes {

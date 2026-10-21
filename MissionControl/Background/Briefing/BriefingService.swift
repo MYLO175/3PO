@@ -249,7 +249,7 @@ import EventKit
         guard live || (!completed.contains(day) && (manual || (!state.paused && BriefingRules.due(now:now,completed:completed)))) else { return }
         if live { state.overviewPaused = false } else { state.paused = false }; error = nil; busy = true;phase="Reading your current sources…"
         let morning = morningAnchor(model)
-        let registration = model.chatGPT.activeID, selectedModel = model.chatGPT.selectedModel, preferences = model.assistant.preferences
+        let registration = model.chatGPT.activeID, selectedModel = model.chatGPT.selectedModel, preferences = model.featureInstruction(.assistant, registration: model.chatGPT.activeID).text
         let writingPrompt=state.writingPrompt(registration)
         let capturedReviewPolicy=model.emailSummaries.policy(registration)
         guard model.emailSummaries.policyAvailable(capturedReviewPolicy) else {busy=false;phase="";error=model.emailSummaries.reviewPolicies.error ?? "Review guidance is unavailable.";return}

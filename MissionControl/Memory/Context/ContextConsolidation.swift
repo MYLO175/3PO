@@ -23,6 +23,8 @@ import Observation
         func append(kind: ContextPage.Kind, key: String, title: String, candidates: [ContextKnowledgeRecord],
                     anchorKeys: [String] = [], projectID: UUID? = nil, mayAskPurpose: Bool = false) {
             let id = ContextPage.stableID(registration: registration, kind: kind, key: key)
+            let identity = model.contextPages.identityStatus(id: id, registration: registration)
+            guard identity == .missing || identity == .available else { return }
             let old = model.contextPages.page(id: id, registration: registration)
             guard old?.owner != .human,
                   let target = ContextConsolidationSelection.target(registration: registration, kind: kind, key: key,

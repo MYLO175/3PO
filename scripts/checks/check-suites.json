@@ -1016,7 +1016,7 @@
       ],
       "report": "missioncontrol-working-context-model-evaluation.json",
       "effects": [
-        "Configured subscription model on four fictional conversation scenarios plus supported page synthesis; maximum20 requests/24 read-only fixture calls; no personal source content or native writes"
+        "Configured subscription model on five fictional conversation scenarios including directory/page retrieval plus supported page synthesis; maximum20 requests/24 read-only fixture calls; no personal source content or native writes"
       ]
     },
     {

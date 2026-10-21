@@ -35,8 +35,9 @@ extension DashboardModel {
         let selected=Set(selection.records.compactMap{$0["id"]})
         var chats=Set(assistant.memory.records.filter{selected.contains($0.id.uuidString)}.flatMap(\.allSourceEvidence).filter{$0.identity.kind == .whatsapp}.map{$0.identity.containerID})
         let purpose = ContextKnowledgePurpose(rawValue: use.rawValue) ?? .suggestions
-        let pages=captureContextPages(registration:chatGPT.activeID,query:query ?? (use == .brief ? nil : ""),includeTopics:false,everyday:false,purpose:purpose,mailAccounts:mailAccounts,whatsappReady:whatsappReady)
+        let pages=captureContextPages(registration:chatGPT.activeID,query:query ?? (use == .brief ? nil : ""),includeTopics:false,everyday:false,purpose:purpose,mailAccounts:mailAccounts,whatsappReady:whatsappReady,includeSourceChanges:use == .brief)
         let versions=pages.current() ? pages.referenceVersions : [:]
+        chats.formUnion(assistant.memory.permittedRecords.filter { pages.memoryIDs.contains($0.id) }.flatMap(\.allSourceEvidence).filter { $0.identity.kind == .whatsapp }.map { $0.identity.containerID })
         let supplied = Set(versions.keys)
         chats.formUnion(contextKnowledge(registration:chatGPT.activeID,includeTopics:false,purpose:purpose,mailAccounts:mailAccounts,whatsappReady:whatsappReady).filter { supplied.contains($0.reference.contextKey) }.compactMap(\.whatsappChatID))
         return .init(records:selection.records,dependencies:MemoryDependencyRules.capture(selection.records),eligibleCount:selection.eligibleCount,whatsappChats:chats,pageContext:versions.isEmpty ? "{}" : AutomaticMemoryCapture.pagePayload(pages.text),contextPageDependencies:versions,workspaceIDs:pages.workspaceIDs)

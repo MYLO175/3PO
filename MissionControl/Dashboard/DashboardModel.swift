@@ -856,9 +856,15 @@ struct CalendarRemovalReviewSession:Identifiable {
             var message:String;var evidence:String
             var date:DiscoveryProposedDate?;var change:DiscoveryDateChange?
             var removal:DiscoveryCalendarRemoval?;var project:DiscoveryProjectTask?;var replyDraft:String?
+            var calendar:[String:String]?
         }
         let encoder=JSONEncoder();encoder.outputFormatting=[.sortedKeys]
-        return try? encoder.encode(Approval(id:record.id,registration:record.registration,kind:record.kind,title:record.sourceTitle,message:record.message,evidence:record.evidence,date:record.proposedDate,change:record.proposedChange,removal:record.proposedRemoval,project:record.proposedProjectTask,replyDraft:record.replyDraft))
+        let calendar=record.proposedCalendarDestination.map { destination in
+            var value=["sourceID":destination.sourceID,"account":destination.account]
+            if let provider=destination.providerID {value["providerID"]=provider}
+            return value
+        }
+        return try? encoder.encode(Approval(id:record.id,registration:record.registration,kind:record.kind,title:record.sourceTitle,message:record.message,evidence:record.evidence,date:record.proposedDate,change:record.proposedChange,removal:record.proposedRemoval,project:record.proposedProjectTask,replyDraft:record.replyDraft,calendar:calendar))
     }
     func currentPreparedApproval(_ record:PADiscovery)->Bool {
         guard let snapshot=preparedApprovalSnapshot(record) else {return false}

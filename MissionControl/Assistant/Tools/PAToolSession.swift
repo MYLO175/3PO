@@ -409,7 +409,8 @@ import Foundation
             guard memory.enabled else { return try json(["available":false,"reason":"Saved memory use is paused."]) }
             let offset = text("offset").flatMap(Int.init) ?? 0
             guard (0...24_000).contains(offset) else { throw ActionFailure.message("Choose a valid page continuation offset.") }
-            let capture = model.captureContextPages(registration: registration, query: text("query"), topic: topicID, includeTopics: focusAreas != nil, everyday: false, pageID: text("id"), pageOffset: offset)
+            let purpose: ContextKnowledgePurpose = assistant.profileBusy(topicID) ? .setup : .conversation
+            let capture = model.captureContextPages(registration: registration, query: text("query"), topic: topicID, includeTopics: purpose == .setup ? false : focusAreas != nil, everyday: false, pageID: text("id"), pageOffset: offset, purpose: purpose)
             contextPageCaptures.append(capture)
             consultedMemory.formUnion(capture.memoryIDs)
             notebookWorkspace.formUnion(capture.workspaceIDs)

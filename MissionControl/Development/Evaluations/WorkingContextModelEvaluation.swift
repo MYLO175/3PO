@@ -27,7 +27,7 @@ import SwiftData
         guard !registration.isEmpty, model.chatGPT.hasSession, model.chatGPT.inferenceVerified, !model.chatGPT.usagePaused else {
             throw ActionFailure.message("The existing configured subscription connection must be verified and available. No settings were changed.")
         }
-        let allowed: Set<String>=["read_memory","search_mail","read_email","list_whatsapp_chats","search_whatsapp","read_calendar","read_attention"]
+        let allowed: Set<String>=["read_context_page","read_memory","search_mail","read_email","list_whatsapp_chats","search_whatsapp","read_calendar","read_attention"]
         let definitions=(PAToolProtocol.tools.first?["tools"] as? [[String: Any]] ?? []).filter { allowed.contains($0["name"] as? String ?? "") }
         guard Set(definitions.compactMap { $0["name"] as? String }) == allowed else { throw Failure.unavailableTool }
         let tools: [[String: Any]]=[["type":"namespace","name":"pa","description":"Local personal assistant read tools","tools":definitions]]
@@ -46,7 +46,8 @@ import SwiftData
             Scenario(id:"email-hint-changed-deadline",human:"Check my email for the Lark prototype presentation deadline. What is the latest arrangement?"),
             Scenario(id:"stable-human-memory",human:"What am I studying at Northbridge University?"),
             Scenario(id:"semantic-memory-rewording",human:"What have I told you about my interests in ML?"),
-            Scenario(id:"same-name-uncertainty",human:"Which of my two Catch up with Alex appointments on 20 October is with Alex Morgan? Please check my Calendar.")
+            Scenario(id:"same-name-uncertainty",human:"Which of my two Catch up with Alex appointments on 20 October is with Alex Morgan? Please check my Calendar."),
+            Scenario(id:"page-directory-project-purpose",human:"What is the purpose of my Cobalt rig project, and what should I preserve while working on it?")
         ]
         var requestCount=0, toolCount=0, observedToolCalls=0, rejectedTools=0
         var rows:[[String: Any]]=[], checks:[String: Bool]=[:], allNames:[String]=[]
@@ -64,13 +65,14 @@ import SwiftData
             var issuedEmailIDs=Set<String>(), visibleEmailIDs=Set<String>(), readEmailIDs=Set<String>(), returnedMessage=false, returnedCalendar=false
             var searchRequest:Int?, emailRequest:Int?, messageRequest:Int?
             var memoryIDs=Set<UUID>()
-            var memoryQueries:[String]=[],targetedMemoryReads=true
+            var memoryQueries:[String]=[],targetedMemoryReads=true,readPurposePage=false
             var executedQueries:[[String:Any]]=[]
             let prepared=PAWorkingContext.prepare(memory:memory,registration:fictionalOwner,purpose:.conversation,query:scenario.human,includeSources:false,now:now)
             memoryIDs.formUnion(prepared.memoryIDs)
             let context:[String: Any]=[
                 "now":"2026-10-16T12:00:00+01:00","timezone":"Europe/London",
-                "savedMemory":prepared.selection.records,"lifeNotebook":prepared.notebook,
+                "supportingRecords":prepared.selection.records,
+                "contextPages":scenario.id == "page-directory-project-purpose" ? ["directory":[["id":"fictional-page-cobalt-rig","title":"Cobalt rig","about":"Project purpose and working preferences"]],"pages":[]] : [:],
                 "sourceHints":prepared.sourceHints,
                 "sourceOverview":["mail":"Enabled fictional Inbox; search required for relevant headers.","whatsapp":"Selected cached chat Lark Lab; targeted search available; history is partial.","calendar":"Enabled Calendar; exact items omitted until requested."],
                 "coverage":"Selected memory and source metadata only; omitted source details are unknown."
@@ -105,6 +107,11 @@ import SwiftData
                     executedQueries.append(["tool":call.name,"arguments":arguments])
                     let output:[String: Any]
                     switch call.name {
+                    case "read_context_page":
+                        if scenario.id == "page-directory-project-purpose", arguments["id"] as? String == "fictional-page-cobalt-rig" || (arguments["query"] as? String ?? "").lowercased().contains("cobalt") {
+                            readPurposePage=true
+                            output=["pages":[["id":"fictional-page-cobalt-rig","title":"Cobalt rig","owner":"human","markdown":"The Cobalt rig project compares two optical calibration methods using the same reference target. Keep original raw captures and measurement settings so the comparison can be repeated. No method has been chosen yet.","nextOffset":"end"]],"coverage":"Exact fictional human project context; original evidence retained. No native operation is authorised."]
+                        } else { output=["pages":[],"coverage":"No matching fictional page supplied. Use a targeted original fact/source read when useful; absence remains unknown."] }
                     case "read_memory":
                         let query=arguments["query"] as? String
                         memoryQueries.append(query ?? "<broad>")
@@ -162,11 +169,16 @@ import SwiftData
             } else if scenario.id == "stable-human-memory" {
                 checks[scenario.id+":shared-selected-fact"]=memoryIDs.contains(course.id)
                 checks[scenario.id+":answered-stable-fact"]=lower.contains("mechanical engineering") && lower.contains("northbridge")
-                checks[scenario.id+":no-unnecessary-source-read"]=names.allSatisfy{$0 == "read_memory"}
+                checks[scenario.id+":no-unnecessary-source-read"]=names.allSatisfy{$0 == "read_memory" || $0 == "read_context_page"}
             } else if scenario.id == "semantic-memory-rewording" {
                 checks[scenario.id+":retrieved-reworded-memory"]=memoryIDs.contains(interest.id) && names.contains("read_memory") && targetedMemoryReads
                 checks[scenario.id+":answered-supported-interest"]=lower.contains("safety") && (lower.contains("artificial intelligence") || lower.contains("ai"))
-                checks[scenario.id+":no-unnecessary-source-read"]=names.allSatisfy{$0 == "read_memory"}
+                checks[scenario.id+":no-unnecessary-source-read"]=names.allSatisfy{$0 == "read_memory" || $0 == "read_context_page"}
+            } else if scenario.id == "page-directory-project-purpose" {
+                checks[scenario.id+":read-exact-directory-page"] = readPurposePage && names.contains("read_context_page")
+                checks[scenario.id+":answered-project-purpose"] = lower.contains("calibration") && ["compare", "comparing", "comparison"].contains { lower.contains($0) }
+                checks[scenario.id+":preserved-raw-captures-and-uncertainty"] = lower.contains("raw") && ["not chosen", "not been chosen", "no method", "no choice", "not yet", "undecided"].contains { lower.contains($0) }
+                checks[scenario.id+":no-unnecessary-source-read"] = names.allSatisfy { $0 == "read_context_page" }
             } else {
                 checks[scenario.id+":read-distinct-occurrences"]=returnedCalendar
                 let uncertainty=["can't","cannot","unclear","not enough","don't know","doesn't","not possible","unable","insufficient","not specified","not clear","no surname","neither","can't tell","cannot tell","not identify","couldn't","can't determine","can't establish"]
@@ -197,7 +209,11 @@ import SwiftData
         guard valid() else { throw Failure.ownership }
         let decodedPages = try ContextConsolidationRules.decode(pageOutput, targets: pageTargets)
         let generated = decodedPages.first { $0.0.id == pageTarget.id }!.0, prose = generated.markdown.lowercased()
-        checks["page-synthesis:exact-supported-output"] = decodedPages.count == 4 && decodedPages.allSatisfy { value in pageTargets.contains { $0.id == value.0.id && $0.references == value.0.references } && value.0.evidenceQuotes?.isEmpty == false }
+        checks["page-synthesis:exact-supported-output"] = decodedPages.count == 4 && decodedPages.allSatisfy { value in pageTargets.contains { target in
+            target.id == value.0.id && !value.0.references.isEmpty && Set(value.0.references).isSubset(of: Set(target.references)) &&
+            Set(value.0.references.map(\.id)) == Set(value.0.evidenceQuotes?.map(\.referenceID) ?? []) &&
+            Set(value.0.processedReferences ?? []) == Set(target.references)
+        } && value.0.evidenceQuotes?.isEmpty == false }
         checks["page-synthesis:full-record-capacity"] = pageTarget.records.count == 20 && generated.processedReferences?.count == 20
         checks["page-synthesis:useful-human-purpose"] = prose.contains("calibration") && ["compare", "comparing", "comparison"].contains { prose.contains($0) }
         checks["page-synthesis:attendance-remains-unconfirmed"] = ["not confirmed", "not agreed", "not been agreed", "unconfirmed", "suggestion", "not accepted", "proposed"].contains { prose.contains($0) }
@@ -207,7 +223,7 @@ import SwiftData
         checks["overall:bounded-inference"]=requestCount <= 20 && toolCount <= 24 && observedToolCalls <= 24
         checks["overall:no-unpermitted-tools"]=rejectedTools == 0 && allNames.allSatisfy{allowed.contains($0)}
         checks["overall:configured-ownership-retained"]=valid()
-        return ["completed":Date.now.ISO8601Format(),"model":selectedModel,"requests":requestCount,"toolCalls":toolCount,"observedToolCalls":observedToolCalls,"toolNames":allNames,"rejectedTools":rejectedTools,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"scenarios":rows,"boundary":"Four fictional conversation scenarios plus supported page synthesis through production contracts and configured subscription transport. Fixed read-only ports only; no personal source content, PAToolSession, native helpers, app actions or personal memory writes. Answer checks are bounded lexical evidence, not a general semantic-quality guarantee. Maximum twenty requests/24 port calls; an oversized observed call batch is rejected before execution and reported as failed. Failures are reported without automatic retry."]
+        return ["completed":Date.now.ISO8601Format(),"model":selectedModel,"requests":requestCount,"toolCalls":toolCount,"observedToolCalls":observedToolCalls,"toolNames":allNames,"rejectedTools":rejectedTools,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"scenarios":rows,"boundary":"Five fictional conversation scenarios including exact directory-to-purpose-page retrieval, plus supported page synthesis through production contracts and configured subscription transport. Fixed read-only ports only; no personal source content, PAToolSession, native helpers, app actions or personal memory writes. Answer checks are bounded lexical evidence, not a general semantic-quality guarantee. Maximum twenty requests/24 port calls; an oversized observed call batch is rejected before execution and reported as failed. Failures are reported without automatic retry."]
     }
 }
 #endif

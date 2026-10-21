@@ -41,11 +41,43 @@ import SwiftData
         },learning:{request in
             let result=try await model.runHeartbeatLearning(request:request)
             try request.validate()
-            let pages = try await model.contextConsolidation.run(model, request: request)
+            let pages = try await populateContextPages(model, request: request)
             try request.validate()
             let failures = [result.failure, pages.failure].compactMap { $0 }
             return .init(failure:failures.isEmpty ? nil : failures.joined(separator:" · "),detail:result.detail + " " + pages.detail,skipped:result.skipped && pages.skipped)
         },started:{model.heartbeatActivityStarted($0,$1,$2)},finished:{model.heartbeatActivityFinished($0,$1)})
+    }
+
+    /// An explicit heartbeat finishes the context backlog captured at its start. Each call
+    /// remains bounded, owned and charged before inference; new arrivals wait for a later run.
+    private static func populateContextPages(_ model: DashboardModel, request: HeartbeatChildRequest) async throws -> HeartbeatLearningResult {
+        guard request.manual else { return try await model.contextConsolidation.run(model, request: request) }
+        try request.validate()
+        let initial = model.contextConsolidation.targets(model, registration: request.registration)
+        guard !initial.isEmpty else { return try await model.contextConsolidation.run(model, request: request) }
+        let initialCount = initial.count
+        let snapshot = ContextPopulationSnapshot(initial: initial, pages: model.contextPages.pages(registration: request.registration))
+        func outstanding() -> (targetIDs: Set<String>, workCount: Int) {
+            let current = model.contextConsolidation.targets(model, registration: request.registration, eligibleReferences: snapshot.references)
+            let records = model.contextKnowledge(registration: request.registration, includeTopics: false, retainingReferences: snapshot.references, purpose: .maintenance)
+            return snapshot.remaining(current: current, records: records, pages: model.contextPages.pages(registration: request.registration))
+        }
+        var batches = 0
+        while true {
+            try Task.checkCancellation(); try request.validate()
+            let pending = outstanding()
+            guard !pending.targetIDs.isEmpty else { break }
+            let result = try await model.contextConsolidation.run(model, request: request, targetIDs: pending.targetIDs, eligibleReferences: snapshot.references)
+            try request.validate()
+            if result.failure != nil || result.skipped { return result }
+            guard outstanding().workCount < pending.workCount else {
+                return .init(failure: "Context population made no progress on its captured input. Completed pages are retained; remaining input waits for a fresh heartbeat.", detail: "Context population stopped without replaying the same batch.", skipped: false)
+            }
+            batches += 1
+            await Task.yield()
+        }
+        let later = model.contextConsolidation.targets(model, registration: request.registration).count
+        return .init(detail: "Context population completed in \(batches) bounded batch\(batches == 1 ? "" : "es"); all \(initialCount) requested pages were considered." + (later == 0 ? " No page updates remain pending." : " \(later) later page updates remain pending."), skipped: batches == 0)
     }
 
     private static func environment(_ model:DashboardModel)->HeartbeatEnvironment {

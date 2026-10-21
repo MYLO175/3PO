@@ -87,13 +87,14 @@ private final class ObservationCounter:@unchecked Sendable {
     var requests: [AssistantToolRequest] = []
     var sessions: [FictionalTools] = []
     var configure: ((FictionalTools, AssistantToolRequest) -> Void)?
+    var pageCapture: (String, String?, UUID?, Bool, Bool) -> AssistantPageContext = { _,_,_,_,_ in .init() }
     func runtime() -> AssistantRuntime {
         .init(clock: { self.now }, state: { self.state }, sourceSnapshot: { self.sourceCalls += 1; return "Fictional cached context\n" + String(decoding:try! JSONEncoder().encode(self.acknowledgements),as:UTF8.self) }, deliveryAvailable: { $0.deliveryID != "fictional-withdrawn" }, tools: { request in
             let session = FictionalTools()
             self.configure?(session, request)
             self.requests.append(request); self.sessions.append(session)
             return session
-        }, afterTurn: { self.afterCalls += 1 })
+        }, afterTurn: { self.afterCalls += 1 }, contextPages: { self.pageCapture($0,$1,$2,$3,$4) })
     }
 }
 
@@ -471,6 +472,12 @@ private final class ObservationCounter:@unchecked Sendable {
             check(value.memory.put(fact),"Context churn fixture saves its selected fact")
             let item=LifeItem(registration:p.activeID,kind:.space,title:"Orion prototype")
             _=try value.projects.create([item],receipt:.init(id:"fixture-"+mode,registration:p.activeID,result:"Fictional space",itemID:item.id))
+            c.pageCapture = { _,_,_,_,_ in
+                let text=String(decoding:try! JSONEncoder().encode(item),as:UTF8.self)
+                return .init(text:text,pageIDs:["fictional-context-page-"+item.id.uuidString],workspaceIDs:[item.id],referenceVersions:["project:"+item.id.uuidString:item.revision.uuidString],validate:{ignored in
+                    ignored.contains("project:"+item.id.uuidString) || value.projects.state.items.first(where:{$0.id == item.id})?.revision == item.revision
+                })
+            }
             c.acknowledgements=[.init(id:"dismissed-fictional",kind:"email",sourceID:"fictional-email",title:"Cached name",concern:"Historical dismissed concern")]
             let resolved=["requestID":"fictional-request","accountID":"fictional-mail","confirmationID":"fictional-confirmation","confirmationQuote":"Received"]
             if mode.hasPrefix("resolution-") && mode != "resolution-added" {c.state.resolvedRequests=[resolved]}
