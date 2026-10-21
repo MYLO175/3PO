@@ -212,6 +212,11 @@ A foreground request has no fixed count of changes, tool calls, inference rounds
 
 ## Memory: what exists today
 
+**Memory → Context pages** opens a local browser for everyday context, topic/project summaries, personal notes, Review guidance, brief instructions and exact-calendar purposes. Ordinary chat receives a compact overview/directory and relevant pending changes, then can read a particular page. Heartbeats maintain changed summaries under existing permissions and call allowances; unchanged context needs no synthesis. Original facts, source evidence, project identities and action receipts remain authoritative. Each page has history/restore, and each page tracks its own processed inputs so deferred work is retained. Pausing memory use keeps source-free human notes editable.
+
+Project-purpose questions can appear in Review under the existing optional-question control. Answers save human context without creating projects/tasks; dismissal has local Undo. Review guidance is applied directly alongside canonical feedback. Informational broadcasts require supported relevance or an explicit human priority, preserving new personal requests. Calendar-purpose descriptions help select exact destinations when the human requests an event. Page/instruction changes are checked only where their versions were supplied; they grant no action authority. See the [Memory and context guide](MEMORY_AND_CONTEXT.md#context-pages-and-working-changes) for ownership and history details.
+
+
 The [Memory and context guide](MEMORY_AND_CONTEXT.md) explains the record structure, recall gates and code/storage ownership. In the app, Memory now opens an Overview of saved/current/available facts; Facts, Life areas and Controls keep inspection separate from learning controls. Life map and Settings link to the same inspector. The local recall preview uses the production ranker without an AI call. New foreground replies expose Context details with prepared memory/notebook IDs, additional memory-read IDs, bounded dialogue counts, model/Focus and attempted tools; it stores no additional source bodies or old prose, and does not claim model attention or verified writes. Older replies retain their existing data without a retroactive trace.
 
 | Layer | What it contains | How it is used |

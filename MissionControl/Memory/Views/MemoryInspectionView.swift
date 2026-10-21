@@ -131,6 +131,7 @@ struct PAContextCaptureView:View {
     var capture:PAContextCapture
     var model:DashboardModel
     var registration:String
+    @State private var pagesOpen = false
     @Environment(\.dismiss) private var dismiss
     var body:some View {
         VStack(alignment:.leading,spacing:14) {
@@ -148,6 +149,10 @@ struct PAContextCaptureView:View {
                     facts("Initial saved-fact selection",capture.memoryIDs,caption:"\(capture.memoryIDs.count) selected from \(capture.eligibleMemoryCount) available at preparation")
                     facts("Life notebook facts",capture.notebookMemoryIDs,caption:"Separate bounded area notes, up to 8 KB including workspace structure")
                     facts("Additional memory reads",capture.consultedMemoryIDs,caption:"Facts returned by memory/notebook tools; distinct from saved or edited facts")
+                    if let pageIDs = capture.contextPageIDs, !pageIDs.isEmpty {
+                        Button("Inspect context pages (\(pageIDs.count) initially prepared)") { pagesOpen = true }
+                            .help("Opens current page versions and their history. The trace stores identities, not another copy of their text.")
+                    }
                     Text("\(capture.workspaceIDs.count) workspace items · \(capture.historyTurnIDs.count) dialogue turns, \(capture.excerptedHistoryIDs.count) excerpted").font(.callout)
                     Text(capture.sourceSnapshotIncluded ? "A permitted cached source snapshot was prepared (\(capture.sourceSnapshotBytes) UTF-8 bytes). Source bodies are not duplicated in this trace." : "No cached source snapshot was prepared.").font(.callout)
                     if capture.profileSetup { Text("Profile interview: memory-only tools; no cached source snapshot or Apple changes.").font(.caption) }
@@ -158,6 +163,7 @@ struct PAContextCaptureView:View {
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
         }.padding(24).frame(width:620,height:650)
+            .sheet(isPresented: $pagesOpen) { ContextPagesView(model: model) }
     }
     private func facts(_ title:String,_ ids:[UUID],caption:String)->some View {
         DisclosureGroup(title+" (\(ids.count))") {
