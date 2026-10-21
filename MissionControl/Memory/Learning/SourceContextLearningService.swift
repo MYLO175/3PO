@@ -29,7 +29,7 @@ import SwiftData
         let access = accessSnapshot(model)
         guard readable, model.assistant.memory.enabled, access.permitted, !scope.linkedIdentity.isEmpty else { return [] }
         let recent = SourceContextRules.recent(model.whatsapp.messages, chats: model.whatsapp.chats,
-            allowed: model.whatsappLearningAccess.chats, now: model.now(), limit: 2000)
+            allowed: model.whatsappLearningAccess.chats, now: model.now(), limit: 2000, retaining: retaining)
         let original = state.scopes[key(scope)]
         let candidates = SourceContextRules.contextItems(recent: recent, progress: model.assistant.memory.learningEnabled ? original : nil,
             access: access, processed: processed, retaining: retaining, now: model.now())

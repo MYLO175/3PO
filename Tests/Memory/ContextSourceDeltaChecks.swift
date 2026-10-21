@@ -124,6 +124,52 @@ import Foundation
         check(SourceContextRules.contextItems(recent: [oldMessage], progress: sourceBaselineWins, access: access, processed: [:], retaining: [:], now: now).isEmpty, "Baseline exclusion remains authoritative even with a learning-seen marker")
         check(NativeLearningRules.hash(progress) == sourceBefore && paused.paused && baseline.coverage?.baseline[changedMessage.id] == changedMessage.revision, "WhatsApp selectors do not mutate supplied cursor/baseline/claim state")
 
+        // Exercise the cache projection before the pure delta selector: exact retained
+        // support survives both the recent-time boundary and the 2,000-row window.
+        func cached(_ id:String,chat:String = "fictional-chat-a",date:Date,text:String = "Fictional project context retained by a saved page.")->WhatsAppReadMessage {
+            .init(id:id,chat:chat,sender:"Fictional person",text:text,sentByMe:false,time:date.timeIntervalSince1970*1000)
+        }
+        let chats=[WhatsAppChat(id:chatA,name:"Fictional chat A",group:false),WhatsAppChat(id:chatB,name:"Fictional chat B",group:false)]
+        let rawOld=cached("retained-before-window",date:now.addingTimeInterval(-49*3600))
+        let oldKey=SourceContextRules.messageKey(chat:rawOld.chat,item:rawOld.id)
+        let retainingOld=[oldKey:Set([SourceContextRules.revision(rawOld)])]
+        check(SourceContextRules.recent([rawOld],chats:chats,allowed:[chatA],now:now,limit:2000).isEmpty,"An unreferenced cached message older than 48 hours stays outside fresh context")
+        let retainedProjection=SourceContextRules.recent([rawOld],chats:chats,allowed:[chatA],now:now,limit:2000,retaining:retainingOld)
+        check(retainedProjection.count == 1 && retainedProjection[0].id == oldKey && retainedProjection[0].revision == SourceContextRules.revision(rawOld),"Exact unchanged cached support survives the 48-hour boundary")
+        check(SourceContextRules.contextItems(recent:retainedProjection,progress:paused,access:access,processed:[:],retaining:retainingOld,now:now) == retainedProjection,"Older retained support remains usable without resuming a failed learning claim")
+        check(SourceContextRules.contextItems(recent:retainedProjection,progress:progress,access:access,processed:[:],retaining:[:],now:now).isEmpty,"An older retained projection cannot be repurposed as an untracked fresh delta")
+        let changedOld=cached(rawOld.id,date:Date(timeIntervalSince1970:rawOld.time/1000),text:"The same old message now has different source text.")
+        check(SourceContextRules.recent([changedOld],chats:chats,allowed:[chatA],now:now,limit:2000,retaining:retainingOld).isEmpty,"An edited old message is neither exact retained support nor new recent history")
+        var changedOldProjection=retainedProjection[0];changedOldProjection.text=changedOld.text;changedOldProjection.revision=SourceContextRules.revision(changedOld)
+        var oldSeen=progress;oldSeen.seen[oldKey]=changedOldProjection.revision;oldSeen.coverage?.assessedDates[oldKey]=changedOldProjection.date
+        check(SourceContextRules.contextItems(recent:[changedOldProjection],progress:oldSeen,access:access,processed:[:],retaining:retainingOld,now:now).isEmpty,"A learning-seen marker cannot admit a changed old retained ID past the fresh-date guard")
+        check(SourceContextRules.contextItems(recent:retainedProjection,progress:progress,access:denied,processed:[:],retaining:retainingOld,now:now).isEmpty,"Permission withdrawal excludes old retained support")
+        check(SourceContextRules.contextItems(recent:retainedProjection,progress:progress,access:excludedChat,processed:[:],retaining:retainingOld,now:now).isEmpty,"Removed chat access excludes old retained support")
+        check(SourceContextRules.recent([rawOld],chats:chats,allowed:[chatB],now:now,retaining:retainingOld).isEmpty,"The cache projection also filters withdrawn chats before retention")
+        let sameIDOtherChat=cached(rawOld.id,chat:chatB,date:Date(timeIntervalSince1970:rawOld.time/1000))
+        check(SourceContextRules.recent([sameIDOtherChat],chats:chats,allowed:[chatA,chatB],now:now,retaining:retainingOld).isEmpty,"Equal raw message IDs in different chats cannot substitute for retained evidence")
+        for duplicateRows in [[rawOld,changedOld],[changedOld,rawOld]] {
+            check(SourceContextRules.recent(duplicateRows,chats:chats,allowed:[chatA],now:now,retaining:retainingOld).isEmpty,"Conflicting cached versions fail closed before age selection, regardless of row order")
+        }
+        check(SourceContextRules.recent([rawOld,rawOld],chats:chats,allowed:[chatA],now:now,retaining:retainingOld) == retainedProjection,"Identical cached retained duplicates coalesce")
+        let freshDuplicate=cached(rawOld.id,date:now.addingTimeInterval(-30),text:"Conflicting newly timestamped copy of an old retained identity.")
+        check(SourceContextRules.recent([rawOld,freshDuplicate],chats:chats,allowed:[chatA],now:now,retaining:retainingOld).isEmpty,"A conflicting fresh duplicate cannot hide an older conflicting row outside 48 hours")
+        let rawWindow=(0..<2001).map{cached("window-\($0)",date:now.addingTimeInterval(-120-Double($0)))}
+        let outside=rawWindow.last!,outsideKey=SourceContextRules.messageKey(chat:outside.chat,item:outside.id)
+        let retainingOutside=[outsideKey:Set([SourceContextRules.revision(outside)])]
+        let boundedWindow=SourceContextRules.recent(rawWindow,chats:chats,allowed:[chatA],now:now,limit:2000)
+        check(boundedWindow.count == 2000 && !boundedWindow.contains{$0.id == outsideKey},"The ordinary fresh cache projection retains its 2,000-message cap")
+        let widenedSupport=SourceContextRules.recent(rawWindow,chats:chats,allowed:[chatA],now:now,limit:2000,retaining:retainingOutside)
+        check(widenedSupport.count == 2001 && Set(widenedSupport.map(\.id)).count == 2001 && widenedSupport.contains{$0.id == outsideKey},"Exact page support beyond capacity is added once without evicting fresh allocation")
+        check(SourceContextRules.recent(rawWindow.reversed(),chats:chats,allowed:[chatA],now:now,limit:2000,retaining:retainingOutside) == widenedSupport,"Retained capacity support does not depend on cache row ordering")
+        check(SourceContextRules.contextItems(recent:widenedSupport,progress:progress,access:access,processed:[:],retaining:retainingOutside,now:now,limit:0).map(\.id) == [outsideKey],"Retained capacity support survives independently of the pending-delta limit")
+        let firstRaw=rawWindow[0],retainingInside=[SourceContextRules.messageKey(chat:firstRaw.chat,item:firstRaw.id):Set([SourceContextRules.revision(firstRaw)])]
+        check(SourceContextRules.recent(rawWindow,chats:chats,allowed:[chatA],now:now,limit:2000,retaining:retainingInside) == boundedWindow,"Retained support already inside the window is not duplicated")
+        let conflictingOutside=cached(outside.id,date:Date(timeIntervalSince1970:outside.time/1000),text:"Conflicting cache body outside the fresh capacity limit.")
+        check(!SourceContextRules.recent(rawWindow+[conflictingOutside],chats:chats,allowed:[chatA],now:now,limit:2000,retaining:retainingOutside).contains{$0.id == outsideKey},"Conflicting versions beyond the window cannot establish retained current support")
+        let future=cached("future",date:now.addingTimeInterval(60)),futureKey=SourceContextRules.messageKey(chat:chatA,item:"future")
+        check(SourceContextRules.recent([future],chats:chats,allowed:[chatA],now:now,retaining:[futureKey:Set([SourceContextRules.revision(future)])]).isEmpty,"Retained IDs do not bypass the future-timestamp guard")
+
         let linkedIdentity = "fictional-whatsapp-identity", registration = "fictional-chatgpt-account"
         let output: [String: Any] = ["facts": [["messageID": oldMessage.id, "text": "A fictional message reports a meeting.", "quote": oldMessage.text, "kind": "context", "areas": ["studies"]]]]
         let decoded = SourceContextRules.decode(String(decoding: try JSONSerialization.data(withJSONObject: output), as: UTF8.self), messages: [oldMessage], registration: registration, linkedIdentity: linkedIdentity, now: now)!.first!
