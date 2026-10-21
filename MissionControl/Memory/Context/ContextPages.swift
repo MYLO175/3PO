@@ -12,7 +12,8 @@ struct ContextPage: Codable, Equatable, Identifiable, Sendable {
         static let project = Self(rawValue: "project")
         static let calendarPurpose = Self(rawValue: "calendarPurpose")
         static let note = Self(rawValue: "note")
-        var isSupported: Bool { [.overview, .topic, .project, .calendarPurpose, .note].contains(self) }
+        static let instruction = Self(rawValue: "instruction")
+        var isSupported: Bool { [.overview, .topic, .project, .calendarPurpose, .note, .instruction].contains(self) }
     }
     struct Owner: RawRepresentable, Codable, Hashable, Sendable {
         var rawValue: String

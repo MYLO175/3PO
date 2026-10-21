@@ -228,7 +228,7 @@ import SwiftData
         }
         if let quotes = page.evidenceQuotes {
             let ids = Set(page.references.map(\.id))
-            guard quotes.count <= 32, quotes.allSatisfy({ ids.contains($0.referenceID) && (8...500).contains($0.quote.count) }) else { throw ContextPageFailure.invalid("page evidence") }
+            guard quotes.count <= 32, quotes.allSatisfy({ ids.contains($0.referenceID) && (1...500).contains($0.quote.count) }) else { throw ContextPageFailure.invalid("page evidence") }
         }
     }
     private static func validateCheckpoint(_ value: ContextPageCheckpoint) throws {

@@ -34,6 +34,16 @@ struct AssistantToolRequest {
     var referenceVersions: [String: String] = [:]
     var validate: (Set<String>) -> Bool = { _ in true }
     func current(ignoring: Set<String> = []) -> Bool { validate(ignoring) }
+    func including(_ guidance: AssistantPageContext, as key: String) -> AssistantPageContext {
+        let base = self
+        var value = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] ?? [:]
+        value[key] = (try? JSONSerialization.jsonObject(with: Data(guidance.text.utf8))) as? [String: Any] ?? [:]
+        let encoded = (try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])).map { String(decoding: $0, as: UTF8.self) } ?? "{}"
+        return .init(text: encoded, pageIDs: Array(Set(pageIDs + guidance.pageIDs)).sorted(),
+                     memoryIDs: memoryIDs.union(guidance.memoryIDs), workspaceIDs: workspaceIDs.union(guidance.workspaceIDs),
+                     referenceVersions: referenceVersions.merging(guidance.referenceVersions) { first, _ in first },
+                     validate: { base.current(ignoring: $0) && guidance.current(ignoring: $0) })
+    }
 }
 
 /// Read-only cursor presentation. Source searching remains inside the turn's tool
@@ -78,6 +88,7 @@ struct AssistantToolRequest {
     var tools: (AssistantToolRequest) -> any AssistantToolSession
     var afterTurn: () -> Void
     var contextPages: (String, String?, UUID?, Bool, Bool) -> AssistantPageContext = { _,_,_,_,_ in .init() }
+    var profileContextPages: (String, UUID?) -> AssistantPageContext = { _,_ in .init() }
     var pageKnowledgeAvailable: (String, [String: String]) -> Bool = { _,_ in true }
     var ownedPageKnowledgeAvailable: ((String, [String: String], Set<String>) -> Bool)?
     var ownedContextReferences: (String, Set<String>) -> Set<String> = { _, keys in keys }
