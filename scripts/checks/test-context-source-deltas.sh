@@ -11,7 +11,7 @@ xcrun swiftc -module-cache-path "$MISSIONCONTROL_TEST_MODULE_CACHE" \
   MissionControl/Memory/Learning/MemoryLearning.swift \
   MissionControl/Assistant/Profile/PALearningQuestion.swift \
   MissionControl/Memory/Records/MemoryDependencies.swift \
-  MissionControl/Background/Briefing/Briefing.swift \
+  MissionControl/Review/Inbox/ReviewPolicyModels.swift MissionControl/Background/Briefing/Briefing.swift \
   MissionControl/Sources/WhatsApp/WhatsAppModels.swift \
   MissionControl/Memory/Learning/NativeSourceLearning.swift \
   MissionControl/Memory/Learning/SourceContextLearning.swift \
