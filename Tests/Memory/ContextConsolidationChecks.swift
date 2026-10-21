@@ -17,7 +17,7 @@ import Foundation
         }
         let decoded = try ContextConsolidationRules.decode(output(), targets: [target])
         check(decoded.count == 1 && decoded[0].0.id == target.id && decoded[0].0.owner == .generated, "Generated page retains exact existing project/account identity")
-        check(Set(decoded[0].0.references) == Set([project.reference, mail.reference]), "Every supplied input remains an exact dependency")
+        check(Set(decoded[0].0.references) == Set([project.reference, mail.reference]), "Every cited input remains an exact dependency")
         check(decoded[0].0.evidenceQuotes?.count == 2 && decoded[0].0.evidenceQuotes?.last?.referenceID == mail.reference.id, "Exact source quotation stored separately with its reference")
         check(Set(decoded[0].0.processedReferences ?? []) == Set(target.references), "Successful input coverage belongs to the exact page")
         var continued = target
@@ -71,7 +71,7 @@ import Foundation
         let fullBatch = try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":fullRows]), targets:fullTargets)
         check(fullBatch.count == 4 && fullBatch.allSatisfy { $0.0.evidenceQuotes?.count == 20 && $0.0.references.count == 20 }, "A full four-page batch may cite every one of its twenty supplied records")
         var overCapacity = fullRows
-        overCapacity[0]["evidence"] = fullRecords.map { ["id":$0.reference.contextKey,"quote":$0.text] } + [["id":fullRecords[0].reference.contextKey,"quote":fullRecords[0].text]]
+        overCapacity[0]["evidence"] = fullRecords.map { ["id":$0.reference.contextKey,"quote":$0.text] } + Array(repeating:["id":fullRecords[0].reference.contextKey,"quote":fullRecords[0].text],count:13)
         rejects("An over-capacity evidence array was accepted") { _ = try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":overCapacity]),targets:fullTargets) }
         let notes = "Compare the \"near-field\" method.\nKeep captures in C:\\Optics before deciding."
         var readableProject = project
@@ -85,6 +85,136 @@ import Foundation
         check(!unicodeTitle.isEmpty && unicodeTitle.utf8.count <= ContextPageLimits.maximumTitleBytes, "Generated title projection respects storage bytes without splitting composed characters")
         var unicodeRow = fullRows[0]; unicodeRow["synopsis"] = String(repeating:"研",count:300)
         rejects("A synopsis that storage cannot save passed consolidation decoding") { _ = try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":[unicodeRow]]),targets:[fullTargets[0]]) }
+
+        // Support describes claims actually used; processing receipts describe reviewed inputs.
+        let citedOnly = try ContextConsolidationRules.decode(output(quotes:[["id":project.reference.contextKey,"quote":"Bridge optics project contains a camera experiment"]]),targets:[target])[0].0
+        check(citedOnly.references == [project.reference] && Set(citedOnly.processedReferences ?? []) == Set(target.references), "Unused supplied source is processed without becoming an unrelated dependency")
+        check(ContextKnowledgeRules.current(citedOnly.references,records:[project]), "Withdrawal of an unused input does not hide supported human context")
+        let short = ContextKnowledgeRecord(reference:.init(kind:"memory",key:"short-preference",revision:"v1"),title:"Preference",text:"Vegan",date:date)
+        var shortTarget = target;shortTarget.records=[short]
+        let shortOutput=output(quotes:[["id":short.reference.contextKey,"quote":"Vegan"]],markdown:"The human stated a vegan preference.")
+        check(try ContextConsolidationRules.decode(shortOutput,targets:[shortTarget])[0].0.references == [short.reference], "A complete short human statement can be quoted exactly")
+        rejects("A partial short statement was accepted as evidence") { _=try ContextConsolidationRules.decode(output(quotes:[["id":short.reference.contextKey,"quote":"Veg"]]),targets:[shortTarget]) }
+        rejects("A fabricated extension of a short statement was accepted") { _=try ContextConsolidationRules.decode(output(quotes:[["id":short.reference.contextKey,"quote":"Vegan for life"]]),targets:[shortTarget]) }
+        var duplicate=target;duplicate.records=[project,project]
+        rejects("Duplicate issued reference was silently acknowledged") { _=try ContextConsolidationRules.decode(output(quotes:[["id":project.reference.contextKey,"quote":"Bridge optics project contains a camera experiment"]]),targets:[duplicate]) }
+
+        let purposeWords="The Bridge optics project compares two calibration methods; preserve this ongoing human purpose."
+        let purpose=ContextKnowledgeRecord(reference:.init(kind:"page",key:"exact-human-purpose",revision:"purpose-v1"),title:"Human project purpose",text:purposeWords,date:date.addingTimeInterval(5000),projectID:projectID)
+        var subject=project;subject.date=date.addingTimeInterval(6000)
+        let updates=(0..<65).map { index in
+            ContextKnowledgeRecord(reference:.init(kind:"human",key:"change-\(index)",revision:"v1"),title:"Fictional update",text:"Bridge optics update \(index) records a bounded calibration observation.",date:date.addingTimeInterval(Double(index)))
+        }
+        let originals=[subject,purpose]+updates,anchorKeys=[subject.reference.contextKey,purpose.reference.contextKey]
+        func selection(_ current:[ContextKnowledgeRecord],_ previous:ContextPage?)->ContextPageTarget {
+            ContextConsolidationSelection.target(registration:"owner",kind:.project,key:projectID.uuidString,title:"Bridge optics",candidates:current,previous:previous,anchorKeys:anchorKeys,projectID:projectID)!
+        }
+        func projection(_ value:ContextPageTarget)->ContextPage {
+            let delta=value.records.last { value.pendingReferences.contains($0.reference) } ?? purpose
+            let evidence=[subject,purpose,delta].filter { record in value.references.contains(record.reference) }
+            let unique=Array(Dictionary(evidence.map {($0.reference.contextKey,$0)},uniquingKeysWith:{first,_ in first}).values).sorted{$0.reference.contextKey < $1.reference.contextKey}
+            let row:[String:Any]=["id":value.id,"synopsis":"Current calibration purpose and changes","markdown":purposeWords+"\n"+delta.text,
+                "evidence":unique.map{["id":$0.reference.contextKey,"quote":$0.text]},"purposeQuestion":NSNull()]
+            return try! ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":[row]]),targets:[value])[0].0
+        }
+        var previous:ContextPage?,cycles=0,sawPrior=false,progress=true,anchorsPresent=true,bounded=true
+        while cycles < 8 {
+            let window=selection(originals,previous)
+            if !window.hasPendingChanges {break}
+            let reversed=selection(Array(originals.reversed()),previous)
+            progress = progress && !window.pendingReferences.isEmpty && window.pendingReferences.count <= 20
+            anchorsPresent = anchorsPresent && anchorKeys.allSatisfy { key in window.records.contains{$0.reference.contextKey == key} }
+            bounded = bounded && window.records.count <= 52 && ContextKnowledgeRules.json(window.input).utf8.count <= 20_000
+            check(window.references == reversed.references, "Window \(cycles) is deterministic under reordered canonical records")
+            if let old=previous {
+                sawPrior = true
+                check(window.input["previousDraft"] != nil && window.previousPage?.markdown == old.markdown && old.references.allSatisfy(window.references.contains), "Window \(cycles) supplies the current prior purpose with every original support")
+            }
+            previous=projection(window);cycles += 1
+        }
+        let complete=selection(originals,previous)
+        check(cycles >= 4 && progress && anchorsPresent && bounded && sawPrior, "More than forty pending changes preserve exact purpose anchors and continuously advance bounded windows")
+        check(!complete.hasPendingChanges && complete.remainingPendingCount == 0 && Set(previous!.processedReferences ?? []) == Set(originals.map(\.reference)), "Every exact initial input is processed independently for the project")
+        check(previous!.markdown.contains(purposeWords) && previous!.references.contains(purpose.reference), "Supported ongoing human purpose survives the full multi-window flow")
+        let independent=ContextConsolidationSelection.target(registration:"owner",kind:.topic,key:"studies",title:"Studies",candidates:originals,previous:nil)!
+        check(independent.hasPendingChanges && independent.processedReferences.isEmpty && independent.remainingPendingCount + independent.pendingReferences.count == originals.count, "Successful project windows cannot consume a topic's independent backlog")
+        var revisedPurpose=purpose;revisedPurpose.reference = .init(kind:"page",key:purpose.reference.key,revision:"purpose-v2");revisedPurpose.text="The human corrected the project purpose: compare sensor alignment instead."
+        let corrected=selection([subject,revisedPurpose]+updates,previous)
+        check(corrected.previousPage == nil && corrected.input["previousDraft"] == nil && !ContextKnowledgeRules.json(corrected.input).contains(purposeWords), "A changed purpose prevents obsolete prior prose from entering the next request")
+        check(corrected.pendingReferences.contains(revisedPurpose.reference) && !corrected.processedReferences.contains(purpose.reference), "The exact human correction is pending while its superseded version is removed from progress")
+        let oldDelta=previous!.references.first{$0.kind == "human"}!
+        let withdrawn=selection(originals.filter{$0.reference != oldDelta},previous)
+        check(withdrawn.previousPage == nil && !withdrawn.references.contains(oldDelta) && !withdrawn.processedReferences.contains(oldDelta), "A withdrawn original is never carried forward from summary or progress metadata")
+        check(withdrawn.references.contains(purpose.reference), "Withdrawal of a source keeps the independently current human purpose anchor")
+        var uncited=updates[0];uncited.reference = .init(kind:"human",key:uncited.reference.key,revision:"v2");uncited.text="Bridge optics update zero has a new exact current version."
+        let uncitedChanged=selection([subject,purpose,uncited]+Array(updates.dropFirst()),previous)
+        check(uncitedChanged.previousPage != nil && uncitedChanged.pendingReferences.contains(uncited.reference), "An uncited earlier change becomes pending without invalidating useful supported prior prose")
+        var wrongAccount=previous!;wrongAccount=ContextPage(registration:"other-owner",kind:.project,key:projectID.uuidString,owner:.generated,title:wrongAccount.title,markdown:wrongAccount.markdown,references:wrongAccount.references)
+        check(selection(originals,wrongAccount).previousPage == nil && selection(originals,wrongAccount).processedReferences.isEmpty, "Another account's page cannot seed continuity or processing receipts")
+        let coalesced=selection(originals+[subject,purpose],previous)
+        check(Set(coalesced.references).count == coalesced.references.count, "Identical current reference duplicates coalesce before issuing model input")
+        var conflicting=subject;conflicting.text="An inconsistent current row cannot silently win by position."
+        let ambiguous=selection(originals+[conflicting],previous)
+        check(!ambiguous.references.contains(subject.reference) && ambiguous.previousPage == nil, "Conflicting current identity rows fail closed rather than retargeting a page")
+
+        let huge = String(repeating:"quoted \"\\🌱 ",count:800)
+        let bulky=(0..<12).map { index in ContextKnowledgeRecord(reference:.init(kind:"memory",key:"bulky-\(index)",revision:"v1"),title:"Large bounded original",text:huge,date:date.addingTimeInterval(Double(index))) }
+        var prior=previous!;prior.markdown=String(repeating:"🧑🏽‍🔬",count:900);prior.references=[subject.reference,purpose.reference]+Array(bulky.prefix(4).map(\.reference));prior.evidenceQuotes=nil
+        let boundedPrior=selection([subject,purpose]+bulky,prior)
+        check(boundedPrior.previousPage == nil && boundedPrior.input["previousDraft"] == nil, "An oversized prior is omitted instead of supplying its unsupported partial body")
+        check(!boundedPrior.pendingReferences.isEmpty && anchorKeys.allSatisfy { key in boundedPrior.references.contains{$0.contextKey == key} } && ContextKnowledgeRules.json(boundedPrior.input).utf8.count <= 20_000, "Oversized prior fallback retains purpose, bounded originals and pending progress")
+        check((boundedPrior.input["records"] as? [[String:String]])?.contains{$0["excerpted"] == "true"} == true, "Clipped original text is explicitly identified as incomplete model context")
+        let overviewTarget=ContextPageTarget(registration:"owner",kind:.overview,key:"maintained",title:"Overview",records:[short])
+        let otherTargets=(0..<9).map { index in ContextPageTarget(registration:"owner",kind:.project,key:"initial-\(index)",title:"Project \(index)",records:[project]) }
+        var waitingTargets=otherTargets+[overviewTarget],served=Set<String>(),rounds=0
+        while !waitingTargets.isEmpty && rounds < 4 {
+            let ordered=ContextConsolidationSelection.ordered(waitingTargets,pages:[])
+            if rounds == 0 {check(ordered.first?.id == overviewTarget.id, "Initial everyday overview is ordered before missing project pages")}
+            let batch=ContextConsolidationSelection.batch(ordered,now:date,timezone:"UTC")
+            check(!batch.isEmpty && batch.count <= 4 && ContextConsolidationSelection.input(batch,now:date,timezone:"UTC").utf8.count <= 30_000, "Initial population batch \(rounds) obeys exact complete-envelope bounds")
+            served.formUnion(batch.map(\.id));waitingTargets.removeAll{served.contains($0.id)};rounds += 1
+        }
+        check(waitingTargets.isEmpty && served.count == 10 && rounds == 3, "Bounded initial batches eventually serve every finite missing project and overview")
+        let budgetBatch=ContextConsolidationSelection.batch([boundedPrior]+otherTargets,now:date,timezone:String(repeating:"X",count:200))
+        check(ContextConsolidationSelection.input(budgetBatch,now:date,timezone:String(repeating:"X",count:200)).utf8.count <= 30_000, "Batch measurement includes the actual clock and timezone metadata")
+
+        let initial=selection(originals,nil)
+        check(Set(initial.allPendingReferences) == Set(originals.map(\.reference)) && initial.pendingReferences.count == 20, "Initial snapshot exposes all outstanding exact refs independently of its first twenty-input window")
+        let frozen=Dictionary(initial.allPendingReferences.map{($0.contextKey,$0.revision)},uniquingKeysWith:{first,_ in first})
+        let arrivals=(0..<100).map { index in ContextKnowledgeRecord(reference:.init(kind:"human",key:"fresh-\(index)",revision:"new-v1"),title:"New arrival",text:"Fresh Bridge optics note \(index) must not extend the captured bootstrap.",date:date.addingTimeInterval(-1000+Double(index))) }
+        var bootstrap:ContextPage?,bootstrapCalls=0
+        while bootstrapCalls < 8 {
+            let window=ContextConsolidationSelection.target(registration:"owner",kind:.project,key:projectID.uuidString,title:"Bridge optics",candidates:originals+arrivals,previous:bootstrap,anchorKeys:anchorKeys,projectID:projectID,eligibleReferences:frozen)!
+            if !window.hasPendingChanges {break}
+            check(!window.pendingReferences.isEmpty && window.records.allSatisfy{$0.reference.key.hasPrefix("fresh-") == false}, "Frozen bootstrap window \(bootstrapCalls) advances only initial pending originals plus current support")
+            bootstrap=projection(window);bootstrapCalls += 1
+        }
+        let frozenDone=ContextConsolidationSelection.target(registration:"owner",kind:.project,key:projectID.uuidString,title:"Bridge optics",candidates:originals+arrivals,previous:bootstrap,anchorKeys:anchorKeys,projectID:projectID,eligibleReferences:frozen)!
+        let ordinaryNext=selection(originals+arrivals,bootstrap)
+        check(bootstrapCalls == 4 && !frozenDone.hasPendingChanges && frozenDone.pendingReferences.isEmpty && frozenDone.remainingPendingCount == 0, "Initial population terminates after its finite original snapshot despite one hundred fresh arrivals")
+        check(frozenDone.allPendingReferences.count == 100 && ordinaryNext.hasPendingChanges && ordinaryNext.allPendingReferences.count == 100, "Fresh arrivals remain independently pending for the following ordinary heartbeat")
+        let changedAfterSnapshot=ContextConsolidationSelection.target(registration:"owner",kind:.project,key:projectID.uuidString,title:"Bridge optics",candidates:[subject,purpose,uncited]+Array(updates.dropFirst()),previous:bootstrap,anchorKeys:anchorKeys,projectID:projectID,eligibleReferences:frozen)!
+        check(changedAfterSnapshot.allPendingReferences.contains(uncited.reference) && !changedAfterSnapshot.pendingReferences.contains(uncited.reference) && !changedAfterSnapshot.references.contains(uncited.reference), "A new version of an initial nonanchor remains pending rather than being substituted for its frozen revision")
+        let humanOwned=ContextPage(registration:"owner",kind:.project,key:projectID.uuidString,owner:.human,title:"Bridge optics",markdown:purposeWords)
+        check(ContextConsolidationSelection.target(registration:"owner",kind:.project,key:projectID.uuidString,title:"Bridge optics",candidates:originals,previous:humanOwned) == nil, "The pure selection boundary cannot replace a human-owned page")
+
+        let savedOverview=ContextPage(registration:"owner",kind:.overview,key:"maintained",owner:.generated,title:"Overview",markdown:"A saved current overview.",references:[short.reference],created:date,updated:date)
+        let afterOverview=ContextConsolidationSelection.ordered([overviewTarget]+otherTargets,pages:[savedOverview])
+        check(afterOverview.first?.kind == .project, "After initial overview creation, missing projects cannot be starved by another overview window")
+        let olderProject=ContextPage(registration:"owner",kind:.project,key:otherTargets[0].key,owner:.generated,title:otherTargets[0].title,markdown:"An earlier project page.",references:[project.reference],created:date.addingTimeInterval(-500),updated:date.addingTimeInterval(-500))
+        check(ContextConsolidationSelection.ordered([overviewTarget,otherTargets[0]],pages:[savedOverview,olderProject]).first?.id == olderProject.id, "An older existing project update precedes a freshly updated overview")
+        var impossible=short;impossible.text="a"+String(repeating:"\u{0301}",count:5000)
+        check(ContextConsolidationSelection.target(registration:"owner",kind:.topic,key:"bounded-unicode",title:"Bounded",candidates:[impossible],previous:nil) == nil, "An original with no complete grapheme inside its byte bound does not trigger an impossible evidence request")
+
+        let retained32=[subject,purpose]+Array(updates.prefix(30))
+        var capacityPrior=ContextPage(registration:"owner",kind:.project,key:projectID.uuidString,owner:.generated,title:"Bridge optics",markdown:purposeWords,references:retained32.map(\.reference))
+        capacityPrior.processedReferences=retained32.map(\.reference)
+        capacityPrior.evidenceQuotes=retained32.map{.init(referenceID:$0.reference.id,quote:$0.text)}
+        let capacity=selection([subject,purpose]+Array(updates.prefix(50)),capacityPrior)
+        check(capacity.records.count == 52 && capacity.pendingReferences.count == 20 && capacity.previousPage != nil && ContextKnowledgeRules.json(capacity.input).utf8.count <= 20_000, "The full retained32 plus new20 original capacity remains bounded and preserves its supported prior")
+        let capacityRow:[String:Any]=["id":capacity.id,"synopsis":"Supported retained purpose","markdown":purposeWords,"evidence":retained32.map{["id":$0.reference.contextKey,"quote":$0.text]},"purposeQuestion":NSNull()]
+        let capacityPage=try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":[capacityRow]]),targets:[capacity])[0].0
+        check(capacityPage.references.count == 32 && capacityPage.evidenceQuotes?.count == 32 && capacityPage.processedReferences?.count == 52, "Thirty-two cited support refs stay distinct from all fifty-two processed original versions")
         print("Context consolidation: \(passed) checks passed; fictional records, no model/source/native requests.")
     }
     static func unseenReference() -> ContextPageReference { .init(kind: "memory", key: "previously-processed", revision: "v1") }
