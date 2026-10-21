@@ -27,15 +27,14 @@ struct PAMemoryView: View {
     @State private var showHistory=false
     @State private var editError:String?
     @State private var lineage:Set<UUID>?
-    @State private var showingContextPages = false
     var body: some View {
         let permittedIDs=Set(memory.permittedRecords.map(\.id))
         VStack(alignment:.leading,spacing:16) {
-            HStack { Label("What your PA remembers",systemImage:"brain").font(.title2.weight(.semibold)); Spacer(); Button("Done") { dismiss() } }
+            HStack { Label("Supporting facts and controls",systemImage:"doc.text.magnifyingglass").font(.title2.weight(.semibold)); Spacer(); Button("Done") { dismiss() } }
             if let error = memory.error { Text(error).foregroundStyle(.orange).font(.caption) }
-            if model != nil { Button("Context pages and instructions…") { showingContextPages = true }.controlSize(.small) }
+            Text("Original facts, evidence, correction history and learning controls behind your Context pages.").font(.caption).foregroundStyle(.secondary)
             HStack {
-                Picker("Memory view",selection:$presentation) { Text("Overview").tag("Overview"); Text("Facts").tag("List"); Text("Life areas").tag("Connections"); if model != nil { Text("Review").tag("Review") };Text("Controls").tag("Controls") }.pickerStyle(.segmented).labelsHidden().frame(width:470)
+                Picker("Supporting facts view",selection:$presentation) { Text("Overview").tag("Overview"); Text("Facts").tag("List"); Text("Life areas").tag("Connections"); if model != nil { Text("Review").tag("Review") };Text("Controls").tag("Controls") }.pickerStyle(.segmented).labelsHidden().frame(width:470)
                 if presentation == "List" { TextField("Search memories and connections",text:$search) }
             }
             if presentation == "List" { HStack { Toggle("Show earlier versions",isOn:$showHistory).font(.caption);if lineage != nil { Button("Show all facts") { lineage=nil;search="" } } } }
@@ -102,16 +101,15 @@ struct PAMemoryView: View {
                 } else if memory.put(item) { clear() }
             }.disabled(text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || registration.isEmpty) }
             }
-        }.sheet(isPresented: $showingContextPages) { if let model { ContextPagesView(model: model) } }
-        .sheet(item:$organising) { item in LifeOrganisationEditor(memory:memory,record:item) }
+        }.sheet(item:$organising) { item in LifeOrganisationEditor(memory:memory,record:item) }
         .sheet(item:$planReports) { item in CommitmentReportsView(memory:memory,recordID:item.id,registration:registration) }
         .onChange(of:registration) { planReports=nil;organising=nil;clear() }
         .onAppear { scope = conversationID }.onChange(of:memory.learningEnabled) { _, enabled in if !enabled { learning?.cancel();organisation?.cancel();model?.sourceLearning.cancel();model?.nativeSourceLearning.cancel();model?.memoryMaintenance.cancel() } }.onChange(of:memory.enabled) { _, enabled in if !enabled { learning?.cancel();organisation?.cancel();model?.sourceLearning.cancel();model?.nativeSourceLearning.cancel();model?.memoryMaintenance.cancel() } }.padding(24).frame(width:720,height:720)
     }
     private var controls:some View { VStack(alignment:.leading,spacing:14) {
-            Toggle("Use saved memory in chats and briefs",isOn:$memory.enabled)
-            Toggle("Allow memory learning",isOn:$memory.learningEnabled)
-            Text("Allows conversation learning, separately opted-in source learning, organisation and optional memory review through your ChatGPT plan. Directly stated stable facts persist; inferred entries remain provisional. Source opt-ins are in Settings → Memory. No email backlog is processed. Pausing stops future learning; explicit memories still work.").font(.caption).foregroundStyle(.secondary)
+            Toggle("Use saved context in chats and briefs",isOn:$memory.enabled)
+            Toggle("Allow context learning and maintenance",isOn:$memory.learningEnabled)
+            Text("Allows conversation learning, separately opted-in source learning, organisation and optional memory review through your ChatGPT plan. Directly stated stable facts persist; inferred entries remain provisional. Source opt-ins are in Settings → Context. No email backlog is processed. Pausing stops future learning; explicit memories still work.").font(.caption).foregroundStyle(.secondary)
             if let learning, let assistant { HStack { Text(learning.status(assistant)).font(.caption).foregroundStyle(.secondary); Spacer(); if learning.busy { Button("Stop") { learning.cancel() } } else { Button("Check context") { checkContext?() }.disabled(assistant.connection.busy || assistant.busy || assistant.connection.usagePaused || !assistant.connection.inferenceVerified || !assistant.contextEnabled || assistant.hasDraft || !memory.enabled || !memory.learningEnabled) } }; if let error = learning.error { Text(error).font(.caption).foregroundStyle(.orange) } }
             if let learning {
                 Toggle("Ask occasional useful learning questions",isOn:Binding(get:{ learning.questionsEnabled },set:{ learning.questionsEnabled = $0; learning.cancel() }))

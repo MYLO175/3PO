@@ -161,6 +161,7 @@ struct AssistantPanel: View {
     @State private var dictation = DictationService()
     @State private var showDictation = false
     @State private var showMemory = false
+    @State private var showSupportingFacts = false
     @State private var inspectingContext:PAContextCapture?
     @State private var showProfileSetup = false
     @State private var showBriefing = false
@@ -233,11 +234,11 @@ struct AssistantPanel: View {
                 }
                 LifeFocusPicker(selection:focusBinding).frame(maxWidth:160,alignment:.trailing)
                 Menu {
-                    Button("Name your PA…") { showRename = true }
-                    Button("Memory…") { showMemory = true }
-                    Button(assistant.setupActive(selectedTopicID) ? "Continue memory setup…" : "Set up my PA…") { showProfileSetup=true }
+                    Button("Name your PA…") { showRename = true }.disabled(assistant.busy)
+                    Button("Context…") { showMemory = true }
+                    Button(assistant.setupActive(selectedTopicID) ? "Continue context setup…" : "Set up my PA…") { showProfileSetup=true }.disabled(assistant.busy)
                     Text(assistant.contextEnabled ? "Apple source context enabled" : "Apple source context off")
-                } label: { Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("PA options").accessibilityLabel("PA options").disabled(assistant.busy)
+                } label: { Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("PA options").accessibilityLabel("PA options")
                 if supportsReadingMode { Button { readingMode.toggle() } label: { Image(systemName:readingMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") }.help(readingMode ? "Compact chat" : "Expand chat") }
             }.buttonStyle(.borderless).controlSize(.small)
             ScrollViewReader { proxy in
@@ -271,7 +272,7 @@ struct AssistantPanel: View {
                                     HStack {
                                         Label("Provisional memory",systemImage:"brain").font(.caption.weight(.medium)).foregroundStyle(.secondary)
                                         Spacer()
-                                        Button("Review") { showMemory = true }.controlSize(.small)
+                                        Button("Review supporting facts") { showSupportingFacts = true }.controlSize(.small)
                                     }
                                     Text(PAProse.display(turn.content.components(separatedBy:"\n\n").first ?? turn.content)).lineLimit(3).textSelection(.enabled)
                                     DisclosureGroup("Details") { Text(PAProse.display(turn.content)).textSelection(.enabled) }.font(.caption)
@@ -424,13 +425,13 @@ struct AssistantPanel: View {
         }.onDisappear { assistant.drafts.hide(widget:imageDraftWidget); assistant.drafts.flush() }
         .onChange(of:selectedID) { showDraft() }
         .onChange(of:selectedTopicID) { showProfileSetup=false; showDraft() }
-        .onChange(of:model.chatGPT.activeID) { assistant.drafts.flush(); assistant.openPA(); showMemory = false; inspectingContext=nil;showProfileSetup=false;sourceDiscovery=nil; showDraft() }
+        .onChange(of:model.chatGPT.activeID) { assistant.drafts.flush(); assistant.openPA(); showMemory = false; showSupportingFacts = false; inspectingContext=nil;showProfileSetup=false;sourceDiscovery=nil; showDraft() }
         .onChange(of:sourceDiscovery.map{model.proactive.visible($0,model:model)}) { _,available in if available == false {sourceDiscovery=nil} }
         .onChange(of:model.chatGPT.usagePaused) { _, paused in
             if !paused, assistant.error?.contains("subscription_sharing_usage_limit_exceeded") == true { assistant.error = nil }
         }.sheet(item:$reviewingProject) { record in
             LifeItemEditor(model:model,item:.init(registration:record.registration,kind:.space,title:String((record.sourceTitle ?? "New space").prefix(160)),notes:record.evidence),close:{reviewingProject=nil},reviewedSuggestion:record)
-        }.sheet(isPresented:$showRename) { PANameEditor(assistant:assistant) }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { PAMemoryView(memory:assistant.memory,registration:model.chatGPT.activeID,conversationID:selectedTopicID,topicTitle:topic?.title,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) },organisation:model.lifeOrganisation,organiseContext:{ model.lifeOrganisation.check(model,manual:true,topic:selectedTopicID) },model:model,focusAreas:focusAreas) }.sheet(item:$inspectingContext) { capture in PAContextCaptureView(capture:capture,model:model,registration:model.chatGPT.activeID) }.sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record,model:model) }.sheet(isPresented:$showProfileSetup) {
+        }.sheet(isPresented:$showRename) { PANameEditor(assistant:assistant) }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { ContextPagesView(model:model,registration:model.chatGPT.activeID) }.sheet(isPresented:$showSupportingFacts) { PAMemoryView(memory:assistant.memory,registration:model.chatGPT.activeID,conversationID:selectedTopicID,topicTitle:topic?.title,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) },organisation:model.lifeOrganisation,organiseContext:{ model.lifeOrganisation.check(model,manual:true,topic:selectedTopicID) },model:model,focusAreas:focusAreas) }.sheet(item:$inspectingContext) { capture in PAContextCaptureView(capture:capture,model:model,registration:model.chatGPT.activeID) }.sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record,model:model) }.sheet(isPresented:$showProfileSetup) {
             PAProfileSetupPanel(model:model,assistant:assistant,topicID:selectedTopicID,registration:model.chatGPT.activeID)
         }.sheet(isPresented:$showDictation) {
             DictationView(dictation:dictation) { text in draft.wrappedValue = draft.wrappedValue.isEmpty ? text : draft.wrappedValue + " " + text }
@@ -491,7 +492,7 @@ struct AssistantSourceSettings: View {
 
                 }
                 Section("Other background work") {
-                    Text("Heartbeats process submitted feedback, analyse saved sources, learn and organise useful context, suggest actions and update Today’s brief. A failed stage keeps completed work and tries fresh information next time. Memory controls apply. Your queued requests use Continue queue.").font(.caption).foregroundStyle(.secondary)
+                    Text("Heartbeats process submitted feedback, analyse saved sources, learn and organise useful context, suggest actions and update Today’s brief. A failed stage keeps completed work and tries fresh information next time. Context controls apply. Your queued requests use Continue queue.").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Daily AI call limit") {
                     Picker("Daily limit",selection:$model.heartbeat.dailyCallLimit) { Text("Off").tag(0);ForEach([8,16,32,64,96],id:\.self) { Text("\($0) calls").tag($0) } }
@@ -499,9 +500,9 @@ struct AssistantSourceSettings: View {
                     Text("Off by default. Optionally limit daily heartbeat AI calls, including email review, memory learning, suggestions and brief updates. One heartbeat can use several calls. ChatGPT account limits still apply.").font(.caption).foregroundStyle(.secondary)
                 }
             case .memory:
-                Section("Saved memory") {
-                    Toggle("Use saved memory in PA replies",isOn:Binding(get:{assistant.memory.enabled},set:{assistant.memory.enabled=$0}))
-                    Toggle("Allow memory learning",isOn:Binding(get:{assistant.memory.learningEnabled},set:{assistant.memory.learningEnabled=$0})).disabled(!assistant.memory.enabled)
+                Section("Saved context") {
+                    Toggle("Use saved context in PA replies",isOn:Binding(get:{assistant.memory.enabled},set:{assistant.memory.enabled=$0}))
+                    Toggle("Allow context learning and maintenance",isOn:Binding(get:{assistant.memory.learningEnabled},set:{assistant.memory.learningEnabled=$0})).disabled(!assistant.memory.enabled)
                     Text("Human memories keep their evidence and correction history. Imported messages are attributed to their source and remain provisional. Forgetting a saved memory prevents the same evidence from being learned again.").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("WhatsApp context learning") {
@@ -514,7 +515,7 @@ struct AssistantSourceSettings: View {
                     if let error=model.sourceLearning.error { Text(error).font(.caption).foregroundStyle(.orange) }
                 }
                 Section("Source memory") {
-                    Text("Sources allowed for review can also teach memory during a heartbeat. Refresh only collects data. Newly included sources baseline existing content; Review once can assess a small existing batch. Facts retain exact evidence and remain editable. Turn off Allow memory learning above to pause learning.").font(.caption).foregroundStyle(.secondary)
+                    Text("Sources allowed for review can also teach memory during a heartbeat. Refresh only collects data. Newly included sources baseline existing content; Review once can assess a small existing batch. Facts retain exact evidence and remain editable. Turn off Allow context learning and maintenance above to pause learning.").font(.caption).foregroundStyle(.secondary)
                     ForEach(NativeLearningRules.kinds,id:\.rawValue) { kind in
                         VStack(alignment:.leading,spacing:6) {
                             if model.learningRuntime().permitsReviewLearning(kind) {

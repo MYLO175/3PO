@@ -35,7 +35,7 @@ struct PALifeMapWidget: View {
             if presentation == "Structure" {
                 LifeProjectWidget(model:model,configuration:configuration,showsHeader:false,focusAreas:focusAreas)
             } else if !model.assistant.memory.enabled && notebook.anchors.isEmpty {
-                Text("Saved memory is off. Enable it in Memory to use your life notebook.").foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity)
+                Text("Saved memory is off. Enable it in Context → Supporting facts and controls to use your life notebook.").foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity)
             } else if notes.isEmpty {
                 Text("Your life notebook grows from useful things you tell your PA. Set up your profile in the PA menu, or organise saved memories below.").foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity)
             } else if presentation == "Map" {
@@ -50,15 +50,15 @@ struct PALifeMapWidget: View {
             if presentation != "Structure" { HStack {
                 Text("\(Set(notes.flatMap { $0.records.map(\.id) }).count) available facts").font(.caption).foregroundStyle(.secondary).lineLimit(1).help(model.lifeOrganisation.summary(model))
                 Spacer()
-                Menu("Memory & context") {
-                    Button("Inspect memory & context") { showContext=true }
+                Menu("Context") {
+                    Button("Context pages and instructions…") { showContext=true }
                     if model.lifeOrganisation.busy { Button("Stop organising") { model.lifeOrganisation.cancel() } }
-                    else { Button("Organise memories · AI") { model.lifeOrganisation.check(model,manual:true,topic:topic) }.disabled(!model.assistant.memory.enabled || !model.assistant.memory.learningEnabled || model.chatGPT.busy || model.assistant.busy || !model.chatGPT.inferenceVerified || model.chatGPT.usagePaused) }
+                    else { Button("Organise supporting facts · AI") { model.lifeOrganisation.check(model,manual:true,topic:topic) }.disabled(!model.assistant.memory.enabled || !model.assistant.memory.learningEnabled || model.chatGPT.busy || model.assistant.busy || !model.chatGPT.inferenceVerified || model.chatGPT.usagePaused) }
                 }
             }.controlSize(.small) }
             if presentation != "Structure",let error=model.lifeOrganisation.error { Text(error).font(.caption).foregroundStyle(.orange).lineLimit(3) }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
-        .sheet(isPresented:$showContext) { PAMemoryView(memory:model.assistant.memory,registration:model.chatGPT.activeID,learning:model.memoryLearning,assistant:model.assistant,checkContext:{model.memoryLearning.check(model,manual:true)},organisation:model.lifeOrganisation,organiseContext:{model.lifeOrganisation.check(model,manual:true)},model:model,focusAreas:focusAreas) }
+        .sheet(isPresented:$showContext) { ContextPagesView(model:model,registration:model.chatGPT.activeID) }
         .sheet(item:$areaDetails) { area in
             LifeMapAreaDetails(model:model,registration:model.chatGPT.activeID,area:area) { areaMemory=$0 }
                 .sheet(item:$areaMemory) { memory in memoryDetails(memory,fromArea:true) }
@@ -71,7 +71,7 @@ struct PALifeMapWidget: View {
             VStack(alignment:.leading,spacing:14) {
                 ScrollView { LifeMemoryInspection(model:model,id:memory.id).frame(maxWidth:.infinity,alignment:.leading) }.frame(maxHeight:540)
                 if memory.kind == .commitment { Button("Remembered plan reports…") { detailPlanReports=memory } }
-                HStack { Button("Close") { if fromArea { areaMemory=nil } else { selected=nil } };Button("Organise") { detailOrganising=memory };Spacer();Button("Manage memories") { detailShowMemory=true } }
+                HStack { Button("Close") { if fromArea { areaMemory=nil } else { selected=nil } };Button("Organise") { detailOrganising=memory };Spacer();Button("Supporting facts…") { detailShowMemory=true } }
             }.padding(24).frame(width:480)
                 .sheet(item:$detailOrganising) { memory in LifeOrganisationEditor(memory:model.assistant.memory,record:memory) }
                 .sheet(item:$detailPlanReports) { memory in CommitmentReportsView(memory:model.assistant.memory,recordID:memory.id,registration:memory.registration) }

@@ -24,6 +24,8 @@ struct LifeProjectWidget: View {
     @State private var editing: LifeItem?
     @State private var linking: LifeItem?
     @State private var inspecting=false
+    @State private var contextProject:LifeItem?
+    @State private var nextContextProject:LifeItem?
     @State private var notice: String?
     @State private var moving:LifeItem?
     @State private var deleting:LifeItem?
@@ -115,7 +117,10 @@ struct LifeProjectWidget: View {
         .sheet(item:$deleting) { item in LifeDeleteSheet(model:model,item:item) { deleting=nil } }
         .sheet(isPresented:$showDeleted) { LifeRecentlyDeleted(model:model,registration:registration) }
         .sheet(item: $linking) { item in LifeItemLinkEditor(model: model, item: item) { linking = nil } }
-        .sheet(isPresented:$inspecting) {
+        .sheet(item:$contextProject) { item in ContextPagesView(model:model,registration:item.registration,projectID:item.id) }
+        .sheet(isPresented:$inspecting,onDismiss:{
+            if let nextContextProject { contextProject=nextContextProject;self.nextContextProject=nil }
+        }) {
             VStack(alignment:.leading,spacing:16) {
                 HStack { Text("Connections & organisation").font(.title2.weight(.semibold));Spacer();Button("Done") { inspecting=false } }
                 if let current { Text(current.title).font(.callout).foregroundStyle(.secondary);ScrollView { details(current) } }
@@ -124,7 +129,7 @@ struct LifeProjectWidget: View {
         .onGeometryChange(for:CGFloat.self) { $0.size.width } action: { availableWidth=$0 }
         .onAppear {consumeActivityNavigation()}
         .onChange(of:model.activityNavigation?.id) {consumeActivityNavigation()}
-        .onChange(of: registration) { boardScroll.stop();navigation = .init(); unfiled=false;notesEditing=nil; editing = nil; linking = nil;moving=nil;deleting=nil;matching=nil;drag=nil;folderDrag=nil;folderInsertion=nil;boardDrag=nil;dropHover=nil;showDeleted=false;inspecting=false; notice = nil }
+        .onChange(of: registration) { boardScroll.stop();navigation = .init(); unfiled=false;notesEditing=nil; editing = nil; linking = nil;moving=nil;deleting=nil;matching=nil;drag=nil;folderDrag=nil;folderInsertion=nil;boardDrag=nil;dropHover=nil;showDeleted=false;inspecting=false;contextProject=nil;nextContextProject=nil; notice = nil }
         .onChange(of:store.revision) { navigation.reconcile(items:items);boardScroll.stop();boardDrag=nil;folderInsertion=nil;dropHover=nil }
         .onChange(of:focusAreas) { navigation.reconcile(items:items);resetPage() }
         .onChange(of: savedRoot) { navigation = .init();unfiled=false;resetPage() }
@@ -159,6 +164,7 @@ struct LifeProjectWidget: View {
                         Divider()
                     }
                     Button("Edit details…") { editing=current };Button("Edit notes…") { notesEditing=LifeNoteEditing(item:current,noteID:current.notes.isEmpty ? nil : current.id) }
+                    if !current.kind.isWork { Button("Context and purpose…") { contextProject=current } }
                     Button("Connections & organisation…") { inspecting=true }
                     Button("Move…") { moving=current }
                     Divider()
@@ -500,6 +506,9 @@ struct LifeProjectWidget: View {
                     if !placement.reason.isEmpty { DisclosureGroup("Details") { Text(placement.reason).font(.caption).textSelection(.enabled) } }
                 } else if !placement.reason.isEmpty { Text(placement.reason).font(.callout).foregroundStyle(.secondary) }
                 if placement.parentPinned { Label("You chose this folder",systemImage:"pin.fill").font(.caption).foregroundStyle(.secondary) }
+            }
+            if !item.kind.isWork {
+                Button("Context and purpose…") { nextContextProject=item;inspecting=false }.controlSize(.small)
             }
             HStack { Button("Link something…") { inspecting=false;linking=item };Button("Match PA understanding…") { inspecting=false;matching=item } }.controlSize(.small)
             if let evidence=item.humanEvidence { DisclosureGroup("Created from your PA conversation") { Text(evidence).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }.font(.caption) }

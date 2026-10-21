@@ -391,7 +391,7 @@ struct SettingsView: View {
         NavigationSplitView {
             List(selection:selectionBinding) {
                 ForEach(pages,id:\.self) { page in
-                    NavigationLink(value:page) { Label(page,systemImage:icon(for:page)) }
+                    NavigationLink(value:page) { Label(page == "Memory" ? "Context" : page,systemImage:icon(for:page)) }
                 }
             }
             .listStyle(.sidebar)
@@ -429,9 +429,9 @@ struct SettingsView: View {
                     EmailSummarySettings(model:model,summaries:model.emailSummaries)
                     BriefingSettings(model:model,briefings:model.briefings)
                 case "Memory":
-                    Section("Memory and context") {
-                        Button("Inspect saved memory and recall") { inspectMemory=true }
-                        Text("See saved/current/available records, evidence, version history and a local recall preview. Opening it makes no AI request.").font(.caption).foregroundStyle(.secondary)
+                    Section("Context pages and instructions") {
+                        Button("Open Context pages") { inspectMemory=true }
+                        Text("Read the overview, project pages, working changes and feature instructions. Supporting facts, history and learning controls remain available inside. Opening Context makes no AI request.").font(.caption).foregroundStyle(.secondary)
                     }
                     AssistantSourceSettings(model:model,assistant:model.assistant,page:.memory)
                 case "Help":
@@ -445,10 +445,10 @@ struct SettingsView: View {
             }
             .padding(.horizontal,12)
             .padding(.vertical,8)
-            .accessibilityLabel("\(selectedPage) settings")
+            .accessibilityLabel("\(selectedPage == "Memory" ? "Context" : selectedPage) settings")
         }
         .frame(minWidth:760,minHeight:620)
-        .sheet(isPresented:$inspectMemory) { PAMemoryView(memory:model.assistant.memory,registration:model.chatGPT.activeID,learning:model.memoryLearning,assistant:model.assistant,checkContext:{model.memoryLearning.check(model,manual:true)},organisation:model.lifeOrganisation,organiseContext:{model.lifeOrganisation.check(model,manual:true)},model:model) }
+        .sheet(isPresented:$inspectMemory) { ContextPagesView(model:model,registration:model.chatGPT.activeID) }
         .onChange(of:model.chatGPT.activeID) { inspectMemory=false }
     }
     private func icon(for page:String)->String {
@@ -492,15 +492,15 @@ struct PAHelpSections:View {
                 Text("Reading, brief inclusion, task suggestions, and context learning have separate controls. Missing cached content means the evidence is unavailable, not that it was deleted or completed. Saved source memories stay attributed and provisional until you confirm them.").font(.callout)
                 Text("Only context permitted for the active account and selected chats can be used. Conversation learning is separate from source learning. Turning memory off stops its use in PA replies; it does not delete saved records.").font(.callout)
             }
-            Section("What the PA remembers") {
+            Section("Context pages and supporting facts") {
                 Text("Collect → remember useful facts → connect them to your life and projects → recall what matters → keep it current.").font(.headline)
-                Text("Memory has Overview, Facts, Life areas, Review and Controls. Overview separates saved records, current versions and currently available facts, and previews recall locally. Review offers evidence-backed suggestions without changing facts. New PA replies expose Context details with the exact prepared memory IDs, notebook IDs, dialogue counts and attempted tool names. Older replies are preserved without inventing a trace.").font(.callout)
+                Text("Open Context from the PA menu, Settings or Life map. The overview, project and topic pages sit alongside Working changes and editable feature instructions. Supporting facts and controls retains original evidence, corrections, history, a local recall preview and memory review. New PA replies expose Context details; older replies keep their original records.").font(.callout)
                 Text("The PA keeps useful personal facts, preferences and relationships with their original evidence. It retrieves a bounded selection relevant to your question and Focus, rather than sending the whole notebook each time. Focus guides relevance; it never grants source access.").font(.callout)
                 Text("Human corrections keep a version history. Retire sets human context aside without deleting evidence; Restore brings the same fact back. Resolve handles remembered commitments, while your projects and Apple reminders keep their own state. Unpinned organisation can be revisited after 30 days within the existing allowance; it never changes fact wording, confirms a belief or deletes one.").font(.callout)
-                Text("Projects are durable parts of the same notebook. Exact saved bindings and memory links guide recall even after a project rename or a fact correction. Similar names alone are not an identity match. The Life map shows available facts and workspace anchors; inspect evidence and excluded records through Memory.").font(.callout)
+                Text("Projects are durable parts of the same notebook. Exact saved bindings and memory links guide recall even after a project rename or a fact correction. Similar names alone are not an identity match. The Life map shows available facts and workspace anchors; inspect evidence and excluded records through Context → Supporting facts and controls.").font(.callout)
                 Text("Life map items are your saved workspace entries. Open an area to see and browse its folders, projects, notes and work items separately from remembered concepts/facts. For a remembered commitment, Plan reports lets you explicitly connect accounts of the same plan; their evidence and uncertainty remain separate. Reported cancellation or completion does not update Calendar or Reminders.").font(.callout)
                 Text("Learning is selective: conversation learning, optional source learning, organisation and optional weekly memory review share four automatic passes per day with a 30-minute cooldown. Receiving a message does not mean the AI has assessed it. Source learning shows baseline, waiting and assessed versions, and versions that left its bounded window.").font(.callout)
-                Text("Calendar, Reminders and Mail have separate memory opt-ins in Settings → Memory. Calendar uses fresh 90-day orientation, Reminders uses incomplete items, and Mail uses exact retained quotes from recently assessed emails. Each pass is bounded. Existing content starts as a baseline; Review once explicitly assesses a small batch. Normal Refresh still makes no AI calls.").font(.callout)
+                Text("Calendar, Reminders and Mail have separate memory opt-ins in Settings → Context. Calendar uses fresh 90-day orientation, Reminders uses incomplete items, and Mail uses exact retained quotes from recently assessed emails. Each pass is bounded. Existing content starts as a baseline; Review once explicitly assesses a small batch. Normal Refresh still makes no AI calls.").font(.callout)
                 Text("Memory Review flags possible duplicates, conflicts and stale provisional assumptions. Weekly review is optional; Review now is explicit. You inspect/correct facts or choose a reversible retirement. Similar names never silently merge people or projects.").font(.callout)
                 Text("New briefs and Tasks suggestions can use permitted source memories. Sources and coverage → Memory supplied shows the facts they received, with evidence. Changed facts, withdrawn access, revised email assessments or later WhatsApp replies can set advice aside. Refresh prepares the current brief using available sources.").font(.callout)
             }
@@ -510,7 +510,7 @@ struct PAHelpSections:View {
                 Text("Mail collection can continue without AI. A review can use multiple model calls; the advanced daily call cap applies to email and proactive communication review only. It is separate from your ChatGPT account's subscription availability.").font(.callout)
                 Text("Mail accounts are reviewed independently after their arrival checks finish. Unavailable accounts keep their cache and pending work; their old emails and source memories do not enter the fresh comparison. Settings → Background shows which accounts were reviewed and which are waiting. Email assessment can continue while a Calendar/Reminders comparison is waiting. Source collection retries unavailable accounts. A failed heartbeat keeps completed work and checks fresh information at the next scheduled interval.").font(.callout)
                 Text("Useful observations, missing plans and proposed date changes appear in Review inbox, without adding background messages to normal chat. A distinctive message can suggest changing an existing event or reminder even without a manual plan connection. The card shows the exact quote, proposed date and inferred connection. Approve applies that change; Dismiss leaves the original unchanged. View/edit opens the original item with the proposed change prefilled. Repeating items need an occurrence or series choice before approval. Ambiguous targets stay informational. There is no daily cap on useful inbox items.").font(.callout)
-                Text("Open it from Dashboard → Open Review inbox or add the Review inbox widget. Settings → Background controls heartbeats, which review sources and update Today’s brief. Failed heartbeats try again at the next interval. Settings → Memory controls selective learning, organisation and optional weekly memory review. Delegated work resumes through Continue queue.").font(.callout)
+                Text("Open it from Dashboard → Open Review inbox or add the Review inbox widget. Settings → Background controls heartbeats, which review sources and update Today’s brief. Failed heartbeats try again at the next interval. Settings → Context controls selective learning, organisation and optional weekly memory review. Delegated work resumes through Continue queue.").font(.callout)
                 Text("3PO works while the app is running and the Mac is awake. Missed heartbeats catch up once on opening or waking. Interrupted foreground requests and queued work need explicit continuation; uncertain writes are never replayed automatically.").font(.callout)
                 Link("Manage ChatGPT usage",destination:URL(string:"https://chatgpt.com/settings/usage")!)
             }

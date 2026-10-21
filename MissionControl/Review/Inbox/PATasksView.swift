@@ -151,7 +151,7 @@ struct PATasksView: View {
                 Label("Review inbox",systemImage:"tray.full").font(.title3.weight(.semibold))
                 ReviewInboxBadge(count:inbox.pendingCount)
                 Spacer()
-                Button {showingRelevance=true} label:{Image(systemName:"slider.horizontal.3")}.buttonStyle(.borderless).help("Review preferences in PA memory").accessibilityLabel("Review preferences")
+                Button {showingRelevance=true} label:{Image(systemName:"slider.horizontal.3")}.buttonStyle(.borderless).help("Review guidance and feedback").accessibilityLabel("Review guidance")
                 Button { showingActivity=true } label:{Image(systemName:"clock.arrow.circlepath")}
                     .buttonStyle(.borderless).help("Background activity and details").accessibilityLabel("Background activity")
                 Button { model.heartbeat.check(model,manual:true) } label:{Image(systemName:"waveform.path.ecg")}
@@ -258,7 +258,7 @@ struct PATasksView: View {
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
-        .sheet(isPresented:$showingRelevance) {ReviewRelevancePreferencesView(model:model)}
+        .sheet(isPresented:$showingRelevance) {ReviewPolicyView(model:model)}
         .onChange(of:model.chatGPT.activeID) {showingRelevance=false}
         .sheet(item:$answering) {question in
             VStack(alignment:.leading,spacing:16) {
