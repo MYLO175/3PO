@@ -16,33 +16,42 @@ struct ContextPagesView: View {
     @State private var nextEditor: ContextPageEditRequest?
     @State private var forgetting: ContextPage?
     @State private var error: String?
+    @State private var showingSupportingFacts = false
+    private let initialProjectID: UUID?
 
-    init(model: DashboardModel) {
+    init(model: DashboardModel, registration: String? = nil, projectID: UUID? = nil) {
         self.model = model
-        registration = model.chatGPT.activeID
+        self.registration = registration ?? model.chatGPT.activeID
         storage = model.container.map(ObjectIdentifier.init)
-        let first = model.contextPages.pages(registration: model.chatGPT.activeID).first { $0.kind == .overview }
-        _selection = State(initialValue: first.map { .page($0.id) })
+        initialProjectID = projectID
+        _selection = State(initialValue: projectID.map { .project($0) } ?? .overview)
     }
     private var owned: Bool { ContextPagesAccess.owned(model, registration: registration, storage: storage) }
+    /// A direct project link can inspect its exact earlier topic, without opening every old topic.
+    private var contextTopic: UUID? {
+        guard let initialProjectID else { return nil }
+        return model.assistant.projects.items(registration, includeTopics: true).first { $0.id == initialProjectID }?.conversationID
+    }
     private var projects: [LifeItem] {
-        model.assistant.projects.items(registration, includeTopics: true).filter { !$0.kind.isWork }
+        model.assistant.projects.items(registration, topic: contextTopic, includeTopics: false).filter { !$0.kind.isWork }
     }
     var body: some View {
-        let records = model.contextKnowledge(registration: registration)
+        let records = model.contextKnowledge(registration: registration, topic: contextTopic, includeTopics: false, purpose: .inspection)
         let pages = model.contextPages.pages(registration: registration)
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Context pages").font(.title2.weight(.semibold))
+                Text("Context").font(.title2.weight(.semibold)).accessibilityIdentifier("context-pages-title")
                 Spacer()
+                Button("Supporting facts and controls…") { showingSupportingFacts = true }
+                    .controlSize(.small).disabled(!owned || registration.isEmpty)
                 Menu("Add context") {
-                    Button("Everyday overview…") { openOverview() }
+                    Button("Everyday context…") { openOverview() }
                     Button("Note…") { editor = .note(registration: registration) }
                     Button("Project purpose…") { choosingProject = true }.disabled(projects.isEmpty)
                 }.disabled(!owned || registration.isEmpty || !model.contextPages.canSave)
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }
-            Text("Readable context for your PA. Pages maintained by 3PO keep their supporting records; your notes and instructions remain yours.")
+            Text("Your PA’s readable context, recent changes and instructions. Supporting facts keep their original evidence and history.")
                 .font(.callout).foregroundStyle(.secondary)
             if owned && !registration.isEmpty {
                 HSplitView {
@@ -53,27 +62,23 @@ struct ContextPagesView: View {
                             .frame(maxWidth: .infinity, alignment: .leading).padding(16)
                     }.frame(minWidth: 450)
                 }
-                if model.contextPages.isReadable {
-                    let pending = ContextPagesAccess.pendingCount(model, registration: registration, records: records)
-                    HStack {
-                        if let checkpoint = model.contextPages.checkpoint(registration: registration) {
-                            Text("Last consolidation \(checkpoint.updated.formatted(date: .abbreviated, time: .shortened))")
-                        } else { Text("Awaiting first consolidation") }
-                        Spacer()
-                        if model.assistant.memory.enabled {
-                            Text(pending == 0 ? "No working changes pending" : "\(pending) working change\(pending == 1 ? "" : "s") pending")
-                        } else { Text("Memory use is paused") }
-                    }.font(.caption).foregroundStyle(.secondary)
-                }
+                ContextMaintenanceStatusView(model: model, registration: registration, pages: pages, records: records, projects: projects)
             } else {
                 ContentUnavailableView("Connect your account", systemImage: "person.crop.circle", description: Text("Context pages stay with the account that owns them. Reopen this view after connecting your account."))
             }
             if let message = error ?? model.contextPages.error {
                 Text(message).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
             }
-        }.padding(22).frame(width: 980, height: 700)
+        }.padding(22).frame(width: 980, height: 740)
             .sheet(item: $editor) { ContextPageHumanEditor(model: model, request: $0) }
             .sheet(item: $history) { ContextPageHistoryView(model: model, request: $0) }
+            .sheet(isPresented: $showingSupportingFacts) {
+                PAMemoryView(memory: model.assistant.memory, registration: registration, conversationID: contextTopic,
+                    topicTitle: model.assistant.conversation(contextTopic)?.title, learning: model.memoryLearning,
+                    assistant: model.assistant, checkContext: { model.memoryLearning.check(model, manual: true) },
+                    organisation: model.lifeOrganisation,
+                    organiseContext: { model.lifeOrganisation.check(model, manual: true, topic: contextTopic) }, model: model)
+            }
             .sheet(item: $instructions) { request in
                 if request.registration == model.chatGPT.activeID {
                     if let capture = request.brief { BriefPromptEditor(model: model, briefings: model.briefings, capture: capture) }
@@ -83,7 +88,7 @@ struct ContextPagesView: View {
             .sheet(isPresented: $choosingProject, onDismiss: {
                 if let nextEditor { editor = nextEditor; self.nextEditor = nil }
             }) {
-                ContextProjectPurposePicker(model: model, registration: registration) { item in
+                ContextProjectPurposePicker(model: model, registration: registration, topic: contextTopic) { item in
                     nextEditor = try ContextPageEditRequest.project(item, model: model, registration: registration)
                     choosingProject = false
                 }
@@ -92,38 +97,43 @@ struct ContextPagesView: View {
                 Button("Cancel", role: .cancel) { forgetting = nil }
                 Button("Forget page", role: .destructive) { forget() }
             } message: { Text("This removes the human page and its saved history. Its project, source records and other memories stay saved.") }
-            .onChange(of: model.chatGPT.activeID) { editor = nil; history = nil; instructions = nil; choosingProject = false; nextEditor = nil; forgetting = nil; dismiss() }
+            .onChange(of: model.chatGPT.activeID) { editor = nil; history = nil; instructions = nil; showingSupportingFacts = false; choosingProject = false; nextEditor = nil; forgetting = nil; dismiss() }
     }
 
     private func pageList(pages: [ContextPage], records: [ContextKnowledgeRecord]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             TextField("Search context pages", text: $query).textFieldStyle(.roundedBorder)
             List(selection: $selection) {
-                ForEach([ContextPage.Kind.overview, .topic], id: \.rawValue) { kind in
-                    let rows = pages.filter { $0.kind == kind && matches($0, records: records) }
-                    if !rows.isEmpty {
-                        Section(kind == .overview ? "Everyday" : "Topics") {
-                            ForEach(rows) { page in pageRow(page, records: records).tag(ContextPageDestination.page(page.id)) }
-                        }
-                    }
+                Section("Context") {
+                    if matches("Overview everyday context") { Label("Overview", systemImage: "doc.text").tag(ContextPageDestination.overview) }
+                    if matches("Working changes recent updates") { Label("Working changes", systemImage: "clock.arrow.circlepath").tag(ContextPageDestination.working) }
                 }
-                let folders = projects.filter { matches(ContextPagesAccess.projectLabel($0, all: projects)) }
-                if !folders.isEmpty {
-                    Section("Projects") {
-                        ForEach(folders) { item in
-                            VStack(alignment: .leading, spacing: 3) {
-                                Label(ContextPagesAccess.projectLabel(item, all: projects), systemImage: "folder")
-                                let id = ContextPage.stableID(registration: registration, kind: .project, key: item.id.uuidString)
-                                Text(pages.contains { $0.id == id } ? "Maintained page" : "Awaiting first page").font(.caption2).foregroundStyle(.secondary)
-                            }.padding(.vertical, 3).tag(ContextPageDestination.project(item.id))
-                        }
+                Section("Projects") {
+                    let folders = projects.filter { matches(ContextPagesAccess.projectLabel($0, all: projects)) }
+                    ForEach(folders) { item in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Label(ContextPagesAccess.projectLabel(item, all: projects), systemImage: "folder")
+                            let id = ContextPage.stableID(registration: registration, kind: .project, key: item.id.uuidString)
+                            let page = pages.first { $0.id == id }
+                            Text(page.map { ContextPagesAccess.eligible($0, model: model, registration: registration, records: records) ? "Saved context page" : "Supporting context unavailable" } ?? "Awaiting first page")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }.padding(.vertical, 3).tag(ContextPageDestination.project(item.id))
                     }
+                    if folders.isEmpty { Text(query.isEmpty ? "No project spaces yet" : "No matching projects").font(.caption).foregroundStyle(.secondary) }
+                }
+                Section("Topics") {
+                    let topics = pages.filter { $0.kind == .topic && matches($0, records: records) }
+                    ForEach(topics) { page in pageRow(page, records: records).tag(ContextPageDestination.page(page.id)) }
+                    if topics.isEmpty { Text(query.isEmpty ? "Awaiting maintained topic pages" : "No matching topics").font(.caption).foregroundStyle(.secondary) }
                 }
                 let notes = pages.filter { $0.kind == .note && matches($0, records: records) }
                 if !notes.isEmpty {
                     Section("Your notes") { ForEach(notes) { page in pageRow(page, records: records).tag(ContextPageDestination.page(page.id)) } }
                 }
                 Section("Instructions") {
+                    ForEach(ContextFeature.allCases) { feature in
+                        if matches(feature.title) { Label(feature.title, systemImage: "text.alignleft").tag(ContextPageDestination.feature(feature)) }
+                    }
                     if matches("Brief instructions") { Label("Brief instructions", systemImage: "sun.max").tag(ContextPageDestination.brief) }
                     if matches("Review guidance") { Label("Review guidance", systemImage: "tray").tag(ContextPageDestination.review) }
                     if matches("Calendar guide") { Label("Calendar guide", systemImage: "calendar").tag(ContextPageDestination.calendars) }
@@ -148,6 +158,12 @@ struct ContextPagesView: View {
     }
     @ViewBuilder private func detail(pages: [ContextPage], records: [ContextKnowledgeRecord]) -> some View {
         switch selection {
+        case .overview:
+            overview(pages: pages, records: records)
+        case .working:
+            ContextWorkingChangesView(model: model, registration: registration, topic: contextTopic, records: records)
+        case .feature(let feature):
+            featureInstructions(feature, pages: pages, records: records)
         case .page(let id):
             if let page = pages.first(where: { $0.id == id }) { pageDetail(page, records: records) }
             else { ContentUnavailableView("Page unavailable", systemImage: "doc.text", description: Text("The page may have changed or been forgotten.")) }
@@ -192,6 +208,45 @@ struct ContextPagesView: View {
         case .calendars: calendarGuide
         case nil:
             ContentUnavailableView("Your context, in readable pages", systemImage: "doc.text.magnifyingglass", description: Text("Select a page, describe a project, or add your everyday context. Relevant working changes remain available between heartbeats."))
+        }
+    }
+    private func overview(pages: [ContextPage], records: [ContextKnowledgeRecord]) -> some View {
+        let overviews = pages.filter { $0.kind == .overview }
+        return VStack(alignment: .leading, spacing: 20) {
+            if overviews.isEmpty {
+                Text("Overview").font(.title2.weight(.semibold))
+                ContentUnavailableView("Your first overview is awaiting maintenance", systemImage: "doc.text.magnifyingglass",
+                    description: Text("A heartbeat can turn useful permitted context into readable pages. Working changes are available while pages are waiting. Opening Context does not start analysis."))
+                Button("Add everyday context…") { openOverview() }.disabled(!model.contextPages.canSave)
+            } else {
+                ForEach(overviews) { page in
+                    pageDetail(page, records: records)
+                    if page.id != overviews.last?.id { Divider() }
+                }
+            }
+        }
+    }
+    private func featureInstructions(_ feature: ContextFeature, pages: [ContextPage], records: [ContextKnowledgeRecord]) -> some View {
+        let id = ContextPage.stableID(registration: registration, kind: .instruction, key: feature.rawValue)
+        let page = pages.first { $0.id == id }
+        let available = page.map { ContextPagesAccess.eligible($0, model: model, registration: registration, records: records) } ?? true
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text(feature.title).font(.title2.weight(.semibold))
+                Spacer()
+                if let page { Button("History…") { history = .init(page: page) } }
+            }
+            Text("Your guidance for future assistance. It does not grant source access or approve actions.").font(.callout).foregroundStyle(.secondary)
+            if model.contextPages.isReadable && available {
+                Text(page == nil ? "3PO default" : "Written by you").font(.caption).foregroundStyle(.secondary)
+                ContextMarkdownBody(markdown: page?.markdown ?? feature.defaultText)
+                HStack {
+                    Button("Edit instructions…") { editor = .feature(feature, page: page, registration: registration) }
+                    if page != nil { Button("Use default…") { editor = .feature(feature, page: page, registration: registration, useDefault: true) } }
+                }.disabled(!model.contextPages.canSave)
+            } else {
+                Label("Saved instructions are unavailable. Their original text is preserved.", systemImage: "lock.doc").foregroundStyle(.secondary)
+            }
         }
     }
     private func pageDetail(_ page: ContextPage, records: [ContextKnowledgeRecord]) -> some View {
@@ -284,7 +339,7 @@ struct ContextPagesView: View {
     private func openOverview() {
         let id = ContextPage.stableID(registration: registration, kind: .overview, key: "everyday")
         if let page = model.contextPages.page(id: id, registration: registration) {
-            guard page.owner == .human, ContextPagesAccess.eligible(page, model: model, registration: registration, records: model.contextKnowledge(registration: registration)) else { error = "The existing overview cannot be edited as a human page. Add a separate context note."; return }
+            guard page.owner == .human, ContextPagesAccess.eligible(page, model: model, registration: registration, records: model.contextKnowledge(registration: registration, includeTopics: false, purpose: .inspection)) else { error = "The existing overview cannot be edited as a human page. Add a separate context note."; return }
             editor = .existing(page)
         } else { editor = .overview(registration: registration) }
     }
@@ -301,7 +356,155 @@ struct ContextPagesView: View {
     }
 }
 
-private enum ContextPageDestination: Hashable { case page(String), project(UUID), brief, review, calendars }
+/// Current permitted records only. Missing old references are counted without exposing old text.
+private struct ContextWorkingProjection {
+    var records: [ContextKnowledgeRecord]
+    var unavailableCount: Int
+    // An absent reference may be outside this scope/bounded window; absence is not a new input.
+    var count: Int { records.count }
+    init(records: [ContextKnowledgeRecord], checkpoint: ContextPageCheckpoint?) {
+        let prior = Dictionary((checkpoint?.references ?? []).filter { $0.kind != "projectIdentity" }.map { ($0.contextKey, $0.revision) }, uniquingKeysWith: { first, _ in first })
+        let current = records.filter { $0.reference.kind != "projectIdentity" }
+        let keys = Set(current.map { $0.reference.contextKey })
+        self.records = current.filter { prior[$0.reference.contextKey] != $0.reference.revision }
+            .sorted { $0.date == $1.date ? $0.reference.contextKey < $1.reference.contextKey : $0.date > $1.date }
+        unavailableCount = prior.keys.filter { !keys.contains($0) }.count
+    }
+}
+
+private struct ContextMaintenanceStatusView: View {
+    @Bindable var model: DashboardModel
+    var registration: String
+    var pages: [ContextPage]
+    var records: [ContextKnowledgeRecord]
+    var projects: [LifeItem]
+    private var updating: Bool {
+        model.heartbeat.activeRegistration == registration && model.contextConsolidation.busy &&
+        model.contextConsolidation.ownedHeartbeatRunID == model.heartbeat.ownedRunID
+    }
+    private var latestLearning: PAHeartbeatStep? {
+        model.heartbeat.state.accounts[registration]?.reviews?.max { $0.started < $1.started }?.steps?.first { $0.id == "learning" }
+    }
+    var body: some View {
+        let checkpoint = model.contextPages.checkpoint(registration: registration)
+        let pending = ContextWorkingProjection(records: records, checkpoint: checkpoint)
+        let maintained = pages.filter { $0.owner == .generated }
+        let awaiting = projects.filter { item in !pages.contains { $0.kind == .project && $0.key == item.id.uuidString } }.count
+        let unavailable = maintained.filter { !ContextPagesAccess.eligible($0, model: model, registration: registration, records: records) }.count
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .top, spacing: 10) {
+                if updating { ProgressView().controlSize(.small) }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(headline(pending: pending.count, awaiting: awaiting, maintained: maintained.count, unavailable: unavailable))
+                        .font(.caption.weight(.medium)).accessibilityIdentifier("context-maintenance-status")
+                    if model.contextPages.isReadable {
+                        Text("\(maintained.count) maintained page\(maintained.count == 1 ? "" : "s") saved · \(awaiting) project page\(awaiting == 1 ? "" : "s") awaiting a first update")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if let checkpoint {
+                            Text("Last saved consolidation: " + checkpoint.updated.formatted(date: .abbreviated, time: .shortened))
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                Spacer()
+                Button("Run heartbeat") { model.heartbeat.check(model, manual: true) }
+                    .controlSize(.small).help(model.heartbeat.manualCheckHelp(model))
+                    .disabled(registration != model.chatGPT.activeID || model.heartbeat.manualCheckBlockReason(model) != nil)
+            }
+            if updating {
+                Text(model.contextConsolidation.status).font(.caption).foregroundStyle(.secondary)
+                if let error = model.contextConsolidation.error { Text(error).font(.caption).foregroundStyle(.orange) }
+            } else if let step = latestLearning, step.status == "failed" || step.status == "waiting" {
+                Text("Latest context and learning stage: " + (step.detail ?? step.label))
+                    .font(.caption).foregroundStyle(.orange).textSelection(.enabled)
+            }
+        }.padding(.top, 8)
+    }
+    private func headline(pending: Int, awaiting: Int, maintained: Int, unavailable: Int) -> String {
+        if !model.contextPages.isReadable { return "Saved context is unavailable; the original data is preserved." }
+        if !model.assistant.memory.enabled { return "Context use is paused. Your saved pages remain preserved." }
+        if updating { return "Updating context pages…" }
+        if !model.assistant.memory.learningEnabled { return "Context maintenance is paused in supporting facts and controls." }
+        if maintained == 0 { return "Awaiting first maintained pages; working changes are available to inspect." }
+        if pending > 0 { return "\(pending) working change\(pending == 1 ? "" : "s") awaiting consolidation." }
+        if awaiting > 0 { return "\(awaiting) project page\(awaiting == 1 ? "" : "s") awaiting maintenance." }
+        if unavailable > 0 { return "\(unavailable) saved page\(unavailable == 1 ? " is" : "s are") unavailable in this current context." }
+        return "Saved context pages are available."
+    }
+}
+
+private struct ContextWorkingChangesView: View {
+    @Bindable var model: DashboardModel
+    var registration: String
+    var topic: UUID?
+    var records: [ContextKnowledgeRecord]
+    var body: some View {
+        let projection = ContextWorkingProjection(records: records, checkpoint: model.contextPages.checkpoint(registration: registration))
+        let items = model.assistant.projects.items(registration, topic: topic, includeTopics: false)
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Working changes").font(.title2.weight(.semibold))
+            Text("Current permitted context since the last saved consolidation. Useful changes can inform your PA while maintained pages wait for their next update. This is a bounded view of saved context, not a full source history.")
+                .font(.callout).foregroundStyle(.secondary)
+            if !model.contextPages.isReadable {
+                ContentUnavailableView("Maintenance history unavailable", systemImage: "lock.doc", description: Text("The saved checkpoint could not be read. No changes have been assumed processed."))
+            } else if !model.assistant.memory.enabled {
+                ContentUnavailableView("Context use is paused", systemImage: "pause.circle", description: Text("Use Supporting facts and controls to resume. Your saved pages and original records remain preserved."))
+            } else {
+                if projection.records.isEmpty {
+                    Text("No new or changed records are available in this permitted projection.").font(.callout).foregroundStyle(.secondary)
+                }
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    ForEach(projection.records, id: \.reference.contextKey) { record in
+                        ContextWorkingChangeRow(record: record, project: record.projectID.flatMap { id in items.first { $0.id == id } })
+                    }
+                }
+                if projection.unavailableCount > 0 {
+                    Label("\(projection.unavailableCount) earlier supporting reference\(projection.unavailableCount == 1 ? " is" : "s are") outside this current permitted view. Earlier text is withheld; this does not prove a plan was completed or cancelled.", systemImage: "lock.doc")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
+
+private struct ContextWorkingChangeRow: View {
+    var record: ContextKnowledgeRecord
+    var project: LifeItem?
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(label).font(.caption.weight(.semibold))
+                Spacer()
+                Text(record.date.formatted(date: .abbreviated, time: .shortened)).font(.caption2).foregroundStyle(.secondary)
+            }
+            if let project, record.reference.kind == "project" {
+                Text(project.title).font(.callout.weight(.medium))
+                Text(project.status.title + (project.due.map { " · Due " + LifeWorkspaceRules.displayDate($0) } ?? "")).font(.caption).foregroundStyle(.secondary)
+                if !project.searchableNotes.isEmpty { ContextMarkdownBody(markdown: project.searchableNotes) }
+            } else {
+                if record.reference.kind != "memory" && record.reference.kind != "human" && record.reference.kind != "action" { Text(record.title).font(.callout.weight(.medium)) }
+                Text(PAProse.display(record.text)).font(.callout).textSelection(.enabled)
+            }
+        }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+    }
+    private var label: String {
+        switch record.reference.kind {
+        case "memory": "Supporting fact"
+        case "human": "Your conversation"
+        case "action": "Recorded app action"
+        case "project": "Project change"
+        case "page": "Your context"
+        case "whatsapp": "Attributed message"
+        case "native-calendar": "Calendar context"
+        case "native-reminder": "Reminder context"
+        case "native-mail": "Email context"
+        default: "Context update"
+        }
+    }
+}
+
+private enum ContextPageDestination: Hashable { case overview, working, page(String), project(UUID), feature(ContextFeature), brief, review, calendars }
 private struct ContextPageInstructionRequest: Identifiable {
     let id = UUID()
     var registration: String
@@ -318,6 +521,11 @@ private struct ContextPageEditRequest: Identifiable {
     var expected: ContextPage? = nil
     var calendar: SourceOption? = nil
     var projectReference: ContextPageReference? = nil
+    var initialMarkdown: String? = nil
+    static func feature(_ feature: ContextFeature, page: ContextPage?, registration: String, useDefault: Bool = false) -> Self {
+        .init(registration: registration, kind: .instruction, key: feature.rawValue, title: feature.title,
+              expected: page, initialMarkdown: page == nil || useDefault ? feature.defaultText : nil)
+    }
     static func note(registration: String) -> Self { .init(registration: registration, kind: .note, key: UUID().uuidString, title: "") }
     static func overview(registration: String) -> Self { .init(registration: registration, kind: .overview, key: "everyday", title: "Everyday context") }
     static func existing(_ page: ContextPage) -> Self {
@@ -336,7 +544,7 @@ private struct ContextPageEditRequest: Identifiable {
         let page = model.contextPages.page(id: id, registration: registration)
         guard page?.owner == nil || page?.owner == .human else { throw ContextPageFailure.unsupportedPage }
         if let page {
-            guard ContextPagesAccess.eligible(page, model: model, registration: registration, records: model.contextKnowledge(registration: registration)) else { throw ContextPageFailure.stalePage }
+            guard ContextPagesAccess.eligible(page, model: model, registration: registration, records: model.contextKnowledge(registration: registration, includeTopics: false, purpose: .inspection)) else { throw ContextPageFailure.stalePage }
         }
         return .init(registration: registration, kind: .note, key: key, title: "About " + current.title, expected: page, projectReference: reference)
     }
@@ -357,6 +565,9 @@ private struct ContextPageEditRequest: Identifiable {
         guard page.registration == registration, registration == model.chatGPT.activeID else { return false }
         if page.kind == .calendarPurpose {
             return page.owner == .human && calendars(model).contains { model.calendarPageKey($0) == page.key }
+        }
+        if page.owner == .human && page.kind == .instruction {
+            return ContextFeature(rawValue: page.key) != nil && page.references.isEmpty
         }
         if page.owner == .human && (page.kind == .overview || page.kind == .note) {
             // Pausing recall does not hide the human's own writing. Project notes still need
@@ -379,13 +590,8 @@ private struct ContextPageEditRequest: Identifiable {
               let item = model.assistant.projects.items(registration, includeTopics: true).first(where: { !$0.kind.isWork && $0.id.uuidString == reference.key }) else { return false }
         return item.registration == registration && projectIdentity(item) == reference
     }
-    static func pendingCount(_ model: DashboardModel, registration: String, records: [ContextKnowledgeRecord]) -> Int {
-        let before = Dictionary((model.contextPages.checkpoint(registration: registration)?.references ?? []).map { ($0.contextKey, $0.revision) }, uniquingKeysWith: { first, _ in first })
-        let now = Dictionary(records.map { ($0.reference.contextKey, $0.reference.revision) }, uniquingKeysWith: { first, _ in first })
-        return now.filter { before[$0.key] != $0.value }.count + before.keys.filter { now[$0] == nil }.count
-    }
     static func kindTitle(_ kind: ContextPage.Kind) -> String {
-        switch kind { case .overview: "Everyday context"; case .project: "Project context"; case .topic: "Topic context"; case .calendarPurpose: "Calendar purpose"; default: "Your context note" }
+        switch kind { case .overview: "Everyday context"; case .project: "Project context"; case .topic: "Topic context"; case .calendarPurpose: "Calendar purpose"; case .instruction: "Feature instructions"; default: "Your context note" }
     }
     static func projectLabel(_ item: LifeItem, all: [LifeItem]) -> String {
         var names = [item.title], parent = item.parentID, seen: Set<UUID> = [item.id]
@@ -409,7 +615,7 @@ private struct ContextPageHumanEditor: View {
         self.model = model; self.request = request
         storage = model.container.map(ObjectIdentifier.init); storeIdentity = ObjectIdentifier(model.contextPages)
         _title = State(initialValue: request.title)
-        _markdown = State(initialValue: request.expected?.owner == .human ? request.expected!.markdown : "")
+        _markdown = State(initialValue: request.initialMarkdown ?? (request.expected?.owner == .human ? request.expected!.markdown : ""))
     }
     private var owned: Bool { ContextPagesAccess.owned(model, registration: request.registration, storage: storage) && storeIdentity == ObjectIdentifier(model.contextPages) }
     private var bindingCurrent: Bool {
@@ -425,7 +631,7 @@ private struct ContextPageHumanEditor: View {
     private var readable: Bool {
         guard bindingCurrent else { return false }
         guard let page = request.expected else { return true }
-        return page.owner == .human && ContextPagesAccess.eligible(page, model: model, registration: request.registration, records: model.contextKnowledge(registration: request.registration))
+        return page.owner == .human && ContextPagesAccess.eligible(page, model: model, registration: request.registration, records: model.contextKnowledge(registration: request.registration, purpose: .inspection))
     }
     private var validText: Bool {
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -434,8 +640,8 @@ private struct ContextPageHumanEditor: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(request.calendar == nil ? "Your context" : "Calendar purpose").font(.title2.weight(.semibold))
-            Text(request.calendar == nil ? "Write only what you want 3PO to know. Your words stay separate from automatically maintained pages." : "Explain what belongs in this calendar. Saving changes only this local guide.").font(.callout).foregroundStyle(.secondary)
+            Text(request.kind == .instruction ? request.title : request.calendar == nil ? "Your context" : "Calendar purpose").font(.title2.weight(.semibold))
+            Text(request.kind == .instruction ? "Describe how you want 3PO to help. This guidance stays separate from factual context, source access and action approval." : request.calendar == nil ? "Write only what you want 3PO to know. Your words stay separate from automatically maintained pages." : "Explain what belongs in this calendar. Saving changes only this local guide.").font(.callout).foregroundStyle(.secondary)
             if readable {
                 if let source = request.calendar { Text(source.label).font(.headline) }
                 else { TextField("Page title", text: $title).textFieldStyle(.roundedBorder) }
@@ -486,7 +692,7 @@ private struct ContextPageHistoryView: View {
     private var owned: Bool { ContextPagesAccess.owned(model, registration: request.page.registration, storage: storage) && storeIdentity == ObjectIdentifier(model.contextPages) }
     var body: some View {
         let versions = owned ? Array(model.contextPages.history(id: request.page.id, registration: request.page.registration).reversed()) : []
-        let records = model.contextKnowledge(registration: request.page.registration)
+        let records = model.contextKnowledge(registration: request.page.registration, purpose: .inspection)
         let current = model.contextPages.page(id: request.page.id, registration: request.page.registration)
         VStack(alignment: .leading, spacing: 14) {
             HStack { Text("Page history").font(.title2.weight(.semibold)); Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
@@ -521,7 +727,7 @@ private struct ContextPageHistoryView: View {
     private func restore() {
         guard owned, let selected,
               let version = model.contextPages.history(id: request.page.id, registration: request.page.registration).first(where: { $0.id == selected }),
-              ContextPagesAccess.eligible(version.page, model: model, registration: request.page.registration, records: model.contextKnowledge(registration: request.page.registration)) else { error = "The account, source access or this version's supporting context changed. No version was restored."; return }
+              ContextPagesAccess.eligible(version.page, model: model, registration: request.page.registration, records: model.contextKnowledge(registration: request.page.registration, purpose: .inspection)) else { error = "The account, source access or this version's supporting context changed. No version was restored."; return }
         do {
             try model.contextPages.restore(id: request.page.id, registration: request.page.registration, revision: selected, expectedRevision: request.page.revision)
             dismiss()
@@ -532,12 +738,13 @@ private struct ContextPageHistoryView: View {
 private struct ContextProjectPurposePicker: View {
     @Bindable var model: DashboardModel
     let registration: String
+    var topic: UUID? = nil
     var choose: (LifeItem) throws -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var error: String?
     var body: some View {
-        let items = model.assistant.projects.items(registration, includeTopics: true).filter { !$0.kind.isWork }
+        let items = model.assistant.projects.items(registration, topic: topic, includeTopics: false).filter { !$0.kind.isWork }
         VStack(alignment: .leading, spacing: 14) {
             HStack { Text("Describe a project").font(.title2.weight(.semibold)); Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
             Text("Choose the existing folder this context belongs to. This creates no project or task.").font(.callout).foregroundStyle(.secondary)
