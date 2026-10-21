@@ -57,6 +57,7 @@ import Foundation
         check(ContextKnowledgeRules.projectCandidate(mail, title: "Supervisor report", notes: ""), "Distinctive project phrase can retrieve a source candidate")
         check(!ContextKnowledgeRules.projectCandidate(mail, title: "Gardening", notes: ""), "Unrelated source never fills a project retrieval")
         check(!ContextKnowledgeRules.projectCandidate(mail, title: "The", notes: ""), "Generic short names cannot connect all source records")
+        check(!ContextKnowledgeRules.matches("Aster Example", title: "Aster Example engineering", synopsis: "", key: "projects", selfLabel: "Aster Example"), "The owner's name alone never selects all their pages")
         print("Context consolidation: \(passed) checks passed; fictional records, no model/source/native requests.")
     }
     static func unseenReference() -> ContextPageReference { .init(kind: "memory", key: "previously-processed", revision: "v1") }

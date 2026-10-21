@@ -60,13 +60,6 @@ import EventKit
                     title: "Attributed message · " + item.chatName, text: item.sender + ": " + item.text, date: item.date))
             }
         }
-        for page in contextPages.pages(registration: registration) where page.owner == .human && page.kind != .calendarPurpose {
-            // A project-purpose note follows exact identity, and disappears from use with its project.
-            if !ContextKnowledgeRules.current(page.references, records: records) { continue }
-            records.append(.init(reference: .init(kind: "page", key: page.id, revision: page.revision.uuidString),
-                                 title: page.title, text: page.markdown, date: page.updated,
-                                 projectID: page.references.first(where: { $0.kind == "projectIdentity" }).flatMap { UUID(uuidString: $0.key) }))
-        }
         if includeRecent && allowedMemoryIDs == nil {
             // Completed human messages only. Imported/quoted contents stay DATA; summaries must not promote commands into facts.
             var suppressedTurns = assistant.memory.suppressed(registration)
@@ -97,6 +90,19 @@ import EventKit
                 if seen.count >= 24 { break }
             }
         }
+        // Resolve readable human pages after canonical facts and retained conversation evidence.
+        // A fixed point handles explicit page references without depending on saved-ID order.
+        var waiting = contextPages.pages(registration: registration).filter { $0.owner == .human && $0.kind != .calendarPurpose }
+        for _ in 0..<min(32, waiting.count) {
+            let ready = waiting.filter { ContextKnowledgeRules.current($0.references, records: records) }
+            guard !ready.isEmpty else { break }
+            for page in ready {
+                records.append(.init(reference: .init(kind: "page", key: page.id, revision: page.revision.uuidString),
+                    title: page.title, text: page.markdown, date: page.updated,
+                    projectID: page.references.first(where: { $0.kind == "projectIdentity" }).flatMap { UUID(uuidString: $0.key) }))
+            }
+            let emitted = Set(ready.map(\.id)); waiting.removeAll { emitted.contains($0.id) }
+        }
         return records.sorted { $0.reference.contextKey < $1.reference.contextKey }
     }
 
@@ -117,8 +123,9 @@ import EventKit
         let visible = pages.filter { contextPageEligible($0, records: records) }
         let checkpoint = contextPages.checkpoint(registration: registration)
         let prior = Dictionary((checkpoint?.references ?? []).map { ($0.contextKey, $0.revision) }, uniquingKeysWith: { first, _ in first })
+        let selfLabel = assistant.memory.notebook(registration, topic: topic, includeTopics: includeTopics).selfLabel
         let effectiveQuery = query ?? pageID.flatMap { id in pages.first { $0.id == id }?.title ?? assistant.projects.items(registration, topic: topic, includeTopics: includeTopics).first { ContextPage.stableID(registration: registration, kind: .project, key: $0.id.uuidString) == id }?.title }
-        let terms = MemoryRetrieval.tokens(effectiveQuery ?? "")
+        let terms = MemoryRetrieval.queryTerms(effectiveQuery, selfLabel: selfLabel)
         func relevant(_ record: ContextKnowledgeRecord) -> Bool {
             effectiveQuery == nil || !terms.isDisjoint(with: MemoryRetrieval.tokens(record.title + " " + record.text))
         }
@@ -126,7 +133,7 @@ import EventKit
             .sorted { $0.date == $1.date ? $0.reference.contextKey < $1.reference.contextKey : $0.date > $1.date }
         var selected = visible.filter { page in
             if let pageID { return page.id == pageID }
-            return (everyday && page.kind == .overview) || ContextKnowledgeRules.matches(query, title: page.title, synopsis: page.synopsis + (page.owner == .human ? " " + page.markdown : ""), key: page.key)
+            return (everyday && page.kind == .overview) || ContextKnowledgeRules.matches(query, title: page.title, synopsis: page.synopsis + (page.owner == .human ? " " + page.markdown : ""), key: page.key, selfLabel: selfLabel)
         }.sorted { lhs, rhs in
             if everyday && (lhs.kind == .overview) != (rhs.kind == .overview) { return lhs.kind == .overview }
             if lhs.owner != rhs.owner { return lhs.owner == .human }
@@ -271,12 +278,15 @@ import EventKit
         ContextKnowledgeRules.fingerprint(ContextKnowledgeRules.json(emailSummaries.policy(registration).input))
     }
     private func contextDependencyVersions(registration: String, records: [ContextKnowledgeRecord], ignoring: Set<String> = []) -> [String: String] {
-        var current = Dictionary(records.map { ($0.reference.contextKey, $0.reference.revision) }, uniquingKeysWith: { first, _ in first })
-        // Text versions are independently checked even when this job itself retires a supporting project/fact.
-        for page in contextPages.pages(registration: registration) where page.owner == .human {
-            if page.references.allSatisfy({ ignoring.contains($0.contextKey) || current[$0.contextKey] == $0.revision }) {
-                current["page:" + page.id] = page.revision.uuidString
-            } else { current.removeValue(forKey: "page:" + page.id) }
+        var current = Dictionary(records.filter { $0.reference.kind != "page" }.map { ($0.reference.contextKey, $0.reference.revision) }, uniquingKeysWith: { first, _ in first })
+        // Text versions are independently checked even when this job itself retires support.
+        // Build transitive page availability from canonical records, never a self-supporting cycle.
+        var waiting = contextPages.pages(registration: registration).filter { $0.owner == .human && $0.kind != .calendarPurpose }
+        for _ in 0..<min(32, waiting.count) {
+            let ready = waiting.filter { page in page.references.allSatisfy { ignoring.contains($0.contextKey) || current[$0.contextKey] == $0.revision } }
+            guard !ready.isEmpty else { break }
+            for page in ready { current["page:" + page.id] = page.revision.uuidString }
+            let emitted = Set(ready.map(\.id)); waiting.removeAll { emitted.contains($0.id) }
         }
         if briefings.writingPromptReadable { current["instruction:brief"] = briefInstructionRevision(registration) }
         if emailSummaries.reviewPolicies.readable { current["instruction:review"] = reviewInstructionRevision(registration) }
@@ -309,7 +319,9 @@ import EventKit
     }
 
     func calendarPageKey(_ source: SourceOption) -> String {
-        ContextKnowledgeRules.fingerprint(ContextKnowledgeRules.json(["id": source.id, "provider": source.providerID ?? "", "account": source.account]))
+        // Provider IDs carry identity; a cosmetic account-label rename must retain its guide.
+        let account = source.providerID.map { "provider:" + $0 } ?? "legacy-label:" + source.account
+        return ContextKnowledgeRules.fingerprint(ContextKnowledgeRules.json(["id": source.id, "account": account]))
     }
     private func calendarGuideRevision(_ source: SourceOption, registration: String) -> String {
         let id = ContextPage.stableID(registration: registration, kind: .calendarPurpose, key: calendarPageKey(source))

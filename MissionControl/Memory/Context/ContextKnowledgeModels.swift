@@ -38,15 +38,15 @@ enum ContextKnowledgeRules {
         let current = Dictionary(records.map { ($0.reference.contextKey, $0.reference.revision) }, uniquingKeysWith: { first, _ in first })
         return references.allSatisfy { current[$0.contextKey] == $0.revision }
     }
-    static func matches(_ query: String?, title: String, synopsis: String, key: String) -> Bool {
+    static func matches(_ query: String?, title: String, synopsis: String, key: String, selfLabel: String = "") -> Bool {
         guard let query else { return true }
-        let terms = MemoryRetrieval.tokens(query)
+        let terms = MemoryRetrieval.queryTerms(query, selfLabel: selfLabel)
         return !terms.isDisjoint(with: MemoryRetrieval.tokens(title + " " + synopsis + " " + key))
     }
     /// Retrieval candidates only; lexical overlap never establishes project ownership or plan identity.
-    static func projectCandidate(_ record: ContextKnowledgeRecord, title: String, notes: String) -> Bool {
+    static func projectCandidate(_ record: ContextKnowledgeRecord, title: String, notes: String, selfLabel: String = "") -> Bool {
         guard record.reference.kind == "human" || record.reference.kind == "whatsapp" || record.reference.kind.hasPrefix("native-") else { return false }
-        let titleTerms = MemoryRetrieval.tokens(title).filter { $0.count >= 3 }
+        let titleTerms = MemoryRetrieval.queryTerms(title, selfLabel: selfLabel).filter { $0.count >= 3 }
         let textTerms = MemoryRetrieval.tokens(record.text + " " + record.title)
         let overlap = titleTerms.intersection(textTerms)
         if overlap.count >= 2 || (titleTerms.count == 1 && overlap.first.map { $0.count >= 5 } == true) { return true }

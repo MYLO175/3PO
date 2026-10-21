@@ -99,7 +99,7 @@ import SwiftData
         let project = try model.assistant.projects.save(.init(registration: registration, kind: .space, title: "Fictional workshop"), expected: nil)
         let purpose = try model.contextPages.save(.init(registration: registration, kind: .note, key: "project-purpose:" + project.id.uuidString, owner: .human, title: "Purpose of fictional workshop", markdown: "Compare cobalt spectroscopy calibration methods using a small optical rig.", references: [model.contextProjectIdentity(project)]), expectedRevision: nil)
         _ = try model.contextPages.save(.init(registration: registration, kind: .overview, key: "everyday", owner: .human, title: "Everyday orientation", markdown: "Fictional cobalt interests and unrelated personal background."), expectedRevision: nil)
-        let raw: [String: Any] = ["id": "fictional-cobalt-email", "accountID": "fictional-mail", "account": "Fictional Mail", "messageID": 1, "internetMessageID": "cobalt@example.invalid", "sender": "Fictional lab", "subject": "Cobalt spectroscopy calibration guide", "received": Date.now.ISO8601Format(), "unread": true, "replied": false, "flagged": false]
+        let raw: [String: Any] = ["id": "fictional-cobalt-email", "accountID": "fictional-mail", "account": "Fictional Mail", "messageID": 1, "internetMessageID": "cobalt@example.invalid", "sender": "Dr Kestrel", "subject": "Cobalt spectroscopy calibration guide", "received": Date.now.ISO8601Format(), "unread": true, "replied": false, "flagged": false]
         let message = try JSONDecoder().decode(MailMessage.self, from: JSONSerialization.data(withJSONObject: raw))
         let body = "The cobalt spectroscopy calibration guide compares practical optical methods."
         let captured = model.emailSummaries.relevanceContext(message, model: model, body: body)
@@ -278,6 +278,10 @@ import SwiftData
         _ = try model.contextPages.save(purpose, expectedRevision: purpose.revision)
         checks["Context pages calendar purpose edit invalidates prior guide capture"] = !guide.current() && !model.contextKnowledgeAvailable(registration: registration, versions: guide.referenceVersions)
         let exact = model.calendarPurposeCapture(sources: [calendars[0]], registration: registration)
+        var renamed = calendars[0]; renamed.account = "Renamed account label"; renamed.title = "Renamed calendar label"
+        let renamedGuide = model.calendarPurposeCapture(sources: [renamed], registration: registration)
+        let renamedRows = try object(renamedGuide.text)["calendars"] as? [[String: Any]]
+        checks["Context pages calendar guide retains human writing after cosmetic labels change"] = model.calendarPageKey(renamed) == model.calendarPageKey(calendars[0]) && renamedRows?.first?["purpose"] as? String != "Not described"
         var changed = calendars[0]; changed.providerID = "different-fictional-provider"; changed.account = "Different fictional account"
         model.calendarData = .init(sources: [changed] + Array(calendars.dropFirst()), events: [])
         let retargeted = model.calendarPurposeCapture(sources: [changed], registration: registration)
@@ -324,7 +328,7 @@ import SwiftData
                     title: "Cobalt workshop purpose", markdown: words, references: support), expectedRevision: nil)
                 let prompt = kind == "memory" ? "Forget my cobalt workshop memory and report the saved result." : "Delete the cobalt workshop project and report the saved result."
                 let tools = ContextPagesMutationTools(model: model, memoryID: fact.id, projectID: project?.id)
-                let args: [String: Any] = kind == "memory" ? ["operation": "forget", "id": fact.id.uuidString, "authorization": prompt] : ["id": project!.id.uuidString, "keepChildren": false, "authorization": prompt]
+                let args: [String: Any] = kind == "memory" ? ["operation": "forget", "id": fact.id.uuidString, "text": NSNull(), "authorization": prompt] : ["id": project!.id.uuidString, "keepChildren": false, "authorization": prompt]
                 fixture.provider.responseCall = .init(id: "fictional-owned-" + kind, name: kind == "memory" ? "change_memory" : "delete_life_item", namespace: "pa", arguments: ContextKnowledgeRules.json(args))
                 fixture.provider.holdFinal = true
                 var runtime = model.assistantRuntime(), capturedReferences: [String: String] = [:]

@@ -222,7 +222,7 @@ import SwiftData
             let records=model.contextKnowledge(registration:registration,includeTopics:false,allowedMemoryIDs:allowedMemoryIDs)
             pages=Array(humanPageSnapshot.filter {page in
                 page.owner == .human && model.contextPageEligible(page,records:records) &&
-                ContextKnowledgeRules.matches(query,title:page.title,synopsis:page.synopsis+" "+page.markdown,key:page.key)
+                ContextKnowledgeRules.matches(query,title:page.title,synopsis:page.synopsis+" "+page.markdown,key:page.key,selfLabel:model.assistant.memory.notebook(registration,includeTopics:false).selfLabel)
             }.sorted{$0.updated > $1.updated}.prefix(4))
         } else {
             let captured=model.captureContextPages(registration:registration,query:query,includeTopics:false,everyday:false,allowedMemoryIDs:allowedMemoryIDs)

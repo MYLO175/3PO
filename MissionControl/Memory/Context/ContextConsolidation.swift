@@ -57,7 +57,7 @@ import Observation
             var selected = records.filter { $0.reference.kind == "project" && $0.projectID.map(children.contains) == true }
             selected += records.filter { $0.reference.kind == "page" && $0.projectID == item.id }
             selected += records.filter { $0.memoryID.map(linked.contains) == true }
-            selected += records.filter { ContextKnowledgeRules.projectCandidate($0, title: item.title, notes: item.searchableNotes) }.map {
+            selected += records.filter { ContextKnowledgeRules.projectCandidate($0, title: item.title, notes: item.searchableNotes, selfLabel: notebook.selfLabel) }.map {
                 var candidate = $0
                 candidate.relevance = "Lexically retrieved candidate for this existing project. Verify relevance from its text; a similar name is not a confirmed relationship. Omit unrelated material."
                 return candidate
