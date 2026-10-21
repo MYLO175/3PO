@@ -128,12 +128,12 @@ import SwiftData
     private func reviewContextCurrent(_ receipt:EmailReviewContextReceipt?,message:MailMessage,model:DashboardModel,evidence:String="",legacyStamp:String?)->Bool {
         let discovery=reviewPreferenceStamp(message,model:model,evidence:evidence)
         guard let receipt else {return legacyStamp == discovery}
-        return reviewPolicies.readable && receipt.policy.matches(policy(model.chatGPT.activeID)) && reviewPreferencesAvailable(receipt.preferences,model:model) && receipt.discoveryRevision == discovery
+        return reviewPolicies.readable && receipt.policy.matches(policy(model.chatGPT.activeID)) && reviewPreferencesAvailable(receipt.preferences,model:model) && model.contextPageDependenciesAvailable(receipt.contextPageDependencies,registration:model.chatGPT.activeID) && receipt.discoveryRevision == discovery
     }
     /// For new AI input only. Prepared Review display deliberately keeps its saved projection.
     func reviewAssessmentAvailable(_ summary:EmailSummary,model:DashboardModel)->Bool {
         guard let receipt=summary.reviewContext else {return true}
-        return reviewPolicies.readable && receipt.policy.matches(policy(model.chatGPT.activeID)) && reviewPreferencesAvailable(receipt.preferences,model:model)
+        return reviewPolicies.readable && receipt.policy.matches(policy(model.chatGPT.activeID)) && reviewPreferencesAvailable(receipt.preferences,model:model) && model.contextPageDependenciesAvailable(receipt.contextPageDependencies,registration:model.chatGPT.activeID)
     }
     private func headerDecisionCurrent(_ decision:EmailHeaderDecision,message:MailMessage,model:DashboardModel)->Bool {
         reviewContextCurrent(decision.reviewContext,message:message,model:model,legacyStamp:decision.reviewPreferenceRevision)
@@ -146,6 +146,21 @@ import SwiftData
         guard record.sourceKind != "whatsapp",model.proactive.sourceEvidenceAvailable(record,model:model),let (message,summary)=sourceAssessments(model).first(where:{$0.0.id == record.mailID}),record.registration == summary.registration,(record.sourceRevision == nil || record.sourceRevision == summary.fingerprint),(record.sourceAssessmentRevision == nil || record.sourceAssessmentRevision == summary.adviceRevision(replied:message.replied)) else {return nil}
         return .init(message:message,summary:summary)
     }
+    private func relevancePages(_ captured:AssistantPageContext,model:DashboardModel,header:Bool)->(rows:[[String:String]],dependencies:[String:String]?) {
+        let payload=(try? JSONSerialization.jsonObject(with:Data(captured.text.utf8))) as? [String:Any]
+        let rows=payload?["pages"] as? [[String:String]] ?? []
+        let saved=model.contextPages.pages(registration:model.chatGPT.activeID)
+        let candidates=rows.compactMap {row->EmailRelevancePage? in
+            guard let id=row["id"],captured.pageIDs.contains(id),let page=saved.first(where:{$0.id == id}),
+                  page.kind != .overview,let markdown=row["markdown"] else {return nil}
+            let references=page.references + (page.owner == .human ? [.init(kind:"page",key:page.id,revision:page.revision.uuidString)] : [])
+            guard !references.isEmpty,references.allSatisfy({captured.referenceVersions[$0.contextKey] == $0.revision}) else {return nil}
+            return .init(id:id,title:page.title,markdown:markdown,owner:page.owner.rawValue,
+                         partial:row["nextOffset"] != "end" || row["offset"] != "0",
+                         dependencies:Dictionary(references.map{($0.contextKey,$0.revision)},uniquingKeysWith:{first,_ in first}))
+        }
+        return EmailRelevanceRules.boundedPages(candidates,maximumBytes:header ? 1200 : 3500)
+    }
     func relevanceContext(_ message:MailMessage,model:DashboardModel,body:String="",header:Bool=false)->EmailRelevanceContext {
         guard model.assistant.contextEnabled else {return .init()}
         let registration=model.chatGPT.activeID,query=MemoryRetrieval.emailQuery(subject:message.subject,sender:message.sender,body:body)
@@ -153,19 +168,31 @@ import SwiftData
         let items=model.assistant.projects.items(registration).filter{$0.status != .archived && $0.status != .done}
         let working=PAWorkingContext.prepare(memory:memory,registration:registration,purpose:header ? .emailHeader : .emailBody,query:query,workspaceIDs:Set(items.map{"life:"+$0.id.uuidString}))
         let selected=working.selection.records
+        // Restrict support to the exact human facts selected for classification. This capture
+        // excludes raw recent/native/message deltas, and only its saved page rows are supplied.
+        let captured=model.captureContextPages(registration:registration,query:query,includeTopics:false,everyday:false,allowedMemoryIDs:Set(selected.compactMap{$0["id"].flatMap(UUID.init(uuidString:))}))
+        let pages=relevancePages(captured,model:model,header:header)
         let data=Data(working.notebook.utf8)
         let anchors=((try? JSONSerialization.jsonObject(with:data)) as? [String:Any])?["lifeStructure"] as? [[String:Any]] ?? []
-        let workspace=anchors.compactMap {row->[String:String]? in
-            guard let id=row["id"] as? String,let item=items.first(where:{"life:"+$0.id.uuidString == id}) else {return nil}
+        let anchored=anchors.compactMap{$0["id"] as? String}
+        let matching=items.filter {item in
+            captured.workspaceIDs.contains(item.id) &&
+            (pages.dependencies?["project:"+item.id.uuidString] != nil || pages.dependencies?["projectIdentity:"+item.id.uuidString] != nil ||
+             ContextKnowledgeRules.matches(query,title:item.title,synopsis:item.searchableNotes,key:item.id.uuidString))
+        }.map{"life:"+$0.id.uuidString}
+        var seen=Set<String>()
+        let workspace=(matching+anchored).compactMap {id->[String:String]? in
+            guard seen.insert(id).inserted,let item=items.first(where:{"life:"+$0.id.uuidString == id}) else {return nil}
             return ["id":id,"revision":item.revision.uuidString,"title":item.title,"notes":String(item.notes.prefix(header ? 80 : 250)),"status":item.status.rawValue]
         }
-        return .init(memories:selected,workspace:Array(workspace.prefix(header ? 2 : 4)),memoryReceipts:working.dependencies)
+        return .init(memories:selected,workspace:Array(workspace.prefix(header ? 2 : 4)),memoryReceipts:working.dependencies,contextPages:pages.rows,contextPageDependencies:pages.dependencies)
     }
     /// Check the facts already supplied, never rerun bounded retrieval after an await.
     /// New facts/projects can change the next selection without revoking this input.
     func relevanceContextAvailable(_ captured:EmailRelevanceContext,model:DashboardModel,header:Bool=false)->Bool {
         guard captured.preferences.isEmpty,captured.memoryReceipts == MemoryDependencyRules.capture(captured.memories),
-              humanMemoryContextAvailable(captured.memories,model:model) else {return false}
+              humanMemoryContextAvailable(captured.memories,model:model),
+              model.contextPageDependenciesAvailable(captured.contextPageDependencies,registration:model.chatGPT.activeID) else {return false}
         let items=model.assistant.projects.items(model.chatGPT.activeID)
         return captured.workspace.allSatisfy {row in
             guard let id=row["id"],let item=items.first(where:{"life:"+$0.id.uuidString == id}),item.status != .archived,item.status != .done else {return false}
@@ -182,11 +209,28 @@ import SwiftData
         }.map(MemoryRetrieval.record)
         return dependencies.count == captured.count && MemoryDependencyRules.available(dependencies,records:records)
     }
-    func reviewPreferenceStamp(_ message:MailMessage,model:DashboardModel,evidence:String="")->String? {
+    func reviewPreferenceStamp(_ message:MailMessage,model:DashboardModel,evidence:String="",humanPageSnapshot:[ContextPage]?=nil)->String? {
         guard model.assistant.memory.enabled else {return nil}
         let query=MemoryRetrieval.emailQuery(subject:message.subject,sender:message.sender,body:evidence)
-        let selected=PAWorkingContext.prepare(memory:model.assistant.memory,registration:model.chatGPT.activeID,purpose:.emailBody,query:query,includeNotebook:false).selection.records.filter{$0["purpose"] == "review preference"}
-        return selected.isEmpty ? nil : EmailNativeEvidence.hash(MemoryDependencyRules.capture(selected))
+        let registration=model.chatGPT.activeID
+        let selected=PAWorkingContext.prepare(memory:model.assistant.memory,registration:registration,purpose:.emailBody,query:query,includeNotebook:false).selection.records
+        let allowedMemoryIDs=Set(selected.compactMap{$0["id"].flatMap(UUID.init(uuidString:))})
+        let pages:[ContextPage]
+        if let humanPageSnapshot {
+            // Discovery is metadata only, never additional model input. Match the completed
+            // assessment against pre-yield human versions so a new note cannot be skipped.
+            let records=model.contextKnowledge(registration:registration,includeTopics:false,allowedMemoryIDs:allowedMemoryIDs)
+            pages=Array(humanPageSnapshot.filter {page in
+                page.owner == .human && model.contextPageEligible(page,records:records) &&
+                ContextKnowledgeRules.matches(query,title:page.title,synopsis:page.synopsis+" "+page.markdown,key:page.key)
+            }.sorted{$0.updated > $1.updated}.prefix(4))
+        } else {
+            let captured=model.captureContextPages(registration:registration,query:query,includeTopics:false,everyday:false,allowedMemoryIDs:allowedMemoryIDs)
+            let ids=Set(captured.pageIDs)
+            pages=model.contextPages.pages(registration:registration).filter{ids.contains($0.id)}
+        }
+        let humanPages=Dictionary(pages.filter {$0.owner == .human && $0.kind != .overview && $0.kind != .calendarPurpose}.map{($0.id,$0.revision.uuidString)},uniquingKeysWith:{first,_ in first})
+        return EmailRelevanceRules.discoveryRevision(preferences:MemoryDependencyRules.capture(selected.filter{$0["purpose"] == "review preference"}),humanPages:humanPages)
     }
     func preferenceNeedsRecheck(_ summary:EmailSummary,message:MailMessage,model:DashboardModel)->Bool {
         guard !ReviewAcknowledgementRules.emailDismissed(summary,message:message,registration:model.chatGPT.activeID),message.received >= Date.now.addingTimeInterval(-30*86400) else {return false}
@@ -199,7 +243,7 @@ import SwiftData
         return summary.needsActionEvidenceRecheck()
     }
     func relevanceAvailable(_ value:EmailPersonalRelevance,model:DashboardModel)->Bool {
-        guard model.assistant.memory.reviewPreferenceMigrationReadable,model.assistant.contextEnabled,model.memoryDependenciesAvailable(value.memories,use:.suggestions) else {return false}
+        guard model.assistant.memory.reviewPreferenceMigrationReadable,model.assistant.contextEnabled,model.memoryDependenciesAvailable(value.memories,use:.suggestions),model.contextPageDependenciesAvailable(value.contextPageDependencies,registration:model.chatGPT.activeID) else {return false}
         let items=model.assistant.projects.items(model.chatGPT.activeID)
         return value.workspace.allSatisfy{receipt in items.contains{"life:"+$0.id.uuidString == receipt.id && $0.revision.uuidString == receipt.revision && $0.status != .archived && $0.status != .done}} && value.preferences.allSatisfy{receipt in model.assistant.memory.matchesConvertedReviewPreference(id:receipt.id,revision:receipt.revision,registration:model.chatGPT.activeID,direction:"more")}
     }
@@ -503,7 +547,7 @@ import SwiftData
                     let previous = decisions
                     for (alias,message) in aliases {
                         decisions.removeAll { $0.id == message.id && $0.registration == registration }
-                        decisions.append(.init(id:message.id,registration:registration,fingerprint:EmailSummary.fingerprint(message),received:message.received,readBody:selected.contains(alias),reviewPreferenceRevision:EmailNativeEvidence.hash(MemoryDependencyRules.capture(contexts[alias]!.memories.filter{$0["purpose"] == "review preference"})),reviewContext:.init(policy:capturedPolicy,memories:contexts[alias]!.memories,discoveryRevision:preferenceStamps[alias].flatMap{$0.isEmpty ? nil : $0})))
+                        decisions.append(.init(id:message.id,registration:registration,fingerprint:EmailSummary.fingerprint(message),received:message.received,readBody:selected.contains(alias),reviewPreferenceRevision:EmailNativeEvidence.hash(MemoryDependencyRules.capture(contexts[alias]!.memories.filter{$0["purpose"] == "review preference"})),reviewContext:.init(policy:capturedPolicy,memories:contexts[alias]!.memories,discoveryRevision:preferenceStamps[alias].flatMap{$0.isEmpty ? nil : $0},contextPageDependencies:contexts[alias]!.contextPageDependencies)))
                     }
                     do { try save() } catch { decisions = previous; throw error }
                 }
@@ -566,7 +610,8 @@ import SwiftData
                     let excerpt = String(body.prefix(16000))
                     let dismissalFeedback:[[String:String]] = []
                     let relevanceContext=self.relevanceContext(message,model:model,body:excerpt)
-                    // Classification has no saved source-memory dependency receipt; keep source facts out.
+                    let discoveryHumanPages=model.contextPages.pages(registration:registration).filter{$0.owner == .human}
+                    // Classification keeps selected facts human-only; pages retain their exact current support separately.
                     let memoryContext=relevanceContext.memories
                     let source = ["lifeContext":relevanceContext.input,"reviewPolicy":capturedPolicy.input,"sharedMemory":memoryContext,"dismissedSuggestions":dismissalFeedback,"reviewFeedback":dismissalFeedback,"now":Date.now.ISO8601Format(),"timezone":TimeZone.current.identifier,"sender":message.sender,"subject":message.subject,"received":message.received.ISO8601Format(),"body":excerpt,"bodyTruncated":body.count > 16000,"replied":message.replied] as [String:Any]
                     let input = String(data: try JSONSerialization.data(withJSONObject: source), encoding: .utf8)!
@@ -595,7 +640,7 @@ import SwiftData
                     var summary = decoded
                     summary.bodyFingerprint = bodyHash; summary.bodyCheckedAt = .now;summary.completionEvidenceChecked=true;summary.reviewPolicyVersion=2
                     summary.reviewPreferenceRevision=EmailNativeEvidence.hash(MemoryDependencyRules.capture(relevanceContext.memories.filter{$0["purpose"] == "review preference"}))
-                    summary.reviewContext = .init(policy:capturedPolicy,memories:relevanceContext.memories,discoveryRevision:reviewPreferenceStamp(message,model:model,evidence:summary.summary+" "+summary.evidence))
+                    summary.reviewContext = .init(policy:capturedPolicy,memories:relevanceContext.memories,discoveryRevision:reviewPreferenceStamp(message,model:model,evidence:summary.summary+" "+summary.evidence,humanPageSnapshot:discoveryHumanPages),contextPageDependencies:relevanceContext.contextPageDependencies)
                     summary.replyDraftCheckedBody=bodyHash
                     let original=records.first(where: { $0.id == message.id && $0.registration == registration })
                     if let original,original.dismissed == true {

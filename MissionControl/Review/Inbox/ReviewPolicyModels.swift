@@ -33,10 +33,12 @@ struct EmailReviewContextReceipt: Codable, Equatable {
     var preferences: [MemoryDependency]
     // Discovery may notice newly relevant preferences without replacing the exact receipts above.
     var discoveryRevision: String?
-    init(policy: ReviewPolicyCapture, memories: [[String: String]], discoveryRevision: String?) {
+    var contextPageDependencies: [String: String]? = nil
+    init(policy: ReviewPolicyCapture, memories: [[String: String]], discoveryRevision: String?, contextPageDependencies: [String: String]? = nil) {
         self.policy = .init(policy)
         preferences = MemoryDependencyRules.capture(memories.filter {$0["purpose"] == "review preference"})
         self.discoveryRevision = discoveryRevision
+        self.contextPageDependencies = contextPageDependencies
     }
 }
 struct EmailPolicyRelevance: Codable, Equatable {
