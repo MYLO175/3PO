@@ -60,7 +60,9 @@ struct ContextPagesView: View {
                             Text("Last consolidation \(checkpoint.updated.formatted(date: .abbreviated, time: .shortened))")
                         } else { Text("Awaiting first consolidation") }
                         Spacer()
-                        Text(pending == 0 ? "No working changes pending" : "\(pending) working change\(pending == 1 ? "" : "s") pending")
+                        if model.assistant.memory.enabled {
+                            Text(pending == 0 ? "No working changes pending" : "\(pending) working change\(pending == 1 ? "" : "s") pending")
+                        } else { Text("Memory use is paused") }
                     }.font(.caption).foregroundStyle(.secondary)
                 }
             } else {
@@ -167,15 +169,25 @@ struct ContextPagesView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Brief instructions").font(.title2.weight(.semibold))
                 Text("Choose the focus and style of future briefs. Current-time, evidence and approval rules stay built in.").foregroundStyle(.secondary)
-                Button("Edit brief instructions…") { instructions = .init(registration: registration, brief: model.briefings.writingPrompt(registration)) }
-                ContextMarkdownBody(markdown: model.briefings.writingPrompt(registration).text)
+                if model.briefings.writingPromptReadable {
+                    Button("Edit brief instructions…") { instructions = .init(registration: registration, brief: model.briefings.writingPrompt(registration)) }
+                    ContextMarkdownBody(markdown: model.briefings.writingPrompt(registration).text)
+                } else {
+                    Label("Saved brief instructions could not be read. Original data is preserved; no default has replaced your writing.", systemImage: "exclamationmark.triangle")
+                        .font(.callout).foregroundStyle(.orange)
+                }
             }
         case .review:
             VStack(alignment: .leading, spacing: 16) {
                 Text("Review guidance").font(.title2.weight(.semibold))
                 Text("Your Review policy and feedback guide what deserves attention. They keep their existing controls and history.").foregroundStyle(.secondary)
-                Button("Open Review guidance…") { instructions = .init(registration: registration) }
-                ContextMarkdownBody(markdown: model.emailSummaries.policy(registration).text)
+                if model.emailSummaries.reviewPolicies.readable {
+                    Button("Open Review guidance…") { instructions = .init(registration: registration) }
+                    ContextMarkdownBody(markdown: model.emailSummaries.policy(registration).text)
+                } else {
+                    Label(model.emailSummaries.reviewPolicies.error ?? "Saved Review guidance could not be read. Original data is preserved.", systemImage: "exclamationmark.triangle")
+                        .font(.callout).foregroundStyle(.orange)
+                }
             }
         case .calendars: calendarGuide
         case nil:
@@ -317,8 +329,8 @@ private struct ContextPageEditRequest: Identifiable {
     }
     @MainActor static func project(_ item: LifeItem, model: DashboardModel, registration: String) throws -> Self {
         guard item.registration == registration, !item.kind.isWork,
-              let current = model.assistant.projects.items(registration, includeTopics: true).first(where: { $0.id == item.id && !$0.kind.isWork }),
-              let reference = model.contextKnowledge(registration: registration).first(where: { $0.reference.kind == "projectIdentity" && $0.reference.key == current.id.uuidString })?.reference else { throw ContextPageFailure.invalid("project identity") }
+              let current = model.assistant.projects.items(registration, includeTopics: true).first(where: { $0.id == item.id && !$0.kind.isWork }) else { throw ContextPageFailure.invalid("project identity") }
+        let reference = ContextPagesAccess.projectIdentity(current)
         let key = "project-purpose:" + current.id.uuidString
         let id = ContextPage.stableID(registration: registration, kind: .note, key: key)
         let page = model.contextPages.page(id: id, registration: registration)
@@ -346,7 +358,26 @@ private struct ContextPageEditRequest: Identifiable {
         if page.kind == .calendarPurpose {
             return page.owner == .human && calendars(model).contains { model.calendarPageKey($0) == page.key }
         }
+        if page.owner == .human && (page.kind == .overview || page.kind == .note) {
+            // Pausing recall does not hide the human's own writing. Project notes still need
+            // their exact current folder/scope; source-supported pages keep the normal gate.
+            if page.kind == .note && page.key.hasPrefix("project-purpose:") {
+                guard page.references.count == 1, let reference = page.references.first,
+                      reference.kind == "projectIdentity", page.key == "project-purpose:" + reference.key else { return false }
+                return currentProjectIdentity(reference, model: model, registration: registration)
+            }
+            if page.references.isEmpty { return true }
+        }
         return model.contextPageEligible(page, records: records)
+    }
+    static func projectIdentity(_ item: LifeItem) -> ContextPageReference {
+        .init(kind: "projectIdentity", key: item.id.uuidString,
+              revision: ContextKnowledgeRules.fingerprint(item.registration + ":" + item.id.uuidString + ":" + (item.conversationID?.uuidString ?? "shared")))
+    }
+    static func currentProjectIdentity(_ reference: ContextPageReference, model: DashboardModel, registration: String) -> Bool {
+        guard reference.kind == "projectIdentity", registration == model.chatGPT.activeID,
+              let item = model.assistant.projects.items(registration, includeTopics: true).first(where: { !$0.kind.isWork && $0.id.uuidString == reference.key }) else { return false }
+        return item.registration == registration && projectIdentity(item) == reference
     }
     static func pendingCount(_ model: DashboardModel, registration: String, records: [ContextKnowledgeRecord]) -> Int {
         let before = Dictionary((model.contextPages.checkpoint(registration: registration)?.references ?? []).map { ($0.contextKey, $0.revision) }, uniquingKeysWith: { first, _ in first })
@@ -387,8 +418,7 @@ private struct ContextPageHumanEditor: View {
             return ContextPagesAccess.calendars(model).contains { $0.id == source.id && model.calendarPageKey($0) == request.key }
         }
         if let reference = request.projectReference {
-            guard model.assistant.projects.items(request.registration, includeTopics: true).contains(where: { !$0.kind.isWork && $0.id.uuidString == reference.key }) else { return false }
-            return model.contextKnowledge(registration: request.registration).contains { $0.reference == reference }
+            return ContextPagesAccess.currentProjectIdentity(reference, model: model, registration: request.registration)
         }
         return true
     }
