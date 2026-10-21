@@ -15,7 +15,7 @@ struct EmailOverviewView: View {
         VStack(alignment:.leading,spacing:12) {
             HStack {
                 Label("Email summary",systemImage:"envelope.badge").font(.title3.weight(.semibold)); Spacer()
-                Button {showRelevance=true} label:{Image(systemName:"slider.horizontal.3")}.help("What matters to me").accessibilityLabel("What matters to me")
+                Button {showRelevance=true} label:{Image(systemName:"slider.horizontal.3")}.help("Review guidance").accessibilityLabel("Review guidance")
                 Button { summaries.process(model,resume:true) } label: { Image(systemName:"arrow.clockwise") }.help("Check incoming mail").accessibilityLabel("Check incoming mail").disabled(!summaries.enabled || summaries.busy || model.chatGPT.busy || model.assistant.busy || model.chatGPT.usagePaused || !model.chatGPT.inferenceVerified)
                 if summaries.busy { ProgressView().controlSize(.small); Button("Stop") { summaries.cancel() } }
             }
@@ -66,7 +66,7 @@ struct EmailOverviewView: View {
             }
             if summaries.paused || model.chatGPT.usagePaused { Text(model.chatGPT.usagePaused ? "Subscription processing paused; saved suggestions are available." : "Monitoring paused. Check incoming mail to resume one bounded batch.").font(.caption).foregroundStyle(.orange) }
             if let error = summaries.error { DisclosureGroup("Monitoring details") { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }.font(.caption) }
-        }.sheet(isPresented:$showRelevance) {ReviewRelevancePreferencesView(model:model)}.onChange(of:model.chatGPT.activeID) {showRelevance=false}.onChange(of:filter) { limit = 6 }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+        }.sheet(isPresented:$showRelevance) {ReviewPolicyView(model:model)}.onChange(of:model.chatGPT.activeID) {showRelevance=false}.onChange(of:filter) { limit = 6 }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
     }
 }
 struct EmailSummarySettings: View {
