@@ -14,6 +14,10 @@ struct CalendarRemovalReviewSession:Identifiable {
 @MainActor @Observable final class DashboardModel {
     let preparedReview = PreparedReviewStore()
     @ObservationIgnored lazy var contextPages = ContextPageStore(container: container)
+    #if DEBUG
+    /// Fictional consumer acceptance only; normal startup never consults this port.
+    @ObservationIgnored var contextCalendarAccess: (() -> Bool)?
+    #endif
     @ObservationIgnored lazy var contextConsolidation = ContextConsolidationService()
     @ObservationIgnored lazy var contextQuestions = ContextProjectQuestionStore(container: container)
     var whatsapp: WhatsAppService { services.whatsapp }
