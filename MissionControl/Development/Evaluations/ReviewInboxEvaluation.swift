@@ -195,7 +195,7 @@ import EventKit
         var checks:[String:Bool]=[:]
         checks["targeted current human fact reaches project header"] = headerContexts["guide"]?.memories.contains{$0["id"] == fact.id.uuidString} == true
         let headerInput:[String:Any]=["reviewPolicy":capturedPolicy.input,"headers":headers]
-        let triage=try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:try JSONSerialization.data(withJSONObject:headerInput,options:.sortedKeys),as:UTF8.self)]],instructions:MailMonitoringRules.headerInstructions+" "+EmailRelevanceRules.instructions+" "+ReviewPolicyRules.instructions,model:selected,purpose:.diagnostic){_ in}
+        let triage=try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:try JSONSerialization.data(withJSONObject:headerInput,options:.sortedKeys),as:UTF8.self)]],instructions:MailMonitoringRules.headerInstructions+" "+EmailRelevanceRules.headerInstructions+" "+ReviewPolicyRules.headerInstructions,model:selected,purpose:.diagnostic){_ in}
         try validatePolicy(capturedPolicy,model:model,selected:selected)
         guard headerContexts.values.allSatisfy({model.emailSummaries.relevanceContextAvailable($0,model:model,header:true)}) else {throw SummaryFailure.invalid}
         try Data(triage.utf8).write(to:EvaluationOutput.url("/tmp/3po-review-feedback-fictional-headers.json"),options:.atomic)
@@ -240,6 +240,7 @@ import EventKit
         checks["untracked conservation broadcast stays quiet under default policy"] = decoded["policy_broadcast"]?.worthReading == false && decoded["policy_broadcast"]?.attention == false && decoded["policy_broadcast"]?.followUpDate == nil
         // Changing guidance affects future inference; it must not reconstruct or erase a prepared card.
         guard var savedGuide=decoded["guide"],let guideMessage=messages["guide"] else {throw SummaryFailure.invalid}
+        savedGuide.reviewPolicyVersion = 2
         savedGuide.reviewContext = .init(policy:capturedPolicy,memories:contexts["guide"]!.memories,discoveryRevision:nil)
         model.emailSummaries.enableMailReviewFixture()
         model.mailData = .init(messages:[guideMessage],accounts:[.init(id:"fictional-mail",title:"Fictional Mail")],errors:[])
@@ -267,7 +268,7 @@ import EventKit
         }
         let customHeaders=headers.filter{row in (row["id"] as? String).flatMap{headerCases[$0]}.map{customIDs.contains($0)} == true}
         let customHeaderInput:[String:Any]=["reviewPolicy":customPolicy.input,"headers":customHeaders]
-        let customTriage=try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:try JSONSerialization.data(withJSONObject:customHeaderInput,options:.sortedKeys),as:UTF8.self)]],instructions:MailMonitoringRules.headerInstructions+" "+EmailRelevanceRules.instructions+" "+ReviewPolicyRules.instructions,model:selected,purpose:.diagnostic){_ in}
+        let customTriage=try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:try JSONSerialization.data(withJSONObject:customHeaderInput,options:.sortedKeys),as:UTF8.self)]],instructions:MailMonitoringRules.headerInstructions+" "+EmailRelevanceRules.headerInstructions+" "+ReviewPolicyRules.headerInstructions,model:selected,purpose:.diagnostic){_ in}
         try validatePolicy(customPolicy,model:model,selected:selected)
         guard customIDs.allSatisfy({model.emailSummaries.relevanceContextAvailable(headerContexts[$0]!,model:model,header:true)}) else {throw SummaryFailure.invalid}
         let customChosen=Set(try MailMonitoringRules.selections(customTriage,allowed:Set(customHeaders.compactMap{$0["id"] as? String})).compactMap{headerCases[$0]})

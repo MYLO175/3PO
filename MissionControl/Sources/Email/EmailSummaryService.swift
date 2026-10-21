@@ -540,7 +540,7 @@ import SwiftData
                     let headerRows = aliases.keys.sorted().map {alias in ["id":alias,"sender":aliases[alias]!.sender,"subject":aliases[alias]!.subject,"received":aliases[alias]!.received.ISO8601Format(),"lifeContext":contexts[alias]!.input] as [String:Any]}
                     let input = String(data:try JSONSerialization.data(withJSONObject:["reviewPolicy":capturedPolicy.input,"headers":headerRows],options:.sortedKeys),encoding:.utf8)!
                     if heartbeat { try heartbeatRequest!.claim() }
-                    let output = try await model.chatGPT.streamResponse(input:[["role":"user","content":input]],instructions:MailMonitoringRules.headerInstructions+" "+EmailRelevanceRules.instructions+" "+ReviewPolicyRules.instructions,model:selectedModel,effort:selectedEffort,purpose:.emailReview) { _ in }
+                    let output = try await model.chatGPT.streamResponse(input:[["role":"user","content":input]],instructions:MailMonitoringRules.headerInstructions+" "+EmailRelevanceRules.headerInstructions+" "+ReviewPolicyRules.headerInstructions,model:selectedModel,effort:selectedEffort,purpose:.emailReview) { _ in }
                     try Task.checkCancellation()
                     try validateWork()
                     guard enabled, !paused, registration == model.chatGPT.activeID, unknown.allSatisfy(permitted) else { return }
