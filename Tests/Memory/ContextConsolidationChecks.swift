@@ -286,7 +286,7 @@ import Foundation
             check(Set(segments.map(\.id)).count == segments.count && segments.map(\.id) == ContextPageTarget.segments(record).map(\.id), "\(name) segment IDs are unique and deterministic")
             let issued = ContextPageTarget(registration:"owner",kind:.topic,key:"passage-"+name,title:record.title,records:[record]).input["records"] as! [[String:Any]]
             let rows = issued[0]["segments"] as! [[String:Any]]
-            check(issued[0]["id"] as? String == record.reference.contextKey && issued[0]["revision"] as? String == record.reference.revision && issued[0]["title"] as? String == record.title && issued[0]["observed"] as? String == date.ISO8601Format() && rows.compactMap{$0["text"] as? String}.joined() == words && issued[0]["text"] == nil && issued[0]["originalCharacters"] as? Int == words.count && issued[0]["issuedCharacters"] as? Int == words.count, "\(name) issued record retains exact metadata and all source text once inside its segments")
+            check(issued[0]["id"] as? String == "record_0" && issued[0]["referenceID"] as? String == record.reference.contextKey && issued[0]["revision"] as? String == record.reference.revision && issued[0]["title"] as? String == record.title && issued[0]["observed"] as? String == date.ISO8601Format() && rows.compactMap{$0["text"] as? String}.joined() == words && issued[0]["text"] == nil && issued[0]["originalCharacters"] as? Int == words.count && issued[0]["issuedCharacters"] as? Int == words.count, "\(name) issued record retains exact metadata and all source text once inside its segments")
         }
         var oversizedPassage = passageRecords[0]
         oversizedPassage.text = String(repeating:"🧑🏽‍🔬 calibration line \"original\"\n",count:300)
@@ -340,6 +340,49 @@ import Foundation
         var tooManySegments = segmentRows
         tooManySegments[0]["evidence"] = Array(repeating:["id":fullRecords[0].reference.contextKey,"segment":ContextPageTarget.segments(fullRecords[0])[0].id],count:33)
         rejects("An over-capacity segment selection array passed the thirty-two-evidence bound") { _=try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":tooManySegments]),targets:fullTargets) }
+
+        func rejectsCategory(_ category:String,_ name:String,_ action:() throws -> Void) {
+            do {try action();preconditionFailure(name)}
+            catch let failure as ContextPageFailure {check(failure == .invalid(category),name+": received \(failure)")}
+            catch {preconditionFailure(name+": unexpected error \(error)")}
+        }
+        var aliasOriginals=fullRecords
+        aliasOriginals[0].text="The optics record says \"near-field\".\nKeep e\u{0301}, 🧑🏽‍🔬 and C:\\Capture byte-exact."
+        let aliasTargets=fullTargets.enumerated().map {index,target -> ContextPageTarget in
+            var value=target;value.records=index.isMultiple(of:2) ? aliasOriginals : Array(aliasOriginals.reversed());return value
+        }
+        let aliasRows:[[String:Any]]=aliasTargets.map {value in
+            ["id":value.id,"synopsis":"Exact calibration context","markdown":"The project retains its supplied calibration context and qualifications.","purposeQuestion":NSNull(),
+             "evidence":value.issuedRecords.map{["id":$0.id,"segment":$0.segments[0].id]}]
+        }
+        let aliasPages=try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":aliasRows]),targets:aliasTargets).map{$0.0}
+        check(aliasPages.count == 4 && zip(aliasPages,aliasTargets).allSatisfy{page,value in Set(page.references) == Set(value.references) && Set(page.processedReferences ?? []) == Set(value.references) && page.evidenceQuotes?.count == 20}, "Four twenty-record targets resolve short aliases to exact canonical support and processing coverage")
+        check(zip(aliasPages,aliasTargets).allSatisfy{page,value in zip(page.evidenceQuotes ?? [],value.records).allSatisfy{quote,record in quote.referenceID == record.reference.id && Data(quote.quote.utf8) == Data(ContextPageTarget.suppliedText(record).utf8)}}, "Target-local alias resolution preserves original Unicode, multiline and slash text byte-exactly")
+        check(aliasTargets[0].issuedRecords[0].id == aliasTargets[1].issuedRecords[0].id && aliasPages[0].evidenceQuotes?.first?.referenceID != aliasPages[1].evidenceQuotes?.first?.referenceID, "The same short alias in two targets resolves only inside each captured target")
+        check(aliasTargets.allSatisfy{value in value.issuedRecords.enumerated().allSatisfy{index,issued in issued.id == "record_\(index)" && issued.record.reference == value.records[index].reference && issued.segments.allSatisfy{$0.id == "passage_\(index)_\($0.index)"}}}, "Every issued record and passage uses its exact small indexed alias")
+        let aliasBatch=ContextConsolidationSelection.batch(aliasTargets,now:date,timezone:"UTC")
+        check(!aliasBatch.isEmpty && aliasBatch.count <= 4 && aliasBatch.allSatisfy{ContextKnowledgeRules.json($0.input).utf8.count <= 20_000} && ContextConsolidationSelection.input(aliasBatch,now:date,timezone:"UTC").utf8.count <= 30_000, "Target and complete batch bounds include short aliases, canonical metadata and source passages")
+        let aliasTarget=aliasTargets[0]
+        func aliasOutput(_ evidence:[[String:String]])->String {
+            ContextKnowledgeRules.json(["pages":[["id":aliasTarget.id,"synopsis":"Exact calibration context","markdown":"A supplied calibration passage remains current.","evidence":evidence,"purposeQuestion":NSNull()]]])
+        }
+        let aliasFirst=aliasTarget.issuedRecords[0], aliasSecond=aliasTarget.issuedRecords[1]
+        let aliasOnly=try ContextConsolidationRules.decode(aliasOutput([["id":aliasFirst.id,"segment":aliasFirst.segments[0].id]]),targets:[aliasTarget])[0].0
+        check(aliasOnly.references == [aliasFirst.record.reference] && Set(aliasOnly.processedReferences ?? []) == Set(aliasTarget.references) && aliasOnly.evidenceQuotes?.first?.referenceID == aliasFirst.record.reference.id, "An uncited issued alias is processed without being promoted to prose support or persisted as an identity")
+        rejectsCategory("consolidation evidence record","An unknown short record alias was repaired") {_=try ContextConsolidationRules.decode(aliasOutput([["id":"record_999","segment":"passage_999_0"]]),targets:[aliasTarget])}
+        rejectsCategory("consolidation evidence record","An unissued canonical record was repaired") {_=try ContextConsolidationRules.decode(aliasOutput([["id":"memory:missing","quote":"A fabricated original source quote"]]),targets:[aliasTarget])}
+        rejectsCategory("consolidation evidence passage","An invented passage alias was repaired") {_=try ContextConsolidationRules.decode(aliasOutput([["id":aliasFirst.id,"segment":"passage_0_999"]]),targets:[aliasTarget])}
+        rejectsCategory("consolidation evidence passage","A different record's issued passage alias was accepted") {_=try ContextConsolidationRules.decode(aliasOutput([["id":aliasFirst.id,"segment":aliasSecond.segments[0].id]]),targets:[aliasTarget])}
+        rejectsCategory("consolidation evidence passage","A canonical ID and a short alias passage were silently combined") {_=try ContextConsolidationRules.decode(aliasOutput([["id":aliasFirst.record.reference.contextKey,"segment":aliasFirst.segments[0].id]]),targets:[aliasTarget])}
+        rejectsCategory("consolidation evidence passage","A short ID and a legacy hashed passage were silently combined") {_=try ContextConsolidationRules.decode(aliasOutput([["id":aliasFirst.id,"segment":ContextPageTarget.segments(aliasFirst.record)[0].id]]),targets:[aliasTarget])}
+        rejectsCategory("consolidation evidence selector","A quote under a short alias bypassed exact passage selection") {_=try ContextConsolidationRules.decode(aliasOutput([["id":aliasFirst.id,"quote":aliasFirst.segments[0].text]]),targets:[aliasTarget])}
+        rejectsCategory("consolidation evidence selector","Ambiguous selectors were silently repaired") {_=try ContextConsolidationRules.decode(aliasOutput([["id":aliasFirst.id,"segment":aliasFirst.segments[0].id,"quote":aliasFirst.segments[0].text]]),targets:[aliasTarget])}
+        rejectsCategory("consolidation evidence selector","An absent selector was silently repaired") {_=try ContextConsolidationRules.decode(aliasOutput([["id":aliasFirst.id]]),targets:[aliasTarget])}
+        rejectsCategory("consolidation evidence quote","A legacy paraphrase did not retain its safe fixed category") {_=try ContextConsolidationRules.decode(aliasOutput([["id":aliasFirst.record.reference.contextKey,"quote":"The entire optics calibration was completed successfully."]]),targets:[aliasTarget])}
+        let compatibleCanonical=try ContextConsolidationRules.decode(aliasOutput([["id":aliasFirst.record.reference.contextKey,"segment":ContextPageTarget.segments(aliasFirst.record)[0].id]]),targets:[aliasTarget])[0].0
+        check(compatibleCanonical.references == aliasOnly.references && compatibleCanonical.evidenceQuotes == aliasOnly.evidenceQuotes, "Legacy canonical ID plus hashed passage retains exact compatibility without alias fallback")
+        let priorSupport=(capacity.input["previousDraft"] as! [String:Any])["supportIDs"] as! [String]
+        check(Set(priorSupport) == Set(capacity.issuedRecords.filter{retained32.map(\.reference).contains($0.record.reference)}.map(\.id)) && priorSupport.allSatisfy{$0.hasPrefix("record_")}, "Earlier draft support points to current short aliases while durable references remain canonical")
 
         print("Context consolidation: \(passed) checks passed; fictional records, no model/source/native requests.")
     }
