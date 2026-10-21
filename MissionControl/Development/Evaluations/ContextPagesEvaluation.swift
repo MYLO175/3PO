@@ -195,7 +195,7 @@ import SwiftData
         var restored = "", offset = 0, bounds = true, offsets = true, chunks = 0, complete = false
         for index in 0..<16 {
             let call = PAFunctionCall(id: "fictional-page-chunk-\(index)", name: "read_context_page", namespace: "pa",
-                arguments: ContextKnowledgeRules.json(["id": page.id, "offset": String(offset)]))
+                arguments: ContextKnowledgeRules.json(["id": page.id, "query": NSNull(), "offset": String(offset)]))
             let text = try await tools.execute(call, valid: { true })
             bounds = bounds && text.utf8.count <= 32_000
             let payload = try object(text)
