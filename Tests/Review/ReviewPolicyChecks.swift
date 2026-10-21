@@ -58,6 +58,13 @@ enum ReviewPolicyChecks {
         let receipt = EmailReviewContextReceipt(policy: saved, memories: [preference, unrelated], discoveryRevision: nil)
         precondition(receipt.preferences == MemoryDependencyRules.capture([preference]))
         precondition(receipt.policy.matches(saved) && !receipt.policy.matches(reset))
+        precondition(!ReviewPolicyRules.assessmentContextMatches(nil,policy:saved,discoveryRevision:nil),"Two absent legacy stamps do not prove the global policy actually used")
+        precondition(!ReviewPolicyRules.assessmentContextMatches(nil,policy:saved,discoveryRevision:"legacy-feedback"),"Legacy feedback stamps alone cannot make an uncaptured policy current")
+        precondition(ReviewPolicyRules.assessmentContextMatches(receipt,policy:saved,discoveryRevision:nil),"A real policy capture remains current with an intentionally empty discovery selection")
+        precondition(!ReviewPolicyRules.assessmentContextMatches(receipt,policy:reset,discoveryRevision:nil),"Changed policy invalidates the exact captured assessment context")
+        var discovered=receipt;discovered.discoveryRevision="selected-feedback-v1"
+        precondition(ReviewPolicyRules.assessmentContextMatches(discovered,policy:saved,discoveryRevision:"selected-feedback-v1"))
+        precondition(!ReviewPolicyRules.assessmentContextMatches(discovered,policy:saved,discoveryRevision:"selected-feedback-v2"),"New applicable feedback schedules reconsideration")
         precondition(MemoryDependencyRules.available(receipt.preferences, records: [preference, unrelated]))
         var corrected = preference; corrected["text"] = "Prioritise these broadcasts."
         precondition(!MemoryDependencyRules.available(receipt.preferences, records: [corrected, unrelated]))
@@ -85,6 +92,21 @@ enum ReviewPolicyChecks {
         let quote = "New robotics dataset and evaluation results are available."
         let relevant = try assessment(quote, additional: ["personalRelevance": ["reason": "Evaluation data for the current robotics project", "evidence": quote, "workspaceIDs": [projectID]]], context: context)
         precondition(relevant.worthReading == true && !relevant.attention && relevant.personalRelevance?.workspace.first?.id == projectID)
+        // Reproduce the model fixture's results case: exact source text alone is quiet,
+        // while a citation to the supplied canonical feedback supports informational reading.
+        let resultsQuote="Your fictional coding assessment results are ready to read."
+        let resultsPreference:[String:String]=["id":UUID().uuidString,"purpose":"review preference","text":"Coding assessment results are important to me.","reviewAbout":"Coding assessment stages and results"]
+        let resultsContext=EmailRelevanceContext(memories:[resultsPreference],memoryReceipts:MemoryDependencyRules.capture([resultsPreference]))
+        let missingCitation=try assessment(resultsQuote,context:resultsContext)
+        precondition(missingCitation.worthReading == false && missingCitation.personalRelevance == nil,"An uncited worthReading claim is not admitted just because positive feedback was supplied")
+        let resultsRelevance:[String:Any]=["reason":"The human explicitly prioritises assessment results.","evidence":resultsQuote,"memoryIDs":[resultsPreference["id"]!]]
+        let citedResults=try assessment(resultsQuote,additional:["personalRelevance":resultsRelevance],context:resultsContext)
+        precondition(citedResults.worthReading == true && !citedResults.attention && citedResults.personalRelevance?.memories == resultsContext.memoryReceipts)
+        for ids:[String:Any] in [["memoryIDs":[UUID().uuidString]],["preferenceIDs":[resultsPreference["id"]!]],["memoryIDs":[]]] {
+            let invalidRelevance:[String:Any]=["reason":"The human explicitly prioritises assessment results.","evidence":resultsQuote].merging(ids){_,next in next}
+            do {_ = try assessment(resultsQuote,additional:["personalRelevance":invalidRelevance],context:resultsContext);preconditionFailure("Unsupplied, misclassified or empty feedback citation admitted")}
+            catch SummaryFailure.unsupportedEvidence {}
+        }
         let humanPolicy = ReviewPolicyCapture(registration: "owner", revision: UUID().uuidString, text: "Show substantive robotics research results even when no action is required.", isDefault: false)
         let policyMatch: [String: Any] = ["reason": "The explicitly prioritised research results arrived.", "policyQuote": humanPolicy.text, "sourceQuote": quote]
         let priority = try assessment(quote, additional: ["policyRelevance": policyMatch], policy: humanPolicy)
@@ -103,6 +125,6 @@ enum ReviewPolicyChecks {
         let readback = try JSONDecoder().decode(EmailSummary.self, from: JSONEncoder().encode(withReceipt))
         precondition(readback.reviewContext == receipt && readback.policyRelevance == priority.policyRelevance)
         precondition(withReceipt.adviceRevision(replied: false) != priority.adviceRevision(replied: false))
-        print("PASS Review policy: account ownership, global capture, persistence/CAS/readback, history/reset/restore, negative feedback receipts, quiet broadcasts/promotions, supported opportunities, direct requests/changes and preserved saved cards. No AI or source reads.")
+        print("PASS Review policy: account ownership, global capture, persistence/CAS/readback, history/reset/restore, exact policy capture rollout, supplied feedback citation requirements, negative feedback receipts, quiet broadcasts/promotions, supported opportunities, direct requests/changes and preserved saved cards. No AI or source reads.")
     }
 }
