@@ -12,7 +12,7 @@ case "${MISSIONCONTROL_PERFORMANCE_MODE:-debug}" in
   *) print -u2 -- "MISSIONCONTROL_PERFORMANCE_MODE must be debug or release."; exit 2 ;;
 esac
 print -- "Runtime performance compile mode: ${MISSIONCONTROL_PERFORMANCE_MODE:-debug}"
-runtime_names=(Infrastructure/Storage/Cache Infrastructure/Storage/LocalRecordRepository Memory/Records/PAMemory Memory/Notebook/LifeNotebook Memory/Notebook/LifeOrganisation Memory/Learning/MemoryLearning Assistant/Profile/PALearningQuestion Memory/Records/MemoryDependencies Infrastructure/Models/Models Background/Briefing/Briefing Memory/Records/PAMemoryStore Memory/Notebook/LifeCanonicalNotebook Projects/LifeWorkspace Projects/LifeProjectPlacement Projects/LifeWorkspaceQuery Assistant/Conversation/Conversations Assistant/Conversation/ConversationRepository)
+runtime_names=(Infrastructure/Storage/Cache Infrastructure/Storage/LocalRecordRepository Memory/Records/PAMemory Memory/Notebook/LifeNotebook Memory/Notebook/LifeOrganisation Memory/Learning/MemoryLearning Assistant/Profile/PALearningQuestion Memory/Records/MemoryDependencies Infrastructure/Models/Models Review/Inbox/ReviewPolicyModels Background/Briefing/Briefing Memory/Records/PAMemoryStore Memory/Notebook/LifeCanonicalNotebook Projects/LifeWorkspace Projects/LifeProjectPlacement Projects/LifeWorkspaceQuery Assistant/Conversation/Conversations Assistant/Conversation/ConversationRepository)
 runtime_sources=()
 for runtime_name in "${runtime_names[@]}"; do
   runtime_sources+=("$runtime_source_root/MissionControl/$runtime_name.swift")
