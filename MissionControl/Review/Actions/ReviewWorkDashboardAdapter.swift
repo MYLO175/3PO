@@ -169,7 +169,11 @@ struct ReviewPreparedRow:Identifiable {
                 #endif
                 try Task.checkCancellation()
                 guard scope.registration == chatGPT.activeID,scope.storage == reviewStorageIdentity,payload.source.map(reviewPermits) == true,capturedDraft || currentPreparedApproval(record) else {throw ActionFailure.message("The account, source access, storage or suggestion changed while preparing this plan.")}
-                let fields=NativeCreationRules.applyingSuggestion(request,to:session.item)
+                var fields=NativeCreationRules.applyingSuggestion(request,to:session.item)
+                if let chosen=record.proposedCalendarDestination {
+                    guard request.kind == .event,session.sources.contains(where:{chosen.matches($0) && !assistant.excludedCalendars.contains($0.id)}) else {throw ActionFailure.message("The proposed Calendar destination is no longer available for this account. Ask below for an alternative.")}
+                    fields.sourceID=chosen.sourceID
+                }
                 guard let destination=session.sources.first(where:{$0.id == fields.sourceID && $0.writable}),!(request.kind == .event ? assistant.excludedCalendars : assistant.excludedLists).contains(destination.id) else {throw ActionFailure.message("Choose an enabled writable destination before approving this action.")}
                 payload.nativeRequest=request;payload.nativeFields=fields
                 row.destination=(request.kind == .event ? "Calendar · " : "Reminders · ")+destination.label
@@ -227,6 +231,7 @@ struct ReviewPreparedRow:Identifiable {
                   request.kind == (proposal.kind == "calendar" ? NativeItemKind.event : .reminder),
                   !(fields.kind == .event ? assistant.excludedCalendars : assistant.excludedLists).contains(fields.sourceID),
                   request.kind != .event || request.suggestedStart != nil else {return false}
+            if let chosen=proposal.proposedCalendarDestination {return request.kind == .event && fields.sourceID == chosen.sourceID}
             return true
         }
         if let item=payload.project,let target=proposal.proposedProjectTask?.target {
@@ -279,7 +284,7 @@ struct ReviewPreparedRow:Identifiable {
         } else if let request=payload.nativeRequest,let captured=payload.nativeFields {
             let session=try await eventKit.creationSession(request)
             try Task.checkCancellation()
-            guard valid(),heartbeat.deviceAvailable,session.sources.contains(where:{$0.id == captured.sourceID && $0.writable}) else {throw ActionFailure.message("The selected Calendar/list is no longer available or this request stopped.")}
+            guard valid(),heartbeat.deviceAvailable,session.sources.contains(where:{$0.id == captured.sourceID && $0.writable}),payload.proposal.proposedCalendarDestination.map({chosen in session.sources.contains(where:chosen.matches)}) ?? true else {throw ActionFailure.message("The selected Calendar/list is no longer available or this request stopped.")}
             var edited=captured;edited.itemID=session.item.itemID;edited.occurrenceID=session.item.occurrenceID;edited.modified=session.item.modified;edited.writable=session.item.writable
             try await createNativeItem(request,baseline:session.item,edited:edited,dateSelected:true,additionalValidity:{valid() && self.heartbeat.deviceAvailable},acceptedSnapshot:payload)
         } else if let item=payload.project {

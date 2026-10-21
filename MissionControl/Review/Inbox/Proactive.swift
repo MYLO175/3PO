@@ -29,6 +29,7 @@ struct PADiscovery: Codable, Identifiable, Equatable {
     var proposedRemoval: DiscoveryCalendarRemoval? = nil
     var proposedDate: DiscoveryProposedDate? = nil
     var proposedProjectTask: DiscoveryProjectTask? = nil
+    var proposedCalendarDestination: DiscoveryCalendarDestination? = nil
     var replyDraft:String? = nil
     var reviewState: String? = nil // pending save / approved, independent of source truth
     var reviewedAt: Date? = nil
@@ -259,6 +260,26 @@ struct DiscoveryProposedDate: Codable, Equatable {
         let f=DateFormatter();f.locale=Locale(identifier:"en_US_POSIX");f.timeZone=TimeZone(identifier:timeZoneID);f.dateFormat="yyyy-MM-dd";return f.string(from:value)
     }
 }
+/// An issued writable destination, separate from permission or the approval to create.
+/// Purpose receipts gate new advice; a later guide edit does not revoke a displayed human approval.
+struct DiscoveryCalendarDestination: Codable, Equatable {
+    var sourceID:String
+    var providerID:String?
+    var account:String
+    var label:String
+    var contextPageDependencies:[String:String]? = nil
+    init(_ source:SourceOption,contextPageDependencies:[String:String]? = nil) {
+        sourceID=source.id;providerID=source.providerID;account=source.account;label=source.displayLabel
+        self.contextPageDependencies=contextPageDependencies
+    }
+    func matches(_ source:SourceOption)->Bool {
+        !sourceID.isEmpty && source.id == sourceID && source.providerID == providerID && source.account == account && source.writable
+    }
+    static func sameIdentity(_ lhs:Self?,_ rhs:Self?)->Bool {
+        guard let lhs,let rhs else {return lhs == nil && rhs == nil}
+        return lhs.sourceID == rhs.sourceID && lhs.providerID == rhs.providerID && lhs.account == rhs.account
+    }
+}
 struct DiscoveryProjectTarget: Codable, Equatable {
     var id: UUID
     var revision: UUID
@@ -290,7 +311,7 @@ struct DiscoveryCandidate {
 /// Never interpolate a model value, JSON key, decoding debug description or source alias.
 struct ReviewResultDiagnostic: LocalizedError, Equatable, Codable {
     enum Section:String,Codable { case result,suggestions,handled,resolved,retirements }
-    enum Field:String,Codable { case envelope,tool,arguments,reviewID,mailID,kind,message,evidence,evidenceID,title,targetID,newDate,hasTime,connection,draft,replaces,replacementReason,scope,endDate,projectID,confirmationID,requestEvidenceID,confirmationEvidenceID,allActionsAddressed,reason }
+    enum Field:String,Codable { case envelope,tool,arguments,reviewID,mailID,kind,message,evidence,evidenceID,title,targetID,newDate,hasTime,connection,draft,replaces,replacementReason,scope,endDate,projectID,calendarID,confirmationID,requestEvidenceID,confirmationEvidenceID,allActionsAddressed,reason }
     enum Reason:String,Codable { case malformedJSON,missingField,wrongType,unsupportedField,tooManyRows,tooLong,emptyValue,unsupportedAction,unissuedSource,unissuedEvidence,quoteMismatch,invalidTarget,invalidDate,incompatibleFields,duplicateProposal,invalidReplacement,missingCompletedCall,unexpectedCallCount,unexpectedTool,oversizedArguments,invalidAssociation,conflictingAssociation,dateFormat,timeFlagMismatch,impossibleDate,unanchoredWeek,endBeforeStart,eventTimeModeChanged,unchangedDate,projectTimeUnsupported }
     var section:Section
     var row:Int? = nil
@@ -503,8 +524,8 @@ enum ProactiveRules {
         }
         return result
     }
-    static func decode(_ text: String, candidates: [DiscoveryCandidate], registration: String, scope: String, now: Date, targets:[String:DiscoveryNativeTarget] = [:], earlier:[String:PADiscovery] = [:], projects:[String:DiscoveryProjectTarget] = [:]) throws -> [PADiscovery] {
-        struct Suggestion: Decodable { var mailID: String; var kind: String; var message: String?; var evidence: String?;var evidenceID:String?;var title:String?;var targetID:String?;var newDate:String?;var hasTime:Bool?;var connection:String?;var draft:String?;var replaces:[String]?;var replacementReason:String?;var scope:String?;var endDate:String?;var projectID:String? }
+    static func decode(_ text: String, candidates: [DiscoveryCandidate], registration: String, scope: String, now: Date, targets:[String:DiscoveryNativeTarget] = [:], earlier:[String:PADiscovery] = [:], projects:[String:DiscoveryProjectTarget] = [:],calendars:[String:DiscoveryCalendarDestination] = [:]) throws -> [PADiscovery] {
+        struct Suggestion: Decodable { var mailID: String; var kind: String; var message: String?; var evidence: String?;var evidenceID:String?;var title:String?;var targetID:String?;var newDate:String?;var hasTime:Bool?;var connection:String?;var draft:String?;var replaces:[String]?;var replacementReason:String?;var scope:String?;var endDate:String?;var projectID:String?;var calendarID:String? }
         struct Output: Decodable { var suggestions: [Suggestion] }
         let output:Output
         do { output=try JSONDecoder().decode(Output.self,from:Data(text.utf8)) }
@@ -564,6 +585,11 @@ enum ProactiveRules {
                 guard connection.count <= 500 else {throw reject(.connection,.tooLong)}
                 projectTask = .init(target:target,connection:connection)
             } else if value.projectID != nil {throw reject(.projectID,.incompatibleFields)}
+            var calendarDestination:DiscoveryCalendarDestination?
+            if let calendarID=value.calendarID {
+                guard value.kind == "calendar",let issued=calendars[calendarID],issued.sourceID == calendarID else {throw reject(.calendarID,.invalidTarget)}
+                calendarDestination=issued
+            }
             var change:DiscoveryDateChange?
             var removal:DiscoveryCalendarRemoval?
             if value.kind == "change" {
@@ -606,7 +632,7 @@ enum ProactiveRules {
                     replacementIDs.append(old.id)
                 }
             } else if value.replacementReason != nil {throw reject(.replacementReason,.incompatibleFields)}
-            let record=reviewProjection(PADiscovery(id:UUID().uuidString,registration:registration,mailID:candidate.mailID,kind:value.kind,message:message,evidence:evidence,created:now,scope:scope,sourceKind:candidate.sourceKind,sourceChatID:candidate.sourceChatID,sourceMessageID:candidate.sourceMessageID,sourceIdentity:candidate.sourceIdentity,sourceRevision:candidate.sourceRevision,sourceLabel:candidate.sourceLabel,sourceTitle:value.title ?? (suggestedDate != nil ? String(evidence.prefix(160)) : nil),sourceAssessmentRevision:candidate.sourceAssessmentRevision,proposedChange:change,proposedRemoval:removal,proposedDate:suggestedDate,proposedProjectTask:projectTask,replyDraft:value.draft,sourceDate:candidate.sourceDate,replaces:replacementIDs.isEmpty ? nil : replacementIDs,replacementReason:value.replacementReason,sourceContentVersion:candidate.sourceContentVersion))
+            let record=reviewProjection(PADiscovery(id:UUID().uuidString,registration:registration,mailID:candidate.mailID,kind:value.kind,message:message,evidence:evidence,created:now,scope:scope,sourceKind:candidate.sourceKind,sourceChatID:candidate.sourceChatID,sourceMessageID:candidate.sourceMessageID,sourceIdentity:candidate.sourceIdentity,sourceRevision:candidate.sourceRevision,sourceLabel:candidate.sourceLabel,sourceTitle:value.title ?? (suggestedDate != nil ? String(evidence.prefix(160)) : nil),sourceAssessmentRevision:candidate.sourceAssessmentRevision,proposedChange:change,proposedRemoval:removal,proposedDate:suggestedDate,proposedProjectTask:projectTask,proposedCalendarDestination:calendarDestination,replyDraft:value.draft,sourceDate:candidate.sourceDate,replaces:replacementIDs.isEmpty ? nil : replacementIDs,replacementReason:value.replacementReason,sourceContentVersion:candidate.sourceContentVersion))
             // Identical prepared actions are redundant data, never separate authority.
             if !decoded.contains(where:{$0.mailID == record.mailID && sameProposal($0,record)}) {decoded.append(record)}
         }
@@ -632,6 +658,7 @@ enum ProactiveRules {
             let old=earlier[alias]!
             var row:[String:Any]=["id":alias,"historicalProposal":true,"canReplace":replaceable?.contains(alias) ?? true,"kind":old.kind,"received":(old.sourceDate ?? old.created).ISO8601Format(),"source":old.sourceKind ?? "mail","evidence":old.evidence,"title":old.sourceTitle ?? "","message":old.message]
             if let target=old.nativeTarget {row["targetID"]=targets.first(where:{$0.value.kind == target.kind && $0.value.itemID == target.itemID && $0.value.sourceID == target.sourceID})?.key}
+            if let destination=old.proposedCalendarDestination {row["calendarID"]=destination.sourceID;row["calendarDestination"]=destination.label}
             if let date=old.proposedDate {row["proposedDate"]=date.start;row["hasTime"]=date.hasTime;row["endDate"]=date.end as Any? ?? NSNull();row["timeZone"]=date.timeZoneID}
             if let project=old.proposedProjectTask {row["projectID"]=project.target.id.uuidString}
             if let change=old.proposedChange {row["proposedDate"]=change.newDate}
@@ -669,7 +696,7 @@ enum ProactiveRules {
             (a.sourceContentVersion != nil && a.sourceContentVersion == b.sourceContentVersion) ||
             (a.sourceContentVersion == nil && b.sourceContentVersion == nil && a.sourceRevision != nil && a.sourceRevision == b.sourceRevision && a.sourceAssessmentRevision != nil && a.sourceAssessmentRevision == b.sourceAssessmentRevision))
         let sameNamedAction=["calendar","reminder","project","projectTask"].contains(a.kind) && a.sourceTitle.map{!$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty} == true && a.sourceTitle == b.sourceTitle && sameSnapshot
-        return a.proposedChange == nil && b.proposedChange == nil && a.kind == b.kind && !distinctTitles && (a.evidence == b.evidence || sameNamedAction) && a.proposedDate == b.proposedDate && a.proposedProjectTask?.target.id == b.proposedProjectTask?.target.id
+        return a.proposedChange == nil && b.proposedChange == nil && a.kind == b.kind && !distinctTitles && (a.evidence == b.evidence || sameNamedAction) && a.proposedDate == b.proposedDate && a.proposedProjectTask?.target.id == b.proposedProjectTask?.target.id && DiscoveryCalendarDestination.sameIdentity(a.proposedCalendarDestination,b.proposedCalendarDestination)
     }
     static func recoveringPreparedMail(_ progress:ProactiveProgress,candidates:[DiscoveryCandidate],prior:[PADiscovery],registration:String)->ProactiveProgress {
         var result=progress,versions=progress.preparedMailVersions ?? []
