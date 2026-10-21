@@ -107,6 +107,10 @@ import SwiftData
     }
     func policy(_ registration:String)->ReviewPolicyCapture {reviewPolicies.policy(registration)}
     func policyAvailable(_ capture:ReviewPolicyCapture)->Bool {reviewPolicies.matches(capture)}
+    func policyAvailable(_ reference:ReviewPolicyReference?,registration:String)->Bool {
+        guard let reference else {return true}
+        return reference.registration == registration && reviewPolicies.readable && reference.matches(policy(registration))
+    }
     @discardableResult func savePolicy(_ text:String,registration:String,expected:ReviewPolicyCapture)->Bool {reviewPolicies.save(text,registration:registration,expected:expected)}
     @discardableResult func resetPolicy(registration:String,expected:ReviewPolicyCapture)->Bool {reviewPolicies.reset(registration,expected:expected)}
     func policyHistory(_ registration:String)->[ReviewPolicyVersion] {reviewPolicies.history(registration)}
@@ -247,6 +251,7 @@ import SwiftData
     }
     func resolution(_ summary:EmailSummary,message:MailMessage,model:DashboardModel,use:AutomaticMemoryUse? = nil,mailAccounts:Set<String>? = nil,whatsappReady:Bool = true)->EmailResolution? {
         guard summary.registration == model.chatGPT.activeID,summary.observedBodyFingerprint.map({$0 == summary.bodyFingerprint}) ?? true,model.assistant.contextEnabled,summary.keepInReview != true,let value=summary.resolution,
+              policyAvailable(value.reviewPolicy,registration:summary.registration),model.contextPageDependenciesAvailable(value.contextPageDependencies,registration:summary.registration),
               model.memoryDependenciesAvailable(value.memoryDependencies,use:value.memoryUse ?? .suggestions),model.whatsappDependenciesAvailable(value.whatsappDependencies,use:value.memoryUse ?? .suggestions),
               use.map({model.reviewAcknowledgementSupportAvailable(memory:value.memoryDependencies,whatsapp:value.whatsappDependencies,use:$0,mailAccounts:mailAccounts,whatsappReady:whatsappReady)}) ?? true,
               let supporting=records.first(where:{$0.id == value.confirmation.messageID && $0.registration == model.chatGPT.activeID}),let confirming=sourceAssessment(supporting,model:model),
@@ -325,6 +330,7 @@ import SwiftData
     func handling(_ summary:EmailSummary,message:MailMessage,model:DashboardModel)->EmailHandling? {
         guard summary.observedBodyFingerprint.map({$0 == summary.bodyFingerprint}) ?? true,summary.dateClarificationQuote == nil,summary.registration == model.chatGPT.activeID,!model.assistant.excludedAccounts.contains(message.accountID),model.mailData.accounts.contains(where:{$0.id == message.accountID}),summary.keepInReview != true,let handling=summary.handling,EmailReviewRules.supportsNativeHandling(summary,native:handling.native),handling.assessmentRevision == summary.adviceRevision(replied:message.replied),summary.fingerprint == EmailSummary.fingerprint(message),!EmailReplyDraftRules.canReply(summary,message:message),model.assistant.contextEnabled,
               model.paOrientationHealth.error == nil,model.reminderHealth.error == nil,
+              policyAvailable(handling.reviewPolicy,registration:summary.registration),model.contextPageDependenciesAvailable(handling.contextPageDependencies,registration:summary.registration),
               model.memoryDependenciesAvailable(handling.memoryDependencies,use:handling.memoryUse ?? .suggestions),model.whatsappDependenciesAvailable(handling.whatsappDependencies,use:handling.memoryUse ?? .suggestions),
               model.paOrientationHealth.lastSuccess.map{Date.now.timeIntervalSince($0) < 600} == true,model.reminderHealth.lastSuccess.map{Date.now.timeIntervalSince($0) < 600} == true,
               handling.native.completedAt == nil || (model.completedReminderHealth.error == nil && model.completedReminderHealth.lastSuccess.map{Date.now.timeIntervalSince($0) < 600} == true),

@@ -299,6 +299,8 @@ struct EmailHandling:Codable,Equatable {
     var memoryDependencies:[MemoryDependency]? = nil
     var whatsappDependencies:[WhatsAppWindowDependency]? = nil
     var memoryUse:AutomaticMemoryUse? = nil
+    var contextPageDependencies:[String:String]? = nil
+    var reviewPolicy:ReviewPolicyReference? = nil
     var label:String {native.completedAt == nil ? "Already planned" : "Addressed · reminder completed"}
 }
 enum EmailReviewRules {

@@ -63,7 +63,10 @@ import Foundation
         dependencies.memoryDependencies=[.init(id:"fictional-memory",fingerprint:"memory-version")]
         dependencies.whatsappDependencies=[.init(chatID:"fictional-chat",linkedIdentity:"fictional-device",fingerprint:"window-version")]
         dependencies.memoryUse = .heartbeatSuggestions
+        dependencies.contextPageDependencies=["project:fictional-project":"exact-project-version"]
+        dependencies.reviewPolicy = .init(ReviewPolicyCapture(registration:request.registration,revision:"policy-v1",text:"Prefer genuine personal requests.",isDefault:false))
         check(try JSONDecoder().decode(EmailResolution.self,from:JSONEncoder().encode(dependencies)) == dependencies,"Optional dependency receipts persist")
+        check(receipt.contextPageDependencies == nil && receipt.reviewPolicy == nil,"Legacy resolution has no invented page/policy dependency")
         check(try decode("{}").isEmpty,"Legacy comparison output can omit resolved")
         check(try decode(#"{"resolved":null}"#).isEmpty,"Null resolved means no resolution")
         check(try decode(#"{"suggestions":[],"handled":[],"resolved":[]}"#).isEmpty,"Resolution coexists with other comparison output")

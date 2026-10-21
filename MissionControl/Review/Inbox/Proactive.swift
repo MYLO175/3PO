@@ -45,6 +45,8 @@ struct PADiscovery: Codable, Identifiable, Equatable {
     var comparisonSourceIDs:[String]? = nil
     /// Exact Mail content identity, independent of generated assessment prose.
     var sourceContentVersion:String? = nil
+    var contextPageDependencies:[String:String]? = nil
+    var reviewPolicy:ReviewPolicyReference? = nil
     var deliveryID: String { "discovery:" + id }
     var needsDateClarification:Bool { SourceDateGrounding.needsWeekAnchor(evidence) && !["project","reply"].contains(kind) }
     var nativeTarget:DiscoveryNativeTarget? { proposedChange?.target ?? proposedRemoval?.target }
@@ -189,6 +191,8 @@ struct DiscoveryRetirementEvidence:Codable,Equatable {
     var id:String
     var revision:String
     var parentID:String? = nil
+    var contextPageDependencies:[String:String]? = nil
+    var reviewPolicy:ReviewPolicyReference? = nil
 }
 struct DiscoveryRetirement:Equatable {
     var proposal:PADiscovery

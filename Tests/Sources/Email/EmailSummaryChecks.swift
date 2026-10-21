@@ -188,6 +188,12 @@ import Foundation
         actionable.keepInReview=true;refuseHandling(actionable,"done_0")
         let savedHandling=try JSONDecoder().decode(EmailHandling.self,from:JSONEncoder().encode(handled[0].1))
         assert(savedHandling == handled[0].1)
+        var pageHandling=savedHandling
+        pageHandling.contextPageDependencies=["page:purpose":"purpose-v1"]
+        pageHandling.reviewPolicy = .init(ReviewPolicyCapture(registration:"registration-a",revision:"policy-v1",text:"Keep Review selective.",isDefault:false))
+        let reopenedPageHandling=try JSONDecoder().decode(EmailHandling.self,from:JSONEncoder().encode(pageHandling))
+        assert(reopenedPageHandling == pageHandling)
+        assert(savedHandling.contextPageDependencies == nil && savedHandling.reviewPolicy == nil)
 
         let relevanceContext=EmailRelevanceContext(memories:[["id":"human_1","text":"Current Orion work"]],workspace:[["id":"life:project_1","revision":UUID().uuidString,"title":"Orion"]],memoryReceipts:[.init(id:"human_1",fingerprint:"f1")])
         let connection=EmailRelevanceJudgement(reason:"Useful for the current Orion project",evidence:body,memoryIDs:["human_1"],workspaceIDs:["life:project_1"],preferenceIDs:[])

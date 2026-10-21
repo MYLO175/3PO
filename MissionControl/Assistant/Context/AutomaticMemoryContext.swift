@@ -1,16 +1,9 @@
 import Foundation
 
-struct AutomaticMemoryCapture:Equatable {
-    var records:[[String:String]]
-    var dependencies:[MemoryDependency]
-    var eligibleCount:Int
-    var whatsappChats:Set<String> = []
-    var context:String {
-        let value:[String:Any]=["savedMemory":records,"commitmentReports":CommitmentRules.context(records),"eligibleMemoryCount":eligibleCount,"selectedMemoryCount":records.count,"coverage":"At most 40 usable saved facts and 20KB, with exact evidence and certainty. Partial local retrieval, not a complete life history. Source memories additionally follow this feature's source permissions; learning permission alone never enables WhatsApp briefing or automatic suggestions."]
-        return (try? String(data:JSONSerialization.data(withJSONObject:value,options:[.sortedKeys]),encoding:.utf8)) ?? "{}"
-    }
-}
 extension DashboardModel {
+    func contextPageDependenciesAvailable(_ versions:[String:String]?,registration:String)->Bool {
+        ContextPageDependencyRules.available(versions) {self.contextKnowledgeAvailable(registration:registration,versions:$0)}
+    }
     func whatsappDependenciesAvailable(_ dependencies:[WhatsAppWindowDependency]?,use:AutomaticMemoryUse)->Bool {
         guard let dependencies,!dependencies.isEmpty else { return true }
         let access=whatsapp.access(for:chatGPT.activeID)
@@ -41,7 +34,10 @@ extension DashboardModel {
         },includeNotebook:false).selection
         let selected=Set(selection.records.compactMap{$0["id"]})
         let chats=Set(assistant.memory.records.filter{selected.contains($0.id.uuidString)}.flatMap(\.allSourceEvidence).filter{$0.identity.kind == .whatsapp}.map{$0.identity.containerID})
-        return .init(records:selection.records,dependencies:MemoryDependencyRules.capture(selection.records),eligibleCount:selection.eligibleCount,whatsappChats:chats)
+        let allowedMemoryIDs=Set(selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))})
+        let pages=captureContextPages(registration:chatGPT.activeID,query:query ?? (use == .brief ? nil : ""),includeTopics:use == .brief,everyday:false,allowedMemoryIDs:allowedMemoryIDs)
+        let versions=pages.current() ? pages.referenceVersions : [:]
+        return .init(records:selection.records,dependencies:MemoryDependencyRules.capture(selection.records),eligibleCount:selection.eligibleCount,whatsappChats:chats,pageContext:versions.isEmpty ? "{}" : AutomaticMemoryCapture.pagePayload(pages.text),contextPageDependencies:versions)
     }
     func memoryDependenciesAvailable(_ dependencies:[MemoryDependency]?,use:AutomaticMemoryUse)->Bool {
         guard let dependencies,!dependencies.isEmpty else { return true }

@@ -430,6 +430,30 @@ import CoreFoundation
         precondition(index.mail[legacyAck.mailID]?.map(\.id) == [legacyAck.id,sameSource.id,sameSource.id],"Exact-source lookup preserves legacy mail, sibling order and duplicates while excluding retired/other-owner/undismissed records")
         precondition(index.whatsapp[.init(chat:"a:b",message:"c")]?.map(\.id) == [waAck.id] && index.whatsapp[.init(chat:"a",message:"b:c")]?.map(\.id) == [anotherChat.id],"Chat and message identity must remain separate typed keys")
         precondition(index.mail["missing"] == nil && index.whatsapp[.init(chat:"other",message:"c")] == nil)
+        let pageVersions=["memory:fact-one":"version-one","project:space-one":"version-two","page:purpose-one":"version-three"]
+        let pageJSON=#"{"pages":[{"id":"project-page","markdown":"Current robotics purpose"}],"workingChanges":[{"id":"project:space-one","text":"Bench validation is next"}],"directory":[{"title":"Unrelated life area"}],"directoryCount":9}"#
+        let payload=AutomaticMemoryCapture.pagePayload(pageJSON)
+        precondition(!payload.contains("Unrelated life area") && !payload.contains("directory") && payload.contains("Current robotics purpose"))
+        let captured=AutomaticMemoryCapture(records:[],dependencies:[],eligibleCount:0,pageContext:payload,contextPageDependencies:pageVersions)
+        precondition(captured == captured,"Automatic page captures contain no validation closures or other non-data fields")
+        let input=try JSONSerialization.jsonObject(with:Data(captured.context.utf8)) as! [String:Any]
+        precondition(input["contextPages"] is [String:Any])
+        let unsupplied=AutomaticMemoryCapture(records:[],dependencies:[],eligibleCount:0,pageContext:payload)
+        let noPages=try JSONSerialization.jsonObject(with:Data(unsupplied.context.utf8)) as! [String:Any]
+        precondition(noPages["contextPages"] == nil,"Unreferenced page prose never enters automatic input")
+        let policyCapture=ReviewPolicyCapture(registration:legacyAck.registration,revision:"human-policy-v2",text:"Prioritise current robotics responsibilities.",isDefault:false)
+        var pageAdvice=legacyAck;pageAdvice.contextPageDependencies=pageVersions;pageAdvice.reviewPolicy = .init(policyCapture)
+        pageAdvice.retirementEvidence = .init(kind:"reminder",id:"exact-reminder",revision:"native-v1",contextPageDependencies:pageVersions,reviewPolicy:.init(policyCapture))
+        let reopenedAdvice=try JSONDecoder().decode(PADiscovery.self,from:JSONEncoder().encode(pageAdvice))
+        precondition(reopenedAdvice.contextPageDependencies == pageVersions && reopenedAdvice.reviewPolicy?.matches(policyCapture) == true)
+        precondition(reopenedAdvice.retirementEvidence?.contextPageDependencies == pageVersions && reopenedAdvice.retirementEvidence?.reviewPolicy?.matches(policyCapture) == true,"Retirement context stays separate from original proposal support")
+        var legacyObject=try JSONSerialization.jsonObject(with:JSONEncoder().encode(pageAdvice)) as! [String:Any]
+        legacyObject.removeValue(forKey:"contextPageDependencies");legacyObject.removeValue(forKey:"reviewPolicy")
+        let legacyAdvice=try JSONDecoder().decode(PADiscovery.self,from:JSONSerialization.data(withJSONObject:legacyObject))
+        precondition(legacyAdvice.contextPageDependencies == nil && legacyAdvice.reviewPolicy == nil && legacyAdvice.message == pageAdvice.message)
+        let projected=ProactiveRules.reviewProjection(pageAdvice)
+        precondition(projected.id == pageAdvice.id && projected.contextPageDependencies == pageVersions,"Prepared projection preserves exact stored provenance without rebuilding pages")
+        print("PASS automatic page capture: purpose payload, no directory/unreferenced prose, data-only equality, persisted advice/policy receipts and legacy prepared projection")
         print("PASS typed review transport, safe field diagnostics, 32000-byte boundary and proactive rules: grounded aliases/quotes, prohibited kinds, account dedup/dismissal, daily budget, pause/cooldown/persistence and conservative current-thread latest-suggestion review references.")
     }
 }

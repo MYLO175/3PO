@@ -223,6 +223,32 @@ import Foundation
         precondition(nativeRecovery.nativeValidationRequiresFresh(capturedRevision:1,currentRevision:1),"Adopting equivalent direct evidence cannot fall back to a lagging cache")
         _=nativeRecovery.advance(.init(kinds:["native"]));_=nativeRecovery.advance(.init(kinds:["native"]))
         precondition(nativeRecovery.omittedKinds.isEmpty,"Native source changes never bypass exact validation")
+        var pageValidationReads=0
+        precondition(ContextPageDependencyRules.available(nil,current:{_ in pageValidationReads += 1;return false}))
+        precondition(ContextPageDependencyRules.available([:],current:{_ in pageValidationReads += 1;return false}))
+        precondition(pageValidationReads == 0,"Legacy or empty page receipts perform no new context/source work")
+        let pageRefs=["memory:fact-one":"fact-v1","project:space-one":"project-v3","page:purpose-one":"purpose-v2"]
+        var currentRefs=pageRefs;currentRefs["project:unrelated"]="unrelated-new-version"
+        func pageCurrent(_ refs:[String:String])->Bool {refs.allSatisfy{currentRefs[$0.key] == $0.value}}
+        precondition(ContextPageDependencyRules.available(pageRefs,current:pageCurrent),"Unrelated additions do not revoke supplied pages")
+        currentRefs["project:space-one"]="project-v4"
+        precondition(!ContextPageDependencyRules.available(pageRefs,current:pageCurrent),"A supplied project update invalidates old page interpretation")
+        currentRefs=pageRefs;currentRefs.removeValue(forKey:"memory:fact-one")
+        precondition(!ContextPageDependencyRules.available(pageRefs,current:pageCurrent),"Withdrawal/correction/forgetting makes the exact supporting reference unavailable")
+        currentRefs=pageRefs;currentRefs["page:purpose-one"]="purpose-v3"
+        precondition(!ContextPageDependencyRules.available(pageRefs,current:pageCurrent),"A human purpose edit invalidates old page advice")
+        precondition(!ContextPageDependencyRules.available(["":"invalid"],current:{_ in true}))
+        let policyCapture=ReviewPolicyCapture(registration:morning.registration,revision:"review-policy-v2",text:"Prioritise changed commitments.",isDefault:false)
+        var pageBrief=morning;pageBrief.contextPageDependencies=pageRefs;pageBrief.reviewPolicy = .init(policyCapture)
+        pageBrief.sources.append(.init(id:"memory_40",label:"Relevant context pages",kind:"contextPages",date:nil,originalID:"automatic-context-pages",contentRevision:"exact-page-refs"))
+        let reopenedPageBrief=try JSONDecoder().decode(DailyBriefing.self,from:JSONEncoder().encode(pageBrief))
+        precondition(reopenedPageBrief.contextPageDependencies == pageRefs && reopenedPageBrief.reviewPolicy?.matches(policyCapture) == true)
+        precondition(reopenedPageBrief.sources.last?.kind == "contextPages" && PAProse.display("Useful context. [memory_40]") == "Useful context.")
+        var legacyPageObject=try JSONSerialization.jsonObject(with:JSONEncoder().encode(pageBrief)) as! [String:Any]
+        legacyPageObject.removeValue(forKey:"contextPageDependencies");legacyPageObject.removeValue(forKey:"reviewPolicy")
+        let legacyPageBrief=try JSONDecoder().decode(DailyBriefing.self,from:JSONSerialization.data(withJSONObject:legacyPageObject))
+        precondition(legacyPageBrief.contextPageDependencies == nil && legacyPageBrief.reviewPolicy == nil && legacyPageBrief.message == morning.message,"Legacy saved brief prose remains untouched")
+        print("PASS context-page dependencies: lazy legacy path, exact changed/missing references, unrelated additions, policy/page persistence and existing memory source aliases")
         print("PASS: account-scoped prompt/default persistence and stale captures; local dayparts/timezone/DST, immutable prose, catch-up, delivery claims and source validation")
     }
     private static func presentationChecks() {
