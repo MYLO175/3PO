@@ -220,6 +220,54 @@ import Foundation
         precondition(EmailRelevanceRules.validPreferences(maximum) && !EmailRelevanceRules.validPreferences(maximum+[preference]))
         var inactive=preference;inactive.inactive=true
         precondition(EmailRelevanceRules.validPreferences(maximum+[inactive]))
-        print("PASS: source grounding, current-life relevance receipts, canonical revisions, bounded preference validation, legacy/cache round-trip, reply/action separation and weak feedback")
+        try contextPageChecks(message:message)
+        print("PASS: source grounding, exact context-page relevance receipts/bounds/discovery, canonical revisions, bounded preference validation, legacy/cache round-trip, reply/action separation and weak feedback")
+    }
+    static func contextPageChecks(message:MailMessage)throws {
+        let projectID="life:"+UUID().uuidString,pageID="context-page:purpose:atlas"
+        let dependencies=["page:"+pageID:"human-purpose-v1","projectIdentity:atlas":"exact-project-identity-v1"]
+        let purpose=EmailRelevancePage(id:pageID,title:"Atlas purpose",markdown:"Atlas is my current robotics project. I use it to compare robot perception benchmarks and track useful datasets.",owner:"human",partial:false,dependencies:dependencies)
+        let bounded=EmailRelevanceRules.boundedPages([purpose],maximumBytes:3500)
+        precondition(bounded.rows.count == 1 && bounded.dependencies == dependencies && bounded.rows[0]["coverage"] == "Complete saved text")
+        let context=EmailRelevanceContext(workspace:[["id":projectID,"revision":UUID().uuidString,"title":"Atlas"]],contextPages:bounded.rows,contextPageDependencies:bounded.dependencies)
+        let quote="New robot perception benchmark results and datasets are available."
+        let output:[String:Any]=["summary":"Robot perception benchmark results are available.","attention":false,"reason":"","evidence":quote,"worthReading":true,"needsReply":false,
+            "personalRelevance":["reason":"Useful comparison data for Atlas's stated robotics purpose.","evidence":quote,"workspaceIDs":[projectID],"pageIDs":[pageID]]]
+        let text=String(decoding:try JSONSerialization.data(withJSONObject:output),as:UTF8.self)
+        let assessment=try EmailSummary.decode(text,message:message,body:quote,registration:"registration-a",relevanceContext:context)
+        precondition(assessment.worthReading == true && !assessment.attention && assessment.personalRelevance?.workspace.first?.id == projectID)
+        precondition(assessment.personalRelevance?.contextPageDependencies == dependencies,"Positive relevance retains the exact purpose-page and project-identity receipts")
+        let noteOnly=EmailRelevanceJudgement(reason:"Useful for the stated robotics work.",evidence:quote,memoryIDs:[],workspaceIDs:[],preferenceIDs:[],pageIDs:[pageID])
+        let noteRelevance=try EmailRelevanceRules.validated(noteOnly,context:context,message:message,body:quote)
+        precondition(noteRelevance.contextPageDependencies == dependencies)
+        for invalid in [EmailRelevanceContext(),EmailRelevanceContext(contextPages:bounded.rows)] {
+            do {_ = try EmailRelevanceRules.validated(noteOnly,context:invalid,message:message,body:quote);fatalError("Unissued or unreceipted page relevance accepted")} catch SummaryFailure.unsupportedEvidence {}
+        }
+        var invented=noteOnly;invented.pageIDs=["unissued-page"]
+        do {_ = try EmailRelevanceRules.validated(invented,context:context,message:message,body:quote);fatalError("Invented page ID accepted")} catch SummaryFailure.unsupportedEvidence {}
+        let empty=EmailRelevanceRules.boundedPages([],maximumBytes:1200)
+        precondition(empty.rows.isEmpty && empty.dependencies == nil && EmailRelevanceContext().input["contextPages"] == nil,"No related context means no biography or fallback pages")
+        var long=purpose;long.markdown=String(repeating:"Robot 🤖 perception tests\n",count:300)
+        for limit in [1200,3500] {
+            let excerpt=EmailRelevanceRules.boundedPages([long],maximumBytes:limit)
+            let encoded=try JSONSerialization.data(withJSONObject:EmailRelevanceRules.pageInput(excerpt.rows),options:.sortedKeys)
+            precondition(encoded.count <= limit && excerpt.rows[0]["coverage"] == "Partial excerpt" && excerpt.dependencies == dependencies)
+        }
+        var conflict=purpose;conflict.id="other-page";conflict.dependencies["page:"+pageID]="different-version"
+        let conflicting=EmailRelevanceRules.boundedPages([purpose,conflict],maximumBytes:3500)
+        precondition(conflicting.rows.count == 1 && conflicting.dependencies == dependencies,"Omitted/conflicting excerpts do not add receipts")
+        let pref=[MemoryDependency(id:"preference",fingerprint:"original")]
+        let oldStamp=EmailRelevanceRules.discoveryRevision(preferences:pref,humanPages:[:])
+        precondition(oldStamp == EmailNativeEvidence.hash(pref) && EmailRelevanceRules.discoveryRevision(preferences:[],humanPages:[:]) == nil,"No page context preserves old preference discovery")
+        let stamp=EmailRelevanceRules.discoveryRevision(preferences:pref,humanPages:[pageID:"v1"])
+        precondition(stamp != oldStamp && stamp != EmailRelevanceRules.discoveryRevision(preferences:pref,humanPages:[pageID:"v2"]))
+        precondition(stamp == EmailRelevanceRules.discoveryRevision(preferences:pref,humanPages:[pageID:"v1"]),"Only current relevant human versions, never generated page wording, enter discovery")
+        var withReceipt=assessment
+        withReceipt.reviewContext = .init(policy:.init(registration:"registration-a",revision:"p1",text:"Keep Review selective.",isDefault:false),memories:[],discoveryRevision:stamp,contextPageDependencies:dependencies)
+        let reopened=try JSONDecoder().decode(EmailSummary.self,from:JSONEncoder().encode(withReceipt))
+        precondition(reopened.reviewContext?.contextPageDependencies == dependencies && reopened.personalRelevance?.contextPageDependencies == dependencies)
+        let oldPersonal=try JSONDecoder().decode(EmailPersonalRelevance.self,from:Data(#"{"reason":"Relevant","evidence":"Exact quote","memories":[],"workspace":[],"preferences":[]}"#.utf8))
+        let oldReceipt=try JSONDecoder().decode(EmailReviewContextReceipt.self,from:Data(#"{"policy":{"registration":"registration-a","revision":"p1"},"preferences":[],"discoveryRevision":null}"#.utf8))
+        precondition(oldPersonal.contextPageDependencies == nil && oldReceipt.contextPageDependencies == nil,"Optional additive receipts keep existing saved cards decodable")
     }
 }
