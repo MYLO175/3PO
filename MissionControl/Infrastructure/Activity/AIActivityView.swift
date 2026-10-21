@@ -80,7 +80,8 @@ struct AIActivityPill: View {
                                openDestination: { activityOpen = false; openDestination($0) }, isVisible: isVisible,relatedDestinations:relatedDestinations,presentation:presentation)
             }
         }
-        .padding(4)
+        .padding(.horizontal,4)
+        .padding(.vertical,2)
         .background(success ? successColour.opacity(0.08) : .clear, in: Capsule())
         .background(palette[.widget].opacity(0.92), in: Capsule())
         .overlay(Capsule().stroke(success ? successColour.opacity(0.4) : failed ? Color.red.opacity(0.45) : attention ? Color.orange.opacity(0.55) : palette[.text].opacity(0.13), lineWidth: 0.75))
