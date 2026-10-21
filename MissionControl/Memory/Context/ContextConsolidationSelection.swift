@@ -61,7 +61,7 @@ enum ContextConsolidationSelection {
             var measured = candidate
             measured.pendingReferences = measured.records.filter(eligiblePending).map(\.reference)
             measured.remainingPendingCount = max(0, waiting.count - measured.pendingReferences.count)
-            return ContextKnowledgeRules.json(measured.input).utf8.count <= maximumTargetBytes
+            return ContextKnowledgeRules.json(ContextConsolidationRules.targetInputs([measured])[0]).utf8.count <= maximumTargetBytes
         }
         // Remove only excess new input while retaining at least one actual pending version.
         while (result.records.count > maximumRecords || !fits(result)),
@@ -111,15 +111,17 @@ enum ContextConsolidationSelection {
     }
 
     static func input(_ targets: [ContextPageTarget], now: Date, timezone: String) -> String {
-        ContextKnowledgeRules.json(["targets": targets.map(\.input), "now": now.ISO8601Format(), "timezone": timezone])
+        ContextKnowledgeRules.json(["targets": ContextConsolidationRules.targetInputs(targets), "now": now.ISO8601Format(), "timezone": timezone])
     }
 
     static func batch(_ targets: [ContextPageTarget], now: Date, timezone: String) -> [ContextPageTarget] {
         var result: [ContextPageTarget] = []
         for target in targets {
             guard result.count < maximumTargets else { break }
-            guard ContextKnowledgeRules.json(target.input).utf8.count <= maximumTargetBytes,
-                  input(result + [target], now: now, timezone: timezone).utf8.count <= maximumBatchBytes else { continue }
+            let proposed = result + [target]
+            let tools = ContextConsolidationRules.tools(proposed)
+            guard !tools.isEmpty, ContextKnowledgeRules.json(ContextConsolidationRules.targetInputs([target])[0]).utf8.count <= maximumTargetBytes,
+                  input(proposed, now: now, timezone: timezone).utf8.count + ContextKnowledgeRules.json(tools).utf8.count <= maximumBatchBytes else { continue }
             result.append(target)
         }
         return result

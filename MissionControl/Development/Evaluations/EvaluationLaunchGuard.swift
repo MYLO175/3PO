@@ -7,6 +7,7 @@ enum EvaluationLaunchGuard {
     static let protocolVersion = 1
     static let modes: [[String]] = [
         ["--validate-review-inbox","--working-context-model"],
+        ["--validate-review-inbox","--working-context-model","--context-pages-only"],
         ["--validate-review-inbox","--reminder-completion-native"],
         ["--validate-review-inbox","--chat-approval-only"],
         ["--preview-chat-approval"],

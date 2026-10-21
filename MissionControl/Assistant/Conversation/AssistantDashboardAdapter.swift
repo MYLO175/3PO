@@ -38,7 +38,7 @@ extension AssistantService {
     func localDiscoveryReview(_ prompt: String, model: DashboardModel, topicID: UUID?) -> PADiscovery? {
         guard let feed else { return nil }
         let turns = ConversationRules.thread(feed:feed,topic:conversation(topicID)).filter { $0.profileSessionID == nil }
-        let records = model.proactive.state.records.filter { $0.registration == connection.activeID && UUID(uuidString:$0.id) != nil && model.proactive.visible($0,model:model) }
+        let records = model.proactive.currentAdvice(model).filter { $0.registration == connection.activeID && UUID(uuidString:$0.id) != nil }
         return ProactiveReviewRules.reference(prompt,turns:turns,records:records)
     }
     func snapshot(_ model: DashboardModel) -> String? {

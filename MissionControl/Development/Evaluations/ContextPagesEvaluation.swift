@@ -179,6 +179,27 @@ import SwiftData
         checks["Primary context calendar routing exposes current account and provider alongside exact source IDs"] = calendarRows.first?["account"] as? String == calendar.account && calendarRows.first?["providerID"] as? String == calendar.providerID && calendarContext.current()
         guard model.assistant.memory.forget(calendarFact.id) else { throw IntegrationError.verification }
         checks["Primary context forgotten calendar guidance revokes both live and persisted capture"] = !calendarContext.current() && !model.contextKnowledgeAvailable(registration: registration, versions: calendarContext.referenceVersions) && model.calendarHumanGuidance(registration: registration).isEmpty
+        let currentConversation = model.captureContextPages(registration: registration, query: "Cobalt optics", includeTopics: false, everyday: true)
+        let captures = Array(repeating: currentConversation.referenceVersions, count: 40) + [email.referenceVersions]
+        let individuallyAvailable = captures.map { model.contextKnowledgeAvailable(registration: registration, versions: $0) }
+        let buildsBefore = model.contextKnowledgeBuildCount
+        var escapedAvailability: (([String: String]?) -> Bool)?
+        let sharedAvailable = model.withContextPageAvailability(registration: registration, captures: captures) { available in
+            escapedAvailability = available
+            return captures.map { available($0) }
+        }
+        checks["Primary context shared advice validation preserves exact results with one projection per purpose"] = sharedAvailable == individuallyAvailable && sharedAvailable.allSatisfy { $0 } && model.contextKnowledgeBuildCount - buildsBefore == 2
+        checks["Primary context a captured validation cannot be reused after its synchronous scope"] = escapedAvailability?(currentConversation.referenceVersions) == false && escapedAvailability?(nil) == true
+        var staleVersions = currentConversation.referenceVersions
+        staleVersions[reference.contextKey] = "fictional-earlier-version"
+        var unknownPurpose = currentConversation.referenceVersions
+        unknownPurpose["context-purpose:unknown-feature"] = "1"
+        let mixedVersions = [staleVersions, currentConversation.referenceVersions, unknownPurpose]
+        let mixedResult = model.withContextPageAvailability(registration: registration, captures: mixedVersions) { available in mixedVersions.map { available($0) } }
+        checks["Primary context mixed historical versions cannot invalidate current receipts or admit unknown purposes"] = mixedResult == [false, true, false]
+        guard model.assistant.memory.forget(fact.id) else { throw IntegrationError.verification }
+        let afterForget = model.withContextPageAvailability(registration: registration, captures: [currentConversation.referenceVersions]) { $0(currentConversation.referenceVersions) }
+        checks["Primary context a later advice pass rebuilds after supporting evidence is forgotten"] = !afterForget
         model.chatGPT.activeID = "fictional-other-context-owner"
         checks["Primary context source-free policies remain account scoped"] = !guidance.current() && !ordinary.current()
         checks["Primary context inspection and captures make no model or source calls"] = fixture.provider.calls == 0 && fixture.sources.reads == 0 && model.aiUsage.state.records.isEmpty

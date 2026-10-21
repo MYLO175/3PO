@@ -380,7 +380,7 @@ import Foundation
         case "read_attention":
             guard memory.reviewPreferenceMigrationReadable else {throw ActionFailure.message("Saved attention preferences are unavailable. No review advice was supplied.")}
             let summaries = model.emailSummaries.highlights(model).filter{!model.acknowledgedEmail($0.0,$0.1)}
-            let discoveries = model.proactive.state.records.filter { model.proactive.visible($0,model:model) }.map(ProactiveRules.reviewProjection)
+            let discoveries = model.proactive.currentAdvice(model).map(ProactiveRules.reviewProjection)
             issuedSuggestions.formUnion(summaries.prefix(40).map { "email:" + $0.1.id }); issuedSuggestions.formUnion(discoveries.prefix(10).map { "discovery:" + $0.id })
             for pair in summaries.prefix(40) {issuedEmailDismissalVersions[pair.1.id]=ReviewAcknowledgementRules.emailVersion(pair.0,pair.1)}
             for record in discoveries.prefix(10) {issuedDiscoveryDismissals[record.id]=record}

@@ -17,6 +17,7 @@ struct CalendarRemovalReviewSession:Identifiable {
     #if DEBUG
     /// Fictional consumer acceptance only; normal startup never consults this port.
     @ObservationIgnored var contextCalendarAccess: (() -> Bool)?
+    @ObservationIgnored var contextKnowledgeBuildCount = 0
     #endif
     @ObservationIgnored lazy var contextConsolidation = ContextConsolidationService()
     @ObservationIgnored lazy var contextQuestions = ContextProjectQuestionStore(container: container)
@@ -256,7 +257,7 @@ struct CalendarRemovalReviewSession:Identifiable {
                 if ProcessInfo.processInfo.arguments.contains("--working-context-model") {
                     let report:[String:Any]
                     do {report=try await WorkingContextModelEvaluation.run(self)}
-                    catch {report=["error":error.localizedDescription,"requests":0,"storage":"Fictional read-only ports; normal source startup did not run."]}
+                    catch {report=["error":error.localizedDescription,"requests":NSNull(),"requestCountKnown":false,"storage":"Fictional read-only ports; normal source startup did not run. This outer failure does not establish how many requests were attempted."]}
                     if let data=try? JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-working-context-model-evaluation.json"),options:.atomic)}
                     NSApp.terminate(nil);return
                 }

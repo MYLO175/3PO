@@ -1020,6 +1020,19 @@
       ]
     },
     {
+      "id": "context-pages-model",
+      "tier": "model",
+      "arguments": [
+        "--validate-review-inbox",
+        "--working-context-model",
+        "--context-pages-only"
+      ],
+      "report": "missioncontrol-working-context-model-evaluation.json",
+      "effects": [
+        "Configured subscription model on one fictional four-page synthesis using issued evidence selectors; maximum1 request/no tool execution; no personal source content or native writes"
+      ]
+    },
+    {
       "id": "review-inference-guards",
       "tier": "source-free",
       "script": "scripts/checks/test-review-inference-guards.sh",

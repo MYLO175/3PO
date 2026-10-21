@@ -107,6 +107,8 @@ import Observation
         let now = Date.now, timezone = TimeZone.current.identifier
         let selected = ContextConsolidationSelection.batch(all, now: now, timezone: timezone)
         guard !selected.isEmpty else { return .init(failure: "A context page exceeded its bounded input; its changes remain pending.", detail: "Context input remains pending.", skipped: false) }
+        let tools = ContextConsolidationRules.tools(selected)
+        guard !tools.isEmpty else { return .init(failure: "The bounded context result could not be prepared. Saved pages and changes are retained.", detail: "Context input remains pending.", skipped: false) }
         let selectedModel = model.chatGPT.selectedModel
         let memoryPermission = model.assistant.memory.useRevision
         let learningPermission = model.assistant.memory.controlsRevision
@@ -116,7 +118,13 @@ import Observation
         defer { busy = false; ownedHeartbeatRunID = nil }
         do {
             try request.validate(); try request.claim()
-            let text = try await model.chatGPT.streamResponse(input: [["role": "user", "content": input]], instructions: ContextConsolidationRules.instructions, model: selectedModel, purpose: .learning) { _ in }
+            let response = try await model.chatGPT.toolResponse(input: [["role": "user", "content": input]], instructions: ContextConsolidationRules.instructions,
+                tools: tools, model: selectedModel, purpose: .learning) { _ in }
+            guard response.calls.count == 1, let call = response.calls.first,
+                  (call.namespace == "pa" && call.name == ContextConsolidationRules.resultTool) || (call.namespace == nil && call.name == "pa." + ContextConsolidationRules.resultTool) else {
+                throw ContextPageFailure.invalid("consolidation result")
+            }
+            let text = call.arguments
             try Task.checkCancellation(); try request.validate()
             guard registration == model.chatGPT.activeID, model.assistant.memory.enabled, model.assistant.memory.learningEnabled,
                   memoryPermission == model.assistant.memory.useRevision, learningPermission == model.assistant.memory.controlsRevision else { throw MemoryLearningFailure.changed }

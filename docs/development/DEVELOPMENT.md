@@ -70,6 +70,8 @@ Signed DEBUG candidate example:
   --candidate-binary /private/tmp/3po-my-change/derived-data/Build/Products/Debug/3PO.app/Contents/MacOS/3PO
 ```
 
+For context-page changes, `--tier model --suite context-pages-model` exercises a fictional four-page batch through the configured model with a one-request allowance. `working-context-model` additionally covers conversation retrieval and source follow-ups. Both require the signed candidate argument above; neither executes native actions or uses personal source content.
+
 Use native/model tiers only for their documented effects and authorised scope. The runner checks signature, stable bundle identity, signed protocol declaration, DEBUG handshake, supported exact mode, timeout and fresh complete report before accepting a result. A legacy diagnostic flag is not inherently safe; an unsupported/Release candidate refuses before normal startup. Never replay an uncertain native write after a timeout.
 
 ## Changes that cross a boundary

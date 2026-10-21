@@ -435,11 +435,15 @@ import EventKit
                 if heartbeat {
                     if recovery.omittedKinds.isEmpty {
                         input["reviewQuestions"]=(state.reviewQuestions ?? []).filter{$0.snapshot.registration == registration && acknowledgementQuestionAvailable($0,model:model,use:.brief,mailAccounts:mailReview?.accountIDs,whatsappReady:whatsappReady && whatsappAccess.briefEnabled)}.suffix(12).map{["question":$0.question,"dismissed":$0.dismissed,"answered":$0.answered] as [String:Any]}
-                        input["reviewInbox"]=model.proactive.state.records.filter{record in
-                            guard model.proactive.visible(record,model:model),model.proactive.acknowledgementAdviceAvailable(record,model:model,use:.brief,mailAccounts:mailReview?.accountIDs,whatsappReady:whatsappReady && whatsappAccess.briefEnabled) else {return false}
-                            if record.sourceKind == "whatsapp" {return whatsappReady && whatsappAccess.briefEnabled}
-                            return mailReview.map{review in emails.contains{$0.0.id == record.mailID && review.accountIDs.contains($0.0.accountID)}} ?? true
-                        }.suffix(12).map(\.message)
+                        let candidates=model.proactive.state.records.filter{$0.registration == registration}
+                        let reviewContext=model.proactive.reviewContext(model)
+                        input["reviewInbox"]=model.withContextPageAvailability(registration:registration,captures:candidates.compactMap(\.contextPageDependencies)){pageAvailable in
+                            candidates.filter{record in
+                                guard model.proactive.visible(record,model:model,context:reviewContext,pageAvailable:pageAvailable),model.proactive.acknowledgementAdviceAvailable(record,model:model,use:.brief,mailAccounts:mailReview?.accountIDs,whatsappReady:whatsappReady && whatsappAccess.briefEnabled,context:reviewContext,pageAvailable:pageAvailable) else {return false}
+                                if record.sourceKind == "whatsapp" {return whatsappReady && whatsappAccess.briefEnabled}
+                                return mailReview.map{review in emails.contains{$0.0.id == record.mailID && review.accountIDs.contains($0.0.accountID)}} ?? true
+                            }.suffix(12).map(\.message)
+                        }
                     }
                     try heartbeatRequest!.claim()
                 }
