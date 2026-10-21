@@ -128,6 +128,31 @@ enum NativeLearningRules {
         }
         return result
     }
+    /// Read-only page/working deltas have their own processed manifest. Learning's first-eight
+    /// selector and cursor are unchanged. Exact retained support never admits a newer version.
+    static func contextItems(items: [NativeLearningItem], progress: NativeLearningProgress?,
+                             processed: [String: String], retaining: [String: Set<String>],
+                             now: Date, limit: Int = 16) -> [NativeLearningItem] {
+        // Conflicting rows do not establish which version is current. Identical duplicates coalesce.
+        let current = Dictionary(grouping: items, by: \.id).values.compactMap { rows -> NativeLearningItem? in
+            guard let first = rows.first, rows.allSatisfy({ $0 == first }) else { return nil }
+            return first
+        }.sorted { ($0.changed ?? .distantPast, $0.id) < ($1.changed ?? .distantPast, $1.id) }
+        let retained = current.filter { retaining[$0.id]?.contains($0.revision) == true }
+        guard let original = progress, original.started != nil, !original.paused,
+              now.timeIntervalSinceReferenceDate.isFinite else { return retained }
+        let collected = collecting(original, items: current, now: now)
+        guard !collected.paused else { return retained }
+        let retainedIDs = Set(retained.map(\.id))
+        // A completed learning assessment is not a completed page consolidation.
+        let pending = Array(current.filter {
+            !retainedIDs.contains($0.id) && processed[$0.id] != $0.revision &&
+            (collected.pending?[$0.id] == $0.revision || collected.assessed[$0.id] == $0.revision) &&
+            collected.baseline[$0.id] != $0.revision
+        }.prefix(max(0, limit)))
+        return (retained + pending).sorted { ($0.changed ?? .distantPast, $0.id) < ($1.changed ?? .distantPast, $1.id) }
+    }
+
     static func completing(_ original:NativeLearningProgress,items:[NativeLearningItem],now:Date)->NativeLearningProgress {
         var result=original
         for item in items { result.assessed[item.id]=item.revision;result.baseline.removeValue(forKey:item.id);result.pending?.removeValue(forKey:item.id) }

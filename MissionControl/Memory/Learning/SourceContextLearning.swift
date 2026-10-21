@@ -119,6 +119,48 @@ enum SourceContextRules {
         }
         return result
     }
+    /// Read-only page/working deltas advance only their caller's processed manifest. A retained
+    /// ID is insufficient: the exact currently permitted source version must still match.
+    static func contextItems(recent: [SourceContextMessage], progress: SourceContextProgress?,
+                             access: SourceContextLearningAccess, processed: [String: String],
+                             retaining: [String: Set<String>], now: Date, limit: Int = 16) -> [SourceContextMessage] {
+        guard access.permitted else { return [] }
+        let current = Dictionary(grouping: recent, by: \.id).values.compactMap { rows -> SourceContextMessage? in
+            guard let first = rows.first, rows.allSatisfy({ $0 == first }), access.chats.contains(chatKey(first.chatID)) else { return nil }
+            return first
+        }
+        // The learning lane's last-chat hint provides the same deterministic fair rotation,
+        // while this selector independently chooses beyond its already processed first eight.
+        func fair(_ values: [SourceContextMessage]) -> [SourceContextMessage] {
+            let groups = Dictionary(grouping: values, by: \.chatID)
+                .mapValues { $0.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date } }
+            var keys = groups.keys.sorted()
+            if let last = progress?.coverage?.lastChat, let index = keys.firstIndex(where: { chatKey($0) == last }) {
+                keys = Array(keys.dropFirst(index + 1)) + Array(keys.prefix(index + 1))
+            }
+            var result: [SourceContextMessage] = [], offset = 0
+            while true {
+                let round = keys.compactMap { groups[$0].flatMap { offset < $0.count ? $0[offset] : nil } }
+                guard !round.isEmpty else { return result }
+                result.append(contentsOf: round); offset += 1
+            }
+        }
+        let retained = current.filter { retaining[$0.id]?.contains($0.revision) == true }
+        guard let original = progress, original.oriented, !original.paused, original.learningAccess == access,
+              now.timeIntervalSinceReferenceDate.isFinite else { return fair(retained) }
+        let collected = collecting(original, recent: current, now: now)
+        let reconciled = reconcilingAccess(collected, previous: original, current: access, recent: current)
+        let pendingVersions = Dictionary((reconciled.coverage?.pending ?? []).map { ($0.id, $0.revision) }, uniquingKeysWith: { first, _ in first })
+        let retainedIDs = Set(retained.map(\.id))
+        // Seen versions still belong to this consumer until its own checkpoint acknowledges them.
+        let pending = Array(fair(current.filter {
+            !retainedIDs.contains($0.id) && processed[$0.id] != $0.revision &&
+            (pendingVersions[$0.id] == $0.revision || reconciled.seen[$0.id] == $0.revision) &&
+            reconciled.coverage?.baseline[$0.id] != $0.revision
+        }).prefix(max(0, limit)))
+        return fair(retained + pending)
+    }
+
     static func collecting(_ progress:SourceContextProgress,recent:[SourceContextMessage],now:Date)->SourceContextProgress {
         var result=progress
         if result.coverage == nil {
