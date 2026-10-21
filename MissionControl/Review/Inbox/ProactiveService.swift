@@ -185,7 +185,9 @@ struct ProactiveReviewContext {
     private func contextRevision(_ model:DashboardModel,mailAccounts:Set<String>? = nil,whatsappReady:Bool = true)->String {
         let facts=model.assistant.memory.permittedRecords.filter{$0.registration == model.chatGPT.activeID && MemoryRules.usable($0,registration:model.chatGPT.activeID) && $0.allSourceEvidence.allSatisfy{source in (source.identity.kind != .mail || (mailAccounts?.contains(source.identity.accountID) ?? true)) && (source.identity.kind != .whatsapp || whatsappReady)}}
         let values:[String]=["communication-actions-v6-date-contract","review-policy",model.emailSummaries.policy(model.chatGPT.activeID).revision,"human-context",model.humanContextDiscoveryRevision(model.chatGPT.activeID),model.assistant.projects.revision.uuidString,TimeZone.current.identifier,scope(model),model.chatGPT.selectedModel,model.assistant.preferences,model.heartbeat.whatsappEnabled.description,DiscoveryNativeTarget.fingerprint(facts.sorted{$0.id.uuidString < $1.id.uuidString}.map{MemoryDependencyRules.fingerprint(MemoryRetrieval.record($0))}),DiscoveryNativeTarget.fingerprint(model.paOrientation?.calendar ?? model.calendarData),DiscoveryNativeTarget.fingerprint(model.reminderData),EmailNativeEvidence.hash(model.completedReminders),EmailNativeEvidence.hash(model.emailSummaries.dismissalContext(model)),model.reviewAcknowledgementRevision,model.assistant.memory.revision.uuidString,model.emailSummaries.resolutionRevision(model),EmailNativeEvidence.hash(model.emailSummaries.sourceAssessments(model).filter{mailAccounts?.contains($0.0.accountID) ?? true}.map{[$0.0.id,$0.1.adviceRevision(replied:$0.0.replied)]})]
-        return DiscoveryNativeTarget.fingerprint(values)
+        let guide=model.calendarPurposeCapture(sources:model.calendarData.sources.filter(\.writable),registration:model.chatGPT.activeID)
+        let instructions=[ContextFeature.projects,.reminders].map{model.featureInstruction($0,registration:model.chatGPT.activeID).reference.revision}
+        return DiscoveryNativeTarget.fingerprint(values+[EmailNativeEvidence.hash(guide.referenceVersions),EmailNativeEvidence.hash(instructions)])
     }
     /// Historical cards may be reconsidered without reusing their old interpretation
     /// as current advice. Account/source choices and uncertain operation claims still apply.
@@ -254,6 +256,7 @@ struct ProactiveReviewContext {
         let heartbeatRevision=model.heartbeat.controlsRevision
         let memoryUseRevision=assistant.memory.useRevision
         let memoryUse:AutomaticMemoryUse = manual ? .manualSuggestions : heartbeat ? .heartbeatSuggestions : .suggestions
+        let contextPurpose:ContextKnowledgePurpose = manual ? .manualSuggestions : heartbeat ? .heartbeatSuggestions : .suggestions
         // Give each supplied message a bounded retrieval subject; do not let the first email own the whole query.
         let memoryQuery=String((emails.map{MemoryRetrieval.emailQuery(subject:$0.0.subject,sender:$0.0.sender,body:String(($0.1.evidence+" "+$0.1.summary).prefix(1200)))} + whatsapp.map{String($0.text.prefix(1200))} + reconsider.map{String((($0.sourceTitle ?? "")+" "+$0.evidence+" "+$0.message).prefix(1200))}).joined(separator:"\n").prefix(24000))
         let memoryCapture=model.automaticMemory(memoryUse,query:memoryQuery,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady)
@@ -286,6 +289,21 @@ struct ProactiveReviewContext {
                 }
                 let events = calendar.events.filter { !assistant.excludedCalendars.contains($0.calendarID) && $0.start < end && $0.end >= start }.sorted { ($0.start,$0.title,$0.id) < ($1.start,$1.title,$1.id) }
                 let tasks = DateRules.ordered(reminders.reminders.filter { !assistant.excludedLists.contains($0.listID) })
+                let calendarGuide=model.calendarPurposeCapture(sources:calendar.sources.filter(\.writable),registration:registration)
+                let guideObject=(try? JSONSerialization.jsonObject(with:Data(calendarGuide.text.utf8))) as? [String:Any] ?? [:]
+                let describedCalendarIDs=Set((guideObject["calendars"] as? [[String:Any]] ?? []).compactMap {row->String? in
+                    guard let id=row["id"] as? String,let purpose=row["purpose"] as? String,!purpose.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,purpose != "Not described",row["purposeTruncated"] as? Bool != true else {return nil}
+                    return id
+                })
+                let issuedCalendars=Dictionary(calendar.sources.filter{source in source.writable && !assistant.excludedCalendars.contains(source.id) && describedCalendarIDs.contains(source.id) && calendarGuide.referenceVersions["calendar-guide:"+source.id] != nil}.map {source in
+                    (source.id,DiscoveryCalendarDestination(source,contextPageDependencies:["calendar-guide:"+source.id:calendarGuide.referenceVersions["calendar-guide:"+source.id]!]))
+                },uniquingKeysWith:{first,_ in first})
+                let initialCachedCalendarIDs=Set(model.calendarData.sources.map(\.id))
+                let featureCaptures=["projects","reminders"].map {feature in
+                    model.captureContextPages(registration:registration,query:nil,includeTopics:true,everyday:false,pageID:"instructions:"+feature,purpose:contextPurpose,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady)
+                }
+                var plannerVersions=memoryCapture.contextPageDependencies
+                for capture in [calendarGuide]+featureCaptures {plannerVersions.merge(capture.referenceVersions){_,latest in latest}}
                 let completed:[CompletedReminder]
                 var completionError:String?
                 do {
@@ -332,6 +350,8 @@ struct ProactiveReviewContext {
                     return row
                 },"paMemory":memory,"recentGeneralChat":recentChat,"preferences":preferences,"deliveredSuggestions":state.records.filter { self.visible($0,model:model) }.suffix(20).map{ProactiveRules.reviewProjection($0).message}]
                 input["reviewPolicy"]=capturedReviewPolicy.input
+                input["calendarPurposes"]=guideObject
+                input["featureInstructions"]=featureCaptures.compactMap{(try? JSONSerialization.jsonObject(with:Data($0.text.utf8))) as? [String:Any]}.compactMap{$0["instructions"]}
                 input["completionEmails"]=completionEmails.enumerated().map {index,pair in
                     ["id":"completion_\(index)","evidenceID":"completion_\(index):primary","account":pair.0.accountID,"received":pair.0.received.ISO8601Format(),"sender":pair.0.sender,"subject":pair.0.subject,"summary":pair.1.summary,"evidence":pair.1.evidence] as [String:Any]
                 }
@@ -346,7 +366,11 @@ struct ProactiveReviewContext {
                     return terms.filter{query.contains($0)}.count
                 }
                 let priorProjectIDs=Set(earlier.values.compactMap{$0.proposedProjectTask?.target.id})
-                let relevant=lifeItems.filter{!$0.kind.isWork && $0.ownership != "life" && $0.status != .archived && (score($0) > 0 || priorProjectIDs.contains($0.id))}.sorted{score($0) == score($1) ? $0.id.uuidString < $1.id.uuidString : score($0) > score($1)}.prefix(12)
+                let relevant=lifeItems.filter{!$0.kind.isWork && $0.ownership != "life" && $0.status != .archived && (score($0) > 0 || memoryCapture.workspaceIDs.contains($0.id) || priorProjectIDs.contains($0.id))}.sorted{
+                    let lhs=memoryCapture.workspaceIDs.contains($0.id),rhs=memoryCapture.workspaceIDs.contains($1.id)
+                    if lhs != rhs {return lhs}
+                    return score($0) == score($1) ? $0.id.uuidString < $1.id.uuidString : score($0) > score($1)
+                }.prefix(12)
                 let projectTargets=Dictionary(uniqueKeysWithValues:relevant.map{($0.id.uuidString,DiscoveryProjectTarget(id:$0.id,revision:$0.revision,title:$0.title,conversationID:$0.conversationID))})
                 let parentIDs=Set(relevant.map(\.id))
                 // A relevant nested space is already supplied above. Do not append
@@ -393,7 +417,7 @@ struct ProactiveReviewContext {
                     scope == self.scope(model) && waScope == model.whatsapp.scope(for:registration,purpose:.suggestions) && registration == model.chatGPT.activeID &&
                     (whatsappWindow.map({$0 == ProactiveRules.whatsappWindow(model.whatsapp.messages,chats:whatsappChats,identity:waScope.linkedIdentity)}) ?? true) &&
                     whatsapp.allSatisfy{original in model.whatsapp.messages.contains{$0.id == original.itemID && $0.chat == original.chatID && SourceContextRules.revision($0) == original.revision}} &&
-                    model.emailSummaries.policyAvailable(capturedReviewPolicy) && model.contextPageDependenciesAvailable(memoryCapture.contextPageDependencies,registration:registration) && memoryUseRevision == assistant.memory.useRevision && model.memoryDependenciesAvailable(memoryCapture.dependencies,use:memoryUse) &&
+                    model.emailSummaries.policyAvailable(capturedReviewPolicy) && model.contextPageDependenciesAvailable(plannerVersions,registration:registration) && calendarGuide.current() && featureCaptures.allSatisfy{$0.current()} && issuedCalendars.values.allSatisfy{choice in !initialCachedCalendarIDs.contains(choice.sourceID) || model.calendarData.sources.contains(where:choice.matches)} && memoryUseRevision == assistant.memory.useRevision && model.memoryDependenciesAvailable(memoryCapture.dependencies,use:memoryUse) &&
                     currentEmailInputs() &&
                     !assistant.busy && !model.chatGPT.busy && !model.projectPlacement.busy && !model.briefings.busy && !model.sourceLearning.busy && !model.nativeSourceLearning.busy && !model.memoryMaintenance.busy && !model.memoryLearning.busy && !model.lifeOrganisation.busy && !model.emailSummaries.busy
                 }
@@ -432,7 +456,7 @@ struct ProactiveReviewContext {
                         let admittedReminders=Array(DateRules.ordered(freshReminders.reminders.filter{!assistant.excludedLists.contains($0.listID)}).prefix(120))
                         let current=ReviewInferenceGuard.nativeRows(calendar:.init(sources:freshCalendar.sources,events:admittedEvents),reminders:.init(sources:freshReminders.sources,reminders:admittedReminders),completed:[],excludedCalendars:assistant.excludedCalendars,excludedLists:assistant.excludedLists)
                         let freshCompletion=Dictionary(uniqueKeysWithValues:freshCompleted.map{("completed:"+$0.item.id,ReviewInferenceGuard.fingerprint($0))})
-                        guard ReviewInferenceGuard.nativeAvailable(suppliedNative,current:current),ReviewInferenceGuard.available(suppliedCompletion,current:freshCompletion) else {throw ActionFailure.message("A Calendar occurrence, reminder or completion supplied to this comparison changed; no stale result was saved.")}
+                        guard ReviewInferenceGuard.nativeAvailable(suppliedNative,current:current),ReviewInferenceGuard.available(suppliedCompletion,current:freshCompletion),issuedCalendars.values.allSatisfy({choice in freshCalendar.sources.contains(where:choice.matches)}) else {throw ActionFailure.message("A Calendar occurrence, reminder or completion supplied to this comparison changed; no stale result was saved.")}
                         checkedNativeRevision=startedRevision
                         // Three successful exact comparisons bound repeated unrelated
                         // hints without treating the notification itself as a failure.
@@ -462,7 +486,7 @@ struct ProactiveReviewContext {
                 let removalUpgrades=Dictionary(uniqueKeysWithValues:candidates.map{($0.alias,ProactiveRules.replacementAliases($0,earlier:earlier,permitted:supportedEarlier,removalUpgrade:true))})
                 let changeSources=Set(candidates.filter{ProactiveRules.nativeChangeCue(([$0.evidence,$0.followUpEvidence]+$0.actionEvidence+[$0.sourceText ?? ""]).joined(separator:" "),removal:false)}.map(\.alias))
                 let removalSources=Set(candidates.filter{ProactiveRules.nativeChangeCue(([$0.evidence,$0.followUpEvidence]+$0.actionEvidence+[$0.sourceText ?? ""]).joined(separator:" "),removal:true)}.map(\.alias))
-                let tools=ProactiveResultRules.tools(sourceAliases:sourceAliases,evidenceAliases:evidenceAliases,nativeAliases:Set(handlingTargets.keys),projectAliases:Set(issuedProjects.keys),earlierAliases:Set(earlier.keys),confirmationAliases:Set(emails.indices.map{"mail_\($0)"}+completionEmails.indices.map{"completion_\($0)"}),retirementAliases:Set(retirementTargets.keys),replacementAliases:replaceableAliases,changeSourceAliases:changeSources,removalSourceAliases:removalSources,writableNativeAliases:Set(targets.filter{$0.value.writable}.keys),replacementAliasesBySource:replacementsBySource,removalUpgradeAliasesBySource:removalUpgrades)
+                let tools=ProactiveResultRules.tools(sourceAliases:sourceAliases,evidenceAliases:evidenceAliases,nativeAliases:Set(handlingTargets.keys),projectAliases:Set(issuedProjects.keys),earlierAliases:Set(earlier.keys),confirmationAliases:Set(emails.indices.map{"mail_\($0)"}+completionEmails.indices.map{"completion_\($0)"}),retirementAliases:Set(retirementTargets.keys),replacementAliases:replaceableAliases,changeSourceAliases:changeSources,removalSourceAliases:removalSources,writableNativeAliases:Set(targets.filter{$0.value.writable}.keys),replacementAliasesBySource:replacementsBySource,removalUpgradeAliasesBySource:removalUpgrades,calendarIDs:Set(issuedCalendars.keys))
                 @MainActor func infer() async throws -> PAResponse {
                     #if DEBUG
                     if ["--validate-advice-context","--validate-review-inbox"].contains(where:ProcessInfo.processInfo.arguments.contains),let evaluationInference=self.evaluationInference {return try await evaluationInference(input,selectedModel)}
@@ -511,7 +535,7 @@ struct ProactiveReviewContext {
                 for (index,item) in whatsapp.enumerated() {diagnosticSources["wa_"+String(index)]=(item.id,item.chatName)}
                 for (alias,item) in earlier {diagnosticSources[alias]=(item.mailID,item.sourceTitle ?? "Earlier suggestion")}
                 let proposalRows=try ProactiveResultRules.validatedRows(response,section:.suggestions,sources:diagnosticSources) {row in
-                    let values=try ProactiveRules.decode(row,candidates:candidates,registration:registration,scope:scope,now:now,targets:targets,earlier:earlier,projects:issuedProjects)
+                    let values=try ProactiveRules.decode(row,candidates:candidates,registration:registration,scope:scope,now:now,targets:targets,earlier:earlier,projects:issuedProjects,calendars:issuedCalendars)
                     guard values.allSatisfy({Set($0.replaces ?? []).isSubset(of:permittedEarlier) && ReviewInferenceGuard.comparisonDependencies(fresh:whatsappDependencies,replaced:$0.replaces ?? [],prior:earlierChatWindows).count <= MemoryDependencyRules.sourceChatLimit}) else {throw ReviewResultDiagnostic(section:.suggestions,field:.replaces,reason:.invalidReplacement)}
                     return values
                 }
@@ -549,12 +573,12 @@ struct ProactiveReviewContext {
                     for (index,value) in resolutionRows.values.enumerated() where conflicting.contains(value.0) {recordConflict(.resolved,resolutionRows.acceptedRows[index],.mailID)}
                 }
                 var associationIDs=Set<String>()
-                let handled=handlingRows.values.filter{!conflicting.contains($0.0) && associationIDs.insert($0.0).inserted}.map {id,value in var saved=value;saved.memoryDependencies=memoryCapture.dependencies;saved.whatsappDependencies=whatsappDependencies;saved.memoryUse=memoryUse;saved.contextPageDependencies=memoryCapture.contextPageDependencies;saved.reviewPolicy = .init(capturedReviewPolicy);return (id,saved)}
-                let resolved=resolutionRows.values.filter{!conflicting.contains($0.0) && associationIDs.insert($0.0).inserted}.map {id,value in var saved=value;saved.memoryDependencies=memoryCapture.dependencies;saved.whatsappDependencies=whatsappDependencies;saved.memoryUse=memoryUse;saved.contextPageDependencies=memoryCapture.contextPageDependencies;saved.reviewPolicy = .init(capturedReviewPolicy);return (id,saved)}
+                let handled=handlingRows.values.filter{!conflicting.contains($0.0) && associationIDs.insert($0.0).inserted}.map {id,value in var saved=value;saved.memoryDependencies=memoryCapture.dependencies;saved.whatsappDependencies=whatsappDependencies;saved.memoryUse=memoryUse;saved.contextPageDependencies=plannerVersions;saved.reviewPolicy = .init(capturedReviewPolicy);return (id,saved)}
+                let resolved=resolutionRows.values.filter{!conflicting.contains($0.0) && associationIDs.insert($0.0).inserted}.map {id,value in var saved=value;saved.memoryDependencies=memoryCapture.dependencies;saved.whatsappDependencies=whatsappDependencies;saved.memoryUse=memoryUse;saved.contextPageDependencies=plannerVersions;saved.reviewPolicy = .init(capturedReviewPolicy);return (id,saved)}
                 var retiredIDs=Set<String>()
-                let retirements=retirementRows.values.filter{!replacementOwners.contains($0.proposal.id) && retiredIDs.insert($0.proposal.id).inserted}.map {value in var captured=value;captured.evidence.contextPageDependencies=memoryCapture.contextPageDependencies;captured.evidence.reviewPolicy = .init(capturedReviewPolicy);return captured}
+                let retirements=retirementRows.values.filter{!replacementOwners.contains($0.proposal.id) && retiredIDs.insert($0.proposal.id).inserted}.map {value in var captured=value;captured.evidence.contextPageDependencies=plannerVersions;captured.evidence.reviewPolicy = .init(capturedReviewPolicy);return captured}
                 let comparablePendingIDs=Set(eligibleEarlier.filter{self.reviewEvidenceAvailable($0.id,model:model)}.map(\.id))
-                let suggestions = ProactiveRules.unreported(decoded.map { record in var value=record;if value.sourceKind == nil { value.scope=self.legacyMailScope(model) };value.memoryDependencies=memoryCapture.dependencies;value.memoryUse=memoryUse;value.contextPageDependencies=memoryCapture.contextPageDependencies;value.reviewPolicy = .init(capturedReviewPolicy);value.whatsappDependencies=ReviewInferenceGuard.comparisonDependencies(fresh:whatsappDependencies,replaced:record.replaces ?? [],prior:earlierChatWindows);value.comparisonSourceIDs=record.replaces?.isEmpty == false ? record.replaces?.sorted() : nil;return value },prior:state.records,dismissedVersions:Dictionary(uniqueKeysWithValues:emails.map{(ProactiveRules.sourceKey("mail",$0.0.id),ReviewAcknowledgementRules.emailVersion($0.0,$0.1))}),preparedMailVersions:progress.preparedMailVersions ?? [],comparablePendingIDs:comparablePendingIDs)
+                let suggestions = ProactiveRules.unreported(decoded.map { record in var value=record;if value.sourceKind == nil { value.scope=self.legacyMailScope(model) };value.memoryDependencies=memoryCapture.dependencies;value.memoryUse=memoryUse;value.contextPageDependencies=plannerVersions;value.reviewPolicy = .init(capturedReviewPolicy);value.whatsappDependencies=ReviewInferenceGuard.comparisonDependencies(fresh:whatsappDependencies,replaced:record.replaces ?? [],prior:earlierChatWindows);value.comparisonSourceIDs=record.replaces?.isEmpty == false ? record.replaces?.sorted() : nil;return value },prior:state.records,dismissedVersions:Dictionary(uniqueKeysWithValues:emails.map{(ProactiveRules.sourceKey("mail",$0.0.id),ReviewAcknowledgementRules.emailVersion($0.0,$0.1))}),preparedMailVersions:progress.preparedMailVersions ?? [],comparablePendingIDs:comparablePendingIDs)
                 let reconciled=try ProactiveRules.reconciled(suggestions,prior:state.records,issued:currentIssued,now:now,permittedEarlier:permittedEarlier)
                 _=try ProactiveRules.retiring(retirements,from:reconciled,now:now)
                 try model.emailSummaries.saveHandling(handled,resolutions:resolved,model:model)

@@ -184,8 +184,8 @@ import CoreFoundation
             _ = try incompleteReview.line("data: "+String(decoding:try JSONSerialization.data(withJSONObject:["type":"response.completed","response":["output":[invalidStatus]]]),as:UTF8.self))
             fatalError("Incomplete review call accepted")
         } catch ChatGPTStream.Failure.invalid {}
-        let declarations=ProactiveResultRules.tools(sourceAliases:["mail_0","wa_0"],evidenceAliases:["mail_0:primary","mail_0:action_0"],nativeAliases:["event_0"],projectAliases:[project.id.uuidString],earlierAliases:["review_0"],confirmationAliases:["completion_0"])
-        let namespace=declarations[0],functions=namespace["tools"] as! [[String:Any]],parameters=functions[0]["parameters"] as! [String:Any],properties=parameters["properties"] as! [String:Any]
+        let declarations=ProactiveResultRules.tools(sourceAliases:["mail_0","wa_0"],evidenceAliases:["mail_0:primary","mail_0:action_0"],nativeAliases:["event_0"],projectAliases:[project.id.uuidString],earlierAliases:["review_0"],confirmationAliases:["completion_0"],calendarIDs:["calendar_studies"])
+        let namespace=declarations[0],functions=namespace["tools"] as! [[String:Any]],parameters=functions[0]["parameters"] as! [String:Any]
         precondition(namespace["name"] as? String == "pa" && functions[0]["strict"] as? Bool == true)
         precondition(Set(parameters["required"] as! [String]) == ["suggestions","projectTasks","handled","resolved","retirements"])
         // Validate representative payloads against the issued schema itself. This
@@ -220,13 +220,40 @@ import CoreFoundation
             return true
         }
         func schemaAccepts(_ rows:[[String:Any]],projectRows:[[String:Any]] = [])->Bool {
-            let fields=["mailID","kind","message","evidence","evidenceID","title","targetID","newDate","hasTime","connection","draft","replaces","replacementReason","scope","endDate","projectID"]
+            let fields=["mailID","kind","message","evidence","evidenceID","title","targetID","newDate","hasTime","connection","draft","replaces","replacementReason","scope","endDate","projectID","calendarID"]
             let padded=rows.map{row in var full=Dictionary(uniqueKeysWithValues:fields.map{($0,NSNull() as Any)});full.merge(row){_,new in new};return full}
             let paddedProjects=projectRows.map{row in var full=Dictionary(uniqueKeysWithValues:fields.map{($0,NSNull() as Any)});full.merge(row){_,new in new};return full}
             return matches(["suggestions":padded,"projectTasks":paddedProjects,"handled":[],"resolved":[],"retirements":[]],parameters,root:parameters)
         }
         var creation:[String:Any]=["mailID":"mail_0","kind":"reminder","message":"Register","evidence":NSNull(),"evidenceID":"mail_0:primary","title":"Register","newDate":NSNull(),"hasTime":NSNull(),"endDate":NSNull(),"replaces":NSNull(),"replacementReason":NSNull()]
         precondition(schemaAccepts([creation]))
+        var calendarCreation=creation;calendarCreation["kind"]="calendar";calendarCreation["calendarID"]="calendar_studies"
+        precondition(schemaAccepts([calendarCreation]),"Calendar destination is limited to an exact issued writable choice")
+        calendarCreation["calendarID"]="calendar_unissued";precondition(!schemaAccepts([calendarCreation]))
+        calendarCreation["calendarID"]=NSNull();precondition(schemaAccepts([calendarCreation]),"An ambiguous or missing purpose retains the local native default")
+        var reminderDestination=creation;reminderDestination["calendarID"]="calendar_studies"
+        precondition(!schemaAccepts([reminderDestination]),"Calendar choices cannot leak into Reminder or other action kinds")
+        let calendarSource=SourceOption(id:"calendar_studies",title:"Studies",account:"Fictional University",writable:true,providerID:"provider-a")
+        let issuedCalendar=DiscoveryCalendarDestination(calendarSource,contextPageDependencies:["calendar-guide:calendar_studies":"guide-v1"])
+        let calendarOutput=#"{"suggestions":[{"mailID":"mail_0","kind":"calendar","message":"Add the registration date","evidenceID":"mail_0:primary","calendarID":"calendar_studies"}]}"#
+        let selectedCalendar=try ProactiveRules.decode(calendarOutput,candidates:candidates,registration:"A",scope:"s",now:.now,calendars:[calendarSource.id:issuedCalendar])[0]
+        precondition(selectedCalendar.proposedCalendarDestination == issuedCalendar && issuedCalendar.matches(calendarSource))
+        let reopenedCalendar=try JSONDecoder().decode(PADiscovery.self,from:JSONEncoder().encode(selectedCalendar))
+        precondition(reopenedCalendar.proposedCalendarDestination == issuedCalendar && records[0].proposedCalendarDestination == nil,"New destination receipts are additive and persist exactly")
+        var legacyCalendarObject=try JSONSerialization.jsonObject(with:JSONEncoder().encode(selectedCalendar)) as! [String:Any]
+        legacyCalendarObject.removeValue(forKey:"proposedCalendarDestination")
+        let legacyCalendar=try JSONDecoder().decode(PADiscovery.self,from:JSONSerialization.data(withJSONObject:legacyCalendarObject))
+        precondition(legacyCalendar.proposedCalendarDestination == nil,"Previously saved proposals retain native-default preparation")
+        do {_ = try ProactiveRules.decode(calendarOutput,candidates:candidates,registration:"A",scope:"s",now:.now);fatalError("Unissued Calendar destination accepted")} catch {}
+        do {_ = try ProactiveRules.decode(calendarOutput.replacingOccurrences(of:"\"calendar\"",with:"\"reminder\""),candidates:candidates,registration:"A",scope:"s",now:.now,calendars:[calendarSource.id:issuedCalendar]);fatalError("Calendar destination accepted for a Reminder")} catch {}
+        var changedAccount=calendarSource;changedAccount.account="Other account";precondition(!issuedCalendar.matches(changedAccount))
+        changedAccount=calendarSource;changedAccount.providerID="provider-b";precondition(!issuedCalendar.matches(changedAccount))
+        changedAccount=calendarSource;changedAccount.writable=false;precondition(!issuedCalendar.matches(changedAccount))
+        changedAccount=calendarSource;changedAccount.title="Renamed studies";precondition(issuedCalendar.matches(changedAccount),"Cosmetic labels do not retarget an approved destination")
+        var reworded=selectedCalendar;reworded.proposedCalendarDestination?.contextPageDependencies=["calendar-guide:calendar_studies":"guide-v2"]
+        precondition(ProactiveRules.sameProposal(selectedCalendar,reworded),"Guide edits alone do not duplicate an unchanged exact destination")
+        reworded.proposedCalendarDestination?.sourceID="calendar_personal"
+        precondition(!ProactiveRules.sameProposal(selectedCalendar,reworded),"Distinct concrete destinations remain independent choices")
         creation["targetID"]="event_0";precondition(!schemaAccepts([creation]),"Creation with targetID must be impossible under the strict schema")
         creation.removeValue(forKey:"targetID");creation["connection"]="Already covered";precondition(!schemaAccepts([creation]))
         creation.removeValue(forKey:"connection");creation["newDate"]="2027-01-21";creation["hasTime"]=false;precondition(schemaAccepts([creation]))
@@ -252,7 +279,7 @@ import CoreFoundation
         var invalidCreation=actions[0];invalidCreation["targetID"]="event_0"
         diagnostic(.suggestions,0,.targetID,.incompatibleFields) {_ = try actionDecode([invalidCreation])}
         let largeEvents=Set((0..<200).map{"event_\($0)"}),largeReminders=Set((0..<120).map{"reminder_\($0)"}),largeCompleted=Set((0..<80).map{"completed_\($0)"})
-        let large=ProactiveResultRules.tools(sourceAliases:["mail_0"],evidenceAliases:["mail_0:primary"],nativeAliases:largeEvents.union(largeReminders).union(largeCompleted),projectAliases:[],earlierAliases:["review_0"],confirmationAliases:["mail_0"],retirementAliases:largeEvents.union(largeReminders).union((0..<60).map{"task_\($0)"}))
+        let large=ProactiveResultRules.tools(sourceAliases:["mail_0"],evidenceAliases:["mail_0:primary"],nativeAliases:largeEvents.union(largeReminders).union(largeCompleted),projectAliases:[],earlierAliases:["review_0"],confirmationAliases:["mail_0"],retirementAliases:largeEvents.union(largeReminders).union((0..<60).map{"task_\($0)"}),calendarIDs:Set((0..<60).map{"calendar_\($0)"}))
         func enumCount(_ value:Any)->Int {
             if let object=value as? [String:Any] {return (object["enum"] as? [Any])?.count ?? object.values.reduce(0){$0+enumCount($1)}}
             if let array=value as? [Any] {return array.reduce(0){$0+enumCount($1)}}

@@ -157,9 +157,10 @@ import SwiftData
                   page.kind != .overview,let markdown=row["markdown"] else {return nil}
             let references=page.references + (page.owner == .human ? [.init(kind:"page",key:page.id,revision:page.revision.uuidString)] : [])
             guard !references.isEmpty,references.allSatisfy({captured.referenceVersions[$0.contextKey] == $0.revision}) else {return nil}
+            var dependencies=Dictionary(references.map{($0.contextKey,$0.revision)},uniquingKeysWith:{first,_ in first})
+            dependencies.merge(captured.referenceVersions.filter{$0.key.hasPrefix("context-purpose:")}){first,_ in first}
             return .init(id:id,title:page.title,markdown:markdown,owner:page.owner.rawValue,
-                         partial:row["nextOffset"] != "end" || row["offset"] != "0",
-                         dependencies:Dictionary(references.map{($0.contextKey,$0.revision)},uniquingKeysWith:{first,_ in first}))
+                         partial:row["nextOffset"] != "end" || row["offset"] != "0",dependencies:dependencies)
         }
         return EmailRelevanceRules.boundedPages(candidates,maximumBytes:header ? 1200 : 3500)
     }
@@ -170,9 +171,9 @@ import SwiftData
         let items=model.assistant.projects.items(registration).filter{$0.status != .archived && $0.status != .done}
         let working=PAWorkingContext.prepare(memory:memory,registration:registration,purpose:header ? .emailHeader : .emailBody,query:query,workspaceIDs:Set(items.map{"life:"+$0.id.uuidString}))
         let selected=working.selection.records
-        // Restrict support to the exact human facts selected for classification. This capture
-        // excludes raw recent/native/message deltas, and only its saved page rows are supplied.
-        let captured=model.captureContextPages(registration:registration,query:query,includeTopics:false,everyday:false,allowedMemoryIDs:Set(selected.compactMap{$0["id"].flatMap(UUID.init(uuidString:))}))
+        // Email support is purpose-scoped before page retrieval. A human purpose note
+        // need not share words with an older selected fact; raw source deltas remain excluded.
+        let captured=model.captureContextPages(registration:registration,query:query,includeTopics:false,everyday:false,purpose:.email)
         let pages=relevancePages(captured,model:model,header:header)
         let data=Data(working.notebook.utf8)
         let anchors=((try? JSONSerialization.jsonObject(with:data)) as? [String:Any])?["lifeStructure"] as? [[String:Any]] ?? []
@@ -216,22 +217,21 @@ import SwiftData
         let query=MemoryRetrieval.emailQuery(subject:message.subject,sender:message.sender,body:evidence)
         let registration=model.chatGPT.activeID
         let selected=PAWorkingContext.prepare(memory:model.assistant.memory,registration:registration,purpose:.emailBody,query:query,includeNotebook:false).selection.records
-        let allowedMemoryIDs=Set(selected.compactMap{$0["id"].flatMap(UUID.init(uuidString:))})
         let pages:[ContextPage]
         if let humanPageSnapshot {
             // Discovery is metadata only, never additional model input. Match the completed
             // assessment against pre-yield human versions so a new note cannot be skipped.
-            let records=model.contextKnowledge(registration:registration,includeTopics:false,allowedMemoryIDs:allowedMemoryIDs)
+            let records=model.contextKnowledge(registration:registration,includeTopics:false,purpose:.email)
             pages=Array(humanPageSnapshot.filter {page in
-                page.owner == .human && model.contextPageEligible(page,records:records) &&
+                page.owner == .human && page.kind != .instruction && model.contextPageEligible(page,records:records) &&
                 ContextKnowledgeRules.matches(query,title:page.title,synopsis:page.synopsis+" "+page.markdown,key:page.key,selfLabel:model.assistant.memory.notebook(registration,includeTopics:false).selfLabel)
             }.sorted{$0.updated > $1.updated}.prefix(4))
         } else {
-            let captured=model.captureContextPages(registration:registration,query:query,includeTopics:false,everyday:false,allowedMemoryIDs:allowedMemoryIDs)
+            let captured=model.captureContextPages(registration:registration,query:query,includeTopics:false,everyday:false,purpose:.email)
             let ids=Set(captured.pageIDs)
             pages=model.contextPages.pages(registration:registration).filter{ids.contains($0.id)}
         }
-        let humanPages=Dictionary(pages.filter {$0.owner == .human && $0.kind != .overview && $0.kind != .calendarPurpose}.map{($0.id,$0.revision.uuidString)},uniquingKeysWith:{first,_ in first})
+        let humanPages=Dictionary(pages.filter {$0.owner == .human && $0.kind != .overview && $0.kind != .calendarPurpose && $0.kind != .instruction}.map{($0.id,$0.revision.uuidString)},uniquingKeysWith:{first,_ in first})
         return EmailRelevanceRules.discoveryRevision(preferences:MemoryDependencyRules.capture(selected.filter{$0["purpose"] == "review preference"}),humanPages:humanPages)
     }
     func preferenceNeedsRecheck(_ summary:EmailSummary,message:MailMessage,model:DashboardModel)->Bool {
@@ -448,17 +448,22 @@ import SwiftData
         task=Task {
             defer { busy=false }
             var suppliedMemory:[[String:String]]=[]
+            var suppliedPages:[String:String]?
             @MainActor func valid()->Bool {
-                registration == model.chatGPT.activeID && !model.assistant.busy && memoryControls == model.assistant.memory.useRevision && storage == model.container.map(ObjectIdentifier.init) && humanMemoryContextAvailable(suppliedMemory,model:model,includeTopics:true) && feedbackSourceCurrent(message,summary:summary,model:model) && current(message,model:model)?.created == summary.created && current(message,model:model)?.replyDraft == nil && current(message,model:model)?.dismissed != true && !(model.mailData.messages.first(where:{$0.id == message.id}) ?? message).replied
+                registration == model.chatGPT.activeID && !model.assistant.busy && memoryControls == model.assistant.memory.useRevision && storage == model.container.map(ObjectIdentifier.init) && humanMemoryContextAvailable(suppliedMemory,model:model,includeTopics:true) && model.contextPageDependenciesAvailable(suppliedPages,registration:registration) && feedbackSourceCurrent(message,summary:summary,model:model) && current(message,model:model)?.created == summary.created && current(message,model:model)?.replyDraft == nil && current(message,model:model)?.dismissed != true && !(model.mailData.messages.first(where:{$0.id == message.id}) ?? message).replied
             }
             do {
                 let body=try await model.mail.body(accountID:message.accountID,messageID:message.messageID,expectedInternetMessageID:message.internetMessageID,mailboxName:message.mailboxName)
                 try Task.checkCancellation();guard valid(),!body.isEmpty,body.count <= 16000 else { throw ActionFailure.message("The email changed or its full body is unavailable; no draft saved.") }
                 let memory=model.assistant.memory.context(registration,includeTopics:true,query:MemoryRetrieval.emailQuery(subject:message.subject,sender:message.sender,body:body,reply:true),includeSources:false)
                 suppliedMemory=memory
-                let input:[String:Any]=["subject":message.subject,"sender":message.sender,"received":message.received.ISO8601Format(),"body":body,"sharedMemory":memory]
+                let captured=model.captureContextPages(registration:registration,query:MemoryRetrieval.emailQuery(subject:message.subject,sender:message.sender,body:body,reply:true),includeTopics:false,everyday:false,purpose:.email)
+                let pages=relevancePages(captured,model:model,header:false)
+                suppliedPages=pages.dependencies
+                var input:[String:Any]=["subject":message.subject,"sender":message.sender,"received":message.received.ISO8601Format(),"body":body,"sharedMemory":memory]
+                if !pages.rows.isEmpty {input["contextPages"]=EmailRelevanceRules.pageInput(pages.rows)}
                 let data=try JSONSerialization.data(withJSONObject:input,options:.sortedKeys)
-                let text=try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:data,as:UTF8.self)]],instructions:EmailReplyDraftRules.instructions,model:selectedModel,purpose:.replyDraft) { _ in }
+                let text=try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:data,as:UTF8.self)]],instructions:EmailReplyDraftRules.instructions+" "+EmailRelevanceRules.pageCoverage,model:selectedModel,purpose:.replyDraft) { _ in }
                 try Task.checkCancellation();guard valid() else { throw ActionFailure.message("Email, account or memory changed during drafting; no draft saved.") }
                 let reply=try EmailReplyDraftRules.decode(text)
                 guard saveReplyDraft(reply,summary:summary,model:model,humanEdited:false) else { throw ActionFailure.message("The draft could not be saved; try again after checking the email.") }
@@ -592,13 +597,16 @@ import SwiftData
                         if EmailReplyDraftRules.needsBackgroundDraft(saved,message:message),body.count <= 16000 {
                             phase="Preparing background reply draft"
                             let memory=model.assistant.memory.context(registration,query:MemoryRetrieval.emailQuery(subject:message.subject,sender:message.sender,body:body,reply:true),includeSources:false)
-                            let source:[String:Any]=["subject":message.subject,"sender":message.sender,"body":body,"sharedMemory":memory]
+                            let captured=model.captureContextPages(registration:registration,query:MemoryRetrieval.emailQuery(subject:message.subject,sender:message.sender,body:body,reply:true),includeTopics:false,everyday:false,purpose:.email)
+                            let pages=relevancePages(captured,model:model,header:false)
+                            var source:[String:Any]=["subject":message.subject,"sender":message.sender,"body":body,"sharedMemory":memory]
+                            if !pages.rows.isEmpty {source["contextPages"]=EmailRelevanceRules.pageInput(pages.rows)}
                             let input=String(decoding:try JSONSerialization.data(withJSONObject:source,options:.sortedKeys),as:UTF8.self)
                             if heartbeat {try heartbeatRequest!.claim()}
-                            let text=try await model.chatGPT.streamResponse(input:[["role":"user","content":input]],instructions:EmailReplyDraftRules.instructions,model:selectedModel,effort:selectedEffort,purpose:.replyDraft){_ in}
+                            let text=try await model.chatGPT.streamResponse(input:[["role":"user","content":input]],instructions:EmailReplyDraftRules.instructions+" "+EmailRelevanceRules.pageCoverage,model:selectedModel,effort:selectedEffort,purpose:.replyDraft){_ in}
                             try Task.checkCancellation()
                             try validateWork()
-                            guard permitted(message),registration == model.chatGPT.activeID,humanMemoryContextAvailable(memory,model:model),enabled,!paused,let unchanged=current(message,model:model),EmailNativeEvidence.hash(unchanged) == EmailNativeEvidence.hash(saved) else {return}
+                            guard permitted(message),registration == model.chatGPT.activeID,humanMemoryContextAvailable(memory,model:model),model.contextPageDependenciesAvailable(pages.dependencies,registration:registration),enabled,!paused,let unchanged=current(message,model:model),EmailNativeEvidence.hash(unchanged) == EmailNativeEvidence.hash(saved) else {return}
                             saved.replyDraft=try EmailReplyDraftRules.decode(text);saved.replyDraftCheckedBody=bodyHash
                         }
                         // Truncated or uncertain drafts are checked once per body, never retried every interval.
@@ -612,7 +620,7 @@ import SwiftData
                     let excerpt = String(body.prefix(16000))
                     let dismissalFeedback:[[String:String]] = []
                     let relevanceContext=self.relevanceContext(message,model:model,body:excerpt)
-                    let discoveryHumanPages=model.contextPages.pages(registration:registration).filter{$0.owner == .human}
+                    let discoveryHumanPages=model.contextPages.pages(registration:registration).filter{$0.owner == .human && $0.kind != .instruction}
                     // Classification keeps selected facts human-only; pages retain their exact current support separately.
                     let memoryContext=relevanceContext.memories
                     let source = ["lifeContext":relevanceContext.input,"reviewPolicy":capturedPolicy.input,"sharedMemory":memoryContext,"dismissedSuggestions":dismissalFeedback,"reviewFeedback":dismissalFeedback,"now":Date.now.ISO8601Format(),"timezone":TimeZone.current.identifier,"sender":message.sender,"subject":message.subject,"received":message.received.ISO8601Format(),"body":excerpt,"bodyTruncated":body.count > 16000,"replied":message.replied] as [String:Any]
