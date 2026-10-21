@@ -125,3 +125,48 @@ enum ContextConsolidationSelection {
         return result
     }
 }
+
+/// Finite initial-population work, independent of later arrivals or refreshed anchors.
+/// The caller supplies the current eligible targets and their permitted canonical records.
+struct ContextPopulationSnapshot {
+    private struct Target {
+        let registration: String
+        let initialRevision: UUID?
+        let pending: Set<ContextPageReference>
+    }
+    private let targets: [String: Target]
+    let references: [String: String]
+
+    init(initial: [ContextPageTarget], pages: [ContextPage]) {
+        var targets: [String: Target] = [:]
+        var references: [String: String] = [:]
+        for target in initial {
+            let page = pages.first { $0.id == target.id && $0.registration == target.registration && $0.owner == .generated }
+            targets[target.id] = Target(registration: target.registration, initialRevision: page?.revision,
+                                        pending: Set(target.allPendingReferences))
+            for reference in target.allPendingReferences { references[reference.contextKey] = reference.revision }
+        }
+        self.targets = targets
+        self.references = references
+    }
+
+    func remaining(current: [ContextPageTarget], records: [ContextKnowledgeRecord],
+                   pages: [ContextPage]) -> (targetIDs: Set<String>, workCount: Int) {
+        // A changed/withdrawn version retires frozen work; its replacement belongs to a later run.
+        let currentReferences = Set(records.map(\.reference))
+        var targetIDs = Set<String>(), workCount = 0
+        for target in current {
+            guard let frozen = targets[target.id], frozen.registration == target.registration,
+                  !targetIDs.contains(target.id) else { continue }
+            let page = pages.first { $0.id == target.id && $0.registration == frozen.registration && $0.owner == .generated }
+            // Legacy pages treated their supporting references as successful input coverage.
+            let processed = Set(page?.processedReferences ?? page?.references ?? [])
+            let pending = frozen.pending.filter { currentReferences.contains($0) && !processed.contains($0) }.count
+            let wroteInitial = page.map { $0.revision != frozen.initialRevision } ?? false
+            let count = pending + (wroteInitial ? 0 : 1)
+            guard count > 0 else { continue }
+            targetIDs.insert(target.id); workCount += count
+        }
+        return (targetIDs, workCount)
+    }
+}

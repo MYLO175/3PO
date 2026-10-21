@@ -195,6 +195,60 @@ import Foundation
         check(frozenDone.allPendingReferences.count == 100 && ordinaryNext.hasPendingChanges && ordinaryNext.allPendingReferences.count == 100, "Fresh arrivals remain independently pending for the following ordinary heartbeat")
         let changedAfterSnapshot=ContextConsolidationSelection.target(registration:"owner",kind:.project,key:projectID.uuidString,title:"Bridge optics",candidates:[subject,purpose,uncited]+Array(updates.dropFirst()),previous:bootstrap,anchorKeys:anchorKeys,projectID:projectID,eligibleReferences:frozen)!
         check(changedAfterSnapshot.allPendingReferences.contains(uncited.reference) && !changedAfterSnapshot.pendingReferences.contains(uncited.reference) && !changedAfterSnapshot.references.contains(uncited.reference), "A new version of an initial nonanchor remains pending rather than being substituted for its frozen revision")
+        let population = ContextPopulationSnapshot(initial:[initial],pages:[])
+        let initialWork = population.remaining(current:[initial],records:originals,pages:[])
+        check(population.references == frozen && initialWork.targetIDs == [initial.id] && initialWork.workCount == originals.count + 1, "Population freezes all exact initial inputs and one required initial page write")
+        let firstPopulationPage = projection(initial)
+        let firstPopulationTarget = ContextConsolidationSelection.target(registration:"owner",kind:.project,key:projectID.uuidString,title:"Bridge optics",candidates:originals,previous:firstPopulationPage,anchorKeys:anchorKeys,projectID:projectID,eligibleReferences:population.references)!
+        let afterFirstWrite = population.remaining(current:[firstPopulationTarget],records:originals,pages:[firstPopulationPage])
+        check(afterFirstWrite.workCount == originals.count - Set(firstPopulationPage.processedReferences ?? []).count && afterFirstWrite.workCount < initialWork.workCount, "A successful bounded write decreases exact per-page initial work rather than merely changing a store revision")
+        let finishedWork = population.remaining(current:[frozenDone],records:originals+arrivals,pages:[bootstrap!])
+        check(finishedWork.workCount == 0 && finishedWork.targetIDs.isEmpty, "Fresh nonfrozen arrivals cannot extend a completed initial page")
+        var stayedFinished = true
+        for index in 0..<8 {
+            var changedSubject = subject, changedPurpose = purpose
+            changedSubject.reference = .init(kind:subject.reference.kind,key:subject.reference.key,revision:"project-later-\(index)")
+            changedSubject.text = "The human edited the current project between population calls: \(index)."
+            changedPurpose.reference = .init(kind:purpose.reference.kind,key:purpose.reference.key,revision:"purpose-later-\(index)")
+            changedPurpose.text = "The human edited their project purpose after the initial page finished: \(index)."
+            let changedRecords = [changedSubject,changedPurpose]+updates+arrivals
+            let changedTarget = ContextConsolidationSelection.target(registration:"owner",kind:.project,key:projectID.uuidString,title:"Bridge optics",candidates:changedRecords,previous:bootstrap,anchorKeys:anchorKeys,projectID:projectID,eligibleReferences:population.references)!
+            let outstanding = population.remaining(current:[changedTarget],records:changedRecords,pages:[bootstrap!])
+            stayedFinished = stayedFinished && changedTarget.previousPage == nil && outstanding.targetIDs.isEmpty && outstanding.workCount == 0
+        }
+        check(stayedFinished, "Continuous current project and human-purpose edits cannot reopen a completed frozen target even while its live page support is stale")
+
+        let sharedPopulation = ContextPopulationSnapshot(initial:[initial,independent],pages:[])
+        let sharedInitialWork = sharedPopulation.remaining(current:[initial,independent],records:originals,pages:[])
+        check(sharedInitialWork.workCount == 2 * (originals.count + 1), "A shared canonical reference counts independently for every initial target that has not processed it")
+        let sharedRemaining = sharedPopulation.remaining(current:[frozenDone,independent],records:originals,pages:[bootstrap!])
+        check(sharedRemaining.targetIDs == [independent.id] && sharedRemaining.workCount == originals.count + 1, "Finishing a project cannot acknowledge the topic's shared pending records or its initial write")
+        let newTarget = ContextPageTarget(registration:"owner",kind:.topic,key:"new-after-snapshot",title:"New target",records:[unrelated],allPendingReferences:[unrelated.reference])
+        let withNewTarget = population.remaining(current:[frozenDone,newTarget],records:originals+[unrelated],pages:[bootstrap!])
+        check(withNewTarget.workCount == 0 && withNewTarget.targetIDs.isEmpty && population.references[unrelated.reference.contextKey] == nil, "Targets and source identities first discovered after the snapshot wait for a later heartbeat")
+
+        let sourceTarget = ContextPageTarget(registration:"owner",kind:.topic,key:"source-population",title:"Source changes",records:[project,mail],allPendingReferences:[project.reference,mail.reference])
+        let sourcePage = ContextPage(registration:"owner",kind:.topic,key:sourceTarget.key,owner:.generated,title:sourceTarget.title,markdown:"An earlier supported source page.",references:[project.reference])
+        let sourcePopulation = ContextPopulationSnapshot(initial:[sourceTarget],pages:[sourcePage])
+        let originalSourceWork = sourcePopulation.remaining(current:[sourceTarget],records:[project,mail],pages:[sourcePage])
+        let withdrawnSourceWork = sourcePopulation.remaining(current:[sourceTarget],records:[project],pages:[sourcePage])
+        let versionedSourceWork = sourcePopulation.remaining(current:[sourceTarget],records:[project,changedMail],pages:[sourcePage])
+        check(originalSourceWork.workCount == 2 && withdrawnSourceWork.workCount == 1 && versionedSourceWork.workCount == 1, "Withdrawal or replacement of an exact frozen source removes obsolete work without adopting its new version")
+        check(sourcePopulation.remaining(current:[],records:[project,mail],pages:[sourcePage]).workCount == 0, "A target no longer eligible under current permissions cannot keep population running")
+        let wrongAccountWork = population.remaining(current:[initial],records:originals,pages:[wrongAccount])
+        check(wrongAccountWork.workCount == initialWork.workCount, "Another account's page cannot acknowledge a required initial write or pending inputs")
+        let wrongAccountTarget = ContextPageTarget(registration:"other-owner",kind:initial.kind,key:initial.key,title:initial.title,records:originals,allPendingReferences:initial.allPendingReferences)
+        check(population.remaining(current:[wrongAccountTarget],records:originals,pages:[wrongAccount]).workCount == 0, "A foreign-account target cannot join the captured population")
+
+        let rebuildRecords = originals.filter { $0.reference != oldDelta }
+        let rebuildPopulation = ContextPopulationSnapshot(initial:[withdrawn],pages:[previous!])
+        let needsRebuild = rebuildPopulation.remaining(current:[withdrawn],records:rebuildRecords,pages:[previous!])
+        var rebuiltPage = previous!; rebuiltPage.revision = UUID()
+        let rebuiltWork = rebuildPopulation.remaining(current:[withdrawn],records:rebuildRecords,pages:[rebuiltPage])
+        check(rebuildPopulation.references.isEmpty && needsRebuild.targetIDs == [complete.id] && needsRebuild.workCount == 1, "An initially stale page with no pending inputs still receives one captured rebuild")
+        check(rebuiltWork.workCount == 0 && rebuiltWork.targetIDs.isEmpty, "That initial rebuild completes on its exact page revision advance and cannot repeat on global-store changes")
+        check(rebuildPopulation.remaining(current:[withdrawn],records:rebuildRecords,pages:[previous!,wrongAccount]).workCount == 1, "An unrelated saved page cannot satisfy an initial target's required revision advance")
+
         let humanOwned=ContextPage(registration:"owner",kind:.project,key:projectID.uuidString,owner:.human,title:"Bridge optics",markdown:purposeWords)
         check(ContextConsolidationSelection.target(registration:"owner",kind:.project,key:projectID.uuidString,title:"Bridge optics",candidates:originals,previous:humanOwned) == nil, "The pure selection boundary cannot replace a human-owned page")
 
