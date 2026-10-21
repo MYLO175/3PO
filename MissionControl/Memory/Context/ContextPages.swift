@@ -1,5 +1,10 @@
 import Foundation
 
+/// Metadata only: unsupported saved pages reserve their identity without exposing their content.
+enum ContextPageIdentityStatus: Equatable, Sendable {
+    case missing, available, preserved, unavailable
+}
+
 /// A readable projection, not a replacement for canonical facts or action receipts.
 struct ContextPage: Codable, Equatable, Identifiable, Sendable {
     struct Kind: RawRepresentable, Codable, Hashable, Sendable {

@@ -29,8 +29,11 @@ import SwiftData
         check(absent.isReadable && absent.canSave && absent.pages(registration: account).isEmpty, "Absent store must be readable and empty")
         check(try repository.read(ContextPageStore.recordKey) == nil, "Opening an absent store must not write")
         check(absent.checkpoint(registration: account) == nil && absent.history(id: "missing", registration: account).isEmpty, "Missing lookup stays absent")
+        check(absent.identityStatus(id: sample().id, registration: account) == .missing, "A readable empty store reports a missing identity")
+        check(try repository.read(ContextPageStore.recordKey) == nil, "Identity inspection must not create an absent record")
         let unavailable = ContextPageStore(container: nil)
         check(!unavailable.isReadable && !unavailable.canSave && unavailable.error != nil, "Missing storage cannot pretend to save")
+        check(unavailable.identityStatus(id: sample().id, registration: account) == .unavailable, "Unavailable storage must not report an identity as missing")
         expectFailure("Unavailable storage accepted a write") { _ = try unavailable.save(sample(), expectedRevision: nil) }
         check(unavailable.pages(registration: account).isEmpty, "No phantom page after failed save")
 
@@ -47,6 +50,8 @@ import SwiftData
         check(original.id == identity && original.revision != sample().revision && original.created == clock, "Committed page retains stable identity with a fresh revision")
         check(original.references.map(\.id) == original.references.map(\.id).sorted(), "References are deterministic")
         check(absent.pages(registration: other).isEmpty && absent.page(id: original.id, registration: other) == nil, "Account scope precedes lookup")
+        check(absent.identityStatus(id: original.id, registration: account) == .available, "A supported current row reports an available identity")
+        check(absent.identityStatus(id: original.id, registration: other) == .missing && absent.identityStatus(id: sample("missing").id, registration: account) == .missing, "Identity lookup requires the exact ID and account")
         let reload = ContextPageStore(container: db)
         check(reload.page(id: original.id, registration: account) == original, "Markdown and metadata must roundtrip")
         check(reload.history(id: original.id, registration: account).map(\.page) == [original], "First save creates immutable history")
@@ -171,6 +176,7 @@ import SwiftData
             try corruptRepo.write([ContextPageStore.recordKey: bad])
             let blocked = ContextPageStore(container: corruptDB)
             check(!blocked.isReadable && !blocked.canSave && blocked.pages(registration: account).isEmpty, "Corrupt/unsupported storage must fail closed")
+            check(blocked.identityStatus(id: original.id, registration: account) == .unavailable && blocked.identityStatus(id: "missing", registration: other) == .unavailable, "Unreadable storage cannot claim any identity is missing")
             expectFailure("Corrupt record accepted a write") { _ = try blocked.save(sample("replacement"), expectedRevision: nil) }
             check(try corruptRepo.read(ContextPageStore.recordKey) == bad, "Corrupt and unsupported original bytes must be preserved")
         }
@@ -229,18 +235,40 @@ import SwiftData
         let futureDB = try container(), futureRepo = LocalRecordRepository(container: futureDB)
         let futurePage = sample("future", kind: .init(rawValue: "futureKind"))
         let unknownOwner = sample("future-owner", owner: .init(rawValue: "futureOwner"))
-        try futureRepo.write([ContextPageStore.recordKey: bytes(["schemaVersion": 1, "pages": [object(try JSONEncoder().encode(futurePage)), object(try JSONEncoder().encode(unknownOwner))]])])
+        var futureKindRow = try object(JSONEncoder().encode(futurePage))
+        futureKindRow["opaqueFutureKind"] = ["retained": true]
+        var futureOwnerRow = try object(JSONEncoder().encode(unknownOwner))
+        futureOwnerRow["opaqueFutureOwner"] = "Retain without exposing this content"
+        let futureBytes = try bytes(["schemaVersion": 1, "pages": [futureKindRow, futureOwnerRow]])
+        try futureRepo.write([ContextPageStore.recordKey: futureBytes])
         let future = ContextPageStore(container: futureDB)
-        check(future.isReadable && future.pages(registration: account).isEmpty && future.page(id: futurePage.id, registration: account) == nil, "Unknown page kinds and ownership are excluded from readable projections")
+        check(future.isReadable && future.pages(registration: account).isEmpty && future.page(id: futurePage.id, registration: account) == nil && future.page(id: unknownOwner.id, registration: account) == nil, "Unknown page kinds and ownership are excluded from readable projections")
+        check(future.identityStatus(id: futurePage.id, registration: account) == .preserved, "An unknown kind reserves its exact stable ID")
+        check(future.identityStatus(id: unknownOwner.id, registration: account) == .preserved, "An unknown owner reserves its exact supported-kind stable ID")
+        check(future.identityStatus(id: futurePage.id, registration: other) == .missing && future.identityStatus(id: unknownOwner.id, registration: other) == .missing && future.identityStatus(id: sample("missing").id, registration: account) == .missing, "Preserved identities stay exact and account scoped")
+        check(future.history(id: futurePage.id, registration: account).isEmpty && future.history(id: unknownOwner.id, registration: account).isEmpty, "Identity inspection does not expose unsupported history")
+        check(try futureRepo.read(ContextPageStore.recordKey) == futureBytes, "Inspecting preserved identities leaves original bytes exact")
         expectFailure("Unknown kind was editable") { _ = try future.save(futurePage, expectedRevision: futurePage.revision) }
-        _ = try future.save(sample("supported"), expectedRevision: nil)
+        expectFailure("Unknown owner was overwritten by a create-only supported page") { _ = try future.save(sample("future-owner"), expectedRevision: nil) }
+        expectFailure("Unknown owner was replaced with a supported owner") { _ = try future.save(sample("future-owner"), expectedRevision: unknownOwner.revision) }
+        check(try futureRepo.read(ContextPageStore.recordKey) == futureBytes, "Rejected replacement of a reserved identity preserves original bytes")
+        var supportedSibling = try future.save(sample("supported"), expectedRevision: nil)
         let futureSaved = try object(futureRepo.read(ContextPageStore.recordKey)!)
         check((futureSaved["pages"] as! [[String: Any]]).count == 3, "Unknown future pages survive writing a supported sibling")
         check((futureSaved["versions"] as! [[String: Any]]).count == 3, "Legacy unknown pages retain their original version on first save")
-        let supportedSibling = future.page(id: sample("supported").id, registration: account)!
+        supportedSibling.markdown += "\nAn explicit fictional human edit."
+        supportedSibling = try future.save(supportedSibling, expectedRevision: supportedSibling.revision)
+        check(future.identityStatus(id: supportedSibling.id, registration: account) == .available, "A supported sibling remains available after an edit")
+        let futureReopened = ContextPageStore(container: futureDB)
+        check(futureReopened.identityStatus(id: futurePage.id, registration: account) == .preserved && futureReopened.identityStatus(id: unknownOwner.id, registration: account) == .preserved, "Preserved identities survive a supported sibling edit and reopen")
+        let editedFutureRows = (try object(futureRepo.read(ContextPageStore.recordKey)!))["pages"] as! [[String: Any]]
+        check(try bytes(editedFutureRows.first { $0["id"] as? String == futurePage.id }!) == bytes(futureKindRow) && bytes(editedFutureRows.first { $0["id"] as? String == unknownOwner.id }!) == bytes(futureOwnerRow), "Sibling edits preserve opaque page bodies and unknown fields exactly")
         try future.forget(id: supportedSibling.id, registration: account, expectedRevision: supportedSibling.revision)
         let futureAfterForget = try object(futureRepo.read(ContextPageStore.recordKey)!)
         check((futureAfterForget["pages"] as! [[String: Any]]).count == 2 && (futureAfterForget["versions"] as! [[String: Any]]).count == 2, "Forgetting a human sibling preserves unknown future pages and their lineages")
+        check(future.identityStatus(id: supportedSibling.id, registration: account) == .missing && future.identityStatus(id: futurePage.id, registration: account) == .preserved && future.identityStatus(id: unknownOwner.id, registration: account) == .preserved, "Forgetting a supported sibling leaves reserved identities intact")
+        let forgottenFutureRows = futureAfterForget["pages"] as! [[String: Any]]
+        check(try bytes(forgottenFutureRows.first { $0["id"] as? String == futurePage.id }!) == bytes(futureKindRow) && bytes(forgottenFutureRows.first { $0["id"] as? String == unknownOwner.id }!) == bytes(futureOwnerRow), "Sibling Forget preserves opaque page bodies and unknown fields exactly")
         let lossyDB = try container(), lossyRepo = LocalRecordRepository(container: lossyDB)
         let lossy = Data("{\"futureNumeric\":1.234567890123456789012345678901234567890,\"pages\":[]}".utf8)
         try lossyRepo.write([ContextPageStore.recordKey: lossy])
