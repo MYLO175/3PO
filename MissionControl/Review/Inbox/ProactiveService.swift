@@ -302,8 +302,11 @@ struct ProactiveReviewContext {
                 let featureCaptures=["projects","reminders"].map {feature in
                     model.captureContextPages(registration:registration,query:nil,includeTopics:true,everyday:false,pageID:"instructions:"+feature,purpose:contextPurpose,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady)
                 }
-                var plannerVersions=memoryCapture.contextPageDependencies
-                for capture in [calendarGuide]+featureCaptures {plannerVersions.merge(capture.referenceVersions){_,latest in latest}}
+                // Fresh native reads may precede the widget cache. The guide's captured
+                // callback validates that exact issued scope; retain its receipts for later advice.
+                var plannerPageVersions=memoryCapture.contextPageDependencies
+                for capture in featureCaptures {plannerPageVersions.merge(capture.referenceVersions){_,latest in latest}}
+                let plannerVersions=plannerPageVersions.merging(calendarGuide.referenceVersions){_,latest in latest}
                 let completed:[CompletedReminder]
                 var completionError:String?
                 do {
@@ -417,7 +420,7 @@ struct ProactiveReviewContext {
                     scope == self.scope(model) && waScope == model.whatsapp.scope(for:registration,purpose:.suggestions) && registration == model.chatGPT.activeID &&
                     (whatsappWindow.map({$0 == ProactiveRules.whatsappWindow(model.whatsapp.messages,chats:whatsappChats,identity:waScope.linkedIdentity)}) ?? true) &&
                     whatsapp.allSatisfy{original in model.whatsapp.messages.contains{$0.id == original.itemID && $0.chat == original.chatID && SourceContextRules.revision($0) == original.revision}} &&
-                    model.emailSummaries.policyAvailable(capturedReviewPolicy) && model.contextPageDependenciesAvailable(plannerVersions,registration:registration) && calendarGuide.current() && featureCaptures.allSatisfy{$0.current()} && issuedCalendars.values.allSatisfy{choice in !initialCachedCalendarIDs.contains(choice.sourceID) || model.calendarData.sources.contains(where:choice.matches)} && memoryUseRevision == assistant.memory.useRevision && model.memoryDependenciesAvailable(memoryCapture.dependencies,use:memoryUse) &&
+                    model.emailSummaries.policyAvailable(capturedReviewPolicy) && model.contextPageDependenciesAvailable(plannerPageVersions,registration:registration) && calendarGuide.current() && featureCaptures.allSatisfy{$0.current()} && issuedCalendars.values.allSatisfy{choice in !initialCachedCalendarIDs.contains(choice.sourceID) || model.calendarData.sources.contains(where:choice.matches)} && memoryUseRevision == assistant.memory.useRevision && model.memoryDependenciesAvailable(memoryCapture.dependencies,use:memoryUse) &&
                     currentEmailInputs() &&
                     !assistant.busy && !model.chatGPT.busy && !model.projectPlacement.busy && !model.briefings.busy && !model.sourceLearning.busy && !model.nativeSourceLearning.busy && !model.memoryMaintenance.busy && !model.memoryLearning.busy && !model.lifeOrganisation.busy && !model.emailSummaries.busy
                 }
