@@ -43,6 +43,12 @@ import SwiftData
     func page(id: String, registration: String) -> ContextPage? {
         pages(registration: registration).first { $0.id == id }
     }
+    /// Inspect identity availability without returning unsupported page content.
+    func identityStatus(id: String, registration: String) -> ContextPageIdentityStatus {
+        guard isReadable else { return .unavailable }
+        guard let page = state.pages.first(where: { $0.id == id && $0.registration == registration }) else { return .missing }
+        return page.isSupported ? .available : .preserved
+    }
     func history(id: String, registration: String) -> [ContextPageVersion] {
         guard let current = page(id: id, registration: registration) else { return [] }
         return state.versions?.filter { $0.page.id == id && $0.page.registration == registration } ?? [.init(page: current)]
