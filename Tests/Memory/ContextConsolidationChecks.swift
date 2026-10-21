@@ -163,7 +163,7 @@ import Foundation
         let boundedPrior=selection([subject,purpose]+bulky,prior)
         check(boundedPrior.previousPage == nil && boundedPrior.input["previousDraft"] == nil, "An oversized prior is omitted instead of supplying its unsupported partial body")
         check(!boundedPrior.pendingReferences.isEmpty && anchorKeys.allSatisfy { key in boundedPrior.references.contains{$0.contextKey == key} } && ContextKnowledgeRules.json(boundedPrior.input).utf8.count <= 20_000, "Oversized prior fallback retains purpose, bounded originals and pending progress")
-        check((boundedPrior.input["records"] as? [[String:String]])?.contains{$0["excerpted"] == "true"} == true, "Clipped original text is explicitly identified as incomplete model context")
+        check((boundedPrior.input["records"] as? [[String:Any]])?.contains{$0["excerpted"] as? String == "true"} == true, "Clipped original text is explicitly identified as incomplete model context")
         let overviewTarget=ContextPageTarget(registration:"owner",kind:.overview,key:"maintained",title:"Overview",records:[short])
         let otherTargets=(0..<9).map { index in ContextPageTarget(registration:"owner",kind:.project,key:"initial-\(index)",title:"Project \(index)",records:[project]) }
         var waitingTargets=otherTargets+[overviewTarget],served=Set<String>(),rounds=0
@@ -265,10 +265,82 @@ import Foundation
         capacityPrior.processedReferences=retained32.map(\.reference)
         capacityPrior.evidenceQuotes=retained32.map{.init(referenceID:$0.reference.id,quote:$0.text)}
         let capacity=selection([subject,purpose]+Array(updates.prefix(50)),capacityPrior)
-        check(capacity.records.count == 52 && capacity.pendingReferences.count == 20 && capacity.previousPage != nil && ContextKnowledgeRules.json(capacity.input).utf8.count <= 20_000, "The full retained32 plus new20 original capacity remains bounded and preserves its supported prior")
+        check(capacity.records.count <= 52 && (1...20).contains(capacity.pendingReferences.count) && capacity.previousPage != nil && ContextKnowledgeRules.json(capacity.input).utf8.count <= 20_000, "Retained32 plus bounded new originals include segment metadata without losing a supported prior or pending progress")
         let capacityRow:[String:Any]=["id":capacity.id,"synopsis":"Supported retained purpose","markdown":purposeWords,"evidence":retained32.map{["id":$0.reference.contextKey,"quote":$0.text]},"purposeQuestion":NSNull()]
         let capacityPage=try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":[capacityRow]]),targets:[capacity])[0].0
-        check(capacityPage.references.count == 32 && capacityPage.evidenceQuotes?.count == 32 && capacityPage.processedReferences?.count == 52, "Thirty-two cited support refs stay distinct from all fifty-two processed original versions")
+        check(capacityPage.references.count == 32 && capacityPage.evidenceQuotes?.count == 32 && Set(capacityPage.processedReferences ?? []) == Set(capacity.processedReferences + capacity.references), "Thirty-two cited support refs stay distinct from every exact processed original version")
+        let passageSources: [(String,String)] = [
+            ("short", "Vegan"),
+            ("tail", String(repeating:"x",count:1000)+"Z"),
+            ("multiline", String(repeating:"Optics line \"quoted\" C:\\Capture\nSecond line.\n",count:30)),
+            ("unicode", String(repeating:"é e\u{0301} 🧑🏽‍🔬 \"\\\n",count:60)),
+            ("long", String(repeating:"Original calibration passage. ",count:50))
+        ]
+        var passageRecords: [ContextKnowledgeRecord] = []
+        for (name, words) in passageSources {
+            let record = ContextKnowledgeRecord(reference:.init(kind:"memory",key:"passage-"+name,revision:"v1"),title:"Original "+name,text:words,date:date)
+            passageRecords.append(record)
+            let segments = ContextPageTarget.segments(record)
+            check(!segments.isEmpty && segments.allSatisfy{(1...500).contains($0.text.count)} && segments.map(\.index) == Array(segments.indices), "\(name) source has complete bounded numbered character slices")
+            check(Data(segments.map(\.text).joined().utf8) == Data(words.utf8), "\(name) source segments reconstruct every original Unicode, newline, quote and slash byte")
+            check(Set(segments.map(\.id)).count == segments.count && segments.map(\.id) == ContextPageTarget.segments(record).map(\.id), "\(name) segment IDs are unique and deterministic")
+            let issued = ContextPageTarget(registration:"owner",kind:.topic,key:"passage-"+name,title:record.title,records:[record]).input["records"] as! [[String:Any]]
+            let rows = issued[0]["segments"] as! [[String:Any]]
+            check(issued[0]["id"] as? String == record.reference.contextKey && issued[0]["revision"] as? String == record.reference.revision && issued[0]["title"] as? String == record.title && issued[0]["observed"] as? String == date.ISO8601Format() && rows.compactMap{$0["text"] as? String}.joined() == words && issued[0]["text"] == nil && issued[0]["originalCharacters"] as? Int == words.count && issued[0]["issuedCharacters"] as? Int == words.count, "\(name) issued record retains exact metadata and all source text once inside its segments")
+        }
+        var oversizedPassage = passageRecords[0]
+        oversizedPassage.text = String(repeating:"🧑🏽‍🔬 calibration line \"original\"\n",count:300)
+        oversizedPassage.relevance = "An exact human-linked project passage."
+        let oversizedSlices = ContextPageTarget.segments(oversizedPassage)
+        let issuedOversized = ContextPageTarget.suppliedText(oversizedPassage)
+        let oversizedTarget = ContextPageTarget(registration:"owner",kind:.topic,key:"oversized-projection",title:"Bounded original",records:[oversizedPassage])
+        let oversizedRow = (oversizedTarget.input["records"] as! [[String:Any]])[0]
+        check(Data(oversizedSlices.map(\.text).joined().utf8) == Data(issuedOversized.utf8) && issuedOversized.count <= 1600 && issuedOversized.utf8.count <= 4000, "Segments retain every byte of the entire bounded issued projection without an additional truncation")
+        check(oversizedRow["excerpted"] as? String == "true" && oversizedRow["originalCharacters"] as? Int == oversizedPassage.text.count && oversizedRow["issuedCharacters"] as? Int == issuedOversized.count && oversizedRow["relevance"] as? String == oversizedPassage.relevance, "Excerpt metadata states exact original and issued coverage while preserving relevance")
+        check(oversizedPassage.text.count > issuedOversized.count && oversizedPassage.reference == passageRecords[0].reference && oversizedSlices.allSatisfy{ContextPageTarget.containsExact($0.text,in:oversizedPassage.text)}, "Bounded passage issuance leaves the full authoritative original and its reference untouched")
+        let passage = passageRecords.first{$0.reference.key == "passage-multiline"}!
+        let selectedSegment = ContextPageTarget.segments(passage)[1]
+        var passageTarget = target; passageTarget.records = [passage,mail]
+        let segmentOutput = output(quotes:[["id":passage.reference.contextKey,"segment":selectedSegment.id]],markdown:"The human's original optics record contains multiline calibration notes.")
+        let passagePage = try ContextConsolidationRules.decode(segmentOutput,targets:[passageTarget])[0].0
+        check(passagePage.evidenceQuotes == [.init(referenceID:passage.reference.id,quote:selectedSegment.text)] && passagePage.references == [passage.reference], "A known record/segment pair resolves locally to the exact untouched canonical passage")
+        check(Set(passagePage.processedReferences ?? []) == Set([passage.reference,mail.reference]), "Uncited supplied input is processed without becoming support when evidence uses segments")
+        let tinyTail = passageRecords.first{$0.reference.key == "passage-tail"}!
+        var tailTarget = target; tailTarget.records = [tinyTail]
+        let tailSegment = ContextPageTarget.segments(tinyTail).last!
+        let tailPage = try ContextConsolidationRules.decode(output(quotes:[["id":tinyTail.reference.contextKey,"segment":tailSegment.id]]),targets:[tailTarget])[0].0
+        check(tailSegment.text == "Z" && tailPage.evidenceQuotes?.first?.quote == "Z", "A final issued segment shorter than eight characters remains exact source evidence")
+        var revisedPassage = passage; revisedPassage.reference = .init(kind:passage.reference.kind,key:passage.reference.key,revision:"v2")
+        var revisedPassageTarget = passageTarget; revisedPassageTarget.records = [revisedPassage,mail]
+        check(Set(ContextPageTarget.segments(revisedPassage).map(\.id)).isDisjoint(with:Set(ContextPageTarget.segments(passage).map(\.id))), "Every source revision receives different opaque segment identities")
+        rejects("A segment from an old source revision was accepted") { _=try ContextConsolidationRules.decode(segmentOutput,targets:[revisedPassageTarget]) }
+        rejects("A fabricated segment ID was accepted") { _=try ContextConsolidationRules.decode(output(quotes:[["id":passage.reference.contextKey,"segment":"segment:invented"]]),targets:[passageTarget]) }
+        rejects("Another record's segment was accepted for a known original ID") { _=try ContextConsolidationRules.decode(output(quotes:[["id":mail.reference.contextKey,"segment":selectedSegment.id]]),targets:[passageTarget]) }
+        var identicalPassage = passage
+        identicalPassage.reference = .init(kind:passage.reference.kind,key:"different-original-same-words",revision:passage.reference.revision)
+        var identicalTarget = passageTarget; identicalTarget.records = [passage,identicalPassage]
+        check(Set(ContextPageTarget.segments(identicalPassage).map(\.id)).isDisjoint(with:Set(ContextPageTarget.segments(passage).map(\.id))), "Identical source text under another original identity has different segment IDs")
+        rejects("Identical text silently substituted another original's segment identity") { _=try ContextConsolidationRules.decode(output(quotes:[["id":identicalPassage.reference.contextKey,"segment":selectedSegment.id]]),targets:[identicalTarget]) }
+        rejects("An unissued source ID borrowed a valid segment") { _=try ContextConsolidationRules.decode(output(quotes:[["id":"memory:not-issued","segment":selectedSegment.id]]),targets:[passageTarget]) }
+        rejects("A valid legacy quote silently repaired a forged segment") { _=try ContextConsolidationRules.decode(output(quotes:[["id":passage.reference.contextKey,"segment":"segment:invented","quote":String(passage.text.prefix(100))]]),targets:[passageTarget]) }
+        rejects("Ambiguous combined quote and segment fields were accepted") { _=try ContextConsolidationRules.decode(output(quotes:[["id":passage.reference.contextKey,"segment":selectedSegment.id,"quote":selectedSegment.text]]),targets:[passageTarget]) }
+        rejects("Evidence with no passage or legacy quote was accepted") { _=try ContextConsolidationRules.decode(output(quotes:[["id":passage.reference.contextKey]]),targets:[passageTarget]) }
+        let decomposed = ContextKnowledgeRecord(reference:.init(kind:"memory",key:"literal-unicode",revision:"v1"),title:"Literal original",text:"The original says cafe\u{0301} today.",date:date)
+        var literalTarget=target;literalTarget.records=[decomposed]
+        rejects("A normalized but byte-different legacy quote was accepted as exact") { _=try ContextConsolidationRules.decode(output(quotes:[["id":decomposed.reference.contextKey,"quote":"says café today"]]),targets:[literalTarget]) }
+        rejects("A paraphrased legacy quote was repaired") { _=try ContextConsolidationRules.decode(output(quotes:[["id":passage.reference.contextKey,"quote":"The calibration notes describe the optics capture."]]),targets:[passageTarget]) }
+        let exactLegacy = String(passage.text.prefix(100))
+        check(try ContextConsolidationRules.decode(output(quotes:[["id":passage.reference.contextKey,"quote":exactLegacy]]),targets:[passageTarget])[0].0.evidenceQuotes?.first?.quote == exactLegacy, "Exact legacy quotation transport remains compatible without approximation")
+        let segmentRows: [[String:Any]] = fullTargets.map { value in
+            ["id":value.id,"synopsis":"Twenty supported calibration records","markdown":"The calibration project retains its supplied reference samples.","purposeQuestion":NSNull(),
+             "evidence":fullRecords.map { ["id":$0.reference.contextKey,"segment":ContextPageTarget.segments($0)[0].id] }]
+        }
+        let segmentBatch = try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":segmentRows]),targets:fullTargets)
+        check(segmentBatch.count == 4 && segmentBatch.allSatisfy{$0.0.references.count == 20 && $0.0.evidenceQuotes?.count == 20}, "A four-target twenty-record response resolves issued segments independently for every page")
+        var tooManySegments = segmentRows
+        tooManySegments[0]["evidence"] = Array(repeating:["id":fullRecords[0].reference.contextKey,"segment":ContextPageTarget.segments(fullRecords[0])[0].id],count:33)
+        rejects("An over-capacity segment selection array passed the thirty-two-evidence bound") { _=try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":tooManySegments]),targets:fullTargets) }
+
         print("Context consolidation: \(passed) checks passed; fictional records, no model/source/native requests.")
     }
     static func unseenReference() -> ContextPageReference { .init(kind: "memory", key: "previously-processed", revision: "v1") }
