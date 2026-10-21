@@ -384,6 +384,40 @@ import Foundation
         let priorSupport=(capacity.input["previousDraft"] as! [String:Any])["supportIDs"] as! [String]
         check(Set(priorSupport) == Set(capacity.issuedRecords.filter{retained32.map(\.reference).contains($0.record.reference)}.map(\.id)) && priorSupport.allSatisfy{$0.hasPrefix("record_")}, "Earlier draft support points to current short aliases while durable references remain canonical")
 
+        let pageInputs=ContextConsolidationRules.targetInputs(aliasTargets)
+        check(pageInputs.enumerated().allSatisfy{index,row in row["id"] as? String == "page_\(index)" && row["referenceID"] as? String == aliasTargets[index].id}, "Every captured target exposes only its short page selector plus canonical diagnostic metadata")
+        let pageAliasRows=aliasRows.enumerated().map {index,row -> [String:Any] in var value=row;value["id"]="page_\(index)";return value}
+        let pageAliasResult=try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":pageAliasRows]),targets:aliasTargets).map{$0.0}
+        check(zip(pageAliasResult,aliasTargets).allSatisfy{page,target in page.id == target.id && page.registration == target.registration && Set(page.references) == Set(target.references) && Set(page.processedReferences ?? []) == Set(target.references)}, "All four short page selectors preserve exact canonical page and source identities with reversed source orders")
+        let reorderedPages=try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":Array(pageAliasRows.reversed())]),targets:aliasTargets).map{$0.0}
+        check(reorderedPages.map(\.id) == aliasTargets.reversed().map(\.id) && reorderedPages.first?.evidenceQuotes?.first?.referenceID == aliasTargets.last?.records.first?.reference.id, "Output order cannot retarget a captured page alias or its target-local source aliases")
+        var forgedPages=pageAliasRows;forgedPages[1]["id"]="page_999"
+        rejectsCategory("consolidation IDs","An unissued short page ID was accepted") {_=try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":forgedPages]),targets:aliasTargets)}
+        var mixedPages=pageAliasRows;mixedPages[1]["id"]=aliasTargets[1].id
+        rejectsCategory("consolidation IDs","Mixed canonical and short page selectors were repaired") {_=try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":mixedPages]),targets:aliasTargets)}
+        var duplicatePages=pageAliasRows;duplicatePages[1]["id"]="page_0"
+        rejectsCategory("consolidation IDs","Repeated short page selectors silently acknowledged a missing page") {_=try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":duplicatePages]),targets:aliasTargets)}
+        rejectsCategory("consolidation IDs","An omitted short page selector was silently acknowledged") {_=try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":Array(pageAliasRows.dropLast())]),targets:aliasTargets)}
+        rejectsCategory("consolidation IDs","Duplicate canonical target inputs made page binding ambiguous") {_=try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":pageAliasRows]),targets:[aliasTargets[0],aliasTargets[0],aliasTargets[2],aliasTargets[3]])}
+        let legacyPageResult=try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":aliasRows]),targets:aliasTargets).map{$0.0}
+        check(legacyPageResult.map(\.id) == pageAliasResult.map(\.id) && zip(legacyPageResult,pageAliasResult).allSatisfy{$0.evidenceQuotes == $1.evidenceQuotes}, "Complete legacy canonical page output remains exact and compatible")
+
+        var schemaTargets=aliasTargets;schemaTargets[1].records=Array(aliasOriginals.prefix(7));schemaTargets[2].records=Array(originals.prefix(52))
+        let resultTools=ContextConsolidationRules.tools(schemaTargets)
+        let namespace=resultTools[0],resultFunctions=namespace["tools"] as! [[String:Any]],resultFunction=resultFunctions[0]
+        let parameters=resultFunction["parameters"] as! [String:Any],rootProperties=parameters["properties"] as! [String:[String:Any]]
+        let pagesSchema=rootProperties["pages"]!,pageSchema=pagesSchema["items"] as! [String:Any],pageProperties=pageSchema["properties"] as! [String:[String:Any]]
+        let evidenceSchema=pageProperties["evidence"]!,evidenceItem=evidenceSchema["items"] as! [String:Any],evidenceProperties=evidenceItem["properties"] as! [String:[String:Any]]
+        check(resultTools.count == 1 && namespace["type"] as? String == "namespace" && namespace["name"] as? String == "pa" && resultFunctions.count == 1 && resultFunction["type"] as? String == "function" && resultFunction["name"] as? String == "prepare_context_pages" && ContextConsolidationRules.resultTool == "prepare_context_pages" && resultFunction["strict"] as? Bool == true, "The result transport exposes exactly one strict data-only pa.prepare_context_pages function")
+        check(parameters["type"] as? String == "object" && parameters["additionalProperties"] as? Bool == false && parameters["required"] as? [String] == ["pages"] && Set(rootProperties.keys) == ["pages"] && pagesSchema["minItems"] as? Int == schemaTargets.count && pagesSchema["maxItems"] as? Int == schemaTargets.count, "Typed result requires exactly the captured page count with no extra root properties")
+        check(Set(pageProperties["id"]!["enum"] as! [String]) == Set(schemaTargets.indices.map{"page_\($0)"}) && Set(pageSchema["required"] as! [String]) == Set(pageProperties.keys) && pageSchema["additionalProperties"] as? Bool == false, "Typed page enum and required fields match every issued page alias")
+        let expectedRecordAliases=Set(schemaTargets.flatMap{$0.issuedRecords.map(\.id)})
+        check(Set(evidenceProperties["id"]!["enum"] as! [String]) == expectedRecordAliases && evidenceSchema["minItems"] as? Int == 1 && evidenceSchema["maxItems"] as? Int == 32 && Set(evidenceItem["required"] as! [String]) == ["id","segment"] && Set(evidenceProperties.keys) == ["id","segment"] && evidenceItem["additionalProperties"] as? Bool == false && evidenceProperties["segment"]!["type"] as? String == "string", "Typed evidence allows only the issued union of record aliases and one locally validated passage selector")
+        check(pageProperties["synopsis"]!["maxLength"] as? Int == 300 && pageProperties["markdown"]!["maxLength"] as? Int == 4500 && Set(pageProperties["purposeQuestion"]!["type"] as! [String]) == ["string","null"] && pageProperties["purposeQuestion"]!["maxLength"] as? Int == 300, "Typed result keeps text bounds and an explicitly required nullable purpose question")
+        check(ContextKnowledgeRules.json(resultTools).utf8.count <= 6000 && !ContextKnowledgeRules.json(resultTools).contains(schemaTargets[0].id) && !ContextKnowledgeRules.json(resultTools).contains(aliasOriginals[0].text), "The complete fifty-two-record typed schema stays under six kilobytes without canonical identities or source bodies")
+        check(ContextConsolidationRules.tools([]).isEmpty && ContextConsolidationRules.tools(schemaTargets+[schemaTargets[0]]).isEmpty, "Empty or over-capacity result schemas expose no callable preparation tool")
+        check(ContextConsolidationRules.instructions.contains("exactly one completed pa.prepare_context_pages call") && ContextConsolidationRules.instructions.contains("Do not answer in ordinary text or call any other tool") && ContextConsolidationRules.instructions.contains("never its canonical referenceID"), "Production instructions require one completed typed result with short page IDs and no ordinary text")
+
         print("Context consolidation: \(passed) checks passed; fictional records, no model/source/native requests.")
     }
     static func unseenReference() -> ContextPageReference { .init(kind: "memory", key: "previously-processed", revision: "v1") }
