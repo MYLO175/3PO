@@ -6,7 +6,14 @@ struct MemoryInspectionPreview:View {
     var model:DashboardModel
     @State private var ready=false
     @State private var capture:PAContextCapture?
+    @ViewBuilder
     var body:some View {
+        if ProcessInfo.processInfo.arguments.contains("--context-pages") {
+            ContextPagesView(model: model).task {
+                guard !ready else { return }; ready = true
+                try? Self.seedContextPages(model)
+            }
+        } else {
         VStack {
             Button("Preview reply context") {
                 let selection=model.assistant.memory.selection("fictional",includeTopics:true,query:"Orion",focus:[.projects])
@@ -16,6 +23,25 @@ struct MemoryInspectionPreview:View {
             PAMemoryView(memory:model.assistant.memory,registration:"fictional",focusAreas:[.projects])
         }.task { guard !ready else { return };ready=true;Self.seed(model,registration:"fictional") }
             .sheet(item:$capture) { capture in PAContextCaptureView(capture:capture,model:model,registration:"fictional") }
+        }
+    }
+    @MainActor private static func seedContextPages(_ model: DashboardModel) throws {
+        let owner = model.chatGPT.activeID
+        guard !owner.isEmpty else { throw ContextPageFailure.unavailable }
+        let project = LifeItem(registration: owner, kind: .space, title: "Fictional Lark optics", notes: "Compare two camera-calibration methods.")
+        _ = try model.assistant.projects.create([project], receipt: .init(id: "fictional-context-preview", registration: owner, result: "Fictional context preview prepared"))
+        let overview = ContextPage(registration: owner, kind: .overview, key: "everyday", owner: .human, title: "Everyday context", markdown: "# My everyday context\n\nThis is a fictional engineering project preview. I prefer short, practical plans and clear uncertainty.\n\n## Where to look\n\nThe Lark optics project explains the current camera experiment.")
+        let saved = try model.contextPages.save(overview, expectedRevision: nil)
+        var revised = saved; revised.markdown += "\n\nKeep original evidence available when a plan changes."
+        _ = try model.contextPages.save(revised, expectedRevision: saved.revision)
+        let purpose = ContextPage(registration: owner, kind: .note, key: "project-purpose:" + project.id.uuidString, owner: .human, title: "Purpose of Fictional Lark optics", markdown: "Compare two camera-calibration methods on the same small optics rig. The next decision is which method is stable enough for repeated measurements.", references: [model.contextProjectIdentity(project)])
+        _ = try model.contextPages.save(purpose, expectedRevision: nil)
+        let records = model.contextKnowledge(registration: owner).filter { $0.projectID == project.id && $0.reference.kind != "projectIdentity" }
+        if !records.isEmpty {
+            var summary = ContextPage(registration: owner, kind: .project, key: project.id.uuidString, owner: .generated, title: project.title, synopsis: "Calibration comparison and next decision", markdown: "# Lark optics\n\nCompare two camera-calibration methods on the same rig. The next decision is which method supports repeatable measurements.\n\nNo completed experiment or attendance has been verified.", references: records.map(\.reference))
+            summary.evidenceQuotes = records.map { .init(referenceID: $0.reference.id, quote: String($0.text.prefix(160))) }
+            _ = try model.contextPages.save(summary, expectedRevision: nil)
+        }
     }
     @MainActor static func seed(_ model:DashboardModel,registration:String) {
         let store=model.assistant.memory,now=Date.now

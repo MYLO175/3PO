@@ -52,6 +52,7 @@ struct HeartbeatLearningResult {
     let whatsapp: any WhatsAppLearningReading
     let now: () -> Date
     let ownership:LearningOwnership?
+    var canOfferQuestion: (String, Date) -> Bool = { _, _ in true }
     private let reviewNativePermission:(MemorySourceKind)->Bool
     private let reviewWhatsAppPermission:()->Bool
     private let reviewWhatsAppRevision:()->UUID?

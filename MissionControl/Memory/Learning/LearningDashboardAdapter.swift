@@ -5,7 +5,7 @@ extension WhatsAppService: WhatsAppLearningReading {}
 
 @MainActor extension DashboardModel {
     func learningRuntime(heartbeatRequest request:HeartbeatChildRequest? = nil) -> LearningRuntime {
-        LearningRuntime(assistant: assistant, inference: chatGPT, learningBudget: learningBudget, whatsapp: whatsapp,
+        let runtime = LearningRuntime(assistant: assistant, inference: chatGPT, learningBudget: learningBudget, whatsapp: whatsapp,
             activity: { [weak self] in
                 guard let self else { return .unavailable }
                 var lanes = Set<LearningLane>()
@@ -36,6 +36,11 @@ extension WhatsAppService: WhatsAppLearningReading {}
                 let access=self.whatsapp.access(for:self.chatGPT.activeID)
                 return access.briefEnabled || access.includeInSuggestions == true || self.heartbeat.whatsappEnabled
             },reviewWhatsAppRevision:{[weak self] in self?.heartbeat.whatsappLearningAccessRevision})
+        runtime.canOfferQuestion = { [weak self] registration, now in
+            guard let self else { return false }
+            return !self.contextQuestions.questions(registration: registration, includeFinished: true).contains { BriefingRules.day($0.created) == BriefingRules.day(now) }
+        }
+        return runtime
     }
 }
 

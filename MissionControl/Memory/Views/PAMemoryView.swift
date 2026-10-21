@@ -115,7 +115,7 @@ struct PAMemoryView: View {
             if let learning, let assistant { HStack { Text(learning.status(assistant)).font(.caption).foregroundStyle(.secondary); Spacer(); if learning.busy { Button("Stop") { learning.cancel() } } else { Button("Check context") { checkContext?() }.disabled(assistant.connection.busy || assistant.busy || assistant.connection.usagePaused || !assistant.connection.inferenceVerified || !assistant.contextEnabled || assistant.hasDraft || !memory.enabled || !memory.learningEnabled) } }; if let error = learning.error { Text(error).font(.caption).foregroundStyle(.orange) } }
             if let learning {
                 Toggle("Ask occasional useful learning questions",isOn:Binding(get:{ learning.questionsEnabled },set:{ learning.questionsEnabled = $0; learning.cancel() }))
-                Text("At most one per day, only about something you told the PA. Included in the existing small learning pass; no separate AI request or notification. You can dismiss it and Undo in chat.").font(.caption).foregroundStyle(.secondary)
+                Text("At most one new learning or project-purpose question per day. Questions stay in Review with Answer, Dismiss and Undo. They use existing learning or context-maintenance work; no separate question request or notification.").font(.caption).foregroundStyle(.secondary)
             }
             if let organisation {
                 Toggle("Organise saved facts into life areas",isOn:Binding(get:{organisation.automatic},set:{organisation.automatic=$0}))

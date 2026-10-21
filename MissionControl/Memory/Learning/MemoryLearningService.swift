@@ -62,7 +62,7 @@ import SwiftData
         ownedHeartbeatRunID=model.ownedHeartbeatRunID;busy = true; error = nil
         let selectedModel = model.inference.selectedModel,memoryControls=memory.controlsRevision,contextControls=assistant.contextRevision
         let questionsEnabled = self.questionsEnabled
-        let questionAllowed = questionsEnabled && (batch.first?.conversationID == nil || assistant.topics.contains { $0.id == batch.first?.conversationID }) && LearningQuestionRules.allowed(progress:progress,records:state.questions ?? [],registration:registration,day:day)
+        let questionAllowed = questionsEnabled && model.canOfferQuestion(registration, now) && (batch.first?.conversationID == nil || assistant.topics.contains { $0.id == batch.first?.conversationID }) && LearningQuestionRules.allowed(progress:progress,records:state.questions ?? [],registration:registration,day:day)
         // Depend only on supplied beliefs and correction history. Other local edits
         // remain in the current envelope when the supported result is merged.
         let selectedMemory=Array(memory.context(registration,conversationID:batch.first?.conversationID,query:batch.map(\.text).joined(separator:" "),now:model.now()).prefix(20))
@@ -95,7 +95,7 @@ import SwiftData
                 assistant.acknowledgeLearned(learned)
                 let beforeResult = state
                 let questionScopeAvailable=batch.first?.conversationID.map{topic in assistant.topics.contains{$0.id == topic}} ?? true
-                if self.questionsEnabled,questionScopeAvailable,let draft = assessment.question, let record = LearningQuestionRules.record(draft,turns:batch,prior:state.questions ?? [],registration:registration,now:model.now()) {
+                if self.questionsEnabled,model.canOfferQuestion(registration, model.now()),questionScopeAvailable,let draft = assessment.question, let record = LearningQuestionRules.record(draft,turns:batch,prior:state.questions ?? [],registration:registration,now:model.now()) {
                     state.questions = (state.questions ?? []) + [record]
                     state.accounts[registration]?.lastQuestionDay = BriefingRules.day(record.created)
                 }
@@ -108,6 +108,9 @@ import SwiftData
     }
     func question(delivery: String, registration: String) -> PALearningQuestion? {
         state.questions?.first { $0.deliveryID == delivery && $0.registration == registration }
+    }
+    func offeredQuestion(registration: String, on date: Date) -> Bool {
+        !LearningQuestionRules.allowed(progress: state.accounts[registration] ?? .init(), records: state.questions ?? [], registration: registration, day: BriefingRules.day(date))
     }
     func visible(_ record: PALearningQuestion, assistant: any LearningAssistantReading) -> Bool {
         record.registration == assistant.connection.activeID && !record.dismissed && record.answered != true && assistant.memory.enabled && assistant.contextEnabled && (record.conversationID == nil || assistant.topics.contains { $0.id == record.conversationID }) && !assistant.memory.suppressed(record.registration).contains(record.turnID)

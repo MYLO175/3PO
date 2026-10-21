@@ -6,7 +6,7 @@ import CryptoKit
 @MainActor @Observable final class WhatsAppService {
     var status = "Not connected"
     var reconnectAtLaunch = UserDefaults.standard.bool(forKey:"whatsappReconnectAtLaunch") {
-        didSet { UserDefaults.standard.set(reconnectAtLaunch,forKey:"whatsappReconnectAtLaunch") }
+        didSet { if !disposable { UserDefaults.standard.set(reconnectAtLaunch,forKey:"whatsappReconnectAtLaunch") } }
     }
     var connected = false
     var namesBusy=false
@@ -54,9 +54,11 @@ import CryptoKit
     private var reader: WhatsAppOutputReader?
     private var generation=UUID()
     private var snapshotID: String?
+    private var disposable = false
     private let directory = FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("Mission Control/WhatsApp",isDirectory:true)
     private let query: [String:Any] = [kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"com.mylomichael.missioncontrol.whatsapp",kSecAttrAccount as String:"session-encryption"]
     private func key() throws -> Data {
+        guard !disposable else { throw CocoaError(.featureUnsupported) }
         var request=query; request[kSecReturnData as String]=true
         var result: CFTypeRef?
         let found=SecItemCopyMatching(request as CFDictionary,&result)
@@ -68,7 +70,15 @@ import CryptoKit
         return data
     }
     init() {
-        guard !ProcessInfo.processInfo.arguments.contains("--sample") else { return }
+        if ProcessInfo.processInfo.arguments.contains("--sample") { disposable = true; return }
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        let fictionalModes: Set<String> = ["--validate-advice-context", "--validate-review-inbox", "--validate-native-memory", "--validate-commitment-reports", "--validate-memory-inspection", "--validate-source-timeline", "--render-projects"]
+        if arguments.contains(where: { fictionalModes.contains($0) || $0.hasPrefix("--preview-") }) {
+            disposable = true
+            return // Before personal encrypted access data or Keychain is opened.
+        }
+        #endif
         let path=directory.appendingPathComponent("access.enc")
         if let bytes=try? Data(contentsOf:path) {
             do { let decrypted=try AES.GCM.open(AES.GCM.SealedBox(combined:bytes),using:SymmetricKey(data:try key())); accesses=try JSONDecoder().decode([String:WhatsAppAccess].self,from:decrypted) }
@@ -91,6 +101,11 @@ import CryptoKit
         guard revised != previous else {return}
         var updated=accesses
         updated[id]=revised
+        if disposable {
+            accesses=updated;accessRevision=UUID();choicesRevision=UUID()
+            readAccessRevisions.record(key:id,previous:previous,current:revised)
+            return
+        }
         do {
             try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
             let bytes=try JSONEncoder().encode(updated)
@@ -122,9 +137,11 @@ import CryptoKit
         catch { namesStatus="Could not request contact names. Reconnect and try again." }
     }
     func resumeAtLaunch() {
+        guard !disposable else { return }
         if reconnectAtLaunch && FileManager.default.fileExists(atPath:directory.appendingPathComponent("auth.enc").path) { connect() }
     }
     func connect() {
+        guard !disposable else { status="WhatsApp is isolated in this fictional preview or evaluation."; return }
         guard !ProcessInfo.processInfo.arguments.contains("--sample") else { status="WhatsApp is unavailable in sample mode."; return }
         if process != nil { if connected || qr != nil { return }; stop(persistPause:false) }
         guard let root=Bundle.main.resourceURL?.appendingPathComponent("WhatsAppBridge"), FileManager.default.fileExists(atPath:root.appendingPathComponent("reader.mjs").path) else { status="WhatsApp helper is missing from this build."; return }
@@ -155,6 +172,7 @@ import CryptoKit
     func stop(persistPause: Bool = true) { if persistPause { reconnectAtLaunch=false }; generation=UUID(); process?.terminationHandler=nil; input?.closeFile(); process?.terminate(); process=nil; input=nil; reader=nil; namesBusy=false; connected=false; qr=nil; status="Paused · session retained" }
     func disconnect() {
         stop(); messages=[]; chats=[]; accesses=[:]; linkedIdentity="";accessRevision=UUID();choicesRevision=UUID()
+        if disposable { status="Fictional source disconnected."; return }
         do {
             if FileManager.default.fileExists(atPath:directory.path) { try FileManager.default.removeItem(at:directory) }
             let result=SecItemDelete(query as CFDictionary)

@@ -11,6 +11,7 @@ import SwiftData
         checks.merge(try humanEvidenceChecks(), uniquingKeysWith: { $1 })
         checks.merge(try await pageReadChecks(), uniquingKeysWith: { $1 })
         checks.merge(try instructionChecks(), uniquingKeysWith: { $1 })
+        checks.merge(try emailPageChecks(), uniquingKeysWith: { $1 })
         checks.merge(try await ownedMutationChecks(), uniquingKeysWith: { $1 })
         return checks
     }
@@ -79,6 +80,54 @@ import SwiftData
         _ = try consolidate(topic, in: shared)
         checks["Context pages sibling target quiets only after its own successful batch"] = !shared.model.contextConsolidation.targets(shared.model, registration: shared.registration).contains(where: { $0.id == topic.id })
         checks["Context pages fixture makes no real inference requests"] = fixture.provider.calls == 0 && shared.provider.calls == 0 && fixture.sources.reads == 0 && shared.sources.reads == 0 && model.aiUsage.state.records.isEmpty
+        let questionProject = try shared.model.assistant.projects.save(.init(registration: shared.registration, kind: .space, title: "Fictional purpose question"), expected: nil)
+        _ = try shared.model.contextQuestions.offer(registration: shared.registration, projectID: questionProject.id, identity: shared.model.contextProjectIdentity(questionProject), question: "What are you aiming to achieve with this fictional project?")
+        checks["Context questions share the existing daily allowance with conversation learning"] = !shared.model.learningRuntime().canOfferQuestion(shared.registration, .now)
+        checks["Context questions pending clarification suppresses more project-purpose offers"] = shared.model.contextConsolidation.targets(shared.model, registration: shared.registration).allSatisfy { !$0.mayAskPurpose }
+        if let pending = shared.model.contextQuestions.questions(registration: shared.registration).first {
+            _ = try shared.model.contextQuestions.dismiss(id: pending.id, registration: shared.registration, expectedRevision: pending.revision)
+        }
+        checks["Context question dismissal does not reopen the same day's question allowance"] = !shared.model.learningRuntime().canOfferQuestion(shared.registration, .now)
+        checks["Context questions leave the next day's learning allowance available"] = shared.model.learningRuntime().canOfferQuestion(shared.registration, Date.now.addingTimeInterval(86400))
+        return checks
+    }
+
+    private static func emailPageChecks() throws -> [String: Bool] {
+        let fixture = try ContextPagesFixture()
+        defer { fixture.clean() }
+        let model = fixture.model, registration = fixture.registration
+        let project = try model.assistant.projects.save(.init(registration: registration, kind: .space, title: "Fictional workshop"), expected: nil)
+        let purpose = try model.contextPages.save(.init(registration: registration, kind: .note, key: "project-purpose:" + project.id.uuidString, owner: .human, title: "Purpose of fictional workshop", markdown: "Compare cobalt spectroscopy calibration methods using a small optical rig.", references: [model.contextProjectIdentity(project)]), expectedRevision: nil)
+        _ = try model.contextPages.save(.init(registration: registration, kind: .overview, key: "everyday", owner: .human, title: "Everyday orientation", markdown: "Fictional cobalt interests and unrelated personal background."), expectedRevision: nil)
+        let raw: [String: Any] = ["id": "fictional-cobalt-email", "accountID": "fictional-mail", "account": "Fictional Mail", "messageID": 1, "internetMessageID": "cobalt@example.invalid", "sender": "Fictional lab", "subject": "Cobalt spectroscopy calibration guide", "received": Date.now.ISO8601Format(), "unread": true, "replied": false, "flagged": false]
+        let message = try JSONDecoder().decode(MailMessage.self, from: JSONSerialization.data(withJSONObject: raw))
+        let body = "The cobalt spectroscopy calibration guide compares practical optical methods."
+        let captured = model.emailSummaries.relevanceContext(message, model: model, body: body)
+        let header = model.emailSummaries.relevanceContext(message, model: model, header: true)
+        let stamp = model.emailSummaries.reviewPreferenceStamp(message, model: model, evidence: body)
+        var checks: [String: Bool] = [:]
+        checks["Context email purpose-only discovery selects the exact active human project"] = captured.memories.isEmpty && captured.workspace.contains { $0["id"] == "life:" + project.id.uuidString } && captured.contextPages.contains { $0["id"] == purpose.id }
+        checks["Context email excludes everyday orientation and raw working changes"] = captured.contextPages.allSatisfy { $0["id"] == purpose.id } && captured.input["workingChanges"] == nil
+        let bodyBytes = try JSONSerialization.data(withJSONObject: EmailRelevanceRules.pageInput(captured.contextPages)).count
+        let headerBytes = try JSONSerialization.data(withJSONObject: EmailRelevanceRules.pageInput(header.contextPages)).count
+        checks["Context email body and header page payloads obey encoded bounds"] = bodyBytes <= 3500 && headerBytes <= 1200
+        checks["Context email exact current page dependencies are available"] = captured.contextPageDependencies?["page:" + purpose.id] == purpose.revision.uuidString && model.emailSummaries.relevanceContextAvailable(captured, model: model)
+        let unrelated = try model.contextPages.save(.init(registration: registration, kind: .note, key: "unrelated-fern", owner: .human, title: "Gardening", markdown: "Keep the fictional fern in indirect light."), expectedRevision: nil)
+        checks["Context email unrelated human notes do not trigger reclassification"] = stamp == model.emailSummaries.reviewPreferenceStamp(message, model: model, evidence: body) && model.emailSummaries.relevanceContextAvailable(captured, model: model)
+        var revised = purpose; revised.markdown += "\nThe comparison now focuses on repeatable optical measurements."
+        let updated = try model.contextPages.save(revised, expectedRevision: purpose.revision)
+        checks["Context email changed human purpose rejects stale classification and changes discovery"] = !model.emailSummaries.relevanceContextAvailable(captured, model: model) && stamp != model.emailSummaries.reviewPreferenceStamp(message, model: model, evidence: body)
+        let current = model.emailSummaries.relevanceContext(message, model: model, body: body)
+        let currentStamp = model.emailSummaries.reviewPreferenceStamp(message, model: model, evidence: body)
+        var generated = ContextPage(registration: registration, kind: .topic, key: "cobalt", owner: .generated, title: "Cobalt calibration", markdown: "A short generated synopsis of the human's optical comparison.", references: [.init(kind: "page", key: updated.id, revision: updated.revision.uuidString)])
+        let first = try model.contextPages.save(generated, expectedRevision: nil)
+        generated.markdown += "\nThe original purpose stays authoritative."
+        _ = try model.contextPages.save(generated, expectedRevision: first.revision)
+        checks["Context email generated rephrasing alone does not trigger another assessment"] = currentStamp == model.emailSummaries.reviewPreferenceStamp(message, model: model, evidence: body)
+        try model.contextPages.forget(id: unrelated.id, registration: registration, expectedRevision: unrelated.revision)
+        model.assistant.memory.enabled = false
+        checks["Context email paused memory withdraws prior page-backed input"] = !model.emailSummaries.relevanceContextAvailable(current, model: model) && model.emailSummaries.relevanceContext(message, model: model, body: body).contextPages.isEmpty
+        checks["Context email fixtures make no source or subscription requests"] = fixture.sources.reads == 0 && fixture.provider.calls == 0 && model.aiUsage.state.records.isEmpty
         return checks
     }
 

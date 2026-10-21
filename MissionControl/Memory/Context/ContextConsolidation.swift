@@ -7,6 +7,13 @@ import Observation
     private(set) var error: String?
     private(set) var status = "Context pages update during a heartbeat when relevant information changes."
 
+    private func mayOfferQuestion(_ model: DashboardModel, registration: String, now: Date = .now) -> Bool {
+        guard model.memoryLearning.questionsEnabled, model.contextQuestions.canSave,
+              model.contextQuestions.questions(registration: registration).isEmpty,
+              !model.memoryLearning.offeredQuestion(registration: registration, on: now) else { return false }
+        return !model.contextQuestions.questions(registration: registration, includeFinished: true).contains { BriefingRules.day($0.created) == BriefingRules.day(now) }
+    }
+
     func targets(_ model: DashboardModel, registration: String) -> [ContextPageTarget] {
         let records = model.contextKnowledge(registration: registration)
         let memory = model.assistant.memory.permittedRecords.filter { MemoryRules.usable($0, registration: registration) }
@@ -59,7 +66,7 @@ import Observation
             let hasPurpose = !item.searchableNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selected.contains { $0.reference.kind == "page" } || !linked.intersection(humanMemory).isEmpty
             let meaningfulProject = item.kind == .project || (!items.filter { $0.parentID == item.id && $0.kind.isWork }.isEmpty)
             append(kind: .project, key: item.id.uuidString, title: item.title, candidates: selected,
-                projectID: item.id, mayAskPurpose: model.memoryLearning.questionsEnabled && !hasPurpose && meaningfulProject)
+                projectID: item.id, mayAskPurpose: mayOfferQuestion(model, registration: registration) && !hasPurpose && meaningfulProject)
         }
         let updates = records.filter { $0.reference.kind != "projectIdentity" }
         append(kind: .topic, key: "recent", title: "Recent context and recorded changes", candidates: updates)
@@ -133,7 +140,7 @@ import Observation
                 expectedCheckpointRevision: checkpoint?.revision)
             var offered = false
             for (page, question) in decoded where !offered {
-                guard model.memoryLearning.questionsEnabled, let question, let target = selected.first(where: { $0.id == page.id }), let projectID = target.projectID,
+                guard mayOfferQuestion(model, registration: registration), let question, let target = selected.first(where: { $0.id == page.id }), let projectID = target.projectID,
                       let identity = current.first(where: { $0.reference.kind == "projectIdentity" && $0.reference.key == projectID.uuidString })?.reference,
                       !model.contextPages.pages(registration: registration).contains(where: { $0.kind == .note && $0.key == "project-purpose:" + projectID.uuidString }) else { continue }
                 offered = try model.contextQuestions.offer(registration: registration, projectID: projectID, identity: identity, question: question) != nil
