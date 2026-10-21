@@ -406,17 +406,46 @@ import Foundation
         let resultTools=ContextConsolidationRules.tools(schemaTargets)
         let namespace=resultTools[0],resultFunctions=namespace["tools"] as! [[String:Any]],resultFunction=resultFunctions[0]
         let parameters=resultFunction["parameters"] as! [String:Any],rootProperties=parameters["properties"] as! [String:[String:Any]]
-        let pagesSchema=rootProperties["pages"]!,pageSchema=pagesSchema["items"] as! [String:Any],pageProperties=pageSchema["properties"] as! [String:[String:Any]]
-        let evidenceSchema=pageProperties["evidence"]!,evidenceItem=evidenceSchema["items"] as! [String:Any],evidenceProperties=evidenceItem["properties"] as! [String:[String:Any]]
+        let pagesSchema=rootProperties["pages"]!,pageItems=pagesSchema["items"] as! [String:Any],pageVariants=pageItems["anyOf"] as! [[String:Any]]
+        let pageSchema=pageVariants[0],pageProperties=pageSchema["properties"] as! [String:[String:Any]]
         check(resultTools.count == 1 && namespace["type"] as? String == "namespace" && namespace["name"] as? String == "pa" && resultFunctions.count == 1 && resultFunction["type"] as? String == "function" && resultFunction["name"] as? String == "prepare_context_pages" && ContextConsolidationRules.resultTool == "prepare_context_pages" && resultFunction["strict"] as? Bool == true, "The result transport exposes exactly one strict data-only pa.prepare_context_pages function")
         check(parameters["type"] as? String == "object" && parameters["additionalProperties"] as? Bool == false && parameters["required"] as? [String] == ["pages"] && Set(rootProperties.keys) == ["pages"] && pagesSchema["minItems"] as? Int == schemaTargets.count && pagesSchema["maxItems"] as? Int == schemaTargets.count, "Typed result requires exactly the captured page count with no extra root properties")
-        check(Set(pageProperties["id"]!["enum"] as! [String]) == Set(schemaTargets.indices.map{"page_\($0)"}) && Set(pageSchema["required"] as! [String]) == Set(pageProperties.keys) && pageSchema["additionalProperties"] as? Bool == false, "Typed page enum and required fields match every issued page alias")
-        let expectedRecordAliases=Set(schemaTargets.flatMap{$0.issuedRecords.map(\.id)})
-        check(Set(evidenceProperties["id"]!["enum"] as! [String]) == expectedRecordAliases && evidenceSchema["minItems"] as? Int == 1 && evidenceSchema["maxItems"] as? Int == 32 && Set(evidenceItem["required"] as! [String]) == ["id","segment"] && Set(evidenceProperties.keys) == ["id","segment"] && evidenceItem["additionalProperties"] as? Bool == false && evidenceProperties["segment"]!["type"] as? String == "string", "Typed evidence allows only the issued union of record aliases and one locally validated passage selector")
+        check(pageVariants.count == schemaTargets.count && pageVariants.enumerated().allSatisfy { index, variant in
+            let properties=variant["properties"] as! [String:[String:Any]]
+            return properties["id"]!["enum"] as? [String] == ["page_\(index)"] && Set(variant["required"] as! [String]) == Set(properties.keys) && variant["additionalProperties"] as? Bool == false
+        }, "Typed variants bind each complete page result to one exact issued page")
+        check(pageVariants.enumerated().allSatisfy { index, variant in
+            let properties=variant["properties"] as! [String:[String:Any]],evidence=properties["evidence"]!,item=evidence["items"] as! [String:Any]
+            let expected=Set(schemaTargets[index].issuedRecords.flatMap(\.segments).filter{!$0.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty}.map(\.id))
+            return item["type"] as? String == "string" && Set(item["enum"] as! [String]) == expected && evidence["minItems"] as? Int == 1 && evidence["maxItems"] as? Int == 32
+        }, "Typed evidence is one exact passage choice scoped to its page, without independently generated source and segment fields")
         check(pageProperties["synopsis"]!["maxLength"] as? Int == 300 && pageProperties["markdown"]!["maxLength"] as? Int == 4500 && Set(pageProperties["purposeQuestion"]!["type"] as! [String]) == ["string","null"] && pageProperties["purposeQuestion"]!["maxLength"] as? Int == 300, "Typed result keeps text bounds and an explicitly required nullable purpose question")
         check(ContextKnowledgeRules.json(resultTools).utf8.count <= 6000 && !ContextKnowledgeRules.json(resultTools).contains(schemaTargets[0].id) && !ContextKnowledgeRules.json(resultTools).contains(aliasOriginals[0].text), "The complete fifty-two-record typed schema stays under six kilobytes without canonical identities or source bodies")
         check(ContextConsolidationRules.tools([]).isEmpty && ContextConsolidationRules.tools(schemaTargets+[schemaTargets[0]]).isEmpty, "Empty or over-capacity result schemas expose no callable preparation tool")
         check(ContextConsolidationRules.instructions.contains("exactly one completed pa.prepare_context_pages call") && ContextConsolidationRules.instructions.contains("Do not answer in ordinary text or call any other tool") && ContextConsolidationRules.instructions.contains("never its canonical referenceID"), "Production instructions require one completed typed result with short page IDs and no ordinary text")
+
+
+        let singleRows:[[String:Any]]=aliasTargets.enumerated().map {index,value in
+            ["id":"page_\(index)","synopsis":"Exact selected passages","markdown":"The project retains the supplied original calibration context.","purposeQuestion":NSNull(),
+             "evidence":value.issuedRecords.map{$0.segments[0].id}]
+        }
+        let singlePages=try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":singleRows]),targets:aliasTargets).map{$0.0}
+        check(singlePages.map(\.id) == aliasPages.map(\.id) && zip(singlePages,aliasPages).allSatisfy{$0.references == $1.references && $0.evidenceQuotes == $1.evidenceQuotes}, "One constrained passage choice retains the exact canonical evidence of the earlier two-field protocol")
+        check(zip(singlePages,aliasTargets).allSatisfy{page,value in Set(page.processedReferences ?? []) == Set(value.references)}, "Single passage selectors never replace or broaden processed source coverage")
+        var badSingle=singleRows;badSingle[0]["evidence"]=["passage_999_0"]
+        rejectsCategory("consolidation evidence passage","A fabricated combined passage choice was repaired") {_=try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":badSingle]),targets:aliasTargets)}
+        badSingle=singleRows;badSingle[0]["evidence"]=["passage_0_9"]
+        rejectsCategory("consolidation evidence passage","An unissued segment index was repaired") {_=try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":badSingle]),targets:aliasTargets)}
+        badSingle=singleRows;badSingle[0]["evidence"]=Array(repeating:"passage_0_0",count:33)
+        rejectsCategory("consolidation page","Single-string evidence bypassed the thirty-two-passage bound") {_=try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":badSingle]),targets:aliasTargets)}
+        var whitespace=aliasTargets[0];whitespace.records[0].text=String(repeating:" ",count:500)+"A useful original tail."
+        let whitespaceTool=ContextConsolidationRules.tools([whitespace])[0]
+        let whitespaceFunction=(whitespaceTool["tools"] as! [[String:Any]])[0]
+        let whitespaceParameters=whitespaceFunction["parameters"] as! [String:Any]
+        check(!ContextKnowledgeRules.json(whitespaceParameters).contains("passage_0_0") && ContextKnowledgeRules.json(whitespaceParameters).contains("passage_0_1"), "The typed picker never offers a whitespace-only passage as usable evidence")
+        let worstRecord=ContextKnowledgeRecord(reference:.init(kind:"memory",key:"longest-original",revision:"v1"),title:"Long original",text:String(repeating:"a",count:1600),date:date)
+        var longest=aliasTargets[0];longest.records=(0..<52).map{index in var value=worstRecord;value.reference = .init(kind:"memory",key:"long-\(index)",revision:"v1");return value}
+        check(!ContextConsolidationRules.tools([longest]).isEmpty && ContextKnowledgeRules.json(ContextConsolidationRules.tools([longest])).utf8.count <= 6000, "A single maximum-capacity target retains an issuable bounded schema even with four passages per original")
 
         print("Context consolidation: \(passed) checks passed; fictional records, no model/source/native requests.")
     }
