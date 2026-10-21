@@ -19,12 +19,12 @@ struct ContextPagesView: View {
     @State private var showingSupportingFacts = false
     private let initialProjectID: UUID?
 
-    init(model: DashboardModel, registration: String? = nil, projectID: UUID? = nil) {
+    init(model: DashboardModel, registration: String? = nil, projectID: UUID? = nil, feature: ContextFeature? = nil) {
         self.model = model
         self.registration = registration ?? model.chatGPT.activeID
         storage = model.container.map(ObjectIdentifier.init)
         initialProjectID = projectID
-        _selection = State(initialValue: projectID.map { .project($0) } ?? .overview)
+        _selection = State(initialValue: feature.map { .feature($0) } ?? projectID.map { .project($0) } ?? .overview)
     }
     private var owned: Bool { ContextPagesAccess.owned(model, registration: registration, storage: storage) }
     /// A direct project link can inspect its exact earlier topic, without opening every old topic.
@@ -230,6 +230,7 @@ struct ContextPagesView: View {
         let id = ContextPage.stableID(registration: registration, kind: .instruction, key: feature.rawValue)
         let page = pages.first { $0.id == id }
         let available = page.map { ContextPagesAccess.eligible($0, model: model, registration: registration, records: records) } ?? true
+        let currentText = model.featureInstruction(feature, registration: registration).text
         return VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text(feature.title).font(.title2.weight(.semibold))
@@ -238,11 +239,11 @@ struct ContextPagesView: View {
             }
             Text("Your guidance for future assistance. It does not grant source access or approve actions.").font(.callout).foregroundStyle(.secondary)
             if model.contextPages.isReadable && available {
-                Text(page == nil ? "3PO default" : "Written by you").font(.caption).foregroundStyle(.secondary)
-                ContextMarkdownBody(markdown: page?.markdown ?? feature.defaultText)
+                Text(page == nil ? (currentText == feature.defaultText ? "3PO default" : "Your existing guidance") : "Written by you").font(.caption).foregroundStyle(.secondary)
+                ContextMarkdownBody(markdown: currentText)
                 HStack {
-                    Button("Edit instructions…") { editor = .feature(feature, page: page, registration: registration) }
-                    if page != nil { Button("Use default…") { editor = .feature(feature, page: page, registration: registration, useDefault: true) } }
+                    Button("Edit instructions…") { editor = .feature(feature, page: page, registration: registration, currentText: currentText) }
+                    Button("Use default…") { editor = .feature(feature, page: page, registration: registration, useDefault: true) }
                 }.disabled(!model.contextPages.canSave)
             } else {
                 Label("Saved instructions are unavailable. Their original text is preserved.", systemImage: "lock.doc").foregroundStyle(.secondary)
@@ -522,9 +523,9 @@ private struct ContextPageEditRequest: Identifiable {
     var calendar: SourceOption? = nil
     var projectReference: ContextPageReference? = nil
     var initialMarkdown: String? = nil
-    static func feature(_ feature: ContextFeature, page: ContextPage?, registration: String, useDefault: Bool = false) -> Self {
+    static func feature(_ feature: ContextFeature, page: ContextPage?, registration: String, currentText: String? = nil, useDefault: Bool = false) -> Self {
         .init(registration: registration, kind: .instruction, key: feature.rawValue, title: feature.title,
-              expected: page, initialMarkdown: page == nil || useDefault ? feature.defaultText : nil)
+              expected: page, initialMarkdown: useDefault ? feature.defaultText : page == nil ? (currentText ?? feature.defaultText) : nil)
     }
     static func note(registration: String) -> Self { .init(registration: registration, kind: .note, key: UUID().uuidString, title: "") }
     static func overview(registration: String) -> Self { .init(registration: registration, kind: .overview, key: "everyday", title: "Everyday context") }

@@ -445,6 +445,7 @@ struct AssistantSourceSettings: View {
     @Environment(\.openWindow) private var openWindow
     var page: Page = .assistant
     @State private var showingActivity=false
+    @State private var showingAssistantInstructions=false
     var body: some View {
         Group {
             switch page {
@@ -452,7 +453,9 @@ struct AssistantSourceSettings: View {
                 Section("Assistant") {
                     LabeledContent("PA name",value:assistant.displayName)
                     PANameSetting(assistant:assistant)
-                    TextField("Assistant preferences", text: $assistant.preferences, axis: .vertical).lineLimit(3...6)
+                    Button("Assistant instructions…") { showingAssistantInstructions=true }
+                        .disabled(model.chatGPT.activeID.isEmpty)
+                    Text("Read and edit the same guidance in Context → Assistant instructions.").font(.caption).foregroundStyle(.secondary)
                     Toggle("Use source context in assistant replies", isOn: $assistant.contextEnabled)
                     Text("When on, a reply may send the enabled Calendar and Reminders snapshots, recent email headers, saved email summaries, and separately enabled WhatsApp context to OpenAI through your ChatGPT connection. Dashboard refresh itself makes no AI requests.").font(.caption).foregroundStyle(.secondary)
                 }
@@ -535,6 +538,8 @@ struct AssistantSourceSettings: View {
                 }
             }
         }.sheet(isPresented:$showingActivity) {BackgroundActivityView(model:model)}
+            .sheet(isPresented:$showingAssistantInstructions) {ContextPagesView(model:model,registration:model.chatGPT.activeID,feature:.assistant)}
+            .onChange(of:model.chatGPT.activeID) {showingAssistantInstructions=false}
     }
     private func sourceMenu(_ title: String, sources: [SourceOption], excluded: Binding<Set<String>>) -> some View {
         Menu(title) {
