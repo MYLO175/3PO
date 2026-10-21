@@ -297,8 +297,10 @@ struct ProactiveReviewContext {
                     guard let id=row["id"] as? String,let purpose=row["purpose"] as? String,!purpose.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,purpose != "Not described",row["purposeTruncated"] as? Bool != true else {return nil}
                     return id
                 })
-                let issuedCalendars=Dictionary(calendar.sources.filter{source in source.writable && !assistant.excludedCalendars.contains(source.id) && describedCalendarIDs.contains(source.id) && calendarGuide.referenceVersions["calendar-guide:"+source.id] != nil}.map {source in
-                    (source.id,DiscoveryCalendarDestination(source,contextPageDependencies:["calendar-guide:"+source.id:calendarGuide.referenceVersions["calendar-guide:"+source.id]!]))
+                let humanGuidanceVersions=calendarGuide.referenceVersions.filter{!$0.key.hasPrefix("calendar-guide:")}
+                let hasHumanGuidance=(guideObject["humanGuidance"] as? [[String:String]])?.isEmpty == false
+                let issuedCalendars=Dictionary(calendar.sources.filter{source in source.writable && !assistant.excludedCalendars.contains(source.id) && (describedCalendarIDs.contains(source.id) || hasHumanGuidance) && calendarGuide.referenceVersions["calendar-guide:"+source.id] != nil}.map {source in
+                    (source.id,DiscoveryCalendarDestination(source,contextPageDependencies:humanGuidanceVersions.merging(["calendar-guide:"+source.id:calendarGuide.referenceVersions["calendar-guide:"+source.id]!]){_,latest in latest}))
                 },uniquingKeysWith:{first,_ in first})
                 let initialCachedCalendarIDs=Set(model.calendarData.sources.map(\.id))
                 let featureCaptures=["projects","reminders"].map {feature in

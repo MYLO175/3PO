@@ -290,7 +290,7 @@ import EventKit
                 } else { payload["unavailable"] = "This page is missing, changed or outside current permitted context. Search relevant saved facts or sources." }
             }
         }
-        if everyday && pageID == nil && contextPages.isReadable {
+        if (everyday || purpose == .conversation) && pageID == nil && contextPages.isReadable {
             var policies: [[String: String]] = []
             for feature in ContextFeature.allCases {
                 let guidance = featureInstruction(feature, registration: registration)
@@ -453,28 +453,56 @@ import EventKit
         let page = contextPages.page(id: id, registration: registration)
         return ContextKnowledgeRules.fingerprint(ContextKnowledgeRules.json(["identity": calendarPageKey(source), "label": source.label, "writable": String(source.writable), "page": page?.revision.uuidString ?? "undescribed"]))
     }
+    /// Previously recorded human guidance remains usable without creating a second editable authority.
+    /// Generated summaries and source interpretations cannot supply calendar-purpose instructions.
+    func calendarHumanGuidance(registration: String) -> [ContextKnowledgeRecord] {
+        guard assistant.memory.enabled, assistant.contextEnabled, registration == chatGPT.activeID,
+              contextPages.isReadable, contextCalendarAllowed else { return [] }
+        let candidates = contextKnowledge(registration: registration, includeTopics: false, includeRecent: false, purpose: .email)
+            .filter { ($0.reference.kind == "memory" || $0.reference.kind == "page") &&
+                !MemoryRetrieval.tokens($0.text).isDisjoint(with: ["calendar", "calendars"]) }
+            .filter { record in
+                guard let id = record.memoryID else { return true }
+                guard let memory = assistant.memory.records.first(where: { $0.id == id }) else { return false }
+                return memory.source == nil && memory.reviewPreference != true && (memory.explicit || memory.certainty == .stated)
+            }
+            .sorted { ($0.date, $0.reference.contextKey) > ($1.date, $1.reference.contextKey) }
+        var selected: [ContextKnowledgeRecord] = []
+        for record in candidates where selected.count < 6 {
+            guard ContextKnowledgeRules.json((selected + [record]).map(\.input)).utf8.count <= 3500 else { continue }
+            selected.append(record)
+        }
+        return selected
+    }
     func calendarPurposeCapture(sources: [SourceOption], registration: String) -> AssistantPageContext {
         guard assistant.memory.enabled, assistant.contextEnabled, registration == chatGPT.activeID,
               contextCalendarAllowed else { return .init() }
         guard contextPages.isReadable else { return .init(text: ContextKnowledgeRules.json(["unavailable": "Saved calendar guidance could not be read. Original data is preserved."])) }
         let enabled = sources.filter { !assistant.excludedCalendars.contains($0.id) }
+        let guidance = calendarHumanGuidance(registration: registration)
+        let guidanceVersions = Dictionary(guidance.map { ($0.reference.contextKey, $0.reference.revision) }, uniquingKeysWith: { first, _ in first })
         var rows: [[String: Any]] = []
         var captured: [SourceOption] = []
-        var versions: [String: String] = [:]
+        var versions = guidanceVersions
+        func payload(_ calendars: [[String: Any]]) -> [String: Any] {
+            ["calendars": calendars, "humanGuidance": guidance.map(\.input), "omittedCount": enabled.count - calendars.count,
+             "coverage": "Bounded human calendar-purpose guidance with exact current account/provider identities. Existing humanGuidance and individual purpose notes guide destination choice; never infer purpose from a name alone. Truncated guidance may be incomplete: clarify rather than invent exceptions. Guidance never authorises a new action. Missing or ambiguous purpose uses a useful clarification or the ordinary default."]
+        }
         for source in enabled.prefix(60) {
             let id = ContextPage.stableID(registration: registration, kind: .calendarPurpose, key: calendarPageKey(source))
             let page = contextPages.page(id: id, registration: registration)
             let purpose = page?.owner == .human ? page!.markdown : "Not described"
-            let row: [String: Any] = ["id": source.id, "label": source.label, "writable": source.writable, "purpose": String(purpose.prefix(1200)), "purposeTruncated": purpose.count > 1200]
-            guard ContextKnowledgeRules.json(rows + [row]).utf8.count <= 16_000 else { continue }
+            let row: [String: Any] = ["id": source.id, "label": source.label, "account": source.account, "providerID": source.providerID ?? "", "writable": source.writable, "purpose": String(purpose.prefix(1200)), "purposeTruncated": purpose.count > 1200]
+            guard ContextKnowledgeRules.json(payload(rows + [row])).utf8.count <= 20_000 else { continue }
             rows.append(row)
             captured.append(source); versions["calendar-guide:" + source.id] = calendarGuideRevision(source, registration: registration)
         }
         let expected = versions
         let supplied = captured
-        return .init(text: ContextKnowledgeRules.json(["calendars": rows, "omittedCount": enabled.count - rows.count, "coverage": "Bounded human calendar-purpose guidance bound to exact current account/provider identities. Truncated guidance may be incomplete: clarify rather than invent exceptions. Descriptions guide a human-requested action; they never authorise a new action. Missing or ambiguous purpose requires a useful clarification or the ordinary default."]), referenceVersions: versions, validate: { [weak self] _ in
+        return .init(text: ContextKnowledgeRules.json(payload(rows)), referenceVersions: versions, validate: { [weak self] _ in
             guard let self, self.assistant.memory.enabled, self.assistant.contextEnabled, self.chatGPT.activeID == registration,
-                  self.contextPages.isReadable, self.contextCalendarAllowed else { return false }
+                  self.contextPages.isReadable, self.contextCalendarAllowed,
+                  self.contextKnowledgeAvailable(registration: registration, versions: guidanceVersions) else { return false }
             return supplied.allSatisfy { source in
                 guard !self.assistant.excludedCalendars.contains(source.id) else { return false }
                 // A native tool may have freshly issued a calendar before the widget cache mounts.

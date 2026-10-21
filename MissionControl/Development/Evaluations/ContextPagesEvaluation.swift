@@ -161,7 +161,24 @@ import SwiftData
             title: ContextFeature.projects.title, markdown: "Keep Cobalt experiment work in its existing project space."), expectedRevision: nil)
         let guidance = model.captureContextPages(registration: registration, query: nil, pageID: "instructions:projects")
         checks["Primary context edited feature guidance replaces default and invalidates prior capture"] = !defaultGuidance.current() && guidance.current() && guidance.text.contains("existing project space")
+        let reviewConversation = model.captureContextPages(registration: registration, query: "Cobalt optics", includeTopics: false, everyday: false)
+        checks["Primary context Review conversations receive the same saved feature guidance without everyday orientation"] = (try object(reviewConversation.text)["featureInstructions"] as? [[String: String]])?.count == ContextFeature.allCases.count && reviewConversation.referenceVersions["instruction:projects"] == instruction.revision.uuidString && reviewConversation.referenceVersions["instruction:assistant"] != nil
         checks["Primary context feature instructions never enter fact extraction or generated page evidence"] = !model.contextKnowledge(registration: registration, purpose: .maintenance).contains { $0.reference.key == instruction.id } && !model.contextConsolidation.targets(model, registration: registration).flatMap(\.records).contains { $0.reference.key == instruction.id }
+        model.contextCalendarAccess = { true }
+        let calendar = SourceOption(id: "fictional-cobalt-calendar", title: "Cobalt", account: "Fictional university", writable: true, providerID: "fictional-university-provider")
+        model.calendarData = .init(sources: [calendar], events: [])
+        let calendarFact = PAMemory(registration: registration, text: "Use my Fictional university calendar for Cobalt research events.", kind: .preference, provenance: "Fictional human calendar guidance")
+        let inferredCalendarFact = PAMemory(registration: registration, text: "Perhaps Cobalt belongs in the personal calendar.", kind: .preference, explicit: false, provenance: "Fictional provisional interpretation", certainty: .inferred)
+        guard model.assistant.memory.put(calendarFact), model.assistant.memory.put(inferredCalendarFact), model.assistant.memory.saveReviewPreference("Do not surface unrelated calendar newsletters.", registration: registration, about: "Fictional Review feedback") else { throw IntegrationError.verification }
+        let calendarContext = model.calendarPurposeCapture(sources: [calendar], registration: registration)
+        let calendarObject = try object(calendarContext.text)
+        let humanGuidance = calendarObject["humanGuidance"] as? [[String: String]] ?? []
+        let calendarRows = calendarObject["calendars"] as? [[String: Any]] ?? []
+        checks["Primary context calendar routing reuses exact existing human guidance without creating a second purpose note"] = humanGuidance.count == 1 && humanGuidance.first?["text"] == calendarFact.text && calendarContext.referenceVersions["memory:" + calendarFact.id.uuidString] != nil && model.contextPages.pages(registration: registration).allSatisfy { $0.kind != .calendarPurpose }
+        checks["Primary context provisional calendar interpretations never become human routing guidance"] = !model.calendarHumanGuidance(registration: registration).contains { $0.memoryID == inferredCalendarFact.id } && calendarContext.referenceVersions["memory:" + inferredCalendarFact.id.uuidString] == nil
+        checks["Primary context calendar routing exposes current account and provider alongside exact source IDs"] = calendarRows.first?["account"] as? String == calendar.account && calendarRows.first?["providerID"] as? String == calendar.providerID && calendarContext.current()
+        guard model.assistant.memory.forget(calendarFact.id) else { throw IntegrationError.verification }
+        checks["Primary context forgotten calendar guidance revokes both live and persisted capture"] = !calendarContext.current() && !model.contextKnowledgeAvailable(registration: registration, versions: calendarContext.referenceVersions) && model.calendarHumanGuidance(registration: registration).isEmpty
         model.chatGPT.activeID = "fictional-other-context-owner"
         checks["Primary context source-free policies remain account scoped"] = !guidance.current() && !ordinary.current()
         checks["Primary context inspection and captures make no model or source calls"] = fixture.provider.calls == 0 && fixture.sources.reads == 0 && model.aiUsage.state.records.isEmpty

@@ -307,6 +307,16 @@ struct ContextPagesView: View {
                 Text("No calendar identities are cached yet. Refresh sources from the dashboard, then return here. Opening this guide does not read Calendar.").foregroundStyle(.secondary)
             } else {
                 let sources = ContextPagesAccess.calendars(model)
+                let guidance = model.calendarHumanGuidance(registration: registration)
+                if !guidance.isEmpty {
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Existing calendar context").font(.headline)
+                            Text("3PO also uses this earlier human context when choosing a calendar. A separate purpose note can add detail.").font(.caption).foregroundStyle(.secondary)
+                            ForEach(guidance, id: \.reference.contextKey) { record in ContextMarkdownBody(markdown: record.text) }
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
                 if sources.isEmpty { Text("No calendars are selected for assistant context.").foregroundStyle(.secondary) }
                 ForEach(sources) { source in
                     let id = ContextPage.stableID(registration: registration, kind: .calendarPurpose, key: model.calendarPageKey(source))
@@ -331,7 +341,7 @@ struct ContextPagesView: View {
                                     Spacer()
                                     Button("Forget purpose…", role: .destructive) { forgetting = page }.controlSize(.small).disabled(!model.contextPages.canSave)
                                 }
-                            } else { Text(preserved ? "This saved guide needs a compatible version of 3PO. Its original text is preserved." : "Not described. 3PO will not infer a purpose from the calendar's name.").font(.callout).foregroundStyle(.secondary) }
+                            } else { Text(preserved ? "This saved guide needs a compatible version of 3PO. Its original text is preserved." : guidance.isEmpty ? "Not described. 3PO will not infer a purpose from the calendar's name." : "No separate purpose note. 3PO also uses the existing calendar context above.").font(.callout).foregroundStyle(.secondary) }
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }

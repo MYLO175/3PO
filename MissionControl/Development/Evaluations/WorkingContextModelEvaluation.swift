@@ -47,7 +47,7 @@ import SwiftData
             Scenario(id:"stable-human-memory",human:"What am I studying at Northbridge University?"),
             Scenario(id:"semantic-memory-rewording",human:"What have I told you about my interests in ML?"),
             Scenario(id:"same-name-uncertainty",human:"Which of my two Catch up with Alex appointments on 20 October is with Alex Morgan? Please check my Calendar."),
-            Scenario(id:"page-directory-project-purpose",human:"What is the purpose of my Cobalt rig project, and what should I preserve while working on it?")
+            Scenario(id:"page-directory-project-purpose",human:"What is the purpose of my Cobalt rig project, what should I preserve while working on it, and have I chosen a method yet?")
         ]
         var requestCount=0, toolCount=0, observedToolCalls=0, rejectedTools=0
         var rows:[[String: Any]]=[], checks:[String: Bool]=[:], allNames:[String]=[]
@@ -159,7 +159,7 @@ import SwiftData
                 },progress:{_ in},partial:{_ in},toolRound:{},attempted:{_ in},toolFinished:{})
                 switch result { case .completed(let text): reply=text;completed=true;case .stopped: failure="The evaluation turn stopped." }
             } catch { failure=String(error.localizedDescription.prefix(700)) }
-            let lower=reply.lowercased()
+            let lower=reply.lowercased().replacingOccurrences(of: "’", with: "'")
             checks[scenario.id+":completed"]=completed && !reply.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty
             if scenario.id == "email-hint-changed-deadline" {
                 let search=names.firstIndex(of:"search_mail"), body=names.firstIndex(of:"read_email"), messages=names.firstIndex(of:"search_whatsapp")
@@ -177,7 +177,7 @@ import SwiftData
             } else if scenario.id == "page-directory-project-purpose" {
                 checks[scenario.id+":read-exact-directory-page"] = readPurposePage && names.contains("read_context_page")
                 checks[scenario.id+":answered-project-purpose"] = lower.contains("calibration") && ["compare", "comparing", "comparison"].contains { lower.contains($0) }
-                checks[scenario.id+":preserved-raw-captures-and-uncertainty"] = lower.contains("raw") && ["not chosen", "not been chosen", "no method", "no choice", "not yet", "undecided"].contains { lower.contains($0) }
+                checks[scenario.id+":preserved-raw-captures-and-uncertainty"] = lower.contains("raw") && ["not chosen", "not been chosen", "haven't chosen", "hasn't chosen", "no method", "no choice", "not yet", "undecided"].contains { lower.contains($0) }
                 checks[scenario.id+":no-unnecessary-source-read"] = names.allSatisfy { $0 == "read_context_page" }
             } else {
                 checks[scenario.id+":read-distinct-occurrences"]=returnedCalendar

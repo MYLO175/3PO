@@ -1,5 +1,15 @@
 # How 3PO works: detailed reference
 
+## 21 October: context pages as the primary memory interface
+
+Open **PA menu → Context**, **Settings → Context → Open Context pages**, or an existing project's **Context** shortcut. Overview, project and topic pages hold readable Markdown with local version history. Working changes shows current permitted information awaiting consolidation. Instructions groups the assistant, project, reminder, brief, Review and Calendar guidance; existing saved preferences remain authoritative. Supporting facts and controls retains original evidence, corrections and learning controls.
+
+Normal chat receives compact everyday orientation and a directory, alongside relevant page excerpts and working changes. The assistant can retrieve more with `read_context_page`. Briefs, email review/drafts, Review conversations and proposals, setup and retained placement work use the same purpose-specific page projection and exact supporting references. Canonical learning and correction still use original records; generated prose never becomes fresh evidence or action authority. Opening pages, displaying saved output and approving a prepared action make no context inference.
+
+A scheduled heartbeat updates a bounded batch when relevant records change. An explicit Run heartbeat additionally works through the initial captured page backlog in bounded batches under that run's existing allowance. Later arrivals wait for the next cycle. A failed batch retains saved pages and pending work, and a quiet cycle needs no page-synthesis request. The consolidation model selects exact issued source-passage IDs rather than copying quotations. 3PO resolves each ID to its original record/version and attaches the untouched text locally; invalid selections leave saved pages and pending changes intact. Calendar routing also reuses bounded existing human calendar guidance, with its original evidence and account/provider identities, without inventing separate purpose notes.
+
+See [Memory and context](MEMORY_AND_CONTEXT.md) for coverage, permissions, instructions and history.
+
 ## 19 October: nested project context
 
 Heartbeat and manual Review comparison supply each relevant space once, even when its parent is also relevant. Direct children already selected as relevant spaces are excluded from the additional child list before its existing cap. Project IDs, parent bindings, content limits and exact supplied-record checks remain intact; the projection never changes saved projects.
