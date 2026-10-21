@@ -60,22 +60,23 @@ struct ProactiveReviewContext {
         #endif
         return .init(highlights:model.emailSummaries.highlights(model),scope:scope(model),legacyMailScope:legacyMailScope(model))
     }
-    func reviewEvidenceAvailable(_ id:String,model:DashboardModel,allowResolved:Bool = false,context:ProactiveReviewContext? = nil)->Bool {
+    func reviewEvidenceAvailable(_ id:String,model:DashboardModel,allowResolved:Bool = false,context:ProactiveReviewContext? = nil,pageAvailable: (([String:String]?)->Bool)? = nil)->Bool {
         let context=context ?? reviewContext(model)
         guard let record=state.records.first(where:{$0.id == id}),!record.dismissed,record.supersededBy == nil,record.retiredAt == nil,sourceEvidenceAvailable(record,model:model,allowResolved:allowResolved,context:context) else { return false }
         guard ProactiveRules.comparisonEvidenceAvailable(record,records:state.records,available:{self.sourceEvidenceAvailable($0,model:model,allowResolved:allowResolved,context:context)}) else {return false}
-        guard model.emailSummaries.policyAvailable(record.reviewPolicy,registration:record.registration),model.contextPageDependenciesAvailable(record.contextPageDependencies,registration:record.registration),model.memoryDependenciesAvailable(record.memoryDependencies,use:record.memoryUse ?? .suggestions),model.whatsappDependenciesAvailable(record.whatsappDependencies,use:record.memoryUse ?? .suggestions) else { return false }
+        guard model.emailSummaries.policyAvailable(record.reviewPolicy,registration:record.registration),(pageAvailable?(record.contextPageDependencies) ?? model.contextPageDependenciesAvailable(record.contextPageDependencies,registration:record.registration)),model.memoryDependenciesAvailable(record.memoryDependencies,use:record.memoryUse ?? .suggestions),model.whatsappDependenciesAvailable(record.whatsappDependencies,use:record.memoryUse ?? .suggestions) else { return false }
         return true
     }
-    func acknowledgementAdviceAvailable(_ record:PADiscovery,model:DashboardModel,use:AutomaticMemoryUse,mailAccounts:Set<String>?,whatsappReady:Bool)->Bool {
-        guard record.registration == model.chatGPT.activeID,(record.scope == scope(model) || (record.sourceKind == nil && record.scope == legacyMailScope(model))),model.emailSummaries.policyAvailable(record.reviewPolicy,registration:record.registration),model.contextPageDependenciesAvailable(record.contextPageDependencies,registration:record.registration),model.memoryDependenciesAvailable(record.memoryDependencies,use:record.memoryUse ?? .suggestions),model.whatsappDependenciesAvailable(record.whatsappDependencies,use:record.memoryUse ?? .suggestions) else {return false}
+    func acknowledgementAdviceAvailable(_ record:PADiscovery,model:DashboardModel,use:AutomaticMemoryUse,mailAccounts:Set<String>?,whatsappReady:Bool,context:ProactiveReviewContext? = nil,pageAvailable: (([String:String]?)->Bool)? = nil)->Bool {
+        let context=context ?? reviewContext(model)
+        guard record.registration == model.chatGPT.activeID,(record.scope == context.scope || (record.sourceKind == nil && record.scope == context.legacyMailScope)),model.emailSummaries.policyAvailable(record.reviewPolicy,registration:record.registration),(pageAvailable?(record.contextPageDependencies) ?? model.contextPageDependenciesAvailable(record.contextPageDependencies,registration:record.registration)),model.memoryDependenciesAvailable(record.memoryDependencies,use:record.memoryUse ?? .suggestions),model.whatsappDependenciesAvailable(record.whatsappDependencies,use:record.memoryUse ?? .suggestions) else {return false}
         guard model.reviewAcknowledgementSupportAvailable(memory:record.memoryDependencies,whatsapp:record.whatsappDependencies,use:use,mailAccounts:mailAccounts,whatsappReady:whatsappReady) else {return false}
         return ProactiveRules.comparisonEvidenceAvailable(record,records:state.records,available:{prior in
             if prior.sourceKind == "whatsapp" && !whatsappReady {return false}
             if prior.sourceKind != "whatsapp",let mailAccounts {
-                guard model.emailSummaries.highlights(model).contains(where:{$0.0.id == prior.mailID && mailAccounts.contains($0.0.accountID)}) else {return false}
+                guard context.highlights.contains(where:{$0.0.id == prior.mailID && mailAccounts.contains($0.0.accountID)}) else {return false}
             }
-            return self.sourceEvidenceAvailable(prior,model:model)
+            return self.sourceEvidenceAvailable(prior,model:model,context:context)
         })
     }
     /// Original communication only, for replacement/history. Old generated advice is not reissued.
@@ -112,10 +113,10 @@ struct ProactiveReviewContext {
         state.records=records;state.accounts[registration]=progress
         do {try save()} catch {state=previous;throw error}
     }
-    func visible(_ record:PADiscovery,model:DashboardModel,context:ProactiveReviewContext? = nil)->Bool {
+    func visible(_ record:PADiscovery,model:DashboardModel,context:ProactiveReviewContext? = nil,pageAvailable: (([String:String]?)->Bool)? = nil)->Bool {
         guard record.reviewState != "approved",!record.dismissed,record.supersededBy == nil,record.retiredAt == nil else {return false}
         let context=context ?? reviewContext(model)
-        guard reviewEvidenceAvailable(record.id,model:model,allowResolved:record.reviewState == "pending" || model.reviewCreationClaim(record).map{$0.receipt == nil} == true,context:context) else { return false }
+        guard reviewEvidenceAvailable(record.id,model:model,allowResolved:record.reviewState == "pending" || model.reviewCreationClaim(record).map{$0.receipt == nil} == true,context:context,pageAvailable:pageAvailable) else { return false }
         if record.sourceKind == nil,record.nativeTarget == nil,record.reviewState != "pending",model.reviewCreationClaim(record).map{$0.receipt == nil} != true,let pair=context.highlights.first(where:{$0.0.id == record.mailID}),model.emailSummaries.handling(pair.1,message:pair.0,model:model) != nil {return false}
         if let project=record.proposedProjectTask {
             guard model.assistant.projects.items(record.registration,includeTopics:true).contains(where:{$0.id == project.target.id && $0.revision == project.target.revision && !$0.kind.isWork && $0.status != .archived}) else {return false}
@@ -127,6 +128,17 @@ struct ProactiveReviewContext {
             return removal.valid && removal.target.matches(events:(model.paOrientation?.calendar ?? model.calendarData).events,reminders:[],excludedCalendars:model.assistant.excludedCalendars,excludedLists:[])
         }
         return true
+    }
+    /// Current advice is distinct from persistent saved-card display. Share only this
+    /// synchronous evidence projection; every later evaluation rebuilds current support.
+    func currentAdvice(_ model:DashboardModel)->[PADiscovery] {
+        let registration=model.chatGPT.activeID
+        let candidates=state.records.filter {$0.registration == registration && $0.reviewState != "approved" && !$0.dismissed && $0.supersededBy == nil && $0.retiredAt == nil}
+        guard !candidates.isEmpty else {return []}
+        let context=reviewContext(model)
+        return model.withContextPageAvailability(registration:registration,captures:candidates.compactMap(\.contextPageDependencies)) { pageAvailable in
+            candidates.filter {self.visible($0,model:model,context:context,pageAvailable:pageAvailable)}
+        }
     }
     func canReview(_ id:String,model:DashboardModel)->Bool {
         state.records.first(where:{$0.id == id}).map{$0.reviewState == nil && model.reviewCreationClaim($0) == nil && !$0.needsDateClarification && model.reviewInbox.discoveries.contains(where:{$0.id == id})} ?? false
@@ -354,7 +366,7 @@ struct ProactiveReviewContext {
                     row["actionEvidence"]=(pair.1.actionEvidence ?? []).enumerated().map{["id":"mail_\(index):action_\($0.offset)","quote":$0.element]}
                     if let relevance=pair.1.personalRelevance {row["personalRelevanceReason"]=relevance.reason}
                     return row
-                },"paMemory":memory,"recentGeneralChat":recentChat,"preferences":preferences,"deliveredSuggestions":state.records.filter { self.visible($0,model:model) }.suffix(20).map{ProactiveRules.reviewProjection($0).message}]
+                },"paMemory":memory,"recentGeneralChat":recentChat,"preferences":preferences,"deliveredSuggestions":self.currentAdvice(model).suffix(20).map{ProactiveRules.reviewProjection($0).message}]
                 input["reviewPolicy"]=capturedReviewPolicy.input
                 input["calendarPurposes"]=guideObject
                 input["featureInstructions"]=featureCaptures.compactMap{(try? JSONSerialization.jsonObject(with:Data($0.text.utf8))) as? [String:Any]}.compactMap{$0["instructions"]}

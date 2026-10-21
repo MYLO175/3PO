@@ -47,7 +47,10 @@ import EventKit
     /// Current eligibility is evaluated before every projection, including after source withdrawal.
     func contextKnowledge(registration: String, topic: UUID? = nil, includeTopics: Bool = true,
                           allowedMemoryIDs: Set<UUID>? = nil, includeRecent: Bool = true, retainingReferences: [String: String] = [:],
-                          purpose: ContextKnowledgePurpose = .conversation, mailAccounts: Set<String>? = nil, whatsappReady: Bool = true) -> [ContextKnowledgeRecord] {
+                          retainingReferenceVersions: [String: Set<String>] = [:], purpose: ContextKnowledgePurpose = .conversation, mailAccounts: Set<String>? = nil, whatsappReady: Bool = true) -> [ContextKnowledgeRecord] {
+        #if DEBUG
+        contextKnowledgeBuildCount += 1
+        #endif
         guard assistant.memory.enabled, registration == chatGPT.activeID else { return [] }
         var records: [ContextKnowledgeRecord] = assistant.memory.permittedRecords.filter {
             MemoryRules.usable($0, registration: registration) && MemoryRules.inScope($0, conversationID: topic, includeTopics: includeTopics) &&
@@ -71,7 +74,7 @@ import EventKit
                                  title: item.title, text: "Existing human-owned " + item.kind.title, date: item.created, projectID: item.id))
         }
         if allowedMemoryIDs == nil && includeRecent && purpose.includesWorkingChanges {
-            var retained: [String: Set<String>] = [:]
+            var retained = retainingReferenceVersions
             for ref in contextPages.pages(registration: registration).flatMap({ $0.references + ($0.processedReferences ?? []) }) { retained[ref.contextKey, default: []].insert(ref.revision) }
             for (key, revision) in retainingReferences { retained[key, default: []].insert(revision) }
             let processed = Dictionary((contextPages.checkpoint(registration: registration)?.references ?? []).map { ($0.contextKey, $0.revision) }, uniquingKeysWith: { first, _ in first })
@@ -116,7 +119,7 @@ import EventKit
                     if reference.kind == "action" { referencedActions.insert(reference.key) }
                 }
             }
-            for key in retainingReferences.keys {
+            for key in Set(retainingReferences.keys).union(retainingReferenceVersions.keys) {
                 if key.hasPrefix("human:") { referencedHuman.insert(String(key.dropFirst(6))) }
                 if key.hasPrefix("action:") { referencedActions.insert(String(key.dropFirst(7))) }
             }
@@ -375,6 +378,42 @@ import EventKit
             let records = contextKnowledge(registration: registration, retainingReferences: versions, purpose: purpose)
             let current = contextDependencyVersions(registration: registration, records: records, ignoring: ignoring)
             return versions.allSatisfy { ignoring.contains($0.key) || current[$0.key] == $0.value }
+        }
+    }
+
+    /// Share current evidence only within one synchronous, read-only evaluation. The union
+    /// retains every exact supplied version without letting one receipt overwrite another.
+    /// Do not await or mutate model state inside body; escaped nonempty checks fail closed.
+    func withContextPageAvailability<T>(registration: String, captures: [[String: String]],
+                                       _ body: (@escaping ([String: String]?) -> Bool) -> T) -> T {
+        var active = true
+        defer { active = false }
+        var retained: [String: Set<String>] = [:]
+        var purposes = Set<ContextKnowledgePurpose>()
+        for versions in captures where !versions.isEmpty {
+            for (key, revision) in versions { retained[key, default: []].insert(revision) }
+            let captured = versions.keys.filter { $0.hasPrefix("context-purpose:") }
+                .compactMap { ContextKnowledgePurpose(rawValue: String($0.dropFirst("context-purpose:".count))) }
+            purposes.formUnion(captured.isEmpty ? [.conversation] : captured)
+        }
+        var current: [ContextKnowledgePurpose: [String: String]] = [:]
+        if assistant.memory.enabled, registration == chatGPT.activeID {
+            for purpose in purposes.sorted(by: { $0.rawValue < $1.rawValue }) {
+                let records = contextKnowledge(registration: registration, retainingReferenceVersions: retained, purpose: purpose)
+                current[purpose] = contextDependencyVersions(registration: registration, records: records)
+            }
+        }
+        return body { versions in
+            ContextPageDependencyRules.available(versions) { versions in
+                guard active, self.assistant.memory.enabled, registration == self.chatGPT.activeID else { return false }
+                let captured = versions.keys.filter { $0.hasPrefix("context-purpose:") }
+                    .compactMap { ContextKnowledgePurpose(rawValue: String($0.dropFirst("context-purpose:".count))) }
+                let required = captured.isEmpty ? [.conversation] : captured
+                return required.allSatisfy { purpose in
+                    guard let projection = current[purpose] else { return false }
+                    return versions.allSatisfy { projection[$0.key] == $0.value }
+                }
+            }
         }
     }
 
