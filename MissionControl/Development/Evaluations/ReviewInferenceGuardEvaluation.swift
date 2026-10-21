@@ -242,6 +242,8 @@ import Foundation
                 if mode == "historical-row-current" {
                     let replacement=saved.first{$0.replaces == ["fictional-historical-pending"]}
                     checks["Review actual replacement retains only its claimed prior source"]=replacement?.comparisonSourceIDs == ["fictional-historical-pending"] && saved.first{$0.id == "fictional-historical-pending"}?.supersededBy == replacement?.id
+                    checks["Review unrelated fresh informational output excludes routing-only Calendar dependencies"] = fresh?.contextPageDependencies?.keys.contains(where:{$0.hasPrefix("calendar-guide:")}) == false
+                    checks["Review fresh independent output has usable support before historical changes"] = fresh.map{model.proactive.reviewEvidenceAvailable($0.id,model:model)} == true
                     summaries[1].observedBodyFingerprint="later-historical-source-loss";try model.emailSummaries.seedAdviceFixture(summaries)
                     checks["Review unrelated fresh output survives later historical source loss"]=fresh.map{model.proactive.reviewEvidenceAvailable($0.id,model:model)} == true
                     checks["Review claimed replacement keeps its exact historical support"]=replacement.map{!model.proactive.reviewEvidenceAvailable($0.id,model:model)} == true
