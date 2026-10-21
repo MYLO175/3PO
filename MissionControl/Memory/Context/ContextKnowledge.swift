@@ -8,13 +8,46 @@ import EventKit
         #endif
         return EKEventStore.authorizationStatus(for: .event) == .fullAccess
     }
+    private func contextSourceAllowed(_ kind: MemorySourceKind, accountID: String? = nil, chatID: String? = nil,
+                                      purpose: ContextKnowledgePurpose, mailAccounts: Set<String>?, whatsappReady: Bool) -> Bool {
+        guard !purpose.humanOnly, assistant.contextEnabled else { return false }
+        switch kind {
+        case .calendar, .reminder: return true // Exact permitted native projection has already filtered identity/version/source choices.
+        case .mail: return emailSummaries.enabled && (accountID.map { mailAccounts?.contains($0) ?? true } ?? true)
+        case .whatsapp:
+            guard whatsappReady else { return false }
+            let access = whatsapp.access(for: chatGPT.activeID)
+            guard chatID.map({ access.chats.contains($0) }) ?? true else { return false }
+            switch purpose {
+            case .brief: return access.briefEnabled
+            case .suggestions: return access.enabled && access.includeInSuggestions == true
+            case .heartbeatSuggestions: return access.enabled && (access.includeInSuggestions == true || heartbeat.whatsappEnabled)
+            case .maintenance, .inspection: return true // Current permitted learning/inspection projection is still required below.
+            default: return access.enabled
+            }
+        }
+    }
+    private func contextMemoryAllowed(_ memory: PAMemory, purpose: ContextKnowledgePurpose, mailAccounts: Set<String>?, whatsappReady: Bool) -> Bool {
+        if purpose.humanOnly { return memory.source == nil }
+        return memory.allSourceEvidence.allSatisfy {
+            contextSourceAllowed($0.identity.kind, accountID: $0.identity.accountID, chatID: $0.identity.kind == .whatsapp ? $0.identity.containerID : nil,
+                                 purpose: purpose, mailAccounts: mailAccounts, whatsappReady: whatsappReady)
+        }
+    }
+    func featureInstruction(_ feature: ContextFeature, registration: String) -> (text: String, reference: ContextPageReference) {
+        let id = ContextPage.stableID(registration: registration, kind: .instruction, key: feature.rawValue)
+        let saved = contextPages.page(id: id, registration: registration)
+        let text = saved?.owner == .human ? saved!.markdown : feature.defaultText
+        return (text, .init(kind: "instruction", key: feature.rawValue, revision: saved?.revision.uuidString ?? ContextKnowledgeRules.fingerprint(text)))
+    }
     /// Current eligibility is evaluated before every projection, including after source withdrawal.
     func contextKnowledge(registration: String, topic: UUID? = nil, includeTopics: Bool = true,
-                          allowedMemoryIDs: Set<UUID>? = nil, includeRecent: Bool = true, retainingReferences: [String: String] = [:]) -> [ContextKnowledgeRecord] {
+                          allowedMemoryIDs: Set<UUID>? = nil, includeRecent: Bool = true, retainingReferences: [String: String] = [:],
+                          purpose: ContextKnowledgePurpose = .conversation, mailAccounts: Set<String>? = nil, whatsappReady: Bool = true) -> [ContextKnowledgeRecord] {
         guard assistant.memory.enabled, registration == chatGPT.activeID else { return [] }
         var records: [ContextKnowledgeRecord] = assistant.memory.permittedRecords.filter {
             MemoryRules.usable($0, registration: registration) && MemoryRules.inScope($0, conversationID: topic, includeTopics: includeTopics) &&
-            (allowedMemoryIDs?.contains($0.id) ?? true)
+            (allowedMemoryIDs?.contains($0.id) ?? true) && contextMemoryAllowed($0, purpose: purpose, mailAccounts: mailAccounts, whatsappReady: whatsappReady)
         }.map { memory in
             .init(reference: .init(kind: "memory", key: memory.id.uuidString, revision: MemoryDependencyRules.fingerprint(MemoryRetrieval.record(memory))),
                   title: memory.kind.rawValue, text: memory.text, date: memory.sourceDate ?? memory.created,
@@ -33,7 +66,7 @@ import EventKit
                                  revision: ContextKnowledgeRules.fingerprint(registration + ":" + item.id.uuidString + ":" + (item.conversationID?.uuidString ?? "shared"))),
                                  title: item.title, text: "Existing human-owned " + item.kind.title, date: item.created, projectID: item.id))
         }
-        if allowedMemoryIDs == nil && includeRecent {
+        if allowedMemoryIDs == nil && includeRecent && purpose.includesWorkingChanges {
             var retained: [String: Set<String>] = [:]
             for ref in contextPages.pages(registration: registration).flatMap({ $0.references + ($0.processedReferences ?? []) }) { retained[ref.contextKey, default: []].insert(ref.revision) }
             for (key, revision) in retainingReferences { retained[key, default: []].insert(revision) }
@@ -47,7 +80,7 @@ import EventKit
             let runtime = learningRuntime()
             for kind in NativeLearningRules.kinds {
                 let prefix = "native-" + kind.rawValue + ":"
-                for item in nativeSourceLearning.contextItems(kind, model: runtime, retaining: retainedVersions(prefix), processed: processedVersions(prefix)) {
+                for item in nativeSourceLearning.contextItems(kind, model: runtime, retaining: retainedVersions(prefix), processed: processedVersions(prefix)) where contextSourceAllowed(kind, accountID: item.identity.accountID, purpose: purpose, mailAccounts: mailAccounts, whatsappReady: whatsappReady) {
                     records.append(.init(reference: .init(kind: "native-" + kind.rawValue, key: item.id, revision: item.revision),
                         title: "Attributed " + kind.rawValue + " update · " + item.label, text: item.text,
                         date: item.changed ?? item.date ?? .distantPast))
@@ -56,12 +89,12 @@ import EventKit
             let identity = whatsapp.linkedIdentity
             let identityPrefix = ContextKnowledgeRules.fingerprint(identity) + "."
             let prefix = "whatsapp:" + identityPrefix
-            for item in sourceLearning.contextItems(runtime, retaining: retainedVersions(prefix), processed: processedVersions(prefix)) {
+            for item in sourceLearning.contextItems(runtime, retaining: retainedVersions(prefix), processed: processedVersions(prefix)) where contextSourceAllowed(.whatsapp, chatID: item.chatID, purpose: purpose, mailAccounts: mailAccounts, whatsappReady: whatsappReady) {
                 records.append(.init(reference: .init(kind: "whatsapp", key: identityPrefix + item.id, revision: item.revision),
-                    title: "Attributed message · " + item.chatName, text: item.sender + ": " + item.text, date: item.date))
+                    title: "Attributed message · " + item.chatName, text: item.sender + ": " + item.text, date: item.date, whatsappChatID: item.chatID))
             }
         }
-        if includeRecent && allowedMemoryIDs == nil {
+        if includeRecent && allowedMemoryIDs == nil && purpose.includesWorkingChanges {
             // Completed human messages only. Imported/quoted contents stay DATA; summaries must not promote commands into facts.
             var suppressedTurns = assistant.memory.suppressed(registration)
             suppressedTurns.formUnion(assistant.memory.records.filter {
@@ -94,7 +127,7 @@ import EventKit
         }
         // Resolve readable human pages after canonical facts and retained conversation evidence.
         // A fixed point handles explicit page references without depending on saved-ID order.
-        var waiting = contextPages.pages(registration: registration).filter { $0.owner == .human && $0.kind != .calendarPurpose }
+        var waiting = contextPages.pages(registration: registration).filter { $0.owner == .human && $0.kind != .calendarPurpose && $0.kind != .instruction }
         for _ in 0..<min(32, waiting.count) {
             let ready = waiting.filter { ContextKnowledgeRules.current($0.references, records: records) }
             guard !ready.isEmpty else { break }
@@ -118,11 +151,12 @@ import EventKit
 
     /// Small directory and current changes are computed locally; browsing never creates saved projects/pages.
     func captureContextPages(registration: String, query: String?, topic: UUID? = nil, includeTopics: Bool = true,
-                             everyday: Bool = false, pageID: String? = nil, allowedMemoryIDs: Set<UUID>? = nil, pageOffset: Int = 0) -> AssistantPageContext {
+                             everyday: Bool = false, pageID: String? = nil, allowedMemoryIDs: Set<UUID>? = nil, pageOffset: Int = 0,
+                             purpose: ContextKnowledgePurpose = .conversation, mailAccounts: Set<String>? = nil, whatsappReady: Bool = true) -> AssistantPageContext {
         guard assistant.memory.enabled, registration == chatGPT.activeID else { return .init() }
-        let records = contextKnowledge(registration: registration, topic: topic, includeTopics: includeTopics, allowedMemoryIDs: allowedMemoryIDs)
+        let records = contextKnowledge(registration: registration, topic: topic, includeTopics: includeTopics, allowedMemoryIDs: allowedMemoryIDs, purpose: purpose, mailAccounts: mailAccounts, whatsappReady: whatsappReady)
         let pages = contextPages.pages(registration: registration)
-        let visible = pages.filter { contextPageEligible($0, records: records) }
+        let visible = pages.filter { $0.kind != .instruction && contextPageEligible($0, records: records) }
         let checkpoint = contextPages.checkpoint(registration: registration)
         let prior = Dictionary((checkpoint?.references ?? []).map { ($0.contextKey, $0.revision) }, uniquingKeysWith: { first, _ in first })
         let selfLabel = assistant.memory.notebook(registration, topic: topic, includeTopics: includeTopics).selfLabel
@@ -131,7 +165,7 @@ import EventKit
         func relevant(_ record: ContextKnowledgeRecord) -> Bool {
             effectiveQuery == nil || !terms.isDisjoint(with: MemoryRetrieval.tokens(record.title + " " + record.text))
         }
-        let working = records.filter { pageID?.hasPrefix("instructions:") != true && prior[$0.reference.contextKey] != $0.reference.revision && $0.reference.kind != "projectIdentity" && relevant($0) }
+        let working = records.filter { purpose.includesWorkingChanges && pageID?.hasPrefix("instructions:") != true && prior[$0.reference.contextKey] != $0.reference.revision && $0.reference.kind != "projectIdentity" && relevant($0) }
             .sorted { $0.date == $1.date ? $0.reference.contextKey < $1.reference.contextKey : $0.date > $1.date }
         var selected = visible.filter { page in
             if let pageID { return page.id == pageID }
@@ -141,7 +175,12 @@ import EventKit
             if lhs.owner != rhs.owner { return lhs.owner == .human }
             return lhs.updated > rhs.updated
         }
-        if pageID == nil { selected = Array(selected.prefix(everyday ? 2 : 4)) }
+        if pageID == nil {
+            // Orientation has its own allowance; it cannot crowd every targeted page out.
+            let orientation = everyday ? Array(selected.filter { $0.kind == .overview }.prefix(2)) : []
+            let orientationIDs = Set(orientation.map(\.id))
+            selected = orientation + Array(selected.filter { !orientationIDs.contains($0.id) }.prefix(4))
+        }
         var payload: [String: Any] = ["pages": [], "workingChanges": [], "lastConsolidation": checkpoint?.updated.ISO8601Format() ?? "Not yet consolidated",
             "coverage": "Bounded current permitted knowledge. Pages retain exact support. Pending changes are available before heartbeat consolidation. Missing context is unknown. App action receipts describe only verified historical operations, never current external completion."]
         var supplied: [ContextPageReference] = [], suppliedPages: [ContextPage] = []
@@ -183,6 +222,7 @@ import EventKit
                     directory.append((["id": id, "title": item.title, "about": "Current project/space context"], refs))
                 }
             }
+            directory += ContextFeature.allCases.map { (["id": "instructions:" + $0.rawValue, "title": $0.title, "about": "Your guidance for this feature"], []) }
             directory += [["id": "instructions:brief", "title": "Brief instructions", "about": "How to prepare the day's brief"], ["id": "instructions:review", "title": "Review instructions", "about": "What deserves attention and current feedback"], ["id": "instructions:calendars", "title": "Calendar guide", "about": "Which permitted calendar to use"]].map { ($0, []) }
             var included: [[String: String]] = []
             for entry in directory.sorted(by: { $0.row["title", default: ""] < $1.row["title", default: ""] }) {
@@ -217,6 +257,12 @@ import EventKit
                 }
                 payload["feedback"] = feedbackRows; payload["feedbackCount"] = feedback.count
             } else if pageID == "instructions:calendars" { return calendarPurposeCapture(sources: calendarData.sources, registration: registration) }
+            else if let feature = ContextFeature(rawValue: String(pageID.dropFirst("instructions:".count))), pageID.hasPrefix("instructions:") {
+                let guidance = featureInstruction(feature, registration: registration)
+                let excerpt = ContextKnowledgeRules.excerpt(guidance.text, offset: pageOffset, limit: 4000)
+                payload["instructions"] = ["purpose": feature.title, "markdown": excerpt.text, "nextOffset": excerpt.next.map(String.init) ?? "end", "totalCharacters": String(excerpt.total)]
+                supplied.append(guidance.reference)
+            }
             else if suppliedPages.isEmpty {
                 // A not-yet-maintained project can still be opened by its stable directory ID.
                 if let item = assistant.projects.items(registration, topic: topic, includeTopics: includeTopics).first(where: { ContextPage.stableID(registration: registration, kind: .project, key: $0.id.uuidString) == pageID }),
@@ -226,18 +272,27 @@ import EventKit
                 } else { payload["unavailable"] = "This page is missing, changed or outside current permitted context. Search relevant saved facts or sources." }
             }
         }
+        if everyday && pageID == nil && contextPages.isReadable {
+            payload["featureInstructions"] = ContextFeature.allCases.map { feature -> [String: String] in
+                let guidance = featureInstruction(feature, registration: registration)
+                supplied.append(guidance.reference)
+                return ["feature": feature.rawValue, "markdown": String(guidance.text.prefix(900)), "readMore": "instructions:" + feature.rawValue]
+            }
+        }
         // The final encoded object, including instructions and the directory, has one whole-payload bound.
         if ContextKnowledgeRules.json(payload).utf8.count > maximumBytes {
             return .init(text: ContextKnowledgeRules.json(["unavailable": "This context selection exceeded its bounded payload. Request a specific page ID and offset.", "maximumBytes": maximumBytes]))
         }
+        if !supplied.isEmpty { supplied.append(.init(kind: "context-purpose", key: purpose.rawValue, revision: "1")) }
         let ids = Set(supplied.map(\.contextKey))
         let selectedRecords = records.filter { ids.contains($0.reference.contextKey) }
         let expected = supplied
-        let whatsappScope = expected.contains { $0.kind == "whatsapp" } ? whatsapp.scope(for: registration, purpose: .conversation) : nil
+        let whatsappPurpose: WhatsAppReadPurpose = purpose == .brief ? .brief : [.suggestions, .manualSuggestions, .heartbeatSuggestions].contains(purpose) ? .suggestions : .conversation
+        let whatsappScope = expected.contains { $0.kind == "whatsapp" } ? whatsapp.scope(for: registration, purpose: whatsappPurpose) : nil
         return .init(text: ContextKnowledgeRules.json(payload), pageIDs: suppliedPages.map(\.id),
                      memoryIDs: Set(selectedRecords.compactMap(\.memoryID)), workspaceIDs: Set(selectedRecords.compactMap(\.projectID)), referenceVersions: Dictionary(expected.map { ($0.contextKey, $0.revision) }, uniquingKeysWith: { first, _ in first }), validate: { [weak self] ignored in
             guard let self, registration == self.chatGPT.activeID, self.assistant.memory.enabled else { return false }
-            if let whatsappScope, whatsappScope != self.whatsapp.scope(for: registration, purpose: .conversation) { return false }
+            if let whatsappScope, whatsappScope != self.whatsapp.scope(for: registration, purpose: whatsappPurpose) { return false }
             let ignoredProjects = Set(ignored.filter { $0.hasPrefix("project:") }.map { String($0.dropFirst(8)) })
             let retained = Dictionary(expected.map { ($0.contextKey, $0.revision) }, uniquingKeysWith: { first, _ in first })
             let filtered = expected.filter { ref in
@@ -246,7 +301,7 @@ import EventKit
                    let project = record.projectID, ignoredProjects.contains(project.uuidString) { return false }
                 return true
             }
-            let current = self.contextDependencyVersions(registration: registration, records: self.contextKnowledge(registration: registration, topic: topic, includeTopics: includeTopics, allowedMemoryIDs: allowedMemoryIDs, retainingReferences: retained), ignoring: ignored)
+            let current = self.contextDependencyVersions(registration: registration, records: self.contextKnowledge(registration: registration, topic: topic, includeTopics: includeTopics, allowedMemoryIDs: allowedMemoryIDs, retainingReferences: retained, purpose: purpose, mailAccounts: mailAccounts, whatsappReady: whatsappReady), ignoring: ignored)
             return filtered.allSatisfy { current[$0.contextKey] == $0.revision }
         })
     }
@@ -254,16 +309,20 @@ import EventKit
     func contextKnowledgeAvailable(registration: String, versions: [String: String], ignoring: Set<String> = []) -> Bool {
         guard !versions.isEmpty else { return true }
         guard assistant.memory.enabled, registration == chatGPT.activeID else { return false }
-        let records = contextKnowledge(registration: registration, retainingReferences: versions)
-        let current = contextDependencyVersions(registration: registration, records: records, ignoring: ignoring)
-        return versions.allSatisfy { ignoring.contains($0.key) || current[$0.key] == $0.value }
+        let capturedPurposes = versions.keys.filter { $0.hasPrefix("context-purpose:") }.compactMap { ContextKnowledgePurpose(rawValue: String($0.dropFirst("context-purpose:".count))) }
+        let purposes = capturedPurposes.isEmpty ? [ContextKnowledgePurpose.conversation] : capturedPurposes
+        return purposes.allSatisfy { purpose in
+            let records = contextKnowledge(registration: registration, retainingReferences: versions, purpose: purpose)
+            let current = contextDependencyVersions(registration: registration, records: records, ignoring: ignoring)
+            return versions.allSatisfy { ignoring.contains($0.key) || current[$0.key] == $0.value }
+        }
     }
 
     /// Human edits can make new information relevant to the next assessment. Generated page
     /// maintenance is deliberately absent so summarisation cannot cause an inference loop.
     func humanContextDiscoveryRevision(_ registration: String) -> String {
         guard assistant.memory.enabled else { return "memory-paused" }
-        return ContextKnowledgeRules.fingerprint(ContextKnowledgeRules.json(contextPages.pages(registration: registration).filter { $0.owner == .human && $0.kind != .calendarPurpose }.map { ["id": $0.id, "revision": $0.revision.uuidString] }))
+        return ContextKnowledgeRules.fingerprint(ContextKnowledgeRules.json(contextPages.pages(registration: registration).filter { $0.owner == .human && $0.kind != .calendarPurpose && $0.kind != .instruction }.map { ["id": $0.id, "revision": $0.revision.uuidString] }))
     }
 
     func contextReferencesForOwnedChanges(registration: String, keys: Set<String>) -> Set<String> {
@@ -283,12 +342,16 @@ import EventKit
         var current = Dictionary(records.filter { $0.reference.kind != "page" }.map { ($0.reference.contextKey, $0.reference.revision) }, uniquingKeysWith: { first, _ in first })
         // Text versions are independently checked even when this job itself retires support.
         // Build transitive page availability from canonical records, never a self-supporting cycle.
-        var waiting = contextPages.pages(registration: registration).filter { $0.owner == .human && $0.kind != .calendarPurpose }
+        var waiting = contextPages.pages(registration: registration).filter { $0.owner == .human && $0.kind != .calendarPurpose && $0.kind != .instruction }
         for _ in 0..<min(32, waiting.count) {
             let ready = waiting.filter { page in page.references.allSatisfy { ignoring.contains($0.contextKey) || current[$0.contextKey] == $0.revision } }
             guard !ready.isEmpty else { break }
             for page in ready { current["page:" + page.id] = page.revision.uuidString }
             let emitted = Set(ready.map(\.id)); waiting.removeAll { emitted.contains($0.id) }
+        }
+        for purpose in ContextKnowledgePurpose.allCases { current["context-purpose:" + purpose.rawValue] = "1" }
+        if contextPages.isReadable {
+            for feature in ContextFeature.allCases { let guidance = featureInstruction(feature, registration: registration); current[guidance.reference.contextKey] = guidance.reference.revision }
         }
         if briefings.writingPromptReadable { current["instruction:brief"] = briefInstructionRevision(registration) }
         if emailSummaries.reviewPolicies.readable { current["instruction:review"] = reviewInstructionRevision(registration) }

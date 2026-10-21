@@ -1,6 +1,33 @@
 import Foundation
 import CryptoKit
 
+/// Relevance never grants access. Every page resolves its original support for the requesting feature.
+enum ContextKnowledgePurpose: String, CaseIterable {
+    case conversation, brief, suggestions, manualSuggestions, heartbeatSuggestions
+    case email, setup, maintenance, inspection
+    var humanOnly: Bool { self == .email || self == .setup }
+    var includesWorkingChanges: Bool { !humanOnly }
+}
+
+enum ContextFeature: String, CaseIterable, Identifiable {
+    case assistant, projects, reminders
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .assistant: return "Assistant instructions"
+        case .projects: return "Project instructions"
+        case .reminders: return "Reminder instructions"
+        }
+    }
+    var defaultText: String {
+        switch self {
+        case .assistant: return "Use relevant context pages and recent changes to answer naturally and concisely. Read more context when needed, state uncertainty and ask one useful question when essential information is missing. Remember useful enduring context with its original evidence."
+        case .projects: return "Use the purpose and current context of existing project spaces to suggest where work belongs. Keep project tasks separate from Apple Reminders. Ask what a project is for when that is unclear. Project creation and changes follow the human's request or approval."
+        case .reminders: return "Use relevant project and personal context when helping with reminders. Preserve the human's requested date and destination; ask only for essential missing information. Do not infer completion from elapsed time or a missing source."
+        }
+    }
+}
+
 /// Request-local projections. Stored references point to canonical records; no second source archive.
 struct ContextKnowledgeRecord {
     var reference: ContextPageReference
@@ -10,6 +37,7 @@ struct ContextKnowledgeRecord {
     var areas: [LifeArea] = []
     var memoryID: UUID? = nil
     var projectID: UUID? = nil
+    var whatsappChatID: String? = nil
     var relevance: String? = nil
     var input: [String: String] {
         var value = ["id": reference.contextKey, "revision": reference.revision, "title": title,
