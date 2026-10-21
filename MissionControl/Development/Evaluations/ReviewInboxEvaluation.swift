@@ -138,6 +138,8 @@ import EventKit
     static func runRelevance(_ model:DashboardModel)async throws->[String:Any] {
         let owner=model.chatGPT.activeID,selected=model.chatGPT.selectedModel,now=Date.now
         let capturedPolicy=try capturePolicy(model)
+        let enabledPreference=UserDefaults.standard.object(forKey:"automaticEmailSummaries") as? Bool
+        model.emailSummaries.enableMailReviewFixture()
         let deadline=DateRules.localDate(Calendar.current.date(byAdding:.day,value:3,to:now)!)
         let fact=PAMemory(registration:owner,text:"I am building the four-sensor Orion prototype this term.",kind:.context,provenance:"Fictional human",evidence:"I am building the four-sensor Orion prototype this term.")
         guard model.assistant.memory.put(fact) else {throw SummaryFailure.invalid}
@@ -225,7 +227,7 @@ import EventKit
         checks["feedback keeps same-company submission receipt quiet"] = decoded["submitted"]?.attention == false && decoded["submitted"]?.worthReading == false
         checks["feedback prioritises assessment invitation"] = decoded["invitation"]?.attention == true
         checks["feedback preserves genuinely new assessment stage"] = decoded["next_stage"]?.attention == true
-        checks["feedback permits worthwhile results without inventing a task"] = decoded["assessment_results"]?.worthReading == true && decoded["assessment_results"]?.attention == false
+        checks["feedback permits worthwhile results with its exact human citation"] = decoded["assessment_results"]?.worthReading == true && decoded["assessment_results"]?.attention == false && decoded["assessment_results"]?.personalRelevance?.memories.contains{$0.id == reviewFact.id.uuidString} == true
         checks["feedback reaches header and body using canonical human memory"] = contexts["invitation"]?.memories.contains{$0["id"] == reviewFact.id.uuidString && $0["text"] == reviewWords} == true && headerContexts["invitation"]?.memories.contains{$0["id"] == reviewFact.id.uuidString} == true
         checks["reasoned preference is saved instead of vague feedback"] = learnedFact.text == learned.rule && learnedFact.text != originalFeedback && learnedFact.evidence == originalFeedback && learnedFact.reviewFeedback == originalFeedback && !learnedFact.explicit
         checks["interpretation names actual communications team and newsletter purpose"] = learned.rule.localizedCaseInsensitiveContains("communications") && (learned.rule.localizedCaseInsensitiveContains("newsletter") || learned.rule.localizedCaseInsensitiveContains("broadcast")) && !learned.rule.contains("INJECTED_PREFERENCE")
@@ -243,14 +245,26 @@ import EventKit
         model.mailData = .init(messages:[guideMessage],accounts:[.init(id:"fictional-mail",title:"Fictional Mail")],errors:[])
         try model.emailSummaries.seedAdviceFixture([savedGuide])
         let hadPreparedGuide=model.reviewInbox.emailCards.contains{$0.id == guideMessage.id}
+        checks["fictional Review is enabled before saved-card inspection"] = model.emailSummaries.enabled
+        checks["supported guide is present before the policy edit"] = hadPreparedGuide
         let guideEncoder=JSONEncoder();guideEncoder.outputFormatting=[.sortedKeys]
         let guideSnapshot=try guideEncoder.encode(savedGuide)
+        var legacyGuide=savedGuide;legacyGuide.reviewContext=nil;legacyGuide.reviewPreferenceRevision=nil;legacyGuide.reviewPolicyVersion=2
+        checks["legacy version2 without captured policy schedules bounded reassessment"] = model.emailSummaries.preferenceNeedsRecheck(legacyGuide,message:guideMessage,model:model)
+        checks["legacy recall remains available while reassessment is pending"] = model.emailSummaries.reviewAssessmentAvailable(legacyGuide,model:model)
         let customWords=capturedPolicy.text+"\n\n## Priorities I have chosen\nTell me about fully funded summer conservation placements in Devon, including general broadcasts. Keep unrelated networking lunches and business-talk roundups quiet."
         guard model.emailSummaries.savePolicy(customWords,registration:owner,expected:capturedPolicy) else {throw SummaryFailure.invalid}
         let customPolicy=try capturePolicy(model),customIDs:Set<String>=["policy_broadcast","policy_roundup"]
         checks["policy edit invalidates the exact earlier capture"] = !model.emailSummaries.policyAvailable(capturedPolicy) && customPolicy.revision != capturedPolicy.revision && !customPolicy.isDefault
-        checks["policy edit preserves the exact saved Review card without reassessment"] = hadPreparedGuide && model.emailSummaries.records.first(where:{$0.id == guideMessage.id}).flatMap{try? guideEncoder.encode($0)} == guideSnapshot && model.reviewInbox.emailCards.contains{$0.id == guideMessage.id}
-        checks["custom global priority needs no retrieved topic-preference match"] = contexts["policy_broadcast"]?.memories.isEmpty == true
+        checks["policy edit preserves exact saved assessment bytes"] = model.emailSummaries.records.first(where:{$0.id == guideMessage.id}).flatMap{try? guideEncoder.encode($0)} == guideSnapshot
+        checks["policy edit keeps the prepared guide visible"] = model.reviewInbox.emailCards.contains{$0.id == guideMessage.id}
+        // Generic or negative feedback may be retrieved; none is a conservation/Devon priority.
+        let broadcastContext=contexts["policy_broadcast"]!
+        let retrievedAuthority=broadcastContext.memories + broadcastContext.workspace + broadcastContext.contextPages
+        checks["custom broadcast has no retrieved conservation or Devon priority"] = !retrievedAuthority.contains {row in
+            let text=row.values.joined(separator:" ")
+            return text.localizedCaseInsensitiveContains("conservation") || text.localizedCaseInsensitiveContains("devon")
+        }
         let customHeaders=headers.filter{row in (row["id"] as? String).flatMap{headerCases[$0]}.map{customIDs.contains($0)} == true}
         let customHeaderInput:[String:Any]=["reviewPolicy":customPolicy.input,"headers":customHeaders]
         let customTriage=try await model.chatGPT.streamResponse(input:[["role":"user","content":String(decoding:try JSONSerialization.data(withJSONObject:customHeaderInput,options:.sortedKeys),as:UTF8.self)]],instructions:MailMonitoringRules.headerInstructions+" "+EmailRelevanceRules.instructions+" "+ReviewPolicyRules.instructions,model:selected,purpose:.diagnostic){_ in}
@@ -269,6 +283,7 @@ import EventKit
         try Data(customTriage.utf8).write(to:EvaluationOutput.url("/tmp/3po-review-policy-fictional-headers.json"),options:.atomic)
         try Data(customResponse.utf8).write(to:EvaluationOutput.url("/tmp/3po-review-policy-fictional-assessments.json"),options:.atomic)
         checks["model and account selection remain unchanged"] = owner == model.chatGPT.activeID && selected == model.chatGPT.selectedModel
+        checks["fictional Review enablement preserves the actual saved preference"] = enabledPreference == UserDefaults.standard.object(forKey:"automaticEmailSummaries") as? Bool
         return ["completed":Date.now.ISO8601Format(),"requests":5,"model":selected,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"storage":"Fictional human context/preferences/emails and a custom human policy in disposable SwiftData before source startup; production captured policy, targeted relevance and strict decoders. No Apple writes, settings changes or personal sources. Narrow scenarios, not a population quality rate; saved-card display is unchanged."]
     }
     /// Three actual subscription requests using the production clock/prompts and fictional sources only.

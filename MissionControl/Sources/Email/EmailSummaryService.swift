@@ -29,7 +29,7 @@ import SwiftData
     private let container: ModelContainer?
     #if DEBUG
     func enableMailReviewFixture() {
-        guard ProcessInfo.processInfo.arguments.contains("--validate-review-inbox"),["--mail-review-only","--email-work-only"].contains(where:ProcessInfo.processInfo.arguments.contains) else {return}
+        guard ProcessInfo.processInfo.arguments.contains("--validate-review-inbox"),["--mail-review-only","--email-work-only","--relevance-only"].contains(where:ProcessInfo.processInfo.arguments.contains) else {return}
         persistEnabledPreference=false;enabled=true
     }
     func seedAdviceFixture(_ values:[EmailSummary]) throws {
@@ -125,10 +125,12 @@ import SwiftData
         }.map(MemoryRetrieval.record)
         return MemoryDependencyRules.available(dependencies,records:records)
     }
-    private func reviewContextCurrent(_ receipt:EmailReviewContextReceipt?,message:MailMessage,model:DashboardModel,evidence:String="",legacyStamp:String?)->Bool {
+    private func reviewContextCurrent(_ receipt:EmailReviewContextReceipt?,message:MailMessage,model:DashboardModel,evidence:String="")->Bool {
+        // Equal legacy nil stamps cannot establish the policy/feedback used by an old decision.
+        // Revisit through the existing bounded lane without changing saved cards or legacy recall.
+        guard let receipt,reviewPolicies.readable else {return false}
         let discovery=reviewPreferenceStamp(message,model:model,evidence:evidence)
-        guard let receipt else {return legacyStamp == discovery}
-        return reviewPolicies.readable && receipt.policy.matches(policy(model.chatGPT.activeID)) && reviewPreferencesAvailable(receipt.preferences,model:model) && model.contextPageDependenciesAvailable(receipt.contextPageDependencies,registration:model.chatGPT.activeID) && receipt.discoveryRevision == discovery
+        return ReviewPolicyRules.assessmentContextMatches(receipt,policy:policy(model.chatGPT.activeID),discoveryRevision:discovery) && reviewPreferencesAvailable(receipt.preferences,model:model) && model.contextPageDependenciesAvailable(receipt.contextPageDependencies,registration:model.chatGPT.activeID)
     }
     /// For new AI input only. Prepared Review display deliberately keeps its saved projection.
     func reviewAssessmentAvailable(_ summary:EmailSummary,model:DashboardModel)->Bool {
@@ -136,7 +138,7 @@ import SwiftData
         return reviewPolicies.readable && receipt.policy.matches(policy(model.chatGPT.activeID)) && reviewPreferencesAvailable(receipt.preferences,model:model) && model.contextPageDependenciesAvailable(receipt.contextPageDependencies,registration:model.chatGPT.activeID)
     }
     private func headerDecisionCurrent(_ decision:EmailHeaderDecision,message:MailMessage,model:DashboardModel)->Bool {
-        reviewContextCurrent(decision.reviewContext,message:message,model:model,legacyStamp:decision.reviewPreferenceRevision)
+        reviewContextCurrent(decision.reviewContext,message:message,model:model)
     }
     func feedbackSourceCurrent(_ message:MailMessage,summary:EmailSummary,model:DashboardModel)->Bool {
         guard model.assistant.contextEnabled,summary.registration == model.chatGPT.activeID,!model.assistant.excludedAccounts.contains(message.accountID),model.mailData.accounts.contains(where:{$0.id == message.accountID}),let current=model.mailData.messages.first(where:{$0.id == message.id}),current.accountID == message.accountID,let saved=records.first(where:{$0.id == message.id && $0.registration == summary.registration}),saved.fingerprint == EmailSummary.fingerprint(current) else {return false}
@@ -234,7 +236,7 @@ import SwiftData
     }
     func preferenceNeedsRecheck(_ summary:EmailSummary,message:MailMessage,model:DashboardModel)->Bool {
         guard !ReviewAcknowledgementRules.emailDismissed(summary,message:message,registration:model.chatGPT.activeID),message.received >= Date.now.addingTimeInterval(-30*86400) else {return false}
-        return summary.reviewPolicyVersion != 2 || !reviewContextCurrent(summary.reviewContext,message:message,model:model,evidence:summary.summary+" "+summary.evidence,legacyStamp:summary.reviewPreferenceRevision)
+        return summary.reviewPolicyVersion != 2 || !reviewContextCurrent(summary.reviewContext,message:message,model:model,evidence:summary.summary+" "+summary.evidence)
     }
     func actionEvidenceNeedsRecheck(_ summary:EmailSummary,message:MailMessage,model:DashboardModel)->Bool {
         guard model.mailData.messages.contains(where:{$0.id == message.id && EmailSummary.fingerprint($0) == summary.fingerprint}),
