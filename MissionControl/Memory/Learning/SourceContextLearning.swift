@@ -81,9 +81,18 @@ enum SourceContextRules {
         let data=(try? JSONSerialization.data(withJSONObject:fields,options:.sortedKeys)) ?? Data()
         return SHA256.hash(data:data).map{String(format:"%02x",$0)}.joined()
     }
-    static func recent(_ messages:[WhatsAppReadMessage],chats:[WhatsAppChat],allowed:Set<String>,now:Date,limit:Int=200)->[SourceContextMessage] {
+    static func recent(_ messages:[WhatsAppReadMessage],chats:[WhatsAppChat],allowed:Set<String>,now:Date,limit:Int=200,
+                       retaining:[String:Set<String>]=[:])->[SourceContextMessage] {
+        guard now.timeIntervalSinceReferenceDate.isFinite else {return []}
         let names=Dictionary(chats.map{($0.id,$0.name)},uniquingKeysWith:{first,_ in first})
-        let eligible=messages.filter { allowed.contains($0.chat) && !$0.text.isEmpty && $0.time.isFinite && $0.time >= now.addingTimeInterval(-48*3600).timeIntervalSince1970*1000 && $0.time <= now.timeIntervalSince1970*1000 }
+        // Resolve current cache identity before age/cap selection. A conflicting row outside
+        // the selected window must not make an older retained version appear current.
+        let current=Dictionary(grouping:messages,by:{[$0.chat,$0.id]}).values.compactMap {rows->WhatsAppReadMessage? in
+            guard let first=rows.first,rows.allSatisfy({$0 == first}),allowed.contains(first.chat),
+                  !first.text.isEmpty,first.time.isFinite,first.time <= now.timeIntervalSince1970*1000 else {return nil}
+            return first
+        }
+        let eligible=current.filter {$0.time >= now.addingTimeInterval(-48*3600).timeIntervalSince1970*1000}
             .sorted{$0.time == $1.time ? $0.id < $1.id : $0.time > $1.time}
         let groups=Dictionary(grouping:eligible,by:{$0.chat}),keys=groups.keys.sorted()
         // Allocate the bounded window across chats before taking more from busy chats.
@@ -94,7 +103,14 @@ enum SourceContextRules {
             guard !round.isEmpty else { break }
             fair.append(contentsOf:round.prefix(cap-fair.count));offset += 1
         }
-        return fair.map {
+        let selected=retaining.isEmpty ? Set<String>() : Set(fair.map{messageKey(chat:$0.chat,item:$0.id)})
+        let retained:[WhatsAppReadMessage]=retaining.isEmpty ? [] : current.filter {item in
+            let id=messageKey(chat:item.chat,item:item.id)
+            return !selected.contains(id) && retaining[id]?.contains(revision(item)) == true
+        }.sorted {($0.time,$0.chat,$0.id) < ($1.time,$1.chat,$1.id)}
+        // This is an exact local support read, not another fresh-history allocation.
+        // Retained evidence never consumes or expands the bounded fresh-message window.
+        return (fair+retained).map {
                 .init(id:messageKey(chat:$0.chat,item:$0.id),itemID:$0.id,chatID:$0.chat,chatName:String((names[$0.chat] ?? "Selected chat").prefix(120)),sender:String($0.sender.prefix(120)),sentByMe:$0.sentByMe,text:String($0.text.prefix(1200)),date:Date(timeIntervalSince1970:$0.time/1000),revision:revision($0))
             }
     }
@@ -124,9 +140,10 @@ enum SourceContextRules {
     static func contextItems(recent: [SourceContextMessage], progress: SourceContextProgress?,
                              access: SourceContextLearningAccess, processed: [String: String],
                              retaining: [String: Set<String>], now: Date, limit: Int = 16) -> [SourceContextMessage] {
-        guard access.permitted else { return [] }
+        guard access.permitted, now.timeIntervalSinceReferenceDate.isFinite else { return [] }
         let current = Dictionary(grouping: recent, by: \.id).values.compactMap { rows -> SourceContextMessage? in
-            guard let first = rows.first, rows.allSatisfy({ $0 == first }), access.chats.contains(chatKey(first.chatID)) else { return nil }
+            guard let first = rows.first, rows.allSatisfy({ $0 == first }), access.chats.contains(chatKey(first.chatID)),
+                  first.date.timeIntervalSinceReferenceDate.isFinite, first.date <= now else { return nil }
             return first
         }
         // The learning lane's last-chat hint provides the same deterministic fair rotation,
@@ -148,12 +165,15 @@ enum SourceContextRules {
         let retained = current.filter { retaining[$0.id]?.contains($0.revision) == true }
         guard let original = progress, original.oriented, !original.paused, original.learningAccess == access,
               now.timeIntervalSinceReferenceDate.isFinite else { return fair(retained) }
-        let collected = collecting(original, recent: current, now: now)
-        let reconciled = reconcilingAccess(collected, previous: original, current: access, recent: current)
+        // The projection can also contain older exact page support. Only the ordinary
+        // fresh window may create a pending delta, including for a changed retained ID.
+        let fresh=current.filter {$0.date >= now.addingTimeInterval(-48*3600)}
+        let collected = collecting(original, recent: fresh, now: now)
+        let reconciled = reconcilingAccess(collected, previous: original, current: access, recent: fresh)
         let pendingVersions = Dictionary((reconciled.coverage?.pending ?? []).map { ($0.id, $0.revision) }, uniquingKeysWith: { first, _ in first })
         let retainedIDs = Set(retained.map(\.id))
         // Seen versions still belong to this consumer until its own checkpoint acknowledges them.
-        let pending = Array(fair(current.filter {
+        let pending = Array(fair(fresh.filter {
             !retainedIDs.contains($0.id) && processed[$0.id] != $0.revision &&
             (pendingVersions[$0.id] == $0.revision || reconciled.seen[$0.id] == $0.revision) &&
             reconciled.coverage?.baseline[$0.id] != $0.revision
