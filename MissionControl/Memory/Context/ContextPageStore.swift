@@ -100,6 +100,7 @@ import SwiftData
                 var value = candidate
                 value.revision = UUID(); value.created = current?.created ?? now; value.updated = now
                 value.references = try Self.canonicalReferences(candidate.references)
+                if let processed = candidate.processedReferences { value.processedReferences = try Self.canonicalReferences(processed) }
                 versions.append(.init(page: value, parentRevision: current?.revision))
                 if let index = next.pages.firstIndex(where: { $0.id == value.id }) { next.pages[index] = value }
                 else { next.pages.append(value) }
@@ -221,6 +222,14 @@ import SwiftData
             throw ContextPageFailure.invalid("page")
         }
         _ = try canonicalReferences(page.references)
+        if let processed = page.processedReferences {
+            guard processed.count <= 4096 else { throw ContextPageFailure.invalid("page progress") }
+            _ = try canonicalReferences(processed)
+        }
+        if let quotes = page.evidenceQuotes {
+            let ids = Set(page.references.map(\.id))
+            guard quotes.count <= 32, quotes.allSatisfy({ ids.contains($0.referenceID) && (8...500).contains($0.quote.count) }) else { throw ContextPageFailure.invalid("page evidence") }
+        }
     }
     private static func validateCheckpoint(_ value: ContextPageCheckpoint) throws {
         try validateRegistration(value.registration)

@@ -23,6 +23,24 @@ import SwiftData
         } catch { readable=false;self.error="Source-learning progress could not be read; its saved record is preserved." }
     }
     private func key(_ scope:WhatsAppSourceScope)->String { SourceContextRules.scopeKey(scope.registration+":"+scope.linkedIdentity) }
+    /// Already received permitted changes only. No history read, claim recovery or cursor mutation.
+    func contextItems(_ model: LearningRuntime, retaining: [String: Set<String>] = [:], processed: [String: String] = [:]) -> [SourceContextMessage] {
+        let scope = model.whatsapp.scope(for: model.inference.activeID)
+        let access = accessSnapshot(model)
+        guard readable, model.assistant.memory.enabled, access.permitted, !scope.linkedIdentity.isEmpty else { return [] }
+        let recent = SourceContextRules.recent(model.whatsapp.messages, chats: model.whatsapp.chats,
+            allowed: model.whatsappLearningAccess.chats, now: model.now(), limit: 2000)
+        let original = state.scopes[key(scope)]
+        let candidates = SourceContextRules.contextItems(recent: recent, progress: model.assistant.memory.learningEnabled ? original : nil,
+            access: access, processed: processed, retaining: retaining, now: model.now())
+        let suppressed = model.assistant.memory.suppressed(model.inference.activeID)
+        return candidates.filter { item in
+            let evidence = MemorySourceEvidence(identity: .init(kind: .whatsapp, accountID: scope.linkedIdentity,
+                containerID: item.chatID, itemID: item.itemID, linkedIdentity: scope.linkedIdentity), revision: item.revision,
+                label: item.chatName, quote: String(item.text.prefix(500)), observed: model.now(), sourceDate: item.date)
+            return PAMemory.suppressionKey(evidence).map { !suppressed.contains($0) } ?? false
+        }
+    }
     private func accessSnapshot(_ model:LearningRuntime)->SourceContextLearningAccess {
         let access=model.whatsappLearningAccess
         return .init(permitted:model.assistant.contextEnabled && access.enabled && access.learnContext == true && !access.chats.isEmpty,chats:Set(access.chats.map(SourceContextRules.chatKey)),revision:access.learningAccessRevision,reviewRevision:model.whatsappReviewLearningRevision)

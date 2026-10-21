@@ -25,6 +25,21 @@ import SwiftData
         } catch { readable=false;self.error="Source-learning settings could not be read. Their saved data is preserved." }
     }
     func enabled(_ kind:MemorySourceKind,registration:String)->Bool { readable && state.scopes[NativeLearningRules.key(registration,kind)]?.enabled == true }
+    /// Local pending deltas for working context; never advances learning cursors or revives a failed claim.
+    /// Retained IDs are exact supporting versions of an already saved page, rechecked against today's cache.
+    func contextItems(_ kind: MemorySourceKind, model: LearningRuntime, retaining: [String: Set<String>] = [:], processed: [String: String] = [:]) -> [NativeLearningItem] {
+        guard readable, model.assistant.memory.enabled, model.assistant.contextEnabled,
+              permittedKind(kind, model: model), let items = model.nativeLearningItems(kind) else { return [] }
+        let original = state.scopes[NativeLearningRules.key(model.inference.activeID, kind)]
+        let candidates = NativeLearningRules.contextItems(items: items, progress: model.assistant.memory.learningEnabled ? original : nil,
+            processed: processed, retaining: retaining, now: model.now())
+        let suppressed = model.assistant.memory.suppressed(model.inference.activeID)
+        return candidates.filter { item in
+            let evidence = MemorySourceEvidence(identity: item.identity, revision: item.revision, label: item.label,
+                quote: String(item.text.prefix(500)), observed: model.now(), sourceDate: item.date)
+            return PAMemory.suppressionKey(evidence).map { !suppressed.contains($0) } ?? false
+        }
+    }
     func permittedKind(_ kind:MemorySourceKind,model:LearningRuntime)->Bool {
         readable && (enabled(kind,registration:model.inference.activeID) || model.permitsReviewLearning(kind))
     }

@@ -21,6 +21,7 @@ struct ReviewInboxProjection {
     var resolved:[(MailMessage,EmailSummary,EmailResolution)]
     var pending:[PAQueuedRequest]
     var pendingCount:Int
+    var contextQuestions: [ContextProjectQuestion] = []
 }
 extension DashboardModel {
     func reviewCreationClaim(_ item:PADiscovery)->NativeCreationClaim? {
@@ -168,7 +169,8 @@ struct PATasksView: View {
             }
             ScrollView {
                 LazyVStack(alignment:.leading,spacing:12) {
-                    if !questions.isEmpty || !learningQuestions.isEmpty {Text("Questions for you").font(.headline)}
+                    if !questions.isEmpty || !learningQuestions.isEmpty || !inbox.contextQuestions.isEmpty {Text("Questions for you").font(.headline)}
+                    ContextProjectQuestionsSection(model: model, questions: inbox.contextQuestions)
                     ForEach(questions) {item in
                         VStack(alignment:.leading,spacing:8) {
                             Label("Your answer would help",systemImage:"questionmark.bubble").font(.caption).foregroundStyle(.secondary)
@@ -250,7 +252,7 @@ struct PATasksView: View {
                             if item.state != .running { HStack { if item.state == .waiting { Button("Continue queue") { model.assistant.resumeQueue(model:model) }.disabled(model.assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }; Button("Remove") { model.assistant.discardQueued(item.id) } }.controlSize(.small) }
                         }.taskCard()
                     }
-                    if emailCards.isEmpty && standaloneDiscoveries.isEmpty && pending.isEmpty && questions.isEmpty && learningQuestions.isEmpty {
+                    if emailCards.isEmpty && standaloneDiscoveries.isEmpty && pending.isEmpty && questions.isEmpty && learningQuestions.isEmpty && inbox.contextQuestions.isEmpty {
                         ContentUnavailableView("Nothing waiting for review",systemImage:"checkmark.circle",description:Text("Proposed changes, useful updates and prepared work appear here when enabled sources reveal something useful."))
                     }
                 }.frame(maxWidth:.infinity,alignment:.leading)

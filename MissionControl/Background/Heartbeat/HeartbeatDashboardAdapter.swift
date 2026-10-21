@@ -40,13 +40,17 @@ import SwiftData
             try await model.emailSummaries.runHeartbeatFeedback(request,model:model)
         },learning:{request in
             let result=try await model.runHeartbeatLearning(request:request)
-            return .init(failure:result.failure,detail:result.detail,skipped:result.skipped)
+            try request.validate()
+            let pages = try await model.contextConsolidation.run(model, request: request)
+            try request.validate()
+            let failures = [result.failure, pages.failure].compactMap { $0 }
+            return .init(failure:failures.isEmpty ? nil : failures.joined(separator:" · "),detail:result.detail + " " + pages.detail,skipped:result.skipped && pages.skipped)
         },started:{model.heartbeatActivityStarted($0,$1,$2)},finished:{model.heartbeatActivityFinished($0,$1)})
     }
 
     private static func environment(_ model:DashboardModel)->HeartbeatEnvironment {
         func otherLearning(_ busy:Bool,_ runID:String?)->Bool {busy && !(runID.map{model.heartbeat.ownsLearningRun($0)} ?? false)}
-        let learning=otherLearning(model.sourceLearning.busy,model.sourceLearning.ownedHeartbeatRunID) || otherLearning(model.nativeSourceLearning.busy,model.nativeSourceLearning.ownedHeartbeatRunID) || otherLearning(model.memoryMaintenance.busy,model.memoryMaintenance.ownedHeartbeatRunID) || otherLearning(model.memoryLearning.busy,model.memoryLearning.ownedHeartbeatRunID) || otherLearning(model.lifeOrganisation.busy,model.lifeOrganisation.ownedHeartbeatRunID)
+        let learning=otherLearning(model.contextConsolidation.busy,model.contextConsolidation.ownedHeartbeatRunID) || otherLearning(model.sourceLearning.busy,model.sourceLearning.ownedHeartbeatRunID) || otherLearning(model.nativeSourceLearning.busy,model.nativeSourceLearning.ownedHeartbeatRunID) || otherLearning(model.memoryMaintenance.busy,model.memoryMaintenance.ownedHeartbeatRunID) || otherLearning(model.memoryLearning.busy,model.memoryLearning.ownedHeartbeatRunID) || otherLearning(model.lifeOrganisation.busy,model.lifeOrganisation.ownedHeartbeatRunID)
         let feedback=model.emailSummaries.feedback.activeID != nil && !(model.emailSummaries.feedback.ownedHeartbeatRunID.map{model.heartbeat.ownsLearningRun($0)} ?? false)
         let foreground=model.reviewWork.busy || feedback || model.assistant.busy || model.chatGPT.busy || model.projectPlacement.busy || learning
         let proposals=model.proactive.state.accounts[model.chatGPT.activeID]

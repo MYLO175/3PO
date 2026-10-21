@@ -20,6 +20,11 @@ import Foundation
     var issuedMemory: Set<UUID> = []
     /// Successful read outputs only; separate from identities issued by memory saves/edits.
     var consultedMemory: Set<UUID> = []
+    private var contextPageCaptures: [AssistantPageContext] = []
+    private var ownedContextChanges: Set<String> = []
+    var pageContextAvailable: Bool { contextPageCaptures.allSatisfy { $0.current(ignoring: ownedContextChanges) } }
+    var consultedContextVersions: [String: String] { contextPageCaptures.reduce(into: [:]) { $0.merge($1.referenceVersions) { _, newer in newer } }.filter { !ownedContextChanges.contains($0.key) } }
+    func adoptContextChanges(_ keys: Set<String>) { ownedContextChanges.formUnion(keys) }
     private(set) var suppliedWeatherScope:String?
     private(set) var suppliedWhatsAppScope:WhatsAppSourceScope?
     var receipts: [String] = []
@@ -200,7 +205,7 @@ import Foundation
         func text(_ name: String) -> String? { args[name] as? String }
         if let quote=text("authorization"),let current=try? PAToolProtocol.conversationalAuthorization(quote,human:human,history:history) {args["authorization"]=current}
         let assistant = model.assistant
-        let memoryTool = ["read_memory","save_memory","remember_context","change_memory","read_life_notebook","organise_memory"].contains(call.name)
+        let memoryTool = ["read_memory","save_memory","remember_context","change_memory","read_life_notebook","read_context_page","organise_memory"].contains(call.name)
         let lifeTool = LifeWorkspaceTools.names.contains(call.name)
         guard memoryTool || lifeTool || call.name == "ask_clarification" || assistant.contextEnabled else { throw ActionFailure.message("Source context is disabled.") }
         if !memoryTool, !lifeTool, call.name != "ask_clarification", ProcessInfo.processInfo.arguments.contains("--sample") { throw ActionFailure.message("Sample mode never accesses Apple apps.") }
@@ -302,8 +307,10 @@ import Foundation
             let enabled = result.events.filter { !assistant.excludedCalendars.contains($0.calendarID) }
             let returned = Array(enabled.prefix(200))
             calendar.sources = result.sources.filter { !assistant.excludedCalendars.contains($0.id) }
+            let calendarGuide = model.calendarPurposeCapture(sources: calendar.sources, registration: registration)
+            contextPageCaptures.append(calendarGuide)
             for event in returned { calendar.events.removeAll { $0.id == event.id }; calendar.events.append(event) }
-            return try json(["sources":calendar.sources.map { ["id":$0.id,"label":$0.label,"writable":$0.writable] as [String:Any] },"events":returned.map { ["id":$0.id,"source":$0.sourceLabel,"title":$0.title,"start":$0.allDay ? DateRules.localDate($0.start) : DateRules.localTimestamp($0.start),"end":$0.allDay ? DateRules.localDate(PAToolProtocol.exclusiveAllDayEnd($0.end)) : DateRules.localTimestamp($0.end),"allDay":$0.allDay,"location":$0.location] as [String:Any] },"coverage":"\(returned.count) of \(enabled.count) enabled occurrences in requested range. Read fresh; do not interpret omitted occurrences as absent."])
+            return try json(["sources":calendar.sources.map { ["id":$0.id,"label":$0.label,"writable":$0.writable] as [String:Any] },"calendarPurposes":(try? JSONSerialization.jsonObject(with:Data(calendarGuide.text.utf8))) ?? [:],"events":returned.map { ["id":$0.id,"source":$0.sourceLabel,"title":$0.title,"start":$0.allDay ? DateRules.localDate($0.start) : DateRules.localTimestamp($0.start),"end":$0.allDay ? DateRules.localDate(PAToolProtocol.exclusiveAllDayEnd($0.end)) : DateRules.localTimestamp($0.end),"allDay":$0.allDay,"location":$0.location] as [String:Any] },"coverage":"\(returned.count) of \(enabled.count) enabled occurrences in requested range. Read fresh; do not interpret omitted occurrences as absent."])
         case "read_reminders":
             let result = try await model.nativeSources.reminders()
             let enabled = result.reminders.filter { !assistant.excludedLists.contains($0.listID) }
@@ -398,6 +405,15 @@ import Foundation
         case "undo_apple_change":
             try PAToolProtocol.evidence(text("authorization"),human:human)
             let result = try await model.undoAssistantAppleChange(); receipts.append(result); return try json(["verified":true,"result":result])
+        case "read_context_page":
+            guard memory.enabled else { return try json(["available":false,"reason":"Saved memory use is paused."]) }
+            let offset = text("offset").flatMap(Int.init) ?? 0
+            guard (0...24_000).contains(offset) else { throw ActionFailure.message("Choose a valid page continuation offset.") }
+            let capture = model.captureContextPages(registration: registration, query: text("query"), topic: topicID, includeTopics: focusAreas != nil, everyday: false, pageID: text("id"), pageOffset: offset)
+            contextPageCaptures.append(capture)
+            consultedMemory.formUnion(capture.memoryIDs)
+            notebookWorkspace.formUnion(capture.workspaceIDs)
+            return capture.text
         case "read_memory":
             guard memory.enabled else { throw ActionFailure.message("Memory is disabled.") }
             let selection = PAWorkingContext.prepare(memory:memory,registration:registration,purpose:.memoryRead,query:text("query"),conversationID:topicID,includeTopics:focusAreas != nil,focus:focusAreas ?? assistant.conversation(topicID)?.notebookAreas ?? [],includeNotebook:false).selection

@@ -1026,6 +1026,53 @@
       "effects": [
         "fictional captured Review input receipts; no app, model or source reads"
       ]
+    },
+    {
+      "id": "context-pages",
+      "tier": "source-free",
+      "script": "scripts/checks/test-context-pages.sh",
+      "effects": [
+        "fictional values",
+        "disposable SwiftData"
+      ],
+      "requires": [
+        "Xcode"
+      ]
+    },
+    {
+      "id": "context-project-questions",
+      "tier": "source-free",
+      "script": "scripts/checks/test-context-project-questions.sh",
+      "effects": [
+        "fictional values",
+        "disposable SwiftData"
+      ],
+      "requires": [
+        "Xcode"
+      ]
+    },
+    {
+      "id": "context-consolidation",
+      "tier": "source-free",
+      "script": "scripts/checks/test-context-consolidation.sh",
+      "effects": [
+        "fictional values",
+        "disposable SwiftData"
+      ],
+      "requires": [
+        "Xcode"
+      ]
+    },
+    {
+      "id": "context-source-deltas",
+      "tier": "source-free",
+      "script": "scripts/checks/test-context-source-deltas.sh",
+      "effects": [
+        "fictional source delta/version receipts; no app, model or source reads"
+      ],
+      "requires": [
+        "Xcode"
+      ]
     }
   ]
 }

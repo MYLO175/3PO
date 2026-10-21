@@ -25,6 +25,7 @@ import EventKit
     private var questionUndoID:String?
     private var questionUndoDate:Date?
     func writingPrompt(_ registration:String)->BriefWritingPrompt {state.writingPrompt(registration)}
+    var writingPromptReadable: Bool { readable }
     func saveWritingPrompt(_ text:String,expected:BriefWritingPrompt,model:DashboardModel) throws {
         guard readable else { throw ActionFailure.message("Saved brief preferences could not be read. Their original storage is preserved.") }
         guard expected.registration == model.chatGPT.activeID else { throw BriefWritingPromptFailure.changed }

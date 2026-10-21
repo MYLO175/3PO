@@ -148,6 +148,20 @@ extension DashboardModel {
             guard let self else {return false}
             return self.nativeLearningValidation.withSnapshot(decision)
         }
+        runtime.contextPages = { [weak self] registration, query, topic, includeTopics, everyday in
+            guard let self else { return .init() }
+            return self.captureContextPages(registration: registration, query: query, topic: topic, includeTopics: includeTopics, everyday: everyday)
+        }
+        runtime.pageKnowledgeAvailable = { [weak self] registration, versions in
+            guard let self else { return false }
+            return self.contextKnowledgeAvailable(registration: registration, versions: versions)
+        }
+        runtime.ownedContextReferences = { [weak self] registration, keys in
+            self?.contextReferencesForOwnedChanges(registration: registration, keys: keys) ?? keys
+        }
+        runtime.memoryMutationReferences = { [weak self] registration, call in
+            self?.contextReferencesForMemoryMutation(registration: registration, call: call) ?? []
+        }
         runtime.approvalAvailable={ [weak self] proposal in
             guard let self else {return false}
             return PAToolSession.approvalAvailable(proposal,model:self)

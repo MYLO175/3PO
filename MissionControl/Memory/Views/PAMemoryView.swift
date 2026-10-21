@@ -27,11 +27,13 @@ struct PAMemoryView: View {
     @State private var showHistory=false
     @State private var editError:String?
     @State private var lineage:Set<UUID>?
+    @State private var showingContextPages = false
     var body: some View {
         let permittedIDs=Set(memory.permittedRecords.map(\.id))
         VStack(alignment:.leading,spacing:16) {
             HStack { Label("What your PA remembers",systemImage:"brain").font(.title2.weight(.semibold)); Spacer(); Button("Done") { dismiss() } }
             if let error = memory.error { Text(error).foregroundStyle(.orange).font(.caption) }
+            if model != nil { Button("Context pages and instructions…") { showingContextPages = true }.controlSize(.small) }
             HStack {
                 Picker("Memory view",selection:$presentation) { Text("Overview").tag("Overview"); Text("Facts").tag("List"); Text("Life areas").tag("Connections"); if model != nil { Text("Review").tag("Review") };Text("Controls").tag("Controls") }.pickerStyle(.segmented).labelsHidden().frame(width:470)
                 if presentation == "List" { TextField("Search memories and connections",text:$search) }
@@ -100,7 +102,8 @@ struct PAMemoryView: View {
                 } else if memory.put(item) { clear() }
             }.disabled(text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || registration.isEmpty) }
             }
-        }.sheet(item:$organising) { item in LifeOrganisationEditor(memory:memory,record:item) }
+        }.sheet(isPresented: $showingContextPages) { if let model { ContextPagesView(model: model) } }
+        .sheet(item:$organising) { item in LifeOrganisationEditor(memory:memory,record:item) }
         .sheet(item:$planReports) { item in CommitmentReportsView(memory:memory,recordID:item.id,registration:registration) }
         .onChange(of:registration) { planReports=nil;organising=nil;clear() }
         .onAppear { scope = conversationID }.onChange(of:memory.learningEnabled) { _, enabled in if !enabled { learning?.cancel();organisation?.cancel();model?.sourceLearning.cancel();model?.nativeSourceLearning.cancel();model?.memoryMaintenance.cancel() } }.onChange(of:memory.enabled) { _, enabled in if !enabled { learning?.cancel();organisation?.cancel();model?.sourceLearning.cancel();model?.nativeSourceLearning.cancel();model?.memoryMaintenance.cancel() } }.padding(24).frame(width:720,height:720)

@@ -18,6 +18,8 @@ struct AssistantTurn: Codable, Identifiable, Equatable {
     /// New turns separate unresolved failures from the retained diagnostic history.
     var unresolvedToolErrors: [String]? = nil
     var sourceMemoryIDs:[UUID]? = nil
+    /// Exact page/working reference versions, without source prose or model reasoning.
+    var contextKnowledgeVersions: [String: String]? = nil
     var focusAreas:[LifeArea]? = nil
     var images:[ChatImageAttachment]? = nil
     /// IDs/counts only. A prepared input trace, not an assertion of model attention or write success.
@@ -75,6 +77,7 @@ struct PAContextCapture: Codable, Equatable, Identifiable {
     var selectionPurpose:String? = nil
     var sourceHints:[String]? = nil
     var usedFollowupContext:Bool? = nil
+    var contextPageIDs: [String]? = nil
     static func notebookIDs(_ context:String)->(memories:[UUID],workspace:[String]) {
         let object=(try? JSONSerialization.jsonObject(with:Data(context.utf8))) as? [String:Any] ?? [:]
         let areas=object["areas"] as? [[String:Any]] ?? []

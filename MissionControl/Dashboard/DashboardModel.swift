@@ -13,6 +13,9 @@ struct CalendarRemovalReviewSession:Identifiable {
 
 @MainActor @Observable final class DashboardModel {
     let preparedReview = PreparedReviewStore()
+    @ObservationIgnored lazy var contextPages = ContextPageStore(container: container)
+    @ObservationIgnored lazy var contextConsolidation = ContextConsolidationService()
+    @ObservationIgnored lazy var contextQuestions = ContextProjectQuestionStore(container: container)
     var whatsapp: WhatsAppService { services.whatsapp }
     var calendarData = CalendarSnapshot(sources: [], events: [])
     var paOrientation: PAOrientation? {didSet{nativeLearningProjectionRevision &+= 1}}

@@ -24,6 +24,18 @@ struct AssistantToolRequest {
     var inferenceModel:String? = nil
 }
 
+/// Bounded page prose plus exact supporting identities captured before yielding.
+/// The callback checks only supplied knowledge and permission, never whole-store churn.
+@MainActor struct AssistantPageContext {
+    var text = "{}"
+    var pageIDs: [String] = []
+    var memoryIDs: Set<UUID> = []
+    var workspaceIDs: Set<UUID> = []
+    var referenceVersions: [String: String] = [:]
+    var validate: (Set<String>) -> Bool = { _ in true }
+    func current(ignoring: Set<String> = []) -> Bool { validate(ignoring) }
+}
+
 /// Read-only cursor presentation. Source searching remains inside the turn's tool
 /// session; the assistant retains its identity without constructing a Mail reader.
 @MainActor protocol AssistantMailCursor: AnyObject {
@@ -43,6 +55,9 @@ struct AssistantToolRequest {
     var consultedWorkspace: Set<UUID> { get }
     var suppliedWeatherScope:String? {get}
     var suppliedWhatsAppScope:WhatsAppSourceScope? {get}
+    var pageContextAvailable: Bool { get }
+    var consultedContextVersions: [String: String] { get }
+    func adoptContextChanges(_ keys: Set<String>)
     var receipts: [String] { get }
     var confirmedActionCount:Int {get}
     var pendingNativeActionCount:Int {get}
@@ -62,6 +77,11 @@ struct AssistantToolRequest {
     var deliveryAvailable: (AssistantTurn) -> Bool
     var tools: (AssistantToolRequest) -> any AssistantToolSession
     var afterTurn: () -> Void
+    var contextPages: (String, String?, UUID?, Bool, Bool) -> AssistantPageContext = { _,_,_,_,_ in .init() }
+    var pageKnowledgeAvailable: (String, [String: String]) -> Bool = { _,_ in true }
+    var ownedContextReferences: (String, Set<String>) -> Set<String> = { _, keys in keys }
+    /// Exact dependencies a supported memory mutation may retire, captured before it removes its lineage.
+    var memoryMutationReferences: (String, PAFunctionCall) -> Set<String> = { _, _ in [] }
     var started:(AssistantTurnOutcome)->Void = {_ in}
     var working:(AssistantTurnOutcome)->Void = {_ in}
     var finished:(AssistantTurnOutcome)->Void = {_ in}
@@ -89,6 +109,9 @@ struct ReviewActionExecution {
     var actionReceiptsReadable:Bool {true}
     var suppliedWeatherScope:String? {nil}
     var suppliedWhatsAppScope:WhatsAppSourceScope? {nil}
+    var pageContextAvailable: Bool { true }
+    var consultedContextVersions: [String: String] { [:] }
+    func adoptContextChanges(_ keys: Set<String>) {}
 }
 
 struct AssistantTurnOutcome {

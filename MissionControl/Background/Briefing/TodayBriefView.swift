@@ -97,7 +97,7 @@ private struct BriefPromptEdit:Identifiable {
     let id=UUID()
     var capture:BriefWritingPrompt
 }
-private struct BriefPromptEditor:View {
+struct BriefPromptEditor:View {
     @Bindable var model:DashboardModel
     @Bindable var briefings:BriefingService
     let capture:BriefWritingPrompt

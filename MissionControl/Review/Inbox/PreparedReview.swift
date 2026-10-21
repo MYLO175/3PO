@@ -71,6 +71,7 @@ struct PreparedReviewAccess {
         let owner=chatGPT.activeID,access=PreparedReviewAccess(self)
         let questions=briefings.preparedQuestions(self)
         let learning=(memoryLearning.state.questions ?? []).filter{memoryLearning.visible($0,assistant:assistant)}
+        let projectQuestions = visibleContextProjectQuestions()
         let discoveries=proactive.state.records.filter{!reviewDiscoveryCompleted($0) && proactive.preparedReviewAvailable($0,model:self,access:access)}.map(ProactiveRules.reviewProjection)
         let currentMessages=Dictionary(mailData.messages.map{($0.id,$0)},uniquingKeysWith:{first,_ in first})
         let saved:[(MailMessage,EmailSummary)]=emailSummaries.records.compactMap {summary in
@@ -99,8 +100,8 @@ struct PreparedReviewAccess {
         let history=saved.compactMap {message,summary in !cardIDs.contains(message.id) ? handled(summary).map{(message,summary,$0)} : nil}
         let resolutions=saved.compactMap {message,summary in !cardIDs.contains(message.id) ? resolved(summary).map{(message,summary,$0)} : nil}
         let pending=PAQueueRules.handoffs(assistant.queue.items,registration:owner)
-        let count=questions.count+learning.count+standalone.count+cards.count+pending.filter{$0.state == .needsAnswer || $0.state == .interrupted}.count
-        return .init(questions:questions,learningQuestions:learning,discoveries:discoveries,emails:emails,highlights:highlights,emailCards:cards,standaloneDiscoveries:standalone,handled:history,resolved:resolutions,pending:pending,pendingCount:count)
+        let count=questions.count+learning.count+projectQuestions.count+standalone.count+cards.count+pending.filter{$0.state == .needsAnswer || $0.state == .interrupted}.count
+        return .init(questions:questions,learningQuestions:learning,discoveries:discoveries,emails:emails,highlights:highlights,emailCards:cards,standaloneDiscoveries:standalone,handled:history,resolved:resolutions,pending:pending,pendingCount:count,contextQuestions:projectQuestions)
     }
 }
 

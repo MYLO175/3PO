@@ -36,6 +36,9 @@ struct ContextPage: Codable, Equatable, Identifiable, Sendable {
     var revision: UUID
     var created: Date
     var updated: Date
+    var evidenceQuotes: [ContextPageQuote]? = nil
+    /// Page-specific successful input coverage, separate from the support for its current prose.
+    var processedReferences: [ContextPageReference]? = nil
 
     init(registration: String, kind: Kind, key: String, owner: Owner, title: String,
          synopsis: String = "", markdown: String, references: [ContextPageReference] = [],
@@ -50,6 +53,12 @@ struct ContextPage: Codable, Equatable, Identifiable, Sendable {
         "context-page:" + ContextPageIdentity.component(registration) + ":" + ContextPageIdentity.component(kind.rawValue) + ":" + ContextPageIdentity.component(key)
     }
     var isSupported: Bool { kind.isSupported && owner.isSupported }
+}
+
+/// Exact bounded support retained separately from the readable page body.
+struct ContextPageQuote: Codable, Equatable, Sendable {
+    var referenceID: String
+    var quote: String
 }
 
 /// Exact canonical identity and version. No source bodies, inferred permission or authority.
@@ -88,7 +97,7 @@ struct ContextPageVersion: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
-/// Complete manifest acknowledged by a consolidation cycle, committed with its pages.
+/// Exact inputs processed by successful consolidation cycles, committed with their pages.
 /// This is local metadata and is never supplied wholesale as model context.
 struct ContextPageCheckpoint: Codable, Equatable, Identifiable, Sendable {
     let id: String
