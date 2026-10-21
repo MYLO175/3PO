@@ -150,7 +150,12 @@ extension DashboardModel {
         }
         runtime.contextPages = { [weak self] registration, query, topic, includeTopics, everyday in
             guard let self else { return .init() }
-            return self.captureContextPages(registration: registration, query: query, topic: topic, includeTopics: includeTopics, everyday: everyday)
+            let pages = self.captureContextPages(registration: registration, query: query, topic: topic, includeTopics: includeTopics, everyday: everyday)
+            guard !everyday else { return pages }
+            return pages.including(self.captureContextPages(registration: registration, query: nil, topic: topic, includeTopics: includeTopics, pageID: "instructions:review"), as: "reviewGuidance")
+        }
+        runtime.profileContextPages = { [weak self] registration, topic in
+            self?.captureContextPages(registration: registration, query: nil, topic: topic, includeTopics: false, everyday: true, purpose: .setup) ?? .init()
         }
         runtime.pageKnowledgeAvailable = { [weak self] registration, versions in
             guard let self else { return false }
