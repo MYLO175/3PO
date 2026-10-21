@@ -175,6 +175,12 @@ enum ContextPageFailure: LocalizedError, Equatable {
         case .staleCheckpoint: return "The consolidation checkpoint changed. Prepare it again before saving."
         case .missingVersion: return "That context-page version is unavailable."
         case .payloadTooLarge: return "The context-page payload exceeds its explicit size limit."
+        case .invalid("consolidation IDs"): return "The context update returned missing or unexpected page identities. Saved pages and pending changes are retained."
+        case .invalid("consolidation page"): return "The context update exceeded its text or evidence bounds. Saved pages and pending changes are retained."
+        case .invalid("consolidation evidence"): return "A context update quotation could not be verified against its exact supplied record. Saved pages and pending changes are retained."
+        case .invalid("project question"): return "The context update returned an unsupported project question. Saved pages and pending changes are retained."
+        case .invalid("changed supporting records"): return "Supporting context changed during the page update. Saved pages and pending changes are retained."
+        case .invalid("duplicate reference"): return "The context update repeated a supporting record. Saved pages and pending changes are retained."
         case .invalid: return "The context page contains invalid fields. No changes were saved."
         }
     }

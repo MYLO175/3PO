@@ -23,10 +23,11 @@ import EventKit
         let items = assistant.projects.items(registration, topic: topic, includeTopics: includeTopics)
         for item in items {
             // Navigation/reorder revisions alone do not require another synthesis.
-            let text = ContextKnowledgeRules.json(["id": item.id.uuidString, "kind": item.kind.workspaceKind.rawValue,
+            let canonical = ContextKnowledgeRules.json(["id": item.id.uuidString, "kind": item.kind.workspaceKind.rawValue,
                 "title": item.title, "notes": item.searchableNotes, "status": item.status.rawValue,
                 "due": item.due ?? "", "parent": item.parentID?.uuidString ?? "", "scope": item.conversationID?.uuidString ?? "shared"])
-            records.append(.init(reference: .init(kind: "project", key: item.id.uuidString, revision: ContextKnowledgeRules.fingerprint(text)),
+            let text = ContextKnowledgeRules.projectText(title:item.title,kind:item.kind.workspaceKind.rawValue,notes:item.searchableNotes,status:item.status.rawValue,due:item.due,parent:item.parentID?.uuidString,scope:item.conversationID?.uuidString ?? "shared")
+            records.append(.init(reference: .init(kind: "project", key: item.id.uuidString, revision: ContextKnowledgeRules.fingerprint(canonical)),
                                  title: item.title, text: text, date: item.updated, areas: item.areas, projectID: item.id))
             records.append(.init(reference: .init(kind: "projectIdentity", key: item.id.uuidString,
                                  revision: ContextKnowledgeRules.fingerprint(registration + ":" + item.id.uuidString + ":" + (item.conversationID?.uuidString ?? "shared"))),
@@ -84,8 +85,9 @@ import EventKit
             }.sorted { ($0.created ?? .distantPast) > ($1.created ?? .distantPast) }
             seen.removeAll()
             for turn in actions where seen.insert(turn.id).inserted {
-                let text = ContextKnowledgeRules.json(["confirmedActions": turn.actionResult!.confirmedActions, "receipts": turn.actionResult!.receipts] as [String: Any])
-                records.append(.init(reference: .init(kind: "action", key: turn.id.uuidString, revision: ContextKnowledgeRules.fingerprint(text)),
+                let canonical = ContextKnowledgeRules.json(["confirmedActions": turn.actionResult!.confirmedActions, "receipts": turn.actionResult!.receipts] as [String: Any])
+                let text = ContextKnowledgeRules.actionText(confirmed:turn.actionResult!.confirmedActions,receipts:turn.actionResult!.receipts)
+                records.append(.init(reference: .init(kind: "action", key: turn.id.uuidString, revision: ContextKnowledgeRules.fingerprint(canonical)),
                                      title: "Verified app action (historical outcome)", text: String(text.prefix(2000)), date: turn.created ?? .distantPast))
                 if seen.count >= 24 { break }
             }

@@ -36,7 +36,8 @@ import Observation
                 return lhs.date == rhs.date ? lhs.reference.contextKey < rhs.reference.contextKey : lhs.date < rhs.date
             }
             var bounded = Array(ordered.prefix(20))
-            var target = ContextPageTarget(registration: registration, kind: kind, key: key, title: String(title.prefix(60)), records: bounded,
+            let boundedTitle = ContextKnowledgeRules.bytePrefix(String(title.prefix(60)), maximumBytes: ContextPageLimits.maximumTitleBytes)
+            var target = ContextPageTarget(registration: registration, kind: kind, key: key, title: boundedTitle.isEmpty ? "Project context" : boundedTitle, records: bounded,
                 projectID: projectID, mayAskPurpose: mayAskPurpose, hasPendingChanges: candidates.contains(where: pending), processedReferences: processed)
             while ContextKnowledgeRules.json(target.input).utf8.count > 20_000 && bounded.count > 1 {
                 bounded.removeLast(); target.records = bounded

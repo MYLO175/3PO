@@ -44,9 +44,9 @@ import Foundation
         check(question[0].1?.hasSuffix("?") == true, "Useful exact-project purpose question can accompany a supported page")
         check(question[0].1 == "What are you aiming to achieve with Bridge optics?", "Saved question uses the human project title rather than source-influenced model wording")
         var noQuestion = target; noQuestion.mayAskPurpose = false
-        rejects("Unrequested generic question accepted") { _ = try ContextConsolidationRules.decode(output(question: "What is this project for?"), targets: [noQuestion]) }
-        rejects("Nonquestion accepted") { _ = try ContextConsolidationRules.decode(output(question: "Please approve a new task"), targets: [target]) }
-        rejects("Overlong question accepted") { _ = try ContextConsolidationRules.decode(output(question: String(repeating: "x", count: 301) + "?"), targets: [target]) }
+        check(try ContextConsolidationRules.decode(output(question: "What is this project for?"), targets: [noQuestion])[0].1 == nil, "An unrequested optional question is discarded while valid page context survives")
+        check(try ContextConsolidationRules.decode(output(question: "Please approve a new task"), targets: [target])[0].1 == nil, "A nonquestion cannot become a Review question")
+        check(try ContextConsolidationRules.decode(output(question: String(repeating: "x", count: 301) + "?"), targets: [target])[0].1 == nil, "An overlong optional question is discarded")
         check(ContextPage.stableID(registration: "other-owner", kind: .project, key: target.key) != target.id, "Same named project in another account is distinct")
         let long = String(repeating: "A🧑🏽‍🔬é", count: 3000)
         let first = ContextKnowledgeRules.excerpt(long, offset: 0, limit: 4000)
@@ -58,6 +58,33 @@ import Foundation
         check(!ContextKnowledgeRules.projectCandidate(mail, title: "Gardening", notes: ""), "Unrelated source never fills a project retrieval")
         check(!ContextKnowledgeRules.projectCandidate(mail, title: "The", notes: ""), "Generic short names cannot connect all source records")
         check(!ContextKnowledgeRules.matches("Aster Example", title: "Aster Example engineering", synopsis: "", key: "projects", selfLabel: "Aster Example"), "The owner's name alone never selects all their pages")
+        let fullRecords = (0..<20).map { index in
+            ContextKnowledgeRecord(reference: .init(kind: "memory", key: "capacity-\(index)", revision: "v1"), title: "Calibration sample", text: "Calibration sample \(index) has a distinct reference distance.", date: date)
+        }
+        let fullTargets = (0..<4).map { index in
+            ContextPageTarget(registration: "owner", kind: .project, key: "batch-\(index)", title: "Calibration project \(index)", records: fullRecords)
+        }
+        let fullRows: [[String:Any]] = fullTargets.map { value in
+            ["id":value.id,"synopsis":"Twenty supported calibration records","markdown":"The calibration project has twenty recorded reference samples.","purposeQuestion":NSNull(),
+             "evidence":fullRecords.map { ["id":$0.reference.contextKey,"quote":$0.text] }]
+        }
+        let fullBatch = try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":fullRows]), targets:fullTargets)
+        check(fullBatch.count == 4 && fullBatch.allSatisfy { $0.0.evidenceQuotes?.count == 20 && $0.0.references.count == 20 }, "A full four-page batch may cite every one of its twenty supplied records")
+        var overCapacity = fullRows
+        overCapacity[0]["evidence"] = fullRecords.map { ["id":$0.reference.contextKey,"quote":$0.text] } + [["id":fullRecords[0].reference.contextKey,"quote":fullRecords[0].text]]
+        rejects("An over-capacity evidence array was accepted") { _ = try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":overCapacity]),targets:fullTargets) }
+        let notes = "Compare the \"near-field\" method.\nKeep captures in C:\\Optics before deciding."
+        var readableProject = project
+        readableProject.text = ContextKnowledgeRules.projectText(title:"Bridge optics",kind:"space",notes:notes,status:"toDo",due:nil,parent:nil,scope:"shared")
+        var readableTarget = target; readableTarget.records = [readableProject]
+        let readableOutput = output(quotes:[["id":readableProject.reference.contextKey,"quote":notes]])
+        check(try ContextConsolidationRules.decode(readableOutput,targets:[readableTarget])[0].0.evidenceQuotes?.first?.quote == notes, "Readable project notes retain exact quotations, newlines and backslashes without an extra JSON-escaping layer")
+        let receipt = "Created task \"Capture optics\".\nNo experiment is verified complete."
+        check(ContextKnowledgeRules.actionText(confirmed:1,receipts:[receipt]).contains(receipt), "Verified action receipts retain their exact readable quotation")
+        let unicodeTitle = ContextKnowledgeRules.bytePrefix(String(repeating:"🧑🏽‍🔬",count:60),maximumBytes:ContextPageLimits.maximumTitleBytes)
+        check(!unicodeTitle.isEmpty && unicodeTitle.utf8.count <= ContextPageLimits.maximumTitleBytes, "Generated title projection respects storage bytes without splitting composed characters")
+        var unicodeRow = fullRows[0]; unicodeRow["synopsis"] = String(repeating:"研",count:300)
+        rejects("A synopsis that storage cannot save passed consolidation decoding") { _ = try ContextConsolidationRules.decode(ContextKnowledgeRules.json(["pages":[unicodeRow]]),targets:[fullTargets[0]]) }
         print("Context consolidation: \(passed) checks passed; fictional records, no model/source/native requests.")
     }
     static func unseenReference() -> ContextPageReference { .init(kind: "memory", key: "previously-processed", revision: "v1") }
