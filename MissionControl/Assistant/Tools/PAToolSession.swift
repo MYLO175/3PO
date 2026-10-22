@@ -180,6 +180,29 @@ import Foundation
         return .init(toolName:call.name,arguments:try json(args),snapshot:encoded,outline:outline,details:details)
     }
     private var memory:PAMemoryStore { evaluationMemory ?? model.assistant.memory }
+    /// Preparation only. External callers cannot invoke performApproval; that
+    /// entry point is reached only from the native UI's concrete Approve button.
+    func prepareMCPApproval(_ call: PAFunctionCall, requestID: UUID, valid: @escaping NativeWriteValidity) async throws -> AssistantActionProposal {
+        guard MCPBridgeContract.writes.contains(call.name), registration == model.chatGPT.activeID,
+              model.assistant.contextEnabled, valid() else { throw ActionFailure.message("External action preparation is unavailable.") }
+        let args = try PAToolProtocol.arguments(call)
+        let sources = call.name == "change_calendar" ? calendar.sources : reminders.sources
+        try PAToolProtocol.nativeReadPreflight(call.name, operation: args["operation"] as? String ?? "", hasSources: !sources.isEmpty, hasDetails: (args["target"] as? String).flatMap { itemDetails[$0] } != nil, target: args["target"] as? String)
+        let session = PAToolSession(model: model, human: MCPBridgeContract.approvalEvidence, humanContext: "Concrete external approval", topicID: nil, turnID: requestID)
+        session.calendar = calendar; session.reminders = reminders; session.itemDetails = itemDetails
+        var proposal = try await session.prepareApproval(call, args: args)
+        if let id = args["target"] as? String, let baseline = itemDetails[id] {
+            if baseline.kind == .event {
+                proposal.details.insert("Current event: " + baseline.start.formatted(date: .abbreviated, time: baseline.allDay ? .omitted : .shortened) + " – " + baseline.end.formatted(date: .abbreviated, time: baseline.allDay ? .omitted : .shortened), at: 0)
+            } else if let due = baseline.due {
+                proposal.details.insert("Current due date: " + due.formatted(date: .abbreviated, time: baseline.hasTime ? .shortened : .omitted), at: 0)
+            }
+        }
+        try Task.checkCancellation()
+        guard valid() else { throw ActionFailure.message("Source access changed while preparing the action. Nothing was submitted.") }
+        proposal.id = requestID
+        return proposal
+    }
     init(model: DashboardModel, human: String, humanContext: String, topicID: UUID?, turnID: UUID, mail: MailLookup? = nil, history: [[String:String]] = [], evaluationMemory:PAMemoryStore? = nil, evaluationProjects:LifeWorkspaceStore? = nil,focusAreas:[LifeArea]? = nil,inferenceModel:String? = nil) {
         self.evaluationMemory=evaluationMemory;self.evaluationProjects=evaluationProjects;self.focusAreas=focusAreas
         self.localMail = mail ?? MailLookup(); self.history = history

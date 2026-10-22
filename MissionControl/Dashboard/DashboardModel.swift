@@ -126,6 +126,7 @@ struct CalendarRemovalReviewSession:Identifiable {
     private(set) var storageOwnershipBlocked = false
     @ObservationIgnored private var personalStorageLease: LocalRecordFileLease?
     @ObservationIgnored private lazy var services = ApplicationServices(container: container, nativeSources: injectedNativeSources)
+    @ObservationIgnored lazy var mcpBridge = MCPBridgeService(model: self)
     var weather: WeatherService { get { services.weather } set { services.weather = newValue } }
     var chatGPT: ChatGPTConnection { services.chatGPT }
     var aiUsage: AIUsageStore { get { services.aiUsage } set { services.aiUsage = newValue } }
@@ -446,6 +447,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         #endif
         if !sample { whatsapp.resumeAtLaunch() }
         if sample { loadSample(); return }
+        mcpBridge.resume()
         weather.startRefresh(allowPrompt:true)
         observers.append(NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
