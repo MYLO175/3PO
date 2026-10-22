@@ -21,12 +21,24 @@ struct ContextPagesView: View {
     @State private var showingSupportingFacts = false
     private let initialProjectID: UUID?
 
-    init(model: DashboardModel, registration: String? = nil, projectID: UUID? = nil, feature: ContextFeature? = nil) {
+    init(model: DashboardModel, registration: String? = nil, projectID: UUID? = nil, feature: ContextFeature? = nil, pageID: String? = nil) {
         self.model = model
-        self.registration = registration ?? model.chatGPT.activeID
+        let registration = registration ?? model.chatGPT.activeID
+        self.registration = registration
         storage = model.container.map(ObjectIdentifier.init)
-        initialProjectID = projectID
-        _selection = State(initialValue: feature.map { .feature($0) } ?? projectID.map { .project($0) } ?? .overview)
+        let page = pageID.flatMap { id in model.contextPages.pages(registration: registration).first { $0.id == id } }
+        let project = projectID ?? (page?.kind == .project ? page.flatMap { UUID(uuidString: $0.key) } : nil)
+        initialProjectID = project
+        var destination: ContextPageDestination = feature.map { .feature($0) } ?? project.map { .project($0) } ?? .overview
+        if let pageID {
+            if let route = ContextInstructionRoute.all.first(where: { $0.id == pageID }) {
+                destination = switch route { case .feature(let feature): .feature(feature); case .brief: .brief; case .review: .review; case .calendars: .calendars }
+            } else if pageID.hasPrefix("area:"), let topic = ContextTopicRoute.named(String(pageID.dropFirst(5))) {
+                let current = model.contextPages.pages(registration: registration).first { $0.kind == .topic && $0.key == topic.key }
+                destination = current.map { .page($0.id) } ?? .area(topic.key)
+            } else if project == nil { destination = .page(pageID) }
+        }
+        _selection = State(initialValue: destination)
     }
     private var owned: Bool { ContextPagesAccess.owned(model, registration: registration, storage: storage) }
     /// A direct project link can inspect its exact earlier topic, without opening every old topic.

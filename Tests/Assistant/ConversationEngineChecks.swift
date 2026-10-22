@@ -15,6 +15,20 @@ import Foundation
         var deltas: [String] = [], receipts: [String] = [], replayed = false
         var oldDelta: ((String) -> Void)?
         let engine = PAConversationEngine()
+        var fullChecks=0,lightChecks=0,displayed=0
+        _ = try await engine.run(base:base,valid:{fullChecks += 1;return true},receipts:{[]},streamingAllowed:{lightChecks += 1;return true},infer:{_,delta in
+            for _ in 0..<500 {delta("word ")}
+            return .init(text:"Authoritative completed reply",output:[],calls:[])
+        },execute:{_ in check(false);return .stopped},progress:{_ in},partial:{_ in displayed += 1},toolRound:{},attempted:{_ in},toolFinished:{})
+        check(fullChecks == 2 && lightChecks == 500 && displayed == 500)
+        var streamAccess=true,afterRevocation=0
+        do {
+            _ = try await engine.run(base:base,valid:{true},receipts:{[]},streamingAllowed:{streamAccess},infer:{_,delta in
+                delta("Visible");streamAccess=false;delta("Hidden");streamAccess=true;delta("Still hidden")
+                return tools(call("must-not-run"))
+            },execute:{_ in afterRevocation += 1;return .stopped},progress:{_ in},partial:{_ in},toolRound:{},attempted:{_ in},toolFinished:{})
+            check(false)
+        } catch {check(afterRevocation == 0)}
         let result = try await engine.run(base: base, valid: { true }, receipts: { receipts }, infer: { input, delta in
             requested += 1
             if requested == 1 { oldDelta = delta; delta("Provisional"); return tools(call("first")) }

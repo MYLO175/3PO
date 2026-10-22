@@ -17,6 +17,7 @@ enum PAEngineResult {
 
     func run(base: [[String: Any]], allowedTools: Set<String>? = nil,
              valid: @escaping () -> Bool, invalidationReason: () -> String = {"the request context changed"}, receipts: () -> [String],
+             streamingAllowed: @escaping () -> Bool = { true },
              infer: Inference, execute: Execution,
              progress: (String) -> Void, partial: @escaping (String) -> Void,
              toolRound: () -> Void, attempted: (PAFunctionCall) -> Void,
@@ -30,10 +31,14 @@ enum PAEngineResult {
             firstRound = false
             var text = ""
             var acceptingDeltas = true
+            var streamingRevoked = false
             let response: PAResponse
             do {
                 response = try await infer(input) { delta in
-                    guard acceptingDeltas, !Task.isCancelled, valid() else { return }
+                    guard acceptingDeltas, !Task.isCancelled, !streamingRevoked else { return }
+                    // Provisional display checks ownership/access only. Full evidence
+                    // validation runs at inference and tool boundaries, not per word.
+                    guard streamingAllowed() else { streamingRevoked = true; return }
                     text += delta; partial(text)
                 }
                 acceptingDeltas = false
@@ -42,6 +47,7 @@ enum PAEngineResult {
                 throw error
             }
             try Task.checkCancellation()
+            guard !streamingRevoked else { throw ActionFailure.message("The reply stopped because its account, storage or source access changed. No new tool executed.") }
             guard valid() else { throw ActionFailure.message("The request stopped because \(invalidationReason()). No new tool executed.") }
             if response.calls.isEmpty { return .completed(response.text) }
             var items = response.output, results: [[String: Any]] = [], successes = 0

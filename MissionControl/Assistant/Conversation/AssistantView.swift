@@ -310,6 +310,11 @@ struct AssistantPanel: View {
                                 if replyingHere && !turn.content.isEmpty {
                                     Text(assistant.toolStatus.isEmpty ? "Thinking…" : assistant.toolStatus).font(.caption).foregroundStyle(.secondary)
                                 }
+                                if turn.role == "assistant", turn.contextCapture != nil, !replyingHere {
+                                    Button { inspectContext(turn) } label: { Label("Sources & searches", systemImage: "magnifyingglass") }
+                                        .buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
+                                        .accessibilityIdentifier("pa-sources-searches-" + turn.id.uuidString)
+                                }
                                 if turn.deliveryID?.contains(":morning:") == true { Button("Briefing and sources") { showBriefing = true }.controlSize(.small) }
                                 if let delivery = turn.deliveryID, let record = model.proactive.record(delivery:delivery,model:model) {
                                     ViewThatFits(in:.horizontal) {

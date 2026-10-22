@@ -1,4 +1,5 @@
 import Foundation
+import EventKit
 
 extension MailLookup: AssistantMailCursor { }
 
@@ -105,6 +106,52 @@ extension AssistantService {
 }
 
 extension DashboardModel {
+    /// A local permission fingerprint for inspecting historical search terms.
+    /// No source bodies, inference or evidence reconstruction is performed here.
+    func assistantLookupAccess(_ tool: String) -> String? {
+        guard AssistantLookupTrace.names.contains(tool) else { return nil }
+        var value: [String: Any] = ["registration": chatGPT.activeID, "storage": reviewStorageIdentity]
+        func whatsappAccess() -> [String: Any] {
+            let access = whatsapp.access(for: chatGPT.activeID)
+            return ["enabled": access.enabled, "chats": access.chats.sorted(), "identity": whatsapp.linkedIdentity]
+        }
+        switch tool {
+        case "read_memory", "read_life_notebook", "read_context_page":
+            guard assistant.memory.enabled else { return nil }
+            value["memory"] = true
+            value["calendars"] = assistant.excludedCalendars.sorted(); value["lists"] = assistant.excludedLists.sorted(); value["mail"] = assistant.excludedAccounts.sorted()
+            value["sourceEnabled"] = assistant.contextEnabled
+            value["whatsapp"] = whatsappAccess()
+            let learning = learningRuntime()
+            value["nativeLearningAccess"] = Dictionary(uniqueKeysWithValues: [MemorySourceKind.calendar, .reminder, .mail].map { ($0.rawValue, nativeSourceLearning.permittedKind($0, model: learning)) })
+            value["emailReviewAccess"] = emailSummaries.enabled
+            value["whatsappLearningAccess"] = learning.whatsappLearningAccess.learnContext == true
+            value["calendarAuthorisation"] = EKEventStore.authorizationStatus(for: .event).rawValue
+            value["reminderAuthorisation"] = EKEventStore.authorizationStatus(for: .reminder).rawValue
+        case "read_life_items", "read_assistant_context": break
+        case "search_mail", "continue_mail", "read_email":
+            guard assistant.contextEnabled else { return nil }
+            value["excluded"] = assistant.excludedAccounts.sorted(); value["accounts"] = mailData.accounts.map(\.id).sorted()
+        case "read_calendar", "read_reminders", "read_item_details":
+            guard assistant.contextEnabled else { return nil }
+            value["calendars"] = assistant.excludedCalendars.sorted(); value["lists"] = assistant.excludedLists.sorted()
+            value["calendarSources"] = calendarData.sources.map(\.id).sorted(); value["reminderSources"] = reminderData.sources.map(\.id).sorted()
+            value["calendarAuthorisation"] = EKEventStore.authorizationStatus(for: .event).rawValue
+            value["reminderAuthorisation"] = EKEventStore.authorizationStatus(for: .reminder).rawValue
+        case "search_whatsapp", "list_whatsapp_chats":
+            guard assistant.contextEnabled, whatsapp.access(for: chatGPT.activeID).enabled else { return nil }
+            value["whatsapp"] = whatsappAccess()
+        case "read_weather":
+            guard assistant.contextEnabled, weather.enabled, weather.allowed else { return nil }
+            value["weather"] = true
+        default:
+            guard assistant.contextEnabled else { return nil }
+            value["sourceControls"] = assistant.contextEnabled
+            value["mail"] = assistant.excludedAccounts.sorted(); value["calendars"] = assistant.excludedCalendars.sorted(); value["lists"] = assistant.excludedLists.sorted()
+            value["whatsapp"] = whatsappAccess()
+        }
+        return ContextKnowledgeRules.fingerprint(ContextKnowledgeRules.json(value))
+    }
     /// Only a submitted foreground instruction takes priority. Editing or
     /// revealing a saved draft never calls this handover.
     func foregroundSendStarted(interruptReview:Bool=true) {
@@ -115,6 +162,7 @@ extension DashboardModel {
     /// Desktop composition only. A foreground turn consumes snapshots and typed
     /// tools; it never receives the dashboard itself.
     func assistantRuntime() -> AssistantRuntime {
+        let capturedContainer = container
         var runtime=AssistantRuntime(clock: { .now }, state: { [weak self] in
             guard let self else { return nil }
             return nativeLearningValidation.withSnapshot { [self] in
@@ -144,6 +192,12 @@ extension DashboardModel {
             guard let self else { return }
             if !reviewWork.busy {projectPlacement.check(self)}
         },started:{ [weak self] in self?.assistantActivityStarted($0) },working:{ [weak self] in self?.assistantActivityStarted($0) },finished:{ [weak self] in self?.assistantActivityFinished($0) })
+        runtime.streamingState = { [weak self] in
+            guard let self else { return nil }
+            return .init(storageCurrent: self.container === capturedContainer,
+                         whatsappScope: self.whatsapp.scope(for: self.chatGPT.activeID, purpose: .conversation), weatherScope: self.weather.scope)
+        }
+        runtime.lookupAccess = { [weak self] in self?.assistantLookupAccess($0) }
         runtime.withValidation={ [weak self] decision in
             guard let self else {return false}
             return self.nativeLearningValidation.withSnapshot(decision)

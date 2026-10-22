@@ -13,6 +13,7 @@ import Observation
     private var failedBodies: Set<String> = []
     var hasUnavailable: Bool { !failedFolders.isEmpty || !failedBodies.isEmpty }
     private var terms: [String] = []
+    var searchTerms: [String] { terms }
     private var registration = ""
     private var exclusions: Set<String> = []
     private var sentIDs: Set<String> = []

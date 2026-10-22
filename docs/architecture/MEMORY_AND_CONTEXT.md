@@ -88,9 +88,9 @@ Open **Context → Supporting facts and controls** for the original record inspe
 - **Review** offers possible duplicates, conflicts and retirement candidates with their exact saved facts/evidence. Review now is explicit; weekly background review is optional/off by default. A changed fact invalidates its proposal. Inspect/correct duplicates or conflicts; retirement is a separate reversible human choice. Dismissal supports Undo.
 - **Controls** contains the memory-use, human-conversation learning, optional question and existing-fact organisation controls. Source learning may inherit current review permission or use its explicit source opt-in; global memory controls, selected sources and new-scope baselines still apply.
 
-New foreground replies offer **Context details**. It records the IDs of the initial saved-fact selection, additional memory-tool reads, supplied context-page IDs, bounded dialogue/excerpt counts, workspace IDs, model, captured Focus and whether a cached source snapshot was prepared. Tool names mean attempted tools; verified changes are shown in their existing receipts. This trace explains prepared inputs, not model attention or reasoning. Older replies have no invented trace.
+Foreground replies offer **Sources & searches**, alongside **Context details** in the reply menu. It records initial selection IDs, memory-tool reads, page IDs, dialogue/excerpt counts, workspace IDs, model, Focus and whether a cached source snapshot was prepared. New replies additionally save bounded lookup terms, date/folder filters, returned page IDs/counts and lookup outcomes. Tool names mean attempts; verified changes remain in their existing receipts. This explains prepared inputs and actual lookups, not model attention or reasoning. Older replies have no invented search history.
 
-The trace stores no extra copy of memory prose, source bodies, prompts, tool arguments, credentials or model reasoning. Inspecting a saved ID shows the fact as it exists now: it may have been corrected, become unavailable or been forgotten since that reply. It is not a historical plaintext prompt export or an exhaustive tool-result audit.
+The trace stores a bounded retrieval question and allowlisted lookup terms/filters, plus identities/counts. It copies no source bodies, memory prose, full prompts/tool arguments, action authorisation, credentials or model reasoning. Current account/source choices gate query inspection; content updates alone do not erase historical lookup metadata. Inspecting an ID opens its current permitted version, which may have changed or become unavailable. A trace holds at most32 lookup rows/16KB, with an omitted count, without capping tool execution or removing operation identities.
 
 ## Feedback about what deserves review
 
@@ -117,7 +117,7 @@ The interpretation stores header and exact identity/version receipts, not the em
 | Notebook / map | `LifeNotebook` plus canonical workspace-anchor projection | Derived usable facts and exact workspace identities. It is rebuilt locally, not another independently editable memory database. |
 | Context pages | Versioned `ContextPage` Markdown, exact supporting references and per-page progress | Human writing and generated projections have separate ownership. A page cannot override canonical evidence, permissions or action receipts. |
 | Working context | Request-local selection, notebook notes, relevant context pages and pending changes, dialogue, preferences, cached snapshot and tool results | Bounded information for one request; ownership is captured before inference and checked before outputs/actions. |
-| Reply trace | Optional `AssistantTurn.contextCapture` | IDs/counts for inspection; separate from source-dependency guards and action receipts. |
+| Reply trace | Optional `AssistantTurn.contextCapture` | Bounded lookup terms/filters and returned IDs/counts for inspection; separate from source-dependency guards and action receipts. |
 
 ```mermaid
 flowchart TD

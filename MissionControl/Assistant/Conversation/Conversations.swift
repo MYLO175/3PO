@@ -55,6 +55,80 @@ struct AssistantActionProposal:Codable,Equatable,Identifiable {
     var approvedAt:Date? = nil
 }
 struct PAChatApprovalRequired:Error {var proposal:AssistantActionProposal;var stopInference=false}
+
+/// Bounded lookup metadata, separate from reasoning, source bodies and action receipts.
+struct AssistantLookupTrace: Codable, Equatable, Identifiable {
+    var id = UUID()
+    var tool: String
+    var query: String?
+    var filters: [String] = []
+    var targetID: String?
+    var accessFingerprint: String?
+    var status = "running"
+    var resultCount: Int?
+    var pageIDs: [String]?
+    static func queryExcerpt(_ text: String) -> String { ConversationRules.utf8Prefix(text, bytes: 400) + (text.utf8.count > 400 ? "…" : "") }
+
+    static let names: Set<String> = ["read_assistant_context", "read_context_page", "read_memory", "read_life_notebook", "read_life_items", "read_calendar", "read_reminders", "read_item_details", "search_mail", "continue_mail", "read_email", "list_whatsapp_chats", "search_whatsapp", "read_weather", "read_attention"]
+    var title: String {
+        switch tool {
+        case "read_assistant_context": return "Assistant tools"
+        case "read_context_page": return "Context pages"
+        case "read_memory": return "Supporting facts"
+        case "read_life_notebook": return "Life context"
+        case "read_life_items": return "Projects"
+        case "read_calendar": return "Calendar"
+        case "read_reminders": return "Reminders"
+        case "read_item_details": return "Item details"
+        case "search_mail": return "Email search"
+        case "continue_mail": return "Email search continued"
+        case "read_email": return "Email opened"
+        case "list_whatsapp_chats": return "Selected WhatsApp chats"
+        case "search_whatsapp": return "WhatsApp search"
+        case "read_weather": return "Weather"
+        case "read_attention": return "Brief and Review inbox"
+        default: return "Lookup"
+        }
+    }
+    static func request(tool: String, namespace: String?, arguments: String, access: String?) -> Self? {
+        guard namespace == "pa", names.contains(tool), arguments.utf8.count <= 32_000,
+              let args = try? JSONSerialization.jsonObject(with: Data(arguments.utf8)) as? [String: Any] else { return nil }
+        let query = (args["terms"] as? [String]).map { $0.prefix(5).joined(separator: ", ") } ?? args["query"] as? String
+        var value = Self(tool: tool, query: query.map(queryExcerpt), accessFingerprint: access)
+        if let start = args["start"] as? String, let end = args["end"] as? String { value.filters.append(String(start.prefix(24)) + " → " + String(end.prefix(24)) + " (end excluded)") }
+        if let folders = args["folders"] as? [String] { value.filters.append(folders.filter { ["inbox", "sent", "archive"].contains($0) }.joined(separator: ", ")) }
+        if tool == "read_reminders" { value.filters.append("Incomplete reminders") }
+        if tool == "read_life_items", args["unfinished"] as? Bool == true { value.filters.append("Unfinished work") }
+        if tool == "read_context_page", let offset = args["offset"] as? String, offset != "0" { value.filters.append("Page continuation") }
+        if ["read_context_page", "read_life_items"].contains(tool), let target = (args["id"] ?? args["root"]) as? String { value.targetID = String(target.prefix(180)) }
+        if tool == "search_whatsapp" {
+            if let chat = args["chat"] as? String { value.targetID = String(chat.prefix(180)) }
+            else { value.filters.append("All selected chats") }
+        }
+        return value
+    }
+    mutating func finish(output: String, succeeded: Bool) {
+        status = succeeded ? "completed" : "failed"
+        guard succeeded, let object = try? JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any] else { return }
+        if object["available"] as? Bool == false || object["unavailable"] != nil { status = "unavailable"; return }
+        let key: String? = switch tool {
+        case "read_context_page": "pages"
+        case "read_memory", "read_life_notebook": "records"
+        case "read_life_items": "items"
+        case "read_calendar": "events"
+        case "read_reminders": "reminders"
+        case "search_mail", "continue_mail": "sources"
+        case "list_whatsapp_chats": "chats"
+        case "search_whatsapp": "messages"
+        default: nil
+        }
+        if let key, let rows = object[key] as? [Any] { resultCount = rows.count }
+        if tool == "read_context_page" {
+            pageIDs = Array((object["pages"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }.filter { $0.utf8.count <= 180 }.prefix(12))
+            if object["instructions"] != nil || object["currentProject"] != nil { resultCount = (resultCount ?? 0) + 1 }
+        }
+    }
+}
 struct PAContextCapture: Codable, Equatable, Identifiable {
     var id = UUID()
     var captured = Date.now
@@ -81,6 +155,22 @@ struct PAContextCapture: Codable, Equatable, Identifiable {
     var contextGuideFingerprint: String? = nil
     var contextGuideBytes: Int? = nil
     var requestMode: String? = nil
+    var registration: String? = nil
+    var retrievalQuery: String? = nil
+    var retrievalAccess: String? = nil
+    var lookups: [AssistantLookupTrace]? = nil
+    var omittedLookups: Int? = nil
+    mutating func appendLookup(_ lookup: AssistantLookupTrace) {
+        var rows = lookups ?? []; rows.append(lookup)
+        lookups = rows; boundLookups()
+    }
+    mutating func boundLookups() {
+        var rows = lookups ?? []
+        while !rows.isEmpty && (rows.count > 32 || ((try? JSONEncoder().encode(rows).count) ?? Int.max) > 16_000) {
+            rows.removeFirst(); omittedLookups = (omittedLookups ?? 0) + 1
+        }
+        lookups = rows
+    }
     static func notebookIDs(_ context:String)->(memories:[UUID],workspace:[String]) {
         let object=(try? JSONSerialization.jsonObject(with:Data(context.utf8))) as? [String:Any] ?? [:]
         let areas=object["areas"] as? [[String:Any]] ?? []

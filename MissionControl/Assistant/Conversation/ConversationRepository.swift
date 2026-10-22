@@ -162,7 +162,12 @@ enum ConversationStorageFailure: LocalizedError {
     private static func encodedTurn(_ turn: AssistantTurn, old: [String: Any]?) throws -> [String: Any] {
         var row = preservingUnknown(try object(JSONEncoder().encode(turn)), old: old, known: keys(turn))
         if let capture = turn.contextCapture, let new = row["contextCapture"] as? [String: Any], let previous = old?["contextCapture"] as? [String: Any], sameID(new, previous) {
-            row["contextCapture"] = preservingUnknown(new, old: previous, known: keys(capture))
+            var merged = preservingUnknown(new, old: previous, known: keys(capture))
+            if let lookups = capture.lookups, let values = new["lookups"] as? [[String: Any]] {
+                let priorLookups = previous["lookups"] as? [[String: Any]] ?? []
+                merged["lookups"] = zip(lookups, values).map { lookup, value in preservingUnknown(value, old: priorLookups.first { sameID(value, $0) }, known: keys(lookup)) }
+            }
+            row["contextCapture"] = merged
         }
         if let images = turn.images, let values = row["images"] as? [[String: Any]] {
             let previous = old?["images"] as? [[String: Any]] ?? []

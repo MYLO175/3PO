@@ -573,6 +573,9 @@ import Observation
         let capturedSourceMemoryIDs=Set(memory.permittedRecords.filter{suppliedMemoryIDs.contains($0.id) && $0.source != nil && MemoryRules.usable($0,registration:registration,now:runtime.clock())}.map(\.id)).union(replayTurns.flatMap{$0.sourceMemoryIDs ?? []})
         var capture=PAContextCapture(captured:runtime.clock(),model:selectedModel,focusAreas:lifeFocus,memoryIDs:Array(Set(selection.records.compactMap{$0["id"].flatMap(UUID.init(uuidString:))}).union(pageContext.memoryIDs)).sorted{$0.uuidString < $1.uuidString},eligibleMemoryCount:selection.eligibleCount,notebookMemoryIDs:notebookIDs.memories,workspaceIDs:Array(Set(notebookIDs.workspace).union(pageContext.workspaceIDs.map{$0.uuidString})).sorted(),historyTurnIDs:replayTurns.map(\.id),excerptedHistoryIDs:replayTurns.filter{turn in permittedHistory.first(where:{$0.id == turn.id})?.content != turn.content}.map(\.id),sourceSnapshotIncluded:sourceEnabled && !setupMode && context != nil,sourceSnapshotBytes:sourceEnabled && !setupMode ? context?.utf8.count ?? 0 : 0,profileSetup:setupMode,sourceMemoryDependencyVersion:1,selectionPurpose:workingContext.purpose.rawValue,sourceHints:workingContext.sourceHints,usedFollowupContext:workingContext.usedFollowup,contextPageIDs:pageContext.pageIDs,contextGuideFingerprint:pageContext.guideFingerprint,contextGuideBytes:pageContext.guideText.isEmpty ? nil : pageContext.guideText.utf8.count)
         capture.requestMode = greeting ? "greeting" : nil
+        capture.registration = registration
+        capture.retrievalQuery = PAWorkingContext.retrievalQuestion(recallQuery, previousHuman: replayTurns.last(where: { $0.role == "user" && $0.id != currentUserID })?.content).query.map(AssistantLookupTrace.queryExcerpt)
+        capture.retrievalAccess = runtime.lookupAccess("read_context_page")
         if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) { allConversations[c].turns[t].contextCapture=capture;save() }
         let reviewValid=reviewValidity, submitted=reviewSubmitted
         let stableInstructions = """
@@ -617,6 +620,23 @@ import Observation
         var reviewConfirmed:[String:String]=[:]
         @MainActor func confirmedReceipts()->[String] {session.receipts+reviewConfirmed.keys.sorted().compactMap{reviewConfirmed[$0]}}
         var attemptedToolNames:[String]=[]
+        var lookupIDs: [String: UUID] = [:]
+        @MainActor func finishLookup(_ call: PAFunctionCall, output: String, succeeded: Bool) {
+            guard let lookupID = lookupIDs[call.id], let c = allConversations.firstIndex(where: { $0.id == id }),
+                  let t = allConversations[c].turns.firstIndex(where: { $0.id == response.id }),
+                  let row = allConversations[c].turns[t].contextCapture?.lookups?.firstIndex(where: { $0.id == lookupID }) else { return }
+            allConversations[c].turns[t].contextCapture?.lookups?[row].finish(output: output, succeeded: succeeded)
+            if call.name == "continue_mail", !session.mailCursor.searchTerms.isEmpty {
+                allConversations[c].turns[t].contextCapture?.lookups?[row].query = AssistantLookupTrace.queryExcerpt(session.mailCursor.searchTerms.prefix(5).joined(separator: ", "))
+            }
+            allConversations[c].turns[t].contextCapture?.boundLookups()
+        }
+        @MainActor func startLookup(_ call: PAFunctionCall) {
+            guard let lookup = AssistantLookupTrace.request(tool: call.name, namespace: call.namespace, arguments: call.arguments, access: runtime.lookupAccess(call.name)),
+                  let c = allConversations.firstIndex(where: { $0.id == id }), let t = allConversations[c].turns.firstIndex(where: { $0.id == response.id }) else { return }
+            lookupIDs[call.id] = lookup.id
+            allConversations[c].turns[t].contextCapture?.appendLookup(lookup)
+        }
         @MainActor func currentBeliefs(_ ids:Set<UUID>) -> [UUID:String] {
             Dictionary(uniqueKeysWithValues: memory.permittedRecords.filter { ids.contains($0.id) && MemoryRules.usable($0,registration:registration,now:runtime.clock()) }.map { ($0.id,MemoryDependencyRules.fingerprint(MemoryRetrieval.record($0))) })
         }
@@ -643,6 +663,9 @@ import Observation
         #endif
         task = Task {
             defer {
+                if let c = allConversations.firstIndex(where: { $0.id == id }), let t = allConversations[c].turns.firstIndex(where: { $0.id == response.id }), let rows = allConversations[c].turns[t].contextCapture?.lookups {
+                    for index in rows.indices where rows[index].status == "running" { allConversations[c].turns[t].contextCapture?.lookups?[index].status = Task.isCancelled ? "stopped" : "failed" }
+                }
                 if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) { allConversations[c].turns[t].contextCapture?.consultedMemoryIDs=session.consultedMemory.sorted{$0.uuidString < $1.uuidString} }
                 let final=allConversations.first(where:{$0.id == id})?.turns.first(where:{$0.id == response.id})
                 let unresolved=final?.unresolvedToolErrors ?? []
@@ -708,6 +731,19 @@ import Observation
                 }
             }
             @MainActor func valid() -> Bool { validOwnership() }
+            @MainActor func streamingAllowed() -> Bool {
+                guard busy, requestConversationID == id, requestTurnID == response.id,
+                      registration == connection.activeID, memoryControls == memory.useRevision,
+                      (!sourceEnabled || contextEnabled), calendars.isSuperset(of: excludedCalendars),
+                      lists.isSuperset(of: excludedLists), accounts.isSuperset(of: excludedAccounts),
+                      !setupMode || (setupActive(contextID) && profileSession(contextID) == response.profileSessionID) else { return false }
+                if let state = runtime.streamingState {
+                    guard let current = state(), current.storageCurrent,
+                          expectedWeather.map({ $0 == current.weatherScope }) ?? true,
+                          expectedWhatsApp.map({ $0 == current.whatsappScope }) ?? true else { return false }
+                }
+                return true
+            }
             @MainActor func setResponse(_ text: String, completed: Bool) {
                 if let c = allConversations.firstIndex(where:{ $0.id == id }), let t = allConversations[c].turns.firstIndex(where:{ $0.id == response.id }) {
                     var turn=allConversations[c].turns[t]
@@ -758,10 +794,11 @@ import Observation
                         notes.append(requirement.reason)
                         allConversations[c].turns[t].contextCapture?.preparationNotes=Array(notes.suffix(6))
                     }
-                    do {_=try await session.execute(read,valid:validOwnership)}
-                    catch is CancellationError {throw CancellationError()}
-                    catch let failure as PAIntentFailure {throw failure}
-                    catch {throw PAReadPreparationFailure(readTool:read.name,reason:error.localizedDescription)}
+                    startLookup(read)
+                    do { let output = try await session.execute(read,valid:validOwnership); finishLookup(read, output: output, succeeded: true) }
+                    catch is CancellationError { finishLookup(read, output: "{}", succeeded: false); throw CancellationError() }
+                    catch let failure as PAIntentFailure { finishLookup(read, output: "{}", succeeded: false); throw failure }
+                    catch { finishLookup(read, output: "{}", succeeded: false); throw PAReadPreparationFailure(readTool:read.name,reason:error.localizedDescription) }
                     try Task.checkCancellation()
                     guard valid() else {throw ActionFailure.message("Configuration changed during source preparation; no operation executed.")}
                     guard requirement.satisfied(calendar:session.calendar,reminders:session.reminders,itemDetailIDs:Set(session.itemDetails.keys)) else {
@@ -785,6 +822,7 @@ import Observation
                 let result = try await engine.run(
                     base: base, allowedTools: setupMode ? PAProfileSetup.allowedTools : nil,
                     valid: valid, invalidationReason: {invalidationReason}, receipts: { confirmedReceipts() },
+                    streamingAllowed: streamingAllowed,
                     infer: { input, delta in
                         compactRound = !expanded
                         let tools=setupMode ? PAProfileSetup.tools : isReviewTurn && prepareReviewActions != nil ? ReviewPlanTools.tools : PAToolProtocol.tools
@@ -793,6 +831,7 @@ import Observation
                         if compactRound {
                             guard !expanded, AssistantGreetingRequest.accepts(call) else { throw ActionFailure.message("The greeting request returned an unavailable tool; no action executed.") }
                             expanded = true
+                            finishLookup(call, output: "{}", succeeded: true)
                             return .output("{\"available\":true,\"instruction\":\"The normal assistant policies and tools are now supplied. Continue the same human request using those policies; no action has been taken.\"}", succeeded: true)
                         }
                         var succeeded = false
@@ -940,11 +979,13 @@ import Observation
                             if let requirement=error as? PAReadPrerequisite {failure["stage"]="read_prerequisite";failure["nativeSaveAttempted"]=false;failure["requiredRead"]=requirement.readTool}
                             if let preparation=error as? PAReadPreparationFailure {failure["stage"]="read_preparation";failure["nativeSaveAttempted"]=false;failure["requiredRead"]=preparation.readTool}
                             output = String(data:try JSONSerialization.data(withJSONObject:failure),encoding:.utf8)! }
+                        finishLookup(call, output: output, succeeded: succeeded)
                         return .output(output, succeeded: succeeded)
                     }, progress: { self.toolStatus = $0 },
                     partial: { if !setupMode { setResponse($0,completed:false) } },
                     toolRound: { setResponse(confirmedReceipts().joined(separator:"\n"),completed:false) },
                     attempted: { call in
+                        startLookup(call)
                         if !attemptedToolNames.contains(call.name) {attemptedToolNames.append(call.name)}
                         if let c=allConversations.firstIndex(where:{$0.id == id}),let t=allConversations[c].turns.firstIndex(where:{$0.id == response.id}) {
                             var names=allConversations[c].turns[t].contextCapture?.attemptedTools ?? []

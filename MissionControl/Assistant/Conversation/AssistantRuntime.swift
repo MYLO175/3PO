@@ -65,6 +65,14 @@ struct AssistantRuntimeState {
     var weatherSupplied:Bool = true
 }
 
+/// Permission/ownership metadata only; reading this must never project sources,
+/// memory, context pages, historical receipts or native items.
+struct AssistantStreamingState {
+    var storageCurrent: Bool
+    var whatsappScope: WhatsAppSourceScope
+    var weatherScope: String
+}
+
 struct AssistantToolRequest {
     var registration: String
     var human: String
@@ -111,7 +119,9 @@ struct AssistantToolRequest {
     var results: [MailMessage] { get }
     var hasMore: Bool { get }
     var hasUnavailable: Bool { get }
+    var searchTerms: [String] { get }
 }
+extension AssistantMailCursor { var searchTerms: [String] { [] } }
 
 /// A session owns exact issued IDs, bounded source cursors and durable receipts
 /// for one turn. Production execution and fictional execution use the same boundary.
@@ -145,6 +155,9 @@ struct AssistantToolRequest {
     var deliveryAvailable: (AssistantTurn) -> Bool
     var tools: (AssistantToolRequest) -> any AssistantToolSession
     var afterTurn: () -> Void
+    var streamingState: (() -> AssistantStreamingState?)? = nil
+    /// Lookup metadata is recorded only at tool boundaries, never per text fragment.
+    var lookupAccess: (String) -> String? = { _ in nil }
     var contextPages: (String, String?, UUID?, Bool, Bool) -> AssistantPageContext = { _,_,_,_,_ in .init() }
     var profileContextPages: (String, UUID?) -> AssistantPageContext = { _,_ in .init() }
     var pageKnowledgeAvailable: (String, [String: String]) -> Bool = { _,_ in true }

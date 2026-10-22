@@ -93,6 +93,7 @@ private final class ObservationCounter:@unchecked Sendable {
     var attentionRevision="ack-1"
     var acknowledgements:[ReviewAcknowledgement] = []
     var sourceCalls = 0
+    var streamingStorageCurrent = true
     var afterCalls = 0
     var requests: [AssistantToolRequest] = []
     var sessions: [FictionalTools] = []
@@ -104,7 +105,7 @@ private final class ObservationCounter:@unchecked Sendable {
             self.configure?(session, request)
             self.requests.append(request); self.sessions.append(session)
             return session
-        }, afterTurn: { self.afterCalls += 1 }, contextPages: { self.pageCapture($0,$1,$2,$3,$4) })
+        }, afterTurn: { self.afterCalls += 1 }, streamingState: { .init(storageCurrent:self.streamingStorageCurrent,whatsappScope:self.state.whatsappScope,weatherScope:self.state.weatherScope) }, lookupAccess: { "fictional-access:" + $0 }, contextPages: { self.pageCapture($0,$1,$2,$3,$4) })
     }
 }
 
@@ -138,6 +139,62 @@ private final class ObservationCounter:@unchecked Sendable {
         }
         func greetingPages() -> AssistantPageContext {
             .init(text:"{\"featureInstructions\":[{\"feature\":\"assistant\",\"markdown\":\"Fictional complete guidance\",\"available\":\"true\",\"partial\":\"false\"}]}",referenceVersions:["instruction:assistant":"policy-v1"])
+        }
+
+        do {
+            let p=FictionalInference(),c=FictionalContext(),store=try open("lookup-history"),value=service(p,store)
+            let page=PAFunctionCall(id:"lookup-page",name:"read_context_page",namespace:"pa",arguments:"{\"id\":null,\"query\":\"Orion design\",\"offset\":null}")
+            let mail=PAFunctionCall(id:"lookup-mail",name:"search_mail",namespace:"pa",arguments:"{\"terms\":[\"Orion\",\"review\"],\"start\":\"2026-10-01\",\"end\":\"2026-10-22\",\"folders\":[\"inbox\",\"sent\"]}")
+            let reminders=PAFunctionCall(id:"lookup-reminders",name:"read_reminders",namespace:"pa",arguments:"{}")
+            c.configure={session,_ in session.executeBody={call,_ in
+                if call.name == "read_context_page" { return "{\"pages\":[{\"id\":\"fictional-page\",\"markdown\":\"PRIVATE_BODY_NOT_IN_TRACE\"}]}" }
+                if call.name == "search_mail" { return "{\"sources\":[{\"body\":\"PRIVATE_BODY_NOT_IN_TRACE\"},{\"bodyAvailable\":false}]}" }
+                throw ActionFailure.message("Fictional read failure")
+            }}
+            let calls=[page,mail,reminders]
+            p.replies=[.init(text:"",output:calls.map{["type":"function_call","call_id":$0.id,"name":$0.name,"arguments":$0.arguments]},calls:calls),final("Fictional lookup answer")]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Find Orion design and review context"),"Search history fixture starts")
+            await until{!value.busy}
+            let capture=value.feed!.turns.last!.contextCapture!,rows=capture.lookups!
+            check(rows.map(\.tool) == ["read_context_page","search_mail","read_reminders"] && rows.map(\.status) == ["completed","completed","failed"],"Lookup history distinguishes completed and failed reads in execution order")
+            check(rows[0].query == "Orion design" && rows[0].pageIDs == ["fictional-page"] && rows[0].resultCount == 1,"Page queries and exact returned page IDs are inspectable")
+            check(rows[1].query == "Orion, review" && rows[1].resultCount == 2 && rows[1].filters.count == 2,"Mail trace uses actual terms, date/folder scope and returned source count")
+            let encoded=String(decoding:try JSONEncoder().encode(capture),as:UTF8.self)
+            check(!encoded.contains("PRIVATE_BODY_NOT_IN_TRACE") && !encoded.contains("Fictional read failure"),"Search traces duplicate no source bodies or tool error prose")
+            check(capture.registration == p.activeID && capture.retrievalQuery == "Find Orion design and review context" && capture.retrievalAccess == "fictional-access:read_context_page","Initial retrieval is separate from model tool searches and keeps exact ownership")
+            let reopened=service(FictionalInference(),store)
+            check(reopened.feed?.turns.last?.contextCapture?.lookups == rows,"Search queries, outcomes and IDs survive reopening")
+            check(AssistantLookupTrace.request(tool:"change_reminder",namespace:"pa",arguments:"{\"authorization\":\"PRIVATE_AUTHORITY_NOT_TRACE\"}",access:"fixture") == nil,"Action payloads never become lookup traces")
+            var bounded=capture
+            for _ in 0..<80 {
+                var row=AssistantLookupTrace(tool:"read_context_page",query:String(repeating:"q",count:400),accessFingerprint:"fixture")
+                row.finish(output:String(decoding:try JSONSerialization.data(withJSONObject:["pages":(0..<12).map{["id":String(repeating:"p",count:170)+String($0)]}]),as:UTF8.self),succeeded:true)
+                bounded.appendLookup(row)
+            }
+            let lookupBytes=try JSONEncoder().encode(bounded.lookups).count
+            check((bounded.lookups?.count ?? 0) <= 32 && lookupBytes <= 16_000 && (bounded.omittedLookups ?? 0) > 0,"Completed lookup histories remain bounded without limiting tool execution")
+        }
+
+        for revoked in ["account","memory","sources","storage"] {
+            settings.set(true,forKey:"paMemoryEnabled");settings.set(true,forKey:"assistantContextEnabled")
+            let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("stream-light-gate-"+revoked))
+            var emitted=0,firstPartial=""
+            p.deltas=["First provisional word","Must stay hidden","Still hidden"];p.replies=[final("Must not complete")]
+            p.afterDelta={
+                emitted += 1
+                guard emitted == 1 else {return};firstPartial=value.feed?.turns.last?.content ?? ""
+                switch revoked {
+                case "account":p.activeID="fictional-other-owner"
+                case "memory":value.memory.enabled=false
+                case "sources":value.contextEnabled=false
+                default:c.streamingStorageCurrent=false
+                }
+            }
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Explain fictional Orion context"),"Light streaming guard fixture starts")
+            await until{!value.busy}
+            if revoked != "account" { check(value.feed?.turns.last?.content == firstPartial && value.feed?.turns.last?.completed == false,"Light access/storage gates stop later fragments and reject completion") }
+            check(c.sessions.first?.calls.isEmpty == true && value.error != nil,"Light streaming withdrawal cannot execute a late tool")
+            settings.set(true,forKey:"paMemoryEnabled");settings.set(true,forKey:"assistantContextEnabled")
         }
 
         do {
@@ -1116,11 +1173,11 @@ private final class ObservationCounter:@unchecked Sendable {
             validationDecisions=0;nativeQueries=0;nativeBuilds=0;withdrawnBuilds=0
             await until{!projectionService.busy}
             let localElapsed=began.duration(to:clock.now)
-            check(validationDecisions >= 202,"All 200 partial callbacks, preflight and completed response retain a fresh full ownership decision")
-            check(nativeQueries == validationDecisions*2 && nativeBuilds == validationDecisions,"Runtime and source-memory consumers share one current snapshot per callback, with no cross-callback reuse")
+            check(validationDecisions == 2,"Two full boundary decisions protect 200 partial callbacks without rebuilding evidence between words")
+            check(nativeQueries == validationDecisions*2 && nativeBuilds == validationDecisions,"Runtime and source-memory consumers share one current snapshot per boundary")
             if revokeSource {
-                check(withdrawnBuilds > 0 && projectionService.error != nil,"The callback after access withdrawal freshly checks the unavailable native source")
-                check(!partialAtWithdrawal.isEmpty && projectionService.feed?.turns.last?.content == partialAtWithdrawal && projectionService.feed?.turns.last?.completed == false,"Source withdrawal stops later partials and rejects completed output while retaining earlier historical text")
+                check(withdrawnBuilds > 0 && projectionService.error != nil,"The completion boundary freshly checks unavailable supporting evidence")
+                check(!partialAtWithdrawal.isEmpty && projectionService.feed?.turns.last?.content != "Completed fictional current-source response" && projectionService.feed?.turns.last?.completed == false,"Changed supporting evidence cannot become a completed reply; provisional streamed text stays labelled partial")
             } else {
                 check(projectionService.feed?.turns.last?.content == "Completed fictional current-source response" && projectionService.feed?.turns.last?.completed == true && projectionService.error == nil,"Batching retains authoritative completed text and ordinary chat behaviour")
             }

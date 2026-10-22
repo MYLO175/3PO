@@ -132,6 +132,7 @@ struct PAContextCaptureView:View {
     var model:DashboardModel
     var registration:String
     @State private var pagesOpen = false
+    @State private var inspectedPageID: String?
     @Environment(\.dismiss) private var dismiss
     var body:some View {
         VStack(alignment:.leading,spacing:14) {
@@ -140,6 +141,7 @@ struct PAContextCaptureView:View {
                 VStack(alignment:.leading,spacing:16) {
                     Text("Prepared "+capture.captured.formatted(date:.abbreviated,time:.shortened)+" · "+capture.model).font(.caption)
                     Text("A record of prepared inputs and attempted tools, not proof the model relied on every fact or that an action succeeded. Inspect saved receipts for verified changes.").font(.callout).foregroundStyle(.secondary)
+                    lookupHistory
                     Text("Focus: "+(capture.focusAreas.map{$0.isEmpty ? "All life areas" : $0.map(\.title).joined(separator:", ")} ?? "Legacy thread")).font(.callout)
                     if let purpose=capture.selectionPurpose {
                         Text("Selection purpose: "+purpose.replacingOccurrences(of:"Conversation",with:" conversation").replacingOccurrences(of:"Read",with:" read")).font(.caption)
@@ -153,7 +155,7 @@ struct PAContextCaptureView:View {
                     facts("Life notebook facts",capture.notebookMemoryIDs,caption:"Separate bounded area notes, up to 8 KB including workspace structure")
                     facts("Additional memory reads",capture.consultedMemoryIDs,caption:"Facts returned by memory/notebook tools; distinct from saved or edited facts")
                     if let pageIDs = capture.contextPageIDs, !pageIDs.isEmpty {
-                        Button("Inspect context pages (\(pageIDs.count) initially prepared)") { pagesOpen = true }
+                        Button("Inspect context pages (\(pageIDs.count) initially prepared)") { inspectedPageID = nil; pagesOpen = true }
                             .help("Opens current page versions and their history. The trace stores identities, not another copy of their text.")
                     }
                     Text("\(capture.workspaceIDs.count) workspace items · \(capture.historyTurnIDs.count) dialogue turns, \(capture.excerptedHistoryIDs.count) excerpted").font(.callout)
@@ -162,11 +164,81 @@ struct PAContextCaptureView:View {
                     if let notes=capture.preparationNotes,!notes.isEmpty { DisclosureGroup("Tool preparation and action checks") {ForEach(notes,id:\.self) {Text($0).font(.caption)}} }
                     if !capture.attemptedTools.isEmpty { Text("Tools attempted: "+capture.attemptedTools.map{$0.replacingOccurrences(of:"_",with:" ")}.joined(separator:", ")).font(.callout) }
                     Text("PA preferences, the local clock and assistant/tool instructions are also prepared. The trace does not reveal model reasoning or claim which input influenced the answer.").font(.caption).foregroundStyle(.secondary)
-                    Text("Facts below show their current version and availability. Corrected or forgotten facts can differ from what was prepared then; this trace retains identities, not an extra copy of old prose. Older replies have no retroactive trace. Tool arguments, private source bodies and model reasoning are not stored here.").font(.caption).foregroundStyle(.secondary)
+                    Text("Facts below show their current version and availability. Corrected or forgotten facts can differ from what was prepared then. Search terms and filters are saved locally for newer replies; source bodies, full tool arguments and model reasoning are not copied here. Older replies have no retroactive search history.").font(.caption).foregroundStyle(.secondary)
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
         }.padding(24).frame(width:620,height:650)
-            .sheet(isPresented: $pagesOpen) { ContextPagesView(model: model) }
+            .sheet(isPresented: $pagesOpen) { ContextPagesView(model: model, registration: registration, pageID: inspectedPageID) }
+    }
+    private func lookupAvailable(_ fingerprint: String?, tool: String) -> Bool {
+        guard let fingerprint, (capture.registration ?? registration) == model.chatGPT.activeID else { return false }
+        return fingerprint == model.assistantLookupAccess(tool)
+    }
+    private var lookupHistory: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("What 3PO looked up").font(.headline)
+            if let query = capture.retrievalQuery {
+                if lookupAvailable(capture.retrievalAccess, tool: "read_context_page") {
+                    Text("Starting context for “" + query + "”").textSelection(.enabled)
+                    Text("\(capture.contextPageIDs?.count ?? 0) context pages and \(capture.memoryIDs.count) supporting facts prepared, alongside the starting guide.").font(.caption).foregroundStyle(.secondary)
+                } else { Text("Starting context search is unavailable under the current account or access choices.").font(.caption).foregroundStyle(.secondary) }
+            }
+            if let lookups = capture.lookups {
+                if lookups.isEmpty { Text("No additional lookups were recorded for this reply.").font(.caption).foregroundStyle(.secondary) }
+                ForEach(lookups) { lookup in
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(lookup.title).font(.subheadline.weight(.semibold))
+                        if lookupAvailable(lookup.accessFingerprint, tool: lookup.tool) {
+                            if let query = lookup.query, !query.isEmpty { Text("“" + query + "”").textSelection(.enabled) }
+                            ForEach(Array(lookup.filters.enumerated()), id: \.offset) { _, filter in Text(filter).font(.caption).foregroundStyle(.secondary) }
+                            if let id = lookup.targetID, lookup.tool == "read_context_page" { pageLink(id) }
+                            if let id = lookup.targetID, lookup.tool == "search_whatsapp" {
+                                Text("Chat: " + (model.whatsapp.chats.first { $0.id == id }?.name ?? "Selected chat")).font(.caption).foregroundStyle(.secondary)
+                            }
+                            if let id = lookup.targetID.flatMap(UUID.init(uuidString:)), lookup.tool == "read_life_items" {
+                                Text("Space: " + (model.assistant.projects.items(registration, includeTopics: true).first { $0.id == id }?.title ?? "Unavailable space")).font(.caption).foregroundStyle(.secondary)
+                            }
+                            ForEach((lookup.pageIDs ?? []).filter { $0 != lookup.targetID }, id: \.self) { id in pageLink(id) }
+                            Text(lookupOutcome(lookup)).font(.caption).foregroundStyle(lookup.status == "failed" ? Color.orange : Color.secondary)
+                        } else { Text("Search details are unavailable under the current account or source access.").font(.caption).foregroundStyle(.secondary) }
+                    }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+                }
+            } else { Text(capture.registration == nil ? "Search terms were not recorded for this older reply. Its prepared context and attempted tools are listed below." : "No additional lookups were recorded for this reply.").font(.caption).foregroundStyle(.secondary) }
+            if let omitted = capture.omittedLookups, omitted > 0 { Text("\(omitted) earlier lookups omitted from this bounded history.").font(.caption).foregroundStyle(.secondary) }
+            Text("Results are bounded. A completed lookup does not imply every source was searched.").font(.caption).foregroundStyle(.secondary)
+        }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 10))
+    }
+    private func pageLink(_ id: String) -> some View {
+        let topic = id.hasPrefix("area:") ? ContextTopicRoute.named(String(id.dropFirst(5)))?.title : nil
+        let page = model.contextPages.pages(registration: registration).first { $0.id == id }
+        let humanProject = page.flatMap { $0.kind == .project ? UUID(uuidString: $0.key) : nil }.flatMap { project in model.assistant.projects.items(registration, includeTopics: true).first { $0.id == project }?.title }
+        let knownTopic = page.flatMap { $0.kind == .topic ? ContextTopicRoute.named($0.key)?.title : nil }
+        let humanTitle = page.flatMap { $0.owner == .human ? $0.title : nil }
+        let title = ContextInstructionRoute.all.first(where: { $0.id == id })?.title ?? topic ?? humanProject ?? knownTopic ?? humanTitle ?? "Context page"
+        return Button("Open “" + title + "”") { inspectedPageID = id; pagesOpen = true }.buttonStyle(.link).font(.caption)
+    }
+    private func lookupOutcome(_ lookup: AssistantLookupTrace) -> String {
+        switch lookup.status {
+        case "failed": return "Lookup failed"
+        case "stopped": return "Lookup stopped"
+        case "unavailable": return "Requested context was unavailable"
+        case "running": return "Lookup unfinished; no completed result recorded"
+        default:
+            guard let count = lookup.resultCount else { return "Lookup completed" }
+            let unit = switch lookup.tool {
+            case "search_mail", "continue_mail": "emails returned"
+            case "read_context_page": "context records returned"
+            case "read_memory": "supporting facts returned"
+            case "read_life_notebook": "supporting records returned, with bounded area notes"
+            case "read_life_items": "project records returned, including parent context"
+            case "read_calendar": "calendar occurrences returned"
+            case "read_reminders": "incomplete reminders returned"
+            case "search_whatsapp": "messages returned"
+            case "list_whatsapp_chats": "selected chats returned"
+            default: "results returned"
+            }
+            return "\(count) " + unit
+        }
     }
     private func facts(_ title:String,_ ids:[UUID],caption:String)->some View {
         DisclosureGroup(title+" (\(ids.count))") {

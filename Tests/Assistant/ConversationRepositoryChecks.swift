@@ -27,13 +27,16 @@ import SwiftData
         func rows(_ data: Data?) throws -> [[String: Any]] { try JSONSerialization.jsonObject(with: data!) as! [[String: Any]] }
         func data(_ value: Any) throws -> Data { try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) }
 
-        let original = [conversation(1, turns: 130), conversation(2, turns: 2, account: "other-fictional-account")]
+        var original = [conversation(1, turns: 130), conversation(2, turns: 2, account: "other-fictional-account")]
+        original[0].turns[0].contextCapture?.lookups = [.init(id:uuid(910_001),tool:"read_memory",query:"First fictional search"),.init(id:uuid(910_002),tool:"read_context_page",query:"Second fictional search")]
         var legacyRows = try rows(JSONEncoder().encode(original))
         legacyRows[0]["futureConversation"] = ["nested": ["kept": true]]
         legacyRows[0]["futureMixed"] = [NSNull(), "retained", ["number": 123456789012345]]
         var turnRows = legacyRows[0]["turns"] as! [[String: Any]]
         turnRows[0]["futureTurn"] = ["flag": "preserved"]
-        var capture = turnRows[0]["contextCapture"] as! [String: Any]; capture["futureCapture"] = ["extra": 7]; turnRows[0]["contextCapture"] = capture
+        var capture = turnRows[0]["contextCapture"] as! [String: Any]; capture["futureCapture"] = ["extra": 7]
+        var lookupRows=capture["lookups"] as! [[String:Any]];lookupRows[0]["futureLookup"]=["retained":true];capture["lookups"]=lookupRows
+        turnRows[0]["contextCapture"] = capture
         var images = turnRows[0]["images"] as! [[String: Any]]; images[0]["futureImage"] = ["nested": ["kept": "yes"]]; turnRows[0]["images"] = images
         legacyRows[0]["turns"] = turnRows
         let legacy = try data(legacyRows)
@@ -66,6 +69,8 @@ import SwiftData
         check(try ConversationRepository(container: try open(url)).load() == edited, "Append and older edit survive reopening")
         edited[0].focus = nil; edited[0].turns[0].choices = nil
         edited[0].turns[0].contextCapture?.preparationNotes = nil
+        edited[0].turns[0].contextCapture?.lookups?[0].query = nil
+        edited[0].turns[0].contextCapture?.lookups?.reverse()
         edited[0].turns[0].images?.reverse()
         try storage.save(edited)
         let metadata = try object(records.read(ConversationRepository.metadataKey(original[0].id)))
@@ -75,6 +80,8 @@ import SwiftData
         check(metadata["futureConversation"] != nil && row["futureTurn"] != nil && changedCapture["futureCapture"] != nil, "Unknown fields survive edits at each object level")
         check((metadata["futureMixed"] as? [Any])?.count == 3, "Unknown null, array and numeric values survive edits")
         check(changedImages[0]["futureImage"] == nil && changedImages[1]["futureImage"] != nil, "Nested image extras follow exact image identity through reordering")
+        let changedLookups=changedCapture["lookups"] as! [[String:Any]]
+        check(changedLookups[0]["futureLookup"] == nil && changedLookups[1]["futureLookup"] != nil && changedLookups[1]["query"] == nil,"Lookup extras follow exact identity through reordering while cleared known query text stays removed")
         edited[0].turns[0].contextCapture?.id = uuid(950_000)
         try storage.save(edited)
         check(try (rows(records.read(ConversationRepository.chunkKey(original[0].id, 0)))[0]["contextCapture"] as! [String: Any])["futureCapture"] == nil, "Unknown capture extras never transfer to a different capture identity")
