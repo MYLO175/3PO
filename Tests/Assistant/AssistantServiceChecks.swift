@@ -341,7 +341,10 @@ private final class ObservationCounter:@unchecked Sendable {
         assistant.drafts.flush()
         context.configure = { session, request in
             session.executeBody = { call, session in
-                if call.name == "read_memory" { session.consultedMemory.insert(fact.id) }
+                if call.name == "read_memory" {
+                    session.consultedMemory.insert(fact.id)
+                    return String(decoding: try JSONSerialization.data(withJSONObject: ["records": [["id": fact.id.uuidString, "text": fact.text]]]), as: UTF8.self)
+                }
                 if call.name == "remember_context" {
                     let entry = PAMemory(registration: request.registration, text: "I prefer a short coursework plan.", kind: .preference, explicit: true, provenance: "Fictional current request", sourceTurnID: request.turnID.uuidString)
                     guard assistant.memory.put(entry) else { throw ActionFailure.message("Fixture memory save failed") }
@@ -357,7 +360,10 @@ private final class ObservationCounter:@unchecked Sendable {
         await until { !assistant.busy }
         let reply = assistant.feed!.turns.last!
         check(reply.completed && reply.content == "Completed fictional coursework plan", "Completed transport must supersede partial text and receipts.")
-        check(reply.contextCapture?.memoryIDs.contains(fact.id) == true && reply.contextCapture?.consultedMemoryIDs == [fact.id], "Actual preparation must retain selected and successfully read memory identities separately.")
+        check(reply.contextCapture?.memoryIDs.isEmpty == true && reply.contextCapture?.directMemoryIDs == [] && reply.contextCapture?.consultedMemoryIDs == [fact.id], "Ordinary chat reads original facts on demand, separately from its initial page context.")
+        let initialInput = String(describing: provider.inputs.first!)
+        check(!initialInput.contains(fact.text) && !initialInput.contains("\"savedMemory\""), "Ordinary preparation does not inject the matching raw fact or the old saved-memory list")
+        check(String(describing: provider.inputs.last!).contains(fact.text), "An explicit successful fact lookup still supplies its original text to the model")
         check(reply.contextCapture?.attemptedTools == ["read_memory", "remember_context"] && reply.focusAreas == [.studies], "Actual execution traces and captured Focus must stay on the response.")
         check(reply.contextCapture?.selectionPurpose == "conversation" && reply.contextCapture?.usedFollowupContext == false,"Actual preparation uses the shared context policy and retains its small trace")
         check(reply.created == context.now && reply.contextCapture?.captured == context.now, "Preparation and trace dates must use the injected clock.")
@@ -468,12 +474,25 @@ private final class ObservationCounter:@unchecked Sendable {
             var permitted:Set<UUID>=[selected.id,unrelated.id]
             value.memory.sourceIsPermitted={permitted.contains($0.id)}
             check(value.memory.putSources([selected,unrelated],evidenceTexts:[selected.source!.identity:selected.text,unrelated.source!.identity:unrelated.text],expectedRevision:value.memory.revision),"Fictional exact-source facts save with original evidence")
+            p.holdNext=true;p.replies=[final("No original fact was supplied")]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Help with garden irrigation"),"An ordinary request with an unsupplied matching original starts")
+            await until{p.waiting}
+            permitted.remove(unrelated.id);p.release();await until{!value.busy}
+            let unprovided=value.feed!.turns.last!
+            check(unprovided.completed && value.error == nil && unprovided.sourceMemoryIDs?.isEmpty != false && unprovided.contextCapture?.directMemoryIDs == [],"Withdrawal of an original that never entered page or tool context does not block ordinary chat")
+            permitted=[selected.id,unrelated.id]
+            c.pageCapture={_,query,_,_,_ in
+                guard query?.contains("Orion") == true else {return .init()}
+                return .init(text:"{\"pages\":[{\"id\":\"fictional-orion\",\"markdown\":\"Orion page summary\"}]}",pageIDs:["fictional-orion"],memoryIDs:[selected.id])
+            }
             p.holdNext=true;p.replies=[final("Selected Orion answer")]
             check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Help with Orion coursework"),"Selected-source request starts")
             await until{p.waiting}
             permitted.remove(unrelated.id);p.release();await until{!value.busy}
             let first=value.feed!.turns.last!
             check(value.error == nil && first.completed && first.sourceMemoryIDs == [selected.id],"Unrelated source withdrawal neither stops a request nor becomes its dependency")
+            check(first.contextCapture?.directMemoryIDs == [] && first.contextCapture?.pageSupportingMemoryIDs == [selected.id],"The trace distinguishes backing page evidence from directly supplied original facts")
+            check(!String(describing:p.inputs.last!).contains(selected.text),"Backing page IDs never reintroduce the original source fact as a parallel prompt list")
             check(value.sourceSafeHistory(runtime:c.runtime(),feed:value.feed!,topic:nil).contains{$0.id == first.id},"A reply remains recallable after unrelated source loss")
             permitted.remove(selected.id)
             check(!value.sourceSafeHistory(runtime:c.runtime(),feed:value.feed!,topic:nil).contains{$0.id == first.id},"Selected-source withdrawal still removes dependent reply history")
@@ -692,7 +711,7 @@ private final class ObservationCounter:@unchecked Sendable {
             _=try value.projects.create([item],receipt:.init(id:"fixture-"+mode,registration:p.activeID,result:"Fictional space",itemID:item.id))
             c.pageCapture = { _,_,_,_,_ in
                 let text=String(decoding:try! JSONEncoder().encode(item),as:UTF8.self)
-                return .init(text:text,pageIDs:["fictional-context-page-"+item.id.uuidString],workspaceIDs:[item.id],referenceVersions:["project:"+item.id.uuidString:item.revision.uuidString],validate:{ignored in
+                return .init(text:text,pageIDs:["fictional-context-page-"+item.id.uuidString],memoryIDs:[fact.id],workspaceIDs:[item.id],referenceVersions:["project:"+item.id.uuidString:item.revision.uuidString],validate:{ignored in
                     ignored.contains("project:"+item.id.uuidString) || value.projects.state.items.first(where:{$0.id == item.id})?.revision == item.revision
                 })
             }
@@ -1145,6 +1164,9 @@ private final class ObservationCounter:@unchecked Sendable {
                 guard let items=currentItems() else {return []}
                 return Set(projectionService.memory.records.filter{NativeLearningRules.permitted($0,items:items)}.map(\.id))
             }
+            projectionContext.pageCapture={_,_,_,_,_ in
+                .init(text:"{\"pages\":[{\"id\":\"fictional-current-source\",\"markdown\":\"Orion page summary\"}]}",pageIDs:["fictional-current-source"],memoryIDs:[sourceFact.id])
+            }
             var projectionRuntime=projectionContext.runtime()
             projectionRuntime.state={
                 // A current runtime acknowledgement can depend on the same
@@ -1173,6 +1195,8 @@ private final class ObservationCounter:@unchecked Sendable {
             validationDecisions=0;nativeQueries=0;nativeBuilds=0;withdrawnBuilds=0
             await until{!projectionService.busy}
             let localElapsed=began.duration(to:clock.now)
+            let projectedCapture=projectionService.feed?.turns.last?.contextCapture
+            check(projectedCapture?.directMemoryIDs == [] && projectedCapture?.pageSupportingMemoryIDs == [sourceFact.id],"Source-backed streaming depends on page evidence without supplying an automatic raw fact list")
             check(validationDecisions == 2,"Two full boundary decisions protect 200 partial callbacks without rebuilding evidence between words")
             check(nativeQueries == validationDecisions*2 && nativeBuilds == validationDecisions,"Runtime and source-memory consumers share one current snapshot per boundary")
             if revokeSource {

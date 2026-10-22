@@ -28,6 +28,8 @@ import SwiftData
         func data(_ value: Any) throws -> Data { try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) }
 
         var original = [conversation(1, turns: 130), conversation(2, turns: 2, account: "other-fictional-account")]
+        original[0].turns[0].contextCapture?.directMemoryIDs = []
+        original[0].turns[0].contextCapture?.pageSupportingMemoryIDs = [uuid(92)]
         original[0].turns[0].contextCapture?.lookups = [.init(id:uuid(910_001),tool:"read_memory",query:"First fictional search"),.init(id:uuid(910_002),tool:"read_context_page",query:"Second fictional search")]
         var legacyRows = try rows(JSONEncoder().encode(original))
         legacyRows[0]["futureConversation"] = ["nested": ["kept": true]]
@@ -69,6 +71,7 @@ import SwiftData
         check(try ConversationRepository(container: try open(url)).load() == edited, "Append and older edit survive reopening")
         edited[0].focus = nil; edited[0].turns[0].choices = nil
         edited[0].turns[0].contextCapture?.preparationNotes = nil
+        edited[0].turns[0].contextCapture?.directMemoryIDs = nil
         edited[0].turns[0].contextCapture?.lookups?[0].query = nil
         edited[0].turns[0].contextCapture?.lookups?.reverse()
         edited[0].turns[0].images?.reverse()
@@ -77,6 +80,7 @@ import SwiftData
         let row = try rows(records.read(ConversationRepository.chunkKey(original[0].id, 0)))[0]
         let changedCapture = row["contextCapture"] as! [String: Any], changedImages = row["images"] as! [[String: Any]]
         check(metadata["focus"] == nil && row["choices"] == nil && changedCapture["preparationNotes"] == nil, "Known optional fields intentionally cleared stay removed")
+        check(changedCapture["directMemoryIDs"] == nil && changedCapture["pageSupportingMemoryIDs"] as? [String] == [uuid(92).uuidString], "Direct-input and backing-evidence fields remain distinct through reopen and optional clearing")
         check(metadata["futureConversation"] != nil && row["futureTurn"] != nil && changedCapture["futureCapture"] != nil, "Unknown fields survive edits at each object level")
         check((metadata["futureMixed"] as? [Any])?.count == 3, "Unknown null, array and numeric values survive edits")
         check(changedImages[0]["futureImage"] == nil && changedImages[1]["futureImage"] != nil, "Nested image extras follow exact image identity through reordering")

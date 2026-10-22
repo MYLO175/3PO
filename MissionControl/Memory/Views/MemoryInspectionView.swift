@@ -155,9 +155,13 @@ struct PAContextCaptureView:View {
                         Text("Starting guide: \(bytes) UTF-8 bytes · version \(String(fingerprint.prefix(12))). The trace stores its fingerprint, not its text.").font(.caption)
                     }
                     if let hints=capture.sourceHints,!hints.isEmpty {Text("Relevant source hints: "+hints.joined(separator:", ")+". Actual tool attempts are listed below.").font(.caption)}
-                    facts("Initial saved-fact selection",capture.memoryIDs,caption:"\(capture.memoryIDs.count) selected from \(capture.eligibleMemoryCount) available at preparation")
-                    facts("Life notebook facts",capture.notebookMemoryIDs,caption:"Separate bounded area notes, up to 8 KB including workspace structure")
-                    facts("Additional memory reads",capture.consultedMemoryIDs,caption:"Facts returned by memory/notebook tools; distinct from saved or edited facts")
+                    initialMemoryContext
+                    if !capture.notebookMemoryIDs.isEmpty {
+                        facts("Recorded relationship evidence",capture.notebookMemoryIDs,caption:"Supporting identities retained by the project/relationship context")
+                    }
+                    if !capture.consultedMemoryIDs.isEmpty {
+                        facts("Additional supporting evidence",capture.consultedMemoryIDs,caption:"Original records read directly or backing pages opened through tools; this is not a list of newly saved facts")
+                    }
                     if let pageIDs = capture.contextPageIDs, !pageIDs.isEmpty {
                         Button("Inspect context pages (\(pageIDs.count) initially prepared)") { pageInspection = .init(pageID: nil) }
                             .help("Opens current page versions and their history. The trace stores identities, not another copy of their text.")
@@ -178,14 +182,34 @@ struct PAContextCaptureView:View {
         guard let fingerprint, (capture.registration ?? registration) == model.chatGPT.activeID else { return false }
         return fingerprint == model.assistantLookupAccess(tool)
     }
+    @ViewBuilder private var initialMemoryContext: some View {
+        if let direct = capture.directMemoryIDs {
+            if direct.isEmpty {
+                Text("No separate saved-fact list was supplied.").font(.callout)
+            } else {
+                facts("Original facts supplied directly",direct,caption:"\(direct.count) original records supplied for this purpose-specific request")
+            }
+            if let supporting = capture.pageSupportingMemoryIDs, !supporting.isEmpty {
+                facts("Evidence behind page context",supporting,caption:"Original records validating pages and working changes. These evidence links are separate from a direct feed of fact records.")
+            }
+        } else {
+            facts("Supporting records for this older reply",capture.memoryIDs,caption:"This older trace combines directly supplied facts with page evidence and cannot distinguish them retrospectively.")
+        }
+    }
     private var lookupHistory: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("What 3PO looked up").font(.headline)
             if let query = capture.retrievalQuery {
                 if lookupAvailable(capture.retrievalAccess, tool: "read_context_page") {
                     Text("Starting context for “" + query + "”").textSelection(.enabled)
-                    Text("\(capture.contextPageIDs?.count ?? 0) context pages and \(capture.memoryIDs.count) supporting facts prepared, alongside the starting guide.").font(.caption).foregroundStyle(.secondary)
+                    Text("\(capture.contextPageIDs?.count ?? 0) context pages prepared" + (capture.contextGuideBytes != nil ? ", alongside the starting guide." : ".")).font(.caption).foregroundStyle(.secondary)
                 } else { Text("Starting context search is unavailable under the current account or access choices.").font(.caption).foregroundStyle(.secondary) }
+            }
+            if capture.directMemoryIDs != nil, let pages = capture.contextPageIDs, !pages.isEmpty {
+                Text("Pages supplied").font(.subheadline.weight(.semibold))
+                if lookupAvailable(capture.retrievalAccess, tool: "read_context_page") {
+                    ForEach(pages, id: \.self) { pageLink($0) }
+                } else { Text("Page links are unavailable under the current account or access choices.").font(.caption).foregroundStyle(.secondary) }
             }
             if let lookups = capture.lookups {
                 if lookups.isEmpty { Text("No additional lookups were recorded for this reply.").font(.caption).foregroundStyle(.secondary) }

@@ -155,6 +155,9 @@ struct PAContextCapture: Codable, Equatable, Identifiable {
     var contextGuideFingerprint: String? = nil
     var contextGuideBytes: Int? = nil
     var requestMode: String? = nil
+    /// Inspection split only; memoryIDs retains the complete initial evidence union.
+    var directMemoryIDs: [UUID]? = nil
+    var pageSupportingMemoryIDs: [UUID]? = nil
     var registration: String? = nil
     var retrievalQuery: String? = nil
     var retrievalAccess: String? = nil
