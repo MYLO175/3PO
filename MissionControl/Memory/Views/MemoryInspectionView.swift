@@ -127,12 +127,16 @@ struct PAMemoryEvidenceView:View {
     }
 }
 
+private struct PAContextPageInspection: Identifiable {
+    let id = UUID()
+    let pageID: String?
+}
+
 struct PAContextCaptureView:View {
     var capture:PAContextCapture
     var model:DashboardModel
     var registration:String
-    @State private var pagesOpen = false
-    @State private var inspectedPageID: String?
+    @State private var pageInspection: PAContextPageInspection?
     @Environment(\.dismiss) private var dismiss
     var body:some View {
         VStack(alignment:.leading,spacing:14) {
@@ -155,7 +159,7 @@ struct PAContextCaptureView:View {
                     facts("Life notebook facts",capture.notebookMemoryIDs,caption:"Separate bounded area notes, up to 8 KB including workspace structure")
                     facts("Additional memory reads",capture.consultedMemoryIDs,caption:"Facts returned by memory/notebook tools; distinct from saved or edited facts")
                     if let pageIDs = capture.contextPageIDs, !pageIDs.isEmpty {
-                        Button("Inspect context pages (\(pageIDs.count) initially prepared)") { inspectedPageID = nil; pagesOpen = true }
+                        Button("Inspect context pages (\(pageIDs.count) initially prepared)") { pageInspection = .init(pageID: nil) }
                             .help("Opens current page versions and their history. The trace stores identities, not another copy of their text.")
                     }
                     Text("\(capture.workspaceIDs.count) workspace items · \(capture.historyTurnIDs.count) dialogue turns, \(capture.excerptedHistoryIDs.count) excerpted").font(.callout)
@@ -168,7 +172,7 @@ struct PAContextCaptureView:View {
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
         }.padding(24).frame(width:620,height:650)
-            .sheet(isPresented: $pagesOpen) { ContextPagesView(model: model, registration: registration, pageID: inspectedPageID) }
+            .sheet(item: $pageInspection) { request in ContextPagesView(model: model, registration: registration, pageID: request.pageID) }
     }
     private func lookupAvailable(_ fingerprint: String?, tool: String) -> Bool {
         guard let fingerprint, (capture.registration ?? registration) == model.chatGPT.activeID else { return false }
@@ -215,7 +219,7 @@ struct PAContextCaptureView:View {
         let knownTopic = page.flatMap { $0.kind == .topic ? ContextTopicRoute.named($0.key)?.title : nil }
         let humanTitle = page.flatMap { $0.owner == .human ? $0.title : nil }
         let title = ContextInstructionRoute.all.first(where: { $0.id == id })?.title ?? topic ?? humanProject ?? knownTopic ?? humanTitle ?? "Context page"
-        return Button("Open “" + title + "”") { inspectedPageID = id; pagesOpen = true }.buttonStyle(.link).font(.caption)
+        return Button("Open “" + title + "”") { pageInspection = .init(pageID: id) }.buttonStyle(.link).font(.caption)
     }
     private func lookupOutcome(_ lookup: AssistantLookupTrace) -> String {
         switch lookup.status {
