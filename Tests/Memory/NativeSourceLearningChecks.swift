@@ -16,6 +16,10 @@ import SwiftData
         precondition(identityEdit == first,"Restoring an identity restores exact value equality without changing the original copy")
         identityEdit.revision="changed-source-content"
         precondition(identityEdit.id == first.id,"A content revision does not change source identity")
+        var composedIdentity=first;composedIdentity.identity.itemID="\u{00e9}"
+        var decomposedIdentity=composedIdentity;decomposedIdentity.identity.itemID="e\u{0301}"
+        precondition(composedIdentity == decomposedIdentity && composedIdentity.id != decomposedIdentity.id,"Canonical Unicode value equality cannot hide an exact-byte identity hash change")
+        precondition(decomposedIdentity.id == NativeLearningRules.hash(decomposedIdentity.identity),"Every identity assignment retains the original exact hash, including equivalent Unicode spellings")
         let mailProjection=MailLearningProjectionCache()
         var mailKey=MailLearningProjectionKey(collectionRevision:1,summaryRevision:1,registration:registration,excluded:[])
         var mailBuilds=0
