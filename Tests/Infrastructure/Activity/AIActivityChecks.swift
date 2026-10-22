@@ -77,7 +77,14 @@ import Foundation
             check(AIActivitySummary.recent([failedHeartbeat,partialHeartbeat,heartbeat],current:nil,registration:"account-a").map(\.id) == [failedHeartbeat.id,partialHeartbeat.id],"Newer successful heartbeat stays hidden without erasing earlier failure history")
             check(AIActivitySummary.recent([failedHeartbeat,partialHeartbeat],current:nil,registration:"account-b").isEmpty,"Heartbeat failures remain account scoped")
             check(AIActivitySummary.recent(history+[failedHeartbeat,partialHeartbeat,heartbeat],current:nil,registration:"account-a").count == 5,"Heartbeat failures share the existing five-outcome Activity bound")
-            check(pill([failedHeartbeat,partialHeartbeat]) == nil,"Heartbeat failure history does not replace the existing closed-pill status policy")
+            check(pill([failedHeartbeat,partialHeartbeat])?.id == failedHeartbeat.id,"The newest actual heartbeat failure appears as a dismissible pill alert")
+            check(pill([failedHeartbeat,partialHeartbeat],running)?.id == running.id,"Live work keeps priority over failed and partial heartbeat alerts")
+            check(pill(heartbeatHistory)?.kind == .heartbeat && [.failed,.partial].contains(pill(heartbeatHistory)!.state),"Only failed/partial heartbeat analysis can supply closed-pill attention")
+            var dismissedHeartbeat=failedHeartbeat;dismissedHeartbeat.acknowledged=true
+            var dismissedPartial=partialHeartbeat;dismissedPartial.acknowledged=true
+            check(pill([dismissedHeartbeat,partialHeartbeat])?.id == partialHeartbeat.id,"Dismissing one heartbeat leaves the other exact unresolved alert visible")
+            check(pill([dismissedHeartbeat,dismissedPartial,heartbeat]) == nil,"Dismissing all heartbeat alerts returns the pill to Ready")
+            check(AIActivitySummary.recent([dismissedHeartbeat,dismissedPartial],current:nil,registration:"account-a").count == 2,"Dismissed heartbeat failures remain in saved Activity history")
             let feedback=AIActivityFeedback(registration:"account-a",message:"Completed: Claim my refund",date:date.addingTimeInterval(61))
             func confirmation(_ displayed:AIActivityRecord?=nil,_ offset:Double=62,_ registration:String="account-a")->AIActivityFeedback? {
                 AIActivityPillRules.feedback(feedback,displayed:displayed,registration:registration,now:date.addingTimeInterval(offset))
@@ -90,6 +97,37 @@ import Foundation
             check(confirmation(nil,66.999) != nil && confirmation(nil,67) == nil,"Direct completion expires after exactly six seconds")
             check(confirmation(nil,60) == nil && confirmation(nil,600) == nil,"Future or expired feedback never flashes on reopening")
             check(confirmation(nil,62,"account-b") == nil,"A direct completion cannot leak into another account")
+        }
+        do {
+            var dismissalBytes:Data?
+            let alerts=AIActivityStore(persist:{dismissalBytes=$0})
+            let heartbeat=record("heartbeat:failed-run",state:.failed,kind:.heartbeat,destination:.heartbeat(targetID:"failed-run"))
+            let question=record("new-question",state:.needsAnswer,offset:20)
+            let other=record(heartbeat.id,registration:"account-b",state:.failed,kind:.heartbeat)
+            check(alerts.upsert(heartbeat) && alerts.upsert(other),"Independent heartbeat alerts are saved before local dismissal")
+            check(!alerts.dismiss(heartbeat,registration:"account-b"),"A captured alert cannot be dismissed in another account")
+            check(!alerts.dismiss(record("unsaved",state:.failed),registration:"account-a"),"An unsaved alert cannot acknowledge another outcome")
+            var changed=heartbeat;changed.message="The heartbeat saved a brief but memory analysis failed";changed.state = .partial
+            check(alerts.upsert(changed),"The saved alert may receive a more precise outcome before dismissal")
+            let beforeDismissal=alerts.state
+            check(!alerts.dismiss(heartbeat,registration:"account-a") && alerts.state == beforeDismissal,"A stale alert control cannot dismiss a changed outcome")
+            check(alerts.dismiss(changed,registration:"account-a"),"The exact displayed heartbeat alert can be dismissed")
+            var expected=changed;expected.acknowledged=true
+            check(alerts.records("account-a") == [expected] && alerts.records("account-b") == [other],"Dismissal changes only the exact alert acknowledgement and retains all outcomes")
+            check(!alerts.dismiss(changed,registration:"account-a"),"Repeated dismissal cannot create a second acknowledgement")
+            let reloaded=AIActivityStore(load:{dismissalBytes},persist:{_ in preconditionFailure("Dismissed alerts must not trigger recovery or replay")})
+            check(reloaded.records("account-a") == [expected],"Heartbeat dismissal survives reopening without changing its failure or destination")
+            check(AIActivityPillRules.displayed(reloaded.records("account-a"),current:nil,registration:"account-a") == nil,"A dismissed heartbeat does not reappear in the pill after reopening")
+            check(alerts.upsert(changed) && alerts.records("account-a") == [expected],"Reprojecting the same failed heartbeat preserves dismissal")
+            check(alerts.upsert(question) && AIActivityPillRules.displayed(alerts.records("account-a"),current:nil,registration:"account-a")?.id == question.id,"A later question still surfaces after heartbeat dismissal")
+            check(alerts.dismiss(question,registration:"account-a"),"An unanswered action question can be dismissed without answering or executing it")
+            let next=record("heartbeat:next-run",state:.failed,kind:.heartbeat,offset:40)
+            check(alerts.upsert(next) && AIActivityPillRules.displayed(alerts.records("account-a"),current:nil,registration:"account-a")?.id == next.id,"A new failed heartbeat has its own unresolved alert")
+            let running=record("live",state:.running)
+            let live=AIActivityStore()
+            check(live.upsert(running) && !live.dismiss(running,registration:"account-a") && live.latest("account-a") == running,"Dismissal cannot stop or change running work")
+            let success=record("success-only",state:.succeeded)
+            check(live.upsert(success) && !live.dismiss(success,registration:"account-a"),"Dismiss controls apply to alerts rather than successful outcomes")
         }
         var bytes: Data?
         var writes = 0
