@@ -115,11 +115,19 @@ struct MemoryInspectionPreview:View {
     /// No tools execute, no personal context is read, and a failed request is never retried.
     @MainActor private static func validatePromptCache(_ model: DashboardModel) async {
         let registration = model.chatGPT.activeID, selected = model.chatGPT.selectedModel
+        let diagnosticKey = "chatgptLastDiagnostic"
+        let savedDiagnostic = UserDefaults.standard.string(forKey: diagnosticKey)
         let indices = ProcessInfo.processInfo.arguments.contains("--warm-boundary-only") ? [2, 3] : Array(0..<4)
         var report: [String: Any] = ["selectedModel": selected, "maximumRequests": indices.count, "stableCacheKeySupplied": true, "storage": "Disposable in-memory state before source startup. Fictional guide only; no tool execution or personal source reads."]
         var rows: [[String: Any]] = [], checks: [String: Bool] = [:], requestCount = 0
         var priorBoundaryHistory: [[String: Any]] = []
         defer {
+            // A fictional rejected request belongs in this report, not the normal
+            // connection screen. Preserve a concurrently changed diagnostic.
+            if UserDefaults.standard.string(forKey: diagnosticKey) == model.chatGPT.diagnostic {
+                if let savedDiagnostic { UserDefaults.standard.set(savedDiagnostic, forKey: diagnosticKey) }
+                else { UserDefaults.standard.removeObject(forKey: diagnosticKey) }
+            }
             report["rows"] = rows; report["checks"] = checks; report["requests"] = requestCount
             report["passed"] = checks.values.filter { $0 }.count; report["total"] = checks.count
             if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
