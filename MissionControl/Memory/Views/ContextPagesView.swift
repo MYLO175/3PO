@@ -8,6 +8,8 @@ struct ContextPagesView: View {
     private let storage: ObjectIdentifier?
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
+    @State private var expandedSections = Set(ContextSidebarSection.allCases)
+    @State private var expandedProjects = Set<UUID>()
     @State private var selection: ContextPageDestination?
     @State private var editor: ContextPageEditRequest?
     @State private var history: ContextPageHistoryRequest?
@@ -101,36 +103,42 @@ struct ContextPagesView: View {
     }
 
     private func pageList(pages: [ContextPage], records: [ContextKnowledgeRecord]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let available = Set(pages.filter { ContextPagesAccess.eligible($0, model: model, registration: registration, records: records) }.map(\.id))
+        let descriptions = projectDescriptions(pages: pages, available: available)
+        let hierarchy = ContextSidebarProjectTree(items: projects)
+        let searching = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let matching = searching ? Set(projects.filter { matches(ContextPagesAccess.projectLabel($0, all: projects) + " " + descriptions[$0.id, default: ""]) }.map(\.id)) : nil
+        let rows = hierarchy.rows(matching: matching, expanded: expandedProjects)
+        let topics = pages.filter { $0.kind == .topic && matches($0, available: available.contains($0.id)) }
+        let notes = pages.filter { $0.kind == .note && matches($0, available: available.contains($0.id)) }
+        return VStack(alignment: .leading, spacing: 10) {
             TextField("Search context pages", text: $query).textFieldStyle(.roundedBorder)
             List(selection: $selection) {
-                Section("Context") {
-                    if matches("Overview everyday context") { Label("Overview", systemImage: "doc.text").tag(ContextPageDestination.overview) }
-                    if matches("Working changes recent updates") { Label("Working changes", systemImage: "clock.arrow.circlepath").tag(ContextPageDestination.working) }
-                }
-                Section("Projects") {
-                    let folders = projects.filter { matches(ContextPagesAccess.projectLabel($0, all: projects)) }
-                    ForEach(folders) { item in
-                        VStack(alignment: .leading, spacing: 3) {
-                            Label(ContextPagesAccess.projectLabel(item, all: projects), systemImage: "folder")
-                            let id = ContextPage.stableID(registration: registration, kind: .project, key: item.id.uuidString)
-                            let page = pages.first { $0.id == id }
-                            Text(model.contextPages.identityStatus(id: id, registration: registration) == .preserved ? "Saved page needs a compatible version" : page.map { ContextPagesAccess.eligible($0, model: model, registration: registration, records: records) ? "Saved context page" : "Supporting context unavailable" } ?? "Awaiting first page")
-                                .font(.caption2).foregroundStyle(.secondary)
-                        }.padding(.vertical, 3).tag(ContextPageDestination.project(item.id))
+                Section("Context", isExpanded: sectionExpanded(.context, searching: searching)) {
+                    if matches("Overview everyday context priorities") {
+                        sidebarShortcut("Overview", symbol: "doc.text", description: "Everyday context and priorities").tag(ContextPageDestination.overview)
                     }
-                    if folders.isEmpty { Text(query.isEmpty ? "No project spaces yet" : "No matching projects").font(.caption).foregroundStyle(.secondary) }
+                    if matches("Working changes recent updates") {
+                        sidebarShortcut("Working changes", symbol: "clock.arrow.circlepath", description: "New context since the last update").tag(ContextPageDestination.working)
+                    }
                 }
-                Section("Topics") {
-                    let topics = pages.filter { $0.kind == .topic && matches($0, records: records) }
-                    ForEach(topics) { page in pageRow(page, records: records).tag(ContextPageDestination.page(page.id)) }
-                    if topics.isEmpty { Text(query.isEmpty ? "Awaiting maintained topic pages" : "No matching topics").font(.caption).foregroundStyle(.secondary) }
+                Section("Projects", isExpanded: sectionExpanded(.projects, searching: searching)) {
+                    ForEach(rows) { row in
+                        projectRow(row, description: descriptions[row.id, default: "Awaiting first context page"], searching: searching)
+                            .tag(ContextPageDestination.project(row.id))
+                    }
+                    if rows.isEmpty { Text(searching ? "No matching projects" : "No project spaces yet").font(.caption).foregroundStyle(.secondary) }
                 }
-                let notes = pages.filter { $0.kind == .note && matches($0, records: records) }
+                Section("Topics", isExpanded: sectionExpanded(.topics, searching: searching)) {
+                    ForEach(topics) { page in pageRow(page, available: available.contains(page.id)).tag(ContextPageDestination.page(page.id)) }
+                    if topics.isEmpty { Text(searching ? "No matching topics" : "Awaiting maintained topic pages").font(.caption).foregroundStyle(.secondary) }
+                }
                 if !notes.isEmpty {
-                    Section("Your notes") { ForEach(notes) { page in pageRow(page, records: records).tag(ContextPageDestination.page(page.id)) } }
+                    Section("Your notes", isExpanded: sectionExpanded(.notes, searching: searching)) {
+                        ForEach(notes) { page in pageRow(page, available: available.contains(page.id)).tag(ContextPageDestination.page(page.id)) }
+                    }
                 }
-                Section("Instructions") {
+                Section("Instructions", isExpanded: sectionExpanded(.instructions, searching: searching)) {
                     ForEach(ContextFeature.allCases) { feature in
                         if matches(feature.title) { Label(feature.title, systemImage: "text.alignleft").tag(ContextPageDestination.feature(feature)) }
                     }
@@ -139,21 +147,70 @@ struct ContextPagesView: View {
                     if matches("Calendar guide") { Label("Calendar guide", systemImage: "calendar").tag(ContextPageDestination.calendars) }
                 }
             }.listStyle(.sidebar)
+                .onAppear {
+                    if let initialProjectID { expandedProjects.formUnion(hierarchy.ancestors(of: initialProjectID)) }
+                }
         }
     }
-    private func pageRow(_ page: ContextPage, records: [ContextKnowledgeRecord]) -> some View {
-        let available = ContextPagesAccess.eligible(page, model: model, registration: registration, records: records)
-        return VStack(alignment: .leading, spacing: 3) {
-            Label(available ? page.title : ContextPagesAccess.kindTitle(page.kind), systemImage: page.owner == .human ? "doc.text" : "sparkles")
-            Text(available ? (page.owner == .human ? "Written by you" : "Maintained by 3PO") : "Supporting context unavailable")
-                .font(.caption2).foregroundStyle(.secondary)
+    private func sectionExpanded(_ section: ContextSidebarSection, searching: Bool) -> Binding<Bool> {
+        Binding(get: { searching || expandedSections.contains(section) }, set: { value in
+            guard !searching else { return }
+            if value { expandedSections.insert(section) } else { expandedSections.remove(section) }
+        })
+    }
+    private func sidebarShortcut(_ title: String, symbol: String, description: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Label(title, systemImage: symbol).lineLimit(1)
+            Text(description).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+        }.padding(.vertical, 3)
+    }
+    private func projectRow(_ row: ContextSidebarProjectTree.Row, description: String, searching: Bool) -> some View {
+        HStack(alignment: .top, spacing: 4) {
+            if row.hasChildren {
+                Button {
+                    if expandedProjects.contains(row.id) { expandedProjects.remove(row.id) } else { expandedProjects.insert(row.id) }
+                } label: {
+                    Image(systemName: row.expanded ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.semibold)).foregroundStyle(.secondary).frame(width: 16, height: 20)
+                        .contentShape(Rectangle())
+                }.buttonStyle(.borderless).disabled(searching)
+                    .accessibilityLabel((row.expanded ? "Collapse " : "Expand ") + row.item.title)
+                    .help(searching ? "Matching project paths stay open during search" : row.expanded ? "Hide nested spaces" : "Show nested spaces")
+            } else { Color.clear.frame(width: 16, height: 20).accessibilityHidden(true) }
+            VStack(alignment: .leading, spacing: 3) {
+                Label(row.item.title, systemImage: row.item.displaySymbol).lineLimit(1)
+                Text(description).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }.padding(.leading, CGFloat(min(row.depth, 8)) * 12).padding(.vertical, 3)
+            .contentShape(Rectangle())
+            .help(ContextPagesAccess.projectLabel(row.item, all: projects) + "\n" + description)
+    }
+    private func projectDescriptions(pages: [ContextPage], available: Set<String>) -> [UUID: String] {
+        let byID = Dictionary(pages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return Dictionary(projects.map { item in
+            let purposeID = ContextPage.stableID(registration: registration, kind: .note, key: "project-purpose:" + item.id.uuidString)
+            if let purpose = byID[purposeID], purpose.owner == .human, available.contains(purpose.id),
+               let description = ContextSidebarText.summary(purpose.markdown) { return (item.id, description) }
+            let id = ContextPage.stableID(registration: registration, kind: .project, key: item.id.uuidString)
+            if let page = byID[id] {
+                guard available.contains(id) else { return (item.id, "Supporting context unavailable") }
+                return (item.id, ContextSidebarText.summary(page.synopsis) ?? ContextSidebarText.summary(page.markdown) ?? "Saved context page")
+            }
+            return (item.id, model.contextPages.identityStatus(id: id, registration: registration) == .preserved ? "Saved page needs a compatible version" : "Awaiting first context page")
+        }, uniquingKeysWith: { first, _ in first })
+    }
+    private func pageRow(_ page: ContextPage, available: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Label(available ? page.title : ContextPagesAccess.kindTitle(page.kind), systemImage: page.owner == .human ? "doc.text" : "sparkles").lineLimit(1)
+            Text(available ? (ContextSidebarText.summary(page.synopsis) ?? ContextSidebarText.summary(page.markdown) ?? (page.owner == .human ? "Written by you" : "Maintained by 3PO")) : "Supporting context unavailable")
+                .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
         }.padding(.vertical, 3)
     }
     private func matches(_ text: String) -> Bool {
         query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || text.localizedStandardContains(query.trimmingCharacters(in: .whitespacesAndNewlines))
     }
-    private func matches(_ page: ContextPage, records: [ContextKnowledgeRecord]) -> Bool {
-        guard ContextPagesAccess.eligible(page, model: model, registration: registration, records: records) else { return matches(ContextPagesAccess.kindTitle(page.kind)) }
+    private func matches(_ page: ContextPage, available: Bool) -> Bool {
+        guard available else { return matches(ContextPagesAccess.kindTitle(page.kind)) }
         return matches(page.title + " " + page.synopsis + " " + page.markdown)
     }
     @ViewBuilder private func detail(pages: [ContextPage], records: [ContextKnowledgeRecord]) -> some View {
@@ -514,6 +571,74 @@ private struct ContextWorkingChangeRow: View {
         case "native-mail": "Email context"
         default: "Context update"
         }
+    }
+}
+
+private enum ContextSidebarSection: CaseIterable, Hashable { case context, projects, topics, notes, instructions }
+
+/// A display-only forest. Missing parents become roots and cycles lose one display edge;
+/// canonical project identities, order, parents and saved presentation are never changed.
+private struct ContextSidebarProjectTree {
+    struct Row: Identifiable {
+        let item: LifeItem
+        let depth: Int
+        let hasChildren: Bool
+        let expanded: Bool
+        var id: UUID { item.id }
+    }
+    private let items: [LifeItem]
+    private let parents: [UUID: UUID]
+    private let children: [UUID: [LifeItem]]
+    private let roots: [LifeItem]
+    init(items: [LifeItem]) {
+        var seen = Set<UUID>()
+        let unique = items.filter { seen.insert($0.id).inserted }
+        let ids = Set(unique.map(\.id))
+        var parents = Dictionary(unique.compactMap { item -> (UUID, UUID)? in
+            guard let parent = item.parentID, parent != item.id, ids.contains(parent) else { return nil }
+            return (item.id, parent)
+        }, uniquingKeysWith: { first, _ in first })
+        var settled = Set<UUID>()
+        for item in unique where !settled.contains(item.id) {
+            var path = Set<UUID>(), next: UUID? = item.id
+            while let id = next, let parent = parents[id], !settled.contains(id) {
+                guard path.insert(id).inserted else { parents.removeValue(forKey: id); break }
+                next = parent
+            }
+            settled.formUnion(path)
+        }
+        self.items = unique; self.parents = parents
+        children = Dictionary(grouping: unique.filter { parents[$0.id] != nil }, by: { parents[$0.id]! })
+        roots = unique.filter { parents[$0.id] == nil }
+    }
+    func ancestors(of id: UUID) -> Set<UUID> {
+        var result = Set<UUID>(), next = parents[id]
+        while let id = next, result.insert(id).inserted { next = parents[id] }
+        return result
+    }
+    func rows(matching: Set<UUID>?, expanded: Set<UUID>) -> [Row] {
+        var included = matching ?? Set(items.map(\.id))
+        if let matching { for id in matching { included.formUnion(ancestors(of: id)) } }
+        var pending = roots.reversed().map { ($0, 0) }, rows: [Row] = [], seen = Set<UUID>()
+        while let (item, depth) = pending.popLast() {
+            guard included.contains(item.id), seen.insert(item.id).inserted else { continue }
+            let nested = children[item.id, default: []]
+            let open = matching != nil || expanded.contains(item.id)
+            rows.append(.init(item: item, depth: depth, hasChildren: !nested.isEmpty, expanded: open))
+            if open { pending.append(contentsOf: nested.reversed().map { ($0, depth + 1) }) }
+        }
+        return rows
+    }
+}
+
+private enum ContextSidebarText {
+    static func summary(_ markdown: String) -> String? {
+        let lines = markdown.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard let line = lines.first(where: { !$0.isEmpty && !$0.hasPrefix("#") && !$0.hasPrefix("```") }) ?? lines.first else { return nil }
+        let plain = PAProse.display(line).replacingOccurrences(of: #"\[([^\]]+)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "#>*_`- \t"))
+        guard !plain.isEmpty else { return nil }
+        return String(plain.prefix(110)) + (plain.count > 110 ? "…" : "")
     }
 }
 
