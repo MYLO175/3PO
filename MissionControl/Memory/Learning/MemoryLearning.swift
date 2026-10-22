@@ -61,6 +61,8 @@ struct MemoryLearningProgress: Codable {
     var actionsBaselined: Bool? = nil
     /// A later approval may update the result on the same saved assistant turn.
     var revisions: [String:String]? = nil
+    /// Attempted input stays paused; it must not hold unrelated later changes behind it.
+    var pausedTurnIDs: Set<String>? = nil
 }
 struct MemoryLearningState: Codable {
     var version = 1
@@ -121,8 +123,9 @@ enum MemoryLearningRules {
     static func pending(_ turn: MemoryLearningTurn, seen: Set<String>, revisions: [String:String]) -> Bool {
         !seen.contains(turn.id) || turn.revision.map { revisions[turn.id] != $0 } == true
     }
-    static func batch(_ turns: [MemoryLearningTurn], seen: Set<String>, suppressed: Set<String>, offsets: [String:Int] = [:], revisions: [String:String] = [:]) -> [MemoryLearningTurn] {
-        let eligible = turns.filter { pending($0, seen: seen, revisions: revisions) && !suppressed.contains($0.id) }.sorted { $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created }
+    static func pauseKey(_ turn: MemoryLearningTurn) -> String { turn.revision.map { turn.id + ":" + $0 } ?? turn.id }
+    static func batch(_ turns: [MemoryLearningTurn], seen: Set<String>, suppressed: Set<String>, offsets: [String:Int] = [:], revisions: [String:String] = [:], paused: Set<String> = []) -> [MemoryLearningTurn] {
+        let eligible = turns.filter { pending($0, seen: seen, revisions: revisions) && !suppressed.contains($0.id) && !paused.contains(pauseKey($0)) }.sorted { $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created }
         guard let first = eligible.first else { return [] }
         // One scope per inference; another topic's memory is never supplied to this batch.
         return eligible.filter { $0.conversationID == first.conversationID }.prefix(batchSize).map {
@@ -163,7 +166,7 @@ enum MemoryLearningRules {
         return value
     }
     static func allowed(_ progress: MemoryLearningProgress, now: Date, manual: Bool) -> Bool {
-        manual || (!progress.paused && progress.attempts < 4 && now.timeIntervalSince(progress.lastAttempt ?? .distantPast) >= 900)
+        manual || ((!progress.paused || progress.pausedTurnIDs != nil) && progress.attempts < 4 && now.timeIntervalSince(progress.lastAttempt ?? .distantPast) >= 900)
     }
     static func decode(_ output: String, turns: [MemoryLearningTurn]) throws -> [LearnedMemory] {
         try assessment(output,turns:turns,questionAllowed:false).memories

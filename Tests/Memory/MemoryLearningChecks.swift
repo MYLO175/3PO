@@ -133,6 +133,7 @@ import Foundation
         MemoryLearningRules.acknowledge([revisedAction],progress:&actionProgress)
         precondition(MemoryLearningRules.batch([revisedAction],seen:actionProgress.seen,suppressed:[],revisions:actionProgress.revisions ?? [:]).isEmpty)
         revisedAction.revision = "verified-approval"
+        precondition(MemoryLearningRules.batch([revisedAction],seen:[],suppressed:[],paused:[action.id + ":pending-approval"]).count == 1,"A failed old outcome cannot block a newly verified outcome on the same turn")
         let updatedAction = MemoryLearningRules.batch([revisedAction],seen:actionProgress.seen,suppressed:[],revisions:actionProgress.revisions ?? [:])
         precondition(updatedAction.count == 1 && updatedAction[0].offset == 0,"A later approval on the same response turn must be consolidated")
         actionProgress.offsets = [action.id:12]

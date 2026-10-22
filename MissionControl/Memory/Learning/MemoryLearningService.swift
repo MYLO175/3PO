@@ -36,14 +36,26 @@ import SwiftData
     func capturePending(_ assistant: any LearningAssistantReading) {
         let owner = assistant.connection.activeID
         guard readable, !busy, !owner.isEmpty else { return }
-        guard state.accounts[owner] == nil || state.accounts[owner]?.actionsBaselined != true else { return }
+        let prior = state.accounts[owner]
+        let legacyPause = prior?.paused == true && prior?.pausedTurnIDs == nil
+        guard prior == nil || prior?.actionsBaselined != true || legacyPause else { return }
         let turns = assistant.learningTurns()
-        var progress = MemoryLearningRules.progress(turns: turns, prior: state.accounts[owner], suppressed: assistant.memory.suppressed(owner), day: BriefingRules.day(.now))
-        progress.seen.formUnion(turns.filter(\.isAction).map(\.id)); progress.actionsBaselined = true
-        for turn in turns where turn.isAction {
-            if let revision = turn.revision {
-                if progress.revisions == nil { progress.revisions = [:] }
-                progress.revisions?[turn.id] = revision
+        var progress = MemoryLearningRules.progress(turns: turns, prior: prior, suppressed: assistant.memory.suppressed(owner), day: BriefingRules.day(.now))
+        if legacyPause {
+            // Older claims did not save their input IDs. Hold all pending human input from
+            // before the claim: changed suppression/scope could otherwise replay part of it.
+            let atClaim = turns.filter { turn in !turn.isAction && MemoryRules.explicitRequest(turn.text) == nil &&
+                !progress.seen.contains(turn.id) &&
+                (progress.lastAttempt.map { date in turn.created <= date } ?? true) }
+            progress.pausedTurnIDs = Set(atClaim.map(\.id))
+        }
+        if progress.actionsBaselined != true {
+            progress.seen.formUnion(turns.filter(\.isAction).map(\.id)); progress.actionsBaselined = true
+            for turn in turns where turn.isAction {
+                if let revision = turn.revision {
+                    if progress.revisions == nil { progress.revisions = [:] }
+                    progress.revisions?[turn.id] = revision
+                }
             }
         }
         let previous = state; state.accounts[owner] = progress
@@ -66,7 +78,10 @@ import SwiftData
         if !assistant.contextEnabled { return "Assistant source context is off; automatic learning is on hold." }
         if assistant.hasDraft { return "A visible chat draft is open. Finish or clear it before learning new context." }
         if !assistant.memory.learningEnabled { return "Automatic learning paused. Explicit Remember requests still work." }
-        if progress?.paused == true { return "Learning paused after a stopped or failed attempt. Check context to try once when ready." }
+        if progress?.paused == true {
+            if let held = progress?.pausedTurnIDs { return "\(count) saved items pending · \(held.count) attempted items await an explicit retry. Other changes remain eligible during a heartbeat." }
+            return "Learning paused after a stopped or failed attempt. Check context to try once when ready."
+        }
         if progress == nil { return "Initial orientation will inspect only the eight most recent eligible messages." }
         return "\(count) saved chat/activity items pending · up to 8 per pass · \(progress?.day == BriefingRules.day(.now) ? progress?.attempts ?? 0 : 0) attempts today (automatic budget: 4) · \(progress?.skippedAtOrientation ?? 0) older messages outside initial orientation"
     }
@@ -78,11 +93,13 @@ import SwiftData
         let turns = assistant.learningTurns(), day = BriefingRules.day(now)
         var progress = MemoryLearningRules.progress(turns:turns,prior:state.accounts[registration],suppressed:memory.suppressed(registration),day:day)
         guard MemoryLearningRules.allowed(progress,now:now,manual:manual) else { return }
-        let batch = MemoryLearningRules.batch(turns,seen:progress.seen,suppressed:memory.suppressed(registration),offsets:progress.offsets ?? [:],revisions:progress.revisions ?? [:])
+        let held = manual ? Set<String>() : progress.pausedTurnIDs ?? []
+        let batch = MemoryLearningRules.batch(turns,seen:progress.seen,suppressed:memory.suppressed(registration),offsets:progress.offsets ?? [:],revisions:progress.revisions ?? [:],paused:held)
         guard !batch.isEmpty else { if state.accounts[registration] == nil { let old = state; state.accounts[registration] = progress; do { try save() } catch { state = old; self.error = error.localizedDescription } }; return }
         guard model.learningBudget.claim(registration,manual:manual,now:model.now(),lane:.conversation) else { return }
         let previous = state
         progress.lastAttempt = now; progress.attempts += 1; progress.paused = true
+        progress.pausedTurnIDs = (progress.pausedTurnIDs ?? []).union(batch.map(MemoryLearningRules.pauseKey))
         state.accounts[registration] = progress
         do { try save() } catch { state = previous; self.error = error.localizedDescription; return }
         // Persist a paused claim before requesting inference. An interrupted job is never retried silently on launch.
@@ -137,7 +154,8 @@ import SwiftData
                     next.accounts[registration]?.lastQuestionDay = BriefingRules.day(record.created)
                 }
                 if var completed = next.accounts[registration] {
-                    MemoryLearningRules.acknowledge(batch, progress: &completed); completed.paused = false
+                    MemoryLearningRules.acknowledge(batch, progress: &completed)
+                    completed.pausedTurnIDs?.subtract(batch.map(MemoryLearningRules.pauseKey)); completed.paused = completed.pausedTurnIDs?.isEmpty == false
                     next.accounts[registration] = completed
                 }
                 let bytes = try LocalRecordCoding.preservingUnknown(next, original: loadedBytes)

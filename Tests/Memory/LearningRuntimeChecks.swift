@@ -311,8 +311,48 @@ import SwiftData
         try await capturedSourceMemoryChecks(now:now,check:check)
         try await conversationContextChecks(now:now,check:check)
         try await consolidationChecks(check:check)
+        try await pausedConsolidationChecks(check:check)
         print("PASS \(count) actual learning-service checks: durable chat/action backlog, routed preferences, atomic progress, exact supplied context, persistence, foreground priority and explicit recovery; no dashboard, credentials or personal sources.")
     }
+    @MainActor private static func pausedConsolidationChecks(check:(Bool,String)->Void) async throws {
+        let isolated = try ModelContainer(for:CachedDashboard.self, configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+        let suite = "3PO.paused-consolidation." + UUID().uuidString
+        let settings = UserDefaults(suiteName:suite)!
+        defer { settings.removePersistentDomain(forName:suite) }
+        let provider = FictionalInference(), memory = PAMemoryStore(container:isolated,settings:settings)
+        let assistant = FictionalAssistant(provider,memory:memory)
+        var clock = Date.now
+        let topic = UUID()
+        assistant.turns = [.init(id:"old-1",text:"An earlier saved statement.",created:clock.addingTimeInterval(-4000),conversationID:topic),
+            .init(id:"old-2",text:"Another earlier saved statement.",created:clock.addingTimeInterval(-3900)),
+            .init(id:"new-1",text:"A later statement that has never been attempted.",created:clock)]
+        assistant.turns += (3...10).map { .init(id:"old-\($0)",text:"An earlier statement in another topic.",created:clock.addingTimeInterval(-3800),conversationID:topic) }
+        let suppressed = PAMemory(registration:"fixture",text:"Forgotten earlier input",kind:.context,explicit:false,provenance:"Fictional human",sourceTurnID:"old-1")
+        check(memory.put(suppressed) && memory.forget(suppressed.id),"Legacy fixture changes suppression after its failed claim")
+        let held = Set((1...10).map { "old-\($0)" })
+        let progress = MemoryLearningProgress(lastAttempt:clock.addingTimeInterval(-3600),day:BriefingRules.day(clock),attempts:1,paused:true)
+        try LocalRecordRepository(container:isolated).save(MemoryLearningState(accounts:["fixture":progress]),key:"paMemoryLearning")
+        let runtime = LearningRuntime(assistant:assistant,inference:provider,learningBudget:LearningBudget(container:isolated),whatsapp:FictionalWhatsApp(),now:{clock},activity:{.init()},writing:{false},sourceRevision:{0},nativeItems:{_,_ in nil})
+        let service = MemoryLearningService(container:isolated,settings:settings)
+        service.capturePending(assistant)
+        check(service.state.accounts["fixture"]?.pausedTurnIDs == held && provider.calls == 0,"Legacy migration conservatively holds historical input across scopes and suppression changes without replay")
+        func run() async {
+            service.check(runtime)
+            for _ in 0..<10000 { if !service.busy { break }; await Task.yield() }
+        }
+        await run()
+        let input = try JSONSerialization.jsonObject(with:Data(provider.inputs.last!.first!["content"]!.utf8)) as! [String:Any]
+        check((input["messages"] as? [[String:Any]])?.compactMap{$0["id"] as? String} == ["new-1"],"An automatic pass processes only never-attempted later changes")
+        check(service.state.accounts["fixture"]?.seen.contains("new-1") == true && service.state.accounts["fixture"]?.pausedTurnIDs == held,"New progress cannot acknowledge the paused legacy batch")
+        clock.addTimeInterval(1801); assistant.turns.append(.init(id:"failed-new",text:"A newly attempted statement.",created:clock))
+        provider.onCall = { provider.activeID = "other" }; await run(); provider.onCall = nil; provider.activeID = "fixture"
+        clock.addTimeInterval(1801); assistant.turns.append(.init(id:"after-failure",text:"A statement saved after the failed job.",created:clock))
+        await run()
+        check(provider.calls == 3 && service.state.accounts["fixture"]?.seen.contains("after-failure") == true && service.state.accounts["fixture"]?.pausedTurnIDs?.contains("failed-new") == true,"A new failed batch pauses itself while later evidence remains eligible")
+        let reopened = MemoryLearningService(container:isolated,settings:settings)
+        check(reopened.state.accounts["fixture"]?.pausedTurnIDs == service.state.accounts["fixture"]?.pausedTurnIDs,"Paused identities and later successful progress survive reopening")
+    }
+
     @MainActor private static func consolidationChecks(check:(Bool,String)->Void) async throws {
         let isolated = try ModelContainer(for:CachedDashboard.self, configurations:ModelConfiguration(isStoredInMemoryOnly:true))
         let suite = "3PO.consolidation." + UUID().uuidString
