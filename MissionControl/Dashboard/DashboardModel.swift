@@ -14,6 +14,7 @@ struct CalendarRemovalReviewSession:Identifiable {
 @MainActor @Observable final class DashboardModel {
     let preparedReview = PreparedReviewStore()
     @ObservationIgnored lazy var contextPages = ContextPageStore(container: container)
+    @ObservationIgnored let contextRecordProjections = ContextRecordProjectionCache()
     #if DEBUG
     /// Fictional consumer acceptance only; normal startup never consults this port.
     @ObservationIgnored var contextCalendarAccess: (() -> Bool)?

@@ -13,11 +13,59 @@ import SwiftData
         checks.merge(try instructionChecks(), uniquingKeysWith: { $1 })
         checks.merge(try emailPageChecks(), uniquingKeysWith: { $1 })
         checks.merge(try primaryContextChecks(), uniquingKeysWith: { $1 })
+        checks.merge(try projectionReuseChecks(), uniquingKeysWith: { $1 })
         checks.merge(try hierarchyGuideChecks(), uniquingKeysWith: { $1 })
         checks.merge(try navigationDirectoryChecks(), uniquingKeysWith: { $1 })
         checks.merge(try guideOverflowChecks(), uniquingKeysWith: { $1 })
         checks.merge(try largeAncestryChecks(), uniquingKeysWith: { $1 })
         checks.merge(try await ownedMutationChecks(), uniquingKeysWith: { $1 })
+        return checks
+    }
+
+    private static func projectionReuseChecks() throws -> [String: Bool] {
+        let fixture=try ContextPagesFixture()
+        defer {fixture.clean()}
+        let model=fixture.model,owner=fixture.registration
+        let fact=PAMemory(registration:owner,text:"Fictional stable optical research context.",kind:.context,provenance:"Fictional human")
+        guard model.assistant.memory.put(fact) else {throw IntegrationError.verification}
+        let space=try model.assistant.projects.save(.init(registration:owner,kind:.space,title:"Fictional optics"),expected:nil)
+        let initial=model.contextKnowledge(registration:owner).map(\.input)
+        let builds=model.contextRecordProjections.builds
+        var identical=true
+        for _ in 0..<200 {identical = identical && model.contextKnowledge(registration:owner).map(\.input) == initial}
+        var checks=["Context repeated validation reuses only identical canonical formatting":identical && model.contextRecordProjections.builds == builds]
+        checks["Context warmed records still respect restricted memory IDs"] = !model.contextKnowledge(registration:owner,allowedMemoryIDs:[]).contains{$0.memoryID != nil}
+        var renamed=space;renamed.title="Fictional updated optics"
+        _=try model.assistant.projects.save(renamed,expected:space.revision)
+        let updated=model.contextKnowledge(registration:owner)
+        let changedProject=updated.first{$0.reference.kind == "project" && $0.projectID == space.id}
+        let oldProjectRevision=initial.first{$0["id"] == "project:"+space.id.uuidString}?["revision"]
+        checks["Context project edits rebuild cached formatting and exact revisions"] = changedProject?.title == renamed.title && oldProjectRevision != nil && changedProject?.reference.revision != oldProjectRevision
+        let quote="Fictional source proposes an optical experiment."
+        let evidence=MemorySourceEvidence(identity:.init(kind:.calendar,accountID:"fictional-account",containerID:"fictional-calendar",itemID:"fictional-event"),revision:"v1",label:"Fictional Calendar",quote:quote,observed:.now,sourceDate:.now)
+        let source=PAMemory(registration:owner,text:quote,kind:.context,explicit:false,provenance:"Fictional source",evidence:quote,certainty:.inferred,durability:.situational,source:evidence)
+        guard model.assistant.memory.putSources([source],evidenceTexts:[evidence.identity:quote],expectedRevision:model.assistant.memory.revision) else {throw IntegrationError.verification}
+        var permitted=Set([source.id])
+        model.assistant.memory.sourcePermissionProjection={permitted}
+        let warmSource=model.contextKnowledge(registration:owner).contains{$0.memoryID == source.id}
+        let sourceRevision=model.assistant.memory.revision
+        checks["Context warmed source records stay excluded from human-only purposes"] = warmSource && !model.contextKnowledge(registration:owner,purpose:.email).contains{$0.memoryID == source.id}
+        permitted=[]
+        checks["Context warm formatting never caches source eligibility"] = warmSource && model.assistant.memory.revision == sourceRevision && !model.contextKnowledge(registration:owner).contains{$0.memoryID == source.id}
+        guard model.assistant.memory.forget(fact.id) else {throw IntegrationError.verification}
+        checks["Context Forget withdraws warm canonical records"] = !model.contextKnowledge(registration:owner).contains{$0.memoryID == fact.id}
+        model.assistant.memory.enabled=false
+        checks["Context warm formatting cannot bypass memory-use withdrawal"] = model.contextKnowledge(registration:owner).isEmpty
+        let bounded=ContextRecordProjectionCache()
+        bounded.prepare(registration:owner,memory:UUID(),project:UUID())
+        let overflow=(0..<1025).map { PAMemory(registration:owner,text:"Fictional capacity record \($0)",kind:.context,provenance:"Fictional human") }
+        for _ in 0..<2 {
+            for value in overflow {
+                _=bounded.memory(value) {.init(reference:.init(kind:"memory",key:value.id.uuidString,revision:"fictional"),title:"Fictional",text:value.text,date:value.created)}
+            }
+        }
+        checks["Context formatting capacity overflow preserves warmed entries without scan thrashing"] = bounded.builds == 1026
+        checks["Context formatting reuse makes no model or source calls"] = fixture.provider.calls == 0 && fixture.sources.reads == 0
         return checks
     }
 

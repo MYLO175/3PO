@@ -1,6 +1,42 @@
 import Foundation
 import EventKit
 
+/// Pure formatting of unchanged canonical values, never permission or availability.
+/// Callers must filter current eligibility before consulting this bounded cache.
+@MainActor final class ContextRecordProjectionCache {
+    private var owner: String?
+    private var memoryRevision: UUID?
+    private var projectRevision: UUID?
+    private var memories: [UUID: (PAMemory, ContextKnowledgeRecord)] = [:]
+    private var projects: [UUID: (LifeItem, [ContextKnowledgeRecord])] = [:]
+    #if DEBUG
+    private(set) var builds = 0
+    #endif
+    func prepare(registration: String, memory: UUID, project: UUID) {
+        if owner != registration || memoryRevision != memory { memories.removeAll(); memoryRevision=memory }
+        if owner != registration || projectRevision != project { projects.removeAll(); projectRevision=project }
+        owner=registration
+    }
+    func memory(_ value: PAMemory, build: () -> ContextKnowledgeRecord) -> ContextKnowledgeRecord {
+        if let cached=memories[value.id], cached.0 == value { return cached.1 }
+        let record=build()
+        if memories.count < 1024 { memories[value.id]=(value,record) }
+        #if DEBUG
+        builds += 1
+        #endif
+        return record
+    }
+    func project(_ value: LifeItem, build: () -> [ContextKnowledgeRecord]) -> [ContextKnowledgeRecord] {
+        if let cached=projects[value.id], cached.0 == value { return cached.1 }
+        let records=build()
+        if projects.count < 1024 { projects[value.id]=(value,records) }
+        #if DEBUG
+        builds += 1
+        #endif
+        return records
+    }
+}
+
 @MainActor extension DashboardModel {
     private var contextCalendarAllowed: Bool {
         #if DEBUG
@@ -52,26 +88,29 @@ import EventKit
         contextKnowledgeBuildCount += 1
         #endif
         guard assistant.memory.enabled, registration == chatGPT.activeID else { return [] }
+        contextRecordProjections.prepare(registration:registration,memory:assistant.memory.revision,project:assistant.projects.revision)
         var records: [ContextKnowledgeRecord] = assistant.memory.permittedRecords.filter {
             MemoryRules.usable($0, registration: registration) && MemoryRules.inScope($0, conversationID: topic, includeTopics: includeTopics) &&
             (allowedMemoryIDs?.contains($0.id) ?? true) && contextMemoryAllowed($0, purpose: purpose, mailAccounts: mailAccounts, whatsappReady: whatsappReady)
         }.map { memory in
-            .init(reference: .init(kind: "memory", key: memory.id.uuidString, revision: MemoryDependencyRules.fingerprint(MemoryRetrieval.record(memory))),
+            contextRecordProjections.memory(memory) { .init(reference: .init(kind: "memory", key: memory.id.uuidString, revision: MemoryDependencyRules.fingerprint(MemoryRetrieval.record(memory))),
                   title: memory.kind.rawValue, text: memory.text, date: memory.sourceDate ?? memory.created,
-                  areas: memory.organisation?.areas ?? [], memoryID: memory.id)
+                  areas: memory.organisation?.areas ?? [], memoryID: memory.id) }
         }
         let items = assistant.projects.items(registration, topic: topic, includeTopics: includeTopics)
         for item in items {
-            // Navigation/reorder revisions alone do not require another synthesis.
-            let canonical = ContextKnowledgeRules.json(["id": item.id.uuidString, "kind": item.kind.workspaceKind.rawValue,
-                "title": item.title, "notes": item.searchableNotes, "status": item.status.rawValue,
-                "due": item.due ?? "", "parent": item.parentID?.uuidString ?? "", "scope": item.conversationID?.uuidString ?? "shared"])
-            let text = ContextKnowledgeRules.projectText(title:item.title,kind:item.kind.workspaceKind.rawValue,notes:item.searchableNotes,status:item.status.rawValue,due:item.due,parent:item.parentID?.uuidString,scope:item.conversationID?.uuidString ?? "shared")
-            records.append(.init(reference: .init(kind: "project", key: item.id.uuidString, revision: ContextKnowledgeRules.fingerprint(canonical)),
-                                 title: item.title, text: text, date: item.updated, areas: item.areas, projectID: item.id))
-            records.append(.init(reference: .init(kind: "projectIdentity", key: item.id.uuidString,
-                                 revision: ContextKnowledgeRules.fingerprint(registration + ":" + item.id.uuidString + ":" + (item.conversationID?.uuidString ?? "shared"))),
-                                 title: item.title, text: "Existing human-owned " + item.kind.title, date: item.created, projectID: item.id))
+            records += contextRecordProjections.project(item) {
+                // Navigation/reorder revisions alone do not require another synthesis.
+                let canonical = ContextKnowledgeRules.json(["id": item.id.uuidString, "kind": item.kind.workspaceKind.rawValue,
+                    "title": item.title, "notes": item.searchableNotes, "status": item.status.rawValue,
+                    "due": item.due ?? "", "parent": item.parentID?.uuidString ?? "", "scope": item.conversationID?.uuidString ?? "shared"])
+                let text = ContextKnowledgeRules.projectText(title:item.title,kind:item.kind.workspaceKind.rawValue,notes:item.searchableNotes,status:item.status.rawValue,due:item.due,parent:item.parentID?.uuidString,scope:item.conversationID?.uuidString ?? "shared")
+                return [.init(reference: .init(kind: "project", key: item.id.uuidString, revision: ContextKnowledgeRules.fingerprint(canonical)),
+                              title: item.title, text: text, date: item.updated, areas: item.areas, projectID: item.id),
+                        .init(reference: .init(kind: "projectIdentity", key: item.id.uuidString,
+                              revision: ContextKnowledgeRules.fingerprint(registration + ":" + item.id.uuidString + ":" + (item.conversationID?.uuidString ?? "shared"))),
+                              title: item.title, text: "Existing human-owned " + item.kind.title, date: item.created, projectID: item.id)]
+            }
         }
         if allowedMemoryIDs == nil && includeRecent && purpose.includesWorkingChanges {
             var retained = retainingReferenceVersions

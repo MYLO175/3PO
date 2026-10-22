@@ -10,7 +10,7 @@ The guide lists **Your spaces**, **Your topics** and **Your instructions**, with
 
 The guide is placed before changing context to support prompt-cache reuse. Context details records a fingerprint and size, and existing usage diagnostics retain provider-reported cached input. Those observations are separate from a guarantee of cache residency or response speed.
 
-Chat history checks its exact page receipts against one fresh context projection per purpose, discarded before yielding. Confirmation lookup checks only saved confirmation candidates, avoiding unrelated email-assessment reconstruction between streamed words. Each partial update still checks current ownership and supplied information. A validated `response.completed` accepts authoritative final text, tool output and usage without waiting for the HTTP connection to close; item completion or a partial reply alone cannot finish a request.
+Chat history checks its exact page receipts against one fresh context projection per purpose, discarded before yielding. Confirmation lookup checks only saved confirmation candidates, avoiding unrelated email-assessment reconstruction between streamed words. A bounded local cache reuses canonical record formatting only after current eligibility checks and while the complete input value is unchanged; account or store revisions clear it. Each partial update still checks current ownership and supplied information. A validated `response.completed` accepts authoritative final text, tool output and usage without waiting for the HTTP connection to close; item completion or a partial reply alone cannot finish a request.
 
 ## 21 October: context pages as the primary memory interface
 
