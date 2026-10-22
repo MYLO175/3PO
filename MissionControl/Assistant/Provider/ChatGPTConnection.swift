@@ -303,7 +303,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
             body["tools"] = tools; body["parallel_tool_calls"] = false
             body["include"] = ["reasoning.encrypted_content"]
         }
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
         responseRequestID = nil; responseHTTPStatus = 0; responseModel = model
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 120; configuration.timeoutIntervalForResource = 180

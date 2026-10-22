@@ -12,7 +12,7 @@ enum ContextConsolidationSelection {
     static func target(registration: String, kind: ContextPage.Kind, key: String, title: String,
                        candidates: [ContextKnowledgeRecord], previous: ContextPage?, anchorKeys: [String] = [],
                        projectID: UUID? = nil, mayAskPurpose: Bool = false,
-                       eligibleReferences: [String: String]? = nil) -> ContextPageTarget? {
+                       eligibleReferences: [String: String]? = nil, structuralReferences: [ContextPageReference] = []) -> ContextPageTarget? {
         let groups = Dictionary(grouping: candidates, by: { $0.reference.contextKey })
         // An ambiguous current identity is not resolved by array order.
         let current = groups.compactMapValues { rows -> ContextKnowledgeRecord? in
@@ -37,7 +37,7 @@ enum ContextConsolidationSelection {
         var seen = Set<String>()
         let anchors = anchorKeys.compactMap { current[$0] }.filter { seen.insert($0.reference.contextKey).inserted }
         let supportedPrior = old.flatMap { page in
-            !page.references.isEmpty && page.references.allSatisfy { current[$0.contextKey]?.reference == $0 } ? page : nil
+            !page.references.isEmpty && page.references.allSatisfy { current[$0.contextKey]?.reference == $0 || structuralReferences.contains($0) } ? page : nil
         }
         let retained = (supportedPrior?.references ?? old?.references ?? []).compactMap { ref -> ContextKnowledgeRecord? in
             guard let record = current[ref.contextKey], record.reference == ref else { return nil }
@@ -48,6 +48,7 @@ enum ContextConsolidationSelection {
             title: boundedTitle.isEmpty ? "Project context" : boundedTitle, records: [], projectID: projectID,
             mayAskPurpose: mayAskPurpose, hasPendingChanges: !waiting.isEmpty, processedReferences: processed,
             previousPage: supportedPrior, pendingReferences: [], allPendingReferences: allWaiting.map(\.reference), remainingPendingCount: waiting.count)
+        result.structuralReferences = structuralReferences
         let anchorIDs = Set(anchors.map { $0.reference.contextKey })
         let priorIDs = Set(supportedPrior?.references.map(\.contextKey) ?? [])
         var originals = anchors + retained

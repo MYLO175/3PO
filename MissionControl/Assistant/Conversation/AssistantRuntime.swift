@@ -32,6 +32,9 @@ struct AssistantToolRequest {
     var memoryIDs: Set<UUID> = []
     var workspaceIDs: Set<UUID> = []
     var referenceVersions: [String: String] = [:]
+    /// Stable ordinary-chat orientation, placed before clocks, snapshots and request-local facts.
+    var guideText: String = ""
+    var guideFingerprint: String? = nil
     var validate: (Set<String>) -> Bool = { _ in true }
     func current(ignoring: Set<String> = []) -> Bool { validate(ignoring) }
     func including(_ guidance: AssistantPageContext, as key: String) -> AssistantPageContext {
@@ -42,6 +45,8 @@ struct AssistantToolRequest {
         return .init(text: encoded, pageIDs: Array(Set(pageIDs + guidance.pageIDs)).sorted(),
                      memoryIDs: memoryIDs.union(guidance.memoryIDs), workspaceIDs: workspaceIDs.union(guidance.workspaceIDs),
                      referenceVersions: referenceVersions.merging(guidance.referenceVersions) { first, _ in first },
+                     guideText: guideText,
+                     guideFingerprint: guideFingerprint,
                      validate: { base.current(ignoring: $0) && guidance.current(ignoring: $0) })
     }
 }

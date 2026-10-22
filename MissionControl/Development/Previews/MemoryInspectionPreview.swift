@@ -30,6 +30,16 @@ struct MemoryInspectionPreview:View {
         guard !owner.isEmpty else { throw ContextPageFailure.unavailable }
         let project = LifeItem(registration: owner, kind: .space, title: "Fictional Lark optics", notes: "Compare two camera-calibration methods.")
         _ = try model.assistant.projects.create([project], receipt: .init(id: "fictional-context-preview", registration: owner, result: "Fictional context preview prepared"))
+        var measurements = LifeItem(registration: owner, kind: .space, title: "Fictional camera measurements", notes: "Compare repeatable measurements on the Lark rig.")
+        measurements.parentID = project.id
+        var repeatability = LifeItem(registration: owner, kind: .space, title: "Fictional repeatability checks")
+        repeatability.parentID = measurements.id
+        let career = LifeItem(registration: owner, kind: .space, title: "Fictional Kite career")
+        _ = try model.assistant.projects.create([measurements, repeatability, career], receipt: .init(id: "fictional-context-hierarchy-preview", registration: owner, result: "Fictional hierarchy prepared"))
+        _ = try model.contextPages.save(.init(registration: owner, kind: .instruction, key: ContextInstructionScope.space(project.id).key,
+            owner: .human, title: "Lark instructions", markdown: "Use SI units and distinguish estimates from verified measurements.", references: [model.contextProjectIdentity(project)]), expectedRevision: nil)
+        _ = try model.contextPages.save(.init(registration: owner, kind: .instruction, key: ContextInstructionScope.space(measurements.id).key,
+            owner: .human, title: "Measurement instructions", markdown: "Report uncertainty ranges for camera measurements.", references: [model.contextProjectIdentity(measurements)]), expectedRevision: nil)
         let overview = ContextPage(registration: owner, kind: .overview, key: "everyday", owner: .human, title: "Everyday context", markdown: "# My everyday context\n\nThis is a fictional engineering project preview. I prefer short, practical plans and clear uncertainty.\n\n## Where to look\n\nThe Lark optics project explains the current camera experiment.")
         let saved = try model.contextPages.save(overview, expectedRevision: nil)
         var revised = saved; revised.markdown += "\n\nKeep original evidence available when a plan changes."

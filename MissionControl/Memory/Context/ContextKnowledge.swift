@@ -168,16 +168,24 @@ import EventKit
 
     /// Small directory and current changes are computed locally; browsing never creates saved projects/pages.
     func captureContextPages(registration: String, query: String?, topic: UUID? = nil, includeTopics: Bool = true,
-                             everyday: Bool = false, pageID: String? = nil, allowedMemoryIDs: Set<UUID>? = nil, pageOffset: Int = 0,
+                             everyday: Bool = false, pageID requestedPageID: String? = nil, allowedMemoryIDs: Set<UUID>? = nil, pageOffset: Int = 0,
                              purpose: ContextKnowledgePurpose = .conversation, mailAccounts: Set<String>? = nil, whatsappReady: Bool = true, includeSourceChanges: Bool = true) -> AssistantPageContext {
         guard assistant.memory.enabled, registration == chatGPT.activeID else { return .init() }
+        let areaKey = requestedPageID.flatMap { value -> String? in
+            guard value.hasPrefix("area:") else { return nil }
+            let key = String(value.dropFirst(5))
+            return LifeArea.allCases.contains(where: { $0.rawValue == key }) ? key : nil
+        }
+        let pageID = areaKey.map { ContextPage.stableID(registration: registration, kind: .topic, key: $0) } ?? requestedPageID
         let records = contextKnowledge(registration: registration, topic: topic, includeTopics: includeTopics, allowedMemoryIDs: allowedMemoryIDs, purpose: purpose, mailAccounts: mailAccounts, whatsappReady: whatsappReady)
         let pages = contextPages.pages(registration: registration)
+        let spaceItems = assistant.projects.items(registration, topic: topic, includeTopics: includeTopics).filter { !$0.kind.isWork }
+        let navigation = everyday ? contextNavigationGuide(registration: registration, items: spaceItems, records: records) : (text: "", references: [ContextPageReference]())
         let visible = pages.filter { $0.kind != .instruction && contextPageEligible($0, records: records) }
         let checkpoint = contextPages.checkpoint(registration: registration)
         let prior = Dictionary((checkpoint?.references ?? []).map { ($0.contextKey, $0.revision) }, uniquingKeysWith: { first, _ in first })
         let selfLabel = assistant.memory.notebook(registration, topic: topic, includeTopics: includeTopics).selfLabel
-        let effectiveQuery = query ?? pageID.flatMap { id in pages.first { $0.id == id }?.title ?? assistant.projects.items(registration, topic: topic, includeTopics: includeTopics).first { ContextPage.stableID(registration: registration, kind: .project, key: $0.id.uuidString) == id }?.title }
+        let effectiveQuery = query ?? areaKey.flatMap { key in LifeArea.allCases.first { $0.rawValue == key }?.title } ?? pageID.flatMap { id in pages.first { $0.id == id }?.title ?? spaceItems.first { ContextPage.stableID(registration: registration, kind: .project, key: $0.id.uuidString) == id }?.title }
         let terms = MemoryRetrieval.queryTerms(effectiveQuery, selfLabel: selfLabel)
         func relevant(_ record: ContextKnowledgeRecord) -> Bool {
             effectiveQuery == nil || !terms.isDisjoint(with: MemoryRetrieval.tokens(record.title + " " + record.text))
@@ -202,7 +210,7 @@ import EventKit
             "coverage": "Bounded current permitted knowledge. Pages retain exact support. Pending changes are available before heartbeat consolidation. Missing context is unknown. App action receipts describe only verified historical operations, never current external completion."]
         var supplied: [ContextPageReference] = [], suppliedPages: [ContextPage] = []
         var directoryBindings: [String: [ContextPageReference]] = [:]
-        let maximumBytes = pageID == nil ? 20_000 : 32_000
+        let maximumBytes = pageID == nil ? 20_000 - navigation.text.utf8.count : 32_000
         var rows: [[String: String]] = []
         for page in selected {
             let excerpt = ContextKnowledgeRules.excerpt(page.markdown, offset: pageID == nil ? 0 : pageOffset, limit: pageID == nil ? (everyday && page.kind == .overview ? 600 : 1800) : 4000)
@@ -224,6 +232,40 @@ import EventKit
         }
         payload["workingChanges"] = changes
         payload["pendingRelevantChangeCount"] = working.count
+        let descriptions = contextSpaceDescriptions(registration: registration, items: spaceItems, records: records)
+        var scopes = suppliedPages.compactMap { page -> ContextInstructionScope? in
+            if page.kind == .project, let id = UUID(uuidString: page.key) { return .space(id) }
+            if page.kind == .topic { return .topic(page.key) }
+            return nil
+        }
+        if let areaKey { scopes.append(.topic(areaKey)) }
+        if let item = spaceItems.first(where: { ContextPage.stableID(registration: registration, kind: .project, key: $0.id.uuidString) == pageID }) {
+            scopes.append(.space(item.id))
+            let parentIDs = Set(ContextHierarchyRules.ancestors(of: item.id, items: spaceItems).map(\.id))
+            let related = descriptions.filter { parentIDs.contains($0.id) || $0.parentID == item.id }
+            var parentRows: [[String: String]] = [], childRows: [[String: String]] = []
+            for row in related.sorted(by: { ($0.title, $0.id.uuidString) < ($1.title, $1.id.uuidString) }) {
+                let value = ["id": row.pageID, "title": row.title, "description": row.text, "parent": row.parentID?.uuidString ?? "root", "owner": row.human ? "human" : "maintained"]
+                guard ContextKnowledgeRules.json(parentRows + childRows + [value]).utf8.count <= 5000 else { continue }
+                if parentIDs.contains(row.id) { parentRows.append(value) } else { childRows.append(value) }
+                supplied += row.references
+            }
+            payload["parentSpaces"] = parentRows; payload["subspaces"] = childRows
+        }
+        // Exact canonical title matches also provide guidance before a first generated page exists.
+        if pageID == nil, let effectiveQuery {
+            for item in spaceItems {
+                let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !title.isEmpty, let match = effectiveQuery.range(of: title, options: [.caseInsensitive, .diacriticInsensitive]) else { continue }
+                let before = match.lowerBound == effectiveQuery.startIndex ? nil : effectiveQuery[effectiveQuery.index(before: match.lowerBound)]
+                let after = match.upperBound == effectiveQuery.endIndex ? nil : effectiveQuery[match.upperBound]
+                guard before.map({ !$0.isLetter && !$0.isNumber }) ?? true,
+                      after.map({ !$0.isLetter && !$0.isNumber }) ?? true else { continue }
+                scopes.append(.space(item.id))
+            }
+        }
+        let scoped = contextGuidance(scopes: scopes, registration: registration, items: spaceItems, records: records)
+        if !scoped.rows.isEmpty { payload["scopeInstructions"] = scoped.rows }
         // A compact everyday orientation is a deliberate ordinary-chat contract; source assessments don't receive the whole directory.
         if everyday || (pageID == nil && query == nil) {
             var directory: [(row: [String: String], references: [ContextPageReference])] = visible.map { page in
@@ -251,7 +293,14 @@ import EventKit
             payload["directory"] = included; payload["directoryCount"] = directory.count
         }
         if let pageID {
-            if pageID == "instructions:brief" {
+            if let instruction = pages.first(where: { $0.id == pageID && $0.kind == .instruction }),
+               let scope = ContextInstructionScope(key: instruction.key),
+               let current = contextScopedInstruction(scope, registration: registration, records: records) {
+                let excerpt = ContextKnowledgeRules.excerpt(current.markdown, offset: pageOffset, limit: 4000)
+                payload["instructions"] = ["scope": scope.key, "markdown": excerpt.text, "nextOffset": excerpt.next.map(String.init) ?? "end"]
+                supplied += current.references + [.init(kind: "page", key: current.id, revision: current.revision.uuidString)]
+            }
+            else if pageID == "instructions:brief" {
                 guard briefings.writingPromptReadable else { return .init(text: ContextKnowledgeRules.json(["unavailable": "Saved brief instructions could not be read. Original data is preserved."])) }
                 let prompt = briefings.writingPrompt(registration)
                 let excerpt = ContextKnowledgeRules.excerpt(prompt.text, offset: pageOffset, limit: 4000)
@@ -344,8 +393,11 @@ import EventKit
         }
         // The final encoded object, including instructions and the directory, has one whole-payload bound.
         if ContextKnowledgeRules.json(payload).utf8.count > maximumBytes {
-            return .init(text: ContextKnowledgeRules.json(["unavailable": "This context selection exceeded its bounded payload. Request a specific page ID and offset.", "maximumBytes": maximumBytes]))
+            payload = ["unavailable": "This context selection exceeded its bounded payload. Request a specific page ID and offset.", "maximumBytes": maximumBytes]
+            supplied.removeAll(); suppliedPages.removeAll()
         }
+        supplied += navigation.references
+        if payload["scopeInstructions"] != nil { supplied += scoped.references }
         if !supplied.isEmpty { supplied.append(.init(kind: "context-purpose", key: purpose.rawValue, revision: "1")) }
         let ids = Set(supplied.map(\.contextKey))
         let selectedRecords = records.filter { ids.contains($0.reference.contextKey) }
@@ -353,7 +405,7 @@ import EventKit
         let whatsappPurpose: WhatsAppReadPurpose = purpose == .brief ? .brief : [.suggestions, .manualSuggestions, .heartbeatSuggestions].contains(purpose) ? .suggestions : .conversation
         let whatsappScope = expected.contains { $0.kind == "whatsapp" } ? whatsapp.scope(for: registration, purpose: whatsappPurpose) : nil
         return .init(text: ContextKnowledgeRules.json(payload), pageIDs: suppliedPages.map(\.id),
-                     memoryIDs: Set(selectedRecords.compactMap(\.memoryID)), workspaceIDs: Set(selectedRecords.compactMap(\.projectID)), referenceVersions: Dictionary(expected.map { ($0.contextKey, $0.revision) }, uniquingKeysWith: { first, _ in first }), validate: { [weak self] ignored in
+                     memoryIDs: Set(selectedRecords.compactMap(\.memoryID)), workspaceIDs: Set(selectedRecords.compactMap(\.projectID)), referenceVersions: Dictionary(expected.map { ($0.contextKey, $0.revision) }, uniquingKeysWith: { first, _ in first }), guideText: navigation.text, guideFingerprint: navigation.text.isEmpty ? nil : ContextKnowledgeRules.fingerprint(navigation.text), validate: { [weak self] ignored in
             guard let self, registration == self.chatGPT.activeID, self.assistant.memory.enabled else { return false }
             if let whatsappScope, whatsappScope != self.whatsapp.scope(for: registration, purpose: whatsappPurpose) { return false }
             let ignoredProjects = Set(ignored.filter { $0.hasPrefix("project:") }.map { String($0.dropFirst(8)) })
@@ -451,6 +503,11 @@ import EventKit
         for purpose in ContextKnowledgePurpose.allCases { current["context-purpose:" + purpose.rawValue] = "1" }
         if contextPages.isReadable {
             for feature in ContextFeature.allCases { let guidance = featureInstruction(feature, registration: registration); current[guidance.reference.contextKey] = guidance.reference.revision }
+            for page in contextPages.pages(registration: registration) where page.kind == .instruction {
+                guard let scope = ContextInstructionScope(key: page.key),
+                      contextScopedInstruction(scope, registration: registration, records: records) != nil else { continue }
+                current["page:" + page.id] = page.revision.uuidString
+            }
         }
         if briefings.writingPromptReadable { current["instruction:brief"] = briefInstructionRevision(registration) }
         if emailSummaries.reviewPolicies.readable { current["instruction:review"] = reviewInstructionRevision(registration) }

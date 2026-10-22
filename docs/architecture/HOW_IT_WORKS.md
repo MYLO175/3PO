@@ -1,5 +1,13 @@
 # How 3PO works: detailed reference
 
+## Finding and controlling context
+
+Open **Context** from the assistant menu. Its sections can be collapsed, and Projects follows the same parent/subspace structure as your workspace. Each space appears immediately, even before its first AI summary. Short descriptions show your own project-purpose writing when present, otherwise a supported maintained synopsis. Space pages provide a child-description table, separate human description/instruction controls and expandable detailed context. Topics also have instruction controls before a maintained topic page exists.
+
+The **3PO guide** explains where information lives. Ordinary chat starts with a compact stable version, then adds relevant pages and working changes. It can open a root space's child index and read deeper pages as needed. Human instructions flow down exact parent paths; child guidance applies more specifically, and unrelated branches stay separate. Heartbeats maintain changed factual descriptions while preserving human wording, evidence and history. Purpose questions are reserved for important unknowns that affect useful assistance; routine empty folders do not cause an interview.
+
+The guide is placed before changing context to support prompt-cache reuse. Context details records a fingerprint and size, and existing usage diagnostics retain provider-reported cached input. Those observations are separate from a guarantee of cache residency or response speed.
+
 ## 21 October: context pages as the primary memory interface
 
 Open **PA menu → Context**, **Settings → Context → Open Context pages**, or an existing project's **Context** shortcut. Overview, project and topic pages hold readable Markdown with local version history. Working changes shows current permitted information awaiting consolidation. Instructions groups the assistant, project, reminder, brief, Review and Calendar guidance; existing saved preferences remain authoritative. Supporting facts and controls retains original evidence, corrections and learning controls.

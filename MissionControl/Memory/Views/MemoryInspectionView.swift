@@ -145,6 +145,9 @@ struct PAContextCaptureView:View {
                         Text("Selection purpose: "+purpose.replacingOccurrences(of:"Conversation",with:" conversation").replacingOccurrences(of:"Read",with:" read")).font(.caption)
                     }
                     if capture.usedFollowupContext == true {Text("The preceding human request helped resolve this follow-up.").font(.caption)}
+                    if let bytes = capture.contextGuideBytes, let fingerprint = capture.contextGuideFingerprint {
+                        Text("Starting guide: \(bytes) UTF-8 bytes · version \(String(fingerprint.prefix(12))). The trace stores its fingerprint, not its text.").font(.caption)
+                    }
                     if let hints=capture.sourceHints,!hints.isEmpty {Text("Relevant source hints: "+hints.joined(separator:", ")+". Actual tool attempts are listed below.").font(.caption)}
                     facts("Initial saved-fact selection",capture.memoryIDs,caption:"\(capture.memoryIDs.count) selected from \(capture.eligibleMemoryCount) available at preparation")
                     facts("Life notebook facts",capture.notebookMemoryIDs,caption:"Separate bounded area notes, up to 8 KB including workspace structure")

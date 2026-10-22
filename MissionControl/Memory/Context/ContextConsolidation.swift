@@ -21,7 +21,8 @@ import Observation
             ($0.kind == .preference || $0.organisation?.areas.contains(.about) == true) }.map(\.id))
         var result: [ContextPageTarget] = []
         func append(kind: ContextPage.Kind, key: String, title: String, candidates: [ContextKnowledgeRecord],
-                    anchorKeys: [String] = [], projectID: UUID? = nil, mayAskPurpose: Bool = false) {
+                    anchorKeys: [String] = [], projectID: UUID? = nil, mayAskPurpose: Bool = false,
+                    structuralReferences: [ContextPageReference] = []) {
             let id = ContextPage.stableID(registration: registration, kind: kind, key: key)
             let identity = model.contextPages.identityStatus(id: id, registration: registration)
             guard identity == .missing || identity == .available else { return }
@@ -29,7 +30,8 @@ import Observation
             guard old?.owner != .human,
                   let target = ContextConsolidationSelection.target(registration: registration, kind: kind, key: key,
                     title: title, candidates: candidates, previous: old, anchorKeys: anchorKeys,
-                    projectID: projectID, mayAskPurpose: mayAskPurpose, eligibleReferences: eligibleReferences) else { return }
+                    projectID: projectID, mayAskPurpose: mayAskPurpose, eligibleReferences: eligibleReferences,
+                    structuralReferences: structuralReferences) else { return }
             result.append(target)
         }
         let humanOverviewIDs = Set(model.contextPages.pages(registration: registration).filter { $0.owner == .human && $0.kind == .overview }.map(\.id))
@@ -53,6 +55,23 @@ import Observation
             var selected = records.filter { $0.reference.kind == "project" && $0.projectID.map(children.contains) == true }
             selected += records.filter { $0.reference.kind == "projectIdentity" && $0.reference.key == item.id.uuidString }
             selected += records.filter { $0.reference.kind == "page" && $0.projectID == item.id }
+            let ancestorIDs = Set(ContextHierarchyRules.ancestors(of: item.id, items: items, maximum: 8).map(\.id))
+            let path = records.filter { $0.reference.kind == "project" && ($0.projectID == item.id || $0.projectID.map(ancestorIDs.contains) == true) }
+            let inheritedCandidates = records.filter { record in
+                (record.reference.kind == "project" && record.projectID.map(ancestorIDs.contains) == true) ||
+                (record.reference.kind == "page" && record.projectID.map(ancestorIDs.contains) == true)
+            }.map { record in
+                var value = record
+                value.relevance = "Inherited context of an exact parent space, not a direct assertion about this child. Use it to understand the hierarchy; child-specific human context takes priority. Do not copy the parent's whole purpose as this child's purpose."
+                return value
+            }
+            var inherited: [ContextKnowledgeRecord] = [], inheritedBytes = 0
+            for record in inheritedCandidates {
+                let bytes = ContextKnowledgeRules.bytePrefix(record.text, maximumBytes: 4000).utf8.count + 200
+                guard inheritedBytes + bytes <= 6000 else { continue }
+                inherited.append(record); inheritedBytes += bytes
+            }
+            selected += inherited
             selected += records.filter { $0.memoryID.map(linked.contains) == true }
             selected += records.filter { ContextKnowledgeRules.projectCandidate($0, title: item.title, notes: item.searchableNotes, selfLabel: notebook.selfLabel) }.map {
                 var candidate = $0
@@ -65,10 +84,12 @@ import Observation
                 page.owner == .human && page.kind == .note && page.key == "project-purpose:" + item.id.uuidString &&
                 selected.contains { record in record.reference.kind == "page" && record.reference.key == page.id }
             }.map(\.id))
-            let anchors = ["project:" + item.id.uuidString, "projectIdentity:" + item.id.uuidString] +
+            let structuralReferences = inherited.isEmpty ? [] : path.map(\.reference)
+            let anchors = ["project:" + item.id.uuidString, "projectIdentity:" + item.id.uuidString] + inherited.map { $0.reference.contextKey } +
                 selected.filter { $0.reference.kind == "page" && purposes.contains($0.reference.key) }.map { $0.reference.contextKey }
             append(kind: .project, key: item.id.uuidString, title: item.title, candidates: selected, anchorKeys: anchors,
-                projectID: item.id, mayAskPurpose: mayOfferQuestion(model, registration: registration) && purposes.isEmpty && meaningfulProject)
+                projectID: item.id, mayAskPurpose: mayOfferQuestion(model, registration: registration) && purposes.isEmpty && meaningfulProject,
+                structuralReferences: structuralReferences)
         }
         let updates = records.filter { $0.reference.kind != "projectIdentity" }
         append(kind: .topic, key: "recent", title: "Recent context and recorded changes", candidates: updates)
@@ -128,8 +149,9 @@ import Observation
             try Task.checkCancellation(); try request.validate()
             guard registration == model.chatGPT.activeID, model.assistant.memory.enabled, model.assistant.memory.learningEnabled,
                   memoryPermission == model.assistant.memory.useRevision, learningPermission == model.assistant.memory.controlsRevision else { throw MemoryLearningFailure.changed }
-            let current = model.contextKnowledge(registration: registration, includeTopics: false, retainingReferences: Dictionary(selected.flatMap(\.references).map { ($0.contextKey, $0.revision) }, uniquingKeysWith: { first, _ in first }), purpose: .maintenance)
-            guard selected.allSatisfy({ ContextKnowledgeRules.current($0.references, records: current) }) else { throw ContextPageFailure.invalid("changed supporting records") }
+            let dependencies = selected.flatMap { $0.references + $0.structuralReferences }
+            let current = model.contextKnowledge(registration: registration, includeTopics: false, retainingReferences: Dictionary(dependencies.map { ($0.contextKey, $0.revision) }, uniquingKeysWith: { first, _ in first }), purpose: .maintenance)
+            guard selected.allSatisfy({ ContextKnowledgeRules.current($0.references + $0.structuralReferences, records: current) }) else { throw ContextPageFailure.invalid("changed supporting records") }
             let decoded = try ContextConsolidationRules.decode(text, targets: selected)
             // Never acknowledge unprocessed targets or changes that arrived while this call yielded.
             let currentByKey = Dictionary(current.map { ($0.reference.contextKey, $0.reference) }, uniquingKeysWith: { first, _ in first })

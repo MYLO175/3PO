@@ -115,6 +115,9 @@ struct ContextPagesView: View {
             TextField("Search context pages", text: $query).textFieldStyle(.roundedBorder)
             List(selection: $selection) {
                 Section("Context", isExpanded: sectionExpanded(.context, searching: searching)) {
+                    if matches("3PO guide information index where to look") {
+                        sidebarShortcut("3PO guide", symbol: "map", description: "Where to find information and instructions").tag(ContextPageDestination.guide)
+                    }
                     if matches("Overview everyday context priorities") {
                         sidebarShortcut("Overview", symbol: "doc.text", description: "Everyday context and priorities").tag(ContextPageDestination.overview)
                     }
@@ -130,6 +133,11 @@ struct ContextPagesView: View {
                     if rows.isEmpty { Text(searching ? "No matching projects" : "No project spaces yet").font(.caption).foregroundStyle(.secondary) }
                 }
                 Section("Topics", isExpanded: sectionExpanded(.topics, searching: searching)) {
+                    ForEach(LifeArea.allCases, id: \.rawValue) { area in
+                        if !topics.contains(where: { $0.key == area.rawValue }) && matches(area.title) {
+                            sidebarShortcut(area.title, symbol: "doc.text", description: "Context and guidance for this area").tag(ContextPageDestination.area(area.rawValue))
+                        }
+                    }
                     ForEach(topics) { page in pageRow(page, available: available.contains(page.id)).tag(ContextPageDestination.page(page.id)) }
                     if topics.isEmpty { Text(searching ? "No matching topics" : "Awaiting maintained topic pages").font(.caption).foregroundStyle(.secondary) }
                 }
@@ -215,6 +223,14 @@ struct ContextPagesView: View {
     }
     @ViewBuilder private func detail(pages: [ContextPage], records: [ContextKnowledgeRecord]) -> some View {
         switch selection {
+        case .guide:
+            navigationGuide(records: records)
+        case .area(let key):
+            VStack(alignment: .leading, spacing: 18) {
+                Text(LifeArea.allCases.first(where: { $0.rawValue == key })?.title ?? "Topic context").font(.title2.weight(.semibold))
+                Text("Useful factual context will be maintained when relevant information is available. You can set guidance for this area now.").foregroundStyle(.secondary)
+                scopedInstructions(.topic(key), records: records)
+            }
         case .overview:
             overview(pages: pages, records: records)
         case .working:
@@ -222,12 +238,21 @@ struct ContextPagesView: View {
         case .feature(let feature):
             featureInstructions(feature, pages: pages, records: records)
         case .page(let id):
-            if let page = pages.first(where: { $0.id == id }) { pageDetail(page, records: records) }
+            if let page = pages.first(where: { $0.id == id }) {
+                pageDetail(page, records: records)
+                if page.kind == .topic { scopedInstructions(.topic(page.key), records: records) }
+            }
             else { ContentUnavailableView("Page unavailable", systemImage: "doc.text", description: Text("The page may have changed or been forgotten.")) }
         case .project(let id):
             if let item = projects.first(where: { $0.id == id }) {
                 let pageID = ContextPage.stableID(registration: registration, kind: .project, key: item.id.uuidString)
-                if let page = pages.first(where: { $0.id == pageID }) { pageDetail(page, records: records) }
+                spaceDescription(item, records: records)
+                projectContext(item, pages: pages, records: records)
+                scopedInstructions(.space(item.id), records: records)
+                spaceChildren(item, records: records)
+                if let page = pages.first(where: { $0.id == pageID }) {
+                    DisclosureGroup("Detailed maintained context") { pageDetail(page, records: records).padding(.top, 12) }.padding(.top, 16)
+                }
                 else {
                     VStack(alignment: .leading, spacing: 16) {
                         Text(item.title).font(.title2.weight(.semibold))
@@ -236,7 +261,6 @@ struct ContextPagesView: View {
                         if !item.searchableNotes.isEmpty { Text("Project notes").font(.headline); ContextMarkdownBody(markdown: item.searchableNotes) }
                     }
                 }
-                projectContext(item, pages: pages, records: records)
             } else { ContentUnavailableView("Project unavailable", systemImage: "folder", description: Text("This folder is no longer available in the current account.")) }
         case .brief:
             VStack(alignment: .leading, spacing: 16) {
@@ -266,6 +290,81 @@ struct ContextPagesView: View {
         case nil:
             ContentUnavailableView("Your context, in readable pages", systemImage: "doc.text.magnifyingglass", description: Text("Select a page, describe a project, or add your everyday context. Relevant working changes remain available between heartbeats."))
         }
+    }
+    private func navigationGuide(records: [ContextKnowledgeRecord]) -> some View {
+        let ids = Set(projects.map(\.id))
+        let roots = projects.filter { $0.parentID == nil || !ids.contains($0.parentID!) }
+        return VStack(alignment: .leading, spacing: 18) {
+            Text("3PO guide").font(.title2.weight(.semibold))
+            Text("3PO starts ordinary chats with a compact guide to your information, then opens relevant pages and tools. This map follows your spaces automatically; viewing it makes no AI request.").foregroundStyle(.secondary)
+            GroupBox("Where to look") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Projects and topics explain background and purpose. Calendar and Reminders provide current schedules and tasks. Feature instructions describe how you want help. Working changes provide relevant information received since the last consolidation.")
+                    Text("Spaces inherit context and guidance from their parents. More specific guidance applies inside that subspace. Your own description takes priority over the maintained summary.").font(.callout).foregroundStyle(.secondary)
+                    Button("Edit assistant instructions…") { selection = .feature(.assistant) }
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Text("Your spaces").font(.headline)
+            spaceTable(roots, records: records)
+            Text("3PO keeps this guide small and opens detailed pages when they are useful.").font(.caption).foregroundStyle(.secondary)
+        }
+    }
+    private func spaceDescription(_ item: LifeItem, records: [ContextKnowledgeRecord]) -> some View {
+        let row = model.contextSpaceDescriptions(registration: registration, items: [item], records: records).first
+        let path = ContextHierarchyRules.ancestors(of: item.id, items: projects).map(\.title)
+        return VStack(alignment: .leading, spacing: 8) {
+            if !path.isEmpty { Text(path.joined(separator: " › ")).font(.caption).foregroundStyle(.secondary) }
+            Text(item.title).font(.title2.weight(.semibold))
+            Text(row?.text.isEmpty == false ? row!.text : "No description yet. A heartbeat will review useful context for this space.").font(.callout)
+            Text(row?.human == true ? "Description written by you" : "Description maintained by 3PO").font(.caption).foregroundStyle(.secondary)
+        }
+    }
+    private func spaceChildren(_ item: LifeItem, records: [ContextKnowledgeRecord]) -> some View {
+        let children = projects.filter { $0.parentID == item.id }
+        return VStack(alignment: .leading, spacing: 10) {
+            if !children.isEmpty { Text("Subspaces").font(.headline); spaceTable(children, records: records) }
+        }.padding(.top, 18)
+    }
+    private func spaceTable(_ items: [LifeItem], records: [ContextKnowledgeRecord]) -> some View {
+        let rows = model.contextSpaceDescriptions(registration: registration, items: items, records: records)
+        return Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 12) {
+            GridRow { Text("Space").font(.caption.weight(.semibold)); Text("Description").font(.caption.weight(.semibold)) }
+            ForEach(rows) { row in
+                GridRow(alignment: .top) {
+                    Button(row.title) { selection = .project(row.id); expandedSections.insert(.projects); expandedProjects.formUnion(ContextSidebarProjectTree(items: projects).ancestors(of: row.id)) }.buttonStyle(.link)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(row.text.isEmpty ? "Not described yet" : row.text).font(.callout)
+                        Text(row.human ? "Written by you" : "Maintained by 3PO").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+    private func scopedInstructions(_ scope: ContextInstructionScope, records: [ContextKnowledgeRecord]) -> some View {
+        let page = model.contextScopedInstruction(scope, registration: registration, records: records)
+        let title: String = switch scope { case .space: "Instructions for this space"; case .topic: "Instructions for this area" }
+        let inherited = model.contextGuidance(scopes: [scope], registration: registration, items: projects, records: records).rows.filter { $0["scope"] != scope.key }
+        return GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(title).font(.headline); Spacer()
+                    Button(page == nil ? "Add instructions…" : "Edit instructions…") {
+                        do { editor = try .scoped(scope, model: model, registration: registration, records: records) }
+                        catch { self.error = error.localizedDescription }
+                    }.disabled(!model.contextPages.canSave || ContextInstructionScope(key: scope.key) != scope)
+                    if let page { Button("History…") { history = .init(page: page) } }
+                }
+                if let page { ContextMarkdownBody(markdown: page.markdown) }
+                else { Text("Describe how you want 3PO to help here. Your instructions are kept separate from the factual description and are not rewritten by a heartbeat.").font(.callout).foregroundStyle(.secondary) }
+                if !inherited.isEmpty {
+                    DisclosureGroup("Inherited from parent spaces") {
+                        ForEach(Array(inherited.enumerated()), id: \.offset) { _, row in
+                            VStack(alignment: .leading, spacing: 4) { Text(row["title"] ?? "Parent instructions").font(.caption.weight(.semibold)); ContextMarkdownBody(markdown: row["markdown"] ?? "") }.padding(.top, 8)
+                        }
+                    }
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }.padding(.top, 16)
     }
     private func overview(pages: [ContextPage], records: [ContextKnowledgeRecord]) -> some View {
         let overviews = pages.filter { $0.kind == .overview }
@@ -342,9 +441,9 @@ struct ContextPagesView: View {
         return GroupBox {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Your project context").font(.headline)
+                    Text("Your description and context").font(.headline)
                     Spacer()
-                    Button(note == nil ? "Describe this project…" : "Edit your context…") {
+                    Button(note == nil ? "Write your description…" : "Edit your description…") {
                         do { editor = try .project(item, model: model, registration: registration) }
                         catch { self.error = error.localizedDescription }
                     }.disabled(!model.contextPages.canSave || (note.map { !ContextPagesAccess.eligible($0, model: model, registration: registration, records: records) } ?? false))
@@ -642,7 +741,7 @@ private enum ContextSidebarText {
     }
 }
 
-private enum ContextPageDestination: Hashable { case overview, working, page(String), project(UUID), feature(ContextFeature), brief, review, calendars }
+private enum ContextPageDestination: Hashable { case guide, overview, working, area(String), page(String), project(UUID), feature(ContextFeature), brief, review, calendars }
 private struct ContextPageInstructionRequest: Identifiable {
     let id = UUID()
     var registration: String
@@ -665,6 +764,23 @@ private struct ContextPageEditRequest: Identifiable {
               expected: page, initialMarkdown: useDefault ? feature.defaultText : page == nil ? (currentText ?? feature.defaultText) : nil)
     }
     static func note(registration: String) -> Self { .init(registration: registration, kind: .note, key: UUID().uuidString, title: "") }
+    @MainActor static func scoped(_ scope: ContextInstructionScope, model: DashboardModel, registration: String, records: [ContextKnowledgeRecord]) throws -> Self {
+        guard registration == model.chatGPT.activeID else { throw ContextPageFailure.unavailable }
+        guard ContextInstructionScope(key: scope.key) == scope else { throw ContextPageFailure.unsupportedPage }
+        let id = ContextPage.stableID(registration: registration, kind: .instruction, key: scope.key)
+        guard model.contextPages.identityStatus(id: id, registration: registration) != .preserved else { throw ContextPageFailure.unsupportedPage }
+        let existing = model.contextPages.page(id: id, registration: registration)
+        if existing != nil, model.contextScopedInstruction(scope, registration: registration, records: records) == nil { throw ContextPageFailure.stalePage }
+        switch scope {
+        case .space(let project):
+            guard let item = model.assistant.projects.items(registration, includeTopics: true).first(where: { $0.id == project && !$0.kind.isWork }) else { throw ContextPageFailure.unavailable }
+            return .init(registration: registration, kind: .instruction, key: scope.key, title: "Instructions for " + item.title,
+                         expected: existing, projectReference: ContextPagesAccess.projectIdentity(item))
+        case .topic(let key):
+            let title = LifeArea.allCases.first(where: { $0.rawValue == key })?.title ?? "Recent context"
+            return .init(registration: registration, kind: .instruction, key: scope.key, title: title + " instructions", expected: existing)
+        }
+    }
     static func overview(registration: String) -> Self { .init(registration: registration, kind: .overview, key: "everyday", title: "Everyday context") }
     static func existing(_ page: ContextPage) -> Self {
         .init(registration: page.registration, kind: page.kind, key: page.key, title: page.title, expected: page,
@@ -706,6 +822,14 @@ private struct ContextPageEditRequest: Identifiable {
             return page.owner == .human && calendars(model).contains { model.calendarPageKey($0) == page.key }
         }
         if page.owner == .human && page.kind == .instruction {
+            if let scope = ContextInstructionScope(key: page.key) {
+                switch scope {
+                case .topic: return page.references.isEmpty
+                case .space(let id):
+                    return page.references.count == 1 && page.references.first?.key == id.uuidString &&
+                        page.references.first.map { currentProjectIdentity($0, model: model, registration: registration) } == true
+                }
+            }
             return ContextFeature(rawValue: page.key) != nil && page.references.isEmpty
         }
         if page.owner == .human && (page.kind == .overview || page.kind == .note) {
@@ -810,7 +934,12 @@ private struct ContextPageHumanEditor: View {
         page.markdown = markdown
         page.synopsis = ""
         if request.expected == nil, let reference = request.projectReference { page.references = [reference] }
-        do { try model.contextPages.save(page, expectedRevision: request.expected?.revision); dismiss() }
+        do {
+            let saved = try model.contextPages.save(page, expectedRevision: request.expected?.revision)
+            do { _ = try model.acknowledgeProjectPurpose(saved) }
+            catch { self.error = "Your description was saved. Its matching clarification could not be marked answered: " + error.localizedDescription; return }
+            dismiss()
+        }
         catch { self.error = error.localizedDescription }
     }
 }

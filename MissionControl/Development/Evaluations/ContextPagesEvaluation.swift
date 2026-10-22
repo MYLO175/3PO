@@ -13,8 +13,183 @@ import SwiftData
         checks.merge(try instructionChecks(), uniquingKeysWith: { $1 })
         checks.merge(try emailPageChecks(), uniquingKeysWith: { $1 })
         checks.merge(try primaryContextChecks(), uniquingKeysWith: { $1 })
+        checks.merge(try hierarchyGuideChecks(), uniquingKeysWith: { $1 })
+        checks.merge(try guideOverflowChecks(), uniquingKeysWith: { $1 })
+        checks.merge(try largeAncestryChecks(), uniquingKeysWith: { $1 })
         checks.merge(try await ownedMutationChecks(), uniquingKeysWith: { $1 })
         return checks
+    }
+
+    private static func hierarchyGuideChecks() throws -> [String: Bool] {
+        let fixture = try ContextPagesFixture()
+        defer { fixture.clean() }
+        let model = fixture.model, owner = fixture.registration
+        let parent = try model.assistant.projects.save(.init(registration: owner, kind: .space, title: "Fictional Lark engineering"), expected: nil)
+        var childValue = LifeItem(registration: owner, kind: .space, title: "Fictional Lyra optics")
+        childValue.parentID = parent.id
+        let child = try model.assistant.projects.save(childValue, expected: nil)
+        let other = try model.assistant.projects.save(.init(registration: owner, kind: .space, title: "Fictional unrelated studio"), expected: nil)
+        let empty = try model.assistant.projects.save(.init(registration: owner, kind: .space, title: "Fictional empty space"), expected: nil)
+        func saveGuidance(_ scope: ContextInstructionScope, text: String, reference: ContextPageReference? = nil) throws -> ContextPage {
+            try model.contextPages.save(.init(registration: owner, kind: .instruction, key: scope.key, owner: .human,
+                title: "Fictional scoped instructions", markdown: text, references: reference.map { [$0] } ?? []), expectedRevision: nil)
+        }
+        let parentGuide = try saveGuidance(.space(parent.id), text: "Use SI units for engineering plans.", reference: model.contextProjectIdentity(parent))
+        let childGuide = try saveGuidance(.space(child.id), text: "For optics, report measurement uncertainty.", reference: model.contextProjectIdentity(child))
+        let siblingGuide = try saveGuidance(.space(other.id), text: "Unrelated studio guidance must stay scoped.", reference: model.contextProjectIdentity(other))
+        let topicGuide = try saveGuidance(.topic(LifeArea.studies.rawValue), text: "Explain study concepts using worked examples.")
+        let records = model.contextKnowledge(registration: owner, includeTopics: false)
+        let items = model.assistant.projects.items(owner, includeTopics: false).filter { !$0.kind.isWork }
+        let rows = model.contextSpaceDescriptions(registration: owner, items: items, records: records)
+        var checks: [String: Bool] = [:]
+        checks["Context hierarchy every empty/new space has a deterministic row before synthesis"] = Set(rows.map(\.id)) == Set([parent.id, child.id, other.id, empty.id]) && rows.allSatisfy { $0.text.isEmpty }
+        checks["Context hierarchy rows retain the exact canonical parent identity"] = rows.first { $0.id == child.id }?.parentID == parent.id && ContextHierarchyRules.ancestors(of: child.id, items: items).map(\.id) == [parent.id]
+        checks["Context hierarchy index/inspection never creates a maintained page"] = model.contextPages.pages(registration: owner).allSatisfy { $0.kind == .instruction }
+        let childID = ContextPage.stableID(registration: owner, kind: .project, key: child.id.uuidString)
+        let captured = model.captureContextPages(registration: owner, query: nil, pageID: childID)
+        let childObject = try object(captured.text)
+        let instructions = childObject["scopeInstructions"] as? [[String: String]] ?? []
+        checks["Context hierarchy parent guidance precedes specific child guidance"] = instructions.map { $0["scope"] } == [ContextInstructionScope.space(parent.id).key, ContextInstructionScope.space(child.id).key]
+        checks["Context hierarchy unrelated branch guidance is not supplied"] = !captured.text.contains(siblingGuide.markdown) && captured.referenceVersions["page:" + siblingGuide.id] == nil
+        checks["Context hierarchy inherited guidance captures exact human versions and filing"] = captured.referenceVersions["page:" + parentGuide.id] == parentGuide.revision.uuidString && captured.referenceVersions["page:" + childGuide.id] == childGuide.revision.uuidString && captured.referenceVersions["project:" + child.id.uuidString] != nil && captured.current()
+        let parentID = ContextPage.stableID(registration: owner, kind: .project, key: parent.id.uuidString)
+        let parentRead = model.captureContextPages(registration: owner, query: nil, pageID: parentID)
+        checks["Context hierarchy reading a parent offers exact child page navigation"] = (try object(parentRead.text)["subspaces"] as? [[String: String]])?.contains { $0["id"] == childID } == true
+        let areaRead = model.captureContextPages(registration: owner, query: nil, pageID: "area:" + LifeArea.studies.rawValue)
+        checks["Context hierarchy area instructions are available before a generated topic page"] = areaRead.text.contains(topicGuide.markdown) && areaRead.referenceVersions["page:" + topicGuide.id] == topicGuide.revision.uuidString
+        let a = model.captureContextPages(registration: owner, query: "optics background", everyday: true)
+        let b = model.captureContextPages(registration: owner, query: "different current question", everyday: true)
+        checks["Context guide stays identical across requests with unchanged structure"] = !a.guideText.isEmpty && a.guideText == b.guideText && a.guideFingerprint == b.guideFingerprint
+        checks["Context guide routes root spaces and areas without listing every nested page"] = a.guideText.contains(parent.title) && a.guideText.contains("area:" + LifeArea.studies.rawValue) && !a.guideText.contains(childID)
+        checks["Context guide plus dynamic ordinary input share the twenty KB bound"] = a.text.utf8.count + a.guideText.utf8.count <= 20_000
+        checks["Context guide is not injected into targeted email input"] = model.captureContextPages(registration: owner, query: "unrelated broadcast", purpose: .email).guideText.isEmpty
+        let purpose = try model.contextPages.save(.init(registration: owner, kind: .note, key: "project-purpose:" + child.id.uuidString,
+            owner: .human, title: "About optics", markdown: "Compare camera calibration methods.\nKeep the same physical rig.", references: [model.contextProjectIdentity(child)]), expectedRevision: nil)
+        let currentRecords = model.contextKnowledge(registration: owner, includeTopics: false)
+        let described = model.contextSpaceDescriptions(registration: owner, items: items, records: currentRecords).first { $0.id == child.id }
+        checks["Context hierarchy human description takes priority and remains distinct"] = described?.human == true && described?.text == "Compare camera calibration methods." && model.contextPages.page(id: purpose.id, registration: owner)?.markdown == purpose.markdown
+        checks["Context hierarchy consolidation receives labelled original parent context"] = model.contextConsolidation.targets(model, registration: owner).first { $0.key == child.id.uuidString }?.records.contains { $0.projectID == parent.id && $0.relevance?.contains("Inherited context") == true } == true
+        func saveAncestorOnly(_ item: LifeItem, ancestor: LifeItem) throws -> ContextPage {
+            guard let target = model.contextConsolidation.targets(model, registration: owner).first(where: { $0.key == item.id.uuidString }),
+                  let evidence = target.records.first(where: { $0.reference.kind == "project" && $0.projectID == ancestor.id }) else { throw IntegrationError.verification }
+            let output: [String: Any] = ["pages": [["id": target.id, "synopsis": "Supported inherited context", "markdown": "Parent context: " + evidence.text,
+                "evidence": [["id": evidence.reference.contextKey, "quote": String(evidence.text.prefix(80))]]]]]
+            let page = try ContextConsolidationRules.decode(ContextKnowledgeRules.json(output), targets: [target])[0].0
+            return try model.contextPages.save(page, expectedRevision: nil)
+        }
+        let inheritedPage = try saveAncestorOnly(child, ancestor: parent)
+        checks["Context hierarchy generated inheritance binds filing independently of selected quotes"] = inheritedPage.evidenceQuotes?.allSatisfy { $0.referenceID != ContextPageReference.stableID(kind: "project", key: child.id.uuidString) } == true && inheritedPage.references.contains { $0.kind == "project" && $0.key == child.id.uuidString } && model.contextPageEligible(inheritedPage, records: model.contextKnowledge(registration: owner))
+        checks["Context hierarchy human instructions never become extracted facts/page evidence"] = !model.contextKnowledge(registration: owner, purpose: .maintenance).contains { $0.reference.key == parentGuide.id || $0.reference.key == topicGuide.id }
+        var revised = parentGuide; revised.markdown = "Updated engineering guidance from the human."
+        _ = try model.contextPages.save(revised, expectedRevision: parentGuide.revision)
+        checks["Context hierarchy editing inherited instructions invalidates only exact prior capture"] = !captured.current() && !model.contextKnowledgeAvailable(registration: owner, versions: captured.referenceVersions)
+        let beforeMove = model.captureContextPages(registration: owner, query: nil, pageID: childID)
+        var moved = child; moved.parentID = other.id
+        _ = try model.assistant.projects.save(moved, expected: child.revision)
+        checks["Context hierarchy moving a child withholds persisted old inherited prose"] = !model.contextPageEligible(inheritedPage, records: model.contextKnowledge(registration: owner))
+        checks["Context hierarchy moving a child invalidates captured inheritance"] = !beforeMove.current() && !model.contextKnowledgeAvailable(registration: owner, versions: beforeMove.referenceVersions)
+        let afterMove = model.captureContextPages(registration: owner, query: nil, pageID: childID)
+        checks["Context hierarchy a fresh child read follows its new exact parent"] = afterMove.text.contains(siblingGuide.markdown) && !afterMove.text.contains(revised.markdown) && afterMove.current()
+        var inheritedOnlyValue = LifeItem(registration: owner, kind: .space, title: "Fictional inherited-only branch")
+        inheritedOnlyValue.parentID = parent.id
+        let inheritedOnly = try model.assistant.projects.save(inheritedOnlyValue, expected: nil)
+        let inheritedOnlyID = ContextPage.stableID(registration: owner, kind: .project, key: inheritedOnly.id.uuidString)
+        let inheritedOnlyCapture = model.captureContextPages(registration: owner, query: nil, pageID: inheritedOnlyID)
+        var inheritedMoved = inheritedOnly; inheritedMoved.parentID = other.id
+        _ = try model.assistant.projects.save(inheritedMoved, expected: inheritedOnly.revision)
+        checks["Context hierarchy filing is guarded even without a child instruction page"] = inheritedOnlyCapture.referenceVersions["project:" + inheritedOnly.id.uuidString] != nil && !inheritedOnlyCapture.current()
+        var chain: [LifeItem] = [], previous: UUID?
+        for index in 0..<7 {
+            var value = LifeItem(registration: owner, kind: .space, title: "Fictional deep space \(index)")
+            value.parentID = previous
+            let saved = try model.assistant.projects.save(value, expected: nil)
+            _ = try saveGuidance(.space(saved.id), text: String(repeating: "Bounded human guidance. ", count: 100), reference: model.contextProjectIdentity(saved))
+            chain.append(saved); previous = saved.id
+        }
+        let bounded = model.contextGuidance(scopes: [.space(chain.last!.id)], registration: owner,
+            items: model.assistant.projects.items(owner, includeTopics: false), records: model.contextKnowledge(registration: owner, includeTopics: false))
+        checks["Context hierarchy bounded guidance always retains the most specific child"] = bounded.rows.last?["scope"] == ContextInstructionScope.space(chain.last!.id).key && ContextKnowledgeRules.json(bounded.rows).utf8.count <= 4800 && bounded.rows.count < chain.count
+        let deepPage = try saveAncestorOnly(chain.last!, ancestor: chain.first!)
+        var movedIntermediate = chain[3]; movedIntermediate.parentID = nil
+        _ = try model.assistant.projects.save(movedIntermediate, expected: chain[3].revision)
+        checks["Context hierarchy moving an intermediate ancestor withholds persisted inherited prose"] = !model.contextPageEligible(deepPage, records: model.contextKnowledge(registration: owner)) && deepPage.references.contains { $0.kind == "project" && $0.key == chain[3].id.uuidString }
+        let phaseOne = try model.assistant.projects.save(.init(registration: owner, kind: .space, title: "Fictional phase 1"), expected: nil)
+        let phaseTwo = try model.assistant.projects.save(.init(registration: owner, kind: .space, title: "Fictional phase 2"), expected: nil)
+        _ = try saveGuidance(.space(phaseOne.id), text: "First phase instruction", reference: model.contextProjectIdentity(phaseOne))
+        let secondPhase = try saveGuidance(.space(phaseTwo.id), text: "Second phase instruction", reference: model.contextProjectIdentity(phaseTwo))
+        let phaseCapture = model.captureContextPages(registration: owner, query: "Please use Fictional phase 1 guidance")
+        checks["Context hierarchy full title guidance preserves numeric distinctions"] = phaseCapture.text.contains("First phase instruction") && !phaseCapture.text.contains(secondPhase.markdown)
+        var cycleA = LifeItem(registration: owner, kind: .space, title: "Fictional cycle A")
+        var cycleB = LifeItem(registration: owner, kind: .space, title: "Fictional cycle B")
+        cycleA.parentID = cycleB.id; cycleB.parentID = cycleA.id
+        checks["Context hierarchy malformed ancestry terminates without mutating identities"] = ContextHierarchyRules.ancestors(of: cycleA.id, items: [cycleA, cycleB]).map(\.id) == [cycleB.id]
+        checks["Context hierarchy unknown instruction scopes remain unavailable"] = ContextInstructionScope(key: "topic:unsupported-future-area") == nil
+        checks["Context guide and scope fixtures make zero model/source calls"] = fixture.provider.calls == 0 && fixture.sources.reads == 0 && model.aiUsage.state.records.isEmpty
+        model.chatGPT.activeID = "fictional-other-owner"
+        checks["Context guide and inherited instructions stay account bound"] = !afterMove.current() && model.captureContextPages(registration: owner, query: nil, everyday: true).guideText.isEmpty
+        return checks
+    }
+
+    private static func guideOverflowChecks() throws -> [String: Bool] {
+        let fixture = try ContextPagesFixture()
+        defer { fixture.clean() }
+        let model = fixture.model, owner = fixture.registration
+        var last: LifeItem?
+        for index in 0..<7 {
+            var value = LifeItem(registration: owner, kind: .space, title: "Fictional overflow space \(index)")
+            value.parentID = last?.id
+            last = try model.assistant.projects.save(value, expected: nil)
+            _ = try model.contextPages.save(.init(registration: owner, kind: .instruction, key: ContextInstructionScope.space(last!.id).key, owner: .human,
+                title: "Fictional scoped guide", markdown: String(repeating: "Guidance for this space. ", count: 80), references: [model.contextProjectIdentity(last!)]), expectedRevision: nil)
+        }
+        for feature in ContextFeature.allCases {
+            _ = try model.contextPages.save(.init(registration: owner, kind: .instruction, key: feature.rawValue, owner: .human,
+                title: feature.title, markdown: String(repeating: "Human feature instructions. ", count: 50)), expectedRevision: nil)
+        }
+        for index in 0..<10 {
+            _ = try model.assistant.projects.save(.init(registration: owner, kind: .space,
+                title: "Fictional extra root \(index) with a deliberately long descriptive title"), expected: nil)
+        }
+        let huge = try model.contextPages.save(.init(registration: owner, kind: .overview, key: "everyday", owner: .human,
+            title: "Fictional composed character", markdown: "a" + String(repeating: "\u{0300}", count: 4800)), expectedRevision: nil)
+        let capture = model.captureContextPages(registration: owner, query: last!.title, everyday: true)
+        let value = try object(capture.text)
+        return [
+            "Context guide survives dynamic overflow and retains its exact dependency validator": value["unavailable"] != nil && !capture.guideText.isEmpty && capture.guideFingerprint == ContextKnowledgeRules.fingerprint(capture.guideText) && capture.current(),
+            "Context guide overflow discards omitted page and scoped instruction dependencies": capture.pageIDs.isEmpty && capture.referenceVersions["page:" + huge.id] == nil && !capture.referenceVersions.keys.contains { $0.hasPrefix("page:") },
+            "Context guide overflow still shares the complete twenty KB ordinary bound": capture.text.utf8.count + capture.guideText.utf8.count <= 20_000,
+            "Context guide overflow performs no inference or source reads": fixture.provider.calls == 0 && fixture.sources.reads == 0
+        ]
+    }
+
+    private static func largeAncestryChecks() throws -> [String: Bool] {
+        let fixture = try ContextPagesFixture()
+        defer { fixture.clean() }
+        let model = fixture.model, owner = fixture.registration
+        var chain: [LifeItem] = []
+        for index in 0..<9 {
+            var item = LifeItem(registration: owner, kind: .space, title: "Fictional large hierarchy \(index)")
+            item.parentID = chain.last?.id
+            item.notes = String(repeating: "Fictional long original project notes. ", count: 200)
+            chain.append(try model.assistant.projects.save(item, expected: nil))
+        }
+        let child = chain.last!
+        guard let target = model.contextConsolidation.targets(model, registration: owner).first(where: { $0.key == child.id.uuidString }),
+              let evidence = target.records.first(where: { $0.reference.kind == "project" && $0.projectID != child.id }),
+              let unissued = chain.first(where: { item in item.parentID != nil && !target.records.contains { $0.reference.kind == "project" && $0.projectID == item.id } }) else { throw IntegrationError.verification }
+        let input = ContextConsolidationRules.targetInputs([target])[0]
+        let output: [String: Any] = ["pages": [["id": target.id, "synopsis": "Bounded inherited context", "markdown": "Supported parent information",
+            "evidence": [["id": evidence.reference.contextKey, "quote": String(evidence.text.prefix(80))]]]]]
+        let page = try ContextConsolidationRules.decode(ContextKnowledgeRules.json(output), targets: [target])[0].0
+        let saved = try model.contextPages.save(page, expectedRevision: nil)
+        let currentBefore = model.contextPageEligible(saved, records: model.contextKnowledge(registration: owner))
+        var moved = unissued; moved.parentID = nil
+        _ = try model.assistant.projects.save(moved, expected: unissued.revision)
+        return [
+            "Context hierarchy large original ancestor notes retain bounded processable targets": ContextKnowledgeRules.json(input).utf8.count <= ContextConsolidationSelection.maximumTargetBytes && ContextConsolidationSelection.batch([target], now: .now, timezone: "Europe/London").count == 1 && target.structuralReferences.count == 9,
+            "Context hierarchy unissued ancestor bodies remain exact metadata dependencies": currentBefore && saved.references.contains { $0.kind == "project" && $0.key == unissued.id.uuidString } && !model.contextPageEligible(saved, records: model.contextKnowledge(registration: owner)),
+            "Context hierarchy large ancestry verification makes no source or model calls": fixture.provider.calls == 0 && fixture.sources.reads == 0
+        ]
     }
 
     /// Produces supported fictional provider output; no selection algorithm lives here.
