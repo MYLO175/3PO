@@ -61,6 +61,7 @@ struct ContextPagesView: View {
                         .frame(minWidth: 220, idealWidth: 250, maxWidth: 300)
                     ScrollView {
                         detail(pages: pages, records: records)
+                            .id(selection)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(16)
                     }.frame(minWidth: 450)
                 }
@@ -297,17 +298,17 @@ struct ContextPagesView: View {
         return VStack(alignment: .leading, spacing: 18) {
             Text("3PO guide").font(.title2.weight(.semibold))
             Text("3PO starts ordinary chats with a compact guide to your information, then opens relevant pages and tools. This map follows your spaces automatically; viewing it makes no AI request.").foregroundStyle(.secondary)
-            GroupBox("Where to look") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Projects and topics explain background and purpose. Calendar and Reminders provide current schedules and tasks. Feature instructions describe how you want help. Working changes provide relevant information received since the last consolidation.")
-                    Text("Spaces inherit context and guidance from their parents. More specific guidance applies inside that subspace. Your own description takes priority over the maintained summary.").font(.callout).foregroundStyle(.secondary)
-                    Button("Edit assistant instructions…") { selection = .feature(.assistant) }
-                }.frame(maxWidth: .infinity, alignment: .leading)
-            }
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Where to look").font(.headline)
+                Text("Projects and topics explain background and purpose. Calendar and Reminders provide current schedules and tasks. Feature instructions describe how you want help. Working changes provide relevant information received since the last consolidation.")
+                Text("Spaces inherit context and guidance from their parents. More specific guidance applies inside that subspace. Your own description takes priority over the maintained summary.").font(.callout).foregroundStyle(.secondary)
+                Button("Edit assistant instructions…") { expandedSections.insert(.instructions); selection = .feature(.assistant) }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12).background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
             Text("Your spaces").font(.headline)
             spaceTable(roots, records: records)
             Text("3PO keeps this guide small and opens detailed pages when they are useful.").font(.caption).foregroundStyle(.secondary)
-        }
+        }.accessibilityIdentifier("context-navigation-guide")
     }
     private func spaceDescription(_ item: LifeItem, records: [ContextKnowledgeRecord]) -> some View {
         let row = model.contextSpaceDescriptions(registration: registration, items: [item], records: records).first

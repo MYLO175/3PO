@@ -5,6 +5,14 @@ import SwiftData
     @MainActor static func main() throws {
         let tokens = AIReportedTokens.parse(["input_tokens":100,"output_tokens":20,"total_tokens":120,"input_tokens_details":["cached_tokens":40],"output_tokens_details":["reasoning_tokens":12]])!
         precondition(tokens.valid && tokens.total == 120)
+        let cacheWrites = AIReportedTokens.parse(["input_tokens":100,"output_tokens":20,"total_tokens":120,"input_tokens_details":["cached_tokens":0,"cache_write_tokens":80]])!
+        precondition(cacheWrites.valid && cacheWrites.cachedInput == 0 && cacheWrites.cacheWriteInput == 80)
+        let noCacheReport = AIReportedTokens.parse(["input_tokens":100,"output_tokens":20,"total_tokens":120])!
+        precondition(noCacheReport.cachedInput == nil && noCacheReport.cacheWriteInput == nil)
+        precondition(AIReportedTokens.parse(["input_tokens":100,"output_tokens":20,"total_tokens":120,"input_tokens_details":["cache_write_tokens":101]])?.cacheWriteInput == nil)
+        let oldTokenJSON = Data("{\"input\":100,\"output\":20,\"total\":120,\"cachedInput\":40}".utf8)
+        let restoredOldTokens = try JSONDecoder().decode(AIReportedTokens.self, from: oldTokenJSON)
+        precondition(restoredOldTokens.cacheWriteInput == nil)
         let invalidCounts: [Any] = [true, -1, 1.5, "100", Double.infinity, 1_000_000_001]
         for invalid in invalidCounts {
             precondition(AIReportedTokens.parse(["input_tokens":invalid,"output_tokens":20,"total_tokens":120]) == nil)
@@ -22,6 +30,11 @@ import SwiftData
         precondition(store.records(registration:"account-a",window:.today,now:now).count == 1)
         let summary = AIUsageRules.summary(store.records(registration:"account-a",window:.today,now:now))
         precondition(summary.calls == 1 && summary.completed == 1 && summary.total == 120 && summary.cachedInput == 40 && summary.reasoningOutput == 12)
+        precondition(summary.cachedReportedCalls == 1 && summary.cacheWriteReportedCalls == 0)
+        var unknownUsage = AIUsageRecord(registration:"account-a",model:"gpt-test",purpose:.conversation,started:now)
+        unknownUsage.tokens = noCacheReport
+        let unknownSummary = AIUsageRules.summary([unknownUsage])
+        precondition(unknownSummary.reportedCalls == 1 && unknownSummary.cachedReportedCalls == 0 && unknownSummary.cacheWriteReportedCalls == 0)
         let recovered = AIUsageStore(container:container,now:now)
         precondition(recovered.state.records.first(where:{$0.id == b})?.outcome == .interrupted)
         precondition(recovered.state.records.first(where:{$0.id == a})?.outcome == .completed)

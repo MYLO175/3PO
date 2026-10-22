@@ -34,7 +34,9 @@ struct AIUsageView: View {
                     LabeledContent("Total reported tokens", value: summary.total.formatted())
                     Text("Reported for \(summary.reportedCalls) of \(summary.calls) calls. Missing counts are unknown, including interrupted calls. Tokens measure processed text, images and generated output; they are not a percentage of your subscription allowance.").font(.caption).foregroundStyle(.secondary)
                     DisclosureGroup("Token details") {
-                        LabeledContent("Cached input (included above)", value: summary.cachedInput.formatted())
+                        LabeledContent("Cached input (included above)", value: summary.cachedReportedCalls == 0 ? "Not reported" : summary.cachedInput.formatted())
+                        LabeledContent("Input prepared for cache (included above)", value: summary.cacheWriteReportedCalls == 0 ? "Not reported" : summary.cacheWriteInput.formatted())
+                        Text("Cache reads reported for \(summary.cachedReportedCalls) calls; cache writes for \(summary.cacheWriteReportedCalls). Missing cache counts are unknown. Prepared input is not proof that a later request reused it.").font(.caption).foregroundStyle(.secondary)
                         LabeledContent("Reasoning output (included above)", value: summary.reasoningOutput.formatted())
                     }
                 } else { Text("The provider has not reported token counts for these calls. Call counts are still available.").foregroundStyle(.secondary) }

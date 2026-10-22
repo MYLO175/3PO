@@ -1033,6 +1033,13 @@
       ]
     },
     {
+      "id": "guide-cache-model",
+      "tier": "model",
+      "arguments": ["--validate-memory-inspection", "--prompt-cache-only", "--warm-boundary-only"],
+      "report": "missioncontrol-guide-cache-evaluation.json",
+      "effects": ["Two declared fictional configured-model requests retaining prior human/completed output history across a changed current snapshot and stable initial developer message boundary; no retries, tool execution, personal sources, native writes or setting changes"]
+    },
+    {
       "id": "review-inference-guards",
       "tier": "source-free",
       "script": "scripts/checks/test-review-inference-guards.sh",

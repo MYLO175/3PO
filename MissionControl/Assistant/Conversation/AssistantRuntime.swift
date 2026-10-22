@@ -1,4 +1,19 @@
 import Foundation
+/// Preserve developer authority while separating reusable policy from changing request data.
+/// An actual human message ends the initial developer block, giving implicit caching
+/// a reusable boundary without unsupported explicit markers or synthetic human evidence.
+struct AssistantRequestPrompt {
+    var stable: String
+    var current: String
+    func input(around history: [[String: Any]]) -> [[String: Any]] {
+        let policy: [String: Any] = ["role": "developer", "content": [["type": "input_text", "text": stable]]]
+        let context: [String: Any] = ["role": "developer", "content": [["type": "input_text", "text": current]]]
+        guard let firstHuman = history.firstIndex(where: { $0["role"] as? String == "user" }) else {
+            return [policy, context] + history
+        }
+        return [policy] + Array(history[...firstHuman]) + [context] + Array(history.dropFirst(firstHuman + 1))
+    }
+}
 
 /// Current context authority needed by a foreground request. These are purpose
 /// specific receipts and projections, not references to the application's services.

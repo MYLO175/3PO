@@ -31,6 +31,7 @@ struct AIReportedTokens: Codable, Equatable {
     var total: Int
     var cachedInput: Int?
     var reasoningOutput: Int?
+    var cacheWriteInput: Int? = nil
 
     static func parse(_ value: Any?) -> Self? {
         guard let fields = value as? [String: Any] else { return nil }
@@ -44,13 +45,16 @@ struct AIReportedTokens: Codable, Equatable {
               let total = number(fields["total_tokens"]), total == input + output else { return nil }
         let cached = number((fields["input_tokens_details"] as? [String: Any])?["cached_tokens"])
         let reasoning = number((fields["output_tokens_details"] as? [String: Any])?["reasoning_tokens"])
+        let written = number((fields["input_tokens_details"] as? [String: Any])?["cache_write_tokens"])
         return .init(input: input, output: output, total: total,
                      cachedInput: cached.flatMap { $0 <= input ? $0 : nil },
-                     reasoningOutput: reasoning.flatMap { $0 <= output ? $0 : nil })
+                     reasoningOutput: reasoning.flatMap { $0 <= output ? $0 : nil },
+                     cacheWriteInput: written.flatMap { $0 <= input ? $0 : nil })
     }
     var valid: Bool {
         [input, output, total].allSatisfy { (0...1_000_000_000).contains($0) } && total == input + output &&
-        cachedInput.map { (0...input).contains($0) } != false && reasoningOutput.map { (0...output).contains($0) } != false
+        cachedInput.map { (0...input).contains($0) } != false && reasoningOutput.map { (0...output).contains($0) } != false &&
+        cacheWriteInput.map { (0...input).contains($0) } != false
     }
 }
 
@@ -84,6 +88,7 @@ enum AIUsageWindow: String, CaseIterable, Identifiable {
 struct AIUsageSummary {
     var calls = 0, completed = 0, failed = 0, interrupted = 0, running = 0, reportedCalls = 0
     var input = 0, output = 0, total = 0, cachedInput = 0, reasoningOutput = 0
+    var cachedReportedCalls = 0, cacheWriteReportedCalls = 0, cacheWriteInput = 0
 }
 enum AIUsageRules {
     static let maximumRecords = 5000
@@ -113,6 +118,8 @@ enum AIUsageRules {
             if let usage = record.tokens {
                 result.reportedCalls += 1; result.input += usage.input; result.output += usage.output; result.total += usage.total
                 result.cachedInput += usage.cachedInput ?? 0; result.reasoningOutput += usage.reasoningOutput ?? 0
+                if usage.cachedInput != nil { result.cachedReportedCalls += 1 }
+                if let written = usage.cacheWriteInput { result.cacheWriteReportedCalls += 1; result.cacheWriteInput += written }
             }
         }
         return result

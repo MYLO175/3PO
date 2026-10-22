@@ -298,7 +298,10 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         var body: [String:Any] = ["model":model, "input":input, "store":false, "stream":true, "reasoning":["effort":effort]]
-        if let instructions { body["instructions"] = instructions }
+        // Stable opaque accounting/routing hint; no prompt prose or credentials in the key.
+        // The provider still controls cache residency and may report a miss.
+        body["prompt_cache_key"] = "3po:" + ChatGPTOAuth.challenge("prompt-prefix-v1:" + registration + ":" + model + ":" + purpose.rawValue)
+        if let instructions, !instructions.isEmpty { body["instructions"] = instructions }
         if !tools.isEmpty {
             body["tools"] = tools; body["parallel_tool_calls"] = false
             body["include"] = ["reasoning.encrypted_content"]

@@ -23,6 +23,7 @@ private final class ObservationCounter:@unchecked Sendable {
     private var held: CheckedContinuation<Void, Never>?
     private(set) var inputs: [[[String: Any]]] = []
     private(set) var instructions: [String] = []
+    private(set) var topLevelInstructions: [String] = []
     private(set) var purposes: [AIRequestPurpose] = []
     private(set) var models:[String] = []
     var waiting: Bool { held != nil }
@@ -31,7 +32,9 @@ private final class ObservationCounter:@unchecked Sendable {
         preconditionFailure("These assistant fixtures must use completed tool transport.")
     }
     func toolResponse(input: [[String: Any]], instructions: String, tools: [[String: Any]], model: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> PAResponse {
-        inputs.append(input); self.instructions.append(instructions); purposes.append(purpose);models.append(model)
+        inputs.append(input); topLevelInstructions.append(instructions)
+        let developerText = input.filter { $0["role"] as? String == "developer" }.flatMap { $0["content"] as? [[String: Any]] ?? [] }.compactMap { $0["text"] as? String }
+        self.instructions.append(([instructions] + developerText).filter { !$0.isEmpty }.joined(separator: "\n")); purposes.append(purpose);models.append(model)
         for text in deltas {onDelta(text);afterDelta?()}
         if holdNext {
             holdNext = false
@@ -201,6 +204,19 @@ private final class ObservationCounter:@unchecked Sendable {
         check(context.sessions.first?.receipts == ["Fictional memory saved and verified"] && context.afterCalls == 1, "Verified receipts must persist across rounds and finish once.")
         check(provider.inputs.last?.contains(where: { $0["encrypted_content"] as? String == "fictional-reasoning" }) == true, "Actual service must replay completed reasoning output.")
         check(provider.instructions.first?.contains(DateRules.localTimestamp(context.now)) == true, "Inference instructions must use the captured fictional clock.")
+        check(provider.topLevelInstructions.allSatisfy(\.isEmpty) && provider.inputs.allSatisfy { $0.filter { $0["role"] as? String == "developer" }.count == 2 }, "Each tool round has exactly one stable and one current developer block, without changing top-level instructions.")
+        let prefix = provider.inputs[0][0]["content"] as! [[String: Any]]
+        let current = provider.inputs[0].filter { $0["role"] as? String == "developer" }[1]["content"] as! [[String: Any]]
+        check(!(prefix[0]["text"] as! String).contains(DateRules.localTimestamp(context.now)) && (current[0]["text"] as! String).contains(DateRules.localTimestamp(context.now)), "Changing clocks stay behind the reusable policy boundary.")
+        let historical: [[String: Any]] = [["role": "user", "content": "Fictional current human evidence"], ["type": "function_call_output", "call_id": "original-operation", "output": "original receipt"]]
+        let firstPrompt = AssistantRequestPrompt(stable: "Stable fictional guide", current: "Clock A; source hint A")
+        let nextPrompt = AssistantRequestPrompt(stable: "Stable fictional guide", current: "Clock B; source hint B")
+        let firstInput = firstPrompt.input(around: historical)
+        let nextInput = nextPrompt.input(around: historical)
+        check(try JSONSerialization.data(withJSONObject: firstInput[0], options: [.sortedKeys]) == JSONSerialization.data(withJSONObject: nextInput[0], options: [.sortedKeys]), "New clocks and selected source hints leave the complete cacheable prefix unchanged.")
+        check(firstInput[1]["role"] as? String == "user" && firstInput[2]["role"] as? String == "developer", "The original human message ends the reusable initial developer block before changing context.")
+        check(try JSONSerialization.data(withJSONObject: firstInput.filter { $0["role"] as? String != "developer" }, options: [.sortedKeys]) == JSONSerialization.data(withJSONObject: historical, options: [.sortedKeys]), "Human evidence and completed operation transport retain their exact order and payloads.")
+        check(!String(describing: firstInput).contains("prompt_cache_breakpoint"), "Implicit caching adds no unsupported cache parameter.")
         let originalIDs = assistant.feed!.turns.map(\.id)
         let reopened = service(FictionalInference(), try open("normal"))
         check(reopened.feed?.turns.map(\.id) == originalIDs && reopened.feed?.turns.last?.contextCapture == reply.contextCapture, "Reopening must preserve turn identities, completed replies and exact traces.")
@@ -301,7 +317,7 @@ private final class ObservationCounter:@unchecked Sendable {
         check(imageAssistant.send(runtime: imageContext.runtime(), topicID: nil, prompt: "Describe this fictional image", images: [attachment]), "Actual service must accept an owned stored image.")
         await until { !imageAssistant.busy }
         let imageTurn = imageAssistant.feed!.turns.first!
-        let inputContent = imageProvider.inputs.first?.first?["content"] as? [[String: Any]] ?? []
+        let inputContent = imageProvider.inputs.first?.first(where: { $0["role"] as? String == "user" })?["content"] as? [[String: Any]] ?? []
         check(imageTurn.images == [attachment] && inputContent.contains(where: { $0["type"] as? String == "input_image" }), "Actual image preparation must preserve attachment identity and include the bounded payload.")
         let imageReopened = service(FictionalInference(), try open("images"))
         check(imageReopened.feed?.turns.first?.images == [attachment] && (try? imageReopened.images.data(attachment, registration: imageProvider.activeID)) != nil, "Owned image metadata and bytes must remain usable after reopening.")
