@@ -241,8 +241,9 @@ struct PAContextCaptureView:View {
         let page = model.contextPages.pages(registration: registration).first { $0.id == id }
         let humanProject = page.flatMap { $0.kind == .project ? UUID(uuidString: $0.key) : nil }.flatMap { project in model.assistant.projects.items(registration, includeTopics: true).first { $0.id == project }?.title }
         let knownTopic = page.flatMap { $0.kind == .topic ? ContextTopicRoute.named($0.key)?.title : nil }
+        let overview = page?.kind == .overview ? "Overview" : nil
         let humanTitle = page.flatMap { $0.owner == .human ? $0.title : nil }
-        let title = ContextInstructionRoute.all.first(where: { $0.id == id })?.title ?? topic ?? humanProject ?? knownTopic ?? humanTitle ?? "Context page"
+        let title = ContextInstructionRoute.all.first(where: { $0.id == id })?.title ?? topic ?? humanProject ?? knownTopic ?? overview ?? humanTitle ?? "Context page"
         return Button("Open “" + title + "”") { pageInspection = .init(pageID: id) }.buttonStyle(.link).font(.caption)
     }
     private func lookupOutcome(_ lookup: AssistantLookupTrace) -> String {
