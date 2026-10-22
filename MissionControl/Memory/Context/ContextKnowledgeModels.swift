@@ -28,6 +28,60 @@ enum ContextFeature: String, CaseIterable, Identifiable {
     }
 }
 
+/// Routing descriptions only. Personal facts and policy bodies stay in their scoped pages.
+struct ContextTopicRoute: Identifiable {
+    var key: String
+    var title: String
+    var about: String
+    var id: String { "area:" + key }
+    var input: [String: String] { ["title": title, "description": about, "read": id] }
+    static var all: [Self] {
+        LifeArea.allCases.map { area in
+            let about: String = switch area {
+            case .about: "Personal background, priorities and everyday preferences."
+            case .studies: "Education, courses, learning goals and study context."
+            case .career: "Career goals, job applications and work preferences."
+            case .projects: "Personal projects, building interests and longer-term aims."
+            case .interests: "Hobbies, interests and activities you enjoy."
+            case .wellbeing: "Wellbeing, habits and personal support preferences."
+            case .people: "People, groups and relationships mentioned in your context."
+            case .home: "Home, family life and everyday living context."
+            case .administration: "Personal administration, accounts and organisation preferences."
+            case .unsorted: "Useful context that has not yet been assigned to a topic."
+            }
+            return .init(key: area.rawValue, title: area.title, about: about)
+        } + [.init(key: "recent", title: "Recent context", about: "Saved conversation context and recorded changes spanning topics.")]
+    }
+    static func named(_ key: String) -> Self? { all.first { $0.key == key } }
+}
+
+/// The screen and model use the same exact routes to existing policy owners.
+enum ContextInstructionRoute: Hashable, Identifiable {
+    case feature(ContextFeature), brief, review, calendars
+    static var all: [Self] { ContextFeature.allCases.map(Self.feature) + [.brief, .review, .calendars] }
+    var id: String {
+        let key = switch self { case .feature(let feature): feature.rawValue; case .brief: "brief"; case .review: "review"; case .calendars: "calendars" }
+        return "instructions:" + key
+    }
+    var title: String {
+        switch self { case .feature(let feature): feature.title; case .brief: "Brief instructions"; case .review: "Review guidance"; case .calendars: "Calendar guide" }
+    }
+    var about: String {
+        switch self {
+        case .feature(.assistant): "How 3PO should respond and help in conversation."
+        case .feature(.projects): "How to organise and plan work in existing project spaces."
+        case .feature(.reminders): "How to help with reminders, dates and task destinations."
+        case .brief: "What to include in your daily brief and how to write it."
+        case .review: "What deserves attention, informed by your Review feedback."
+        case .calendars: "What each permitted calendar is for and where events belong."
+        }
+    }
+    var symbol: String {
+        switch self { case .feature: "text.alignleft"; case .brief: "sun.max"; case .review: "tray"; case .calendars: "calendar" }
+    }
+    var input: [String: String] { ["title": title, "description": about, "read": id] }
+}
+
 /// Request-local projections. Stored references point to canonical records; no second source archive.
 struct ContextKnowledgeRecord {
     var reference: ContextPageReference

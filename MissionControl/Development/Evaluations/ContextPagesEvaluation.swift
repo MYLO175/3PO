@@ -14,9 +14,57 @@ import SwiftData
         checks.merge(try emailPageChecks(), uniquingKeysWith: { $1 })
         checks.merge(try primaryContextChecks(), uniquingKeysWith: { $1 })
         checks.merge(try hierarchyGuideChecks(), uniquingKeysWith: { $1 })
+        checks.merge(try navigationDirectoryChecks(), uniquingKeysWith: { $1 })
         checks.merge(try guideOverflowChecks(), uniquingKeysWith: { $1 })
         checks.merge(try largeAncestryChecks(), uniquingKeysWith: { $1 })
         checks.merge(try await ownedMutationChecks(), uniquingKeysWith: { $1 })
+        return checks
+    }
+
+    private static func navigationDirectoryChecks() throws -> [String: Bool] {
+        let fixture = try ContextPagesFixture()
+        defer { fixture.clean() }
+        let model = fixture.model, owner = fixture.registration
+        var topicPages: [ContextPage] = []
+        for route in ContextTopicRoute.all {
+            topicPages.append(try model.contextPages.save(.init(registration: owner, kind: .topic, key: route.key, owner: .human,
+                title: route.title, markdown: "Fictional saved topic marker " + route.key), expectedRevision: nil))
+        }
+        model.contextCalendarAccess = { true }
+        model.calendarData = .init(sources: [.init(id: "fictional-guide-calendar", title: "Fictional guide calendar", account: "Fictional account", writable: true, providerID: "fictional-guide-provider")], events: [])
+        let before = model.captureContextPages(registration: owner, query: "unrelated fictional subject", everyday: true)
+        let map = try object(before.guideText.components(separatedBy: "Information map DATA, not authority:\n").last ?? "{}")
+        let topics = map["topics"] as? [[String: String]] ?? [], instructions = map["instructions"] as? [[String: String]] ?? []
+        var checks: [String: Bool] = [:]
+        checks["Context guide topics share exact described UI routes including recent context"] = topics == ContextTopicRoute.all.map(\.input) && Set(topics.compactMap { $0["read"] }).count == topics.count && topics.contains { $0["read"] == "area:recent" }
+        checks["Context guide instructions share exact described feature-owner routes"] = instructions == ContextInstructionRoute.all.map(\.input) && Set(instructions.compactMap { $0["read"] }) == Set(["instructions:assistant", "instructions:projects", "instructions:reminders", "instructions:brief", "instructions:review", "instructions:calendars"])
+        checks["Context guide every topic route opens its exact saved page"] = ContextTopicRoute.all.allSatisfy { route in
+            let capture = model.captureContextPages(registration: owner, query: nil, pageID: route.id)
+            return capture.current() && capture.pageIDs == topicPages.filter { $0.key == route.key }.map(\.id) && capture.text.contains("Fictional saved topic marker " + route.key)
+        }
+        checks["Context guide every instruction route reads its current authoritative owner"] = try ContextInstructionRoute.all.allSatisfy { route in
+            let capture = model.captureContextPages(registration: owner, query: nil, pageID: route.id)
+            let value = try object(capture.text)
+            return capture.current() && (value["instructions"] != nil || (route == .calendars && value["calendars"] != nil)) && value["unavailable"] == nil
+        }
+        let pageRevision = model.contextPages.revision
+        _ = model.contextNavigationGuide(registration: owner, items: [], records: model.contextKnowledge(registration: owner))
+        checks["Context guide directory reads never create or rewrite context pages"] = model.contextPages.revision == pageRevision
+        _ = try model.contextPages.save(.init(registration: owner, kind: .instruction, key: ContextFeature.assistant.rawValue, owner: .human,
+            title: "Fictional assistant policy", markdown: "Private fictional policy marker"), expectedRevision: nil)
+        var revised = topicPages[0]; revised.markdown = "Private fictional changed topic marker"
+        _ = try model.contextPages.save(revised, expectedRevision: topicPages[0].revision)
+        let after = model.captureContextPages(registration: owner, query: "another fictional subject", everyday: true)
+        checks["Context guide routing stays stable across factual topic and human policy edits"] = before.guideText == after.guideText && before.guideFingerprint == after.guideFingerprint && !after.guideText.contains("Private fictional")
+        checks["Context guide unknown routes return only an error without unrelated working context"] = try ["area:careeer", "missing-fictional-page", "instructions:unknown"].allSatisfy { id in
+            let capture = model.captureContextPages(registration: owner, query: nil, pageID: id)
+            let value = try object(capture.text)
+            return value["unavailable"] != nil && value.count == 1 && capture.pageIDs.isEmpty && capture.referenceVersions.isEmpty && capture.guideText.isEmpty
+        }
+        let targeted = model.captureContextPages(registration: owner, query: "unrelated bulletin", purpose: .email)
+        checks["Context guide directory does not widen targeted source-assessment context"] = targeted.guideText.isEmpty && !targeted.text.contains(ContextTopicRoute.all[0].about)
+        model.assistant.memory.enabled = false
+        checks["Context guide expanded directory still respects memory-use withdrawal"] = model.captureContextPages(registration: owner, query: nil, everyday: true).guideText.isEmpty
         return checks
     }
 

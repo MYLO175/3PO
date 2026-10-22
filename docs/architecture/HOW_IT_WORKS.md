@@ -6,6 +6,8 @@ Open **Context** from the assistant menu. Its sections can be collapsed, and Pro
 
 The **3PO guide** explains where information lives. Ordinary chat starts with a compact stable version, then adds relevant pages and working changes. It can open a root space's child index and read deeper pages as needed. Human instructions flow down exact parent paths; child guidance applies more specifically, and unrelated branches stay separate. Heartbeats maintain changed factual descriptions while preserving human wording, evidence and history. Purpose questions are reserved for important unknowns that affect useful assistance; routine empty folders do not cause an interview.
 
+The guide lists **Your spaces**, **Your topics** and **Your instructions**, with a short description and a link for each. The visible topic/instruction lists and the AI map share the same route definitions. Topics include the life areas and retained recent context; instruction links open the existing Assistant, Projects, Reminders, Brief, Review and Calendar controls. Space/topic-specific guidance stays inside its own page. Directory descriptions explain where to look without copying private topic facts or policy bodies into the starting guide. Opening a link makes no AI request.
+
 The guide is placed before changing context to support prompt-cache reuse. Context details records a fingerprint and size, and existing usage diagnostics retain provider-reported cached input. Those observations are separate from a guarantee of cache residency or response speed.
 
 ## 21 October: context pages as the primary memory interface

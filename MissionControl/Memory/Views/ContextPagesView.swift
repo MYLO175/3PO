@@ -134,9 +134,9 @@ struct ContextPagesView: View {
                     if rows.isEmpty { Text(searching ? "No matching projects" : "No project spaces yet").font(.caption).foregroundStyle(.secondary) }
                 }
                 Section("Topics", isExpanded: sectionExpanded(.topics, searching: searching)) {
-                    ForEach(LifeArea.allCases, id: \.rawValue) { area in
-                        if !topics.contains(where: { $0.key == area.rawValue }) && matches(area.title) {
-                            sidebarShortcut(area.title, symbol: "doc.text", description: "Context and guidance for this area").tag(ContextPageDestination.area(area.rawValue))
+                    ForEach(ContextTopicRoute.all) { route in
+                        if !topics.contains(where: { $0.key == route.key }) && matches(route.title) {
+                            sidebarShortcut(route.title, symbol: "doc.text", description: route.about).tag(ContextPageDestination.area(route.key))
                         }
                     }
                     ForEach(topics) { page in pageRow(page, available: available.contains(page.id)).tag(ContextPageDestination.page(page.id)) }
@@ -148,12 +148,9 @@ struct ContextPagesView: View {
                     }
                 }
                 Section("Instructions", isExpanded: sectionExpanded(.instructions, searching: searching)) {
-                    ForEach(ContextFeature.allCases) { feature in
-                        if matches(feature.title) { Label(feature.title, systemImage: "text.alignleft").tag(ContextPageDestination.feature(feature)) }
+                    ForEach(ContextInstructionRoute.all) { route in
+                        if matches(route.title) { Label(route.title, systemImage: route.symbol).tag(instructionDestination(route)) }
                     }
-                    if matches("Brief instructions") { Label("Brief instructions", systemImage: "sun.max").tag(ContextPageDestination.brief) }
-                    if matches("Review guidance") { Label("Review guidance", systemImage: "tray").tag(ContextPageDestination.review) }
-                    if matches("Calendar guide") { Label("Calendar guide", systemImage: "calendar").tag(ContextPageDestination.calendars) }
                 }
             }.listStyle(.sidebar)
                 .onAppear {
@@ -225,10 +222,10 @@ struct ContextPagesView: View {
     @ViewBuilder private func detail(pages: [ContextPage], records: [ContextKnowledgeRecord]) -> some View {
         switch selection {
         case .guide:
-            navigationGuide(records: records)
+            navigationGuide(pages: pages, records: records)
         case .area(let key):
             VStack(alignment: .leading, spacing: 18) {
-                Text(LifeArea.allCases.first(where: { $0.rawValue == key })?.title ?? "Topic context").font(.title2.weight(.semibold))
+                Text(ContextTopicRoute.named(key)?.title ?? "Topic context").font(.title2.weight(.semibold))
                 Text("Useful factual context will be maintained when relevant information is available. You can set guidance for this area now.").foregroundStyle(.secondary)
                 scopedInstructions(.topic(key), records: records)
             }
@@ -292,12 +289,12 @@ struct ContextPagesView: View {
             ContentUnavailableView("Your context, in readable pages", systemImage: "doc.text.magnifyingglass", description: Text("Select a page, describe a project, or add your everyday context. Relevant working changes remain available between heartbeats."))
         }
     }
-    private func navigationGuide(records: [ContextKnowledgeRecord]) -> some View {
+    private func navigationGuide(pages: [ContextPage], records: [ContextKnowledgeRecord]) -> some View {
         let ids = Set(projects.map(\.id))
         let roots = projects.filter { $0.parentID == nil || !ids.contains($0.parentID!) }
         return VStack(alignment: .leading, spacing: 18) {
             Text("3PO guide").font(.title2.weight(.semibold))
-            Text("3PO starts ordinary chats with a compact guide to your information, then opens relevant pages and tools. This map follows your spaces automatically; viewing it makes no AI request.").foregroundStyle(.secondary)
+            Text("3PO starts ordinary chats with a compact guide to your information, then opens relevant pages and tools. This map covers your spaces, topics and instructions; viewing it makes no AI request.").foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 8) {
                 Text("Where to look").font(.headline)
                 Text("Projects and topics explain background and purpose. Calendar and Reminders provide current schedules and tasks. Feature instructions describe how you want help. Working changes provide relevant information received since the last consolidation.")
@@ -307,8 +304,38 @@ struct ContextPagesView: View {
                 .padding(12).background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
             Text("Your spaces").font(.headline)
             spaceTable(roots, records: records)
+            Text("Your topics").font(.headline)
+            Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 12) {
+                GridRow { Text("Topic").font(.caption.weight(.semibold)); Text("What to look here for").font(.caption.weight(.semibold)) }
+                ForEach(ContextTopicRoute.all) { route in
+                    GridRow(alignment: .top) {
+                        Button(route.title) {
+                            expandedSections.insert(.topics)
+                            // Preserve the saved navigation identity even when its support is
+                            // unavailable; pageDetail displays the current withheld state.
+                            let page = pages.first { $0.kind == .topic && $0.key == route.key }
+                            selection = page.map { .page($0.id) } ?? .area(route.key)
+                        }.buttonStyle(.link)
+                        Text(route.about).font(.callout)
+                    }
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            Text("Your instructions").font(.headline)
+            Text("Open the relevant guidance for how 3PO should help. Instructions for a particular space or topic are inside its page. Instructions stay with their existing controls and do not grant access or approve actions.").font(.callout).foregroundStyle(.secondary)
+            Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 12) {
+                GridRow { Text("Instructions").font(.caption.weight(.semibold)); Text("When to use them").font(.caption.weight(.semibold)) }
+                ForEach(ContextInstructionRoute.all) { route in
+                    GridRow(alignment: .top) {
+                        Button(route.title) { expandedSections.insert(.instructions); selection = instructionDestination(route) }.buttonStyle(.link)
+                        Text(route.about).font(.callout)
+                    }
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
             Text("3PO keeps this guide small and opens detailed pages when they are useful.").font(.caption).foregroundStyle(.secondary)
         }.accessibilityIdentifier("context-navigation-guide")
+    }
+    private func instructionDestination(_ route: ContextInstructionRoute) -> ContextPageDestination {
+        switch route { case .feature(let feature): .feature(feature); case .brief: .brief; case .review: .review; case .calendars: .calendars }
     }
     private func spaceDescription(_ item: LifeItem, records: [ContextKnowledgeRecord]) -> some View {
         let row = model.contextSpaceDescriptions(registration: registration, items: [item], records: records).first

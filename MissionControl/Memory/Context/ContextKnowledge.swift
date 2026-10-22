@@ -174,18 +174,27 @@ import EventKit
         let areaKey = requestedPageID.flatMap { value -> String? in
             guard value.hasPrefix("area:") else { return nil }
             let key = String(value.dropFirst(5))
-            return LifeArea.allCases.contains(where: { $0.rawValue == key }) ? key : nil
+            return ContextTopicRoute.named(key)?.key
+        }
+        if requestedPageID?.hasPrefix("area:") == true, areaKey == nil {
+            return .init(text: ContextKnowledgeRules.json(["unavailable": "This topic route is unknown. Search with a descriptive query and no page ID."]))
         }
         let pageID = areaKey.map { ContextPage.stableID(registration: registration, kind: .topic, key: $0) } ?? requestedPageID
-        let records = contextKnowledge(registration: registration, topic: topic, includeTopics: includeTopics, allowedMemoryIDs: allowedMemoryIDs, purpose: purpose, mailAccounts: mailAccounts, whatsappReady: whatsappReady)
         let pages = contextPages.pages(registration: registration)
         let spaceItems = assistant.projects.items(registration, topic: topic, includeTopics: includeTopics).filter { !$0.kind.isWork }
+        if let pageID, areaKey == nil,
+           !pages.contains(where: { $0.id == pageID }),
+           !spaceItems.contains(where: { ContextPage.stableID(registration: registration, kind: .project, key: $0.id.uuidString) == pageID }),
+           !ContextInstructionRoute.all.contains(where: { $0.id == pageID }) {
+            return .init(text: ContextKnowledgeRules.json(["unavailable": "This page is missing or outside the current scope. Search with a descriptive query and no page ID."]))
+        }
+        let records = contextKnowledge(registration: registration, topic: topic, includeTopics: includeTopics, allowedMemoryIDs: allowedMemoryIDs, purpose: purpose, mailAccounts: mailAccounts, whatsappReady: whatsappReady)
         let navigation = everyday ? contextNavigationGuide(registration: registration, items: spaceItems, records: records) : (text: "", references: [ContextPageReference]())
         let visible = pages.filter { $0.kind != .instruction && contextPageEligible($0, records: records) }
         let checkpoint = contextPages.checkpoint(registration: registration)
         let prior = Dictionary((checkpoint?.references ?? []).map { ($0.contextKey, $0.revision) }, uniquingKeysWith: { first, _ in first })
         let selfLabel = assistant.memory.notebook(registration, topic: topic, includeTopics: includeTopics).selfLabel
-        let effectiveQuery = query ?? areaKey.flatMap { key in LifeArea.allCases.first { $0.rawValue == key }?.title } ?? pageID.flatMap { id in pages.first { $0.id == id }?.title ?? spaceItems.first { ContextPage.stableID(registration: registration, kind: .project, key: $0.id.uuidString) == id }?.title }
+        let effectiveQuery = query ?? areaKey.flatMap { ContextTopicRoute.named($0)?.title } ?? pageID.flatMap { id in pages.first { $0.id == id }?.title ?? spaceItems.first { ContextPage.stableID(registration: registration, kind: .project, key: $0.id.uuidString) == id }?.title }
         let terms = MemoryRetrieval.queryTerms(effectiveQuery, selfLabel: selfLabel)
         func relevant(_ record: ContextKnowledgeRecord) -> Bool {
             effectiveQuery == nil || !terms.isDisjoint(with: MemoryRetrieval.tokens(record.title + " " + record.text))
@@ -282,8 +291,7 @@ import EventKit
                     directory.append((["id": id, "title": item.title, "about": "Current project/space context"], refs))
                 }
             }
-            directory += ContextFeature.allCases.map { (["id": "instructions:" + $0.rawValue, "title": $0.title, "about": "Your guidance for this feature"], []) }
-            directory += [["id": "instructions:brief", "title": "Brief instructions", "about": "How to prepare the day's brief"], ["id": "instructions:review", "title": "Review instructions", "about": "What deserves attention and current feedback"], ["id": "instructions:calendars", "title": "Calendar guide", "about": "Which permitted calendar to use"]].map { ($0, []) }
+            directory += ContextInstructionRoute.all.map { (["id": $0.id, "title": $0.title, "about": $0.about], []) }
             var included: [[String: String]] = []
             for entry in directory.sorted(by: { $0.row["title", default: ""] < $1.row["title", default: ""] }) {
                 guard ContextKnowledgeRules.json(included + [entry.row]).utf8.count <= 4000 else { continue }
