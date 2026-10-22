@@ -8,6 +8,14 @@ import SwiftData
         var event=AgendaEvent(id:"occurrence",calendarID:calendar.id,title:"Orion engineering supervision",start:now.addingTimeInterval(86400),end:now.addingTimeInterval(90000),allDay:false,location:"Private address excluded",sourceLabel:calendar.label,modified:now.addingTimeInterval(-3600),memoryItemID:"stable-occurrence")
         func calendarItem()->NativeLearningItem { NativeSourceAdapters.calendar(.init(start:now,end:now.addingTimeInterval(90*86400),refreshed:now,calendar:.init(sources:[calendar],events:[event])),sources:[],now:now).first! }
         let first=calendarItem()
+        precondition(first.id == NativeLearningRules.hash(first.identity),"Stored source IDs retain the original canonical identity hash")
+        var identityEdit=first
+        identityEdit.identity.itemID="fictional-new-exact-item"
+        precondition(identityEdit.id != first.id && identityEdit.id == NativeLearningRules.hash(identityEdit.identity),"Nested identity edits refresh the exact source ID")
+        identityEdit.identity=first.identity
+        precondition(identityEdit == first,"Restoring an identity restores exact value equality without changing the original copy")
+        identityEdit.revision="changed-source-content"
+        precondition(identityEdit.id == first.id,"A content revision does not change source identity")
         let mailProjection=MailLearningProjectionCache()
         var mailKey=MailLearningProjectionKey(collectionRevision:1,summaryRevision:1,registration:registration,excluded:[])
         var mailBuilds=0

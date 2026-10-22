@@ -20,13 +20,21 @@ struct MailLearningProjectionKey:Equatable {
 
 /// A bounded, exact version of already collected source data. Never a write instruction.
 struct NativeLearningItem:Equatable {
-    var identity:MemorySourceIdentity
+    var identity:MemorySourceIdentity {
+        didSet { if identity != oldValue { id=NativeLearningRules.hash(identity) } }
+    }
+    /// The exact canonical identity hash, reused by grouping/sorting/retention.
+    /// Nested identity edits also run didSet; this never caches source eligibility.
+    private(set) var id:String
     var revision:String
     var label:String
     var text:String
     var date:Date?
     var changed:Date?
-    var id:String { NativeLearningRules.hash(identity) }
+    init(identity:MemorySourceIdentity,revision:String,label:String,text:String,date:Date? = nil,changed:Date? = nil) {
+        self.identity=identity;id=NativeLearningRules.hash(identity)
+        self.revision=revision;self.label=label;self.text=text;self.date=date;self.changed=changed
+    }
 }
 
 struct NativeLearningProjectionKey:Equatable {
