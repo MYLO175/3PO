@@ -21,12 +21,29 @@ struct ChatGPTStream {
     private(set) var responseID: String?
     private(set) var reportedTokens: AIReportedTokens?
     private var completed = false
+    /// Only the fully validated terminal response ends transport. Item completion
+    /// and [DONE] alone never authorise text acceptance or tool execution.
+    var responseCompleted: Bool { completed }
     private var finishedItems: [(Int,[String:Any])] = []
     private var eventKinds: [String] = []
     var diagnostic: String { "completed=\(completed), events=" + eventKinds.suffix(12).joined(separator:",") + ", output=" + output.compactMap { $0["type"] as? String }.joined(separator:",") }
     private var eventData: [String] = []
     private var byteLine = Data()
     private var sawCR = false
+    /// The response.completed event is the transport boundary; an SSE connection
+    /// may remain open afterwards. Validate ownership once more before acceptance.
+    @MainActor mutating func read<Bytes: AsyncSequence>(from bytes: Bytes, validate: () throws -> Void,
+                                                       onDelta: (String) -> Void) async throws -> String where Bytes.Element == UInt8 {
+        for try await value in bytes {
+            try Task.checkCancellation()
+            try validate()
+            if let delta = try byte(value) { onDelta(delta) }
+            if responseCompleted { break }
+        }
+        try Task.checkCancellation()
+        try validate()
+        return try finishBytes()
+    }
     // SSE framing uses ASCII CR/LF, never Unicode separators inside JSON strings.
     mutating func byte(_ value: UInt8) throws -> String? {
         if value == 10 && sawCR { sawCR = false; return nil }
@@ -55,14 +72,15 @@ struct ChatGPTStream {
         eventData.append(String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces))
         let payload = eventData.joined(separator: "\n")
         guard payload.utf8.count <= 1_000_000 else { throw Failure.oversized }
-        if payload == "[DONE]" || (try? JSONSerialization.jsonObject(with: Data(payload.utf8))) != nil { return try consume() }
+        if payload == "[DONE]" { return try consume() }
+        if let event = try? JSONSerialization.jsonObject(with: Data(payload.utf8)) { return try consume(parsed: event) }
         return nil
     }
-    private mutating func consume() throws -> String? {
+    private mutating func consume(parsed: Any? = nil) throws -> String? {
         guard !eventData.isEmpty else { return nil }
         let payload = eventData.joined(separator: "\n"); eventData = []
         if payload == "[DONE]" { return nil }
-        guard let event = (try? JSONSerialization.jsonObject(with:Data(payload.utf8))) as? [String:Any], let type = event["type"] as? String else { throw Failure.invalid }
+        guard let event = (parsed ?? (try? JSONSerialization.jsonObject(with:Data(payload.utf8)))) as? [String:Any], let type = event["type"] as? String else { throw Failure.invalid }
         if let response = event["response"] as? [String:Any], let id = response["id"] as? String { responseID = id }
         if type.count < 100, type.allSatisfy({ $0.isASCII && ($0.isLetter || $0 == "_" || $0 == ".") }) { eventKinds.append(type); if eventKinds.count > 12 { eventKinds.removeFirst() } }
         switch type {

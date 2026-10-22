@@ -10,6 +10,8 @@ The guide lists **Your spaces**, **Your topics** and **Your instructions**, with
 
 The guide is placed before changing context to support prompt-cache reuse. Context details records a fingerprint and size, and existing usage diagnostics retain provider-reported cached input. Those observations are separate from a guarantee of cache residency or response speed.
 
+Chat history checks its exact page receipts against one fresh context projection per purpose, discarded before yielding. Confirmation lookup checks only saved confirmation candidates, avoiding unrelated email-assessment reconstruction between streamed words. Each partial update still checks current ownership and supplied information. A validated `response.completed` accepts authoritative final text, tool output and usage without waiting for the HTTP connection to close; item completion or a partial reply alone cannot finish a request.
+
 ## 21 October: context pages as the primary memory interface
 
 Open **PA menu → Context**, **Settings → Context → Open Context pages**, or an existing project's **Context** shortcut. Overview, project and topic pages hold readable Markdown with local version history. Working changes shows current permitted information awaiting consolidation. Instructions groups the assistant, project, reminder, brief, Review and Calendar guidance; existing saved preferences remain authoritative. Supporting facts and controls retains original evidence, corrections and learning controls.

@@ -285,9 +285,11 @@ import SwiftData
         Set(records.filter{$0.registration == model.chatGPT.activeID && $0.resolution != nil}.flatMap{[$0.id,$0.resolution!.confirmation.messageID]})
     }
     /// Current saved source assessments, including quiet or acknowledged receipts. This grants no action authority.
-    func sourceAssessments(_ model:DashboardModel,includeStale:Bool = false)->[(MailMessage,EmailSummary)] {
+    func sourceAssessments(_ model:DashboardModel,includeStale:Bool = false,requiringResolution:Bool = false)->[(MailMessage,EmailSummary)] {
         guard enabled,model.assistant.contextEnabled else {return []}
-        return records.compactMap{sourceAssessment($0,model:model,includeStale:includeStale)}.sorted{$0.0.received == $1.0.received ? $0.0.id < $1.0.id : $0.0.received > $1.0.received}
+        // Confirmation context needs only saved confirmation candidates. Rejecting
+        // other rows first avoids revalidating every assessment for each chat delta.
+        return records.lazy.filter{!requiringResolution || $0.resolution != nil}.compactMap{self.sourceAssessment($0,model:model,includeStale:includeStale)}.sorted{$0.0.received == $1.0.received ? $0.0.id < $1.0.id : $0.0.received > $1.0.received}
     }
     private func sourceAssessment(_ summary:EmailSummary,model:DashboardModel,includeStale:Bool = false)->(MailMessage,EmailSummary)? {
         guard enabled,model.assistant.contextEnabled,summary.registration == model.chatGPT.activeID,includeStale || reviewAssessmentAvailable(summary,model:model),includeStale || (summary.observedBodyFingerprint.map({$0 == summary.bodyFingerprint}) ?? true),
@@ -305,7 +307,7 @@ import SwiftData
         return value
     }
     func resolved(_ model:DashboardModel,mailAccounts:Set<String>? = nil,use:AutomaticMemoryUse? = nil,whatsappReady:Bool = true)->[(MailMessage,EmailSummary,EmailResolution)] {
-        sourceAssessments(model).compactMap {message,summary in
+        sourceAssessments(model,requiringResolution:true).compactMap {message,summary in
             guard mailAccounts?.contains(message.accountID) ?? true,let value=resolution(summary,message:message,model:model),use.map({model.reviewAcknowledgementSupportAvailable(memory:value.memoryDependencies,whatsapp:value.whatsappDependencies,use:$0,mailAccounts:mailAccounts,whatsappReady:whatsappReady)}) ?? true else {return nil}
             return (message,summary,value)
         }

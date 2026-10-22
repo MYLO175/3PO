@@ -229,6 +229,24 @@ private final class ObservationCounter:@unchecked Sendable {
         ], isPrimary: true)
         check(assistant.sourceSafeHistory(runtime: context.runtime(), feed: history, topic: nil).map(\.content) == ["Retained fictional human turn"], "Injected delivery support must withdraw stale source advice without discarding human history.")
 
+        do {
+            let kept=AssistantTurn(role:"assistant",content:"Current fictional page reply",completed:true,created:context.now,contextKnowledgeVersions:["page:kept":"v1"])
+            let stale=AssistantTurn(role:"assistant",content:"Stale fictional page reply",completed:true,created:context.now,contextKnowledgeVersions:["page:stale":"v1"])
+            let feed=AssistantConversation(accountID:provider.activeID,title:"Fictional page history",turns:[history.turns[0],kept,stale],isPrimary:true)
+            var runtime=context.runtime(),batches=0,current=true
+            runtime.pageKnowledgeAvailable={_,_ in preconditionFailure("History must use its one fresh batch")}
+            runtime.pageKnowledgeAvailability={registration,captures in
+                batches += 1
+                precondition(registration == provider.activeID && captures.count == 3)
+                return captures.map { $0.isEmpty || (current && $0["page:kept"] == "v1") }
+            }
+            check(assistant.sourceSafeHistory(runtime:runtime,feed:feed,topic:nil).map(\.id) == [history.turns[0].id,kept.id] && batches == 1,"History checks page receipts in one batch while withholding stale replies")
+            current=false
+            check(assistant.sourceSafeHistory(runtime:runtime,feed:feed,topic:nil).map(\.id) == [history.turns[0].id] && batches == 2,"A later history read rebuilds current availability and preserves human messages")
+            runtime.pageKnowledgeAvailability={_,_ in []}
+            check(assistant.sourceSafeHistory(runtime:runtime,feed:feed,topic:nil).isEmpty,"Malformed batch cardinality fails closed")
+        }
+
         for corrected in [true,false] {
             let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("native-preparation-\(corrected)"))
             var attempts=0

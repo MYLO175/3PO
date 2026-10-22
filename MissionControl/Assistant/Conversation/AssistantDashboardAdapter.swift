@@ -161,6 +161,12 @@ extension DashboardModel {
             guard let self else { return false }
             return self.contextKnowledgeAvailable(registration: registration, versions: versions)
         }
+        runtime.pageKnowledgeAvailability = { [weak self] registration, captures in
+            guard let self else { return captures.map { _ in false } }
+            return self.withContextPageAvailability(registration: registration, captures: captures) { available in
+                captures.map { available($0) }
+            }
+        }
         runtime.ownedPageKnowledgeAvailable = { [weak self] registration, versions, ignored in
             self?.contextKnowledgeAvailable(registration: registration, versions: versions, ignoring: ignored) ?? false
         }

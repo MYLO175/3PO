@@ -1,6 +1,6 @@
 import Foundation
 @main struct Checks {
-    static func main() throws {
+    @MainActor static func main() async throws {
         assert(ChatGPTRecovery.quota("subscription_sharing_usage_limit_exceeded"))
         let first = ChatGPTRecovery.blocked(after:"subscription_sharing_usage_limit_exceeded",registration:"request-account",existing:[])
         assert(first == ["request-account"] && !first.contains("new-active-account"))
@@ -73,6 +73,26 @@ import Foundation
         _ = try badCounts.line(#"data: {"type":"response.output_text.delta","delta":"Valid answer"}"#)
         _ = try badCounts.line(#"data: {"type":"response.completed","response":{"usage":{"input_tokens":true,"output_tokens":20,"total_tokens":21}}}"#)
         let uncountedAnswer = try badCounts.finish(); assert(uncountedAnswer == "Valid answer" && badCounts.reportedTokens == nil, "Bad optional counts must not reject an answer")
+        // Real production reader, with a deliberately open SSE tail (no EOF).
+        var openTail: AsyncStream<UInt8>.Continuation!
+        let openBytes=AsyncStream<UInt8> { openTail=$0 }
+        defer { openTail.finish() }
+        let terminalWire=#"data: {"type":"response.output_text.delta","delta":"Partial"}"#+"\n\n"+#"data: {"type":"response.completed","response":{"output":[{"type":"message","content":[{"text":"Authoritative final"}]}],"usage":{"input_tokens":10,"output_tokens":4,"total_tokens":14}}}"#+"\n\n"
+        for byte in terminalWire.utf8 {openTail.yield(byte)}
+        var reader=ChatGPTStream(),partials="",ownershipChecks=0
+        let openAnswer=try await reader.read(from:openBytes,validate:{ownershipChecks += 1},onDelta:{partials += $0})
+        assert(openAnswer == "Authoritative final" && partials == "Partial" && reader.responseCompleted && ownershipChecks > 1)
+        assert(reader.reportedTokens?.output == 4,"Completion accepts exact terminal usage before HTTP EOF")
+        for revoke in [false,true] {
+            var continuation:AsyncStream<UInt8>.Continuation!
+            let bytes=AsyncStream<UInt8> {continuation=$0}
+            let incompleteWire=#"data: {"type":"response.output_text.delta","delta":"Partial"}"#+"\n\n"+#"data: [DONE]"#+"\n\n"
+            for byte in incompleteWire.utf8 {continuation.yield(byte)}
+            continuation.finish()
+            var candidate=ChatGPTStream(),owned=true,rejected=false
+            do {_=try await candidate.read(from:bytes,validate:{if !owned {throw CancellationError()}},onDelta:{_ in if revoke {owned=false}})} catch {rejected=true}
+            assert(rejected && !candidate.responseCompleted,"Missing completion and ownership withdrawal cannot accept a partial response")
+        }
         print("PASS: SSE deltas, terminal completion, multiline events, interruption, failed/incomplete/empty/malformed rejection")
     }
 }

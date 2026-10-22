@@ -110,6 +110,9 @@ struct AssistantToolRequest {
     var contextPages: (String, String?, UUID?, Bool, Bool) -> AssistantPageContext = { _,_,_,_,_ in .init() }
     var profileContextPages: (String, UUID?) -> AssistantPageContext = { _,_ in .init() }
     var pageKnowledgeAvailable: (String, [String: String]) -> Bool = { _,_ in true }
+    /// One fresh synchronous projection for a bounded history selection; no result
+    /// is retained across an await or another validation decision.
+    var pageKnowledgeAvailability: ((String, [[String: String]]) -> [Bool])?
     var ownedPageKnowledgeAvailable: ((String, [String: String], Set<String>) -> Bool)?
     var ownedContextReferences: (String, Set<String>) -> Set<String> = { _, keys in keys }
     /// Exact dependencies a supported memory mutation may retire, captured before it removes its lineage.

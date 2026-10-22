@@ -329,22 +329,19 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         var firstDelta:Double?,lastDelta:Double?,callbackSeconds=0.0,deltaCount=0
         #endif
         do {
-            for try await byte in bytes {
-                try Task.checkCancellation()
+            let text = try await stream.read(from: bytes, validate: {
                 guard activeID == registration else { throw ChatGPTError.message("The selected account changed; the old response was stopped.") }
-                if let delta = try stream.byte(byte) {
-                    #if DEBUG
-                    let arrived=ProcessInfo.processInfo.systemUptime
-                    if firstDelta == nil {firstDelta=arrived-streamClock}
-                    lastDelta=arrived-streamClock;deltaCount += 1
-                    #endif
-                    onDelta?(delta)
-                    #if DEBUG
-                    callbackSeconds += ProcessInfo.processInfo.systemUptime-arrived
-                    #endif
-                }
-            }
-            let text = try stream.finishBytes()
+            }, onDelta: { delta in
+                #if DEBUG
+                let arrived=ProcessInfo.processInfo.systemUptime
+                if firstDelta == nil {firstDelta=arrived-streamClock}
+                lastDelta=arrived-streamClock;deltaCount += 1
+                #endif
+                onDelta?(delta)
+                #if DEBUG
+                callbackSeconds += ProcessInfo.processInfo.systemUptime-arrived
+                #endif
+            })
             usageStore?.finish(usageID, outcome: .completed, tokens: stream.reportedTokens, httpStatus: responseHTTPStatus)
             #if DEBUG
             if let flag=ProcessInfo.processInfo.arguments.firstIndex(of:"--stream-profile-path"),ProcessInfo.processInfo.arguments.indices.contains(flag+1) {

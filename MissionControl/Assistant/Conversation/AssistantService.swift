@@ -488,7 +488,11 @@ import Observation
             return delivery
         })
         let permitted=Set((memory.enabled ? memory.permittedRecords : []).filter{MemoryRules.usable($0,registration:connection.activeID,now:runtime.clock())}.map(\.id))
-        return ConversationRules.sourceMemoryHistory(ConversationRules.history(feed:feed,topic:topic,excludedDeliveries:excluded),permitted:permitted,history:feed.turns).filter { runtime.pageKnowledgeAvailable(connection.activeID, $0.contextKnowledgeVersions ?? [:]) }.map{turn in
+        let candidates=ConversationRules.sourceMemoryHistory(ConversationRules.history(feed:feed,topic:topic,excludedDeliveries:excluded),permitted:permitted,history:feed.turns)
+        let captures=candidates.map { $0.contextKnowledgeVersions ?? [:] }
+        let available=runtime.pageKnowledgeAvailability?(connection.activeID,captures) ?? captures.map { runtime.pageKnowledgeAvailable(connection.activeID,$0) }
+        guard available.count == candidates.count else { return [] }
+        return zip(candidates,available).filter { $0.1 }.map{turn,_ in
             guard turn.role == "assistant" else {return turn}
             var value=turn;value.content=PAIntentFailure.correctedLegacyReply(turn.content,errors:turn.toolErrors)
             if let proposals=turn.actionApprovals {

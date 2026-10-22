@@ -124,6 +124,20 @@ import Synchronization
         checks["exact supplied confirmation context is initially available"] = !capturedResolutions.isEmpty && model.emailSummaries.resolutionContextAvailable(capturedResolutions,model:model)
         checks["exact confirmation context retains purpose-specific Mail access"] = !model.emailSummaries.resolutionContextAvailable(capturedResolutions,model:model,mailAccounts:[],use:.brief)
         do {
+            defer {try? model.emailSummaries.seedAdviceFixture(saved)}
+            var unrelated=request
+            unrelated.id="fictional-unrelated-no-confirmation";unrelated.resolution=nil
+            unrelated.reviewContext = .init(policy:model.emailSummaries.policy(owner),memories:[],discoveryRevision:nil,contextPageDependencies:["context-purpose:email":"1"])
+            let ordinary=model.emailSummaries.sourceAssessments(model).filter{$0.1.resolution != nil}.map{$0.1.id}
+            let candidates=model.emailSummaries.sourceAssessments(model,requiringResolution:true).map{$0.1.id}
+            checks["confirmation candidate filter preserves the exact guarded sorted subset"] = candidates == ordinary
+            let additions=(0..<80).map { index in var row=unrelated;row.id += "-\(index)";return row }
+            try model.emailSummaries.seedAdviceFixture(saved + additions)
+            let builds=model.contextKnowledgeBuildCount
+            let actual=model.emailSummaries.resolutionContext(model)
+            checks["confirmation lookup ignores unrelated assessments before context-page validation"] = actual == capturedResolutions && model.contextKnowledgeBuildCount == builds
+        }
+        do {
             let capturedMail=model.mailData
             defer {model.mailData=capturedMail;try? model.emailSummaries.seedAdviceFixture(saved)}
             var additions:[EmailSummary]=[]
