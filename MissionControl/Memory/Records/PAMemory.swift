@@ -111,6 +111,10 @@ struct PAMemory: Codable, Identifiable, Equatable {
     var reviewContext:String? = nil
     /// Separate, editable interpretation of explicitly submitted feedback. Never replaces human evidence.
     var reviewInterpretation:ReviewFeedbackInterpretation? = nil
+    /// Learned feature guidance lives in this canonical fact/history, never in a second policy store.
+    var instructionScope: String? = nil
+    var effectiveInstructionScope: String? { instructionScope ?? (reviewPreference == true ? "review" : nil) }
+    var supportsInstructionScope: Bool { kind == .preference || (kind == .context && instructionScope?.hasPrefix("calendar:") == true) }
     var allSourceEvidence:[MemorySourceEvidence] { source.map{[$0] + (supportingSources ?? [])} ?? [] }
     static func suppressionKey(_ source:MemorySourceEvidence)->String? {
         let fields=[source.identity.kind.rawValue,source.identity.accountID,source.identity.containerID,source.identity.itemID,source.identity.linkedIdentity ?? "",source.revision]
@@ -284,6 +288,7 @@ enum MemoryRetrieval {
             if let revision=memory.commitmentGroupRevision { value["humanLinkedPlanRevision"]=revision.uuidString }
         }
         value["durability"]=memory.durability?.rawValue ?? "legacy"
+        if let scope = memory.effectiveInstructionScope { value["instructionScope"] = scope }
         if memory.reviewPreference == true {
             value["purpose"]="review preference";value["reviewAbout"]=memory.reviewContext ?? ""
             if let feedback=memory.reviewFeedback {value["reviewFeedback"]=feedback}

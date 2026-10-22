@@ -1,5 +1,15 @@
 # Memory and context in 3PO
 
+## Learning from chat and activity
+
+Saved human dialogue and recorded app outcomes form a durable consolidation backlog. The existing learning record keeps processed identities, outcome revisions and long-message offsets; no second transcript archive is created. Establishing an account's existing-history baseline happens before new foreground evidence is recorded. Later messages stay pending beyond the recent-history window and across reopening. An approval that changes the result on the same chat turn becomes new pending work. Long messages are considered in bounded chunks without acknowledging an unread tail.
+
+During permitted idle heartbeat learning, the model considers a bounded batch, nearby dialogue, relevant existing memories and the available feature destinations. It may retain useful context, route an enduring preference to Assistant, Projects, Reminders, Brief or Review guidance, describe an exact permitted calendar, or decide nothing needs remembering. For example, newsletter feedback in ordinary chat can become a canonical Review preference. A calendar description is bound to its supplied account/provider identity. Quoted material and app outcomes cannot supply preference authority; recording an operation never proves real-world completion.
+
+Learned guidance uses the same canonical memories and correction history as other human context. It supplements the feature's explicit human instructions, which retain priority and their original text. The Context instruction screens show learned preferences with Disable/Restore and access to editing/evidence/history. Review uses its existing feedback preference records. Calendar routing receives learned guidance only with that exact permitted destination. Memory-off, review gates, Forget, corrections and account/source withdrawal still apply.
+
+Memory changes and processed-batch progress commit together. Failed or interrupted attempts retain their backlog and existing explicit-recovery behavior; later arrivals are never acknowledged by an earlier request. Existing shared learning allowances, foreground priority and heartbeat ownership remain. The full backlog is for background consolidation, rather than an additional automatic chat-context feed. Original transcripts and receipts stay in their existing stores; collection, opening screens and source-only refresh make no inference requests.
+
 ## The starting guide, spaces and scoped instructions
 
 Ordinary chat receives a small 3PO information guide before changing clocks, relevant pages, working changes and source snapshots. It describes the assistant's role, where to find background or current information, the root spaces and topic routes. A space read returns its parent context and a bounded child index, so the assistant can descend to the relevant subspace. The guide's ordering and request JSON are deterministic. Its fingerprint and byte count are retained in Context details without duplicating guide prose.

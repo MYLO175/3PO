@@ -11,6 +11,7 @@ import SwiftData
         checks.merge(try humanEvidenceChecks(), uniquingKeysWith: { $1 })
         checks.merge(try await pageReadChecks(), uniquingKeysWith: { $1 })
         checks.merge(try instructionChecks(), uniquingKeysWith: { $1 })
+        checks.merge(try learnedInstructionChecks(), uniquingKeysWith: { $1 })
         checks.merge(try emailPageChecks(), uniquingKeysWith: { $1 })
         checks.merge(try primaryContextChecks(), uniquingKeysWith: { $1 })
         checks.merge(try projectionReuseChecks(), uniquingKeysWith: { $1 })
@@ -655,6 +656,52 @@ import SwiftData
         model.contextCalendarAccess = { false }
         checks["Context pages calendar permission withdrawal revokes guidance without OS reads"] = !owned.current() && model.calendarPurposeCapture(sources: calendars, registration: registration).text == "{}"
         checks["Context pages instruction fixtures make zero inference requests"] = fixture.provider.calls == 0 && fixture.sources.reads == 0 && model.aiUsage.state.records.isEmpty
+        return checks
+    }
+
+    private static func learnedInstructionChecks() throws -> [String: Bool] {
+        let fixture = try ContextPagesFixture()
+        defer { fixture.clean() }
+        let model = fixture.model, owner = fixture.registration
+        var checks: [String:Bool] = [:]
+        let base = "Give practical answers with clear uncertainty."
+        _ = try model.contextPages.save(.init(registration:owner,kind:.instruction,key:"assistant",owner:.human,title:"Assistant",markdown:base),expectedRevision:nil)
+        let additions = [LearnedMemory(turnID:"human-assistant",text:"Use short explanations before technical detail.",kind:.preference,evidence:"I prefer short explanations before technical detail.",certainty:.stated,durability:.stable,instruction:"assistant"),
+            .init(turnID:"human-brief",text:"Start morning briefs with upcoming commitments.",kind:.preference,evidence:"Start my morning brief with upcoming commitments.",certainty:.stated,durability:.stable,instruction:"brief"),
+            .init(turnID:"human-review",text:"Keep routine university newsletters quiet unless they contain a direct personal request.",kind:.preference,evidence:"Routine newsletters are unimportant; direct requests matter.",certainty:.stated,durability:.stable,instruction:"review")]
+        guard model.assistant.memory.merge(additions,registration:owner) else { throw IntegrationError.verification }
+        let effective = model.featureInstruction(.assistant,registration:owner)
+        checks["Learned instructions reach feature input without copying into human prose"] = effective.baseText == base && effective.text.contains(additions[0].text) && model.contextPages.pages(registration:owner).first?.markdown == base
+        let captured = model.captureContextPages(registration:owner,query:nil,pageID:"instructions:assistant")
+        checks["Learned instructions are visible in exact instruction reads"] = captured.current() && captured.text.contains(additions[0].text)
+        let brief = model.captureContextPages(registration:owner,query:nil,pageID:"instructions:brief")
+        checks["Learned brief preferences share the versioned instruction route"] = brief.current() && brief.text.contains(additions[1].text) && !brief.text.contains(additions[0].text)
+        let review = model.captureContextPages(registration:owner,query:nil,pageID:"instructions:review")
+        checks["Chat-derived Review guidance is the canonical feedback preference"] = review.current() && review.text.contains(additions[2].text) && model.assistant.memory.reviewPreferences(owner).count == 1
+        let rule = model.assistant.memory.instructionPreferences("assistant",registration:owner).first!
+        guard model.assistant.memory.retire(rule.id,retired:true,expectedRevision:model.assistant.memory.revision) else { throw IntegrationError.verification }
+        checks["Disabling learned guidance removes it and invalidates supplied instructions"] = !captured.current() && model.featureInstruction(.assistant,registration:owner).text == base
+        guard model.assistant.memory.retire(rule.id,retired:false,expectedRevision:model.assistant.memory.revision) else { throw IntegrationError.verification }
+        model.contextCalendarAccess = { true }
+        let calendar = SourceOption(id:"calendar",title:"Tentative",account:"Primary account",writable:true,providerID:"exact-provider")
+        model.calendarData = .init(sources:[calendar],events:[])
+        let scope = "calendar:" + model.calendarPageKey(calendar)
+        let calendarRule = LearnedMemory(turnID:"human-calendar",text:"Use this calendar only for tentative plans.",kind:.context,evidence:"This calendar is only for tentative plans.",certainty:.stated,durability:.stable,instruction:scope)
+        guard model.assistant.memory.merge([calendarRule],registration:owner) else { throw IntegrationError.verification }
+        let guide = model.calendarPurposeCapture(sources:[calendar],registration:owner)
+        let guideObject = try object(guide.text)
+        let rows = guideObject["calendars"] as? [[String:Any]] ?? []
+        checks["Chat calendar purpose reaches the exact destination guide"] = guide.current() && (rows.first?["learnedGuidance"] as? String)?.contains(calendarRule.text) == true
+        checks["Scoped calendar instructions never enter unrelated generic calendar guidance"] = (guideObject["humanGuidance"] as? [[String:Any]] ?? []).isEmpty
+        let targets = model.contextLearningTargets(registration:owner)
+        checks["Learning receives exact permitted instruction targets"] = targets.contains{$0.scope == scope} && targets.contains{$0.scope == "review"} && targets.contains{$0.scope == "brief"}
+        var reused = calendar; reused.providerID = "different-provider"
+        model.calendarData = .init(sources:[reused],events:[])
+        let otherRows = try object(model.calendarPurposeCapture(sources:[reused],registration:owner).text)["calendars"] as? [[String:Any]]
+        checks["Learned calendar guidance cannot follow a reused source ID across providers"] = !guide.current() && otherRows?.first?["learnedGuidance"] as? String == ""
+        model.assistant.memory.enabled = false
+        checks["Memory-off withdraws learned feature instructions"] = model.featureInstruction(.assistant,registration:owner).text == base
+        checks["Learned instruction production fixtures make no inference or native reads"] = fixture.provider.calls == 0 && fixture.sources.reads == 0
         return checks
     }
 

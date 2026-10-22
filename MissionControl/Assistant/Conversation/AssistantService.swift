@@ -5,6 +5,7 @@ import Observation
 @MainActor @Observable final class AssistantService {
     let connection: any PAInferenceConnection
     let memory: PAMemoryStore
+    @ObservationIgnored var prepareMemoryLearning: () -> Void = {}
     let projects: LifeWorkspaceStore
     let images: ChatImageStore
     private var activeImages:[ChatImageAttachment]=[]
@@ -144,6 +145,7 @@ import Observation
     private func recordActionResult(_ outcome:AssistantTurnOutcome) {
         guard !outcome.attemptedTools.isEmpty || outcome.confirmedActions > 0 || outcome.unconfirmedActions > 0 else {return}
         guard let c=allConversations.firstIndex(where:{$0.id == outcome.conversationID && $0.accountID == outcome.registration}),let t=allConversations[c].turns.firstIndex(where:{$0.id == outcome.responseTurnID}) else {return}
+        prepareMemoryLearning()
         allConversations[c].turns[t].actionResult = .init(phase:outcome.phase,receipts:outcome.receipts,confirmedActions:outcome.confirmedActions,unconfirmedActions:outcome.unconfirmedActions)
     }
     #if DEBUG
@@ -204,6 +206,7 @@ import Observation
         return busy || ((conversation(id)?.turns.count ?? 0) > count && error == nil)
     }
     @discardableResult func openReview(key:String,title:String,sourceKind:String,accountID:String?,messageID:String?,identity:String?,chatID:String?,seeds:[AssistantTurn])->UUID? {
+        prepareMemoryLearning()
         if let existing=conversations.first(where:{$0.reviewKey == key}) {return existing.id}
         guard conversationsWritable,container != nil else {return nil}
         let previous=allConversations
@@ -213,6 +216,7 @@ import Observation
         guard save() else {allConversations=previous;return nil};return value.id
     }
     @discardableResult func appendReview(_ text:String,conversationID:UUID,turnID:UUID=UUID(),human:Bool=false)->Bool {
+        if human { prepareMemoryLearning() }
         guard let index=allConversations.firstIndex(where:{$0.id == conversationID && $0.accountID == connection.activeID && $0.reviewKey != nil}),!allConversations[index].turns.contains(where:{$0.id == turnID}) else {return false}
         let previous=allConversations
         allConversations[index].turns.append(.init(id:turnID,role:human ? "user" : "assistant",content:text,completed:true))
@@ -259,6 +263,7 @@ import Observation
         if queueRunning { Task { [weak self] in await Task.yield(); guard let self else { return }; self.advanceQueue(runtime:runtime) } }
     }
     private func prepare(_ prompt: String, id: UUID, now: Date) -> AssistantTurn? {
+        prepareMemoryLearning()
         guard let index = allConversations.firstIndex(where:{ $0.id == id && $0.accountID == connection.activeID }) else { return nil }
         let previous = allConversations
         // A new human direction supersedes unapproved proposals in this scope.
@@ -288,10 +293,27 @@ import Observation
         return (try? String(data:JSONSerialization.data(withJSONObject:value,options:[.sortedKeys]),encoding:.utf8)) ?? "{}"
     }
     func learningTurns() -> [MemoryLearningTurn] {
-        conversations.flatMap { conversation in conversation.turns.filter { $0.completed && $0.role == "user" && $0.profileControl != true }.map { MemoryLearningTurn(id:$0.id.uuidString,text:$0.content,created:$0.created ?? conversation.created,dateKnown:$0.created != nil,conversationID:ConversationRules.context(for:$0,in:conversation)) } }
+        conversations.flatMap { conversation -> [MemoryLearningTurn] in
+            var result: [MemoryLearningTurn] = [], nearby: [String:[String]] = [:]
+            for turn in conversation.turns where (turn.completed || turn.actionResult != nil) && turn.profileControl != true && turn.deliveryID == nil {
+                let scope = ConversationRules.context(for: turn, in: conversation)
+                let scopeKey = scope?.uuidString ?? "shared"
+                if turn.role == "user" {
+                    result.append(.init(id: turn.id.uuidString, text: turn.content, created: turn.created ?? conversation.created,
+                        dateKnown: turn.created != nil, conversationID: scope, context: nearby[scopeKey,default:[]].joined(separator:"\n")))
+                } else if let outcome = turn.actionResult {
+                    let text = "Recorded historical app outcome: \(outcome.phase). Verified operations: \(outcome.confirmedActions). Unconfirmed operations: \(outcome.unconfirmedActions).\n" + outcome.receipts.joined(separator: "\n")
+                    result.append(.init(id: turn.id.uuidString, text: text, created: turn.created ?? conversation.created,
+                        dateKnown: turn.created != nil, conversationID: scope, category: "action", revision: MemoryDependencyRules.fingerprint(["outcome":text])))
+                }
+                nearby[scopeKey] = Array((nearby[scopeKey,default:[]] + [turn.role + ": " + String(turn.content.prefix(750))]).suffix(2))
+            }
+            return result
+        }
     }
     private func remember(_ supplied: String, prompt: String) {
         guard !busy else { return }
+        prepareMemoryLearning()
         if active == nil { openPA() }
         guard let id = activeID, let index = allConversations.firstIndex(where:{ $0.id == id && $0.accountID == connection.activeID }) else { return }
         let text = supplied.isEmpty ? ConversationRules.thread(feed:allConversations[index],topic:conversation(activeTopicID)).last(where:{ $0.completed && $0.profileSessionID == nil && !$0.content.isEmpty })?.content : supplied

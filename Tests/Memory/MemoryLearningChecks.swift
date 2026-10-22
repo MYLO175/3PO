@@ -85,6 +85,58 @@ import Foundation
         let questionReload = try JSONDecoder().decode(MemoryLearningState.self,from:JSONEncoder().encode(questionState))
         precondition(questionReload.questions == [savedQuestion] && questionReload.accounts["one"]?.lastQuestionDay == today)
         precondition(!q.deliveryID.hasPrefix("discovery:") && !q.deliveryID.contains(":morning:"))
-        print("PASS: bounded orientation/batches, evidence and ID validation, daily/interval/pause controls, explicit migration/suppression, single-scope batches, grounded optional daily questions, legacy state and dismissal roundtrip")
+        var backlog = MemoryLearningProgress()
+        let many = (0..<100).map { MemoryLearningTurn(id:"pending-\($0)", text:"A saved message \($0)", created:now.addingTimeInterval(Double($0))) }
+        var consumed = Set<String>()
+        while true {
+            let page = MemoryLearningRules.batch(many.reversed(), seen:backlog.seen, suppressed:[], offsets:backlog.offsets ?? [:])
+            if page.isEmpty { break }
+            consumed.formUnion(page.map(\.id)); MemoryLearningRules.acknowledge(page, progress:&backlog)
+            backlog = try JSONDecoder().decode(MemoryLearningProgress.self, from:JSONEncoder().encode(backlog))
+        }
+        precondition(consumed.count == 100 && backlog.seen.count == 100, "A busy period or restart must not lose older pending messages")
+        let longTurn = MemoryLearningTurn(id:"long", text:String(repeating:"x", count:6200) + " I prefer concise morning briefs.", created:now)
+        var longProgress = MemoryLearningProgress(), pieces:[String] = []
+        while !longProgress.seen.contains("long") {
+            let page = MemoryLearningRules.batch([longTurn], seen:longProgress.seen, suppressed:[], offsets:longProgress.offsets ?? [:])
+            precondition(page.count == 1 && page[0].text.count <= 3000)
+            pieces.append(page[0].text); MemoryLearningRules.acknowledge(page, progress:&longProgress)
+        }
+        precondition(pieces.joined() == longTurn.text && longProgress.offsets?.isEmpty == true, "Do not acknowledge an unread tail")
+        let target = MemoryInstructionTarget(id:"calendar_0",scope:"calendar:exact-account-provider",title:"Tentative",text:"",revision:"one")
+        let guidanceTurn = MemoryLearningTurn(id:"guidance",text:"This calendar is only for tentative plans.",created:now)
+        var guidance = LearnedMemory(turnID:"guidance",text:"Use this calendar for tentative plans.",kind:.preference,evidence:guidanceTurn.text,certainty:.stated,durability:.stable,instruction:"calendar_0")
+        let routed = try MemoryLearningRules.assessment(encode([guidance]),turns:[guidanceTurn],questionAllowed:false,targets:[target])
+        precondition(routed.memories[0].instruction == target.scope)
+        guidance.kind = .context
+        let calendarContext = try MemoryLearningRules.assessment(encode([guidance]),turns:[guidanceTurn],questionAllowed:false,targets:[target])
+        precondition(calendarContext.memories[0].kind == .context && calendarContext.memories[0].instruction == target.scope,"A stated calendar purpose can remain factual context")
+        let instructionResult = "{\"memories\":[],\"instructions\":" + String(data:try JSONEncoder().encode([guidance]),encoding:.utf8)! + "}"
+        let separateInstructions = try MemoryLearningRules.assessment(instructionResult,turns:[guidanceTurn],questionAllowed:false,targets:[target])
+        precondition(separateInstructions.memories.first?.instruction == target.scope,"Instruction updates use a separate bounded result lane")
+        guidance.kind = .preference
+        do { _ = try MemoryLearningRules.assessment(encode([guidance]),turns:[guidanceTurn],questionAllowed:false); preconditionFailure("Unissued calendar accepted") } catch {}
+        var priorRule = PAMemory(registration:"one",text:"Old guidance",kind:.preference,provenance:"Human")
+        priorRule.instructionScope = target.scope
+        guidance.replaces = priorRule.id.uuidString
+        _ = try MemoryLearningRules.assessment(encode([guidance]),turns:[guidanceTurn],questionAllowed:false,targets:[target],existing:[priorRule])
+        guidance.certainty = .inferred
+        do { _ = try MemoryLearningRules.assessment(encode([guidance]),turns:[guidanceTurn],questionAllowed:false,targets:[target],existing:[priorRule]); preconditionFailure("Inferred correction accepted") } catch {}
+        let action = MemoryLearningTurn(id:"operation",text:"Created a reminder for the optics experiment.",created:now,category:"action")
+        var actionMemory = LearnedMemory(turnID:action.id,text:"A reminder was created for the experiment.",kind:.context,evidence:action.text)
+        let outcome = try MemoryLearningRules.assessment(encode([actionMemory]),turns:[action],questionAllowed:false)
+        precondition(outcome.memories[0].certainty == .inferred && outcome.memories[0].durability == .situational)
+        actionMemory.kind = .preference; actionMemory.instruction = "calendar_0"
+        do { _ = try MemoryLearningRules.assessment(encode([actionMemory]),turns:[action],questionAllowed:false,targets:[target]); preconditionFailure("App outcome became a policy") } catch {}
+        var revisedAction = action; revisedAction.revision = "pending-approval"
+        var actionProgress = MemoryLearningProgress()
+        MemoryLearningRules.acknowledge([revisedAction],progress:&actionProgress)
+        precondition(MemoryLearningRules.batch([revisedAction],seen:actionProgress.seen,suppressed:[],revisions:actionProgress.revisions ?? [:]).isEmpty)
+        revisedAction.revision = "verified-approval"
+        let updatedAction = MemoryLearningRules.batch([revisedAction],seen:actionProgress.seen,suppressed:[],revisions:actionProgress.revisions ?? [:])
+        precondition(updatedAction.count == 1 && updatedAction[0].offset == 0,"A later approval on the same response turn must be consolidated")
+        actionProgress.offsets = [action.id:12]
+        precondition(MemoryLearningRules.batch([revisedAction],seen:actionProgress.seen,suppressed:[],offsets:actionProgress.offsets ?? [:],revisions:actionProgress.revisions ?? [:])[0].offset == 0,"A revised outcome cannot inherit an old chunk cursor")
+        print("PASS: durable backlog/restart, complete long-message coverage, exact instruction routing/corrections, action authority, bounded learning and legacy controls")
     }
 }
