@@ -691,6 +691,14 @@ struct ProactiveReviewContext {
         let registration=chatGPT.activeID
         var values:[ReviewAcknowledgement]=[]
         let proposals=ReviewAcknowledgementIndex(proactive.state.records,registration:registration)
+        // Build lazily, once for this synchronous read; keep every exact support check.
+        var acknowledgementContext: ProactiveReviewContext?
+        func context() -> ProactiveReviewContext {
+            if let acknowledgementContext { return acknowledgementContext }
+            let value = proactive.reviewContext(self)
+            acknowledgementContext = value
+            return value
+        }
         if emailSummaries.enabled {
             var mailByID:[String:MailMessage]=[:]
             for message in mailData.messages where mailByID[message.id] == nil {mailByID[message.id]=message}
@@ -703,7 +711,7 @@ struct ProactiveReviewContext {
                 if ReviewAcknowledgementRules.emailDismissed(summary,message:message,registration:registration) {
                     values.append(.init(id:"email:"+summary.id,kind:"email",sourceID:message.id,title:String(message.subject.prefix(200)),concern:String((summary.reason.isEmpty ? summary.summary : summary.reason).prefix(500)),acknowledgedAt:summary.dismissedAt))
                 }
-                for record in proposals.mail[message.id] ?? [] where ReviewAcknowledgementRules.matches(record,message:message,summary:summary,registration:registration) && proactive.acknowledgementAdviceAvailable(record,model:self,use:use ?? .manualSuggestions,mailAccounts:mailAccounts,whatsappReady:whatsappReady) {
+                for record in proposals.mail[message.id] ?? [] where ReviewAcknowledgementRules.matches(record,message:message,summary:summary,registration:registration) && proactive.acknowledgementAdviceAvailable(record,model:self,use:use ?? .manualSuggestions,mailAccounts:mailAccounts,whatsappReady:whatsappReady,context:context()) {
                     values.append(.init(id:"discovery:"+record.id,kind:record.kind,sourceID:message.id,title:String(message.subject.prefix(200)),concern:String(record.message.prefix(500)),acknowledgedAt:record.dismissedAt,evidence:String(record.evidence.prefix(500)),nativeTargetID:record.nativeTarget?.itemID))
                 }
             }
@@ -712,7 +720,7 @@ struct ProactiveReviewContext {
         let waPermitted=use.map{purpose in switch purpose {case .brief:return access.briefEnabled;case .manualSuggestions:return access.enabled;case .suggestions:return access.enabled && access.includeInSuggestions == true;case .heartbeatSuggestions:return access.enabled && (access.includeInSuggestions == true || heartbeat.whatsappEnabled)}} ?? access.enabled
         if !proposals.whatsapp.isEmpty && whatsappReady && waPermitted && !whatsapp.linkedIdentity.isEmpty {
             for message in whatsapp.messages where access.chats.contains(message.chat) {
-                for record in proposals.whatsapp[.init(chat:message.chat,message:message.id)] ?? [] where ReviewAcknowledgementRules.matches(record,message:message,registration:registration,identity:whatsapp.linkedIdentity) && proactive.acknowledgementAdviceAvailable(record,model:self,use:use ?? .manualSuggestions,mailAccounts:mailAccounts,whatsappReady:whatsappReady) {
+                for record in proposals.whatsapp[.init(chat:message.chat,message:message.id)] ?? [] where ReviewAcknowledgementRules.matches(record,message:message,registration:registration,identity:whatsapp.linkedIdentity) && proactive.acknowledgementAdviceAvailable(record,model:self,use:use ?? .manualSuggestions,mailAccounts:mailAccounts,whatsappReady:whatsappReady,context:context()) {
                     values.append(.init(id:"discovery:"+record.id,kind:record.kind,sourceID:message.id,title:String((whatsapp.chats.first{$0.id == message.chat}?.name ?? "Selected chat").prefix(200)),concern:String(record.message.prefix(500)),acknowledgedAt:record.dismissedAt,evidence:String(record.evidence.prefix(500)),nativeTargetID:record.nativeTarget?.itemID))
                 }
             }

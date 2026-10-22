@@ -495,6 +495,13 @@ import Synchronization
         checks["Dismiss counts as exact acknowledgement without native or memory changes"] = model.reviewAcknowledgementRevision != beforeAcknowledgement && !model.acknowledgedEmail(message,summary) && DiscoveryNativeTarget.fingerprint(model.reminderData) == nativeBefore && store.revision == memoryBefore
         checks["dismissing one proposal preserves independent actions in the same source"] = model.briefings.currentEmails(model).count == 1 && model.proactive.emailReviewCandidates(model,heartbeat:true,mailReview:nil,whatsappReady:false,now:now).count == 1
         let ackRows=model.reviewAcknowledgements()
+        let originalAcknowledgement=model.proactive.state.records[0]
+        var siblingAcknowledgement=originalAcknowledgement;siblingAcknowledgement.id="fictional-ack-sibling"
+        try model.proactive.seedAdviceFixture([originalAcknowledgement,siblingAcknowledgement],model:model)
+        let acknowledgementBuilds=model.proactive.reviewContextBuildCount
+        let bothAcknowledgements=model.reviewAcknowledgements()
+        checks["acknowledgements share one synchronous current evidence projection"] = bothAcknowledgements.contains{$0.id == "discovery:fictional-ack"} && bothAcknowledgements.contains{$0.id == "discovery:fictional-ack-sibling"} && model.proactive.reviewContextBuildCount-acknowledgementBuilds == 1
+        try model.proactive.seedAdviceFixture([originalAcknowledgement],model:model)
         let snapshot=model.assistant.snapshot(model).flatMap{try? JSONSerialization.jsonObject(with:Data($0.utf8)) as? [String:Any]}
         checks["foreground source context knows the acknowledged concern"] = ackRows.contains{$0.id == "discovery:fictional-ack"} && (snapshot?["reviewAcknowledgements"] as? [[String:Any]])?.contains{$0["id"] as? String == "discovery:fictional-ack"} == true && (snapshot?["savedEmailSummaries"] as? [[String:Any]])?.count == 1
         checks["actual dismissal survives reopening its cache"] = model.proactive.reopenedAcknowledgementFixture().first?.dismissed == true && model.proactive.reopenedAcknowledgementFixture().first?.dismissedSourceVersion != nil

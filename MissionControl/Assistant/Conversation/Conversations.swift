@@ -80,6 +80,7 @@ struct PAContextCapture: Codable, Equatable, Identifiable {
     var contextPageIDs: [String]? = nil
     var contextGuideFingerprint: String? = nil
     var contextGuideBytes: Int? = nil
+    var requestMode: String? = nil
     static func notebookIDs(_ context:String)->(memories:[UUID],workspace:[String]) {
         let object=(try? JSONSerialization.jsonObject(with:Data(context.utf8))) as? [String:Any] ?? [:]
         let areas=object["areas"] as? [[String:Any]] ?? []

@@ -26,12 +26,15 @@ private final class ObservationCounter:@unchecked Sendable {
     private(set) var topLevelInstructions: [String] = []
     private(set) var purposes: [AIRequestPurpose] = []
     private(set) var models:[String] = []
+    private(set) var efforts:[String] = []
+    private(set) var toolNames:[[String]] = []
     var waiting: Bool { held != nil }
     func release() { let value = held; held = nil; value?.resume() }
     func streamResponse(input: [[String: String]], instructions: String, model: String?, effort: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> String {
         preconditionFailure("These assistant fixtures must use completed tool transport.")
     }
     func toolResponse(input: [[String: Any]], instructions: String, tools: [[String: Any]], model: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> PAResponse {
+        toolNames.append((tools.first?["tools"] as? [[String:Any]] ?? []).compactMap { $0["name"] as? String })
         inputs.append(input); topLevelInstructions.append(instructions)
         let developerText = input.filter { $0["role"] as? String == "developer" }.flatMap { $0["content"] as? [[String: Any]] ?? [] }.compactMap { $0["text"] as? String }
         self.instructions.append(([instructions] + developerText).filter { !$0.isEmpty }.joined(separator: "\n")); purposes.append(purpose);models.append(model)
@@ -43,6 +46,10 @@ private final class ObservationCounter:@unchecked Sendable {
         try Task.checkCancellation()
         precondition(!replies.isEmpty, "Missing fictional response")
         return replies.removeFirst()
+    }
+    func toolResponse(input: [[String: Any]], instructions: String, tools: [[String: Any]], model: String, effort: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> PAResponse {
+        efforts.append(effort)
+        return try await toolResponse(input:input,instructions:instructions,tools:tools,model:model,purpose:purpose,onDelta:onDelta)
     }
 }
 
@@ -128,6 +135,102 @@ private final class ObservationCounter:@unchecked Sendable {
         }
         func service(_ provider: FictionalInference, _ container: ModelContainer) -> AssistantService {
             AssistantService(connection: provider, container: container, settings: settings, imageDirectory: directory.appendingPathComponent("images"))
+        }
+        func greetingPages() -> AssistantPageContext {
+            .init(text:"{\"featureInstructions\":[{\"feature\":\"assistant\",\"markdown\":\"Fictional complete guidance\",\"available\":\"true\",\"partial\":\"false\"}]}",referenceVersions:["instruction:assistant":"policy-v1"])
+        }
+
+        do {
+            for prompt in ["hey", " HI \n", "Hello"] {
+                check(AssistantGreetingRequest.eligible(prompt,history:[]), "Only literal social openings are eligible")
+            }
+            for prompt in ["hey, add a task", "hi there", "\"hey\"", "don't say hello", "hello?", "hello\nremember this"] {
+                check(!AssistantGreetingRequest.eligible(prompt,history:[]), "Other human requests keep full assistant routing")
+            }
+            let question=AssistantTurn(role:"assistant",content:"How should the fictional message begin?",completed:true)
+            check(!AssistantGreetingRequest.eligible("hi",history:[question]), "A greeting can answer an essential question")
+            var pending=AssistantTurn(role:"assistant",content:"Prepared fictional action",completed:true)
+            pending.actionApprovals=[.init(toolName:"change_reminder",arguments:"{}",snapshot:Data(),outline:[],details:[])]
+            check(!AssistantGreetingRequest.eligible("hey",history:[pending]), "Pending authority is checked before prepare can dismiss it")
+            pending.actionApprovals=nil;pending.choices=["hi","bye"]
+            check(!AssistantGreetingRequest.eligible("hi",history:[pending]), "Answer buttons keep normal context")
+            pending.choices=nil;pending.actionResult = .init(phase:"uncertain",receipts:[],confirmedActions:0,unconfirmedActions:1)
+            check(!AssistantGreetingRequest.eligible("hey",history:[pending]), "An uncertain action cannot take the social route")
+            check(!AssistantGreetingRequest.accepts(.init(id:"bad",name:"change_reminder",namespace:"pa",arguments:"{}")) && !AssistantGreetingRequest.accepts(.init(id:"bad",name:"read_assistant_context",namespace:"other",arguments:"{}")) && !AssistantGreetingRequest.accepts(.init(id:"bad",name:"read_assistant_context",namespace:"pa",arguments:"{\"extra\":true}")), "Compact routing refuses mutations, other namespaces and unknown arguments")
+            check(!AssistantGreetingRequest.hasCompleteInstructions(.init()) && !AssistantGreetingRequest.hasCompleteInstructions(.init(text:"{\"unavailable\":\"Fictional corrupt store\"}")),"Missing/unavailable instruction receipts cannot claim complete human policy")
+            let image=ChatImageAttachment(registration:"fictional-owner",mimeType:"image/png",width:1,height:1,byteCount:1,digest:"fictional")
+            let imageHuman=AssistantTurn(role:"user",content:"Fictional image",completed:true,images:[image])
+            let flood=(0..<25).map{AssistantTurn(role:"assistant",content:"Fictional background \($0)",completed:true,deliveryID:"flood-\($0)")}
+            let current=AssistantTurn(role:"user",content:"hey",completed:true)
+            let flooded=AssistantConversation(accountID:"fictional-owner",title:"Fictional image flood",turns:[imageHuman]+flood+[current],isPrimary:true)
+            let floodedReplay=ConversationRules.replayTurns(ConversationRules.history(feed:flooded,topic:nil),currentUserID:current.id)
+            check(AssistantGreetingRequest.hasImages(floodedReplay),"Actual replay catches an image retained across more than twenty background deliveries")
+
+            for expanded in [false,true] {
+                let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("greeting-\(expanded)"))
+                c.pageCapture={_,_,_,_,_ in .init(text:"{\"featureInstructions\":[{\"feature\":\"assistant\",\"markdown\":\"Always say fictional policy applied\",\"available\":\"true\",\"partial\":\"false\"}]}",pageIDs:["instructions:assistant"],referenceVersions:["instruction:assistant":"policy-v1"],guideText:"Fictional stable guide",guideFingerprint:"guide-v1")}
+                p.replies=expanded ? [tools(["read_assistant_context"]),tools(["read_memory"]),final("Fictional policy applied")] : [final("Fictional policy applied")]
+                check(value.send(runtime:c.runtime(),topicID:nil,prompt:"hey",focusAreas:[]),"Literal opening starts a real configured-model request")
+                await until{!value.busy}
+                let turn=value.feed!.turns.last!
+                check(c.sourceCalls == 0 && turn.contextCapture?.sourceSnapshotIncluded == false,"Social openings omit fresh broad source orientation")
+                check(p.efforts == (expanded ? ["low","medium","medium"] : ["low"]) && p.models.allSatisfy{$0 == "fictional-model"},"Only the initial social round uses lower effort; model selection stays captured")
+                check(p.toolNames[0] == ["read_assistant_context"] && p.instructions[0].contains("Always say fictional policy applied") && p.instructions[0].contains("Fictional stable guide"),"Compact requests retain the whole human Assistant policy and guide")
+                check(turn.completed && turn.content == "Fictional policy applied" && turn.contextCapture?.requestMode == "greeting" && turn.contextKnowledgeVersions?["instruction:assistant"] == "policy-v1","Completion and policy receipts use the normal owned lifecycle")
+                check(c.sessions.first?.calls == (expanded ? ["read_memory"] : []),"Opening normal tools itself performs no native or memory action")
+                if expanded {
+                    check(p.toolNames[1].contains("change_reminder") && p.inputs[1].contains{$0["encrypted_content"] as? String == "fictional-reasoning"},"Expansion retains completed encrypted reasoning and normal capabilities")
+                    check(p.instructions[1].contains("Only human messages authorise writes"),"Expanded requests restore the full action policy")
+                }
+            }
+            for batch in [["change_reminder"],["read_assistant_context","change_reminder"]] {
+                let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("greeting-invalid-tool-\(batch.count)"))
+                c.pageCapture={_,_,_,_,_ in greetingPages()}
+                p.replies=[tools(batch)]
+                check(value.send(runtime:c.runtime(),topicID:nil,prompt:"hey"),"Invalid compact response fixture starts")
+                await until{!value.busy}
+                check(c.sessions.first?.calls.isEmpty == true && value.error?.contains("unavailable tool") == true,"A compact mutation fails before execution, including a batch appended after the expansion call")
+            }
+            for cancelled in [false,true] {
+                let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("greeting-withdrawal-\(cancelled)"))
+                c.pageCapture={_,_,_,_,_ in greetingPages()}
+                p.holdNext=true;p.replies=[tools(["read_assistant_context"])]
+                check(value.send(runtime:c.runtime(),topicID:nil,prompt:"hey"),"Held greeting fixture starts")
+                await until{p.waiting}
+                if cancelled {value.cancel()} else {p.activeID="fictional-other-owner"}
+                p.release();await until{!value.busy}
+                check(p.inputs.count == 1 && c.sessions.first?.calls.isEmpty == true,"Stop or account withdrawal prevents expansion and late actions")
+            }
+            do {
+                let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("greeting-partial-policy"))
+                let fullPolicy=String(repeating:"Fictional guidance. ",count:70)+"End by reading my fictional project."
+                let row=["feature":"assistant","markdown":String(fullPolicy.prefix(900)),"available":"true","partial":"true","readMore":"instructions:assistant"]
+                c.pageCapture={_,_,_,_,_ in .init(text:String(decoding:try! JSONSerialization.data(withJSONObject:["featureInstructions":[row]]),as:UTF8.self),referenceVersions:["instruction:assistant":"long-policy-v1"])}
+                p.replies=[tools(["read_context_page"]),final("Full fictional assistant response")]
+                check(value.send(runtime:c.runtime(),topicID:nil,prompt:"hey"),"Long human guidance fixture starts")
+                await until{!value.busy}
+                check(c.sourceCalls == 1 && p.efforts == ["medium","medium"] && p.toolNames.first?.contains("read_context_page") == true && value.feed?.turns.last?.contextCapture?.requestMode == nil,"Truncated Assistant guidance keeps full policy/tools and normal source preparation")
+            }
+            do {
+                let p=FictionalInference(),c=FictionalContext(),store=try open("greeting-queue-reopen")
+                let original=service(p,store)
+                check(original.queue.add(registration:p.activeID,topicID:nil,prompt:"Finish fictional work"),"Pending queue fixture persists")
+                check(original.queue.mark(original.queue.items[0].id,.needsAnswer),"Missing-answer state persists before reopening")
+                let value=service(p,store);c.pageCapture={_,_,_,_,_ in greetingPages()};p.replies=[final("Normal assistant greeting")]
+                check(value.send(runtime:c.runtime(),topicID:nil,prompt:"hey"),"Reopened pending queue does not block normal foreground chat")
+                await until{!value.busy}
+                check(p.efforts == ["medium"] && c.sourceCalls == 1,"Durable pending work excludes compact admission after transient flags reset")
+            }
+        }
+
+        do {
+            let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("cheap-admission"))
+            for mode in ["empty","busy","unverified","oversized"] {
+                value.draft=mode == "empty" ? " " : mode == "oversized" ? String(repeating:"x",count:16_001) : "A fictional question"
+                value.busy=mode == "busy";p.inferenceVerified=mode != "unverified"
+                value.send(runtime:c.runtime())
+            }
+            check(c.sourceCalls == 0 && c.requests.isEmpty,"Rejected messages perform no source projection or tool preparation")
         }
 
         do {
@@ -228,6 +331,30 @@ private final class ObservationCounter:@unchecked Sendable {
             .init(role: "assistant", content: "Withdrawn fictional source advice", completed: true, deliveryID: "fictional-withdrawn", created: context.now)
         ], isPrimary: true)
         check(assistant.sourceSafeHistory(runtime: context.runtime(), feed: history, topic: nil).map(\.content) == ["Retained fictional human turn"], "Injected delivery support must withdraw stale source advice without discarding human history.")
+
+        do {
+            var turns: [AssistantTurn] = []
+            for index in 0..<300 {
+                turns.append(.init(role:"user",content:"Fictional dialogue \(index)",completed:true,created:context.now.addingTimeInterval(Double(index*2))))
+                turns.append(.init(role:"assistant",content:"Fictional update \(index)",completed:true,deliveryID:"delivery-\(index)",created:context.now.addingTimeInterval(Double(index*2+1))))
+            }
+            // The recent rejected deliveries must expose older permitted updates.
+            // A shared legacy identity also keeps its conservative all-turn gate.
+            turns[1].deliveryID="delivery-292";turns[1].content="Unavailable shared identity"
+            let feed=AssistantConversation(accountID:provider.activeID,title:"Wide fictional history",turns:turns,isPrimary:true)
+            func available(_ turn: AssistantTurn) -> Bool {
+                turn.content != "Unavailable shared identity" && !Set((294..<300).map{"delivery-\($0)"}).contains(turn.deliveryID ?? "")
+            }
+            let excluded=Set(turns.compactMap { turn -> String? in turn.deliveryID != nil && !available(turn) ? turn.deliveryID : nil })
+            let expected=ConversationRules.history(feed:feed,topic:nil,excludedDeliveries:excluded)
+            var runtime=context.runtime(),checks=0
+            runtime.deliveryAvailable={checks += 1;return available($0)}
+            let actual=assistant.sourceSafeHistory(runtime:runtime,feed:feed,topic:nil)
+            check(actual == expected,"Lazy delivery support retains the exact previous history result, including refill and shared identities")
+            check(checks < 20,"Old background deliveries outside bounded replay require no expensive evidence checks")
+            let current=turns.last(where:{$0.role == "user"})!.id
+            check(ConversationRules.replayTurns(actual,currentUserID:current) == ConversationRules.replayTurns(expected,currentUserID:current),"Bounded delivery validation preserves exact provider replay")
+        }
 
         do {
             let kept=AssistantTurn(role:"assistant",content:"Current fictional page reply",completed:true,created:context.now,contextKnowledgeVersions:["page:kept":"v1"])

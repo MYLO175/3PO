@@ -1,5 +1,9 @@
 # How 3PO works: detailed reference
 
+Standalone `hi`, `hey` and `hello` messages can start with a smaller configured-model request and low reasoning effort. It retains the guide, permitted conversation and complete applicable Assistant guidance; pending actions, outstanding questions, images, setup, Review, queued work and partial guidance use the full assistant. The initial round has one read-only option to open the normal policies and tools for the same captured turn if the human's instructions require them. This is a model response with normal streaming, Stop, ownership, completion and usage handling. Other requests keep their existing model and reasoning effort.
+
+Chat preparation checks only background delivery identities that can enter its bounded history, refilling when an unavailable delivery exposes an older candidate. Exact history, shared delivery identities and source/page evidence remain checked. Review acknowledgements share one current evidence projection within each synchronous read, and rejected messages stop before source preparation.
+
 ## Finding and controlling context
 
 Open **Context** from the assistant menu. Its sections can be collapsed, and Projects follows the same parent/subspace structure as your workspace. Each space appears immediately, even before its first AI summary. Short descriptions show your own project-purpose writing when present, otherwise a supported maintained synopsis. Space pages provide a child-description table, separate human description/instruction controls and expandable detailed context. Topics also have instruction controls before a maintained topic page exists.

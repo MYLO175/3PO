@@ -279,17 +279,23 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         return try await performResponse(input: input, instructions: instructions, model: requestedModel, effort: effort, purpose: purpose, onDelta: onDelta)
     }
     func toolResponse(input: [[String:Any]], instructions: String, tools: [[String:Any]], model: String, purpose: AIRequestPurpose = .conversation, onDelta: @escaping (String) -> Void) async throws -> PAResponse {
+        try await toolResponse(input: input, instructions: instructions, tools: tools, model: model, effort: "medium", purpose: purpose, onDelta: onDelta)
+    }
+    func toolResponse(input: [[String:Any]], instructions: String, tools: [[String:Any]], model: String, effort: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> PAResponse {
         guard !busy, !usagePaused, hasSession, inferenceVerified else { throw ChatGPTError.message("Subscription access is unavailable or another request is in progress.") }
         busy = true; defer { busy = false }
         let registration = activeID
         if models.isEmpty { try await loadModels() }
-        guard activeID == registration, models.contains(where:{ $0.id == model }) else { throw ChatGPTError.message("The selected account/model is unavailable.") }
-        return try await performToolResponse(input:input,instructions:instructions,model:model,effort:"medium",tools:tools,purpose:purpose,onDelta:onDelta)
+        guard activeID == registration, models.contains(where:{ $0.id == model }), ["low", "medium", "high"].contains(effort) else { throw ChatGPTError.message("The selected account/model or reasoning level is unavailable.") }
+        return try await performToolResponse(input:input,instructions:instructions,model:model,effort:effort,tools:tools,purpose:purpose,onDelta:onDelta)
     }
     private func performResponse(input: [[String:String]], instructions: String?, model: String, effort: String, purpose: AIRequestPurpose = .conversation, onDelta: ((String) -> Void)?) async throws -> String {
         try await performToolResponse(input:input.map { $0 as [String:Any] },instructions:instructions,model:model,effort:effort,tools:[],purpose:purpose,onDelta:onDelta).text
     }
     private func performToolResponse(input: [[String:Any]], instructions: String?, model: String, effort: String, tools: [[String:Any]], purpose: AIRequestPurpose = .conversation, onDelta: ((String) -> Void)?) async throws -> PAResponse {
+        #if DEBUG
+        let requestClock = ProcessInfo.processInfo.systemUptime
+        #endif
         let registration = activeID
         let token = try await access()
         guard activeID == registration else { throw ChatGPTError.message("The selected account changed before inference; no source request sent.") }
@@ -317,8 +323,12 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         do {
         #if DEBUG
         let streamClock=ProcessInfo.processInfo.systemUptime
+        let requestSetupSeconds=streamClock-requestClock
         #endif
         let (bytes, response) = try await inferenceSession.bytes(for: request)
+        #if DEBUG
+        let responseHeadersSeconds=ProcessInfo.processInfo.systemUptime-streamClock
+        #endif
         if let http = response as? HTTPURLResponse { responseRequestID = http.value(forHTTPHeaderField:"x-request-id"); responseHTTPStatus = http.statusCode }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             var data = Data(); for try await byte in bytes { if data.count < 8192 { data.append(byte) } else { break } }
@@ -346,7 +356,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
             #if DEBUG
             if let flag=ProcessInfo.processInfo.arguments.firstIndex(of:"--stream-profile-path"),ProcessInfo.processInfo.arguments.indices.contains(flag+1) {
                 let path=ProcessInfo.processInfo.arguments[flag+1]
-                let report:[String:Any] = ["model":model,"streamSeconds":ProcessInfo.processInfo.systemUptime-streamClock,"firstDeltaSeconds":firstDelta as Any? ?? NSNull(),"lastDeltaSeconds":lastDelta as Any? ?? NSNull(),"callbackSeconds":callbackSeconds,"deltaCount":deltaCount,"inputTokens":stream.reportedTokens?.input as Any? ?? NSNull(),"outputTokens":stream.reportedTokens?.output as Any? ?? NSNull()]
+                let report:[String:Any] = ["model":model,"effort":effort,"toolCount":(tools.first?["tools"] as? [[String:Any]])?.count ?? 0,"requestSetupSeconds":requestSetupSeconds,"responseHeadersSeconds":responseHeadersSeconds,"streamSeconds":ProcessInfo.processInfo.systemUptime-streamClock,"firstDeltaSeconds":firstDelta as Any? ?? NSNull(),"lastDeltaSeconds":lastDelta as Any? ?? NSNull(),"callbackSeconds":callbackSeconds,"deltaCount":deltaCount,"inputTokens":stream.reportedTokens?.input as Any? ?? NSNull(),"outputTokens":stream.reportedTokens?.output as Any? ?? NSNull()]
                 if path.hasPrefix("/private/tmp/"),let data=try? JSONSerialization.data(withJSONObject:report,options:[.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:path),options:.atomic)}
             }
             #endif
