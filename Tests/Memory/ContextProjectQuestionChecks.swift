@@ -28,6 +28,29 @@ import SwiftData
         check(first.id == ContextProjectQuestion.stableID(registration: account, projectID: project), "Question identity is stable per account/project")
         check(first.identity == identity(project) && first.created == clock && first.updated == clock && first.status == .pending, "Offer captures exact identity and original time")
         check(first.answerPageID == nil && first.answerPageRevision == nil && first.finished == nil, "Pending questions carry no answer receipt")
+        check(ContextProjectQuestionRules.candidate(status: "planned", hasOpenWork: true, hasHumanNotes: false), "A modern space with current work may be considered without a legacy project kind")
+        check(ContextProjectQuestionRules.candidate(status: "active", hasOpenWork: false, hasHumanNotes: true), "An explicitly active space with human notes may be considered")
+        check(!ContextProjectQuestionRules.candidate(status: "planned", hasOpenWork: false, hasHumanNotes: false) && !ContextProjectQuestionRules.candidate(status: "active", hasOpenWork: false, hasHumanNotes: false), "A missing description and empty space never establish importance")
+        check(!ContextProjectQuestionRules.candidate(status: "planned", hasOpenWork: false, hasHumanNotes: true), "Routine notes in an otherwise inactive folder do not trigger an interview")
+        for status in ["done", "archived", "future-status"] {
+            check(!ContextProjectQuestionRules.candidate(status: status, hasOpenWork: true, hasHumanNotes: true), "Closed or unknown-status spaces cannot ask clarification")
+        }
+        check(ContextProjectQuestionRules.actionable(first, currentIdentity: identity(project), candidate: true, hasPurpose: false), "A pending important exact-space question occupies the pending slot")
+        for current in [nil, identity(project, "new-scope"), identity(secondProject)] {
+            check(!ContextProjectQuestionRules.actionable(first, currentIdentity: current, candidate: true, hasPurpose: false), "Deleted, moved or different space questions cannot starve current clarification")
+        }
+        check(!ContextProjectQuestionRules.actionable(first, currentIdentity: identity(project), candidate: false, hasPurpose: false), "A formerly important but now inactive question cannot starve current clarification")
+        let manualPurpose = ContextPage(registration: account, kind: .note, key: "project-purpose:" + project.uuidString,
+            owner: .human, title: "Human purpose", markdown: "Compare the fictional calibration designs.", references: [identity(project)])
+        check(ContextProjectQuestionRules.purpose(manualPurpose, registration: account, identity: identity(project)), "An exact current human purpose page satisfies the pending question")
+        check(!ContextProjectQuestionRules.actionable(first, currentIdentity: identity(project), candidate: true, hasPurpose: ContextProjectQuestionRules.purpose(manualPurpose, registration: account, identity: identity(project))), "An ordinary manual purpose save frees the pending slot without rewriting question history")
+        check(store.questions(registration: account) == [first], "Actionability inspection preserves the exact stored pending question")
+        for invalidPurpose in [ContextPage(registration: other, kind: .note, key: manualPurpose.key, owner: .human, title: "Other account", markdown: manualPurpose.markdown, references: manualPurpose.references),
+            ContextPage(registration: account, kind: .note, key: manualPurpose.key, owner: .generated, title: "Generated", markdown: manualPurpose.markdown, references: manualPurpose.references),
+            ContextPage(registration: account, kind: .note, key: manualPurpose.key, owner: .human, title: "Old scope", markdown: manualPurpose.markdown, references: [identity(project, "old-scope")]),
+            ContextPage(registration: account, kind: .note, key: manualPurpose.key, owner: .human, title: "Blank", markdown: " \n", references: manualPurpose.references)] {
+            check(!ContextProjectQuestionRules.purpose(invalidPurpose, registration: account, identity: identity(project)), "Other-account/generated/old-scope/blank notes cannot suppress a current clarification")
+        }
         let originalBytes = try repository.read(ContextProjectQuestionStore.recordKey)
         let originalGeneration = store.revision
         let repeated = try store.offer(registration: account, projectID: project, identity: identity(project), question: "Could you explain the purpose another way?", now: clock.addingTimeInterval(60))
@@ -48,6 +71,7 @@ import SwiftData
         let dismissed = try store.dismiss(id: first.id, registration: account, expectedRevision: first.revision, now: clock.addingTimeInterval(40))
         check(dismissed.status == .dismissed && dismissed.revision != first.revision && dismissed.finished == clock.addingTimeInterval(40), "Dismiss records a new exact state")
         check(dismissed.question == first.question && dismissed.identity == first.identity && dismissed.created == first.created, "Dismiss preserves the original clarification")
+        check(!ContextProjectQuestionRules.actionable(dismissed, currentIdentity: identity(project), candidate: true, hasPurpose: false), "Renewed importance cannot reopen a dismissed concern")
         check(store.questions(registration: account) == [second] && store.questions(registration: account, includeFinished: true).count == 2, "Finished question remains in local history, outside pending Review")
         let beforeSuppressed = try repository.read(ContextProjectQuestionStore.recordKey)
         check(try store.offer(registration: account, projectID: project, identity: identity(project), question: "Why is this project important?", now: clock.addingTimeInterval(100)) == nil, "Human dismissal is not resurrected by another model offer")
@@ -72,6 +96,7 @@ import SwiftData
         check(answered.status == .answered && answered.answerPageID == purpose.id && answered.answerPageRevision == purpose.revision, "Answer records the exact saved human-page receipt")
         check(answered.revision != second.revision && answered.finished == answerTime && answered.updated == answerTime && answered.created == second.created, "Answer preserves creation and records completion")
         check(answered.question == second.question && answered.identity == second.identity, "Answer cannot rewrite the original question/project identity")
+        check(!ContextProjectQuestionRules.actionable(answered, currentIdentity: identity(secondProject), candidate: true, hasPurpose: false), "Removing a purpose page cannot reopen an answered concern")
         check(store.questions(registration: account).isEmpty && store.questions(registration: account, includeFinished: true).contains(answered), "Answered clarification stays finished")
         let answeredReload = ContextProjectQuestionStore(container: db)
         check(answeredReload.questions(registration: account, includeFinished: true).contains(answered), "Answer receipt survives reopening")

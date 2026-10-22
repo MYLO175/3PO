@@ -9,7 +9,7 @@ import Observation
 
     private func mayOfferQuestion(_ model: DashboardModel, registration: String, now: Date = .now) -> Bool {
         guard model.memoryLearning.questionsEnabled, model.contextQuestions.canSave,
-              model.contextQuestions.questions(registration: registration).isEmpty,
+              model.visibleContextProjectQuestions().isEmpty,
               !model.memoryLearning.offeredQuestion(registration: registration, on: now) else { return false }
         return !model.contextQuestions.questions(registration: registration, includeFinished: true).contains { BriefingRules.day($0.created) == BriefingRules.day(now) }
     }
@@ -60,7 +60,7 @@ import Observation
                 return candidate
             }
             guard !selected.isEmpty else { continue }
-            let meaningfulProject = item.kind == .project || (!items.filter { $0.parentID == item.id && $0.kind.isWork }.isEmpty)
+            let meaningfulProject = model.contextProjectQuestionCandidate(item, items: items)
             let purposes = Set(model.contextPages.pages(registration: registration).filter { page in
                 page.owner == .human && page.kind == .note && page.key == "project-purpose:" + item.id.uuidString &&
                 selected.contains { record in record.reference.kind == "page" && record.reference.key == page.id }

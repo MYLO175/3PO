@@ -5,16 +5,44 @@ import SwiftUI
         .init(kind: "projectIdentity", key: item.id.uuidString,
               revision: ContextKnowledgeRules.fingerprint(item.registration + ":" + item.id.uuidString + ":" + (item.conversationID?.uuidString ?? "shared")))
     }
-    /// Saved question display depends only on local human ownership/scope, never streamed prose or source reconstruction.
+    /// Local activity is an admission signal, not a claim that clarification is actually needed.
+    func contextProjectQuestionCandidate(_ project: LifeItem, items: [LifeItem]) -> Bool {
+        guard !project.kind.isWork,
+              LifeItemQuery.path(project, in: items).allSatisfy({ ContextProjectQuestionRules.open(status: $0.status.rawValue) }) else { return false }
+        let hasOpenWork = items.contains { item in
+            guard item.kind.isWork, ContextProjectQuestionRules.open(status: item.status.rawValue) else { return false }
+            let path = LifeItemQuery.path(item, in: items)
+            return path.contains { $0.id == project.id } && path.allSatisfy { ContextProjectQuestionRules.open(status: $0.status.rawValue) }
+        }
+        return ContextProjectQuestionRules.candidate(status: project.status.rawValue, hasOpenWork: hasOpenWork,
+            hasHumanNotes: !project.searchableNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+    /// Actionable saved questions use only current local human ownership/activity, never source reconstruction.
     func visibleContextProjectQuestions() -> [ContextProjectQuestion] {
         guard assistant.memory.enabled else { return [] }
         let registration = chatGPT.activeID
         let projects = assistant.projects.items(registration, includeTopics: true)
         let purposePages = contextPages.pages(registration: registration).filter { $0.owner == .human && $0.kind == .note && $0.key.hasPrefix("project-purpose:") }
         return contextQuestions.questions(registration: registration).filter { question in
-            projects.contains { $0.id == question.projectID && contextProjectIdentity($0) == question.identity } &&
-            !purposePages.contains { $0.key == "project-purpose:" + question.projectID.uuidString && $0.references.contains(question.identity) }
+            let project = projects.first { $0.id == question.projectID }
+            return ContextProjectQuestionRules.actionable(question, currentIdentity: project.map(contextProjectIdentity),
+                candidate: project.map { contextProjectQuestionCandidate($0, items: projects) } ?? false,
+                hasPurpose: purposePages.contains { ContextProjectQuestionRules.purpose($0, registration: registration, identity: question.identity) })
         }
+    }
+    /// Call after an ordinary manual purpose save. Only an exact verified human page can finish
+    /// its current pending clarification; dismissal and answer history are never reopened.
+    @discardableResult func acknowledgeProjectPurpose(_ page: ContextPage) throws -> Bool {
+        guard page.kind == .note, page.key.hasPrefix("project-purpose:") else { return false }
+        guard page.registration == chatGPT.activeID, let identity = page.references.first,
+              ContextProjectQuestionRules.purpose(page, registration: chatGPT.activeID, identity: identity),
+              let project = assistant.projects.items(page.registration, includeTopics: true).first(where: { !$0.kind.isWork && $0.id.uuidString == identity.key }),
+              contextProjectIdentity(project) == identity,
+              contextPages.page(id: page.id, registration: page.registration) == page else { throw ContextProjectQuestionFailure.stale }
+        guard let question = contextQuestions.questions(registration: page.registration).first(where: { $0.projectID == project.id && $0.identity == identity }) else { return false }
+        try contextQuestions.answer(id: question.id, registration: page.registration, expectedRevision: question.revision,
+            pageID: page.id, pageRevision: page.revision)
+        return true
     }
     func saveProjectPurpose(_ answer: String, question: ContextProjectQuestion, expectedPage: ContextPage?) throws {
         let text = answer.trimmingCharacters(in: .whitespacesAndNewlines)
