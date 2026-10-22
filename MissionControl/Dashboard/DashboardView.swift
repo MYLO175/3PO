@@ -386,7 +386,7 @@ struct SettingsView: View {
     @State private var error: String?
     @State private var inspectMemory=false
     @Environment(\.openWindow) private var openWindow
-    private let pages = ["General", "Connections", "Assistant", "Background", "Memory", "Usage", "Help"]
+    private let pages = ["General", "Connections", "External assistants", "Assistant", "Background", "Memory", "Usage", "Help"]
     var body: some View {
         NavigationSplitView {
             List(selection:selectionBinding) {
@@ -424,6 +424,8 @@ struct SettingsView: View {
                     WeatherSettings(weather:model.weather)
                 case "Assistant":
                     AssistantSourceSettings(model:model,assistant:model.assistant,page:.assistant)
+                case "External assistants":
+                    MCPBridgeSettings(bridge:model.mcpBridge)
                 case "Background":
                     AssistantSourceSettings(model:model,assistant:model.assistant,page:.background)
                     EmailSummarySettings(model:model,summaries:model.emailSummaries)
@@ -455,6 +457,7 @@ struct SettingsView: View {
         switch page {
         case "General": "gearshape"
         case "Connections": "link"
+        case "External assistants": "point.3.connected.trianglepath.dotted"
         case "Assistant": "sparkles"
         case "Background": "clock.arrow.circlepath"
         case "Memory": "brain"

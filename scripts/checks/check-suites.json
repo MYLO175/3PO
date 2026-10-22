@@ -24,6 +24,13 @@
   },
   "suites": [
     {
+      "id": "mcp-bridge",
+      "tier": "source-free",
+      "script": "scripts/checks/test-mcp-bridge.sh",
+      "effects": ["fictional values", "disposable SwiftData", "temporary discovery file", "private fixture preferences", "loopback bridge", "local MCP subprocesses"],
+      "requires": ["Xcode", "Node", "installed MCPBridge dependencies"]
+    },
+    {
       "id": "actions",
       "tier": "source-free",
       "script": "scripts/checks/test-actions.sh",
