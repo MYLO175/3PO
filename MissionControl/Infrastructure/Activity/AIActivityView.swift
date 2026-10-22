@@ -19,7 +19,8 @@ struct AIActivityPill: View {
     var body: some View {
         // Resolve history/visibility once, rather than once for every label,
         // progress and accessibility property in this toolbar render.
-        let saved=store.records(registration).filter{$0.kind != .heartbeat && isVisible($0)}.map(presentation)
+        let originals=store.records(registration).filter{isVisible($0)}
+        let saved=originals.map(presentation)
         let active:AIActivityRecord? = {
             guard var current,current.state == .running,current.registration == registration,isVisible(current) else {return nil}
             if let saved=saved.first(where:{$0.id == current.id}) {current.acknowledged=saved.acknowledged}
@@ -29,7 +30,9 @@ struct AIActivityPill: View {
         let displayed=AIActivityPillRules.displayed(saved,current:active,registration:registration,now:now)
         let confirmation=store.error == nil ? AIActivityPillRules.feedback(feedback,displayed:displayed,registration:registration,now:now) : nil
         let expiry=confirmation?.expiry ?? displayed.flatMap{$0.state == .succeeded ? $0.date.addingTimeInterval(AIActivityPillRules.successDuration) : nil}
-        let attention = saved.contains{$0.needsAttention} || store.error != nil
+        let attention = saved.contains{AIActivitySummary.includesOutcome($0) && $0.needsAttention} || store.error != nil
+        let dismissible=active == nil && store.error == nil && displayed?.needsAttention == true
+            ? originals.first{$0.id == displayed?.id && $0.needsAttention} : nil
         let success=confirmation != nil || active == nil && displayed?.state == .succeeded
         let failed=active == nil && displayed?.state.isFailure == true
         let successColour=scheme == .dark ? Color(red:0.44,green:0.83,blue:0.55) : Color(red:0.10,green:0.43,blue:0.22)
@@ -68,7 +71,7 @@ struct AIActivityPill: View {
                             .foregroundStyle(success ? successColour : failed ? Color.red : attention ? Color.orange : palette[.accent].opacity(0.8))
                     }
                 }.foregroundStyle(statusColour).padding(.leading, 9).padding(.trailing, 7)
-                    .frame(width: 237, height: 29).contentShape(Rectangle())
+                    .frame(width: dismissible == nil ? 237 : 213, height: 29).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(message)
@@ -78,6 +81,19 @@ struct AIActivityPill: View {
                 AIActivityView(store: store, registration: registration, current: active, palette: palette,
                                openChat: { activityOpen = false; openChat() },
                                openDestination: { activityOpen = false; openDestination($0) }, isVisible: isVisible,relatedDestinations:relatedDestinations,presentation:presentation)
+            }
+            if let record=dismissible {
+                Button { _=store.dismiss(record,registration:registration) } label: {
+                    Image(systemName:"xmark").font(.system(size:10,weight:.semibold))
+                        .frame(width:24,height:29).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(statusColour)
+                .disabled(store.readOnly)
+                .help("Dismiss this alert")
+                .accessibilityLabel(record.kind == .heartbeat ? "Dismiss heartbeat alert" : "Dismiss AI activity alert")
+                .accessibilityHint("The saved outcome remains in Activity.")
+                .accessibilityIdentifier("aiActivityDismissAlert")
             }
         }
         .padding(.horizontal,4)
@@ -156,6 +172,13 @@ struct AIActivityView: View {
             HStack {
                 if let destination=record.destination {
                     Button {openDestination(destination)} label:{Label(destination.title,systemImage:destination.symbol)}.controlSize(.small)
+                }
+                if record.needsAttention,let original=store.state.records.first(where:{$0.registration == registration && $0.id == record.id && $0.needsAttention}) {
+                    Button("Dismiss") { _=store.dismiss(original,registration:registration) }
+                        .controlSize(.small).disabled(store.readOnly)
+                        .help("Dismiss this alert; keep its saved outcome in Activity")
+                        .accessibilityLabel(record.kind == .heartbeat ? "Dismiss heartbeat alert" : "Dismiss AI activity alert")
+                        .accessibilityIdentifier("aiActivityDismissAlert-"+record.id)
                 }
                 Spacer(minLength:4)
                 Text(record.date,format:.dateTime.day().month(.abbreviated).hour().minute()).font(.caption2).foregroundStyle(palette[.text].opacity(0.62))
