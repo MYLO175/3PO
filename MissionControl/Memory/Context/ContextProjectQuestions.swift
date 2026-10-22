@@ -61,6 +61,24 @@ struct ContextProjectQuestion: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+/// Admission metadata only; these rules never infer a purpose or change saved question history.
+enum ContextProjectQuestionRules {
+    static func open(status: String) -> Bool { ["planned", "active", "waiting"].contains(status) }
+    static func candidate(status: String, hasOpenWork: Bool, hasHumanNotes: Bool) -> Bool {
+        open(status: status) && (hasOpenWork || (status == "active" && hasHumanNotes))
+    }
+    static func purpose(_ page: ContextPage, registration: String, identity: ContextPageReference) -> Bool {
+        let key = "project-purpose:" + identity.key
+        return page.registration == registration && page.owner == .human && page.kind == .note && page.key == key &&
+            page.id == ContextPage.stableID(registration: registration, kind: .note, key: key) &&
+            page.references == [identity] && !page.markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    static func actionable(_ question: ContextProjectQuestion, currentIdentity: ContextPageReference?,
+                           candidate: Bool, hasPurpose: Bool) -> Bool {
+        question.status == .pending && currentIdentity == question.identity && candidate && !hasPurpose
+    }
+}
+
 enum ContextProjectQuestionFailure: LocalizedError, Equatable {
     case unavailable, corrupt, unsupportedSchema(Int), invalid, stale, finished, notDismissed, unsupportedStatus
     var errorDescription: String? {
