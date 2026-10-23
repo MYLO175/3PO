@@ -604,7 +604,7 @@ import Observation
         let capturedSelectionContext=reviewSelectionContext
         if !capturedSelectionContext.isEmpty {history.insert(["role":"assistant","content":capturedSelectionContext],at:max(0,history.count-1))}
         guard !history.isEmpty else { busy = false; error = "This message could not fit safely in the PA request. Please split it into smaller messages."; return }
-        let pageContext = !memory.enabled ? AssistantPageContext() : setupMode ? runtime.profileContextPages(connection.activeID, contextID) : isReviewTurn ? runtime.contextPages(connection.activeID, reviewQuery ?? prompt, contextID, response.focusAreas != nil, false) : runtime.conversationDirectory(connection.activeID)
+        let pageContext = isReviewTurn ? runtime.contextPages(connection.activeID, reviewQuery ?? prompt, contextID, response.focusAreas != nil, false) : !memory.enabled ? AssistantPageContext() : setupMode ? runtime.profileContextPages(connection.activeID, contextID) : runtime.conversationDirectory(connection.activeID)
         let capturedReviewContext=reviewSourceContext ?? ""
         let prepareReviewActions=runtime.prepareReviewActions
         let executeReviewActions=runtime.executeReviewActions

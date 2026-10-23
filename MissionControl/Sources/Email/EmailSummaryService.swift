@@ -14,6 +14,7 @@ import SwiftData
     @ObservationIgnored private(set) var sourceProjectionRevision=0
     let feedback:ReviewFeedbackJobs
     let reviewPolicies:ReviewPolicyStore
+    @ObservationIgnored private let reviewMemory: PAMemoryStore?
     private var dismissedUndo: (String,String)?
     private var dismissalDate: Date?
     func undoDate(_ registration: String) -> Date? { dismissedUndo?.1 == registration ? dismissalDate : nil }
@@ -38,7 +39,7 @@ import SwiftData
     }
     func reopenedResolutionFixture()throws->EmailSummaryService {
         guard ProcessInfo.processInfo.arguments.contains("--validate-advice-context") else {throw SummaryFailure.invalid}
-        return EmailSummaryService(container:container)
+        return EmailSummaryService(container:container, memory: reviewMemory)
     }
     #endif
     private var task: Task<Void, Never>?
@@ -87,8 +88,9 @@ import SwiftData
         reviewFeedbackTask=operation
         return try await withTaskCancellationHandler(operation:{try await operation.value},onCancel:{operation.cancel()})
     }
-    init(container: ModelContainer?) {
+    init(container: ModelContainer?, memory: PAMemoryStore? = nil) {
         self.container = container
+        reviewMemory = memory
         reviewPolicies=ReviewPolicyStore(load:{try LocalRecordRepository.read("emailReviewPolicy",container:container)},persist:container.map {container in
             {(data:Data,expected:Data?) throws -> Void in try LocalRecordRepository(container:container).write(["emailReviewPolicy":data],expected:["emailReviewPolicy":LocalRecordVersion(expected)])}
         })
@@ -105,16 +107,26 @@ import SwiftData
             if let saved = try LocalRecordRepository.read("mailHeaderDecisions", container: container) { decisions = try JSONDecoder().decode([EmailHeaderDecision].self,from: saved) }
         } catch { self.error = "Saved email summaries could not be loaded."; paused = true }
     }
-    func policy(_ registration:String)->ReviewPolicyCapture {reviewPolicies.policy(registration)}
-    func policyAvailable(_ capture:ReviewPolicyCapture)->Bool {reviewPolicies.matches(capture)}
+    func guidancePreferences(_ registration: String) -> [ReviewGuidancePreference] {
+        guard let memory = reviewMemory, memory.enabled else { return [] }
+        return memory.reviewPreferences(registration).filter { $0.conversationID == nil }.reversed().map {
+            let text = $0.reviewInterpretation == nil && !($0.reviewContext ?? "").isEmpty ? "For " + $0.reviewContext! + ": " + $0.text : $0.text
+            return .init(dependency: .init(id: $0.id.uuidString, fingerprint: MemoryDependencyRules.fingerprint(MemoryRetrieval.record($0))), text: text)
+        }
+    }
+    func policy(_ registration:String)->ReviewPolicyCapture {reviewPolicies.policy(registration, preferences: guidancePreferences(registration))}
+    func reviewGuidancePending(_ registration: String) -> Bool {
+        reviewMemory?.learningEnabled == true && reviewPolicies.readable && reviewPolicies.needsConsolidation(registration, preferences: guidancePreferences(registration))
+    }
+    func policyAvailable(_ capture:ReviewPolicyCapture)->Bool {ReviewPolicyRules.validText(capture.text) && reviewPolicies.matches(capture, preferences: guidancePreferences(capture.registration))}
     func policyAvailable(_ reference:ReviewPolicyReference?,registration:String)->Bool {
         guard let reference else {return true}
         return reference.registration == registration && reviewPolicies.readable && reference.matches(policy(registration))
     }
-    @discardableResult func savePolicy(_ text:String,registration:String,expected:ReviewPolicyCapture)->Bool {reviewPolicies.save(text,registration:registration,expected:expected)}
-    @discardableResult func resetPolicy(registration:String,expected:ReviewPolicyCapture)->Bool {reviewPolicies.reset(registration,expected:expected)}
+    @discardableResult func savePolicy(_ text:String,registration:String,expected:ReviewPolicyCapture)->Bool {reviewPolicies.save(text,registration:registration,expected:expected,preferences:guidancePreferences(registration))}
+    @discardableResult func resetPolicy(registration:String,expected:ReviewPolicyCapture)->Bool {reviewPolicies.reset(registration,expected:expected,preferences:guidancePreferences(registration))}
     func policyHistory(_ registration:String)->[ReviewPolicyVersion] {reviewPolicies.history(registration)}
-    @discardableResult func restorePolicy(_ version:ReviewPolicyVersion,expected:ReviewPolicyCapture)->Bool {reviewPolicies.restore(version,expected:expected)}
+    @discardableResult func restorePolicy(_ version:ReviewPolicyVersion,expected:ReviewPolicyCapture)->Bool {reviewPolicies.restore(version,expected:expected,preferences:guidancePreferences(expected.registration))}
     /// Exact selected feedback remains valid even when an email summary omits its matching words.
     private func reviewPreferencesAvailable(_ dependencies:[MemoryDependency],model:DashboardModel)->Bool {
         guard !dependencies.isEmpty else {return true}
@@ -620,12 +632,10 @@ import SwiftData
                         continue // No inference for unchanged bodies.
                     }
                     let excerpt = String(body.prefix(16000))
-                    let dismissalFeedback:[[String:String]] = []
                     let relevanceContext=self.relevanceContext(message,model:model,body:excerpt)
                     let discoveryHumanPages=model.contextPages.pages(registration:registration).filter{$0.owner == .human && $0.kind != .instruction}
                     // Classification keeps selected facts human-only; pages retain their exact current support separately.
-                    let memoryContext=relevanceContext.memories
-                    let source = ["lifeContext":relevanceContext.input,"reviewPolicy":capturedPolicy.input,"sharedMemory":memoryContext,"dismissedSuggestions":dismissalFeedback,"reviewFeedback":dismissalFeedback,"now":Date.now.ISO8601Format(),"timezone":TimeZone.current.identifier,"sender":message.sender,"subject":message.subject,"received":message.received.ISO8601Format(),"body":excerpt,"bodyTruncated":body.count > 16000,"replied":message.replied] as [String:Any]
+                    let source = ["lifeContext":relevanceContext.input,"reviewPolicy":capturedPolicy.input,"now":Date.now.ISO8601Format(),"timezone":TimeZone.current.identifier,"sender":message.sender,"subject":message.subject,"received":message.received.ISO8601Format(),"body":excerpt,"bodyTruncated":body.count > 16000,"replied":message.replied] as [String:Any]
                     let input = String(data: try JSONSerialization.data(withJSONObject: source), encoding: .utf8)!
                     phase = "Receiving subscription inference"
                     if heartbeat { try heartbeatRequest!.claim() }

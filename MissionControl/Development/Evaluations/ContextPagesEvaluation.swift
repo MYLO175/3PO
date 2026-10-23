@@ -12,6 +12,7 @@ import SwiftData
         checks.merge(try humanEvidenceChecks(), uniquingKeysWith: { $1 })
         checks.merge(try await pageReadChecks(), uniquingKeysWith: { $1 })
         checks.merge(try instructionChecks(), uniquingKeysWith: { $1 })
+        checks.merge(try await reviewGuidanceChecks(), uniquingKeysWith: { $1 })
         checks.merge(try learnedInstructionChecks(), uniquingKeysWith: { $1 })
         checks.merge(try emailPageChecks(), uniquingKeysWith: { $1 })
         checks.merge(try primaryContextChecks(), uniquingKeysWith: { $1 })
@@ -741,6 +742,62 @@ import SwiftData
         return checks
     }
 
+    private static func reviewGuidanceChecks() async throws -> [String: Bool] {
+        var checks: [String: Bool] = [:]
+        for scenario in ["success", "stop", "policy edit", "disabled rule"] {
+            let fixture = try ContextPagesFixture()
+            defer { fixture.clean() }
+            let model = fixture.model, owner = fixture.registration
+            let raw = "ORIGINAL_REVIEW_WORDS_" + UUID().uuidString
+            let turnID = UUID()
+            try fixture.human(raw, id: turnID)
+            var memory = PAMemory(registration: owner, text: "Routine fictional violet newsletters can stay quiet; direct personal deadlines still matter.", kind: .preference,
+                                  explicit: false, provenance: "Fictional interpreted feedback", sourceTurnID: turnID.uuidString, evidence: raw, certainty: .stated, durability: .stable)
+            memory.reviewPreference = true; memory.reviewFeedback = raw
+            guard model.assistant.memory.put(memory) else { throw IntegrationError.verification }
+            let service = model.emailSummaries
+            let captured = service.policy(owner)
+            let automatic = model.automaticMemory(.brief, query: "violet newsletters")
+            checks["Review guide excludes raw feedback from routine context: " + scenario] = !captured.text.contains(raw) && !automatic.context.contains(raw) && !automatic.records.contains { $0["purpose"] == "review preference" }
+            let reviewInput = model.assistantRuntime().contextPages(owner, "violet newsletters", nil, false, false)
+            checks["Review conversation supplies the guide without raw working feedback: " + scenario] = reviewInput.current() && !reviewInput.text.contains(raw) && reviewInput.text.contains("reviewGuidance") && !reviewInput.referenceVersions.keys.contains("memory:" + memory.id.uuidString)
+            var claims = 0, calls = 0, owned = true
+            var held: CheckedContinuation<Void, Never>?
+            var supplied = ""
+            let request = HeartbeatChildRequest(registration: owner, manual: true, runID: "fictional-review-guide", mailReview: .init(windows: [:], issues: [:]), whatsappReady: false,
+                claim: { guard owned else { throw CancellationError() }; claims += 1 }, validate: { if !owned || Task.isCancelled { throw CancellationError() } })
+            let rewritten = "# My Review guidance\n\nKeep routine fictional violet newsletters quiet; direct personal deadlines still matter."
+            let infer: (String) async throws -> PAResponse = { input in
+                calls += 1; supplied = input
+                if scenario != "success" { await withCheckedContinuation { held = $0 } }
+                let args = String(decoding: try JSONSerialization.data(withJSONObject: ["text": rewritten]), as: UTF8.self)
+                return .init(text: "", output: [], calls: [.init(id: "fictional-result", name: ReviewGuidanceRules.toolName, namespace: "pa", arguments: args)])
+            }
+            let task = Task { try await service.consolidateReviewGuidance(model, request: request, infer: infer) }
+            if scenario != "success" {
+                await waitUntil { held != nil }
+                switch scenario {
+                case "stop": owned = false; task.cancel()
+                case "policy edit": guard service.savePolicy("My independently edited Review guidance.", registration: owner, expected: captured) else { throw IntegrationError.verification }
+                default: guard model.assistant.memory.retire(memory.id, retired: true, expectedRevision: model.assistant.memory.revision) else { throw IntegrationError.verification }
+                }
+                held?.resume(); held = nil
+            }
+            var cancelled = false
+            let result: HeartbeatLearningResult?
+            do { result = try await task.value } catch is CancellationError { cancelled = true; result = nil }
+            checks["Review consolidation claims one owned request: " + scenario] = calls == 1 && claims == 1 && !supplied.contains(raw)
+            if scenario == "success" {
+                let second = try await service.consolidateReviewGuidance(model, request: request, infer: infer)
+                checks["Review synthesis saves once and skips unchanged later heartbeats"] = result?.failure == nil && service.policy(owner).text == rewritten && second.skipped && calls == 1 && claims == 1
+            } else {
+                checks["Review synthesis rejects late completion: " + scenario] = service.policy(owner).text != rewritten && (cancelled || result?.failure != nil)
+            }
+            checks["Review consolidation fixture performs no real source or model calls: " + scenario] = fixture.sources.reads == 0 && fixture.provider.calls == 0
+        }
+        return checks
+    }
+
     private static func instructionChecks() throws -> [String: Bool] {
         let fixture = try ContextPagesFixture()
         defer { fixture.clean() }
@@ -760,11 +817,18 @@ import SwiftData
             guard model.assistant.memory.saveReviewPreference("Fictional cobalt feedback \(index): " + String(repeating: "\"\\🌱", count: 400), registration: registration, about: String(repeating: "f", count: 280)) else { throw IntegrationError.verification }
         }
         let review = model.captureContextPages(registration: registration, query: nil, pageID: "instructions:review")
-        let reviewObject = try object(review.text), feedback = reviewObject["feedback"] as? [[String: String]] ?? []
-        checks["Context pages Review policy and feedback obey one final payload bound"] = review.current() && review.text.utf8.count <= 32_000 && reviewObject["unavailable"] == nil && !feedback.isEmpty && (reviewObject["feedbackCount"] as? Int) == 18
-        checks["Context pages Review policy capture retains canonical feedback receipts"] = review.referenceVersions["instruction:review"] != nil && review.referenceVersions.keys.filter { $0.hasPrefix("memory:") }.count == feedback.count
+        let reviewObject = try object(review.text)
+        checks["Context pages Review browsing pages one document without a parallel feedback list"] = review.current() && review.text.utf8.count <= 32_000 && reviewObject["unavailable"] == nil && reviewObject["feedback"] == nil && (reviewObject["instructions"] as? [String: String])?["nextOffset"] != "end"
+        let fullReview = model.reviewGuidanceCapture(registration: registration)
+        checks["Review decisions receive every rule beyond the browsing excerpt"] = fullReview.current() && (0..<18).allSatisfy { fullReview.text.contains("Fictional cobalt feedback \($0):") } && fullReview.text.count > 6000
+        checks["Review policy captures one exact complete guidance revision"] = review.referenceVersions["instruction:review"] != nil && review.referenceVersions.keys.filter { $0.hasPrefix("memory:") }.isEmpty && fullReview.referenceVersions == review.referenceVersions.filter { $0.key == "instruction:review" }
         guard model.emailSummaries.savePolicy("Only surface meaningful revised fictional cobalt changes.", registration: registration, expected: model.emailSummaries.policy(registration)) else { throw IntegrationError.verification }
         checks["Context pages Review edit invalidates exact prior policy capture"] = !review.current() && !model.contextKnowledgeAvailable(registration: registration, versions: review.referenceVersions)
+        checks["Review complete guide also rejects stale completion after an edit"] = !fullReview.current()
+        model.assistant.memory.enabled = false
+        let withoutMemory = model.reviewGuidanceCapture(registration: registration)
+        checks["Review retains explicit guidance while learned memory is paused"] = withoutMemory.current() && withoutMemory.text.contains("Only surface meaningful revised fictional cobalt changes.") && model.contextKnowledgeAvailable(registration: registration, versions: withoutMemory.referenceVersions)
+        model.assistant.memory.enabled = true
         checks["Context pages feature instructions share existing saved authorities"] = model.contextPages.pages(registration: registration).isEmpty
         let currentBrief = model.captureContextPages(registration: registration, query: nil, pageID: "instructions:brief")
         let currentReview = model.captureContextPages(registration: registration, query: nil, pageID: "instructions:review")
@@ -966,6 +1030,7 @@ import SwiftData
         images = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
         settings.set(true, forKey: "assistantContextEnabled"); settings.set(true, forKey: "paMemoryEnabled")
         model.assistant = AssistantService(connection: provider, container: container, settings: settings, imageDirectory: images)
+        model.emailSummaries = EmailSummaryService(container: container, memory: model.assistant.memory)
         model.chatGPT.activeID = provider.activeID
         model.contextCalendarAccess = { false }
     }

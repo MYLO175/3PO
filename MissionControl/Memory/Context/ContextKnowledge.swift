@@ -64,6 +64,7 @@ import EventKit
         }
     }
     private func contextMemoryAllowed(_ memory: PAMemory, purpose: ContextKnowledgePurpose, mailAccounts: Set<String>?, whatsappReady: Bool) -> Bool {
+        if purpose.usesReviewGuide && memory.reviewPreference == true { return false }
         if purpose.humanOnly { return memory.source == nil }
         return memory.allSourceEvidence.allSatisfy {
             contextSourceAllowed($0.identity.kind, accountID: $0.identity.accountID, chatID: $0.identity.kind == .whatsapp ? $0.identity.containerID : nil,
@@ -149,7 +150,7 @@ import EventKit
             targets.append(.init(id: "brief", scope: "brief", title: "Brief instructions", text: text, revision: briefInstructionRevision(registration)))
         }
         if emailSummaries.reviewPolicies.readable {
-            let text = emailSummaries.policy(registration).text + "\n" + learnedInstructionText("review", registration: registration)
+            let text = emailSummaries.policy(registration).text
             targets.append(.init(id: "review", scope: "review", title: "Review preferences", text: text,
                 revision: ContextKnowledgeRules.fingerprint(ContextKnowledgeRules.json(emailSummaries.policy(registration).input) + text)))
         }
@@ -227,6 +228,11 @@ import EventKit
         if includeRecent && allowedMemoryIDs == nil && purpose.includesWorkingChanges {
             // Completed human messages only. Imported/quoted contents stay DATA; summaries must not promote commands into facts.
             var suppressedTurns = assistant.memory.suppressed(registration)
+            if purpose.usesReviewGuide {
+                suppressedTurns.formUnion(assistant.memory.records.filter {
+                    $0.registration == registration && $0.reviewPreference == true
+                }.compactMap(\.sourceTurnID))
+            }
             suppressedTurns.formUnion(assistant.memory.records.filter {
                 $0.registration == registration && $0.sourceTurnID != nil &&
                 ($0.supersededBy != nil || $0.retiredAt != nil || $0.resolved != nil || MemoryRules.needsReview($0))
@@ -447,16 +453,6 @@ import EventKit
                 policy["text"] = excerpt.text; policy["nextOffset"] = excerpt.next.map(String.init) ?? "end"; policy["totalCharacters"] = String(excerpt.total)
                 payload["instructions"] = policy
                 supplied.append(.init(kind: "instruction", key: "review", revision: reviewInstructionRevision(registration)))
-                let feedback = assistant.memory.reviewPreferences(registration).filter { MemoryRules.inScope($0, conversationID: topic, includeTopics: includeTopics) }
-                var feedbackRows: [[String: String]] = []
-                for fact in feedback.prefix(12) {
-                    let row = ["text": String(fact.text.prefix(900)), "about": fact.reviewContext ?? ""]
-                    var candidate = payload; candidate["feedback"] = feedbackRows + [row]
-                    guard ContextKnowledgeRules.json(candidate).utf8.count <= maximumBytes - 1000 else { continue }
-                    feedbackRows.append(row)
-                    supplied.append(.init(kind: "memory", key: fact.id.uuidString, revision: MemoryDependencyRules.fingerprint(MemoryRetrieval.record(fact))))
-                }
-                payload["feedback"] = feedbackRows; payload["feedbackCount"] = feedback.count
             } else if pageID == "instructions:calendars" { return calendarPurposeCapture(sources: calendarData.sources, registration: registration) }
             else if let feature = ContextFeature(rawValue: String(pageID.dropFirst("instructions:".count))), pageID.hasPrefix("instructions:") {
                 guard contextPages.isReadable else { return .init(text: ContextKnowledgeRules.json(["unavailable": "Saved feature instructions could not be read. Original data is preserved."])) }
@@ -558,9 +554,23 @@ import EventKit
         !versions.isEmpty && versions.keys.allSatisfy { $0 == "instruction:assistant" }
     }
 
+    func reviewGuidanceCapture(registration: String) -> AssistantPageContext {
+        let policy = emailSummaries.policy(registration)
+        let available = registration == chatGPT.activeID && emailSummaries.policyAvailable(policy)
+        return .init(text: ContextKnowledgeRules.json(available ? policy.input : ["unavailable": "Saved Review guidance is unavailable."]),
+                     referenceVersions: ["instruction:review": reviewInstructionRevision(registration)], validate: { [weak self] _ in
+            guard let self, available, registration == self.chatGPT.activeID else { return false }
+            return self.emailSummaries.policyAvailable(policy)
+        })
+    }
+
     func contextKnowledgeAvailable(registration: String, versions: [String: String], ignoring: Set<String> = []) -> Bool {
         guard !versions.isEmpty else { return true }
-        guard assistant.memory.enabled, registration == chatGPT.activeID else { return false }
+        guard registration == chatGPT.activeID else { return false }
+        if versions.keys.allSatisfy({ $0 == "instruction:review" }) {
+            return emailSummaries.reviewPolicies.readable && versions["instruction:review"] == reviewInstructionRevision(registration)
+        }
+        guard assistant.memory.enabled else { return false }
         if isConversationDirectoryReceipt(versions) {
             guard contextPages.isReadable, assistant.memory.isReadable else { return false }
             let guidance = featureInstruction(.assistant, registration: registration)
@@ -599,7 +609,11 @@ import EventKit
         }
         return body { versions in
             ContextPageDependencyRules.available(versions) { versions in
-                guard active, self.assistant.memory.enabled, registration == self.chatGPT.activeID else { return false }
+                guard active, registration == self.chatGPT.activeID else { return false }
+                if versions.keys.allSatisfy({ $0 == "instruction:review" }) {
+                    return self.contextKnowledgeAvailable(registration: registration, versions: versions)
+                }
+                guard self.assistant.memory.enabled else { return false }
                 if self.isConversationDirectoryReceipt(versions) {
                     return self.contextKnowledgeAvailable(registration: registration, versions: versions)
                 }

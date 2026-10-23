@@ -11,6 +11,7 @@ enum EvaluationLaunchGuard {
         ["--validate-review-inbox","--working-context-model","--context-pages-only"],
         ["--validate-review-inbox","--working-context-model","--chat-on-demand-only"],
         ["--validate-review-inbox","--working-context-model","--memory-consolidation-only"],
+        ["--validate-review-inbox","--working-context-model","--review-guidance-only"],
         ["--validate-memory-inspection", "--prompt-cache-only", "--warm-boundary-only"],
         ["--validate-review-inbox","--reminder-completion-native"],
         ["--validate-review-inbox","--chat-approval-only"],

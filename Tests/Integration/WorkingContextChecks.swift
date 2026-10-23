@@ -24,7 +24,7 @@ import SwiftData
         let purposes: [PAContextPurpose] = [.conversation, .reviewConversation, .dailyBrief, .suggestions, .emailHeader, .emailBody, .memoryRead, .notebookRead]
         for purpose in purposes {
             let context = PAWorkingContext.prepare(memory: memory, registration: "owner", purpose: purpose, query: "Orion prototype")
-            check(context.memoryIDs.contains(preference.id), "Same canonical preference supplied: " + purpose.rawValue)
+            check(context.memoryIDs.contains(preference.id) == !purpose.usesReviewGuide, "Review decisions use the single guide; explicit memory reads retain the ledger: " + purpose.rawValue)
             check(!context.memoryIDs.contains(unrelated.id) && !context.memoryIDs.contains(foreign.id), "No unrelated or other-account context")
             check(context.selection.records.count <= purpose.recordLimit, "Purpose count limit")
             check(context.memoryIDs.contains(sourced.id) == !purpose.humanOnly, "Purpose source policy")

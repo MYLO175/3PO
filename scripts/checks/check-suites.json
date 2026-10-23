@@ -1163,6 +1163,19 @@
       "effects": [
         "One configured subscription request on invented human dialogue, app outcomes and exact feature/calendar targets. Production learning prompt/decoder; no personal source content or saved changes; no retry."
       ]
+    },
+    {
+      "id": "review-guidance-model",
+      "tier": "model",
+      "arguments": [
+        "--validate-review-inbox",
+        "--working-context-model",
+        "--review-guidance-only"
+      ],
+      "report": "missioncontrol-working-context-model-evaluation.json",
+      "effects": [
+        "Two configured subscription requests over one long fictional Review guide and invented emails. Private policy store, production synthesis and classification contracts; no personal sources, native actions, app policy changes or retry."
+      ]
     }
   ]
 }

@@ -3,10 +3,11 @@ import CryptoKit
 
 /// Relevance never grants access. Every page resolves its original support for the requesting feature.
 enum ContextKnowledgePurpose: String, CaseIterable {
-    case conversation, brief, suggestions, manualSuggestions, heartbeatSuggestions
+    case conversation, reviewConversation, brief, suggestions, manualSuggestions, heartbeatSuggestions
     case email, setup, maintenance, inspection
     var humanOnly: Bool { self == .email || self == .setup }
     var includesWorkingChanges: Bool { !humanOnly }
+    var usesReviewGuide: Bool { [.email, .reviewConversation, .brief, .suggestions, .manualSuggestions, .heartbeatSuggestions].contains(self) }
 }
 
 enum ContextFeature: String, CaseIterable, Identifiable {

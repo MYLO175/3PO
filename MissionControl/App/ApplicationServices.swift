@@ -20,7 +20,7 @@ import SwiftData
     lazy var aiUsage = AIUsageStore(container: container)
     lazy var assistant = AssistantService(connection: chatGPT, container: container, engine: conversationEngine)
     lazy var assistantActions = AssistantActions(container: container)
-    lazy var emailSummaries = EmailSummaryService(container: container)
+    lazy var emailSummaries = EmailSummaryService(container: container, memory: assistant.memory)
     lazy var heartbeat = HeartbeatService(container: container)
     lazy var memoryLearning = MemoryLearningService(container: container)
     lazy var sourceLearning = SourceContextLearningService(container: container)

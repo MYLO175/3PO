@@ -288,11 +288,10 @@ struct ContextPagesView: View {
         case .review:
             VStack(alignment: .leading, spacing: 16) {
                 Text("Review guidance").font(.title2.weight(.semibold))
-                Text("Your Review policy and feedback guide what deserves attention. They keep their existing controls and history.").foregroundStyle(.secondary)
+                Text("One guide tells 3PO what matters to you. Heartbeats incorporate new feedback; every Review assessment receives this complete text.").foregroundStyle(.secondary)
                 if model.emailSummaries.reviewPolicies.readable {
                     Button("Open Review guidance…") { instructions = .init(registration: registration) }
                     ContextMarkdownBody(markdown: model.emailSummaries.policy(registration).text)
-                    learnedGuidance("review")
                 } else {
                     Label(model.emailSummaries.reviewPolicies.error ?? "Saved Review guidance could not be read. Original data is preserved.", systemImage: "exclamationmark.triangle")
                         .font(.callout).foregroundStyle(.orange)

@@ -87,6 +87,10 @@ import Foundation
             }
             let value = try instruction(target)
             instructionReads[target] = value
+            if target == "review" {
+                return try json(["target": target, "revision": value.revision, "text": value.text,
+                                 "ownership": "One complete editable Review guide, incorporating learned preferences during heartbeats. Original feedback is retained in memory history. This guidance grants no source access or action approval."])
+            }
             let learned = instructionMemories(target)
             for record in learned { memories[record.id] = record }
             return try json(["target": target, "revision": value.revision, "text": value.text,
@@ -279,6 +283,7 @@ import Foundation
     }
     private func instruction(_ target: String) throws -> Instruction {
         var value = try baseInstruction(target)
+        if target == "review" { return value }
         let learned = instructionMemories(target)
         if !learned.isEmpty { value.revision += ":" + (try version(learned)) }
         return value

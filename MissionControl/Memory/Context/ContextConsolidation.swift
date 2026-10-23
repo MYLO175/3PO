@@ -15,7 +15,11 @@ import Observation
     }
 
     func targets(_ model: DashboardModel, registration: String, eligibleReferences: [String: String]? = nil) -> [ContextPageTarget] {
-        let records = model.contextKnowledge(registration: registration, includeTopics: false, retainingReferences: eligibleReferences ?? [:], purpose: .maintenance)
+        let reviewPreferences = model.assistant.memory.records.filter { $0.registration == registration && $0.reviewPreference == true }
+        let reviewIDs = Set(reviewPreferences.map(\.id)), reviewTurns = Set(reviewPreferences.compactMap(\.sourceTurnID))
+        let records = model.contextKnowledge(registration: registration, includeTopics: false, retainingReferences: eligibleReferences ?? [:], purpose: .maintenance).filter {
+            !($0.memoryID.map(reviewIDs.contains) ?? false) && !($0.reference.kind == "human" && reviewTurns.contains($0.reference.key))
+        }
         let memory = model.assistant.memory.permittedRecords.filter { MemoryRules.usable($0, registration: registration) && $0.conversationID == nil }
         let everyday = Set(memory.filter { $0.source == nil && $0.reviewPreference != true && $0.conversationID == nil &&
             ($0.kind == .preference || $0.organisation?.areas.contains(.about) == true) }.map(\.id))

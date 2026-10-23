@@ -367,9 +367,11 @@ import SwiftData
         return selectionContext(registration,conversationID:conversationID,includeTopics:includeTopics,query:query,focus:focus,includeSources:includeSources,sourceFilter:sourceFilter,now:now).selection
     }
     /// Selection and notebook share one permission-filtered, current snapshot.
-    func selectionContext(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, focus:[LifeArea] = [],includeSources:Bool = true,sourceFilter:((PAMemory)->Bool)? = nil,now:Date = .now) -> (selection:MemorySelection,notebook:LifeNotebook) {
+    func selectionContext(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, focus:[LifeArea] = [],includeSources:Bool = true,sourceFilter:((PAMemory)->Bool)? = nil,recordFilter:((PAMemory)->Bool)? = nil,now:Date = .now) -> (selection:MemorySelection,notebook:LifeNotebook) {
         guard enabled else { return (MemorySelection(records:[],eligibleCount:0),prepareNotebook([],registration:registration,topic:conversationID,includeTopics:includeTopics,now:now)) }
-        let candidates=(includeSources ? permittedRecords : records.filter{$0.source == nil}).filter{$0.source == nil || (sourceFilter?($0) ?? true)}
+        let candidates=(includeSources ? permittedRecords : records.filter{$0.source == nil}).filter {
+            ($0.source == nil || (sourceFilter?($0) ?? true)) && (recordFilter?($0) ?? true)
+        }
         let projected=prepareNotebook(candidates,registration:registration,topic:conversationID,includeTopics:includeTopics,now:now)
         if preparedLexical?.revision != revision { preparedLexical = (revision, MemoryLexicalIndex(records)) }
         return (MemoryRetrieval.select(candidates,registration:registration,conversationID:conversationID,includeTopics:includeTopics,query:query,now:now,focus:focus,notebook:projected,lexical:preparedLexical?.value),projected)

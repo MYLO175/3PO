@@ -52,6 +52,55 @@ enum ReviewPolicyChecks {
         let mismatch = ReviewPolicyStore(load: {nil}, persist: {_, _ in})
         precondition(!mismatch.save(global, registration: "owner", expected: mismatch.policy("owner")) && !mismatch.readable)
 
+        // The complete guide is global, includes its tail, and never needs original feedback.
+        var guideData: Data?
+        func guideStore() -> ReviewPolicyStore {
+            ReviewPolicyStore(load: {guideData}, persist: {next, expected in
+                guard expected == guideData else { throw SummaryFailure.invalid }
+                guideData = next
+            })
+        }
+        func rule(_ text: String, id: String = UUID().uuidString) -> ReviewGuidancePreference {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .init(dependency: .init(id: id, fingerprint: MemoryDependencyRules.fingerprint(["id": id, "text": trimmed])), text: trimmed)
+        }
+        let guide = guideStore()
+        var rules = (0..<18).map { rule("Priority \($0): " + String(repeating: "Keep the distinct fictional topic and its conditions. ", count: 10)) }
+        let complete = guide.policy("owner", preferences: rules)
+        precondition(complete.text.count > 6000 && rules.allSatisfy { complete.text.contains($0.text) } && !complete.isDefault)
+        precondition(guide.needsConsolidation("owner", preferences: rules) && guide.history("owner").isEmpty)
+        let merged = "# What matters to me\n\n" + rules.map(\.text).joined(separator: "\n\n")
+        precondition(guide.save(merged, registration: "owner", expected: complete, preferences: rules, consolidate: true))
+        let synthesised = guide.policy("owner", preferences: rules)
+        precondition(synthesised.text == merged && !guide.needsConsolidation("owner", preferences: rules))
+        precondition(guideStore().policy("owner", preferences: rules) == synthesised && guide.history("owner").first?.consolidatedFrom?.preferences.count == 18)
+        precondition(guide.policy("other", preferences: []).isDefault && guide.policy("owner").isDefault)
+        let disabled = guide.policy("owner", preferences: Array(rules.dropLast()))
+        precondition(!disabled.text.contains(rules.last!.text) && !guide.matches(synthesised, preferences: Array(rules.dropLast())))
+        let originalRule = rules[0]
+        rules[0] = rule("A corrected fictional rule replaces the earlier preference.", id: originalRule.dependency.id)
+        let correctedGuide = guide.policy("owner", preferences: rules)
+        precondition(correctedGuide.text.contains(rules[0].text) && !correctedGuide.text.contains(originalRule.text))
+        precondition(!guide.save("Stale synthesis", registration: "owner", expected: synthesised, preferences: rules, consolidate: true))
+        let edited = "Show only my explicitly edited fictional priorities."
+        precondition(guide.save(edited, registration: "owner", expected: correctedGuide, preferences: rules))
+        precondition(guide.policy("owner", preferences: rules).text == edited && !guide.needsConsolidation("owner", preferences: rules))
+        let pausedEdit = edited + " Keep the wording concise."
+        precondition(guide.save(pausedEdit, registration: "owner", expected: guide.policy("owner")))
+        precondition(guide.policy("owner", preferences: rules).text == pausedEdit, "Editing with memory paused cannot resurrect earlier removed rules")
+        let hiddenEdit = pausedEdit + " Preserve the specific scope."
+        precondition(guide.save(hiddenEdit, registration: "owner", expected: guide.policy("owner", preferences: Array(rules.dropLast())), preferences: Array(rules.dropLast())))
+        precondition(guide.policy("owner", preferences: rules).text == hiddenEdit, "Re-enabling a disabled rule cannot undo a deliberate human edit")
+        rules.append(rule("Also prioritise the newly learned fictional result."))
+        let later = guide.policy("owner", preferences: rules)
+        precondition(later.text.contains(hiddenEdit) && later.text.contains(rules.last!.text) && !later.text.contains(rules[1].text))
+        precondition(guide.policy("owner").text == hiddenEdit, "Pausing memory keeps explicit human edits")
+        let decodedGuide = try ReviewGuidanceRules.decode(String(decoding: JSONSerialization.data(withJSONObject: ["text": merged]), as: UTF8.self))
+        precondition(decodedGuide == merged)
+        for malformed in ["{}", "{\"text\":\"\"}", "{\"text\":\"ok\",\"other\":true}"] {
+            do { _ = try ReviewGuidanceRules.decode(malformed); preconditionFailure("Invalid guidance admitted") } catch {}
+        }
+
         // Negative decisions retain every supplied Review preference, not a generated summary's subset.
         let preference: [String: String] = ["id": UUID().uuidString, "purpose": "review preference", "text": "Routine university broadcasts can stay quiet.", "reviewAbout": "University newsletters"]
         let unrelated: [String: String] = ["id": UUID().uuidString, "text": "I study robotics."]
@@ -97,6 +146,9 @@ enum ReviewPolicyChecks {
         let resultsQuote="Your fictional coding assessment results are ready to read."
         let resultsPreference:[String:String]=["id":UUID().uuidString,"purpose":"review preference","text":"Coding assessment results are important to me.","reviewAbout":"Coding assessment stages and results"]
         let resultsContext=EmailRelevanceContext(memories:[resultsPreference],memoryReceipts:MemoryDependencyRules.capture([resultsPreference]))
+        var rawPreference = resultsPreference; rawPreference["reviewFeedback"] = "ORIGINAL_FEEDBACK_MARKER"; rawPreference["reviewInterpretation"] = "INTERPRETATION_MARKER"
+        let routineInput = String(decoding: try JSONSerialization.data(withJSONObject: EmailRelevanceContext(memories:[rawPreference]).input), as: UTF8.self)
+        precondition(!routineInput.contains("ORIGINAL_FEEDBACK_MARKER") && !routineInput.contains("INTERPRETATION_MARKER") && !routineInput.contains(resultsPreference["id"]!))
         let missingCitation=try assessment(resultsQuote,context:resultsContext)
         precondition(missingCitation.worthReading == false && missingCitation.personalRelevance == nil,"An uncited worthReading claim is not admitted just because positive feedback was supplied")
         let resultsRelevance:[String:Any]=["reason":"The human explicitly prioritises assessment results.","evidence":resultsQuote,"memoryIDs":[resultsPreference["id"]!]]
@@ -111,6 +163,10 @@ enum ReviewPolicyChecks {
         let policyMatch: [String: Any] = ["reason": "The explicitly prioritised research results arrived.", "policyQuote": humanPolicy.text, "sourceQuote": quote]
         let priority = try assessment(quote, additional: ["policyRelevance": policyMatch], policy: humanPolicy)
         precondition(priority.worthReading == true && priority.policyRelevance?.policy?.matches(humanPolicy) == true && !priority.attention)
+        let learnedPolicy = guide.policy("owner", preferences: rules)
+        let learnedMatch: [String: Any] = ["reason": "A result explicitly prioritised in the complete guide arrived.", "policyQuote": rules.last!.text, "sourceQuote": resultsQuote]
+        let learnedPriority = try assessment(resultsQuote, additional: ["policyRelevance": learnedMatch], policy: learnedPolicy)
+        precondition(learnedPriority.worthReading == true && learnedPriority.policyRelevance?.policy?.matches(learnedPolicy) == true)
         var invalid = policyMatch; invalid["policyQuote"] = "Invented sender priority"
         do {_ = try assessment(quote, additional: ["policyRelevance": invalid], policy: humanPolicy); preconditionFailure("Invented policy quote accepted")} catch SummaryFailure.unsupportedEvidence {}
         do {_ = try assessment(quote, additional: ["policyRelevance": policyMatch]); preconditionFailure("Default policy used as a positive personal priority")} catch SummaryFailure.unsupportedEvidence {}

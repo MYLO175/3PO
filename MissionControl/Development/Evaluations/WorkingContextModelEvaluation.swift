@@ -68,6 +68,7 @@ import SwiftData
     }
 
     static func run(_ model: DashboardModel) async throws -> [String: Any] {
+        if ProcessInfo.processInfo.arguments.contains("--review-guidance-only") { return try await ReviewGuidanceModelEvaluation.run(model) }
         if ProcessInfo.processInfo.arguments.contains("--chat-on-demand-only") { return try await OnDemandChatModelEvaluation.run(model) }
         let registration=model.chatGPT.activeID, selectedModel=model.chatGPT.selectedModel
         let pagesOnly=ProcessInfo.processInfo.arguments.contains("--context-pages-only"), requestLimit=pagesOnly ? 1 : 20
