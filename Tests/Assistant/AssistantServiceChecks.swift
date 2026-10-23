@@ -1312,6 +1312,8 @@ private final class ObservationCounter:@unchecked Sendable {
         do {
             let provider=FictionalInference(),context=FictionalContext(),container=try open("chat-approval")
             let assistant=service(provider,container),id=assistant.openPA()!
+            assistant.endSetup(nil)
+            check(assistant.newChat(now:context.now),"Approval fixture starts a fresh session")
             let snapshot=Data("fictional exact target snapshot".utf8)
             context.configure={session,_ in session.executeBody={call,_ in
                 throw PAChatApprovalRequired(proposal:.init(toolName:call.name,arguments:"{\"exact\":\"fictional target\"}",snapshot:snapshot,outline:["Create fictional space"],details:["Inside fictional Engineering"]))
@@ -1340,8 +1342,10 @@ private final class ObservationCounter:@unchecked Sendable {
             allowed=true
             let before=provider.inputs.count
             check(reopened.approveActions(runtime:runtime,conversationID:id,responseID:turn.id),"Explicit button approval starts the captured actions")
+            check(reopened.requestChatSessionID == turn.chatSessionID && reopened.requestChatSessionID != nil,"Approval progress retains the exact fresh session for Stop and display")
             check(!reopened.approveActions(runtime:runtime,conversationID:id,responseID:turn.id),"A rapid second click cannot start a second save")
             await until{!reopened.busy}
+            check(reopened.requestChatSessionID == nil,"Finishing exact approvals clears live session ownership")
             check(executed == turn.actionApprovals!.map(\.id),"Only the displayed exact actions execute once, in order")
             check(provider.inputs.count == before,"Button approval makes zero AI calls")
             check(reopened.draft == "An unsent variation","Approval preserves the unsent composer draft")

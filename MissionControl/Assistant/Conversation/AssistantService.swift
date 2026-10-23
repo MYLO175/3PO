@@ -485,7 +485,7 @@ import Observation
         let registration=connection.activeID
         let pending=proposals.filter{$0.phase == .pending}
         busy=true;error=nil;errorConversationID=conversationID;errorTopicID=turn.contextID;errorChatSessionID=turn.chatSessionID
-        requestConversationID=conversationID;requestTurnID=responseID;requestTopicID=turn.contextID;toolStatus="Saving approved actions…"
+        requestConversationID=conversationID;requestTurnID=responseID;requestTopicID=turn.contextID;requestChatSessionID=turn.chatSessionID;toolStatus="Saving approved actions…"
         runtime.started(.init(registration:registration,conversationID:conversationID,humanTurnID:humanID,responseTurnID:responseID,phase:"running",message:toolStatus,receipts:[],errors:[],attemptedTools:pending.map(\.toolName)))
         task=Task {
             var receipts:[String]=[],failure:String?,uncertain=false,confirmedCount=0
@@ -494,7 +494,7 @@ import Observation
                 if failure == nil,remainingErrors.isEmpty,let queuedID=turn.approvalQueuedRequestID,queue.items.contains(where:{$0.id == queuedID && $0.registration == registration && $0.topicID == turn.contextID && $0.state == .needsAnswer}) {
                     _=queue.finish(queuedID,result:receipts.joined(separator:"\n"),needsAnswer:false)
                 }
-                busy=false;toolStatus="";requestConversationID=nil;requestTurnID=nil;requestTopicID=nil
+                busy=false;toolStatus="";requestConversationID=nil;requestTurnID=nil;requestTopicID=nil;requestChatSessionID=nil
                 let outcome=AssistantTurnOutcome(registration:registration,conversationID:conversationID,humanTurnID:humanID,responseTurnID:responseID,phase:uncertain ? "uncertain" : failure != nil || !remainingErrors.isEmpty ? (receipts.isEmpty ? "failed" : "partial") : "completed",message:failure ?? receipts.joined(separator:"\n"),receipts:receipts,errors:remainingErrors+(failure.map{[$0]} ?? []),confirmedActions:confirmedCount,unconfirmedActions:uncertain ? 1 : 0,attemptedTools:pending.map(\.toolName))
                 recordActionResult(outcome);save();runtime.finished(outcome)
                 runtime.afterTurn()
