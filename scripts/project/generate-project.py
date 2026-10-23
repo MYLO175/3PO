@@ -16,6 +16,9 @@ for p in files:
 bridge='WhatsAppBridge'; refs.append(uid(bridge)); resources.append(uid('build'+bridge))
 obj(bridge,'isa = PBXFileReference; lastKnownFileType = folder; path = "WhatsAppBridge"; sourceTree = SOURCE_ROOT;')
 obj('build'+bridge,f'isa = PBXBuildFile; fileRef = {uid(bridge)};')
+mcp='MCPBridge'; resources.append(uid('build'+mcp))
+obj(mcp,'isa = PBXFileReference; lastKnownFileType = folder; path = "MCPBridge"; sourceTree = SOURCE_ROOT;')
+obj('build'+mcp,f'isa = PBXBuildFile; fileRef = {uid(mcp)};')
 obj('product','isa = PBXFileReference; explicitFileType = wrapper.application; path = "3PO.app"; sourceTree = BUILT_PRODUCTS_DIR;')
 # File references remain SOURCE_ROOT-relative; groups mirror physical folders.
 groups = {}
@@ -36,7 +39,7 @@ for directory in sorted(groups, key=lambda value: (-value.count('/'), value)):
     obj(key, f'isa = PBXGroup; children = ({",".join(sorted(groups[directory], key=lambda ref: (ref not in folder_refs, labels[ref].casefold())))}); name = "{Path(directory).name}"; sourceTree = "<group>";')
     if parent in groups:
         groups[parent].append(uid(key))
-obj('main',f'isa = PBXGroup; children = ({uid("group:MissionControl")},{uid(bridge)},{uid("products")}); sourceTree = "<group>";')
+obj('main',f'isa = PBXGroup; children = ({uid("group:MissionControl")},{uid(bridge)},{uid(mcp)},{uid("products")}); sourceTree = "<group>";')
 obj('products',f'isa = PBXGroup; children = ({uid("product")}); name = Products; sourceTree = "<group>";')
 for key,typ,ls in [('sources','PBXSourcesBuildPhase',builds),('resources','PBXResourcesBuildPhase',resources),('frameworks','PBXFrameworksBuildPhase',[])]: obj(key,f'isa = {typ}; buildActionMask = 2147483647; files = ({",".join(ls)}); runOnlyForDeploymentPostprocessing = 0;')
 obj('target',f'isa = PBXNativeTarget; buildConfigurationList = {uid("targetconfigs")}; buildPhases = ({uid("sources")},{uid("frameworks")},{uid("resources")}); buildRules = (); dependencies = (); name = MissionControl; productName = "3PO"; productReference = {uid("product")}; productType = "com.apple.product-type.application";')

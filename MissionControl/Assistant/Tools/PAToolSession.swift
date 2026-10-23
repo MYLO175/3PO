@@ -42,6 +42,9 @@ import Foundation
     private var issuedWhatsApp: [String:LifeReference] = [:]
     private var preparingApprovals=false
     private var executingApproval=false
+    private var externalInvocationID: UUID?
+    private var externalWorkspaceRead = false
+    private var externalHostInvocation = false
     private var notebookWorkspace:Set<UUID> = []
     static func attentionUsesWhatsApp(_ model:DashboardModel,brief:DailyBriefing? = nil,discoveries:[PADiscovery] = [],acknowledgements:[ReviewAcknowledgement])->Bool {
         func uses(_ brief:DailyBriefing)->Bool {brief.sources.contains{$0.kind == "whatsapp"} || brief.whatsappDependencies?.isEmpty == false}
@@ -180,6 +183,51 @@ import Foundation
         return .init(toolName:call.name,arguments:try json(args),snapshot:encoded,outline:outline,details:details)
     }
     private var memory:PAMemoryStore { evaluationMemory ?? model.assistant.memory }
+    /// Preparation only. External callers cannot invoke performApproval; that
+    /// entry point is reached only from the native UI's concrete Approve button.
+    func prepareMCPApproval(_ call: PAFunctionCall, requestID: UUID, valid: @escaping NativeWriteValidity) async throws -> AssistantActionProposal {
+        guard MCPBridgeContract.writes.contains(call.name), registration == model.chatGPT.activeID,
+              model.assistant.contextEnabled, valid() else { throw ActionFailure.message("External action preparation is unavailable.") }
+        let args = try PAToolProtocol.arguments(call)
+        let sources = call.name == "change_calendar" ? calendar.sources : reminders.sources
+        try PAToolProtocol.nativeReadPreflight(call.name, operation: args["operation"] as? String ?? "", hasSources: !sources.isEmpty, hasDetails: (args["target"] as? String).flatMap { itemDetails[$0] } != nil, target: args["target"] as? String)
+        let session = PAToolSession(model: model, human: MCPBridgeContract.approvalEvidence, humanContext: "Concrete external approval", topicID: nil, turnID: requestID)
+        session.calendar = calendar; session.reminders = reminders; session.itemDetails = itemDetails
+        var proposal = try await session.prepareApproval(call, args: args)
+        if let id = args["target"] as? String, let baseline = itemDetails[id] {
+            if baseline.kind == .event {
+                proposal.details.insert("Current event: " + baseline.start.formatted(date: .abbreviated, time: baseline.allDay ? .omitted : .shortened) + " – " + baseline.end.formatted(date: .abbreviated, time: baseline.allDay ? .omitted : .shortened), at: 0)
+            } else if let due = baseline.due {
+                proposal.details.insert("Current due date: " + due.formatted(date: .abbreviated, time: baseline.hasTime ? .shortened : .omitted), at: 0)
+            }
+        }
+        try Task.checkCancellation()
+        guard valid() else { throw ActionFailure.message("Source access changed while preparing the action. Nothing was submitted.") }
+        proposal.id = requestID
+        return proposal
+    }
+    /// The MCP host owns conversational intent and its own tool approval UI.
+    /// This typed entry point cannot be selected by a model-supplied JSON field.
+    /// Native revisions, source permissions, durable receipts and readback still apply.
+    func executeMCP(_ call: PAFunctionCall, requestID: UUID?, valid: @escaping NativeWriteValidity) async throws -> String {
+        guard MCPBridgeContract.nativeReads.contains(call.name) || MCPBridgeContract.nativeWrites.contains(call.name),
+              valid(), registration == model.chatGPT.activeID else { throw ActionFailure.message("External invocation is unavailable.") }
+        if LifeWorkspaceTools.mutations.contains(call.name), !externalWorkspaceRead { throw ActionFailure.message("Read Projects before changing project data or its display.") }
+        externalHostInvocation = true
+        externalInvocationID = requestID
+        life.externalOperationID = requestID
+        defer { externalHostInvocation = false; externalInvocationID = nil; life.externalOperationID = nil }
+        let output = try await execute(call, valid: valid)
+        if call.name == "read_life_items" { externalWorkspaceRead = true }
+        return output
+    }
+    func mcpProjectItem(_ id: UUID) throws -> LifeItem {
+        guard let issued = life.issued[id], let current = model.assistant.projects.items(registration, includeTopics: true).first(where: { $0.id == id }), issued.revision == current.revision else { throw ActionFailure.message("Read the exact current Project item before using its notes or instructions.") }
+        return current
+    }
+    private func requireConversationEvidence(_ quote: String?) throws {
+        if externalInvocationID == nil { try PAToolProtocol.evidence(quote, human: human) }
+    }
     init(model: DashboardModel, human: String, humanContext: String, topicID: UUID?, turnID: UUID, mail: MailLookup? = nil, history: [[String:String]] = [], evaluationMemory:PAMemoryStore? = nil, evaluationProjects:LifeWorkspaceStore? = nil,focusAreas:[LifeArea]? = nil,inferenceModel:String? = nil) {
         self.evaluationMemory=evaluationMemory;self.evaluationProjects=evaluationProjects;self.focusAreas=focusAreas
         self.localMail = mail ?? MailLookup(); self.history = history
@@ -203,7 +251,7 @@ import Foundation
             }
         }
         func text(_ name: String) -> String? { args[name] as? String }
-        if let quote=text("authorization"),let current=try? PAToolProtocol.conversationalAuthorization(quote,human:human,history:history) {args["authorization"]=current}
+        if externalInvocationID == nil, let quote=text("authorization"),let current=try? PAToolProtocol.conversationalAuthorization(quote,human:human,history:history) {args["authorization"]=current}
         let assistant = model.assistant
         let memoryTool = ["read_memory","save_memory","remember_context","change_memory","read_life_notebook","read_context_page","organise_memory"].contains(call.name)
         let lifeTool = LifeWorkspaceTools.names.contains(call.name)
@@ -247,11 +295,11 @@ import Foundation
         let organisationAccepted: Bool
         do {
             if preparingApprovals,Self.approvableTools.contains(call.name) {throw PAIntentFailure(reason:"Review the remaining proposed changes together.")}
-            organisationAccepted=executingApproval ? true : try await PAToolAuthorization.check(call:call,args:args,human:human,history:history,target:target,model:model,inferenceModel:inferenceModel)
+            organisationAccepted=(executingApproval || externalInvocationID != nil) ? true : try await PAToolAuthorization.check(call:call,args:args,human:human,history:history,target:target,model:model,inferenceModel:inferenceModel)
         }
         catch is CancellationError { throw CancellationError() }
         catch {
-            guard !executingApproval,Self.approvableTools.contains(call.name) else {throw error}
+            guard !executingApproval,externalInvocationID == nil,Self.approvableTools.contains(call.name) else {throw error}
             let proposal=try await prepareApproval(call,args:args)
             try Task.checkCancellation()
             guard valid() else {throw ActionFailure.message("Ownership changed while preparing approval; no change was attempted.")}
@@ -260,7 +308,7 @@ import Foundation
         }
         // The source-free check has verified the current reply's continuation of
         // the cited human request. Bind downstream evidence/receipts to this turn.
-        if let quote=args["authorization"] as? String {
+        if externalInvocationID == nil, let quote=args["authorization"] as? String {
             args["authorization"]=try PAToolProtocol.conversationalAuthorization(quote,human:human,history:history)
         }
         if !organisationAccepted,args["organisation"] as? [String:Any] != nil { args["organisation"]=NSNull();memoryNotes.append("Unsupported organisation was omitted; the validated personal fact can still be saved.") }
@@ -329,7 +377,7 @@ import Foundation
             let operation = text("operation")!
             let kind: ActionKind = call.name == "change_calendar" ? (operation == "create" ? .createEvent : operation == "delete" ? .deleteEvent : .editEvent) : (operation == "create" ? .createReminder : operation == "complete" ? .completeReminder : operation == "delete" ? .deleteReminder : .editReminder)
             let draft = ActionDraft(kind:kind,target:text("target"),destination:text("destination"),title:text("title"),due:text("due"),hasTime:args["hasTime"] as? Bool,start:text("start"),end:text("end"),allDay:args["allDay"] as? Bool,scope:text("scope"),notes:text("notes"),location:text("location"),options:try (args["options"] as? [String:Any]).map { try json($0) })
-            let result = try await model.assistantActions.performTool(draft,human:human,authorization:text("authorization"),turnID:turnID,model:model,calendar:calendar,reminders:reminders,expectedDetails:draft.target.flatMap {itemDetails[$0]},valid:valid)
+            let result = try await model.assistantActions.performTool(draft,human:human,authorization:text("authorization"),turnID:externalInvocationID ?? turnID,model:model,calendar:calendar,reminders:reminders,expectedDetails:draft.target.flatMap {itemDetails[$0]},valid:valid,authority:externalInvocationID == nil ? .conversation : .externalMCPHost)
             receipts.append(result)
             // A subsequent edit must read the new version, never reuse the old snapshot.
             if let target = draft.target { itemDetails.removeValue(forKey:target); calendar.events.removeAll { $0.id == target }; reminders.reminders.removeAll { $0.id == target } }
@@ -345,7 +393,7 @@ import Foundation
         case "continue_mail":
             guard localMail.hasMore || localMail.hasUnavailable else { return try json(["coverage":"No pending search in this turn. Start search_mail using the current thread's human query."]) }
             let retry = args["retryUnavailable"] as? Bool == true
-            guard !retry || MailLookupRules.retryRequested(human) else { throw ActionFailure.message("Failed Mail reads require an explicit request to try again.") }
+            guard !retry || externalHostInvocation || MailLookupRules.retryRequested(human) else { throw ActionFailure.message("Failed Mail reads require an explicit request to try again.") }
             let output = try await localMail.context(request:retry ? "Retry unavailable mail reads." : "Continue the email search.",model:model)
             localMail.commitAnswer(); for message in localMail.results { emails[message.id] = message; issuedLifeMail.insert(message.id) }; return output
         case "read_email":
@@ -389,7 +437,7 @@ import Foundation
             if Self.attentionUsesWhatsApp(model,brief:brief,discoveries:Array(discoveries.prefix(10)),acknowledgements:acknowledgements) {suppliedWhatsAppScope=model.whatsapp.scope(for:registration,purpose:.conversation)}
             return try json(["resolvedEmailRequests":model.emailSummaries.resolutionContext(model),"reviewAcknowledgements":try JSONSerialization.jsonObject(with:JSONEncoder().encode(acknowledgements)),"brief":brief?.message ?? "No saved brief for today", "briefCoverage":brief?.coverage ?? "Unavailable", "emailCoverage":model.emailSummaries.coverage(model),"emails":summaries.prefix(40).map { ["id":$0.1.id,"subject":$0.0.subject,"account":$0.0.account,"summary":$0.1.summary,"category":EmailHighlightRules.category($0.1,replied:$0.0.replied),"evidence":$0.1.evidence] },"suggestions":discoveries.prefix(10).map { ["id":$0.id,"kind":$0.kind,"message":$0.message,"evidence":$0.evidence] }])
         case "dismiss_suggestion":
-            try PAToolProtocol.evidence(text("authorization"),human:human)
+            try requireConversationEvidence(text("authorization"))
             let id = text("id")!, kind = text("kind")!
             guard issuedSuggestions.contains(kind + ":" + id) else { throw ActionFailure.message("Read the exact visible suggestion before dismissing it.") }
             if kind == "email" {
@@ -403,7 +451,7 @@ import Foundation
             }
             receipts.append("Item acknowledged. Undo is available in its widget."); return try json(["saved":true,"dismissed":id,"acknowledged":true,"completed":false])
         case "undo_apple_change":
-            try PAToolProtocol.evidence(text("authorization"),human:human)
+            try requireConversationEvidence(text("authorization"))
             let result = try await model.undoAssistantAppleChange(); receipts.append(result); return try json(["verified":true,"result":result])
         case "read_context_page":
             guard memory.enabled else { return try json(["available":false,"reason":"Saved memory use is paused."]) }
@@ -473,7 +521,7 @@ import Foundation
             receipts.append(receipt); return try json(["saved":true,"id":record.id.uuidString,"explicit":explicit,"result":receipt])
         case "change_memory":
             guard memory.enabled else { throw ActionFailure.message("Memory is disabled.") }
-            try PAToolProtocol.evidence(text("authorization"),human:human)
+            try requireConversationEvidence(text("authorization"))
             guard let id = UUID(uuidString:text("id")!), issuedMemory.contains(id), let record = memory.permittedRecords.first(where:{ $0.id == id && $0.registration == registration && (focusAreas != nil || MemoryRules.inScope($0,conversationID:topicID)) }) else { throw ActionFailure.message("Read the memory's permitted identity before changing it.") }
             let success: Bool
             var resultID=id

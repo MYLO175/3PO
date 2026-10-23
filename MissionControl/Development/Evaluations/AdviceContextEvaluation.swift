@@ -336,6 +336,10 @@ import Synchronization
         return checks
     }
     static func run(_ model:DashboardModel)async throws->[String:Any] {
+        if ProcessInfo.processInfo.arguments.contains("--validate-advice-context"), ProcessInfo.processInfo.arguments.contains("--mcp-workspace-only") {
+            let checks = try await ContextPagesEvaluation.run()
+            return ["checks": checks, "total": checks.count, "passed": checks.values.filter { $0 }.count, "requests": 0, "storage": "Fictional ports, isolated preferences and disposable SwiftData; normal source startup did not run"]
+        }
         guard ProcessInfo.processInfo.arguments.contains("--validate-advice-context"),model.assistant.memory.enabled,model.assistant.contextEnabled else {
             throw ActionFailure.message("This check requires the existing memory/source context settings to be on. No settings were changed.")
         }

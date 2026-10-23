@@ -24,6 +24,24 @@
   },
   "suites": [
     {
+      "id": "mcp-bridge",
+      "tier": "source-free",
+      "script": "scripts/checks/test-mcp-bridge.sh",
+      "effects": [
+        "fictional values",
+        "disposable SwiftData",
+        "temporary discovery file",
+        "private fixture preferences",
+        "loopback bridge",
+        "local MCP subprocesses"
+      ],
+      "requires": [
+        "Xcode",
+        "Node",
+        "installed MCPBridge dependencies"
+      ]
+    },
+    {
       "id": "actions",
       "tier": "source-free",
       "script": "scripts/checks/test-actions.sh",
@@ -1035,9 +1053,15 @@
     {
       "id": "guide-cache-model",
       "tier": "model",
-      "arguments": ["--validate-memory-inspection", "--prompt-cache-only", "--warm-boundary-only"],
+      "arguments": [
+        "--validate-memory-inspection",
+        "--prompt-cache-only",
+        "--warm-boundary-only"
+      ],
       "report": "missioncontrol-guide-cache-evaluation.json",
-      "effects": ["Two declared fictional configured-model requests retaining prior human/completed output history across a changed current snapshot and stable initial developer message boundary; no retries, tool execution, personal sources, native writes or setting changes"]
+      "effects": [
+        "Two declared fictional configured-model requests retaining prior human/completed output history across a changed current snapshot and stable initial developer message boundary; no retries, tool execution, personal sources, native writes or setting changes"
+      ]
     },
     {
       "id": "review-inference-guards",
@@ -1092,6 +1116,26 @@
       ],
       "requires": [
         "Xcode"
+      ]
+    },
+    {
+      "id": "app-mcp-workspace",
+      "tier": "app-memory",
+      "arguments": [
+        "--validate-advice-context",
+        "--mcp-workspace-only"
+      ],
+      "report": "missioncontrol-advice-context-evaluation.json",
+      "effects": [
+        "signed DEBUG app launch",
+        "fictional ports",
+        "disposable SwiftData",
+        "isolated fixture preferences",
+        "no inference or native source calls"
+      ],
+      "requires": [
+        "integration-owner startup/output audit",
+        "signed DEBUG candidate"
       ]
     }
   ]

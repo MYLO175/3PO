@@ -95,7 +95,7 @@ enum PAToolProtocol {
         }
         return value
     }
-    private static func schemaValue(_ value: Any, _ schema: [String:Any], depth: Int = 0) -> Bool {
+    static func schemaValue(_ value: Any, _ schema: [String:Any], depth: Int = 0) -> Bool {
         guard depth <= 8 else { return false }
         let types=schema["type"] as? [String] ?? [schema["type"] as? String ?? ""]
         if value is NSNull { return types.contains("null") }

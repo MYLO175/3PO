@@ -7,6 +7,7 @@ import SwiftData
 @MainActor enum ContextPagesEvaluation {
     static func run() async throws -> [String: Bool] {
         guard ProcessInfo.processInfo.arguments.contains("--validate-advice-context") else { throw IntegrationError.verification }
+        if ProcessInfo.processInfo.arguments.contains("--mcp-workspace-only") { return try await mcpWorkspaceChecks() }
         var checks = try consolidationChecks()
         checks.merge(try humanEvidenceChecks(), uniquingKeysWith: { $1 })
         checks.merge(try await pageReadChecks(), uniquingKeysWith: { $1 })
@@ -19,6 +20,101 @@ import SwiftData
         checks.merge(try guideOverflowChecks(), uniquingKeysWith: { $1 })
         checks.merge(try largeAncestryChecks(), uniquingKeysWith: { $1 })
         checks.merge(try await ownedMutationChecks(), uniquingKeysWith: { $1 })
+        return checks
+    }
+
+    private static func mcpWorkspaceChecks() async throws -> [String: Bool] {
+        let fixture = try ContextPagesFixture()
+        defer { fixture.clean() }
+        let model = fixture.model, owner = fixture.registration
+        let session = MCPAppToolSession(model: model)
+        var checks: [String: Bool] = [:]
+        func call(_ name: String, _ fields: [String: Any] = [:]) async throws -> [String: Any] {
+            var args = fields
+            let id = MCPBridgeContract.writes.contains(name) ? UUID() : nil
+            if let id { args["requestID"] = id.uuidString }
+            let request = try MCPBridgeContract.call(name: name, arguments: args)
+            return try object(await session.execute(request, requestID: id, valid: { true }))
+        }
+        func refused(_ name: String, _ fields: [String: Any]) async -> Bool {
+            do { _ = try await call(name, fields); return false } catch { return true }
+        }
+        func projects() async throws -> [String: Any] {
+            try await call("read_life_items", ["query": "", "root": NSNull(), "unfinished": false, "dueBefore": NSNull(), "maxMinutes": NSNull(), "deleted": false])
+        }
+        let guide = try await call("about_3po")
+        checks["MCP live orientation explains host permission and separate app records"] = (guide["instructions"] as? String)?.contains("normal tool approval controls") == true && (guide["purpose"] as? String)?.contains("Projects") == true
+        let batch: [[String: Any]] = [
+            ["title": "Fictional MCP optics", "kind": "space", "parent": NSNull(), "notes": "Original purpose", "due": NSNull(), "estimateMinutes": NSNull(), "areas": ["studies"]],
+            ["title": "Fictional MCP report", "kind": "task", "parent": "batch:0", "notes": "Draft the report", "due": NSNull(), "estimateMinutes": NSNull(), "areas": ["studies"]]
+        ]
+        checks["MCP project writes require a structure read"] = await refused("create_life_items", ["items": batch])
+        _ = try await projects()
+        let created = try await call("create_life_items", ["items": batch])
+        let items = created["items"] as! [[String: Any]], spaceID = items[0]["id"] as! String
+        checks["MCP host authority creates an atomic hierarchy without app inference"] = created["saved"] as? Bool == true && items.count == 2 && fixture.provider.calls == 0
+        let notes = try await call("read_project_notes", ["id": spaceID])
+        let added = try await call("change_project_note", ["id": spaceID, "revision": notes["revision"]!, "noteID": NSNull(), "text": "A second note card"])
+        checks["MCP edits the real additional project note cards"] = added["saved"] as? Bool == true && model.assistant.projects.items(owner).first { $0.id.uuidString == spaceID }?.additionalNotes?.first?.text == "A second note card"
+        checks["MCP refuses stale project note edits"] = await refused("change_project_note", ["id": spaceID, "revision": notes["revision"]!, "noteID": NSNull(), "text": "Should never save"])
+        _ = try await projects()
+        let latestNotes = try await call("read_project_notes", ["id": spaceID])
+        _ = try await call("change_project_note", ["id": spaceID, "revision": latestNotes["revision"]!, "noteID": spaceID, "text": "Revised original note"])
+        checks["MCP original-note edits preserve other cards and hierarchy"] = model.assistant.projects.items(owner).first { $0.id.uuidString == spaceID }?.additionalNotes?.first?.text == "A second note card" && model.assistant.projects.items(owner).count == 2
+        _ = try await projects()
+        for target in ["assistant", "projects", "reminders", "brief", "review", "topic:studies", "space:" + spaceID] {
+            let prior = try await call("read_instructions", ["target": target])
+            let saved = try await call("change_instructions", ["target": target, "revision": prior["revision"]!, "text": "Fictional host-approved guidance for " + target])
+            let current = try await call("read_instructions", ["target": target])
+            checks["MCP saves the canonical instruction owner for " + target] = saved["saved"] as? Bool == true && current["text"] as? String == "Fictional host-approved guidance for " + target
+            checks["MCP refuses stale instruction revision for " + target] = await refused("change_instructions", ["target": target, "revision": prior["revision"]!, "text": "Stale text"])
+        }
+        let first = try await call("read_instructions", ["target": "assistant"])
+        _ = try await call("change_instructions", ["target": "assistant", "revision": first["revision"]!, "text": "A second saved instruction version"])
+        let instructionID = ContextPage.stableID(registration: owner, kind: .instruction, key: "assistant")
+        checks["MCP feature instructions retain immutable history"] = model.contextPages.history(id: instructionID, registration: owner).count == 2
+        session.tools.calendar.sources = [.init(id: "fictional-mcp-calendar", title: "Fictional MCP Calendar", account: "Fictional", writable: true)]
+        let calendar = try await call("read_instructions", ["target": "calendar:fictional-mcp-calendar"])
+        _ = try await call("change_instructions", ["target": "calendar:fictional-mcp-calendar", "revision": calendar["revision"]!, "text": "Fictional course sessions only"])
+        checks["MCP calendar guidance uses the actual human-owned purpose page"] = model.contextPages.pages(registration: owner).contains { $0.kind == .calendarPurpose && $0.markdown == "Fictional course sessions only" }
+        let note = try await call("change_context_note", ["operation": "create", "id": NSNull(), "revision": NSNull(), "title": "Fictional context note", "markdown": "First human-owned text"])
+        let noteID = note["id"] as! String
+        let noteRead = try await call("read_context_notes", ["id": noteID])
+        let page = noteRead["page"] as! [String: Any]
+        _ = try await call("change_context_note", ["operation": "edit", "id": noteID, "revision": page["revision"]!, "title": "Fictional context note", "markdown": "Second human-owned text"])
+        checks["MCP context edits preserve version history"] = model.contextPages.history(id: noteID, registration: owner).count == 2
+        checks["MCP refuses stale context edits"] = await refused("change_context_note", ["operation": "edit", "id": noteID, "revision": page["revision"]!, "title": "Stale", "markdown": "Stale"])
+        _ = try await call("read_context_notes", ["id": noteID])
+        let latest = model.contextPages.page(id: noteID, registration: owner)!
+        _ = try await call("change_context_note", ["operation": "forget", "id": noteID, "revision": latest.revision.uuidString, "title": NSNull(), "markdown": NSNull()])
+        checks["MCP explicit context Forget removes only its selected human note"] = model.contextPages.page(id: noteID, registration: owner) == nil && model.contextPages.page(id: instructionID, registration: owner) != nil
+        let generated = try model.contextPages.save(.init(registration: owner, kind: .overview, key: "everyday", owner: .generated, title: "Fictional generated page", markdown: "Generated data", references: [model.contextProjectIdentity(model.assistant.projects.items(owner).first { $0.id.uuidString == spaceID }!)]), expectedRevision: nil)
+        _ = try await call("read_context_notes", ["id": generated.id])
+        checks["MCP refuses generated-page replacement"] = await refused("change_context_note", ["operation": "edit", "id": generated.id, "revision": generated.revision.uuidString, "title": "Overwrite", "markdown": "Must not save"])
+        let fact = try await call("save_memory", ["text": "Fictional MCP preference for morning optics", "kind": "preference", "evidence": "Please remember that I prefer morning optics"])
+        let factID = fact["id"] as! String
+        _ = try await call("read_memory_records", ["query": "morning optics", "state": "current", "offset": 0])
+        let correction = try await call("change_memory", ["id": factID, "operation": "correct", "text": "Fictional MCP preference for afternoon optics", "evidence": "Actually I prefer afternoon optics"])
+        let correctedID = correction["id"] as! String
+        checks["MCP memory correction preserves original wording and honest external provenance"] = model.assistant.memory.records.first { $0.id.uuidString == factID }?.supersededBy?.uuidString == correctedID && model.assistant.memory.records.first { $0.id.uuidString == correctedID }?.provenance.contains("external MCP") == true
+        checks["MCP refuses stale memory targets after correction"] = await refused("change_memory", ["id": factID, "operation": "forget", "text": NSNull(), "evidence": "Forget that old fact"])
+        _ = try await call("read_memory_records", ["query": "afternoon optics", "state": "current", "offset": 0])
+        _ = try await call("change_memory", ["id": correctedID, "operation": "resolve", "text": NSNull(), "evidence": "That commitment is finished"])
+        let resolved = try await call("read_memory_records", ["query": "afternoon optics", "state": "resolved", "offset": 0])
+        _ = try await call("change_memory", ["id": correctedID, "operation": "reopen", "text": NSNull(), "evidence": "Reopen that commitment"])
+        checks["MCP can inspect and reopen an explicitly resolved memory"] = (resolved["records"] as? [[String: Any]])?.count == 1 && model.assistant.memory.records.first { $0.id.uuidString == correctedID }?.resolved == nil
+        _ = try await call("read_memory_records", ["query": "afternoon optics", "state": "current", "offset": 0])
+        _ = try await call("change_memory", ["id": correctedID, "operation": "forget", "text": NSNull(), "evidence": "Forget this optics preference"])
+        checks["MCP memory Forget removes the selected correction lineage"] = !model.assistant.memory.records.contains { [$0.id.uuidString, $0.supersedes?.uuidString ?? ""].contains(factID) }
+        let question = try model.contextQuestions.offer(registration: owner, projectID: UUID(uuidString: spaceID)!, identity: model.contextProjectIdentity(model.assistant.projects.items(owner).first { $0.id.uuidString == spaceID }!), question: "What is this fictional optics space for?")!
+        let inbox = try await call("read_review_inbox")
+        let row = (inbox["items"] as! [[String: Any]]).first { $0["id"] as? String == "project:" + question.id }!
+        _ = try await call("dismiss_review_item", ["id": row["id"]!, "revision": row["revision"]!])
+        checks["MCP Review dismissal acknowledges a current exact question without task completion"] = model.contextQuestions.questions(registration: owner, includeFinished: true).first { $0.id == question.id }?.status == .dismissed && model.assistant.projects.items(owner).first { $0.id.uuidString == items[1]["id"] as? String }?.status == .planned
+        checks["MCP Review rejects a repeated or stale acknowledgement"] = await refused("dismiss_review_item", ["id": row["id"]!, "revision": row["revision"]!])
+        model.assistant.memory.enabled = false
+        checks["MCP does not expose saved memory after use is withdrawn"] = await refused("read_memory_records", ["query": NSNull(), "state": "all", "offset": 0])
+        checks["MCP workspace operations make no inference or native-source calls"] = fixture.provider.calls == 0 && fixture.sources.reads == 0 && model.aiUsage.state.records.isEmpty
         return checks
     }
 

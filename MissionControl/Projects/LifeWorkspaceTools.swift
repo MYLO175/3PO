@@ -13,6 +13,7 @@ import CryptoKit
     private var issuedWidgets: [UUID:WidgetPlacement] = [:]
     private let evaluationStore: LifeWorkspaceStore?
     private var store: LifeWorkspaceStore { evaluationStore ?? model.assistant.projects }
+    var externalOperationID: UUID?
     private var approvalReferenceIDs = Set<UUID>()
     struct Capture: Codable {
         var issued: [UUID:LifeItem]
@@ -27,7 +28,7 @@ import CryptoKit
     }
     private func json(_ value: Any) throws -> String { String(data: try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]), encoding: .utf8)! }
     private func operationKey(_ call: PAFunctionCall, args: [String:Any]) throws -> String {
-        let canonical = try JSONSerialization.data(withJSONObject: ["name":call.name, "arguments":args, "registration":registration, "topic":topic?.uuidString ?? "shared", "turn":turnID.uuidString], options: [.sortedKeys])
+        let canonical = try JSONSerialization.data(withJSONObject: ["name":call.name, "arguments":args, "registration":registration, "topic":topic?.uuidString ?? "shared", "turn":(externalOperationID ?? turnID).uuidString], options: [.sortedKeys])
         return "life:" + SHA256.hash(data: canonical).map { String(format:"%02x", $0) }.joined()
     }
     private func hasReceipt(_ call: PAFunctionCall, args: [String:Any]) throws -> Bool {

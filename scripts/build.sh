@@ -15,6 +15,9 @@ print -- "Build log: $MISSIONCONTROL_BUILD_LOG"
 if [[ ! -d WhatsAppBridge/node_modules ]]; then
   npm --cache "$MISSIONCONTROL_BUILD_ROOT/npm-cache" ci --ignore-scripts --prefix WhatsAppBridge
 fi
+if [[ ! -d MCPBridge/node_modules ]]; then
+  npm --cache "$MISSIONCONTROL_BUILD_ROOT/npm-cache" ci --ignore-scripts --prefix MCPBridge
+fi
 python3 scripts/packaging/patch-baileys-readonly.py
 python3 scripts/packaging/package-whatsapp-runtime.py
 python3 scripts/assets/build-icon.py

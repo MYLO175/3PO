@@ -6,6 +6,7 @@ enum EvaluationLaunchGuard {
     enum Decision: Equatable { case proceed; case exit(code: Int32, output: String) }
     static let protocolVersion = 1
     static let modes: [[String]] = [
+        ["--validate-advice-context", "--mcp-workspace-only"],
         ["--validate-review-inbox","--working-context-model"],
         ["--validate-review-inbox","--working-context-model","--context-pages-only"],
         ["--validate-memory-inspection", "--prompt-cache-only", "--warm-boundary-only"],

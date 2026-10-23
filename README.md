@@ -30,6 +30,7 @@
 - **See action outcomes.** Accepted never-started Review jobs run when idle; Activity shows five recent tasks. Verified success appears green for six seconds, with unresolved questions and failures retaining attention.
 - **Keep useful knowledge.** Inspect facts, corrections and evidence; preview which memories a question retrieves; connect memory to your existing projects.
 - **Make supported changes.** Native Calendar/Reminders operations and local project edits check exact identities, current revisions and saved results.
+- **Connect external assistants.** An optional local MCP bridge exposes Calendar and Reminders to Claude Desktop or ChatGPT through Secure MCP Tunnel. Review and approve submitted changes in 3PO. [Connection setup](MCPBridge/README.md).
 
 Read the [feature guide](docs/guides/FEATURES.md) for controls, examples and the limits of each feature.
 
