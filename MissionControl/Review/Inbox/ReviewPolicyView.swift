@@ -32,7 +32,7 @@ struct ReviewPolicyView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Your Review guidance").font(.headline)
-                    TextEditor(text: $text).font(.body).frame(minHeight: 210).padding(6).border(Color.secondary.opacity(0.25)).accessibilityLabel("Review policy Markdown")
+                    TextEditor(text: $text).font(.body).frame(height: 300).padding(6).border(Color.secondary.opacity(0.25)).accessibilityLabel("Review guidance text")
                     HStack {
                         Text("Plain text or Markdown · \(text.count)/\(ReviewPolicyRules.textLimit)").font(.caption).foregroundStyle(.secondary)
                         Spacer()
