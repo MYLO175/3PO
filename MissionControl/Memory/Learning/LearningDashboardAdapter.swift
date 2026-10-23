@@ -40,6 +40,10 @@ extension WhatsAppService: WhatsAppLearningReading {}
             guard let self else { return false }
             return !self.contextQuestions.questions(registration: registration, includeFinished: true).contains { BriefingRules.day($0.created) == BriefingRules.day(now) }
         }
+        runtime.instructionTargets = { [weak self] _ in
+            guard let self else { return [] }
+            return self.contextLearningTargets(registration: self.chatGPT.activeID)
+        }
         return runtime
     }
 }

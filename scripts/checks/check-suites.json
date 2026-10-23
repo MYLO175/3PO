@@ -1137,6 +1137,19 @@
         "integration-owner startup/output audit",
         "signed DEBUG candidate"
       ]
+    },
+    {
+      "id": "memory-consolidation-model",
+      "tier": "model",
+      "arguments": [
+        "--validate-review-inbox",
+        "--working-context-model",
+        "--memory-consolidation-only"
+      ],
+      "report": "missioncontrol-working-context-model-evaluation.json",
+      "effects": [
+        "One configured subscription request on invented human dialogue, app outcomes and exact feature/calendar targets. Production learning prompt/decoder; no personal source content or saved changes; no retry."
+      ]
     }
   ]
 }

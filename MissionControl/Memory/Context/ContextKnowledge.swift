@@ -70,15 +70,54 @@ import EventKit
                                  purpose: purpose, mailAccounts: mailAccounts, whatsappReady: whatsappReady)
         }
     }
-    func featureInstruction(_ feature: ContextFeature, registration: String) -> (text: String, reference: ContextPageReference, available: Bool) {
+    func learnedInstructionText(_ scope: String, registration: String) -> String {
+        var lines: [String] = [], bytes = 0
+        for memory in assistant.memory.instructionPreferences(scope, registration: registration) {
+            let line = "- " + memory.text
+            guard bytes + line.utf8.count <= 4000 else { continue }
+            lines.append(line); bytes += line.utf8.count
+        }
+        return lines.isEmpty ? "" : "Learned from your conversation (your explicit instructions take priority):\n" + lines.joined(separator: "\n")
+    }
+    func featureInstruction(_ feature: ContextFeature, registration: String) -> (text: String, reference: ContextPageReference, available: Bool, baseText: String) {
         let id = ContextPage.stableID(registration: registration, kind: .instruction, key: feature.rawValue)
         let identity = contextPages.identityStatus(id: id, registration: registration)
         guard identity == .missing || identity == .available else {
-            return ("", .init(kind: "instruction", key: feature.rawValue, revision: identity == .preserved ? "preserved" : "unavailable"), false)
+            return ("", .init(kind: "instruction", key: feature.rawValue, revision: identity == .preserved ? "preserved" : "unavailable"), false, "")
         }
         let saved = contextPages.page(id: id, registration: registration)
         let text = saved?.owner == .human ? saved!.markdown : feature == .assistant ? assistant.preferences : feature.defaultText
-        return (text, .init(kind: "instruction", key: feature.rawValue, revision: saved?.revision.uuidString ?? ContextKnowledgeRules.fingerprint(text)), true)
+        let learned = learnedInstructionText(feature.rawValue, registration: registration)
+        let effective = learned.isEmpty ? text : text + "\n\n" + learned
+        return (effective, .init(kind: "instruction", key: feature.rawValue,
+            revision: learned.isEmpty ? saved?.revision.uuidString ?? ContextKnowledgeRules.fingerprint(text) : ContextKnowledgeRules.fingerprint((saved?.revision.uuidString ?? "default") + effective)), true, text)
+    }
+    func contextLearningTargets(registration: String) -> [MemoryInstructionTarget] {
+        guard registration == chatGPT.activeID, contextPages.isReadable else { return [] }
+        var targets: [MemoryInstructionTarget] = ContextFeature.allCases.compactMap { feature in
+            let value = featureInstruction(feature, registration: registration)
+            guard value.available else { return nil }
+            return .init(id: feature.rawValue, scope: feature.rawValue, title: feature.title, text: value.text, revision: value.reference.revision)
+        }
+        if briefings.writingPromptReadable {
+            let text = briefings.writingPrompt(registration).text + "\n" + learnedInstructionText("brief", registration: registration)
+            targets.append(.init(id: "brief", scope: "brief", title: "Brief instructions", text: text, revision: briefInstructionRevision(registration)))
+        }
+        if emailSummaries.reviewPolicies.readable {
+            let text = emailSummaries.policy(registration).text + "\n" + learnedInstructionText("review", registration: registration)
+            targets.append(.init(id: "review", scope: "review", title: "Review preferences", text: text,
+                revision: ContextKnowledgeRules.fingerprint(ContextKnowledgeRules.json(emailSummaries.policy(registration).input) + text)))
+        }
+        if assistant.contextEnabled && contextCalendarAllowed {
+            for source in calendarData.sources.filter({ !assistant.excludedCalendars.contains($0.id) }).prefix(32) {
+                let key = calendarPageKey(source), scope = "calendar:" + calendarPageKey(source)
+                let page = contextPages.page(id: ContextPage.stableID(registration: registration, kind: .calendarPurpose, key: key), registration: registration)
+                let text = (page?.owner == .human ? page!.markdown : "Purpose not described") + "\n" + learnedInstructionText(scope, registration: registration)
+                targets.append(.init(id: "calendar_" + String(targets.count), scope: scope, title: source.label + " (" + source.account + ")", text: text,
+                    revision: calendarGuideRevision(source, registration: registration)))
+            }
+        }
+        return targets
     }
     /// Current eligibility is evaluated before every projection, including after source withdrawal.
     func contextKnowledge(registration: String, topic: UUID? = nil, includeTopics: Bool = true,
@@ -162,7 +201,8 @@ import EventKit
                 if key.hasPrefix("human:") { referencedHuman.insert(String(key.dropFirst(6))) }
                 if key.hasPrefix("action:") { referencedActions.insert(String(key.dropFirst(7))) }
             }
-            let retainedTurns = Array(turns.prefix(32)) + turns.dropFirst(32).filter { referencedHuman.contains($0.id.uuidString) }
+            let pending = purpose == .maintenance || purpose == .inspection ? memoryLearning.pendingTurnIDs(assistant) : []
+            let retainedTurns = Array(turns.prefix(32)) + turns.dropFirst(32).filter { referencedHuman.contains($0.id.uuidString) || pending.contains($0.id.uuidString) }
             var seen = Set<UUID>()
             for turn in retainedTurns where seen.insert(turn.id).inserted {
                 let text = String(turn.content.prefix(1800))
@@ -172,7 +212,7 @@ import EventKit
             let actions = assistant.conversations.flatMap(\.turns).filter {
                 $0.completed && $0.actionResult?.succeeded == true && (includeTopics || $0.contextID == nil || $0.contextID == topic)
             }.sorted { ($0.created ?? .distantPast) > ($1.created ?? .distantPast) }
-            let retainedActions = Array(actions.prefix(24)) + actions.dropFirst(24).filter { referencedActions.contains($0.id.uuidString) }
+            let retainedActions = Array(actions.prefix(24)) + actions.dropFirst(24).filter { referencedActions.contains($0.id.uuidString) || pending.contains($0.id.uuidString) }
             seen.removeAll()
             for turn in retainedActions where seen.insert(turn.id).inserted {
                 let canonical = ContextKnowledgeRules.json(["confirmedActions": turn.actionResult!.confirmedActions, "receipts": turn.actionResult!.receipts] as [String: Any])
@@ -350,7 +390,8 @@ import EventKit
             else if pageID == "instructions:brief" {
                 guard briefings.writingPromptReadable else { return .init(text: ContextKnowledgeRules.json(["unavailable": "Saved brief instructions could not be read. Original data is preserved."])) }
                 let prompt = briefings.writingPrompt(registration)
-                let excerpt = ContextKnowledgeRules.excerpt(prompt.text, offset: pageOffset, limit: 4000)
+                let effective = prompt.text + "\n\n" + learnedInstructionText("brief", registration: registration)
+                let excerpt = ContextKnowledgeRules.excerpt(effective, offset: pageOffset, limit: 4000)
                 payload["instructions"] = ["purpose": "Brief writing preferences", "markdown": excerpt.text, "nextOffset": excerpt.next.map(String.init) ?? "end", "totalCharacters": String(excerpt.total)]
                 supplied.append(.init(kind: "instruction", key: "brief", revision: briefInstructionRevision(registration)))
             }
@@ -531,7 +572,7 @@ import EventKit
 
     private func briefInstructionRevision(_ registration: String) -> String {
         let prompt = briefings.writingPrompt(registration)
-        return (prompt.revision?.uuidString ?? "default") + ":" + ContextKnowledgeRules.fingerprint(prompt.text)
+        return (prompt.revision?.uuidString ?? "default") + ":" + ContextKnowledgeRules.fingerprint(prompt.text + learnedInstructionText("brief", registration: registration))
     }
     private func reviewInstructionRevision(_ registration: String) -> String {
         ContextKnowledgeRules.fingerprint(ContextKnowledgeRules.json(emailSummaries.policy(registration).input))
@@ -594,7 +635,7 @@ import EventKit
     private func calendarGuideRevision(_ source: SourceOption, registration: String) -> String {
         let id = ContextPage.stableID(registration: registration, kind: .calendarPurpose, key: calendarPageKey(source))
         let page = contextPages.page(id: id, registration: registration)
-        return ContextKnowledgeRules.fingerprint(ContextKnowledgeRules.json(["identity": calendarPageKey(source), "label": source.label, "writable": String(source.writable), "page": page?.revision.uuidString ?? "undescribed"]))
+        return ContextKnowledgeRules.fingerprint(ContextKnowledgeRules.json(["identity": calendarPageKey(source), "label": source.label, "writable": String(source.writable), "page": page?.revision.uuidString ?? "undescribed", "learned": learnedInstructionText("calendar:" + calendarPageKey(source), registration: registration)]))
     }
     /// Previously recorded human guidance remains usable without creating a second editable authority.
     /// Generated summaries and source interpretations cannot supply calendar-purpose instructions.
@@ -607,7 +648,7 @@ import EventKit
             .filter { record in
                 guard let id = record.memoryID else { return true }
                 guard let memory = assistant.memory.records.first(where: { $0.id == id }) else { return false }
-                return memory.source == nil && memory.reviewPreference != true && (memory.explicit || memory.certainty == .stated)
+                return memory.source == nil && memory.effectiveInstructionScope == nil && (memory.explicit || memory.certainty == .stated)
             }
             .sorted { ($0.date, $0.reference.contextKey) > ($1.date, $1.reference.contextKey) }
         var selected: [ContextKnowledgeRecord] = []
@@ -635,7 +676,8 @@ import EventKit
             let id = ContextPage.stableID(registration: registration, kind: .calendarPurpose, key: calendarPageKey(source))
             let page = contextPages.page(id: id, registration: registration)
             let purpose = page?.owner == .human ? page!.markdown : "Not described"
-            let row: [String: Any] = ["id": source.id, "label": source.label, "account": source.account, "providerID": source.providerID ?? "", "writable": source.writable, "purpose": String(purpose.prefix(1200)), "purposeTruncated": purpose.count > 1200]
+            let learned = learnedInstructionText("calendar:" + calendarPageKey(source), registration: registration)
+            let row: [String: Any] = ["id": source.id, "label": source.label, "account": source.account, "providerID": source.providerID ?? "", "writable": source.writable, "purpose": String(purpose.prefix(1200)), "purposeTruncated": purpose.count > 1200, "learnedGuidance": learned]
             guard ContextKnowledgeRules.json(payload(rows + [row])).utf8.count <= 20_000 else { continue }
             rows.append(row)
             captured.append(source); versions["calendar-guide:" + source.id] = calendarGuideRevision(source, registration: registration)

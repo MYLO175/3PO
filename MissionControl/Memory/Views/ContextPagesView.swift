@@ -279,6 +279,7 @@ struct ContextPagesView: View {
                 if model.briefings.writingPromptReadable {
                     Button("Edit brief instructions…") { instructions = .init(registration: registration, brief: model.briefings.writingPrompt(registration)) }
                     ContextMarkdownBody(markdown: model.briefings.writingPrompt(registration).text)
+                    learnedGuidance("brief")
                 } else {
                     Label("Saved brief instructions could not be read. Original data is preserved; no default has replaced your writing.", systemImage: "exclamationmark.triangle")
                         .font(.callout).foregroundStyle(.orange)
@@ -291,6 +292,7 @@ struct ContextPagesView: View {
                 if model.emailSummaries.reviewPolicies.readable {
                     Button("Open Review guidance…") { instructions = .init(registration: registration) }
                     ContextMarkdownBody(markdown: model.emailSummaries.policy(registration).text)
+                    learnedGuidance("review")
                 } else {
                     Label(model.emailSummaries.reviewPolicies.error ?? "Saved Review guidance could not be read. Original data is preserved.", systemImage: "exclamationmark.triangle")
                         .font(.callout).foregroundStyle(.orange)
@@ -426,7 +428,7 @@ struct ContextPagesView: View {
         let id = ContextPage.stableID(registration: registration, kind: .instruction, key: feature.rawValue)
         let page = pages.first { $0.id == id }
         let available = model.contextPages.identityStatus(id: id, registration: registration) != .preserved && (page.map { ContextPagesAccess.eligible($0, model: model, registration: registration, records: records) } ?? true)
-        let currentText = model.featureInstruction(feature, registration: registration).text
+        let currentText = model.featureInstruction(feature, registration: registration).baseText
         return VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text(feature.title).font(.title2.weight(.semibold))
@@ -441,8 +443,33 @@ struct ContextPagesView: View {
                     Button("Edit instructions…") { editor = .feature(feature, page: page, registration: registration, currentText: currentText) }
                     Button("Use default…") { editor = .feature(feature, page: page, registration: registration, useDefault: true) }
                 }.disabled(!model.contextPages.canSave)
+                learnedGuidance(feature.rawValue)
             } else {
                 Label("Saved instructions are unavailable. Their original text is preserved.", systemImage: "lock.doc").foregroundStyle(.secondary)
+            }
+        }
+    }
+    @ViewBuilder private func learnedGuidance(_ scope: String) -> some View {
+        let memories = model.assistant.memory.records.filter { $0.registration == registration && $0.source == nil &&
+            $0.conversationID == nil && $0.supersededBy == nil && $0.effectiveInstructionScope == scope }
+            .sorted { $0.created > $1.created }
+        if !memories.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Learned guidance").font(.headline)
+                ForEach(memories) { memory in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(memory.text).textSelection(.enabled)
+                        HStack {
+                            Text(memory.retiredAt != nil ? "Disabled" : MemoryRules.needsReview(memory) ? "Needs review" : memory.certainty == .inferred ? "Inferred from your words" : "From your words")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            Button(memory.retiredAt == nil ? "Disable" : "Restore") {
+                                _ = model.assistant.memory.retire(memory.id, retired: memory.retiredAt == nil, expectedRevision: model.assistant.memory.revision)
+                            }.controlSize(.small)
+                        }
+                    }
+                }
+                Button("Edit preferences and inspect history…") { showingSupportingFacts = true }.buttonStyle(.link)
             }
         }
     }
@@ -538,6 +565,7 @@ struct ContextPagesView: View {
                                     Button("Forget purpose…", role: .destructive) { forgetting = page }.controlSize(.small).disabled(!model.contextPages.canSave)
                                 }
                             } else { Text(preserved ? "This saved guide needs a compatible version of 3PO. Its original text is preserved." : guidance.isEmpty ? "Not described. 3PO will not infer a purpose from the calendar's name." : "No separate purpose note. 3PO also uses the existing calendar context above.").font(.callout).foregroundStyle(.secondary) }
+                            learnedGuidance("calendar:" + model.calendarPageKey(source))
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }

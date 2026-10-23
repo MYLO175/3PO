@@ -142,6 +142,25 @@ private final class ObservationCounter:@unchecked Sendable {
         }
 
         do {
+            let p = FictionalInference(), context = FictionalContext(), value = service(p,try open("learning-baseline"))
+            p.activeID = ""
+            var beforeEvidence: [Int] = []
+            value.prepareMemoryLearning = { beforeEvidence.append(value.learningTurns().count) }
+            p.activeID = "signed-in-after-startup"
+            for index in 0..<10 {
+                p.replies = [final("A concise answer.")]
+                check(value.send(runtime:context.runtime(),topicID:nil,prompt:"A normal saved message \(index)."),"A newly signed-in account accepts chat")
+                await until { !value.busy }
+            }
+            check(beforeEvidence == Array(0..<10) && value.learningTurns().count == 10,"Learning baseline is prepared before the first new human turn, so a later heartbeat cannot skip new messages")
+            p.activeID = "switched-account"
+            p.replies = [final("An answer for the other account.")]
+            check(value.send(runtime:context.runtime(),topicID:nil,prompt:"My first message in this account."),"Switched account accepts its own chat")
+            await until { !value.busy }
+            check(beforeEvidence.last == 0 && value.learningTurns().count == 1,"The baseline hook follows account ownership before recording evidence")
+        }
+
+        do {
             let p=FictionalInference(),c=FictionalContext(),store=try open("lookup-history"),value=service(p,store)
             let page=PAFunctionCall(id:"lookup-page",name:"read_context_page",namespace:"pa",arguments:"{\"id\":null,\"query\":\"Orion design\",\"offset\":null}")
             let mail=PAFunctionCall(id:"lookup-mail",name:"search_mail",namespace:"pa",arguments:"{\"terms\":[\"Orion\",\"review\"],\"start\":\"2026-10-01\",\"end\":\"2026-10-22\",\"folders\":[\"inbox\",\"sent\"]}")
