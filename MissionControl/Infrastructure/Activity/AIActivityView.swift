@@ -29,8 +29,9 @@ struct AIActivityPill: View {
         let now=max(outcomeClock,.now)
         let displayed=AIActivityPillRules.displayed(saved,current:active,registration:registration,now:now)
         let confirmation=store.error == nil ? AIActivityPillRules.feedback(feedback,displayed:displayed,registration:registration,now:now) : nil
-        let expiry=confirmation?.expiry ?? displayed.flatMap{$0.state == .succeeded ? $0.date.addingTimeInterval(AIActivityPillRules.successDuration) : nil}
-        let attention = saved.contains{AIActivitySummary.includesOutcome($0) && $0.needsAttention} || store.error != nil
+        let successExpiry=displayed.flatMap{$0.state == .succeeded ? $0.date.addingTimeInterval(AIActivityPillRules.successDuration) : nil}
+        let expiry=[confirmation?.expiry,successExpiry,AIActivitySummary.nextExpiry(saved,registration:registration,now:now)].compactMap{$0}.min()
+        let attention = saved.contains{$0.registration == registration && AIActivitySummary.includesNotification($0,now:now) && $0.needsAttention} || store.error != nil
         let dismissible=active == nil && store.error == nil && displayed?.needsAttention == true
             ? originals.first{$0.id == displayed?.id && $0.needsAttention} : nil
         let success=confirmation != nil || active == nil && displayed?.state == .succeeded
@@ -78,7 +79,7 @@ struct AIActivityPill: View {
             .accessibilityLabel("AI activity")
             .accessibilityValue(accessibilityStatus)
             .popover(isPresented: $activityOpen, arrowEdge: .bottom) {
-                AIActivityView(store: store, registration: registration, current: active, palette: palette,
+                AIActivityView(store: store, registration: registration, current: active, palette: palette, now:now,
                                openChat: { activityOpen = false; openChat() },
                                openDestination: { activityOpen = false; openDestination($0) }, isVisible: isVisible,relatedDestinations:relatedDestinations,presentation:presentation)
             }
@@ -92,7 +93,7 @@ struct AIActivityPill: View {
                 .disabled(store.readOnly)
                 .help("Dismiss this alert")
                 .accessibilityLabel(record.kind == .heartbeat ? "Dismiss heartbeat alert" : "Dismiss AI activity alert")
-                .accessibilityHint("The saved outcome remains in Activity.")
+                .accessibilityHint("Removes this notification without deleting its saved outcome.")
                 .accessibilityIdentifier("aiActivityDismissAlert")
             }
         }
@@ -118,6 +119,7 @@ struct AIActivityView: View {
     var registration: String
     var current: AIActivityRecord?
     var palette: WorkspacePalette
+    var now:Date
     var openChat: () -> Void
     var openDestination: (AIActivityDestination) -> Void
     var isVisible: (AIActivityRecord) -> Bool = { _ in true }
@@ -128,7 +130,7 @@ struct AIActivityView: View {
     private var visibleCurrent: AIActivityRecord? { current.flatMap { $0.kind != .heartbeat && $0.registration == registration && isVisible($0) ? $0 : nil } }
     private var records: [AIActivityRecord] {
         let saved = store.records(registration).filter{isVisible($0)}.map(presentation)
-        return AIActivitySummary.recent(saved,current:visibleCurrent,registration:registration)
+        return AIActivitySummary.recent(saved,current:visibleCurrent,registration:registration,now:now)
     }
     var body: some View {
         let shown=records
@@ -176,7 +178,7 @@ struct AIActivityView: View {
                 if record.needsAttention,let original=store.state.records.first(where:{$0.registration == registration && $0.id == record.id && $0.needsAttention}) {
                     Button("Dismiss") { _=store.dismiss(original,registration:registration) }
                         .controlSize(.small).disabled(store.readOnly)
-                        .help("Dismiss this alert; keep its saved outcome in Activity")
+                        .help("Remove this notification without deleting its saved outcome")
                         .accessibilityLabel(record.kind == .heartbeat ? "Dismiss heartbeat alert" : "Dismiss AI activity alert")
                         .accessibilityIdentifier("aiActivityDismissAlert-"+record.id)
                 }

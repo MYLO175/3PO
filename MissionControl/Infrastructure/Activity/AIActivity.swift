@@ -171,7 +171,7 @@ enum AIActivityPillRules {
     }
     static func displayed(_ records:[AIActivityRecord],current:AIActivityRecord?,registration:String,now:Date = .now)->AIActivityRecord? {
         if let current,current.registration == registration,current.state == .running {return current}
-        let outcomes=records.filter{$0.registration == registration && AIActivitySummary.includesOutcome($0)}.sorted {
+        let outcomes=records.filter{$0.registration == registration && AIActivitySummary.includesOutcome($0) && now < AIActivitySummary.expiry($0)}.sorted {
             $0.date != $1.date ? $0.date > $1.date : $0.id < $1.id
         }
         if let attention=outcomes.first(where:{$0.needsAttention}) {return attention}
@@ -184,6 +184,14 @@ enum AIActivityPillRules {
 
 /// Presentation only: retain all stored history and original result prose.
 enum AIActivitySummary {
+    static let notificationDuration:TimeInterval = 24 * 60 * 60
+    static func expiry(_ record:AIActivityRecord)->Date { record.date.addingTimeInterval(notificationDuration) }
+    static func includesNotification(_ record:AIActivityRecord,now:Date)->Bool {
+        includesOutcome(record) && !record.acknowledged && ![.replied,.resolved].contains(record.state) && now < expiry(record)
+    }
+    static func nextExpiry(_ records:[AIActivityRecord],registration:String,now:Date)->Date? {
+        records.filter{$0.registration == registration && includesNotification($0,now:now)}.map(expiry).min()
+    }
     // Heartbeat success and sleep/Stop interruptions are routine; actual
     // analysis failures share the same dismissible attention as other work.
     static func includesOutcome(_ record:AIActivityRecord)->Bool {
@@ -194,10 +202,10 @@ enum AIActivitySummary {
         let reads:Set<String>=["Checked Calendar","Checked Reminders","Checked item details","Searched email","Read the email","Searched WhatsApp","Checked the weather","Checked project items"]
         return reads.contains(text(record.message))
     }
-    static func recent(_ records:[AIActivityRecord],current:AIActivityRecord?,registration:String)->[AIActivityRecord] {
+    static func recent(_ records:[AIActivityRecord],current:AIActivityRecord?,registration:String,now:Date = .now)->[AIActivityRecord] {
         // Sleep/closed-laptop suspensions and foreground cancellation are
         // interrupted/stopped outcomes, distinct from an actual analysis failure.
-        var values=records.filter{$0.registration == registration && includesOutcome($0) && ![.replied,.resolved].contains($0.state)}
+        var values=records.filter{$0.registration == registration && includesNotification($0,now:now)}
         if let current,current.registration == registration,current.kind != .heartbeat,current.state == .running {
             values.removeAll{$0.id == current.id};values.append(current)
         }
@@ -293,7 +301,7 @@ struct AIActivityState: Codable, Equatable {
         acknowledgements[registration] == nil ? nil : "Undo AI activity acknowledgement"
     }
 
-    @discardableResult func upsert(_ record: AIActivityRecord) -> Bool {
+    @discardableResult func upsert(_ record: AIActivityRecord, now:Date = .now) -> Bool {
         guard readable else { return false }
         var candidate = state
         if let index = candidate.records.firstIndex(where: { $0.id == record.id && $0.registration == record.registration }) {
@@ -304,6 +312,11 @@ struct AIActivityState: Codable, Equatable {
             }
             var updated = record
             updated.acknowledged = old.acknowledged
+            if updated.state.isTerminal,updated.finished == nil {
+                // Feedback may finish long after it was queued. Capture that transition
+                // once, without renewing older outcomes during ordinary reprojection.
+                updated.finished = old.state.isTerminal ? old.finished : max(now,updated.created)
+            }
             candidate.records[index] = updated
         } else { candidate.records.append(record) }
         return commit(candidate)
