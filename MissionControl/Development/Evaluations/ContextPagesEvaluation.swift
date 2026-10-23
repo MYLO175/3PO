@@ -18,6 +18,7 @@ import SwiftData
         checks.merge(try projectionReuseChecks(), uniquingKeysWith: { $1 })
         checks.merge(try hierarchyGuideChecks(), uniquingKeysWith: { $1 })
         checks.merge(try navigationDirectoryChecks(), uniquingKeysWith: { $1 })
+        checks.merge(try conversationDirectoryChecks(), uniquingKeysWith: { $1 })
         checks.merge(try guideOverflowChecks(), uniquingKeysWith: { $1 })
         checks.merge(try largeAncestryChecks(), uniquingKeysWith: { $1 })
         checks.merge(try await ownedMutationChecks(), uniquingKeysWith: { $1 })
@@ -172,6 +173,55 @@ import SwiftData
         }
         checks["Context formatting capacity overflow preserves warmed entries without scan thrashing"] = bounded.builds == 1026
         checks["Context formatting reuse makes no model or source calls"] = fixture.provider.calls == 0 && fixture.sources.reads == 0
+        return checks
+    }
+
+    private static func conversationDirectoryChecks() throws -> [String:Bool] {
+        let fixture = try ContextPagesFixture()
+        defer { fixture.clean() }
+        let model=fixture.model,owner=fixture.registration
+        var checks:[String:Bool]=[:]
+        let empty=model.conversationContextDirectory(registration:owner)
+        checks["Conversation directory empty valid stores retain complete Assistant defaults"] = empty.current() && empty.text.contains(model.assistant.preferences)
+        let fact=PAMemory(registration:owner,text:"PRIVATE_FACT_MARKER",kind:.context,provenance:"Fictional human")
+        guard model.assistant.memory.put(fact) else {throw IntegrationError.verification}
+        let space=LifeItem(registration:owner,kind:.space,title:"PRIVATE_PROJECT_MARKER",notes:"PRIVATE_PROJECT_BODY")
+        _=try model.assistant.projects.create([space],receipt:.init(id:UUID().uuidString,registration:owner,result:"Fixture",itemID:space.id))
+        var topic=try model.contextPages.save(.init(registration:owner,kind:.topic,key:"directory-fixture",owner:.human,title:"PRIVATE_TOPIC_MARKER",markdown:"PRIVATE_TOPIC_BODY"),expectedRevision:nil)
+        _=try model.contextPages.save(.init(registration:owner,kind:.instruction,key:"review",owner:.human,title:"Review",markdown:"PRIVATE_REVIEW_POLICY"),expectedRevision:nil)
+        let fullPolicy=String(repeating:"Give practical fictional explanations. ",count:200)+"FINAL_ASSISTANT_POLICY_MARKER"
+        var policy=try model.contextPages.save(.init(registration:owner,kind:.instruction,key:"assistant",owner:.human,title:"Assistant",markdown:fullPolicy),expectedRevision:nil)
+        let builds=model.contextKnowledgeBuildCount,capture=model.conversationContextDirectory(registration:owner)
+        checks["Conversation directory contains complete Assistant policy without personal knowledge"] = capture.current() && capture.text.contains(fullPolicy) && !["PRIVATE_FACT_MARKER","PRIVATE_PROJECT_MARKER","PRIVATE_PROJECT_BODY","PRIVATE_TOPIC_BODY","PRIVATE_REVIEW_POLICY"].contains(where:(capture.text+capture.guideText).contains) && capture.pageIDs.isEmpty && capture.memoryIDs.isEmpty && capture.workspaceIDs.isEmpty
+        checks["Conversation directory never builds a knowledge projection"] = model.contextKnowledgeBuildCount == builds
+        let receipts=Array(repeating:capture.referenceVersions,count:40)
+        let availability=model.withContextPageAvailability(registration:owner,captures:receipts) { available in receipts.map { available($0) } }
+        checks["Conversation directory validates forty history receipts without projecting personal knowledge"] = availability.allSatisfy{$0} && model.contextKnowledgeBuildCount == builds
+        var changed=fact;changed.text="Unrelated fact changed";guard model.assistant.memory.put(changed) else {throw IntegrationError.verification}
+        topic.markdown="Unrelated topic changed";topic=try model.contextPages.save(topic,expectedRevision:topic.revision)
+        checks["Conversation directory ignores unrelated facts and page changes"] = capture.current() && model.contextKnowledgeAvailable(registration:owner,versions:capture.referenceVersions)
+        policy.markdown="Revised Assistant policy";policy=try model.contextPages.save(policy,expectedRevision:policy.revision)
+        checks["Conversation directory invalidates live and historical supplied policy on edit"] = !capture.current() && !model.contextKnowledgeAvailable(registration:owner,versions:capture.referenceVersions)
+        let beforeLearning=model.conversationContextDirectory(registration:owner)
+        guard model.assistant.memory.merge([.init(turnID:"fictional-policy",text:"Explain one unfamiliar concept at a time.",kind:.preference,evidence:"Explain one unfamiliar concept at a time.",certainty:.stated,durability:.stable,instruction:"assistant")],registration:owner) else {throw IntegrationError.verification}
+        let learned=model.conversationContextDirectory(registration:owner)
+        checks["Conversation directory tracks learned Assistant guidance without injecting unrelated memory"] = !beforeLearning.current() && learned.current() && learned.text.contains("one unfamiliar concept") && learned.memoryIDs.isEmpty
+        model.assistant.memory.enabled=false
+        checks["Conversation directory memory-use withdrawal invalidates supplied policy"] = !learned.current() && !model.contextKnowledgeAvailable(registration:owner,versions:learned.referenceVersions)
+        model.assistant.memory.enabled=true
+        let account=model.conversationContextDirectory(registration:owner)
+        model.chatGPT.activeID="other-fictional-account"
+        checks["Conversation directory retains captured account ownership"] = !account.current()
+        checks["Conversation directory checks perform no inference or native collection"] = fixture.provider.calls == 0 && fixture.sources.reads == 0
+        for key in ["paMemory",ContextPageStore.recordKey] {
+            let broken=try ContextPagesFixture();defer {broken.clean()}
+            let valid=broken.model.conversationContextDirectory(registration:broken.registration)
+            try LocalRecordRepository(container:broken.model.container!).write([key:Data("corrupt fictional record".utf8)])
+            if key == "paMemory" {broken.model.assistant=AssistantService(connection:broken.provider,container:broken.model.container,settings:broken.settings,imageDirectory:broken.images)}
+            else {_=broken.model.contextPages.reload()}
+            let failed=broken.model.conversationContextDirectory(registration:broken.registration)
+            checks["Conversation directory corrupt \(key) cannot silently discard human policy"] = !failed.current() && !broken.model.contextKnowledgeAvailable(registration:broken.registration,versions:valid.referenceVersions) && broken.provider.calls == 0
+        }
         return checks
     }
 
@@ -529,7 +579,7 @@ import SwiftData
         checks["Primary context separate orientation allowance retains a relevant topic beside two overviews"] = ordinary.pageIDs.contains(topic.id) && ordinary.pageIDs.count == 3
         checks["Primary context automatic pages resolve support beyond old lexical fact selection"] = automatic.records.isEmpty && automatic.contextPageDependencies[reference.contextKey] == reference.revision && automatic.pageContext.contains("Cobalt optics")
         checks["Primary context preserves captured feature purpose for later dependency checks"] = automatic.contextPageDependencies["context-purpose:brief"] == "1" && model.contextPageDependenciesAvailable(automatic.contextPageDependencies, registration: registration)
-        checks["Primary context ordinary chat automatically receives human feature guidance"] = (broad["featureInstructions"] as? [[String: String]])?.count == ContextFeature.allCases.count
+        checks["Primary context explicit broad page captures retain purpose-specific feature guidance"] = (broad["featureInstructions"] as? [[String: String]])?.count == ContextFeature.allCases.count
         let email = model.captureContextPages(registration: registration, query: "Cobalt optics", includeTopics: false, purpose: .email)
         let emailObject = try object(email.text)
         checks["Primary context email resolves all relevant human support without raw working context"] = email.pageIDs.contains(topic.id) && ((emailObject["workingChanges"] as? [[String: String]]) ?? []).isEmpty
@@ -840,8 +890,10 @@ import SwiftData
                 fixture.provider.holdFinal = true
                 var runtime = model.assistantRuntime(), capturedReferences: [String: String] = [:]
                 let capture = runtime.contextPages
-                runtime.contextPages = { registration, query, topic, includeTopics, everyday in
-                    let value = capture(registration, query, topic, includeTopics, everyday)
+                // Deliberately supply this page to exercise exact mutation adoption.
+                // Production ordinary chat receives only its directory until a read.
+                runtime.conversationDirectory = { registration in
+                    let value = capture(registration, prompt, nil, false, false)
                     capturedReferences = value.referenceVersions
                     return value
                 }

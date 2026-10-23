@@ -43,14 +43,22 @@ private struct AssistantChatHistoryView: View {
             if entries.isEmpty {
                 ContentUnavailableView("No earlier chats",systemImage:"clock.arrow.circlepath",description:Text("Start a new chat to keep the current conversation here."))
             } else {
-                List(entries) { entry in
+                ScrollView {
+                LazyVStack(alignment:.leading,spacing:8) {
+                ForEach(entries) { entry in
                     Button { select(entry) } label: {
+                        HStack {
                         VStack(alignment:.leading,spacing:4) {
                             Text(entry.title).lineLimit(2)
                             Text(entry.started.formatted(date:.abbreviated,time:.shortened)).font(.caption).foregroundStyle(.secondary)
-                        }.frame(maxWidth:.infinity,alignment:.leading).padding(.vertical,4)
-                    }.buttonStyle(.plain)
-                }.listStyle(.inset)
+                        }.frame(maxWidth:.infinity,alignment:.leading)
+                        Image(systemName:"chevron.right").foregroundStyle(.secondary)
+                        }.padding(.vertical,8).contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityIdentifier("pa-history-session-"+entry.id)
+                    Divider()
+                }
+                }
+                }
             }
         }.padding(20).frame(width:480,height:420)
     }
@@ -319,6 +327,9 @@ struct AssistantPanel: View {
                 HStack {
                     Label("Earlier chat",systemImage:"clock.arrow.circlepath").font(.caption).foregroundStyle(.secondary)
                     Spacer()
+                    if assistant.busy && assistant.requestConversationID == selectedID && assistant.requestChatSessionID == displayedSessionID {
+                        Button("Stop") { assistant.cancel() }.controlSize(.small)
+                    }
                     Button("Return to current chat") { historySelection = nil;composerFocused = true }.controlSize(.small)
                         .accessibilityIdentifier("pa-return-current-chat")
                 }

@@ -44,7 +44,7 @@ private final class ObservationCounter:@unchecked Sendable {
             await withCheckedContinuation { held = $0 }
         }
         try Task.checkCancellation()
-        precondition(!replies.isEmpty, "Missing fictional response")
+        precondition(!replies.isEmpty, "Missing fictional response for " + String(describing: input.last { $0["role"] as? String == "user" }) + " after " + String(inputs.count) + " calls")
         return replies.removeFirst()
     }
     func toolResponse(input: [[String: Any]], instructions: String, tools: [[String: Any]], model: String, effort: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> PAResponse {
@@ -98,14 +98,17 @@ private final class ObservationCounter:@unchecked Sendable {
     var requests: [AssistantToolRequest] = []
     var sessions: [FictionalTools] = []
     var configure: ((FictionalTools, AssistantToolRequest) -> Void)?
+    var directoryCapture: (String) -> AssistantPageContext = { _ in .init() }
     var pageCapture: (String, String?, UUID?, Bool, Bool) -> AssistantPageContext = { _,_,_,_,_ in .init() }
     func runtime() -> AssistantRuntime {
-        .init(clock: { self.now }, state: { self.state }, sourceSnapshot: { self.sourceCalls += 1; return "Fictional cached context\n" + String(decoding:try! JSONEncoder().encode(self.acknowledgements),as:UTF8.self) }, deliveryAvailable: { $0.deliveryID != "fictional-withdrawn" }, tools: { request in
+        var runtime = AssistantRuntime(clock: { self.now }, state: { self.state }, sourceSnapshot: { self.sourceCalls += 1; return "Fictional cached context\n" + String(decoding:try! JSONEncoder().encode(self.acknowledgements),as:UTF8.self) }, deliveryAvailable: { $0.deliveryID != "fictional-withdrawn" }, tools: { request in
             let session = FictionalTools()
             self.configure?(session, request)
             self.requests.append(request); self.sessions.append(session)
             return session
         }, afterTurn: { self.afterCalls += 1 }, streamingState: { .init(storageCurrent:self.streamingStorageCurrent,whatsappScope:self.state.whatsappScope,weatherScope:self.state.weatherScope) }, lookupAccess: { "fictional-access:" + $0 }, contextPages: { self.pageCapture($0,$1,$2,$3,$4) })
+        runtime.conversationDirectory = { self.directoryCapture($0) }
+        return runtime
     }
 }
 
@@ -136,9 +139,6 @@ private final class ObservationCounter:@unchecked Sendable {
         }
         func service(_ provider: FictionalInference, _ container: ModelContainer) -> AssistantService {
             AssistantService(connection: provider, container: container, settings: settings, imageDirectory: directory.appendingPathComponent("images"))
-        }
-        func greetingPages() -> AssistantPageContext {
-            .init(text:"{\"featureInstructions\":[{\"feature\":\"assistant\",\"markdown\":\"Fictional complete guidance\",\"available\":\"true\",\"partial\":\"false\"}]}",referenceVersions:["instruction:assistant":"policy-v1"])
         }
 
         do {
@@ -180,7 +180,7 @@ private final class ObservationCounter:@unchecked Sendable {
             check(rows[1].query == "Orion, review" && rows[1].resultCount == 2 && rows[1].filters.count == 2,"Mail trace uses actual terms, date/folder scope and returned source count")
             let encoded=String(decoding:try JSONEncoder().encode(capture),as:UTF8.self)
             check(!encoded.contains("PRIVATE_BODY_NOT_IN_TRACE") && !encoded.contains("Fictional read failure"),"Search traces duplicate no source bodies or tool error prose")
-            check(capture.registration == p.activeID && capture.retrievalQuery == "Find Orion design and review context" && capture.retrievalAccess == "fictional-access:read_context_page","Initial retrieval is separate from model tool searches and keeps exact ownership")
+            check(capture.registration == p.activeID && capture.retrievalQuery == nil && capture.retrievalAccess == nil,"Ordinary input records no eager retrieval query; actual tool searches retain exact ownership")
             let reopened=service(FictionalInference(),store)
             check(reopened.feed?.turns.last?.contextCapture?.lookups == rows,"Search queries, outcomes and IDs survive reopening")
             check(AssistantLookupTrace.request(tool:"change_reminder",namespace:"pa",arguments:"{\"authorization\":\"PRIVATE_AUTHORITY_NOT_TRACE\"}",access:"fixture") == nil,"Action payloads never become lookup traces")
@@ -216,87 +216,109 @@ private final class ObservationCounter:@unchecked Sendable {
             settings.set(true,forKey:"paMemoryEnabled");settings.set(true,forKey:"assistantContextEnabled")
         }
 
+        // One ordinary route for all messages, with information fetched only on demand.
+        for prompt in ["hey", "What is six times seven?", "Explain why the sky looks blue."] {
+            let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("on-demand-"+UUID().uuidString))
+            let fact=PAMemory(registration:p.activeID,text:"Private unrelated garden marker",kind:.context,explicit:true,provenance:"Fixture")
+            check(value.memory.put(fact),"Unrelated fixture memory saves")
+            var projections=0,fullStates=0,lightStates=0,pageReads=0
+            value.memory.sourcePermissionProjection={projections += 1;return []}
+            c.pageCapture={_,_,_,_,_ in pageReads += 1;return .init(text:"Unrelated topic page marker")}
+            c.directoryCapture={_ in .init(text:"Complete fictional Assistant policy",referenceVersions:["instruction:assistant":"policy-v1"],guideText:"Static information directory")}
+            var runtime=c.runtime()
+            runtime.state={fullStates += 1;return c.state}
+            runtime.requestState={includeAttention in
+                if includeAttention {fullStates += 1} else {lightStates += 1}
+                var state=c.state;state.attentionPreferencesReadable=false;return state
+            }
+            p.replies=[final("A useful direct answer.")]
+            check(value.send(runtime:runtime,topicID:nil,prompt:prompt,focusAreas:[]),"All ordinary messages use the same assistant")
+            await until{!value.busy}
+            let turn=value.feed!.turns.last!,input=String(describing:p.inputs)
+            check(value.error == nil && turn.completed,"Unrelated Review readability does not block ordinary chat")
+            check(c.sourceCalls == 0 && projections == 0 && pageReads == 0 && fullStates == 0 && lightStates > 0,"Lookup-free chat builds no broad sources, memory, pages or attention context")
+            check(!input.contains(fact.text) && !input.contains("Unrelated topic page marker") && input.contains("Complete fictional Assistant policy"),"Only the directory and complete applicable policy are initially supplied")
+            check(p.toolNames[0].contains("search_chat_history") && !p.toolNames[0].contains("read_assistant_context") && p.efforts == ["medium"],"All messages retain normal tools without a greeting mode")
+            check(turn.contextCapture?.requestMode == "conversation" && turn.contextCapture?.historyTurnIDs.count == 1 && turn.contextCapture?.memoryIDs == [],"Prepared trace describes the actual minimal input")
+        }
         do {
-            for prompt in ["hey", " HI \n", "Hello"] {
-                check(AssistantGreetingRequest.eligible(prompt,history:[]), "Only literal social openings are eligible")
-            }
-            for prompt in ["hey, add a task", "hi there", "\"hey\"", "don't say hello", "hello?", "hello\nremember this"] {
-                check(!AssistantGreetingRequest.eligible(prompt,history:[]), "Other human requests keep full assistant routing")
-            }
-            let question=AssistantTurn(role:"assistant",content:"How should the fictional message begin?",completed:true)
-            check(!AssistantGreetingRequest.eligible("hi",history:[question]), "A greeting can answer an essential question")
-            var pending=AssistantTurn(role:"assistant",content:"Prepared fictional action",completed:true)
-            pending.actionApprovals=[.init(toolName:"change_reminder",arguments:"{}",snapshot:Data(),outline:[],details:[])]
-            check(!AssistantGreetingRequest.eligible("hey",history:[pending]), "Pending authority is checked before prepare can dismiss it")
-            pending.actionApprovals=nil;pending.choices=["hi","bye"]
-            check(!AssistantGreetingRequest.eligible("hi",history:[pending]), "Answer buttons keep normal context")
-            pending.choices=nil;pending.actionResult = .init(phase:"uncertain",receipts:[],confirmedActions:0,unconfirmedActions:1)
-            check(!AssistantGreetingRequest.eligible("hey",history:[pending]), "An uncertain action cannot take the social route")
-            check(!AssistantGreetingRequest.accepts(.init(id:"bad",name:"change_reminder",namespace:"pa",arguments:"{}")) && !AssistantGreetingRequest.accepts(.init(id:"bad",name:"read_assistant_context",namespace:"other",arguments:"{}")) && !AssistantGreetingRequest.accepts(.init(id:"bad",name:"read_assistant_context",namespace:"pa",arguments:"{\"extra\":true}")), "Compact routing refuses mutations, other namespaces and unknown arguments")
-            check(!AssistantGreetingRequest.hasCompleteInstructions(.init()) && !AssistantGreetingRequest.hasCompleteInstructions(.init(text:"{\"unavailable\":\"Fictional corrupt store\"}")),"Missing/unavailable instruction receipts cannot claim complete human policy")
-            let image=ChatImageAttachment(registration:"fictional-owner",mimeType:"image/png",width:1,height:1,byteCount:1,digest:"fictional")
-            let imageHuman=AssistantTurn(role:"user",content:"Fictional image",completed:true,images:[image])
-            let flood=(0..<25).map{AssistantTurn(role:"assistant",content:"Fictional background \($0)",completed:true,deliveryID:"flood-\($0)")}
-            let current=AssistantTurn(role:"user",content:"hey",completed:true)
-            let flooded=AssistantConversation(accountID:"fictional-owner",title:"Fictional image flood",turns:[imageHuman]+flood+[current],isPrimary:true)
-            let floodedReplay=ConversationRules.replayTurns(ConversationRules.history(feed:flooded,topic:nil),currentUserID:current.id)
-            check(AssistantGreetingRequest.hasImages(floodedReplay),"Actual replay catches an image retained across more than twenty background deliveries")
+            let p=FictionalInference(),c=FictionalContext(),store=try open("fresh-sessions"),value=service(p,store)
+            p.replies=[final("Old Orion answer")]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Earlier Orion discussion"),"Original conversation starts")
+            await until{!value.busy}
+            let old=value.feed!.turns,oldID=value.feed!.id
+            value.draft="Retained original draft"
+            check(value.newChat(now:c.now),"Manual New chat persists a fresh session")
+            let session=value.feed!.chatSession!.id
+            check(value.feed!.id == oldID && value.feed!.turns == old && value.learningTurns().count == 1,"Refreshing preserves canonical conversation, transcript and consolidation backlog")
+            check(value.drafts.text(registration:p.activeID,widget:UUID(uuidString:"00000000-0000-0000-0000-000000000001")!,conversation:oldID) == "Retained original draft" && value.draft.isEmpty,"New chat preserves the prior standalone draft")
+            p.replies=[final("Fresh answer")]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"A new independent question"),"Fresh conversation accepts a message")
+            await until{!value.busy}
+            check(value.feed!.turns.suffix(2).allSatisfy{$0.chatSessionID == session} && !String(describing:p.inputs.last!).contains("Earlier Orion discussion"),"Old conversation stays outside fresh default input")
+            let request=c.requests.last!,search=request.historyLookup("Orion",nil)
+            let object=try JSONSerialization.jsonObject(with:Data(search.text.utf8)) as! [String:Any]
+            let rows=object["turns"] as! [[String:Any]]
+            check(rows.count == 2 && search.current(),"Earlier conversation is searchable only through an explicit bounded read")
+            check(request.historyLookup(nil,UUID().uuidString).text.contains("false"),"History read refuses an ID not issued by this request's search")
+            check(request.historyLookup(nil,rows[0]["id"] as? String).text.contains("Earlier Orion discussion"),"An issued history ID opens its nearby discussion")
+            check(!request.humanContext.contains("Earlier Orion discussion") && !String(describing:request.history).contains("Old Orion answer"),"Retrieved old human words never become current action authority")
+            let reopened=service(p,store)
+            check(reopened.feed?.chatSession?.id == session && reopened.feed?.turns == value.feed?.turns && reopened.learningTurns().count == 2,"Fresh sessions and all original evidence survive reopening")
+            p.activeID="another-account"
+            check(!search.current() && request.historyLookup("Orion",nil).text.contains("false"),"Account withdrawal invalidates captured history and later reads")
+        }
+        do {
+            let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("idle-session"))
+            p.replies=[final("Old answer")]
+            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Do not repeat this old work"),"Idle fixture starts")
+            await until{!value.busy}
+            var runtime=c.runtime();runtime.clock={c.now.addingTimeInterval(ConversationRules.chatIdleInterval)}
+            p.replies=[final("Independent answer")]
+            check(value.send(runtime:runtime,topicID:nil,prompt:"Another question"),"A long idle gap accepts a fresh question")
+            await until{!value.busy}
+            check(value.feed?.chatSession != nil && value.feed?.turns.count == 4 && !String(describing:p.inputs.last!).contains("Do not repeat this old work"),"Eight-hour idle rollover preserves history and resets automatic input")
+        }
 
-            for expanded in [false,true] {
-                let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("greeting-\(expanded)"))
-                c.pageCapture={_,_,_,_,_ in .init(text:"{\"featureInstructions\":[{\"feature\":\"assistant\",\"markdown\":\"Always say fictional policy applied\",\"available\":\"true\",\"partial\":\"false\"}]}",pageIDs:["instructions:assistant"],referenceVersions:["instruction:assistant":"policy-v1"],guideText:"Fictional stable guide",guideFingerprint:"guide-v1")}
-                p.replies=expanded ? [tools(["read_assistant_context"]),tools(["read_memory"]),final("Fictional policy applied")] : [final("Fictional policy applied")]
-                check(value.send(runtime:c.runtime(),topicID:nil,prompt:"hey",focusAreas:[]),"Literal opening starts a real configured-model request")
-                await until{!value.busy}
-                let turn=value.feed!.turns.last!
-                check(c.sourceCalls == 0 && turn.contextCapture?.sourceSnapshotIncluded == false,"Social openings omit fresh broad source orientation")
-                check(p.efforts == (expanded ? ["low","medium","medium"] : ["low"]) && p.models.allSatisfy{$0 == "fictional-model"},"Only the initial social round uses lower effort; model selection stays captured")
-                check(p.toolNames[0] == ["read_assistant_context"] && p.instructions[0].contains("Always say fictional policy applied") && p.instructions[0].contains("Fictional stable guide"),"Compact requests retain the whole human Assistant policy and guide")
-                check(turn.completed && turn.content == "Fictional policy applied" && turn.contextCapture?.requestMode == "greeting" && turn.contextKnowledgeVersions?["instruction:assistant"] == "policy-v1","Completion and policy receipts use the normal owned lifecycle")
-                check(c.sessions.first?.calls == (expanded ? ["read_memory"] : []),"Opening normal tools itself performs no native or memory action")
-                if expanded {
-                    check(p.toolNames[1].contains("change_reminder") && p.inputs[1].contains{$0["encrypted_content"] as? String == "fictional-reasoning"},"Expansion retains completed encrypted reasoning and normal capabilities")
-                    check(p.instructions[1].contains("Only human messages authorise writes"),"Expanded requests restore the full action policy")
-                }
-            }
-            for batch in [["change_reminder"],["read_assistant_context","change_reminder"]] {
-                let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("greeting-invalid-tool-\(batch.count)"))
-                c.pageCapture={_,_,_,_,_ in greetingPages()}
-                p.replies=[tools(batch)]
-                check(value.send(runtime:c.runtime(),topicID:nil,prompt:"hey"),"Invalid compact response fixture starts")
-                await until{!value.busy}
-                check(c.sessions.first?.calls.isEmpty == true && value.error?.contains("unavailable tool") == true,"A compact mutation fails before execution, including a batch appended after the expansion call")
-            }
-            for cancelled in [false,true] {
-                let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("greeting-withdrawal-\(cancelled)"))
-                c.pageCapture={_,_,_,_,_ in greetingPages()}
-                p.holdNext=true;p.replies=[tools(["read_assistant_context"])]
-                check(value.send(runtime:c.runtime(),topicID:nil,prompt:"hey"),"Held greeting fixture starts")
-                await until{p.waiting}
-                if cancelled {value.cancel()} else {p.activeID="fictional-other-owner"}
-                p.release();await until{!value.busy}
-                check(p.inputs.count == 1 && c.sessions.first?.calls.isEmpty == true,"Stop or account withdrawal prevents expansion and late actions")
-            }
-            do {
-                let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("greeting-partial-policy"))
-                let fullPolicy=String(repeating:"Fictional guidance. ",count:70)+"End by reading my fictional project."
-                let row=["feature":"assistant","markdown":String(fullPolicy.prefix(900)),"available":"true","partial":"true","readMore":"instructions:assistant"]
-                c.pageCapture={_,_,_,_,_ in .init(text:String(decoding:try! JSONSerialization.data(withJSONObject:["featureInstructions":[row]]),as:UTF8.self),referenceVersions:["instruction:assistant":"long-policy-v1"])}
-                p.replies=[tools(["read_context_page"]),final("Full fictional assistant response")]
-                check(value.send(runtime:c.runtime(),topicID:nil,prompt:"hey"),"Long human guidance fixture starts")
-                await until{!value.busy}
-                check(c.sourceCalls == 1 && p.efforts == ["medium","medium"] && p.toolNames.first?.contains("read_context_page") == true && value.feed?.turns.last?.contextCapture?.requestMode == nil,"Truncated Assistant guidance keeps full policy/tools and normal source preparation")
-            }
-            do {
-                let p=FictionalInference(),c=FictionalContext(),store=try open("greeting-queue-reopen")
-                let original=service(p,store)
-                check(original.queue.add(registration:p.activeID,topicID:nil,prompt:"Finish fictional work"),"Pending queue fixture persists")
-                check(original.queue.mark(original.queue.items[0].id,.needsAnswer),"Missing-answer state persists before reopening")
-                let value=service(p,store);c.pageCapture={_,_,_,_,_ in greetingPages()};p.replies=[final("Normal assistant greeting")]
-                check(value.send(runtime:c.runtime(),topicID:nil,prompt:"hey"),"Reopened pending queue does not block normal foreground chat")
-                await until{!value.busy}
-                check(p.efforts == ["medium"] && c.sourceCalls == 1,"Durable pending work excludes compact admission after transient flags reset")
-            }
+        do {
+            let p=FictionalInference(),c=FictionalContext(),store=try open("historical-permissions")
+            let fact=PAMemory(registration:p.activeID,text:"A supported historical marker",kind:.context,provenance:"Fictional human")
+            let trace=PAContextCapture(model:"fixture",focusAreas:nil,memoryIDs:[fact.id],eligibleMemoryCount:1,notebookMemoryIDs:[],workspaceIDs:[],historyTurnIDs:[],excerptedHistoryIDs:[],sourceSnapshotIncluded:false,sourceSnapshotBytes:0,profileSetup:false)
+            let legacy=AssistantTurn(role:"assistant",content:"LEGACY_NARROWED_HISTORY",completed:true,sourceMemoryIDs:[fact.id,UUID()],contextCapture:trace)
+            var unscoped=legacy;unscoped.id=UUID();unscoped.content="UNSCOPED_PRIVATE_SNAPSHOT";unscoped.sourceMemoryIDs=nil;unscoped.contextCapture?.sourceSnapshotIncluded=true
+            var raw=legacy;raw.id=UUID();raw.content="SCOPED_CALENDAR_HISTORY";raw.sourceMemoryIDs=nil;raw.contextCapture=nil;raw.sourceAccessFingerprints=["read_calendar":"current-calendar-access"]
+            let original=AssistantConversation(accountID:p.activeID,title:"Old fictional history",turns:[legacy,unscoped,raw],isPrimary:true)
+            try ConversationRepository(container:store).save([original])
+            let value=service(p,store);check(value.memory.put(fact),"Historical source-dependency fixture saves")
+            check(value.newChat(),"Permission fixture starts fresh")
+            var access="current-calendar-access",runtime=c.runtime();runtime.lookupAccess={_ in access}
+            p.replies=[final("Current independent answer")]
+            check(value.send(runtime:runtime,topicID:nil,prompt:"An independent current question"),"Permission fixture accepts current request")
+            await until{!value.busy}
+            let lookup=c.requests.last!.historyLookup
+            let narrowed=lookup("LEGACY_NARROWED_HISTORY",nil)
+            check(narrowed.text.contains(legacy.content) && narrowed.current() && narrowed.memoryIDs == [fact.id],"Derived legacy dependencies validate against unchanged canonical saved turns")
+            check(!lookup("UNSCOPED_PRIVATE_SNAPSHOT",nil).text.contains(unscoped.content),"Unscoped legacy source snapshots never leak through new history tools")
+            let scoped=lookup("SCOPED_CALENDAR_HISTORY",nil)
+            check(scoped.current() && scoped.sourceAccessFingerprints == raw.sourceAccessFingerprints,"History carries complete raw-source permission receipts")
+            access="withdrawn-calendar-access"
+            check(!scoped.current() && !lookup("SCOPED_CALENDAR_HISTORY",nil).text.contains(raw.content),"Exact source withdrawal withholds earlier source prose and revokes captured reads")
+            check(!value.sourceSafeHistory(runtime:runtime,feed:value.feed!,topic:nil).contains{$0.id == raw.id || $0.id == unscoped.id},"Default history uses the same raw-source permission filtering")
+            check(value.feed!.turns.contains(unscoped) && value.feed!.turns.contains(raw),"Withheld history remains saved for human inspection")
+            value.draft="Account A draft";p.activeID="other-account"
+            check(value.draft.isEmpty,"Standalone draft never appears in another account")
+            value.draft="Account B draft";p.activeID="fictional-owner"
+            check(value.draft == "Account A draft","Account switch retains both standalone draft owners")
+        }
+        do {
+            let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("legacy-queue-session"))
+            _=value.openPA()
+            check(value.queue.add(registration:p.activeID,topicID:nil,prompt:"Captured original-session request"),"Legacy queue request captures the original nil session")
+            check(value.newChat(),"A new chat can be started while old accepted work is waiting")
+            let current=value.feed!.chatSession!.id
+            p.replies=[final("Original queued result")];value.resumeQueue(runtime:c.runtime())
+            await until{!value.busy && value.queue.items[0].state == .completed}
+            check(value.feed!.chatSession?.id == current && value.feed!.turns.last?.chatSessionID == nil && ConversationRules.chatTurns(feed:value.feed!,sessionID:current).isEmpty,"Queued legacy work never retargets into the displayed fresh session")
         }
 
         do {
@@ -500,8 +522,7 @@ private final class ObservationCounter:@unchecked Sendable {
             let unprovided=value.feed!.turns.last!
             check(unprovided.completed && value.error == nil && unprovided.sourceMemoryIDs?.isEmpty != false && unprovided.contextCapture?.directMemoryIDs == [],"Withdrawal of an original that never entered page or tool context does not block ordinary chat")
             permitted=[selected.id,unrelated.id]
-            c.pageCapture={_,query,_,_,_ in
-                guard query?.contains("Orion") == true else {return .init()}
+            c.directoryCapture={_ in
                 return .init(text:"{\"pages\":[{\"id\":\"fictional-orion\",\"markdown\":\"Orion page summary\"}]}",pageIDs:["fictional-orion"],memoryIDs:[selected.id])
             }
             p.holdNext=true;p.replies=[final("Selected Orion answer")]
@@ -525,6 +546,7 @@ private final class ObservationCounter:@unchecked Sendable {
             await until{!value.busy}
             let readReply=value.feed!.turns.last!
             check(Set(readReply.sourceMemoryIDs ?? []) == [selected.id,unrelated.id] && readReply.contextCapture?.consultedMemoryIDs == [unrelated.id],"Actual successful tool reads extend exact reply dependencies beyond initial selection")
+            c.directoryCapture={_ in .init()}
             p.replies=[final("Follow-up using facts supplied by earlier replies")]
             check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Could you continue?"),"A follow-up without a direct memory match starts")
             await until{!value.busy}
@@ -585,13 +607,14 @@ private final class ObservationCounter:@unchecked Sendable {
             switch change {
             case "Stop": value.cancel()
             case "account": p.activeID = "another-fictional-owner"
-            case "source": c.state.weatherScope = "changed-fictional-weather"
+            case "source": value.contextEnabled = false
             case "memory-reset":value.memory.enabled.toggle();value.memory.enabled.toggle()
             default: value.memory.enabled = false
             }
             p.release()
             await until { !value.busy }
             if change == "memory" {value.memory.enabled=true}
+            if change == "source" {value.contextEnabled=true}
             check(c.sessions.first?.calls.isEmpty == true && value.error != nil, "\(change) must reject late tools and retain a visible stop/failure.")
             let saved = try ConversationRepository(container: try open("ownership-" + change)).load()
             check(saved.first?.turns.contains(where: { $0.role == "user" && $0.content == "Fictional owned request" }) == true, "\(change) must retain the prepared human request after reopen.")
@@ -728,7 +751,7 @@ private final class ObservationCounter:@unchecked Sendable {
             check(value.memory.put(fact),"Context churn fixture saves its selected fact")
             let item=LifeItem(registration:p.activeID,kind:.space,title:"Orion prototype")
             _=try value.projects.create([item],receipt:.init(id:"fixture-"+mode,registration:p.activeID,result:"Fictional space",itemID:item.id))
-            c.pageCapture = { _,_,_,_,_ in
+            c.directoryCapture = { _ in
                 let text=String(decoding:try! JSONEncoder().encode(item),as:UTF8.self)
                 return .init(text:text,pageIDs:["fictional-context-page-"+item.id.uuidString],memoryIDs:[fact.id],workspaceIDs:[item.id],referenceVersions:["project:"+item.id.uuidString:item.revision.uuidString],validate:{ignored in
                     ignored.contains("project:"+item.id.uuidString) || value.projects.state.items.first(where:{$0.id == item.id})?.revision == item.revision
@@ -755,7 +778,7 @@ private final class ObservationCounter:@unchecked Sendable {
             default:var changed=item;changed.notes="The prototype scope changed";_=try value.projects.save(changed,expected:item.revision)
             }
             p.release();await until{!value.busy}
-            let rejected=["resolution-changed","resolution-lost","selected-memory","selected-project"].contains(mode)
+            let rejected=["selected-memory","selected-project"].contains(mode)
             check((value.error != nil) == rejected,"\(mode) distinguishes supplied-context changes from unrelated collection")
             check(rejected ? c.sessions[0].calls.isEmpty : c.sessions[0].calls == ["read_memory"],"\(mode) validates before executing any late tool")
             if rejected {check(value.error?.contains("because") == true,"Real invalidation names the changed context rather than a generic configuration failure")}
@@ -813,12 +836,29 @@ private final class ObservationCounter:@unchecked Sendable {
             check((value.error != nil) == supplied,"Only an actually supplied tool confirmation becomes a later dependency")
         }
 
+        do {
+            let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("attention-on-demand-state"))
+            let row=["requestID":"fixture-attention","accountID":"fictional-mail","confirmationQuote":"Received"]
+            c.state.resolvedRequests=[row]
+            c.configure={session,_ in session.executeBody={_,_ in String(decoding:try JSONSerialization.data(withJSONObject:["resolvedEmailRequests":[row]]),as:UTF8.self)}}
+            var reads:[Bool]=[],runtime=c.runtime()
+            runtime.requestState={includeAttention in
+                reads.append(includeAttention);var state=c.state
+                if !includeAttention {state.resolvedRequests=[]};return state
+            }
+            p.replies=[tools(["read_attention"]),final("Current attention read completed")]
+            check(value.send(runtime:runtime,topicID:nil,prompt:"What needs my attention?"),"Ordinary attention request starts with light state")
+            await until{!value.busy}
+            check(value.error == nil && value.feed?.turns.last?.completed == true && reads.first == false && reads.contains(true),"Resolution projection becomes necessary only after read_attention supplies exact resolutions")
+        }
+
         for selected in [false,true] {
             let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("project-link-churn-\(selected)"))
             let orion=LifeItem(registration:p.activeID,kind:.space,title:"Orion prototype"),garden=LifeItem(registration:p.activeID,kind:.space,title:"Garden irrigation")
             _=try value.projects.create([orion,garden],receipt:.init(id:"project-link-churn",registration:p.activeID,result:"Fictional spaces"))
             let owner=selected ? orion : garden
             let edge=try value.projects.link(.init(registration:p.activeID,from:owner.id,relation:.related,target:.init(kind:.item,id:(selected ? garden : orion).id.uuidString)),expected:owner.revision)
+            c.directoryCapture={_ in .init(workspaceIDs:[orion.id])}
             p.holdNext=true;p.replies=[tools(["change_reminder"]),final("Fictional answer")]
             check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Tell me about the Orion prototype"),"Project link-churn request starts")
             await until{p.waiting}
@@ -953,6 +993,8 @@ private final class ObservationCounter:@unchecked Sendable {
             let p=FictionalInference(),c=FictionalContext()
             settings.set(true,forKey:"assistantContextEnabled")
             let value=service(p,try open("preparation-interruption-"+interruption))
+            var pageCurrent=true
+            c.directoryCapture={_ in .init(validate:{_ in pageCurrent})}
             var writes=0
             c.configure={session,_ in session.executeBody={call,session in
                 if call.name == "read_calendar" {
@@ -962,7 +1004,7 @@ private final class ObservationCounter:@unchecked Sendable {
                     case "account":p.activeID="changed-owner"
                     case "permission":value.contextEnabled=false
                     case "filters":value.excludedCalendars.insert(destination.id)
-                    default:c.state.weatherScope="changed-context"
+                    default:pageCurrent=false
                     }
                     return "{}"
                 }
@@ -1183,7 +1225,7 @@ private final class ObservationCounter:@unchecked Sendable {
                 guard let items=currentItems() else {return []}
                 return Set(projectionService.memory.records.filter{NativeLearningRules.permitted($0,items:items)}.map(\.id))
             }
-            projectionContext.pageCapture={_,_,_,_,_ in
+            projectionContext.directoryCapture={_ in
                 .init(text:"{\"pages\":[{\"id\":\"fictional-current-source\",\"markdown\":\"Orion page summary\"}]}",pageIDs:["fictional-current-source"],memoryIDs:[sourceFact.id])
             }
             var projectionRuntime=projectionContext.runtime()

@@ -25,6 +25,7 @@ import Foundation
     private var ownedContextChanges: Set<String> = []
     var pageContextAvailable: Bool { contextPageCaptures.allSatisfy { $0.current(ignoring: ownedContextChanges) } }
     var consultedContextVersions: [String: String] { contextPageCaptures.reduce(into: [:]) { $0.merge($1.referenceVersions) { _, newer in newer } }.filter { !ownedContextChanges.contains($0.key) } }
+    var suppliedSourceAccessFingerprints: [String:String] { contextPageCaptures.reduce(into: [:]) { $0.merge($1.sourceAccessFingerprints) { _,newer in newer } } }
     func adoptContextChanges(_ keys: Set<String>) { ownedContextChanges.formUnion(keys) }
     private(set) var suppliedWeatherScope:String?
     private(set) var suppliedWhatsAppScope:WhatsAppSourceScope?

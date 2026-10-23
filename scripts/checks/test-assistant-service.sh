@@ -10,6 +10,6 @@ for name in "${types[@]}"; do sources+=("$reference/MissionControl/$name.swift")
 sources+=("$reference/MissionControl/Sources/Mail/MailService.swift" "$reference/MissionControl/Sources/Mail/MailBatching.swift")
 # Deliberately excludes DashboardModel, its adapter, production connection,
 # EventKitService, MailLookup and PAToolSession: this runs the actual core only.
-sources+=(MissionControl/Assistant/Provider/PAInferenceConnection.swift MissionControl/Assistant/Conversation/AssistantRuntime.swift MissionControl/Assistant/Context/PAWorkingContext.swift MissionControl/Assistant/Conversation/AssistantService.swift Tests/Assistant/AssistantServiceChecks.swift)
+sources+=(MissionControl/Assistant/Provider/PAInferenceConnection.swift MissionControl/Assistant/Conversation/AssistantRuntime.swift MissionControl/Assistant/Context/PAWorkingContext.swift MissionControl/Assistant/Conversation/AssistantService.swift MissionControl/Assistant/Conversation/AssistantChatHistory.swift Tests/Assistant/AssistantServiceChecks.swift)
 xcrun swiftc -module-cache-path "$MISSIONCONTROL_TEST_MODULE_CACHE" -swift-version 5 "${sources[@]}" -o "$MISSIONCONTROL_TEST_BIN"
 "$MISSIONCONTROL_TEST_BIN"

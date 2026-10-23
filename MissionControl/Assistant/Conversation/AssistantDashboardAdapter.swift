@@ -187,11 +187,22 @@ extension DashboardModel {
         }, tools: { [self] request in
             PAToolSession(model: self, human: request.human, humanContext: request.humanContext,
                           topicID: request.topicID, turnID: request.turnID, mail: request.mail as? MailLookup,
-                          history: request.history, focusAreas: request.focusAreas,inferenceModel:request.inferenceModel)
+                          history: request.history, focusAreas: request.focusAreas,inferenceModel:request.inferenceModel,historyLookup:request.historyLookup)
         }, afterTurn: { [weak self] in
             guard let self else { return }
             if !reviewWork.busy {projectPlacement.check(self)}
         },started:{ [weak self] in self?.assistantActivityStarted($0) },working:{ [weak self] in self?.assistantActivityStarted($0) },finished:{ [weak self] in self?.assistantActivityFinished($0) })
+        let fullState = runtime.state
+        runtime.requestState = { [weak self] includeAttention in
+            guard let self else { return nil }
+            if includeAttention { return fullState() }
+            return .init(attentionPreferencesReadable: self.assistant.memory.reviewPreferenceMigrationReadable,
+                         resolvedRequests: [], whatsappScope: self.whatsapp.scope(for: self.chatGPT.activeID, purpose: .conversation),
+                         weatherScope: self.weather.scope, weatherSupplied: false)
+        }
+        runtime.conversationDirectory = { [weak self] registration in
+            self?.conversationContextDirectory(registration: registration) ?? .init()
+        }
         runtime.streamingState = { [weak self] in
             guard let self else { return nil }
             return .init(storageCurrent: self.container === capturedContainer,

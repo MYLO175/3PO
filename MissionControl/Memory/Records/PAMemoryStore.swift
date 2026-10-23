@@ -17,6 +17,8 @@ import SwiftData
     @ObservationIgnored private var restoringSettings = true
     private let container: ModelContainer?
     private var writable = true
+    /// A failed decode/migration must not make saved learned policy look empty.
+    var isReadable: Bool { writable }
     private var loadedBytes: Data?
     private var reviewPreferenceMigration: ReviewPreferenceConversion.Receipt?
     private(set) var reviewPreferenceMigrationReadable = true

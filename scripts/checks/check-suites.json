@@ -1038,6 +1038,19 @@
       ]
     },
     {
+      "id": "chat-on-demand-model",
+      "tier": "model",
+      "arguments": [
+        "--validate-review-inbox",
+        "--working-context-model",
+        "--chat-on-demand-only"
+      ],
+      "report": "missioncontrol-working-context-model-evaluation.json",
+      "effects": [
+        "Configured subscription model using actual foreground preparation on three fictional requests: self-contained answer, optional past-chat search, relevant page read; maximum8 requests, no retry, personal sources or mutation ports"
+      ]
+    },
+    {
       "id": "context-pages-model",
       "tier": "model",
       "arguments": [
