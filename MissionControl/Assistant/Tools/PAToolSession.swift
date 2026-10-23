@@ -21,6 +21,7 @@ import Foundation
     /// Successful read outputs only; separate from identities issued by memory saves/edits.
     var consultedMemory: Set<UUID> = []
     private var contextPageCaptures: [AssistantPageContext] = []
+    private let historyLookup: ((String?, String?) -> AssistantPageContext)?
     private var ownedContextChanges: Set<String> = []
     var pageContextAvailable: Bool { contextPageCaptures.allSatisfy { $0.current(ignoring: ownedContextChanges) } }
     var consultedContextVersions: [String: String] { contextPageCaptures.reduce(into: [:]) { $0.merge($1.referenceVersions) { _, newer in newer } }.filter { !ownedContextChanges.contains($0.key) } }
@@ -206,8 +207,9 @@ import Foundation
     private func requireConversationEvidence(_ quote: String?) throws {
         if externalInvocationID == nil { try PAToolProtocol.evidence(quote, human: human) }
     }
-    init(model: DashboardModel, human: String, humanContext: String, topicID: UUID?, turnID: UUID, mail: MailLookup? = nil, history: [[String:String]] = [], evaluationMemory:PAMemoryStore? = nil, evaluationProjects:LifeWorkspaceStore? = nil,focusAreas:[LifeArea]? = nil,inferenceModel:String? = nil) {
+    init(model: DashboardModel, human: String, humanContext: String, topicID: UUID?, turnID: UUID, mail: MailLookup? = nil, history: [[String:String]] = [], evaluationMemory:PAMemoryStore? = nil, evaluationProjects:LifeWorkspaceStore? = nil,focusAreas:[LifeArea]? = nil,inferenceModel:String? = nil, historyLookup: ((String?, String?) -> AssistantPageContext)? = nil) {
         self.evaluationMemory=evaluationMemory;self.evaluationProjects=evaluationProjects;self.focusAreas=focusAreas
+        self.historyLookup = historyLookup
         self.localMail = mail ?? MailLookup(); self.history = history
         self.model = model;self.inferenceModel=inferenceModel ?? model.chatGPT.selectedModel; self.human = human; self.humanContext = humanContext; self.topicID = topicID; self.turnID = turnID; registration = model.chatGPT.activeID
         if evaluationMemory == nil && evaluationProjects == nil {
@@ -231,7 +233,7 @@ import Foundation
         func text(_ name: String) -> String? { args[name] as? String }
         if externalInvocationID == nil, let quote=text("authorization"),let current=try? PAToolProtocol.conversationalAuthorization(quote,human:human,history:history) {args["authorization"]=current}
         let assistant = model.assistant
-        let memoryTool = ["read_memory","save_memory","remember_context","change_memory","read_life_notebook","read_context_page","organise_memory"].contains(call.name)
+        let memoryTool = ["read_memory","save_memory","remember_context","change_memory","read_life_notebook","read_context_page","search_chat_history","read_chat_history","organise_memory"].contains(call.name)
         let lifeTool = LifeWorkspaceTools.names.contains(call.name)
         guard memoryTool || lifeTool || call.name == "ask_clarification" || assistant.contextEnabled else { throw ActionFailure.message("Source context is disabled.") }
         if !memoryTool, !lifeTool, call.name != "ask_clarification", ProcessInfo.processInfo.arguments.contains("--sample") { throw ActionFailure.message("Sample mode never accesses Apple apps.") }
@@ -438,6 +440,18 @@ import Foundation
             guard (0...24_000).contains(offset) else { throw ActionFailure.message("Choose a valid page continuation offset.") }
             let purpose: ContextKnowledgePurpose = assistant.profileBusy(topicID) ? .setup : .conversation
             let capture = model.captureContextPages(registration: registration, query: text("query"), topic: topicID, includeTopics: purpose == .setup ? false : focusAreas != nil, everyday: false, pageID: text("id"), pageOffset: offset, purpose: purpose)
+            contextPageCaptures.append(capture)
+            consultedMemory.formUnion(capture.memoryIDs)
+            notebookWorkspace.formUnion(capture.workspaceIDs)
+            return capture.text
+        case "search_chat_history", "read_chat_history":
+            guard let historyLookup else { return try json(["available":false,"reason":"Earlier chat lookup is unavailable for this request."]) }
+            let capture = historyLookup(text("query"), text("id"))
+            guard let output = (try? JSONSerialization.jsonObject(with: Data(capture.text.utf8))) as? [String:Any] else {
+                throw ActionFailure.message("Earlier chat lookup returned an invalid result.")
+            }
+            if output["available"] as? Bool == false || output["unavailable"] != nil { return capture.text }
+            guard capture.current() else { throw ActionFailure.message("Earlier chat access changed. Look up the discussion again.") }
             contextPageCaptures.append(capture)
             consultedMemory.formUnion(capture.memoryIDs)
             notebookWorkspace.formUnion(capture.workspaceIDs)
