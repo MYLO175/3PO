@@ -183,35 +183,13 @@ import Foundation
         return .init(toolName:call.name,arguments:try json(args),snapshot:encoded,outline:outline,details:details)
     }
     private var memory:PAMemoryStore { evaluationMemory ?? model.assistant.memory }
-    /// Preparation only. External callers cannot invoke performApproval; that
-    /// entry point is reached only from the native UI's concrete Approve button.
-    func prepareMCPApproval(_ call: PAFunctionCall, requestID: UUID, valid: @escaping NativeWriteValidity) async throws -> AssistantActionProposal {
-        guard MCPBridgeContract.writes.contains(call.name), registration == model.chatGPT.activeID,
-              model.assistant.contextEnabled, valid() else { throw ActionFailure.message("External action preparation is unavailable.") }
-        let args = try PAToolProtocol.arguments(call)
-        let sources = call.name == "change_calendar" ? calendar.sources : reminders.sources
-        try PAToolProtocol.nativeReadPreflight(call.name, operation: args["operation"] as? String ?? "", hasSources: !sources.isEmpty, hasDetails: (args["target"] as? String).flatMap { itemDetails[$0] } != nil, target: args["target"] as? String)
-        let session = PAToolSession(model: model, human: MCPBridgeContract.approvalEvidence, humanContext: "Concrete external approval", topicID: nil, turnID: requestID)
-        session.calendar = calendar; session.reminders = reminders; session.itemDetails = itemDetails
-        var proposal = try await session.prepareApproval(call, args: args)
-        if let id = args["target"] as? String, let baseline = itemDetails[id] {
-            if baseline.kind == .event {
-                proposal.details.insert("Current event: " + baseline.start.formatted(date: .abbreviated, time: baseline.allDay ? .omitted : .shortened) + " – " + baseline.end.formatted(date: .abbreviated, time: baseline.allDay ? .omitted : .shortened), at: 0)
-            } else if let due = baseline.due {
-                proposal.details.insert("Current due date: " + due.formatted(date: .abbreviated, time: baseline.hasTime ? .shortened : .omitted), at: 0)
-            }
-        }
-        try Task.checkCancellation()
-        guard valid() else { throw ActionFailure.message("Source access changed while preparing the action. Nothing was submitted.") }
-        proposal.id = requestID
-        return proposal
-    }
     /// The MCP host owns conversational intent and its own tool approval UI.
     /// This typed entry point cannot be selected by a model-supplied JSON field.
     /// Native revisions, source permissions, durable receipts and readback still apply.
     func executeMCP(_ call: PAFunctionCall, requestID: UUID?, valid: @escaping NativeWriteValidity) async throws -> String {
         guard MCPBridgeContract.nativeReads.contains(call.name) || MCPBridgeContract.nativeWrites.contains(call.name),
-              valid(), registration == model.chatGPT.activeID else { throw ActionFailure.message("External invocation is unavailable.") }
+              valid(), registration == model.chatGPT.activeID,
+              !MCPBridgeContract.nativeWrites.contains(call.name) || requestID != nil else { throw ActionFailure.message("External invocation is unavailable.") }
         if LifeWorkspaceTools.mutations.contains(call.name), !externalWorkspaceRead { throw ActionFailure.message("Read Projects before changing project data or its display.") }
         externalHostInvocation = true
         externalInvocationID = requestID
@@ -377,6 +355,7 @@ import Foundation
             let operation = text("operation")!
             let kind: ActionKind = call.name == "change_calendar" ? (operation == "create" ? .createEvent : operation == "delete" ? .deleteEvent : .editEvent) : (operation == "create" ? .createReminder : operation == "complete" ? .completeReminder : operation == "delete" ? .deleteReminder : .editReminder)
             let draft = ActionDraft(kind:kind,target:text("target"),destination:text("destination"),title:text("title"),due:text("due"),hasTime:args["hasTime"] as? Bool,start:text("start"),end:text("end"),allDay:args["allDay"] as? Bool,scope:text("scope"),notes:text("notes"),location:text("location"),options:try (args["options"] as? [String:Any]).map { try json($0) })
+            try ActionRules.validate(draft)
             let result = try await model.assistantActions.performTool(draft,human:human,authorization:text("authorization"),turnID:externalInvocationID ?? turnID,model:model,calendar:calendar,reminders:reminders,expectedDetails:draft.target.flatMap {itemDetails[$0]},valid:valid,authority:externalInvocationID == nil ? .conversation : .externalMCPHost)
             receipts.append(result)
             // A subsequent edit must read the new version, never reuse the old snapshot.

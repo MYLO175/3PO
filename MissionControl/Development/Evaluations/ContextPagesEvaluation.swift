@@ -70,6 +70,15 @@ import SwiftData
             checks["MCP saves the canonical instruction owner for " + target] = saved["saved"] as? Bool == true && current["text"] as? String == "Fictional host-approved guidance for " + target
             checks["MCP refuses stale instruction revision for " + target] = await refused("change_instructions", ["target": target, "revision": prior["revision"]!, "text": "Stale text"])
         }
+        var learned = PAMemory(registration: owner, text: "Fictional learned reminder guidance", kind: .preference, explicit: false, provenance: "Fictional conversation", certainty: .stated, durability: .stable)
+        learned.instructionScope = "reminders"
+        guard model.assistant.memory.put(learned) else { throw IntegrationError.verification }
+        let learnedRead = try await call("read_instructions", ["target": "reminders"])
+        let learnedRows = learnedRead["learnedGuidance"] as? [[String: String]] ?? []
+        checks["MCP instruction reads include current learned guidance without overwriting explicit policy"] = learnedRows.first?["id"] == learned.id.uuidString && (learnedRead["text"] as? String)?.contains("Fictional host-approved guidance") == true
+        _ = try await call("change_memory", ["id": learned.id.uuidString, "operation": "correct", "text": "Fictional revised reminder guidance", "evidence": "Please revise my reminder preference"])
+        checks["MCP corrections retain learned instruction scope and prior evidence"] = model.learnedInstructionText("reminders", registration: owner).contains("Fictional revised reminder guidance") && model.assistant.memory.records.first { $0.id == learned.id }?.supersededBy != nil
+        checks["MCP learned-guidance changes invalidate a prior instruction read"] = await refused("change_instructions", ["target": "reminders", "revision": learnedRead["revision"]!, "text": "Stale replacement"])
         let first = try await call("read_instructions", ["target": "assistant"])
         _ = try await call("change_instructions", ["target": "assistant", "revision": first["revision"]!, "text": "A second saved instruction version"])
         let instructionID = ContextPage.stableID(registration: owner, kind: .instruction, key: "assistant")
@@ -108,7 +117,7 @@ import SwiftData
         _ = try await call("change_memory", ["id": correctedID, "operation": "forget", "text": NSNull(), "evidence": "Forget this optics preference"])
         checks["MCP memory Forget removes the selected correction lineage"] = !model.assistant.memory.records.contains { [$0.id.uuidString, $0.supersedes?.uuidString ?? ""].contains(factID) }
         let question = try model.contextQuestions.offer(registration: owner, projectID: UUID(uuidString: spaceID)!, identity: model.contextProjectIdentity(model.assistant.projects.items(owner).first { $0.id.uuidString == spaceID }!), question: "What is this fictional optics space for?")!
-        let inbox = try await call("read_review_inbox")
+        let inbox = try await call("read_review_inbox", ["offset": 0])
         let row = (inbox["items"] as! [[String: Any]]).first { $0["id"] as? String == "project:" + question.id }!
         _ = try await call("dismiss_review_item", ["id": row["id"]!, "revision": row["revision"]!])
         checks["MCP Review dismissal acknowledges a current exact question without task completion"] = model.contextQuestions.questions(registration: owner, includeFinished: true).first { $0.id == question.id }?.status == .dismissed && model.assistant.projects.items(owner).first { $0.id.uuidString == items[1]["id"] as? String }?.status == .planned

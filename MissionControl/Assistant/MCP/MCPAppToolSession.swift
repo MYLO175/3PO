@@ -21,7 +21,7 @@ import Foundation
     }
     init(model: DashboardModel) {
         self.model = model; registration = model.chatGPT.activeID
-        tools = PAToolSession(model: model, human: MCPBridgeContract.approvalEvidence,
+        tools = PAToolSession(model: model, human: MCPBridgeContract.hostProvenance,
                               humanContext: "External MCP host session", topicID: nil, turnID: UUID(), focusAreas: [])
     }
     static func permissionScope(_ model: DashboardModel) -> String {
@@ -87,13 +87,19 @@ import Foundation
             }
             let value = try instruction(target)
             instructionReads[target] = value
+            let learned = instructionMemories(target)
+            for record in learned { memories[record.id] = record }
             return try json(["target": target, "revision": value.revision, "text": value.text,
-                             "ownership": "Human guidance, separate from factual context, source permissions and write approval."])
+                             "learnedGuidance": learned.map { ["id": $0.id.uuidString, "text": $0.text, "instructionScope": $0.effectiveInstructionScope ?? ""] },
+                             "ownership": "text is the explicit editable policy. Learned guidance is separate saved memory; use change_memory to correct/forget an issued learned rule. Explicit instructions take priority. Neither grants source access or action approval."])
         case "change_instructions":
             let target = text("target")!, expected = text("revision")!, value = text("text")!
             guard let captured = instructionReads[target], captured.revision == expected,
                   try instruction(target).revision == expected,
                   !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ActionFailure.message("Read the current instructions before replacing them. Empty guidance is not saved.") }
+            guard captured.brief == nil || value.count <= 8000,
+                  captured.review == nil || value.count <= ReviewPolicyRules.textLimit,
+                  captured.page == nil && captured.candidate == nil || value.utf8.count <= ContextPageLimits.maximumMarkdownBytes else { throw ActionFailure.message("The instruction text exceeds this editor's size limit.") }
             willMutate()
             if let brief = captured.brief { try model.briefings.saveWritingPrompt(value, expected: brief, model: model) }
             else if let review = captured.review {
@@ -163,7 +169,7 @@ import Foundation
             for record in selected { memories[record.id] = record }
             return try json(["records": selected.map { record in
                 ["id": record.id.uuidString, "text": record.text, "kind": record.kind.rawValue, "evidence": record.evidence ?? "", "provenance": record.provenance,
-                 "resolved": record.resolved != nil, "retired": record.retiredAt != nil, "scope": record.conversationID?.uuidString ?? "shared", "reviewPreference": record.reviewPreference == true] as [String: Any]
+                 "resolved": record.resolved != nil, "retired": record.retiredAt != nil, "scope": record.conversationID?.uuidString ?? "shared", "reviewPreference": record.reviewPreference == true, "instructionScope": record.effectiveInstructionScope as Any? ?? NSNull()] as [String: Any]
             }, "total": available.count, "nextOffset": offset + selected.count < available.count ? (offset + selected.count) as Any : NSNull(), "coverage": "Current saved versions only; forgotten records and inaccessible source content are withheld."])
         case "save_memory":
             guard memory.enabled, let value = text("text"), !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -200,9 +206,17 @@ import Foundation
             memories.removeValue(forKey: id)
             return try json(result("Saved 3PO memory change: " + operation, ["id": resultID.uuidString]))
         case "read_review_inbox":
+            guard let offset = args["offset"] as? Int, (0...1_000_000).contains(offset) else { throw ActionFailure.message("Supply a nonnegative Review offset, starting at zero.") }
             let rows = try reviewRows()
-            for row in rows { reviewReads[row["id"] as! String] = row["revision"] as? String }
-            return try json(["items": Array(rows.prefix(100)), "omitted": max(0, rows.count - 100), "pendingCount": model.reviewInbox.pendingCount,
+            var selected: [[String: Any]] = [], bytes = 0
+            for row in rows.dropFirst(offset).prefix(40) {
+                let count = try JSONSerialization.data(withJSONObject: row).count
+                guard bytes + count <= 240_000 else { break }
+                selected.append(row); bytes += count
+            }
+            for row in selected { reviewReads[row["id"] as! String] = row["revision"] as? String }
+            let next = offset + selected.count
+            return try json(["items": selected, "total": rows.count, "nextOffset": next < rows.count ? next as Any : NSNull(), "pendingCount": model.reviewInbox.pendingCount,
                              "coverage": "Saved Review presentation only. Suggestions are proposals, not approvals or proof of current native state. Use source reads and separate change tools for requested work."])
         case "dismiss_review_item":
             let id = text("id")!, revision = text("revision")!
@@ -255,7 +269,21 @@ import Foundation
         default: throw ActionFailure.message("Unsupported external tool.")
         }
     }
+    private func instructionMemories(_ target: String) -> [PAMemory] {
+        var scope = target
+        if target.hasPrefix("calendar:") {
+            guard let source = tools.calendar.sources.first(where: { "calendar:" + $0.id == target && !model.assistant.excludedCalendars.contains($0.id) }) else { return [] }
+            scope = "calendar:" + model.calendarPageKey(source)
+        }
+        return model.assistant.memory.instructionPreferences(scope, registration: registration)
+    }
     private func instruction(_ target: String) throws -> Instruction {
+        var value = try baseInstruction(target)
+        let learned = instructionMemories(target)
+        if !learned.isEmpty { value.revision += ":" + (try version(learned)) }
+        return value
+    }
+    private func baseInstruction(_ target: String) throws -> Instruction {
         if target == "brief" {
             guard model.briefings.writingPromptReadable else { throw ActionFailure.message("Saved brief instructions are unavailable.") }
             let value = model.briefings.writingPrompt(registration)
@@ -270,7 +298,7 @@ import Foundation
         let candidate: ContextPage
         var defaultText = ""
         if let feature = ContextFeature(rawValue: target) {
-            defaultText = feature.defaultText
+            defaultText = feature == .assistant ? model.assistant.preferences : feature.defaultText
             candidate = .init(registration: registration, kind: .instruction, key: target, owner: .human, title: feature.title, markdown: defaultText)
         } else if target.hasPrefix("calendar:") {
             let id = String(target.dropFirst(9))
@@ -310,7 +338,10 @@ import Foundation
         let inbox = model.reviewInbox
         var rows: [[String: Any]] = []
         func row<T: Encodable>(_ prefix: String, _ id: String, _ value: T, title: String) throws {
-            rows.append(["id": prefix + id, "revision": try version(value), "title": title, "data": try object(value)])
+            let data = try object(value)
+            let encoded = try json(data)
+            rows.append(["id": prefix + id, "revision": try version(value), "title": String(title.prefix(1000)),
+                         "data": encoded.utf8.count <= 20_000 ? data : String(encoded.prefix(10_000)), "dataTruncated": encoded.utf8.count > 20_000])
         }
         for card in inbox.emailCards { try row("email:", card.id, card.summary, title: card.message.subject) }
         for discovery in inbox.discoveries { try row("discovery:", discovery.id, discovery, title: discovery.message) }

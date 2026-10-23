@@ -16,7 +16,7 @@ import Foundation
         var fields: [String: Any] = ["requestID": UUID().uuidString, "operation": "create", "target": NSNull(), "destination": NSNull(), "title": "Fictional review", "notes": NSNull(), "due": "2026-10-23", "hasTime": false, "scope": NSNull(), "options": NSNull()]
         let call = try MCPBridgeContract.call(name: "change_reminder", arguments: fields)
         let args = try PAToolProtocol.arguments(call)
-        precondition(args["authorization"] as? String == MCPBridgeContract.approvalEvidence)
+        precondition(args["authorization"] as? String == MCPBridgeContract.hostProvenance)
         func refuses(_ name: String, _ args: [String: Any]) {
             do { _ = try MCPBridgeContract.call(name: name, arguments: args); preconditionFailure("Unsafe request accepted") } catch {}
         }
