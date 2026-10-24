@@ -5,6 +5,7 @@ struct GraphitiMemoryView: View {
     let registration: String
     @Environment(\.dismiss) private var dismiss
     @State private var question = ""
+    @State private var indexingFocus = ""
     @State private var showingGraph = false
     @State private var showingSettings = true
     @State private var selectedNode: String?
@@ -50,6 +51,12 @@ struct GraphitiMemoryView: View {
                 Button("Delete experimental graph", role: .destructive) { Task { await model.graphiti.clear(model) } }.disabled(model.graphiti.busy || !model.graphiti.runtimeAvailable)
                 if let updated = state.updated { Text("Updated \(updated.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
             }
+            HStack {
+                TextField("Index a person or topic, e.g. Cipolla", text: $indexingFocus)
+                Button("Index matching background") { model.graphiti.update(model, focus: indexingFocus) }
+                    .disabled(indexingFocus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || indexingFocus.utf8.count > 200 || !model.graphiti.runtimeAvailable || model.graphiti.busy || model.assistant.busy || model.chatGPT.busy || model.heartbeat.busy || !model.assistant.memory.enabled || !model.assistant.memory.learningEnabled)
+            }
+            Text("Processes up to six pending original records containing this phrase. Existing relationships are retained; this does not add a new memory.").font(.caption).foregroundStyle(.secondary)
             Text("The first background-only update rebuilds the earlier broad experimental index. Original records and context pages stay saved. Records with no lasting background are marked processed without adding relationships.").font(.caption).foregroundStyle(.secondary)
             Text(model.graphiti.status).font(.caption).textSelection(.enabled)
             if let error = model.graphiti.error { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }

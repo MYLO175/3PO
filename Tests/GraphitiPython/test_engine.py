@@ -106,8 +106,32 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(response['type'], 'result', response)
         return response['result']
 
+    def test_focused_sync_retains_full_snapshot_and_skips_unrelated_pending(self):
+        original = episode(key='existing')
+        self.successful('sync', episodes=[original])
+        target = episode(person='Beatrice', place='Oxford', key='focus')
+        unrelated = episode(key='unrelated')
+        unrelated['body'] = 'Source type: memory.\nOriginal evidence DATA; Beatrice appears only in boilerplate.\n' + unrelated['body']
+        snapshot = [original, unrelated, target]
+        done = self.successful('sync', episodes=snapshot, focus_query='bEaTrIcE', max_new_episodes=6)
+        self.assertEqual(done['episode_count'], 2)
+        self.assertEqual(done['pending_count'], 1)
+        self.assertEqual(done['focus_pending_count'], 0)
+        manifest = json.loads(next(Path(self.root).rglob('manifest.json')).read_text())
+        self.assertEqual(set(manifest['episodes']), {original['id'], target['id']})
+        calls = self.calls
+        self.successful('sync', episodes=snapshot, focus_query='no matching record', max_new_episodes=6)
+        self.assertEqual(self.calls, calls)
+        view = self.successful('browse', allowed_episode_ids=[ep['id'] for ep in snapshot])
+        self.assertTrue(any('Alice' in f['text'] for f in view['facts']))
+        self.assertTrue(any('Beatrice' in f['text'] for f in view['facts']))
+        # Focus never hides withdrawal: reconciliation still checks the entire snapshot.
+        reset = self.successful('sync', episodes=[target, unrelated], focus_query='no matching record')
+        self.assertEqual(reset['episode_count'], 0)
+        self.assertEqual(self.calls, calls)
+
     def test_durable_policy_filters_and_checkpoints_transient_records(self):
-        policy = {'memory_policy': 'durable-background-v1'}
+        policy = {'memory_policy': 'durable-background-v2'}
         mixed = episode()
         mixed['body'] += ' Meet the tutor at 14:00 tomorrow. Finish the worksheet tonight.'
         transient = episode(key='appointment')

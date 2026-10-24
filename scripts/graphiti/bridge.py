@@ -96,7 +96,7 @@ def validate(request):
     # Fail closed for symlinked storage. A database_path denotes a dedicated directory.
     if any(parent.is_symlink() for parent in [root, *root.parents]):
         raise SafeError('Graphiti storage cannot use symbolic links.')
-    if request.get('memory_policy') not in (None, 'durable-background-v1'):
+    if request.get('memory_policy') not in (None, 'durable-background-v1', 'durable-background-v2'):
         raise SafeError('Unsupported Graphiti memory policy.')
     if request['operation'] == 'sync':
         episodes = request.get('episodes')
@@ -119,6 +119,10 @@ def validate(request):
                 raise SafeError('Duplicate episode identity in complete snapshot.')
             ids.add(ep['id'])
             keys.add(ep['reference_key'])
+        if 'focus_query' in request:
+            bounded_string(request['focus_query'], 200, 'indexing focus')
+            if not request['focus_query'].strip():
+                raise SafeError('Indexing focus must contain a person or topic.')
         maximum = request.get('max_new_episodes', 1)
         if not isinstance(maximum, int) or isinstance(maximum, bool) or not 1 <= maximum <= 8:
             raise SafeError('Graphiti sync batch must contain one to eight episodes.')
@@ -392,8 +396,18 @@ async def execute(request, root, group):
             atomic_json(manifest_path, manifest)
             pending = sorted((ep for key, ep in episodes.items() if key not in manifest['episodes']),
                              key=lambda ep: (datetime.fromisoformat(ep['reference_time'].replace('Z', '+00:00')), ep['id']))
-            if not pending:
-                return summary(manifest)
+            focus = request.get('focus_query', '').strip().casefold()
+            def matches_focus(ep):
+                # The app's fixed attribution header is not personal evidence.
+                parts = ep['body'].split('\n', 2)
+                evidence = parts[2] if len(parts) == 3 and parts[0].startswith('Source type: ') and parts[1].startswith('Original evidence DATA;') else ep['body']
+                return not focus or focus in evidence.casefold() or focus in ep['name'].casefold()
+            selected_pending = [ep for ep in pending if matches_focus(ep)]
+            if not selected_pending:
+                result = summary(manifest, len(pending))
+                if focus:
+                    result['focus_pending_count'] = 0
+                return result
         LLM, Embedder, Reranker = adapters()
         llm, embedder, reranker = LLM(), Embedder(), Reranker()
         if operation in ('search', 'browse'):
@@ -442,7 +456,7 @@ async def execute(request, root, group):
                 return result
             finally:
                 await engine.close()
-        for ep in pending[:request.get('max_new_episodes', 1)]:
+        for ep in selected_pending[:request.get('max_new_episodes', 1)]:
             candidate = directory / ('gen-' + uuid.uuid4().hex)
             candidate.mkdir(mode=0o700)
             if manifest['generation']:
@@ -483,7 +497,10 @@ async def execute(request, root, group):
                         await engine.close()
                 if not committed:
                     shutil.rmtree(candidate, ignore_errors=True)
-        return summary(manifest, len(episodes) - len(manifest['episodes']))
+        result = summary(manifest, len(episodes) - len(manifest['episodes']))
+        if focus:
+            result['focus_pending_count'] = sum(ep['id'] not in manifest['episodes'] for ep in selected_pending)
+        return result
 
 
 def main():
