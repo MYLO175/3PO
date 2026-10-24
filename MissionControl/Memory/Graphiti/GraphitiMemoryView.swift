@@ -5,6 +5,8 @@ struct GraphitiMemoryView: View {
     let registration: String
     @Environment(\.dismiss) private var dismiss
     @State private var question = ""
+    @State private var showingGraph = false
+    @State private var selectedNode: String?
     @State private var result = ""
     @State private var resultCapture: AssistantPageContext?
     @State private var searching = false
@@ -34,8 +36,10 @@ struct GraphitiMemoryView: View {
                 Text("\(state.indexedCount) indexed · \(state.pendingCount) pending").monospacedDigit()
             }.font(.callout)
             HStack {
-                Button(state.paused ? "Resume graph update" : "Update graph") { model.graphiti.update(model) }
+                Button("Index next record") { model.graphiti.update(model) }
                     .disabled(!model.graphiti.runtimeAvailable || model.graphiti.busy || model.assistant.busy || model.chatGPT.busy || model.heartbeat.busy || !model.assistant.memory.enabled || !model.assistant.memory.learningEnabled)
+                Button("Index all pending") { model.graphiti.update(model, all: true) }
+                    .disabled(model.graphiti.busy || model.assistant.busy || model.chatGPT.busy || model.heartbeat.busy || !model.graphiti.runtimeAvailable)
                 if model.graphiti.busy {
                     ProgressView().controlSize(.small)
                     Button("Stop") { searchTask?.cancel(); model.graphiti.cancel() }
@@ -50,21 +54,17 @@ struct GraphitiMemoryView: View {
                     .font(.caption).textSelection(.enabled)
             }
             Divider()
+            HStack {
+                Button("View saved graph") { lookup(browse: true) }
+                    .disabled(searching || model.graphiti.busy || model.assistant.busy || model.heartbeat.busy)
+                if searching { ProgressView().controlSize(.small) }
+                Text("Viewing and searching use saved relationships, without AI extraction.").font(.caption).foregroundStyle(.secondary)
+            }
             Text("Try a graph lookup").font(.headline)
             HStack {
                 TextField("For example: Which projects relate to my current goals?", text: $question)
                 Button("Search") {
-                    let query = question
-                    searching = true; result = ""; resultCapture = nil
-                    searchTask = Task {
-                        defer { searching = false; searchTask = nil }
-                        do {
-                            let capture = try await model.graphiti.search(query, model: model, registration: registration)
-                            guard capture.current() else { throw CancellationError() }
-                            resultCapture = capture; result = capture.text
-                        } catch is CancellationError { result = "Search stopped." }
-                        catch { result = error.localizedDescription }
-                    }
+                    lookup(browse: false)
                 }.disabled(searching || model.graphiti.busy || model.assistant.busy || model.heartbeat.busy || question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             ScrollView {
@@ -75,9 +75,17 @@ struct GraphitiMemoryView: View {
                         Text("\(report.indexedEpisodes) records indexed · \(report.pendingEpisodes) awaiting update · \(report.omittedEpisodes) outside this snapshot")
                             .font(.caption).foregroundStyle(.secondary)
                         if report.facts.isEmpty {
-                            Text("No matching relationships were retrieved. The graph may be incomplete; this does not mean the information is absent from your life or original records.")
+                            Text(showingGraph ? "No current relationships are available in this graph sample. Index a record or try a focused search." : "No matching relationships were retrieved. The graph may be incomplete; this does not mean the information is absent from your life or original records.")
                         }
-                        ForEach(report.facts) { fact in
+                        if showingGraph && !report.facts.isEmpty {
+                            GraphitiNetwork(report: report, selected: $selectedNode).frame(height: 360)
+                            HStack {
+                                Text("Select a node to inspect its relationships below.").font(.caption)
+                                if selectedNode != nil { Button("Show all relationships") { selectedNode = nil } }
+                            }
+                            if report.bounded == true { Text("Showing a bounded sample from the first 201 stored relationships. Search to find other connections.").font(.caption).foregroundStyle(.secondary) }
+                        }
+                        ForEach(report.facts.filter { selectedNode == nil || $0.source == selectedNode || $0.target == selectedNode }) { fact in
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(fact.text)
                                 if let start = fact.valid_at { Text("Applies from: " + GraphitiLookupReport.date(start)).font(.caption).foregroundStyle(.secondary) }
@@ -101,11 +109,25 @@ struct GraphitiMemoryView: View {
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
 
-        }.padding(24).frame(width: 760, height: 660)
+        }.padding(24).frame(width: 960, height: 760)
             .disabled(registration != model.chatGPT.activeID || !model.graphiti.readable)
             .onChange(of: model.chatGPT.activeID) { searchTask?.cancel(); result = ""; dismiss() }
             .onDisappear { searchTask?.cancel() }
     }
+    private func lookup(browse: Bool) {
+        let query = browse ? "Saved graph" : question
+        searching = true; result = ""; resultCapture = nil; selectedNode = nil; showingGraph = browse
+        searchTask = Task {
+            defer { searching = false; searchTask = nil }
+            do {
+                let capture = try await model.graphiti.search(query, model: model, registration: registration, browse: browse)
+                guard capture.current() else { throw CancellationError() }
+                resultCapture = capture; result = capture.text
+            } catch is CancellationError { result = "Lookup stopped." }
+            catch { result = error.localizedDescription }
+        }
+    }
+
 }
 
 private struct GraphitiLookupReport: Decodable {
@@ -113,10 +135,15 @@ private struct GraphitiLookupReport: Decodable {
     struct Fact: Decodable, Identifiable {
         let id: String
         let text: String
+        let source: String?
+        let target: String?
         let valid_at: String?
         let invalid_at: String?
         let sources: [Source]
     }
+    struct Node: Decodable, Identifiable { let id: String; let name: String }
+    let nodes: [Node]?
+    let bounded: Bool?
     let facts: [Fact]
     let indexedEpisodes: Int
     let pendingEpisodes: Int
@@ -124,5 +151,54 @@ private struct GraphitiLookupReport: Decodable {
     static func date(_ value: String) -> String {
         guard let date = try? Date(value, strategy: .iso8601) else { return value }
         return date.formatted(date: .abbreviated, time: .omitted)
+    }
+}
+
+
+private struct GraphitiNetwork: View {
+    let report: GraphitiLookupReport
+    @Binding var selected: String?
+    @State private var scale = 1.0
+    private var nodes: [GraphitiLookupReport.Node] {
+        let used = Set(report.facts.flatMap { [$0.source, $0.target].compactMap { $0 } })
+        return (report.nodes ?? []).filter { used.contains($0.id) }.sorted { $0.name < $1.name }
+    }
+    private func point(_ index: Int, count: Int, size: CGFloat) -> CGPoint {
+        let angle = Double(index) * 2 * Double.pi / Double(max(count, 1)) - Double.pi / 2
+        return CGPoint(x: size / 2 + cos(angle) * size * 0.36, y: size / 2 + sin(angle) * size * 0.36)
+    }
+    var body: some View {
+        let items = nodes
+        let size = max(540, Double(items.count) * 24) * scale
+        VStack(alignment: .leading) {
+            HStack {
+                Text("\(items.count) entities · \(report.facts.count) relationships").font(.caption)
+                Spacer()
+                Button("−") { scale = max(0.5, scale - 0.25) }.accessibilityLabel("Zoom out")
+                Button("+") { scale = min(2, scale + 0.25) }.accessibilityLabel("Zoom in")
+            }
+            ScrollView([.horizontal, .vertical]) {
+                ZStack(alignment: .topLeading) {
+                    Canvas { context, _ in
+                        let positions = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($0.element.id, point($0.offset, count: items.count, size: size)) })
+                        for edge in report.facts {
+                            guard let source = edge.source, let target = edge.target, let a = positions[source], let b = positions[target] else { continue }
+                            var path = Path(); path.move(to: a); path.addLine(to: b)
+                            let highlighted = selected == source || selected == target
+                            context.stroke(path, with: .color(highlighted ? .accentColor : .secondary.opacity(0.3)), lineWidth: highlighted ? 2.5 : 1)
+                        }
+                    }
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, node in
+                        Button { selected = selected == node.id ? nil : node.id } label: {
+                            VStack(spacing: 3) {
+                                Circle().fill(selected == node.id ? Color.accentColor : Color.secondary).frame(width: 14, height: 14)
+                                Text(node.name).font(.caption).lineLimit(3).multilineTextAlignment(.center)
+                                    .padding(3).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 4))
+                            }.frame(width: 120)
+                        }.buttonStyle(.plain).help(node.name).position(point(index, count: items.count, size: size))
+                    }
+                }.frame(width: size, height: size)
+            }.background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
+        }
     }
 }

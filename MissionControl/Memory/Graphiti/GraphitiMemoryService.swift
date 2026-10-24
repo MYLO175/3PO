@@ -111,7 +111,7 @@ import SwiftData
         }
         return try await GraphitiProcess.run(python: runtimePython, helper: helper, request: request, onLLM: onLLM)
     }
-    func update(_ model: DashboardModel) {
+    func update(_ model: DashboardModel, all: Bool = false) {
         guard !busy, !model.assistant.busy, !model.chatGPT.busy, !model.heartbeat.busy else { return }
         let registration = model.chatGPT.activeID
         task = Task { [weak self, weak model] in
@@ -120,9 +120,9 @@ import SwiftData
                 var previousCount = -1
                 while true {
                     try Task.checkCancellation()
-                    let result = try await self.synchronize(model, registration: registration, explicit: true)
+                    let result = try await self.synchronize(model, registration: registration, explicit: true, batchSize: all ? 6 : 1)
                     let state = self.settings(registration)
-                    if result.failure != nil || result.skipped || state.pendingCount == 0 { break }
+                    if !all || result.failure != nil || result.skipped || state.pendingCount == 0 { break }
                     guard state.indexedCount > previousCount else { throw ActionFailure.message("Graphiti made no progress. Completed episodes are retained.") }
                     previousCount = state.indexedCount
                     await Task.yield()
@@ -141,7 +141,7 @@ import SwiftData
         defer { heartbeatTask = nil }
         return try await withTaskCancellationHandler(operation: { try await operation.value }, onCancel: { operation.cancel() })
     }
-    func synchronize(_ model: DashboardModel, registration: String, explicit: Bool, heartbeat: HeartbeatChildRequest? = nil) async throws -> HeartbeatLearningResult {
+    func synchronize(_ model: DashboardModel, registration: String, explicit: Bool, heartbeat: HeartbeatChildRequest? = nil, batchSize: Int = 6) async throws -> HeartbeatLearningResult {
         guard !busy, model.assistant.memory.enabled, model.assistant.memory.learningEnabled,
               model.chatGPT.hasSession, model.chatGPT.inferenceVerified, !model.chatGPT.usagePaused,
               !model.assistant.busy, !model.assistant.hasDraft else {
@@ -168,7 +168,7 @@ import SwiftData
         }
         var command = request("sync", registration: registration)
         command["episodes"] = captured.episodes
-        command["max_new_episodes"] = explicit ? 6 : 1
+        command["max_new_episodes"] = explicit ? batchSize : 1
         var calls = 0
         do {
             try validate()
@@ -217,7 +217,7 @@ import SwiftData
         }
         return object
     }
-    func search(_ query: String, model: DashboardModel, registration: String) async throws -> AssistantPageContext {
+    func search(_ query: String, model: DashboardModel, registration: String, browse: Bool = false) async throws -> AssistantPageContext {
         guard !busy, readable, model.assistant.memory.enabled, registration == model.chatGPT.activeID else {
             throw ActionFailure.message("Graphiti is busy or unavailable for this account.")
         }
@@ -226,7 +226,7 @@ import SwiftData
         }
         let captured = snapshot(model, registration: registration), expectedRevision = revision, storage = model.reviewStorageIdentity
         busy = true; defer { busy = false }
-        var command = request("search", registration: registration)
+        var command = request(browse ? "browse" : "search", registration: registration)
         command["query"] = query; command["limit"] = 12
         command["allowed_episode_ids"] = captured.records.keys.sorted()
         let result = try await execute(command) { _ in throw ActionFailure.message("Graphiti search cannot start extraction or inference.") }
@@ -237,7 +237,7 @@ import SwiftData
             throw ActionFailure.message("Graphiti's evidence changed or could not be verified. Update the graph before searching again.")
         }
         let indexedSet = Set(indexed)
-        let verified = facts.prefix(12).compactMap { fact -> [String: Any]? in
+        let verified = facts.prefix(browse ? 200 : 12).compactMap { fact -> [String: Any]? in
             guard let text = fact["text"] as? String, text.utf8.count <= 4000,
                   let ids = fact["episode_ids"] as? [String], !ids.isEmpty, Set(ids).isSubset(of: indexedSet) else { return nil }
             var row = fact
@@ -249,7 +249,7 @@ import SwiftData
         // generation, not just the citations attached to the returned edge.
         let backing = indexed.compactMap { captured.records[$0] }
         let versions = Dictionary(backing.map { ($0.reference.contextKey, $0.reference.revision) }, uniquingKeysWith: { first, _ in first })
-        let text = GraphitiMemoryRules.json(["backend": "Graphiti", "facts": verified, "indexedEpisodes": indexed.count,
+        let text = GraphitiMemoryRules.json(["backend": "Graphiti", "facts": verified, "nodes": result["nodes"] as? [[String: Any]] ?? [], "bounded": result["bounded"] as? Bool ?? false, "indexedEpisodes": indexed.count,
             "pendingEpisodes": max(0, captured.records.count - indexed.count), "omittedEpisodes": captured.omitted,
             "coverage": "Partial graph retrieval over shared permitted original evidence. Missing edges do not prove absence. Temporal validity and third-party attribution must be considered. Use original source tools to verify changing plans; graph results never issue write targets."])
         return .init(text: text, memoryIDs: Set(backing.compactMap(\.memoryID)), workspaceIDs: Set(backing.compactMap(\.projectID)), referenceVersions: versions, validate: { [weak self, weak model] ignored in

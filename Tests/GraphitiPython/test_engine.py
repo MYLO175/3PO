@@ -103,6 +103,24 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(response['type'], 'result', response)
         return response['result']
 
+    def test_browse_partial_graph_without_inference(self):
+        alice, beatrice = episode(), episode('Beatrice', 'Oxford', 'other')
+        self.successful('sync', episodes=[alice, beatrice], max_new_episodes=1)
+        calls = self.calls
+        graph = self.successful('browse', allowed_episode_ids=[alice['id'], beatrice['id']])
+        self.assertEqual(graph['episode_count'], 1)
+        self.assertEqual(graph['pending_count'], 1)
+        self.assertTrue(graph['facts'])
+        nodes = {n['id']: n['name'] for n in graph['nodes']}
+        for fact in graph['facts']:
+            self.assertIn(fact['source'], nodes)
+            self.assertIn(fact['target'], nodes)
+            self.assertTrue(fact['episode_ids'])
+        self.assertEqual(self.calls, calls, 'Browsing must not request extraction')
+        self.assertEqual(self.call('browse', allowed_episode_ids=[])['type'], 'error')
+        self.successful('clear')
+        self.assertEqual(self.successful('browse', allowed_episode_ids=[])['facts'], [])
+
     def test_engine_lifecycle(self):
         alice, beatrice = episode(), episode('Beatrice', 'Oxford', 'other')
         first = self.successful('sync', episodes=[alice, beatrice], max_new_episodes=1)

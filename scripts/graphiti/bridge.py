@@ -84,7 +84,7 @@ def bounded_string(value, limit, label):
 
 
 def validate(request):
-    if request.get('protocol') != 1 or request.get('operation') not in ('sync', 'search', 'status', 'clear'):
+    if request.get('protocol') != 1 or request.get('operation') not in ('sync', 'search', 'browse', 'status', 'clear'):
         raise SafeError('Unsupported Graphiti protocol or operation.')
     group = bounded_string(request.get('group_id'), 128, 'group identifier')
     if not re.fullmatch(r'[a-zA-Z0-9_-]{16,128}', group):
@@ -120,8 +120,9 @@ def validate(request):
         maximum = request.get('max_new_episodes', 1)
         if not isinstance(maximum, int) or isinstance(maximum, bool) or not 1 <= maximum <= 8:
             raise SafeError('Graphiti sync batch must contain one to eight episodes.')
-    if request['operation'] == 'search':
-        bounded_string(request.get('query'), 4000, 'search query')
+    if request['operation'] in ('search', 'browse'):
+        if request['operation'] == 'search':
+            bounded_string(request.get('query'), 4000, 'search query')
         if not isinstance(request.get('allowed_episode_ids'), list) or len(request['allowed_episode_ids']) > MAX_EPISODES:
             raise SafeError('Search requires the complete currently allowed episode IDs.')
         try:
@@ -343,7 +344,7 @@ async def execute(request, root, group):
         if operation == 'status':
             return summary(manifest)
         clean_generations(directory, manifest.get('generation'))
-        if operation == 'search':
+        if operation in ('search', 'browse'):
             allowed = set(request['allowed_episode_ids'])
             if not set(manifest['episodes']).issubset(allowed):
                 raise SafeError('Graphiti index needs reconciliation after a memory change or access withdrawal.')
@@ -365,7 +366,7 @@ async def execute(request, root, group):
                 return summary(manifest)
         LLM, Embedder, Reranker = adapters()
         llm, embedder, reranker = LLM(), Embedder(), Reranker()
-        if operation == 'search':
+        if operation in ('search', 'browse'):
             engine = Engine(directory / manifest['generation'], group, llm, embedder, reranker)
             try:
                 from graphiti_core.search.search_filters import SearchFilters, DateFilter, ComparisonOperator
@@ -376,8 +377,16 @@ async def execute(request, root, group):
                     return [[DateFilter(comparison_operator=ComparisonOperator.is_null)],
                             [DateFilter(date=now, comparison_operator=ComparisonOperator.greater_than)]]
                 current = SearchFilters(invalid_at=not_ended(), expired_at=not_ended())
-                edges = await engine.graph.search(request['query'], group_ids=[group],
-                                                  num_results=request.get('limit', 12), search_filter=current)
+                if operation == 'browse':
+                    from graphiti_core.edges import EntityEdge
+                    from graphiti_core.errors import GroupsEdgesNotFoundError
+                    try:
+                        edges = await EntityEdge.get_by_group_ids(engine.graph.driver, [group], limit=201)
+                    except GroupsEdgesNotFoundError:
+                        edges = []
+                else:
+                    edges = await engine.graph.search(request['query'], group_ids=[group],
+                                                      num_results=request.get('limit', 12), search_filter=current)
                 facts = []
                 for edge in edges:
                     sources = sorted(set(edge.episodes))
@@ -389,10 +398,17 @@ async def execute(request, root, group):
                             or (edge.expired_at is not None and edge.expired_at <= now)):
                         continue
                     facts.append({'id': edge.uuid, 'text': edge.fact, 'episode_ids': sources,
+                                  'source': edge.source_node_uuid, 'target': edge.target_node_uuid,
                                   'valid_at': edge.valid_at.isoformat() if edge.valid_at else None,
                                   'invalid_at': edge.invalid_at.isoformat() if edge.invalid_at else None})
                 result = summary(manifest)
-                result['facts'] = facts
+                result['facts'] = facts[:200] if operation == 'browse' else facts
+                if operation == 'browse':
+                    from graphiti_core.nodes import EntityNode
+                    ids = sorted({f[key] for f in result['facts'] for key in ('source', 'target')})
+                    nodes = await EntityNode.get_by_uuids(engine.graph.driver, ids) if ids else []
+                    result['nodes'] = [{'id': n.uuid, 'name': n.name[:240]} for n in nodes if n.group_id == group]
+                    result['bounded'] = len(edges) >= 201
                 return result
             finally:
                 await engine.close()
