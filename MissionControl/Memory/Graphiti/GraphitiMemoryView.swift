@@ -31,7 +31,7 @@ struct GraphitiMemoryView: View {
                 .font(.caption).foregroundStyle(.secondary)
             Toggle("Learn Graphiti relationships during heartbeats", isOn: Binding(get: { state.learningEnabled }, set: { model.graphiti.configure(registration, learning: $0) }))
                 .disabled(model.graphiti.busy)
-            Text("Uses permitted shared conversations, supporting facts, project records, human notes and eligible source updates. Existing memory and learning controls still apply. AI extraction uses your connected ChatGPT plan; semantic search runs locally.")
+            Text("Learns lasting background from permitted shared conversations, supporting facts and human notes. Calendar events, reminders and project task state stay in their source apps. Mixed records are screened before graph extraction. Existing memory and learning controls still apply. AI extraction uses your connected ChatGPT plan; semantic search runs locally.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Label(model.graphiti.runtimeAvailable ? "Local Graphiti runtime ready" : "Local runtime needs setup", systemImage: model.graphiti.runtimeAvailable ? "checkmark.circle" : "exclamationmark.circle")
@@ -50,6 +50,7 @@ struct GraphitiMemoryView: View {
                 Button("Delete experimental graph", role: .destructive) { Task { await model.graphiti.clear(model) } }.disabled(model.graphiti.busy || !model.graphiti.runtimeAvailable)
                 if let updated = state.updated { Text("Updated \(updated.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
             }
+            Text("The first background-only update rebuilds the earlier broad experimental index. Original records and context pages stay saved. Records with no lasting background are marked processed without adding relationships.").font(.caption).foregroundStyle(.secondary)
             Text(model.graphiti.status).font(.caption).textSelection(.enabled)
             if let error = model.graphiti.error { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
             if !model.graphiti.runtimeAvailable {

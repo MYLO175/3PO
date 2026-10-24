@@ -20,6 +20,9 @@ GROUP = 'a' * 64
 def fixture(request):
     text = '\n'.join(x['content'] for x in request['messages'])
     name = request['name']
+    if name == 'DurableBackground':
+        body = request['messages'][-1]['content']
+        return {'excerpts': ['Alice studies at Cambridge.'] if 'Alice studies at Cambridge.' in body else []}
     current_match = re.search(r'<(?:CURRENT MESSAGE|EPISODE)>\s*(.*?)\s*</(?:CURRENT MESSAGE|EPISODE)>', text, re.S)
     current = current_match.group(1) if current_match else text
     person = 'Beatrice' if 'Beatrice' in current else 'Alice'
@@ -102,6 +105,28 @@ class EngineTests(unittest.TestCase):
         response = self.call(operation, **kwargs)
         self.assertEqual(response['type'], 'result', response)
         return response['result']
+
+    def test_durable_policy_filters_and_checkpoints_transient_records(self):
+        policy = {'memory_policy': 'durable-background-v1'}
+        mixed = episode()
+        mixed['body'] += ' Meet the tutor at 14:00 tomorrow. Finish the worksheet tonight.'
+        transient = episode(key='appointment')
+        transient['body'] = 'Meet the tutor at 14:00 tomorrow.'
+        # Legacy generation cannot leak through the changed extraction policy.
+        self.successful('sync', episodes=[mixed])
+        self.assertEqual(self.call('browse', allowed_episode_ids=[mixed['id']], **policy)['type'], 'error')
+        done = self.successful('sync', episodes=[mixed, transient], max_new_episodes=2, **policy)
+        self.assertEqual(done['episode_count'], 2)
+        calls = self.calls
+        graph = self.successful('browse', allowed_episode_ids=[mixed['id'], transient['id']], **policy)
+        self.assertTrue(graph['facts'])
+        self.assertTrue(all('14:00' not in f['text'] and 'worksheet' not in f['text'] for f in graph['facts']))
+        self.successful('sync', episodes=[mixed, transient], **policy)
+        self.assertEqual(calls, self.calls, 'Empty background selections must not be retried')
+        with __import__('unittest.mock', fromlist=['patch']).patch(__name__ + '.fixture', return_value={'excerpts': ['Invented unsupported claim']}):
+            invalid = episode(key='bad-excerpt')
+            self.assertEqual(self.call('sync', episodes=[mixed, transient, invalid], **policy)['type'], 'error')
+        self.assertEqual(self.successful('status')['episode_count'], 2)
 
     def test_browse_partial_graph_without_inference(self):
         alice, beatrice = episode(), episode('Beatrice', 'Oxford', 'other')
