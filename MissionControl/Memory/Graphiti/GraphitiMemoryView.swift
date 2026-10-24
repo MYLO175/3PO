@@ -6,6 +6,7 @@ struct GraphitiMemoryView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var question = ""
     @State private var showingGraph = false
+    @State private var showingSettings = true
     @State private var selectedNode: String?
     @State private var result = ""
     @State private var resultCapture: AssistantPageContext?
@@ -19,6 +20,8 @@ struct GraphitiMemoryView: View {
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }
+            DisclosureGroup("Memory and indexing settings", isExpanded: $showingSettings) {
+            VStack(alignment: .leading, spacing: 16) {
             Text("Compare how 3PO remembers your life. Your existing context pages, supporting facts and history stay saved.")
                 .foregroundStyle(.secondary)
             Picker("Memory for ordinary chat", selection: Binding(get: { state.mode }, set: { model.graphiti.configure(registration, mode: $0) })) {
@@ -52,6 +55,8 @@ struct GraphitiMemoryView: View {
             if !model.graphiti.runtimeAvailable {
                 Text("Install this experiment's local runtime with scripts/graphiti/setup.sh. Setup downloads Graphiti and its local embedding model; it does not read your personal data.")
                     .font(.caption).textSelection(.enabled)
+            }
+            }
             }
             Divider()
             HStack {
@@ -117,6 +122,7 @@ struct GraphitiMemoryView: View {
     private func lookup(browse: Bool) {
         let query = browse ? "Saved graph" : question
         searching = true; result = ""; resultCapture = nil; selectedNode = nil; showingGraph = browse
+        if browse { showingSettings = false }
         searchTask = Task {
             defer { searching = false; searchTask = nil }
             do {
@@ -163,20 +169,21 @@ private struct GraphitiNetwork: View {
         let used = Set(report.facts.flatMap { [$0.source, $0.target].compactMap { $0 } })
         return (report.nodes ?? []).filter { used.contains($0.id) }.sorted { $0.name < $1.name }
     }
-    private func point(_ index: Int, count: Int, size: CGFloat) -> CGPoint {
+    private func point(_ index: Int, count: Int, size: CGSize) -> CGPoint {
         let angle = Double(index) * 2 * Double.pi / Double(max(count, 1)) - Double.pi / 2
-        return CGPoint(x: size / 2 + cos(angle) * size * 0.36, y: size / 2 + sin(angle) * size * 0.36)
+        return CGPoint(x: size.width / 2 + cos(angle) * max(0, size.width / 2 - 80), y: size.height / 2 + sin(angle) * max(0, size.height / 2 - 40))
     }
     var body: some View {
         let items = nodes
-        let size = max(540, Double(items.count) * 24) * scale
         VStack(alignment: .leading) {
             HStack {
                 Text("\(items.count) entities · \(report.facts.count) relationships").font(.caption)
                 Spacer()
-                Button("−") { scale = max(0.5, scale - 0.25) }.accessibilityLabel("Zoom out")
+                Button("−") { scale = max(1, scale - 0.25) }.accessibilityLabel("Zoom out")
                 Button("+") { scale = min(2, scale + 0.25) }.accessibilityLabel("Zoom in")
             }
+            GeometryReader { geometry in
+            let size = CGSize(width: geometry.size.width * scale, height: geometry.size.height * scale)
             ScrollView([.horizontal, .vertical]) {
                 ZStack(alignment: .topLeading) {
                     Canvas { context, _ in
@@ -197,8 +204,9 @@ private struct GraphitiNetwork: View {
                             }.frame(width: 120)
                         }.buttonStyle(.plain).help(node.name).position(point(index, count: items.count, size: size))
                     }
-                }.frame(width: size, height: size)
+                }.frame(width: size.width, height: size.height)
             }.background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
+            }
         }
     }
 }
