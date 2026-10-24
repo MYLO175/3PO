@@ -48,6 +48,14 @@ All of each edge's Graphiti source episode IDs are retained; an edge with empty,
 
 `status` returns counts/IDs without loading the embedding model or starting a database. `clear` discards this group's experimental index only. Errors are bounded generic `{ "type":"error", "message":"..." }` messages; exception bodies, source text and tracebacks are not logged.
 
+## Pinned temporal compatibility
+
+The helper applies `invalid_at`/`expired_at` eligibility inside Graphiti search before its result limit, then checks returned edges again. Otherwise expired high-ranking matches can hide a still-current relationship.
+
+Graphiti 0.31.2 also marks an edge with any end date as expired during related-edge resolution, even when that date is in the future. A narrow process-local compatibility function changes that initial check to require an end date at or before now. Existing contradiction handling is retained. The helper verifies the exact upstream function SHA-256 before applying this adjustment; an unreviewed library implementation fails closed instead of silently receiving the patch. Revisit this adjustment when upgrading Graphiti. Attribution and the Apache-2.0 licence are included in `GRAPHITI-LICENSE` and the bundled resources.
+
+Regression tests reproduce both cases with the actual database/engine. Separate resolver-contract checks verify past expiry, genuine contradictions, and refusal on upstream-function drift. These fixes do not establish complete correctness for every future plan, recurrence or conflicting report.
+
 ## Persistence and forgetting
 
 A removed/revised episode invalidates the complete old generation before any new inference. This avoids stale derived summaries or connections surviving a source withdrawal. Rebuilding can require multiple sync batches.

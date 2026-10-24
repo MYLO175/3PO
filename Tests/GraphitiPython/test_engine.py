@@ -8,6 +8,7 @@ import subprocess
 import signal
 import time
 import sys
+sys.dont_write_bytecode = True
 import tempfile
 import unittest
 import uuid
@@ -23,7 +24,7 @@ def fixture(request):
     current = current_match.group(1) if current_match else text
     person = 'Beatrice' if 'Beatrice' in current else 'Alice'
     place = 'Oxford' if 'Oxford' in current else 'Cambridge'
-    fact = f'{person} studies at {place}.'
+    fact = f'{person} studies at {place}.' + (' This is the current enrolment.' if 'Current enrolment' in current else '')
     entities = [{'name': person, 'entity_type_id': 0}, {'name': place, 'entity_type_id': 0}]
     edge = {'source_entity_name': person, 'target_entity_name': place,
             'relation_type': 'STUDIES_AT', 'fact': fact, 'valid_at': '2026-01-01T00:00:00Z',
@@ -59,6 +60,7 @@ class EngineTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(prefix='3po-graphiti-engine-', dir='/private/tmp')
         self.root = self.temporary.name + '/db'
         self.calls = 0
+        self.extractions = []
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -78,6 +80,7 @@ class EngineTests(unittest.TestCase):
                         reply = {'type': 'llm_response', 'id': response['id'], 'error': 'Fictional failure'}
                     else:
                         reply = {'type': 'llm_response', 'id': response['id'], 'result': fixture(response)}
+                        self.extractions.append((response['name'], reply['result']))
                     process.stdin.write(json.dumps(reply) + '\n')
                     process.stdin.flush()
                 else:
@@ -143,6 +146,43 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(self.successful('search', query='Alice', allowed_episode_ids=[changed['id']])['facts'], [])
         self.assertEqual(self.successful('sync', episodes=[changed])['episode_count'], 1)
 
+    def test_temporal_compatibility_keeps_contradictions_and_rejects_drift(self):
+        import importlib.util
+        from datetime import datetime, timezone
+        from graphiti_core.edges import EntityEdge
+        from graphiti_core.utils.maintenance import edge_operations as operations
+        spec = importlib.util.spec_from_file_location('graphiti_temporal_fixture', BRIDGE)
+        bridge = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bridge)
+        original = operations._apply_temporal_invalidation
+        def date(month, year=2025):
+            return datetime(year, month, 1, tzinfo=timezone.utc)
+        def edge(start, end=None):
+            return EntityEdge(source_node_uuid=str(uuid.uuid4()), target_node_uuid=str(uuid.uuid4()),
+                              name='STUDIES_AT', fact='Fictional enrolment', group_id=GROUP,
+                              valid_at=start, invalid_at=end, created_at=datetime.now(timezone.utc))
+        try:
+            bridge.configure_temporal_resolution()
+            old, current = edge(date(1)), edge(date(2), date(1, 2100))
+            invalidated = operations._apply_temporal_invalidation(current, [old])
+            self.assertIsNone(current.expired_at, 'A future end must not expire the current claim')
+            self.assertEqual(invalidated, [old])
+            self.assertEqual(old.invalid_at, current.valid_at)
+            self.assertIsNotNone(old.expired_at, 'Genuine earlier contradictions still expire')
+            superseded = edge(date(1))
+            operations._apply_temporal_invalidation(superseded, [edge(date(2))])
+            self.assertEqual(superseded.invalid_at, date(2))
+            self.assertIsNotNone(superseded.expired_at)
+            ended = edge(date(1), date(2))
+            operations._apply_temporal_invalidation(ended, [])
+            self.assertIsNotNone(ended.expired_at, 'Past end dates remain historical')
+            operations._apply_temporal_invalidation = lambda *_: []
+            bridge._TEMPORAL_PATCHED = False
+            with self.assertRaises(bridge.SafeError):
+                bridge.configure_temporal_resolution()
+        finally:
+            operations._apply_temporal_invalidation = original
+
     def test_temporal_end_dates(self):
         future = episode()
         future['body'] += ' Ends in 2100.'
@@ -154,6 +194,34 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(any('Alice' in x['text'] for x in found['facts']), found)
         self.assertFalse(any('Beatrice' in x['text'] for x in found['facts']), found)
         self.assertTrue(any(x['invalid_at'].startswith('2100') for x in found['facts']))
+
+    def test_expired_matches_do_not_consume_current_result_limit(self):
+        # The expired and current claims have the same searchable text; filtering
+        # only after top-k can return no current answer despite one being indexed.
+        expired = episode(key='ended')
+        expired['body'] += ' Ended in February.'
+        current = episode(key='current')
+        current['body'] += ' Current enrolment.'
+        self.successful('sync', episodes=[expired, current], max_new_episodes=2)
+        full = self.successful('search', query='Alice studies at Cambridge', limit=30,
+                               allowed_episode_ids=[expired['id'], current['id']])
+        self.assertTrue(any(current['id'] in x['episode_ids'] for x in full['facts']), (full, self.extractions))
+        result = self.successful('search', query='Alice studies at Cambridge', limit=1,
+                                 allowed_episode_ids=[expired['id'], current['id']])
+        self.assertEqual(len(result['facts']), 1, result)
+        self.assertEqual(result['facts'][0]['episode_ids'], [current['id']])
+
+    def test_future_end_remains_current_when_related_fact_exists(self):
+        expired = episode(key='ended')
+        expired['body'] += ' Ended in February.'
+        current = episode(key='future-end')
+        current['reference_time'] = '2026-01-02T00:00:00Z'
+        current['body'] += ' Ends in 2100. Current enrolment.'
+        self.successful('sync', episodes=[expired, current], max_new_episodes=2)
+        result = self.successful('search', query='Alice studies at Cambridge', limit=30,
+                                 allowed_episode_ids=[expired['id'], current['id']])
+        self.assertTrue(any(current['id'] in fact['episode_ids'] for fact in result['facts']),
+                        'A future end date must not expire a current relationship during related-edge resolution: ' + repr(result))
 
     def test_successful_checkpoint_survives_next_episode_failure(self):
         episodes = [episode(), episode('Beatrice', 'Oxford', 'other')]

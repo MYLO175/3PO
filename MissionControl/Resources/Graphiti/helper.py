@@ -134,8 +134,47 @@ def validate(request):
     return root, group
 
 
+# Graphiti 0.31.2's related-edge resolver expires any edge carrying an end
+# date, including a future date. This narrow, process-local compatibility fix
+# retains contradiction handling and rejects an unreviewed upstream function.
+# Adapted from Graphiti, Copyright 2024 Zep Software, Inc., Apache-2.0.
+_TEMPORAL_PATCHED = False
+
+
+def configure_temporal_resolution():
+    global _TEMPORAL_PATCHED
+    if _TEMPORAL_PATCHED:
+        return
+    import inspect
+    from graphiti_core.utils.maintenance import edge_operations as operations
+    expected = '08e98a76906232e1d09c107365d3afc02c98f034acba99c3e0ab43a671f200f0'
+    source = inspect.getsource(operations._apply_temporal_invalidation)
+    if hashlib.sha256(source.encode()).hexdigest() != expected:
+        raise SafeError('Graphiti temporal resolver changed; this runtime needs a reviewed compatibility update.')
+
+    def apply_temporal_invalidation(resolved_edge, invalidation_candidates):
+        now = operations.utc_now()
+        if (resolved_edge.invalid_at and not resolved_edge.expired_at
+                and operations.ensure_utc(resolved_edge.invalid_at) <= now):
+            resolved_edge.expired_at = now
+        if resolved_edge.expired_at is None:
+            invalidation_candidates.sort(key=lambda c: (c.valid_at is None, operations.ensure_utc(c.valid_at)))
+            for candidate in invalidation_candidates:
+                candidate_start = operations.ensure_utc(candidate.valid_at)
+                resolved_start = operations.ensure_utc(resolved_edge.valid_at)
+                if candidate_start is not None and resolved_start is not None and candidate_start > resolved_start:
+                    resolved_edge.invalid_at = candidate.valid_at
+                    resolved_edge.expired_at = now
+                    break
+        return operations.resolve_edge_contradictions(resolved_edge, invalidation_candidates)
+
+    operations._apply_temporal_invalidation = apply_temporal_invalidation
+    _TEMPORAL_PATCHED = True
+
+
 # Lazy imports keep status/clear usable without starting a DB or model.
 def adapters():
+    configure_temporal_resolution()
     from graphiti_core.llm_client.client import LLMClient
     from graphiti_core.llm_client.config import LLMConfig
     from graphiti_core.embedder.client import EmbedderClient, EmbedderConfig
@@ -329,8 +368,16 @@ async def execute(request, root, group):
         if operation == 'search':
             engine = Engine(directory / manifest['generation'], group, llm, embedder, reranker)
             try:
+                from graphiti_core.search.search_filters import SearchFilters, DateFilter, ComparisonOperator
+                now = datetime.now(timezone.utc)
+                # Apply temporal eligibility before top-k. Filtering only returned
+                # edges lets expired matches consume every available result slot.
+                def not_ended():
+                    return [[DateFilter(comparison_operator=ComparisonOperator.is_null)],
+                            [DateFilter(date=now, comparison_operator=ComparisonOperator.greater_than)]]
+                current = SearchFilters(invalid_at=not_ended(), expired_at=not_ended())
                 edges = await engine.graph.search(request['query'], group_ids=[group],
-                                                  num_results=request.get('limit', 12))
+                                                  num_results=request.get('limit', 12), search_filter=current)
                 facts = []
                 for edge in edges:
                     sources = sorted(set(edge.episodes))
@@ -338,7 +385,6 @@ async def execute(request, root, group):
                     if not sources or not set(sources).issubset(allowed & set(manifest['episodes'])):
                         continue
                     # Expired/superseded facts are not current-life answers.
-                    now = datetime.now(timezone.utc)
                     if ((edge.invalid_at is not None and edge.invalid_at <= now)
                             or (edge.expired_at is not None and edge.expired_at <= now)):
                         continue
