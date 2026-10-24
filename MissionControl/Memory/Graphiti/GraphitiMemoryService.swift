@@ -180,6 +180,7 @@ import SwiftData
                     throw ActionFailure.message("Graphiti's bounded extraction request was invalid or exhausted its allowance.")
                 }
                 try heartbeat?.claim()
+                self.status = "Building relationships · \(state.indexedCount) records previously indexed · \(calls) AI extraction calls in this batch. Stop keeps completed records."
                 let object = try await Self.extract(message, connection: model.chatGPT, modelName: modelName)
                 try validate()
                 return object

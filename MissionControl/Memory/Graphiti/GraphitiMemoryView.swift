@@ -67,10 +67,62 @@ struct GraphitiMemoryView: View {
                     }
                 }.disabled(searching || model.graphiti.busy || model.assistant.busy || model.heartbeat.busy || question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            ScrollView { Text(resultCapture.map { !$0.current() } == true ? "These results are no longer current. Search again." : result.isEmpty ? "Results include relationship dates and the original evidence references. Searching does not run AI extraction." : result).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+            ScrollView {
+                if resultCapture.map({ !$0.current() }) == true {
+                    Text("These results are no longer current. Search again.")
+                } else if let data = result.data(using: .utf8), let report = try? JSONDecoder().decode(GraphitiLookupReport.self, from: data) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("\(report.indexedEpisodes) records indexed · \(report.pendingEpisodes) awaiting update · \(report.omittedEpisodes) outside this snapshot")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if report.facts.isEmpty {
+                            Text("No matching relationships were retrieved. The graph may be incomplete; this does not mean the information is absent from your life or original records.")
+                        }
+                        ForEach(report.facts) { fact in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(fact.text)
+                                if let start = fact.valid_at { Text("Applies from: " + GraphitiLookupReport.date(start)).font(.caption).foregroundStyle(.secondary) }
+                                if let end = fact.invalid_at { Text("Applies until: " + GraphitiLookupReport.date(end)).font(.caption).foregroundStyle(.secondary) }
+                                DisclosureGroup("Evidence · \(fact.sources.count) sources") {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        ForEach(Array(fact.sources.enumerated()), id: \.offset) { _, source in
+                                            Text(source.title + " · " + GraphitiLookupReport.date(source.observed)).font(.caption)
+                                            Text(source.reference).font(.system(.caption2, design: .monospaced)).foregroundStyle(.secondary)
+                                        }
+                                        Text("An AI interpretation of these sources. Check attribution, dates and the original evidence before relying on it.").font(.caption).foregroundStyle(.secondary)
+                                    }.padding(.top, 4)
+                                }.font(.caption)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                            Divider()
+                        }
+                    }.textSelection(.enabled)
+                } else {
+                    Text(result.isEmpty ? "Ask about a person, project, goal or connection. Results include dates and evidence; searching does not run AI extraction." : result)
+                        .textSelection(.enabled)
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+
         }.padding(24).frame(width: 760, height: 660)
             .disabled(registration != model.chatGPT.activeID || !model.graphiti.readable)
             .onChange(of: model.chatGPT.activeID) { searchTask?.cancel(); result = ""; dismiss() }
             .onDisappear { searchTask?.cancel() }
+    }
+}
+
+private struct GraphitiLookupReport: Decodable {
+    struct Source: Decodable { let reference: String; let title: String; let observed: String }
+    struct Fact: Decodable, Identifiable {
+        let id: String
+        let text: String
+        let valid_at: String?
+        let invalid_at: String?
+        let sources: [Source]
+    }
+    let facts: [Fact]
+    let indexedEpisodes: Int
+    let pendingEpisodes: Int
+    let omittedEpisodes: Int
+    static func date(_ value: String) -> String {
+        guard let date = try? Date(value, strategy: .iso8601) else { return value }
+        return date.formatted(date: .abbreviated, time: .omitted)
     }
 }

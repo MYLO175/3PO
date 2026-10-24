@@ -9,7 +9,7 @@ From this checkout, run `scripts/graphiti/setup.sh`, then build/install the app 
 Open **Context → Graphiti experiment…**. The default is **Context pages**, with automatic Graphiti learning off.
 
 1. Choose **Update graph** to index the currently permitted shared evidence. The existing saved-memory and memory-learning controls must allow this. Extraction uses the connected ChatGPT subscription and selected model, with several calls per episode. A large first build can take substantial time; Stop preserves completed episodes and another update resumes.
-2. Try a question in the graph lookup box, or choose **Graphiti** and ask in ordinary chat. The assistant has a `search_graph_memory` tool; Sources & searches records its actual use.
+2. Try a question in the graph lookup box to see readable relationships, applicability dates and expandable evidence, or choose **Graphiti** and ask in ordinary chat. The assistant has a `search_graph_memory` tool; Sources & searches records its actual use.
 3. Choose **Context pages** to return to the existing system, or **Pages + Graphiti** to make both available. These choices do not migrate or delete original records.
 4. Enable **Learn Graphiti relationships during heartbeats** for incremental maintenance. This uses the existing background allowance, adds at most one new episode per heartbeat, and pauses on an extraction failure until explicit retry.
 
@@ -33,6 +33,6 @@ Facts include their episode references and temporal validity. Currently expired 
 
 ## Verification
 
-The branch has a source-free live diagnostic, `--validate-graphiti-memory`, advertised by the DEBUG evaluation handshake. It uses fictional records, an in-memory app database and a temporary graph, runs real subscription extraction and the actual assistant/tool path, then checks withdrawal and clears the graph. Its output is `missioncontrol-graphiti-evaluation.json` under `MISSIONCONTROL_TEST_ROOT` when provided. Never run a normal second app copy as a substitute for the diagnostic.
+The branch has a source-free live diagnostic, `--validate-graphiti-memory`, advertised by the DEBUG evaluation handshake. It uses fictional records, an in-memory app database and a temporary graph, runs real subscription extraction across separate project, collaborator and motivation records and the actual assistant/tool path, then corrects a collaborator and sensor count, checks withdrawal, and clears the graph. It records initial-build and correction-rebuild durations. Cross-record checks require citations on the returned relationships; merely indexing a source is not a successful recall. Its output is `missioncontrol-graphiti-evaluation.json` under `MISSIONCONTROL_TEST_ROOT` when provided. Never run a normal second app copy as a substitute for the diagnostic.
 
 Focused checks cover the real Graphiti engine with scripted extraction, process cancellation/schema handling, assistant backend selection and history, and the existing page and heartbeat contracts. These establish that the integration works; they do not establish that Graphiti gives better answers about a person's life. Sustained personal use and a comparative question set are still needed.
