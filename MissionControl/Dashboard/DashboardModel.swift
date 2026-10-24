@@ -310,7 +310,7 @@ struct CalendarRemovalReviewSession:Identifiable {
             Task {
                 let result: [String: Any]
                 do { result = try await GraphitiMemoryEvaluation.run(self) }
-                catch { result = ["error": error.localizedDescription, "storage": "Fictional source-free Graphiti check; disposable stores only"] }
+                catch { result = ["error": error.localizedDescription, "providerDiagnostic": chatGPT.diagnostic, "model": chatGPT.selectedModel, "storage": "Fictional source-free Graphiti check; disposable stores only"] }
                 if let data = try? JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]) { try? data.write(to: EvaluationOutput.url("/tmp/missioncontrol-graphiti-evaluation.json"), options: .atomic) }
                 NSApp.terminate(nil)
             }; return

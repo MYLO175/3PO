@@ -131,6 +131,7 @@ import SwiftData
                     try Task.checkCancellation()
                     let result = try await self.synchronize(model, registration: registration, explicit: true, batchSize: all ? 6 : 1)
                     let state = self.settings(registration)
+                    if result.skipped { self.status = result.detail }
                     if !all || result.failure != nil || result.skipped || state.pendingCount == 0 { break }
                     guard state.indexedCount > previousCount else { throw ActionFailure.message("Graphiti made no progress. Completed episodes are retained.") }
                     previousCount = state.indexedCount
@@ -153,10 +154,14 @@ import SwiftData
     func synchronize(_ model: DashboardModel, registration: String, explicit: Bool, heartbeat: HeartbeatChildRequest? = nil, batchSize: Int = 6) async throws -> HeartbeatLearningResult {
         guard !busy, model.assistant.memory.enabled, model.assistant.memory.learningEnabled,
               model.chatGPT.hasSession, model.chatGPT.inferenceVerified, !model.chatGPT.usagePaused,
-              !model.assistant.busy, !model.assistant.hasDraft else {
+              !model.assistant.busy, (explicit || !model.assistant.hasDraft) else {
             return .init(detail: "Graphiti waits for idle, permitted memory learning.", skipped: true)
         }
         guard explicit || settings(registration).learningEnabled else { return .init(detail: "Graphiti learning is off.", skipped: true) }
+        // Explicit indexing may coexist with an unchanged unsent draft. New typing still wins.
+        let draft = model.assistant.draft
+        let draftTexts = model.assistant.drafts.state.values.filter { $0.key.hasPrefix(registration + ":") }
+        let draftImages = model.assistant.drafts.state.images?.filter { $0.key.hasPrefix(registration + ":") }
         let captured = snapshot(model, registration: registration)
         var state = settings(registration)
         // Retain exact IDs so older permitted conversation evidence can still be resolved.
@@ -170,7 +175,11 @@ import SwiftData
             try Task.checkCancellation(); try heartbeat?.validate()
             guard model.chatGPT.activeID == registration, model.reviewStorageIdentity == storage,
                   self.revision == expectedRevision, model.assistant.memory.enabled, model.assistant.memory.learningEnabled,
-                  model.assistant.memory.controlsRevision == controls, !model.assistant.busy, !model.assistant.hasDraft,
+                  model.assistant.memory.controlsRevision == controls, !model.assistant.busy,
+                  explicit ? (model.assistant.draft == draft
+                    && model.assistant.drafts.state.values.filter { $0.key.hasPrefix(registration + ":") } == draftTexts
+                    && model.assistant.drafts.state.images?.filter { $0.key.hasPrefix(registration + ":") } == draftImages)
+                    : !model.assistant.hasDraft,
                   model.contextKnowledgeAvailable(registration: registration, versions: captured.references) else {
                 throw CancellationError()
             }

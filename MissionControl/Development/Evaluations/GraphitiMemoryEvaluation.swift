@@ -46,11 +46,14 @@ import SwiftData
         checks["excluded fixture originals saved"] = model.assistant.memory.put(temporary) && model.assistant.memory.put(commitment)
         let admitted = model.graphiti.snapshot(model, registration: registration)
         checks["situational memories and commitments excluded before inference"] = !admitted.records.values.contains { $0.memoryID == temporary.id || $0.memoryID == commitment.id }
+        model.assistant.draft = "Fictional unsent draft retained during explicit indexing"
         let buildStarted = Date.now
         let first = try await model.graphiti.synchronize(model, registration: registration, explicit: true)
         guard first.failure == nil, model.graphiti.settings(registration).indexedCount == 3 else {
             throw ActionFailure.message(first.failure ?? first.detail)
         }
+        checks["explicit indexing preserves existing draft"] = model.assistant.draft == "Fictional unsent draft retained during explicit indexing"
+        model.assistant.draft = ""
         checks["live extraction indexed original"] = true
         timings["initialThreeEpisodeBuildSeconds"] = Date.now.timeIntervalSince(buildStarted)
         let unchanged = try await model.graphiti.synchronize(model, registration: registration, explicit: true)
