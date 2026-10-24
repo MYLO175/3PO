@@ -69,10 +69,11 @@ struct AssistantLookupTrace: Codable, Equatable, Identifiable {
     var pageIDs: [String]?
     static func queryExcerpt(_ text: String) -> String { ConversationRules.utf8Prefix(text, bytes: 400) + (text.utf8.count > 400 ? "…" : "") }
 
-    static let names: Set<String> = ["read_assistant_context", "read_context_page", "read_memory", "read_life_notebook", "read_life_items", "read_calendar", "read_reminders", "read_item_details", "search_mail", "continue_mail", "read_email", "list_whatsapp_chats", "search_whatsapp", "read_weather", "read_attention"]
+    static let names: Set<String> = ["read_assistant_context", "read_context_page", "search_graph_memory", "read_memory", "read_life_notebook", "read_life_items", "read_calendar", "read_reminders", "read_item_details", "search_mail", "continue_mail", "read_email", "list_whatsapp_chats", "search_whatsapp", "read_weather", "read_attention"]
     var title: String {
         switch tool {
         case "read_assistant_context": return "Assistant tools"
+        case "search_graph_memory": return "Graphiti memory"
         case "read_context_page": return "Context pages"
         case "read_memory": return "Supporting facts"
         case "read_life_notebook": return "Life context"
@@ -112,6 +113,7 @@ struct AssistantLookupTrace: Codable, Equatable, Identifiable {
         guard succeeded, let object = try? JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any] else { return }
         if object["available"] as? Bool == false || object["unavailable"] != nil { status = "unavailable"; return }
         let key: String? = switch tool {
+        case "search_graph_memory": "facts"
         case "read_context_page": "pages"
         case "read_memory", "read_life_notebook": "records"
         case "read_life_items": "items"
@@ -156,6 +158,7 @@ struct PAContextCapture: Codable, Equatable, Identifiable {
     var contextGuideBytes: Int? = nil
     var requestMode: String? = nil
     /// Inspection split only; memoryIDs retains the complete initial evidence union.
+    var memoryBackend: String? = nil
     var directMemoryIDs: [UUID]? = nil
     var pageSupportingMemoryIDs: [UUID]? = nil
     var registration: String? = nil

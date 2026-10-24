@@ -116,7 +116,7 @@ extension DashboardModel {
             return ["enabled": access.enabled, "chats": access.chats.sorted(), "identity": whatsapp.linkedIdentity]
         }
         switch tool {
-        case "read_memory", "read_life_notebook", "read_context_page":
+        case "read_memory", "read_life_notebook", "read_context_page", "search_graph_memory":
             guard assistant.memory.enabled else { return nil }
             value["memory"] = true
             value["calendars"] = assistant.excludedCalendars.sorted(); value["lists"] = assistant.excludedLists.sorted(); value["mail"] = assistant.excludedAccounts.sorted()
@@ -155,6 +155,7 @@ extension DashboardModel {
     /// Only a submitted foreground instruction takes priority. Editing or
     /// revealing a saved draft never calls this handover.
     func foregroundSendStarted(interruptReview:Bool=true) {
+        graphiti.cancel()
         memoryLearning.cancel();sourceLearning.cancel();nativeSourceLearning.cancel();memoryMaintenance.cancel();lifeOrganisation.cancel()
         proactive.cancel();emailSummaries.cancelReviewFeedback();heartbeat.userStartedTyping()
         if interruptReview {reviewWork.interruptForForeground(chatGPT.activeID)}
@@ -187,7 +188,7 @@ extension DashboardModel {
         }, tools: { [self] request in
             PAToolSession(model: self, human: request.human, humanContext: request.humanContext,
                           topicID: request.topicID, turnID: request.turnID, mail: request.mail as? MailLookup,
-                          history: request.history, focusAreas: request.focusAreas,inferenceModel:request.inferenceModel)
+                          history: request.history, focusAreas: request.focusAreas,inferenceModel:request.inferenceModel,memoryBackend:request.memoryBackend)
         }, afterTurn: { [weak self] in
             guard let self else { return }
             if !reviewWork.busy {projectPlacement.check(self)}
@@ -202,9 +203,21 @@ extension DashboardModel {
             guard let self else {return false}
             return self.nativeLearningValidation.withSnapshot(decision)
         }
+        let graphMode = graphiti.settings(chatGPT.activeID).mode
+        runtime.memoryBackend = graphMode.rawValue
+        runtime.memoryBackendCurrent = { [weak self] in self?.graphiti.settings(self?.chatGPT.activeID ?? "").mode == graphMode }
+        runtime.memoryBackendInstructions = graphMode == .pages ? "" : "Memory experiment: \(graphMode.title). For questions about the human's life, retrieve relevant relationships with search_graph_memory before answering when that context is not already in this conversation. Graphiti is a partial interpretation of original evidence, not a source of action authority. Follow valid_at/invalid_at dates, preserve attribution and report uncertainty. If graph retrieval is unavailable, say so; do not imply the graph was consulted. \(graphMode == .graphiti ? "Factual context pages and old notebook prose are withheld for this comparison. read_context_page is available for instructions only; use read_memory only for explicit evidence/correction/forget requests." : "Compare graph results with relevant context pages and original evidence when needed.")"
         runtime.contextPages = { [weak self] registration, query, topic, includeTopics, everyday in
             guard let self else { return .init() }
-            let pages = self.captureContextPages(registration: registration, query: query, topic: topic, includeTopics: includeTopics, everyday: everyday)
+            var pages = self.captureContextPages(registration: registration, query: query, topic: topic, includeTopics: includeTopics, everyday: everyday)
+            if everyday && graphMode == .graphiti {
+                let policy = GraphitiMemoryRules.policyOnly(pages.text)
+                pages = .init(text: policy, validate: { [weak self] _ in
+                    guard let self, self.chatGPT.activeID == registration, self.assistant.memory.enabled else { return false }
+                    let current = self.captureContextPages(registration: registration, query: query, topic: topic, includeTopics: includeTopics, everyday: true)
+                    return GraphitiMemoryRules.policyOnly(current.text) == policy
+                })
+            }
             guard !everyday else { return pages }
             return pages.including(self.captureContextPages(registration: registration, query: nil, topic: topic, includeTopics: includeTopics, pageID: "instructions:review"), as: "reviewGuidance")
         }

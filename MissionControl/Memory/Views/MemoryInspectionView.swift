@@ -147,6 +147,7 @@ struct PAContextCaptureView:View {
                     Text("A record of prepared inputs and attempted tools, not proof the model relied on every fact or that an action succeeded. Inspect saved receipts for verified changes.").font(.callout).foregroundStyle(.secondary)
                     lookupHistory
                     Text("Focus: "+(capture.focusAreas.map{$0.isEmpty ? "All life areas" : $0.map(\.title).joined(separator:", ")} ?? "Legacy thread")).font(.callout)
+                    if let backend = capture.memoryBackend { Text("Memory backend: " + backend) }
                     if let purpose=capture.selectionPurpose {
                         Text("Selection purpose: "+purpose.replacingOccurrences(of:"Conversation",with:" conversation").replacingOccurrences(of:"Read",with:" read")).font(.caption)
                     }

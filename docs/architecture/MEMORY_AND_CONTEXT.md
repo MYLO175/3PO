@@ -1,5 +1,9 @@
 # Memory and context in 3PO
 
+## Optional Graphiti experiment
+
+The existing page-first system remains the default. An account-owned comparison setting now selects Context pages, Graphiti, or both for ordinary chat. Graphiti uses a separate local temporal graph and local semantic embeddings, with extraction through the existing subscription connection. Original records and pages remain canonical and recoverable. Review and briefs retain their existing input contracts. See [Trying Graphiti memory](../guides/GRAPHITI.md) for setup, source boundaries, comparison behaviour and validation limits.
+
 ## The starting guide, spaces and scoped instructions
 
 Ordinary chat receives a small 3PO information guide before changing clocks, relevant pages, working changes and source snapshots. It describes the assistant's role, where to find background or current information, the root spaces and topic routes. A space read returns its parent context and a bounded child index, so the assistant can descend to the relevant subspace. The guide's ordering and request JSON are deterministic. Its fingerprint and byte count are retained in Context details without duplicating guide prose.

@@ -6,6 +6,7 @@ import Foundation
     let human: String
     let humanContext: String
     let history: [[String:String]]
+    let memoryBackend: String
     let topicID: UUID?
     let focusAreas:[LifeArea]?
     let turnID: UUID
@@ -180,9 +181,9 @@ import Foundation
         return .init(toolName:call.name,arguments:try json(args),snapshot:encoded,outline:outline,details:details)
     }
     private var memory:PAMemoryStore { evaluationMemory ?? model.assistant.memory }
-    init(model: DashboardModel, human: String, humanContext: String, topicID: UUID?, turnID: UUID, mail: MailLookup? = nil, history: [[String:String]] = [], evaluationMemory:PAMemoryStore? = nil, evaluationProjects:LifeWorkspaceStore? = nil,focusAreas:[LifeArea]? = nil,inferenceModel:String? = nil) {
+    init(model: DashboardModel, human: String, humanContext: String, topicID: UUID?, turnID: UUID, mail: MailLookup? = nil, history: [[String:String]] = [], evaluationMemory:PAMemoryStore? = nil, evaluationProjects:LifeWorkspaceStore? = nil,focusAreas:[LifeArea]? = nil,inferenceModel:String? = nil,memoryBackend:String = "pages") {
         self.evaluationMemory=evaluationMemory;self.evaluationProjects=evaluationProjects;self.focusAreas=focusAreas
-        self.localMail = mail ?? MailLookup(); self.history = history
+        self.localMail = mail ?? MailLookup(); self.history = history; self.memoryBackend = memoryBackend
         self.model = model;self.inferenceModel=inferenceModel ?? model.chatGPT.selectedModel; self.human = human; self.humanContext = humanContext; self.topicID = topicID; self.turnID = turnID; registration = model.chatGPT.activeID
         if evaluationMemory == nil && evaluationProjects == nil {
             emails = Dictionary(uniqueKeysWithValues:model.mailData.messages.filter { !model.assistant.excludedAccounts.contains($0.accountID) }.map { ($0.id,$0) })
@@ -205,7 +206,7 @@ import Foundation
         func text(_ name: String) -> String? { args[name] as? String }
         if let quote=text("authorization"),let current=try? PAToolProtocol.conversationalAuthorization(quote,human:human,history:history) {args["authorization"]=current}
         let assistant = model.assistant
-        let memoryTool = ["read_memory","save_memory","remember_context","change_memory","read_life_notebook","read_context_page","organise_memory"].contains(call.name)
+        let memoryTool = ["read_memory","save_memory","remember_context","change_memory","read_life_notebook","read_context_page","search_graph_memory","organise_memory"].contains(call.name)
         let lifeTool = LifeWorkspaceTools.names.contains(call.name)
         guard memoryTool || lifeTool || call.name == "ask_clarification" || assistant.contextEnabled else { throw ActionFailure.message("Source context is disabled.") }
         if !memoryTool, !lifeTool, call.name != "ask_clarification", ProcessInfo.processInfo.arguments.contains("--sample") { throw ActionFailure.message("Sample mode never accesses Apple apps.") }
@@ -405,7 +406,21 @@ import Foundation
         case "undo_apple_change":
             try PAToolProtocol.evidence(text("authorization"),human:human)
             let result = try await model.undoAssistantAppleChange(); receipts.append(result); return try json(["verified":true,"result":result])
+        case "search_graph_memory":
+            guard memory.enabled, memoryBackend != "pages", !assistant.profileBusy(topicID) else {
+                throw ActionFailure.message("Graphiti is available in shared ordinary chat when selected in Context → Graphiti experiment.")
+            }
+            guard valid() else { throw CancellationError() }
+            let capture = try await model.graphiti.search(text("query") ?? "", model: model, registration: registration)
+            guard valid() else { throw CancellationError() }
+            contextPageCaptures.append(capture)
+            consultedMemory.formUnion(capture.memoryIDs)
+            notebookWorkspace.formUnion(capture.workspaceIDs)
+            return capture.text
         case "read_context_page":
+            if memoryBackend == "graphiti", text("id")?.hasPrefix("instructions:") != true {
+                throw ActionFailure.message("Graphiti comparison mode uses search_graph_memory for remembered life context. Context pages remain available in the page browser or after switching back to Context pages.")
+            }
             guard memory.enabled else { return try json(["available":false,"reason":"Saved memory use is paused."]) }
             let offset = text("offset").flatMap(Int.init) ?? 0
             guard (0...24_000).contains(offset) else { throw ActionFailure.message("Choose a valid page continuation offset.") }
@@ -422,6 +437,7 @@ import Foundation
             consultedMemory.formUnion(selection.records.compactMap { $0["id"].flatMap(UUID.init(uuidString:)) })
             return try json(["records":selection.records,"eligible":selection.eligibleCount,"selected":selection.records.count,"searchAdvice":PAWorkingContext.memorySearchAdvice(selection),"coverage":focusAreas != nil ? "Bounded account-owned relevant memory with life-area focus; not exhaustive recall." : "Bounded relevant shared/current-topic memory; not exhaustive recall."])
         case "read_life_notebook":
+            guard memoryBackend != "graphiti" else { throw ActionFailure.message("Use search_graph_memory in Graphiti comparison mode.") }
             guard memory.enabled else { throw ActionFailure.message("Memory is disabled.") }
             let focus=focusAreas ?? assistant.conversation(topicID)?.notebookAreas ?? []
             let working=PAWorkingContext.prepare(memory:memory,registration:registration,purpose:.notebookRead,query:text("query"),conversationID:topicID,includeTopics:focusAreas != nil,focus:focus)

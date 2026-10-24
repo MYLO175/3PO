@@ -18,6 +18,7 @@ struct ContextPagesView: View {
     @State private var nextEditor: ContextPageEditRequest?
     @State private var forgetting: ContextPage?
     @State private var error: String?
+    @State private var showingGraphiti = false
     @State private var showingSupportingFacts = false
     private let initialProjectID: UUID?
 
@@ -56,6 +57,7 @@ struct ContextPagesView: View {
             HStack {
                 Text("Context").font(.title2.weight(.semibold)).accessibilityIdentifier("context-pages-title")
                 Spacer()
+                Button("Graphiti experiment…") { showingGraphiti = true }.controlSize(.small).disabled(!owned || registration.isEmpty)
                 Button("Supporting facts and controls…") { showingSupportingFacts = true }
                     .controlSize(.small).disabled(!owned || registration.isEmpty)
                 Menu("Add context") {
@@ -87,6 +89,7 @@ struct ContextPagesView: View {
         }.padding(22).frame(width: 980, height: 740)
             .sheet(item: $editor) { ContextPageHumanEditor(model: model, request: $0) }
             .sheet(item: $history) { ContextPageHistoryView(model: model, request: $0) }
+            .sheet(isPresented: $showingGraphiti) { GraphitiMemoryView(model: model, registration: registration) }
             .sheet(isPresented: $showingSupportingFacts) {
                 PAMemoryView(memory: model.assistant.memory, registration: registration, conversationID: contextTopic,
                     topicTitle: model.assistant.conversation(contextTopic)?.title, learning: model.memoryLearning,

@@ -43,8 +43,10 @@ import SwiftData
             try request.validate()
             let pages = try await populateContextPages(model, request: request)
             try request.validate()
-            let failures = [result.failure, pages.failure].compactMap { $0 }
-            return .init(failure:failures.isEmpty ? nil : failures.joined(separator:" · "),detail:result.detail + " " + pages.detail,skipped:result.skipped && pages.skipped)
+            let graph = try await model.graphiti.runHeartbeat(model, request: request)
+            try request.validate()
+            let failures = [result.failure, pages.failure, graph.failure].compactMap { $0 }
+            return .init(failure:failures.isEmpty ? nil : failures.joined(separator:" · "),detail:result.detail + " " + pages.detail + " " + graph.detail,skipped:result.skipped && pages.skipped && graph.skipped)
         },started:{model.heartbeatActivityStarted($0,$1,$2)},finished:{model.heartbeatActivityFinished($0,$1)})
     }
 
@@ -82,7 +84,7 @@ import SwiftData
 
     private static func environment(_ model:DashboardModel)->HeartbeatEnvironment {
         func otherLearning(_ busy:Bool,_ runID:String?)->Bool {busy && !(runID.map{model.heartbeat.ownsLearningRun($0)} ?? false)}
-        let learning=otherLearning(model.contextConsolidation.busy,model.contextConsolidation.ownedHeartbeatRunID) || otherLearning(model.sourceLearning.busy,model.sourceLearning.ownedHeartbeatRunID) || otherLearning(model.nativeSourceLearning.busy,model.nativeSourceLearning.ownedHeartbeatRunID) || otherLearning(model.memoryMaintenance.busy,model.memoryMaintenance.ownedHeartbeatRunID) || otherLearning(model.memoryLearning.busy,model.memoryLearning.ownedHeartbeatRunID) || otherLearning(model.lifeOrganisation.busy,model.lifeOrganisation.ownedHeartbeatRunID)
+        let learning=otherLearning(model.graphiti.busy,model.graphiti.ownedHeartbeatRunID) || otherLearning(model.contextConsolidation.busy,model.contextConsolidation.ownedHeartbeatRunID) || otherLearning(model.sourceLearning.busy,model.sourceLearning.ownedHeartbeatRunID) || otherLearning(model.nativeSourceLearning.busy,model.nativeSourceLearning.ownedHeartbeatRunID) || otherLearning(model.memoryMaintenance.busy,model.memoryMaintenance.ownedHeartbeatRunID) || otherLearning(model.memoryLearning.busy,model.memoryLearning.ownedHeartbeatRunID) || otherLearning(model.lifeOrganisation.busy,model.lifeOrganisation.ownedHeartbeatRunID)
         let feedback=model.emailSummaries.feedback.activeID != nil && !(model.emailSummaries.feedback.ownedHeartbeatRunID.map{model.heartbeat.ownsLearningRun($0)} ?? false)
         let foreground=model.reviewWork.busy || feedback || model.assistant.busy || model.chatGPT.busy || model.projectPlacement.busy || learning
         let proposals=model.proactive.state.accounts[model.chatGPT.activeID]
