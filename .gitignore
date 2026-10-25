@@ -49,6 +49,9 @@ WhatsAppBridge/Runtime/
 
 # Personal planning, agent instructions and development records stay local.
 /AGENTS.md
+/CLAUDE.md
+/CLAUDE.local.md
+/.claude/
 /PLAN.md
 /STATUS.md
 /VALIDATION.md
