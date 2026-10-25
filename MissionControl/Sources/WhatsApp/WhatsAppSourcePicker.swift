@@ -39,7 +39,7 @@ struct WhatsAppSourcePicker: View {
         let messageCounts=counts
         VStack(alignment:.leading,spacing:12) {
             HStack { Text("WhatsApp sources").font(.title2.bold());Spacer();Button("Done") { dismiss() } }
-            Text("Share only the chats you choose. Names and requested text use your ChatGPT connection; linked-device history can be partial.").font(.callout).foregroundStyle(.secondary)
+            Text("Share only the chats you choose. Names and requested text use your AI connection; linked-device history can be partial.").font(.callout).foregroundStyle(.secondary)
             Toggle("Allow PA access",isOn:Binding(get:{access.enabled},set:{value in change { $0.enabled=value } }))
             HStack(spacing:20) {
                 Toggle("Today’s brief",isOn:Binding(get:{access.includeInBrief == true},set:{value in change { $0.includeInBrief=value } }))

@@ -73,8 +73,8 @@ import SwiftData
         let count = pendingTurnIDs(assistant).count
         if busy { return "Consolidating useful chat, activity and feature guidance…" }
         if !assistant.memory.enabled { return "Saved memory use is off; automatic learning is also on hold." }
-        if !assistant.connection.inferenceVerified { return "Verify your ChatGPT connection to enable learning. Explicit memory still works locally." }
-        if assistant.connection.usagePaused { return "ChatGPT access is paused. Saved and explicit memories remain available." }
+        if !assistant.connection.inferenceVerified { return "Verify your AI connection to enable learning. Explicit memory still works locally." }
+        if assistant.connection.usagePaused { return "AI access is paused. Saved and explicit memories remain available." }
         if !assistant.contextEnabled { return "Assistant source context is off; automatic learning is on hold." }
         if assistant.hasDraft { return "A visible chat draft is open. Finish or clear it before learning new context." }
         if !assistant.memory.learningEnabled { return "Automatic learning paused. Explicit Remember requests still work." }

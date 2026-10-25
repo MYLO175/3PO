@@ -78,7 +78,7 @@ struct PAProfileSetupPanel: View {
                 }
             }
             if !assistant.memory.enabled { Text("Memory saving is off. Answers stay in this interview; enable memory in Settings to retain facts.").font(.caption).foregroundStyle(.orange) }
-            if !model.inference.inferenceVerified || model.inference.usagePaused { Text("Verify your ChatGPT connection or check its usage in Settings to continue.").font(.caption).foregroundStyle(.secondary) }
+            if !model.inference.inferenceVerified || model.inference.usagePaused { Text("Verify your AI connection or check its usage in Settings to continue.").font(.caption).foregroundStyle(.secondary) }
         }.padding(28).frame(width:640,height:570)
         .onChange(of:working) { _,busy in if !busy { answerFocused=true } }
         .onChange(of:model.inference.activeID) { dismiss() }

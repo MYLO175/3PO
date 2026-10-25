@@ -13,7 +13,7 @@ import Foundation
         let overloaded=PAIntentFailure(reason:"ChatGPT request failed. (server_is_overloaded). No paid fallback or automatic retry.",kind:.unavailable)
         let stopped=overloaded.stoppedReply(receipts:[])
         assert(overloaded.kind == .unavailable && refused.kind == .refused)
-        assert(stopped.contains("ChatGPT was temporarily overloaded") && stopped.contains("wasn’t attempted") && !stopped.contains("Reminders service"))
+        assert(stopped.contains("The AI provider was temporarily overloaded") && stopped.contains("wasn’t attempted") && !stopped.contains("Reminders service"))
         let partial=overloaded.stoppedReply(receipts:["Created fictional event"])
         assert(partial.hasPrefix("Created fictional event\n\n") && !partial.contains("No change was made"),"Earlier verified changes must not be denied")
         let legacy="I couldn’t update it because the Reminders service was overloaded; no change was made."

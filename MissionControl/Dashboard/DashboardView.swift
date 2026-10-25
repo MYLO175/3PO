@@ -419,7 +419,7 @@ struct SettingsView: View {
                         Button("Open Privacy & Security") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security")!) }
                     }
                 case "Connections":
-                    ChatGPTConnectionView(connection:model.chatGPT)
+                    AIProviderSettings(model:model)
                     WhatsAppSettings(service:model.whatsapp,registration:model.inference.activeID,heartbeatReviewEnabled:model.heartbeat.whatsappEnabled)
                     WeatherSettings(weather:model.weather)
                 case "Assistant":
@@ -510,12 +510,13 @@ struct PAHelpSections:View {
             Section("Background review and usage") {
                 Text(model.heartbeat.statusFor(model.inference.activeID)).font(.callout).foregroundStyle(.secondary)
                 Text(model.emailSummaries.enabled ? "Incoming email assessment is on. It starts from new mail and coverage can be partial." : "Incoming email assessment is off.").font(.callout).foregroundStyle(.secondary)
-                Text("Mail collection can continue without AI. A review can use multiple model calls; the advanced daily call cap applies to email and proactive communication review only. It is separate from your ChatGPT account's subscription availability.").font(.callout)
+                Text("Mail collection can continue without AI. A review can use multiple model calls; the advanced daily call cap applies to email and proactive communication review only. It is separate from your AI provider's plan availability.").font(.callout)
                 Text("Mail accounts are reviewed independently after their arrival checks finish. Unavailable accounts keep their cache and pending work; their old emails and source memories do not enter the fresh comparison. Settings → Background shows which accounts were reviewed and which are waiting. Email assessment can continue while a Calendar/Reminders comparison is waiting. Source collection retries unavailable accounts. A failed heartbeat keeps completed work and checks fresh information at the next scheduled interval.").font(.callout)
                 Text("Useful observations, missing plans and proposed date changes appear in Review inbox, without adding background messages to normal chat. A distinctive message can suggest changing an existing event or reminder even without a manual plan connection. The card shows the exact quote, proposed date and inferred connection. Approve applies that change; Dismiss leaves the original unchanged. View/edit opens the original item with the proposed change prefilled. Repeating items need an occurrence or series choice before approval. Ambiguous targets stay informational. There is no daily cap on useful inbox items.").font(.callout)
                 Text("Open it from Dashboard → Open Review inbox or add the Review inbox widget. Settings → Background controls heartbeats, which review sources and update Today’s brief. Failed heartbeats try again at the next interval. Settings → Context controls selective learning, organisation and optional weekly memory review. Delegated work resumes through Continue queue.").font(.callout)
                 Text("3PO works while the app is running and the Mac is awake. Missed heartbeats catch up once on opening or waking. Interrupted foreground requests and queued work need explicit continuation; uncertain writes are never replayed automatically.").font(.callout)
-                Link("Manage ChatGPT usage",destination:URL(string:"https://chatgpt.com/settings/usage")!)
+                if model.inference.provider == .claudeCode { Link("See Claude plan usage",destination:URL(string:"https://claude.ai/settings/usage")!) }
+                else { Link("Manage ChatGPT usage",destination:URL(string:"https://chatgpt.com/settings/usage")!) }
             }
             if let openHelpWindow {
                 Section { Button("Open Help in its own window",action:openHelpWindow) }

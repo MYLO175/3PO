@@ -131,6 +131,7 @@ struct CalendarRemovalReviewSession:Identifiable {
     var weather: WeatherService { get { services.weather } set { services.weather = newValue } }
     var chatGPT: ChatGPTConnection { services.chatGPT }
     var inference: PAInferenceRouter { services.inference }
+    var claude: ClaudeCodeConnection { services.claude }
     var aiUsage: AIUsageStore { get { services.aiUsage } set { services.aiUsage = newValue } }
     @ObservationIgnored lazy var workspace = WorkspaceStore(container:container,calendars:excludedCalendars,lists:excludedLists,accounts:excludedAccounts,date:selectedDate)
     @ObservationIgnored lazy var widgetCalendars = WidgetCalendarStore(service:eventKit)
@@ -215,7 +216,7 @@ struct CalendarRemovalReviewSession:Identifiable {
             return
         }
         #endif
-        defer { if !storageOwnershipBlocked { chatGPT.usageStore = aiUsage } }
+        defer { if !storageOwnershipBlocked { chatGPT.usageStore = aiUsage; claude.usageStore = aiUsage } }
         // Read all saved filters before observable property setters persist any
         // values; otherwise the first setter erases later filters during init.
         let savedCalendars = Set(UserDefaults.standard.stringArray(forKey: "excludedCalendars") ?? [])

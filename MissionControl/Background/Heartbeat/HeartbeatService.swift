@@ -140,7 +140,7 @@ import SwiftData
         if !deviceAvailable {return "Heartbeat waits while the Mac is asleep, in dark wake or the laptop is closed."}
         if !readable {return "Saved review state is unavailable. See Background activity for details."}
         if !environment.permitted {return "Heartbeat is unavailable in this preview."}
-        if environment.registration.isEmpty || !environment.inferenceVerified {return "Connect your ChatGPT subscription in Settings to run a heartbeat."}
+        if environment.registration.isEmpty || !environment.inferenceVerified {return "Connect ChatGPT or Claude in Settings to run a heartbeat."}
         if !environment.contextEnabled {return "Enable PA context in Settings to run a heartbeat."}
         if environment.usagePaused {return "AI usage is paused. Resume it in Settings before running a heartbeat."}
         if environment.workBusy {return "Wait for the current PA work to finish before running a heartbeat."}

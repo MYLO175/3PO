@@ -533,7 +533,7 @@ import Observation
         let preparationStarted = ProcessInfo.processInfo.systemUptime
         let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard (!prompt.isEmpty || !activeImages.isEmpty), !busy, !connection.busy, !connection.usagePaused else { return }
-        guard connection.hasSession, connection.inferenceVerified else { error = "Verify the ChatGPT connection in Settings first."; return }
+        guard connection.hasSession, connection.inferenceVerified else { error = "Verify your AI connection in Settings first."; return }
         guard ConversationRules.acceptsPrompt(prompt) else { error = "This message is too long for one PA request. Please shorten it or split it into smaller messages; your draft is kept."; return }
         send(context: reviewHumanTurnID != nil ? runtime.sourceSnapshot() : nil, runtime: runtime, preparationStarted: preparationStarted)
     }
@@ -587,7 +587,7 @@ import Observation
         let preparationStarted = preparationStarted ?? ProcessInfo.processInfo.systemUptime
         let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard (!prompt.isEmpty || !activeImages.isEmpty), !busy, !connection.busy, !connection.usagePaused else { return }
-        guard connection.hasSession, connection.inferenceVerified else { error = "Verify the ChatGPT connection in Settings first."; return }
+        guard connection.hasSession, connection.inferenceVerified else { error = "Verify your AI connection in Settings first."; return }
         let isReviewTurn = reviewHumanTurnID != nil
         guard let owned = runtime.snapshot(includeAttention: isReviewTurn) else { error = "Assistant context is unavailable. Your draft is kept."; return }
         guard !isReviewTurn || !contextEnabled || owned.attentionPreferencesReadable else {error="Saved attention preferences are unavailable. Your draft is kept.";return}

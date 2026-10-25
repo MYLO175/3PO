@@ -34,7 +34,7 @@ struct PAIntentFailure: LocalizedError {
     /// A failed AI check cannot be resolved by another inference round or a native write.
     func stoppedReply(receipts:[String])->String {
         let explanation=reason.contains("(server_is_overloaded)")
-            ? "ChatGPT was temporarily overloaded while 3PO checked your requested change."
+            ? "The AI provider was temporarily overloaded while 3PO checked your requested change."
             : "3PO couldn’t complete its AI check of your requested change."
         let ending="This operation wasn’t attempted. Ask me to try again when you’re ready."
         return ([receipts.joined(separator:"\n"),explanation+" "+ending].filter{!$0.isEmpty}).joined(separator:"\n\n")

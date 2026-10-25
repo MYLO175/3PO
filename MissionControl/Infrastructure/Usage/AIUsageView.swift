@@ -16,7 +16,7 @@ struct AIUsageView: View {
                 LabeledContent("Completed", value: summary.completed.formatted())
                 LabeledContent("Failed / stopped", value: "\(summary.failed) / \(summary.interrupted)")
                 if summary.running > 0 { LabeledContent("In progress", value: summary.running.formatted()) }
-                Text("One message or background review can use several AI calls, including tool follow-ups and action checks. These are calls made by 3PO for the selected account; they do not show ChatGPT or Codex activity.").font(.caption).foregroundStyle(.secondary)
+                Text("One message or background review can use several AI calls, including tool follow-ups and action checks. These are calls made by 3PO for the selected account; they do not show other apps' activity on the same plan.").font(.caption).foregroundStyle(.secondary)
                 Text("Tracking began " + store.state.trackingStarted.formatted(date: .abbreviated, time: .shortened) + ". Earlier activity is not reconstructed.").font(.caption).foregroundStyle(.secondary)
                 if let date = store.state.truncatedBefore, date >= window.start(now: timeline.date) { Text("Some older calls in this range were removed by the local retention limit; totals are partial.").font(.caption).foregroundStyle(.orange) }
                 if let error = store.error { Text(error).font(.caption).foregroundStyle(.orange) }
@@ -41,9 +41,10 @@ struct AIUsageView: View {
                     }
                 } else { Text("The provider has not reported token counts for these calls. Call counts are still available.").foregroundStyle(.secondary) }
             }
-            Section("Your ChatGPT allowance") {
-                Text("This connection does not provide a verified remaining-allowance percentage. Open ChatGPT Usage for account-wide limits and available controls. Local call limits control 3PO's work; they are separate from your plan allowance.").font(.callout)
-                Button("Manage ChatGPT usage") { NSWorkspace.shared.open(URL(string: "https://chatgpt.com/settings/usage")!) }
+            Section(model.inference.provider == .claudeCode ? "Your Claude allowance" : "Your ChatGPT allowance") {
+                Text("This connection does not provide a verified remaining-allowance percentage. Open your provider's usage page for account-wide limits and available controls. Local call limits control 3PO's work; they are separate from your plan allowance.").font(.callout)
+                if model.inference.provider == .claudeCode { Button("See Claude plan usage") { NSWorkspace.shared.open(URL(string: "https://claude.ai/settings/usage")!) } }
+                else { Button("Manage ChatGPT usage") { NSWorkspace.shared.open(URL(string: "https://chatgpt.com/settings/usage")!) } }
                 if model.inference.usagePaused { Text("New AI requests are paused after an allowance failure. Source collection and completed results are retained.").font(.caption).foregroundStyle(.orange) }
                 Text("Usage history contains only dates, model names, categories, outcomes and reported counts. No conversations, source content or credentials are stored here. Up to 30 days / 5,000 calls are kept locally.").font(.caption).foregroundStyle(.secondary)
             }

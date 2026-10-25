@@ -146,12 +146,12 @@ struct BriefingRequestAvailability {
     var writing=false
     var hasAccount=true
     var reason:String? {
-        if !hasAccount { return "Connect your ChatGPT account in Settings to prepare a brief." }
+        if !hasAccount { return "Connect ChatGPT or Claude in Settings to prepare a brief." }
         if !contextEnabled { return "Enable assistant source context in Settings to prepare a brief." }
         if paused { return "Subscription access is paused. Check the connection in Settings, then update the brief." }
-        if !verified { return "Verify your ChatGPT connection in Settings, then update the brief." }
+        if !verified { return "Verify your AI connection in Settings, then update the brief." }
         if assistantBusy { return "Your PA is answering another request. Update the brief once it finishes." }
-        if connectionBusy { return "Your ChatGPT connection is being checked. Update the brief once it finishes." }
+        if connectionBusy { return "Your AI connection is being checked. Update the brief once it finishes." }
         if writing { return "A calendar or reminder change is being saved. Update the brief once it finishes." }
         return nil
     }

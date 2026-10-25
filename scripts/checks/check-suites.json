@@ -623,6 +623,18 @@
       ]
     },
     {
+      "id": "claude-code",
+      "tier": "source-free",
+      "script": "scripts/checks/test-claude-code.sh",
+      "effects": [
+        "fictional values",
+        "private temporary fake CLI process"
+      ],
+      "requires": [
+        "Xcode"
+      ]
+    },
+    {
       "id": "summaries",
       "tier": "source-free",
       "script": "scripts/checks/test-summaries.sh",

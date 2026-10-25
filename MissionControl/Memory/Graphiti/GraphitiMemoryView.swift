@@ -32,7 +32,7 @@ struct GraphitiMemoryView: View {
                 .font(.caption).foregroundStyle(.secondary)
             Toggle("Learn Graphiti relationships during heartbeats", isOn: Binding(get: { state.learningEnabled }, set: { model.graphiti.configure(registration, learning: $0) }))
                 .disabled(model.graphiti.busy)
-            Text("Learns lasting background from permitted shared conversations, supporting facts and human notes. Calendar events, reminders and project task state stay in their source apps. Mixed records are screened before graph extraction. Existing memory and learning controls still apply. AI extraction uses your connected ChatGPT plan; semantic search runs locally.")
+            Text("Learns lasting background from permitted shared conversations, supporting facts and human notes. Calendar events, reminders and project task state stay in their source apps. Mixed records are screened before graph extraction. Existing memory and learning controls still apply. AI extraction uses your selected AI provider's plan; semantic search runs locally.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Label(model.graphiti.runtimeAvailable ? "Local Graphiti runtime ready" : "Local runtime needs setup", systemImage: model.graphiti.runtimeAvailable ? "checkmark.circle" : "exclamationmark.circle")

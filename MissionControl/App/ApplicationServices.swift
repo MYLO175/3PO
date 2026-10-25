@@ -8,7 +8,8 @@ import SwiftData
     private let container: ModelContainer?
     private let injectedNativeSources: (any NativeSourceReading)?
     let chatGPT = ChatGPTConnection()
-    lazy var inference = PAInferenceRouter(chatGPT: chatGPT)
+    let claude = ClaudeCodeConnection()
+    lazy var inference = PAInferenceRouter(chatGPT: chatGPT, claude: claude)
     let eventKit = EventKitService()
     let mail = MailService()
     let mailLookup = MailLookup()

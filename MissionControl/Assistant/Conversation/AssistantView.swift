@@ -465,7 +465,7 @@ struct AssistantPanel: View {
             if !viewingHistory && model.inference.busy && !assistant.busy {
                 HStack(spacing:6) {
                     ProgressView().controlSize(.mini)
-                    Text(model.briefings.busy ? "Preparing today’s brief… You can draft a message while it finishes." : model.memoryLearning.busy ? "Learning conversation context… Start drafting to pause learning." : model.proactive.busy ? "Checking useful suggestions… Start drafting to pause the check." : model.emailSummaries.busy ? "Checking incoming mail… You can draft a message while it finishes." : "Checking your ChatGPT connection…").font(.caption).foregroundStyle(.secondary)
+                    Text(model.briefings.busy ? "Preparing today’s brief… You can draft a message while it finishes." : model.memoryLearning.busy ? "Learning conversation context… Start drafting to pause learning." : model.proactive.busy ? "Checking useful suggestions… Start drafting to pause the check." : model.emailSummaries.busy ? "Checking incoming mail… You can draft a message while it finishes." : "Checking your AI connection…").font(.caption).foregroundStyle(.secondary)
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
             let queued=assistant.queue.items.filter { $0.registration == model.inference.activeID && $0.topicID == selectedTopicID && $0.chatSessionID == displayedSessionID && $0.state != .completed }
@@ -607,7 +607,7 @@ struct AssistantSourceSettings: View {
                 Section("Daily AI call limit") {
                     Picker("Daily limit",selection:$model.heartbeat.dailyCallLimit) { Text("Off").tag(0);ForEach([8,16,32,64,96],id:\.self) { Text("\($0) calls").tag($0) } }
                     Text(model.heartbeat.budgetStatus(model.inference.activeID)).font(.caption).foregroundStyle(.secondary)
-                    Text("Off by default. Optionally limit daily heartbeat AI calls, including email review, memory learning, suggestions and brief updates. One heartbeat can use several calls. ChatGPT account limits still apply.").font(.caption).foregroundStyle(.secondary)
+                    Text("Off by default. Optionally limit daily heartbeat AI calls, including email review, memory learning, suggestions and brief updates. One heartbeat can use several calls. Your AI provider's plan limits still apply.").font(.caption).foregroundStyle(.secondary)
                 }
             case .memory:
                 Section("Saved context") {
