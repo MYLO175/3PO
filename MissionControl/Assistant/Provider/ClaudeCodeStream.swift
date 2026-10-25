@@ -10,8 +10,12 @@ struct ClaudeCodeStream {
     }
     struct ToolUse { var id: String; var name: String; var input: [String: Any] }
 
-    /// Full MCP names (mcp__pa__…) this round advertised; empty disables tools.
+    /// The CLI's own tool for JSON-schema results; it needs the run's final result.
+    static let structuredOutputTool = "StructuredOutput"
+    /// Full tool names the CLI must report: mcp__pa__… for a tool round, or the structured-output tool.
     let expectedTools: Set<String>
+    /// A tool round ends at its completed tool_use message; a schema result waits for the run's result.
+    let endsAtToolUse: Bool
     private(set) var streamedText = ""
     private(set) var finished = false
     private(set) var reportedTokens: AIReportedTokens?
@@ -25,7 +29,7 @@ struct ClaudeCodeStream {
     private var partial: [Int: (id: String, name: String, json: String)] = [:]
     private var streamUsage: (input: Int, cacheRead: Int, cacheWrite: Int, output: Int)?
 
-    init(expectedTools: Set<String>) { self.expectedTools = expectedTools }
+    init(expectedTools: Set<String>, endsAtToolUse: Bool = true) { self.expectedTools = expectedTools; self.endsAtToolUse = endsAtToolUse }
 
     /// The completed reply text: assistant message content is authoritative over deltas.
     var text: String {
@@ -58,7 +62,9 @@ struct ClaudeCodeStream {
                 }
             }
             if let reason = message["stop_reason"] as? String { try stop(reason) }
-            if stopReason == "tool_use", partial.isEmpty, !toolUses.isEmpty { finish() }
+            if endsAtToolUse, stopReason == "tool_use", partial.isEmpty, !toolUses.isEmpty { finish() }
+        case "rate_limit_event":
+            if (event["rate_limit_info"] as? [String: Any])?["status"] as? String == "rejected" { throw Failure.usageLimit }
         case "result":
             guard initialised else { throw Failure.invalid }
             if let usage = event["usage"] { reportedTokens = Self.tokens(usage) ?? reportedTokens }
@@ -82,8 +88,11 @@ struct ClaudeCodeStream {
         if let source = event["apiKeySource"] as? String, source != "none" { throw Failure.apiKeyAuthentication }
         guard let tools = event["tools"] as? [String], Set(tools) == expectedTools, tools.count == expectedTools.count else { throw Failure.unexpectedEnvironment }
         let servers = (event["mcp_servers"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
-        guard servers == (expectedTools.isEmpty ? [] : [ClaudeCodeTranscript.serverName]) else { throw Failure.unexpectedEnvironment }
-        if let plugins = event["plugins"] as? [Any], !plugins.isEmpty { throw Failure.unexpectedEnvironment }
+        let advertised = expectedTools.contains { $0.hasPrefix(ClaudeCodeTranscript.toolPrefix) }
+        guard servers == (advertised ? [ClaudeCodeTranscript.serverName] : []) else { throw Failure.unexpectedEnvironment }
+        // Claude Code's own built-in plugins are part of the signed binary; the user's installed plugins never load.
+        if let plugins = event["plugins"] as? [[String: Any]], !plugins.allSatisfy({ ($0["source"] as? String)?.hasSuffix("@builtin") == true && $0["path"] as? String == "builtin" }) { throw Failure.unexpectedEnvironment }
+        if event["plugins"] != nil, !(event["plugins"] is [[String: Any]]) { throw Failure.unexpectedEnvironment }
         model = event["model"] as? String
         initialised = true
     }
@@ -114,7 +123,7 @@ struct ClaudeCodeStream {
             if let usage = inner["usage"] as? [String: Any], var current = streamUsage { current.output = Self.int(usage["output_tokens"]); streamUsage = current }
             if let reason = (inner["delta"] as? [String: Any])?["stop_reason"] as? String { try stop(reason) }
         case "message_stop":
-            if stopReason == "tool_use", partial.isEmpty, !toolUses.isEmpty { finish() }
+            if endsAtToolUse, stopReason == "tool_use", partial.isEmpty, !toolUses.isEmpty { finish() }
         default: break
         }
         return nil

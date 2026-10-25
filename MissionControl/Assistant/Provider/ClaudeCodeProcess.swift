@@ -6,8 +6,9 @@ import Security
 /// Claude login and would need an API key.
 enum ClaudeCodeInvocation {
     enum Failure: Error, Equatable { case invalidModel, invalidEffort }
-    /// Personal Claude Code settings, plugins, hooks and commands stay out of 3PO's runs.
-    static let isolation = ["--setting-sources", "local", "--disable-slash-commands"]
+    /// Personal Claude Code settings, plugins, hooks, commands and auto-memory stay out of 3PO's runs.
+    /// Confirmed on Claude Code 2.1.310; `--safe-mode` would also drop 3PO's MCP tools, so it isn't used.
+    static let isolation = ["--setting-sources", "local", "--disable-slash-commands", "--settings", "{\"autoMemoryEnabled\":false}"]
     private static let modelID = try! NSRegularExpression(pattern: "^claude-[a-z0-9.-]{1,64}$")
 
     /// The CLI model name for a captured `claude-code:` model.
@@ -28,6 +29,10 @@ enum ClaudeCodeInvocation {
         if let jsonSchema {
             let data = try JSONSerialization.data(withJSONObject: jsonSchema, options: [.sortedKeys])
             arguments += ["--json-schema", String(decoding: data, as: UTF8.self)]
+        } else {
+            // One model turn: a held tool call can never lead to a second, wasted request.
+            // Schema results need the CLI's own follow-up turn, so they keep the default.
+            arguments += ["--max-turns", "1"]
         }
         return arguments
     }
@@ -64,21 +69,16 @@ enum ClaudeCodeLocator {
         return nil
     }
 
-    /// The signing certificate's subject when the binary carries a valid Developer ID signature.
-    static func signer(of url: URL) -> String? {
-        var code: SecStaticCode?
-        guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code else { return nil }
-        var requirement: SecRequirement?
-        guard SecRequirementCreateWithString("anchor apple generic" as CFString, [], &requirement) == errSecSuccess,
-              SecStaticCodeCheckValidity(code, [], requirement) == errSecSuccess else { return nil }
-        var information: CFDictionary?
-        guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &information) == errSecSuccess,
-              let certificates = (information as? [String: Any])?[kSecCodeInfoCertificates as String] as? [SecCertificate],
-              let leaf = certificates.first else { return nil }
-        return SecCertificateCopySubjectSummary(leaf) as String?
-    }
+    /// Anthropic's Developer ID team and Claude Code's signing identifier (checked on 2.1.310).
+    static let signingRequirement = "identifier \"com.anthropic.claude-code\" and anchor apple generic and certificate leaf[subject.OU] = \"Q6L2SF6YDW\""
 
-    static func anthropicSigned(_ subject: String?) -> Bool { subject?.contains("Anthropic PBC") == true }
+    /// True only for an intact binary signed by Anthropic's Developer ID as Claude Code.
+    static func anthropicSigned(_ url: URL) -> Bool {
+        var code: SecStaticCode?, requirement: SecRequirement?
+        guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code,
+              SecRequirementCreateWithString(signingRequirement as CFString, [], &requirement) == errSecSuccess else { return false }
+        return SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckAllArchitectures), requirement) == errSecSuccess
+    }
 
     struct Auth: Equatable { var loggedIn: Bool; var subscription: Bool; var plan: String? }
     /// Reads only sign-in state from `claude auth status --json`; never credentials.

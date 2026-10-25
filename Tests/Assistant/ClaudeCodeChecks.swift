@@ -11,13 +11,18 @@ private func expectFailure(_ expected: ClaudeCodeStream.Failure, _ lines: [Strin
 }
 
 private let toolNames: Set<String> = ["mcp__pa__read_calendar", "mcp__pa__read_weather"]
-private func initLine(tools: [String] = Array(toolNames).sorted(), servers: [String] = ["pa"], apiKeySource: String = "none", plugins: [Any] = []) -> String {
-    json(["type": "system", "subtype": "init", "session_id": "fictional", "model": "claude-haiku-5-5", "apiKeySource": apiKeySource, "tools": tools,
-          "mcp_servers": servers.map { ["name": $0, "status": "connected"] }, "plugins": plugins])
+/// Shapes follow Claude Code 2.1.310 output: its own built-in plugins are always listed.
+private let builtinPlugins: [Any] = [["name": "cc-plugin-agents-md", "path": "builtin", "source": "cc-plugin-agents-md@builtin"],
+                                      ["name": "cc-plugin-plugin-authoring", "path": "builtin", "source": "cc-plugin-plugin-authoring@builtin"]]
+private func initLine(tools: [String] = Array(toolNames).sorted(), servers: [String] = ["pa"], apiKeySource: String = "none", plugins: [Any] = builtinPlugins) -> String {
+    json(["type": "system", "subtype": "init", "session_id": "fictional", "model": "claude-haiku-5-5", "apiKeySource": apiKeySource, "tools": tools, "slash_commands": [], "skills": [],
+          "mcp_servers": servers.map { ["name": $0, "status": "connected", "source": "dynamic"] }, "plugins": plugins])
 }
 /// A fictional round: text, then two parallel tool calls, stopping for tool use.
 private let toolRound: [String] = [
     initLine(),
+    json(["type": "system", "subtype": "status", "status": "requesting"]),
+    json(["type": "system", "subtype": "thinking_tokens", "estimated_tokens": 50]),
     event(["type": "message_start", "message": ["id": "msg_fictional", "usage": ["input_tokens": 10, "cache_read_input_tokens": 100, "cache_creation_input_tokens": 5, "output_tokens": 1]]]),
     event(["type": "content_block_start", "index": 0, "content_block": ["type": "text", "text": ""]]),
     event(["type": "content_block_delta", "index": 0, "delta": ["type": "text_delta", "text": "Checking "]]),
@@ -27,11 +32,16 @@ private let toolRound: [String] = [
     event(["type": "content_block_start", "index": 1, "content_block": ["type": "tool_use", "id": "toolu_fictional1", "name": "mcp__pa__read_calendar", "input": [:]]]),
     event(["type": "content_block_delta", "index": 1, "delta": ["type": "input_json_delta", "partial_json": "{\"start\":\"2026-10-26\","]]),
     event(["type": "content_block_delta", "index": 1, "delta": ["type": "input_json_delta", "partial_json": "\"end\":\"2026-10-27\"}"]]),
+    json(["type": "assistant", "message": ["id": "msg_fictional", "content": [["type": "tool_use", "id": "toolu_fictional1", "name": "mcp__pa__read_calendar", "input": ["start": "2026-10-26", "end": "2026-10-27"], "caller": ["type": "direct"]]], "stop_reason": NSNull()]]),
     event(["type": "content_block_stop", "index": 1]),
     event(["type": "content_block_start", "index": 2, "content_block": ["type": "tool_use", "id": "toolu_fictional2", "name": "mcp__pa__read_weather", "input": [:]]]),
+    event(["type": "content_block_delta", "index": 2, "delta": ["type": "input_json_delta", "partial_json": ""]]),
+    json(["type": "assistant", "message": ["id": "msg_fictional", "content": [["type": "tool_use", "id": "toolu_fictional2", "name": "mcp__pa__read_weather", "input": [:]]], "stop_reason": NSNull()]]),
     event(["type": "content_block_stop", "index": 2]),
     event(["type": "message_delta", "delta": ["stop_reason": "tool_use"], "usage": ["output_tokens": 20]]),
     event(["type": "message_stop"]),
+    json(["type": "rate_limit_event", "rate_limit_info": ["status": "allowed", "rateLimitType": "five_hour"]]),
+    json(["type": "user", "message": ["role": "user", "content": [["type": "tool_result", "content": "Connection closed", "is_error": true, "tool_use_id": "toolu_fictional1"]]]]),
 ]
 private let calendarTool: [String: Any] = ["type": "function", "name": "read_calendar", "description": "Read fictional occurrences.", "strict": true,
     "parameters": ["type": "object", "additionalProperties": false, "required": ["calendar", "end", "start"],
@@ -125,7 +135,21 @@ private let namespace: [[String: Any]] = [["type": "namespace", "name": "pa", "d
     expectFailure(.unexpectedEnvironment, [initLine(tools: ["Bash"] + Array(toolNames))], tools: toolNames, "built-in tools are refused")
     expectFailure(.unexpectedEnvironment, [initLine(tools: ["mcp__pa__read_calendar"])], tools: toolNames, "missing advertised tools are refused")
     expectFailure(.unexpectedEnvironment, [initLine(servers: ["pa", "3po"])], tools: toolNames, "the user's own MCP servers are refused")
-    expectFailure(.unexpectedEnvironment, [initLine(plugins: [["name": "3po"]])], tools: toolNames, "the user's plugins are refused")
+    expectFailure(.unexpectedEnvironment, [initLine(plugins: builtinPlugins + [["name": "3po", "path": "/Users/fictional/plugins/3po", "source": "3po@3po-local"]])], tools: toolNames, "the user's plugins are refused")
+    expectFailure(.unexpectedEnvironment, [initLine(plugins: [["name": "fake", "path": "/x", "source": "fake@builtin"]])], tools: toolNames, "a plugin outside the binary is refused")
+    expectFailure(.usageLimit, [initLine(tools: [], servers: []), json(["type": "rate_limit_event", "rate_limit_info": ["status": "rejected", "rateLimitType": "five_hour"]])], "a rejected usage window pauses requests")
+
+    // JSON-schema results: the CLI's own StructuredOutput tool, two internal turns, then the validated result.
+    var typed = ClaudeCodeStream(expectedTools: [ClaudeCodeStream.structuredOutputTool], endsAtToolUse: false)
+    for line in [initLine(tools: ["StructuredOutput"], servers: []),
+                 json(["type": "assistant", "message": ["content": [["type": "thinking", "thinking": "", "signature": "opaque"]]]]),
+                 json(["type": "assistant", "message": ["content": [["type": "tool_use", "id": "toolu_s", "name": "StructuredOutput", "input": ["summary": "Fictional"]]]]]),
+                 event(["type": "message_delta", "delta": ["stop_reason": "tool_use"]]), event(["type": "message_stop"])] { _ = try typed.line(line) }
+    assert(!typed.finished, "a schema result waits for the CLI's validated result")
+    for line in [json(["type": "user", "message": ["content": [["type": "tool_result", "tool_use_id": "toolu_s", "content": "Structured output provided successfully"]]]]),
+                 json(["type": "result", "subtype": "success", "is_error": false, "num_turns": 2, "result": "{\"summary\":\"Fictional\"}", "structured_output": ["summary": "Fictional"]])] { _ = try typed.line(line) }
+    assert(typed.finished && (typed.structuredOutput as? [String: Any])?["summary"] as? String == "Fictional")
+    expectFailure(.unexpectedEnvironment, [initLine(tools: ["StructuredOutput", "Bash"], servers: [])], tools: [ClaudeCodeStream.structuredOutputTool], "schema runs get no other tool")
     expectFailure(.invalid, [event(["type": "message_start"])], "events before init are refused")
     expectFailure(.usageLimit, [initLine(tools: [], servers: []), json(["type": "result", "subtype": "success", "is_error": true, "result": "Claude AI usage limit reached|1761400000"])], "usage limits pause requests")
     expectFailure(.overloaded, [initLine(tools: [], servers: []), json(["type": "result", "is_error": true, "result": "API Error: 529 overloaded"])], "overload is not a usage limit")
@@ -146,8 +170,11 @@ private let namespace: [[String: Any]] = [["type": "namespace", "name": "pa", "d
     assert(!arguments.contains("--bare"), "bare mode would ignore the user's Claude login")
     assert(arguments[arguments.firstIndex(of: "--model")! + 1] == "claude-sonnet-5-5" && arguments[arguments.firstIndex(of: "--allowedTools")! + 1] == "mcp__pa__*")
     assert(arguments[arguments.firstIndex(of: "--json-schema")! + 1] == "{\"type\":\"object\"}")
+    assert(!arguments.contains("--max-turns"), "schema results need the CLI's own follow-up turn")
+    assert(arguments[arguments.firstIndex(of: "--settings")! + 1] == "{\"autoMemoryEnabled\":false}" && arguments[arguments.firstIndex(of: "--setting-sources")! + 1] == "local")
+    assert(!arguments.contains("--safe-mode"), "safe mode would drop 3PO's tools")
     let plain = try ClaudeCodeInvocation.arguments(model: PAProvider.claudeModelTag + "claude-haiku-5-5", effort: "low", systemFile: system, mcpConfig: nil, jsonSchema: nil)
-    assert(!plain.contains("--mcp-config"))
+    assert(!plain.contains("--mcp-config") && plain[plain.firstIndex(of: "--max-turns")! + 1] == "1", "one model turn per round")
     for model in ["claude-sonnet-5-5", "gpt-6.1-sol", PAProvider.claudeModelTag + "claude sonnet; rm"] {
         do { _ = try ClaudeCodeInvocation.cliModel(model); assertionFailure("untagged or unsafe models are refused: " + model) } catch {}
     }
@@ -164,7 +191,7 @@ private let namespace: [[String: Any]] = [["type": "namespace", "name": "pa", "d
     assert(auth == .init(loggedIn: true, subscription: true, plan: "Claude Max"))
     assert(!ClaudeCodeLocator.auth(["loggedIn": true, "authMethod": "api_key"]).subscription)
     assert(!ClaudeCodeLocator.auth([:]).loggedIn)
-    assert(ClaudeCodeLocator.anthropicSigned("Developer ID Application: Anthropic PBC (FICTIONAL)") && !ClaudeCodeLocator.anthropicSigned(nil))
+    assert(ClaudeCodeLocator.signingRequirement.contains("Q6L2SF6YDW") && ClaudeCodeLocator.signingRequirement.contains("com.anthropic.claude-code"))
 }
 
 @MainActor private func processChecks(_ directory: URL) async throws {
@@ -184,6 +211,7 @@ private let namespace: [[String: Any]] = [["type": "namespace", "name": "pa", "d
     FileManager.default.createFile(atPath: fake.path, contents: Data(script.utf8), attributes: [.posixPermissions: 0o700])
     try FileManager.default.createSymbolicLink(at: bin.appendingPathComponent("claude"), withDestinationURL: fake)
     assert(ClaudeCodeLocator.locate(home: home) == fake.resolvingSymlinksInPath(), "the native installer's launcher symlink resolves")
+    assert(!ClaudeCodeLocator.anthropicSigned(fake), "an unsigned program named claude is never used")
     func environment(_ mode: String) -> [String: String] { ["PATH": "/usr/bin:/bin", "FAKE_MODE": mode] }
     let input = Data((json(["type": "user", "message": ["role": "user", "content": [["type": "text", "text": "fictional"]]]]) + "\n").utf8)
 

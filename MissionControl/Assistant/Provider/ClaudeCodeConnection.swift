@@ -38,6 +38,10 @@ enum ClaudeCodeError: LocalizedError {
     var busy = false
     var message = "Choose Claude to use your Claude plan."
     @ObservationIgnored weak var usageStore: AIUsageStore?
+    /// Where the bundled Node runtime and tool-schema server live; the app bundle by default.
+    @ObservationIgnored let resources: URL?
+
+    init(resources: URL? = Bundle.main.resourceURL) { self.resources = resources }
 
     var installed: Bool { binary != nil }
     var hasSession: Bool { installed && signedIn }
@@ -59,7 +63,7 @@ enum ClaudeCodeError: LocalizedError {
             guard let found = ClaudeCodeLocator.locate(custom: UserDefaults.standard.string(forKey: Keys.customPath)) else {
                 binary = nil; signedIn = false; message = "Claude Code isn't installed on this Mac yet."; return
             }
-            guard ClaudeCodeLocator.anthropicSigned(ClaudeCodeLocator.signer(of: found)) else {
+            guard ClaudeCodeLocator.anthropicSigned(found) else {
                 binary = nil; signedIn = false; message = "The claude program found on this Mac isn't Anthropic's signed Claude Code, so 3PO won't use it."; return
             }
             binary = found
@@ -131,7 +135,7 @@ enum ClaudeCodeError: LocalizedError {
         try write(Data(request.system.utf8), to: system)
         var mcp: URL?
         if !request.tools.isEmpty {
-            guard let resources = Bundle.main.resourceURL else { throw ClaudeCodeError.message("3PO's tool helper is missing from this build.") }
+            guard let resources else { throw ClaudeCodeError.message("3PO's tool helper is missing from this build.") }
             let schema = run.appendingPathComponent("tools.json"), config = run.appendingPathComponent("mcp.json")
             try write(try JSONSerialization.data(withJSONObject: request.tools, options: [.sortedKeys]), to: schema)
             let node = resources.appendingPathComponent("WhatsAppBridge/Runtime/node"), server = resources.appendingPathComponent("MCPBridge/tool-schema-server.mjs")
@@ -139,7 +143,8 @@ enum ClaudeCodeError: LocalizedError {
             mcp = config
         }
         let arguments = try ClaudeCodeInvocation.arguments(model: model, effort: effort, systemFile: system, mcpConfig: mcp, jsonSchema: typed?.schema)
-        var stream = ClaudeCodeStream(expectedTools: Set(request.tools.compactMap { ($0["name"] as? String).map { ClaudeCodeTranscript.toolPrefix + $0 } }))
+        var stream = typed != nil ? ClaudeCodeStream(expectedTools: [ClaudeCodeStream.structuredOutputTool], endsAtToolUse: false)
+            : ClaudeCodeStream(expectedTools: Set(request.tools.compactMap { ($0["name"] as? String).map { ClaudeCodeTranscript.toolPrefix + $0 } }))
         let usage = usageStore?.begin(registration: registration, model: model, purpose: purpose)
         do {
             let line = try JSONSerialization.data(withJSONObject: request.message) + Data([10])
