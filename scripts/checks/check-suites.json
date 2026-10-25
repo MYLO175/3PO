@@ -611,6 +611,18 @@
       ]
     },
     {
+      "id": "inference-router",
+      "tier": "source-free",
+      "script": "scripts/checks/test-inference-router.sh",
+      "effects": [
+        "fictional providers",
+        "private UserDefaults suites"
+      ],
+      "requires": [
+        "Xcode"
+      ]
+    },
+    {
       "id": "summaries",
       "tier": "source-free",
       "script": "scripts/checks/test-summaries.sh",

@@ -16,21 +16,21 @@ import SwiftUI
     }
     static func run(_ model:DashboardModel) async throws->[String:Any] {
         let container=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
-        let store=ChatImageStore(container:container),account=model.chatGPT.activeID,selected=model.chatGPT.selectedModel
+        let store=ChatImageStore(container:container),account=model.inference.activeID,selected=model.inference.selectedModel
         let image=try store.add(fixture(),registration:account)
         var first=AssistantTurn(role:"user",content:"Read the large label at the top. Reply with the label only.",completed:true);first.images=[image]
         let instructions="You are analysing fictional image fixtures. Answer the current question from the image. No tools or source access."
         let one=try store.input([first],currentUserID:first.id,registration:account)
         try PAToolProtocol.boundedInput(one)
-        let result=try await model.chatGPT.toolResponse(input:one,instructions:instructions,tools:[],model:selected,purpose:.diagnostic,onDelta:{_ in})
-        guard model.chatGPT.activeID == account,model.chatGPT.selectedModel == selected else { throw ChatImageFailure.unavailable }
+        let result=try await model.inference.toolResponse(input:one,instructions:instructions,tools:[],model:selected,purpose:.diagnostic,onDelta:{_ in})
+        guard model.inference.activeID == account,model.inference.selectedModel == selected else { throw ChatImageFailure.unavailable }
         let answer=AssistantTurn(role:"assistant",content:result.text,completed:true)
         let next=AssistantTurn(role:"user",content:"What colour is the triangle in that screenshot? Reply with one colour word.",completed:true)
         let replay=ConversationRules.replayTurns([first,answer,next],currentUserID:next.id)
         let input=try ChatImageStore(container:container).input(replay,currentUserID:next.id,registration:account)
         try PAToolProtocol.boundedInput(input)
-        let follow=try await model.chatGPT.toolResponse(input:input,instructions:instructions,tools:[],model:selected,purpose:.diagnostic,onDelta:{_ in})
-        let checks=["actual screenshot label":result.text.uppercased().contains("WILLOW 731"),"saved attachment follow-up":follow.text.lowercased().contains("green"),"account/model retained":model.chatGPT.activeID == account && model.chatGPT.selectedModel == selected]
+        let follow=try await model.inference.toolResponse(input:input,instructions:instructions,tools:[],model:selected,purpose:.diagnostic,onDelta:{_ in})
+        let checks=["actual screenshot label":result.text.uppercased().contains("WILLOW 731"),"saved attachment follow-up":follow.text.lowercased().contains("green"),"account/model retained":model.inference.activeID == account && model.inference.selectedModel == selected]
         return ["passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"model":selected,"boundary":"Two completed subscription requests with fictional raster input and reloaded private attachment store. No personal sources, native writes or transcript changes."]
     }
 }

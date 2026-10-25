@@ -19,7 +19,7 @@ import Foundation
             checks["native form captures exact displayed proposal"]=request.discoveryApproval == model.preparedApprovalSnapshot(record) && request.id.uuidString == record.id
         } else {checks["native form captures exact displayed proposal"]=false}
         let snapshot=model.preparedApprovalSnapshot(record)
-        let fact=PAMemory(registration:model.chatGPT.activeID,text:"The fictional report is for a different supervisor now.",kind:.context,provenance:"Fictional human",evidence:"The fictional report is for a different supervisor now.")
+        let fact=PAMemory(registration:model.inference.activeID,text:"The fictional report is for a different supervisor now.",kind:.context,provenance:"Fictional human",evidence:"The fictional report is for a different supervisor now.")
         guard model.assistant.memory.put(fact) else {throw SummaryFailure.invalid}
         var summary=model.emailSummaries.records[0];summary.bodyFingerprint="changed-after-preparation"
         try model.emailSummaries.seedAdviceFixture([summary])

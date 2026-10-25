@@ -13,10 +13,10 @@ import SwiftData
             if let index = selected.widgets.firstIndex(where: { $0.id == widget.id }) { selected.widgets[index] = widget }
         }
     }
-    var chatGPT: Connection
+    var inference: Connection
     var assistant: Assistant
     var workspace = Workspace()
-    init(account: String, store: LifeWorkspaceStore) { chatGPT = .init(activeID:account); assistant = .init(projects:store) }
+    init(account: String, store: LifeWorkspaceStore) { inference = .init(activeID:account); assistant = .init(projects:store) }
 }
 struct LifeLinkOption {
     var reference: LifeReference
@@ -154,7 +154,7 @@ enum LifeWorkspaceContext {
             let f = try Fixture(), session = try f.session(), call = try f.unlink
             try session.prepareExactReferences(call,args:f.args)
             let capture = session.approvalCapture()
-            f.model.chatGPT.activeID = "different-account"
+            f.model.inference.activeID = "different-account"
             rejects("Changed account rejects execution") { _ = try session.execute(call,args:f.args) }
             rejects("Changed account rejects approval") { try session.restoreApprovalCapture(capture,call:call,args:f.args) }
             check(f.store.state.links == [f.link],"Changed account makes no removal")

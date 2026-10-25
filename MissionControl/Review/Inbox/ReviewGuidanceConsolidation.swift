@@ -22,7 +22,7 @@ extension EmailSummaryService {
         guard ReviewPolicyRules.validText(captured.text) else {
             return .init(failure: "Review guidance exceeds the supported document size. Edit it before the next assessment; no preferences were discarded.", detail: "Review guidance is retained.", skipped: false)
         }
-        let selectedModel = model.chatGPT.selectedModel
+        let selectedModel = model.inference.selectedModel
         let permission = memory.useRevision, controls = memory.controlsRevision
         busy = true
         defer { busy = false }
@@ -32,13 +32,13 @@ extension EmailSummaryService {
             let result: PAResponse
             if let infer { result = try await infer(input) }
             else {
-                result = try await model.chatGPT.toolResponse(input: [["role": "user", "content": input]], instructions: ReviewGuidanceRules.instructions,
-                    tools: ReviewGuidanceRules.tools, model: selectedModel, purpose: .learning) { _ in }
+                result = try await model.inference.typedResult(input: [["role": "user", "content": input]], instructions: ReviewGuidanceRules.instructions,
+                    tools: ReviewGuidanceRules.tools, model: selectedModel, effort: "medium", purpose: .learning)
             }
             try Task.checkCancellation(); try request.validate()
-            guard registration == model.chatGPT.activeID, memory.enabled, memory.learningEnabled,
+            guard registration == model.inference.activeID, memory.enabled, memory.learningEnabled,
                   permission == memory.useRevision, controls == memory.controlsRevision,
-                  selectedModel == model.chatGPT.selectedModel, !model.assistant.busy, !model.assistant.hasDraft,
+                  selectedModel == model.inference.selectedModel, !model.assistant.busy, !model.assistant.hasDraft,
                   policyAvailable(captured), result.calls.count == 1, let call = result.calls.first,
                   (call.namespace == "pa" && call.name == ReviewGuidanceRules.toolName) ||
                   (call.namespace == nil && call.name == "pa." + ReviewGuidanceRules.toolName) else { throw SummaryFailure.invalid }

@@ -18,10 +18,10 @@ extension DashboardModel {
             let key=nativeLearningProjectionKey(excluded:assistant.excludedLists,now:now)
             return nativeLearningProjectionCache.items(kind,key:key) {NativeSourceAdapters.reminders(reminderData,excluded:assistant.excludedLists)}
         case .mail:
-            let key=MailLearningProjectionKey(collectionRevision:mailLearningProjectionRevision,summaryRevision:emailSummaries.sourceProjectionRevision,registration:chatGPT.activeID,excluded:assistant.excludedAccounts)
+            let key=MailLearningProjectionKey(collectionRevision:mailLearningProjectionRevision,summaryRevision:emailSummaries.sourceProjectionRevision,registration:inference.activeID,excluded:assistant.excludedAccounts)
             // Rebuild at the next future checked-time or 24-hour expiry, and after a clock rollback.
             let boundary=MailLearningProjectionCache.deadline(checked:emailSummaries.records.compactMap(\.bodyCheckedAt),now:now)
-            return mailLearningProjectionCache.items(key:key,now:now,until:boundary) {NativeSourceAdapters.collectedMail(mailData,index:mailIndex,summaries:emailSummaries.records,registration:chatGPT.activeID,excluded:assistant.excludedAccounts,now:now)}
+            return mailLearningProjectionCache.items(key:key,now:now,until:boundary) {NativeSourceAdapters.collectedMail(mailData,index:mailIndex,summaries:emailSummaries.records,registration:inference.activeID,excluded:assistant.excludedAccounts,now:now)}
         case .whatsapp:return nil
         }
     }

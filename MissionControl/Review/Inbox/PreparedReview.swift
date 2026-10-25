@@ -15,7 +15,7 @@ struct PreparedReviewAccess {
     var whatsappIdentity:String
     var whatsappChats:Set<String>
     @MainActor init(_ model:DashboardModel) {
-        registration=model.chatGPT.activeID;enabled=model.assistant.contextEnabled
+        registration=model.inference.activeID;enabled=model.assistant.contextEnabled
         mailEnabled=model.emailSummaries.enabled
         mailAccounts=Set(model.mailData.accounts.map(\.id));excludedMail=model.assistant.excludedAccounts
         mailAccountByMessage=[:];acknowledgedMail=[]
@@ -68,7 +68,7 @@ struct PreparedReviewAccess {
 
 @MainActor extension DashboardModel {
     func buildPreparedReview()->ReviewInboxProjection {
-        let owner=chatGPT.activeID,access=PreparedReviewAccess(self)
+        let owner=inference.activeID,access=PreparedReviewAccess(self)
         let questions=briefings.preparedQuestions(self)
         let learning=(memoryLearning.state.questions ?? []).filter{memoryLearning.visible($0,assistant:assistant)}
         let projectQuestions = visibleContextProjectQuestions()

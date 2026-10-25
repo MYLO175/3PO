@@ -4,11 +4,11 @@ import Foundation
 /// Two bounded subscription requests over invented rules and emails, with a private policy store.
 @MainActor enum ReviewGuidanceModelEvaluation {
     static func run(_ model: DashboardModel) async throws -> [String: Any] {
-        let owner = model.chatGPT.activeID, selected = model.chatGPT.selectedModel
-        guard !owner.isEmpty, model.chatGPT.inferenceVerified, !model.chatGPT.usagePaused else { throw SummaryFailure.invalid }
+        let owner = model.inference.activeID, selected = model.inference.selectedModel
+        guard !owner.isEmpty, model.inference.inferenceVerified, !model.inference.usagePaused else { throw SummaryFailure.invalid }
         func validate() throws {
             try Task.checkCancellation()
-            guard owner == model.chatGPT.activeID, selected == model.chatGPT.selectedModel else { throw SummaryFailure.invalid }
+            guard owner == model.inference.activeID, selected == model.inference.selectedModel else { throw SummaryFailure.invalid }
         }
         var data: Data?
         let store = ReviewPolicyStore(load: { data }, persist: { next, expected in
@@ -27,7 +27,7 @@ import Foundation
         }
         let pending = store.policy(owner, preferences: rules)
         let input = String(decoding: try JSONSerialization.data(withJSONObject: ["guidance": pending.text], options: .sortedKeys), as: UTF8.self)
-        let result = try await model.chatGPT.toolResponse(input: [["role": "user", "content": input]], instructions: ReviewGuidanceRules.instructions,
+        let result = try await model.inference.toolResponse(input: [["role": "user", "content": input]], instructions: ReviewGuidanceRules.instructions,
             tools: ReviewGuidanceRules.tools, model: selected, purpose: .diagnostic) { _ in }
         try validate()
         guard result.calls.count == 1, let call = result.calls.first,
@@ -49,7 +49,7 @@ import Foundation
             let fields: [String: Any] = ["id": entry.0, "accountID": "fictional-mail", "account": "Fictional", "messageID": 1, "internetMessageID": entry.0 + "@example.invalid", "sender": entry.1, "subject": entry.2, "received": Date.now.ISO8601Format(), "unread": true, "replied": false, "flagged": false]
             messages[entry.0] = try JSONDecoder().decode(MailMessage.self, from: JSONSerialization.data(withJSONObject: fields))
         }
-        let response = try await model.chatGPT.streamResponse(input: [["role": "user", "content": String(decoding: JSONSerialization.data(withJSONObject: decisionInput, options: .sortedKeys), as: UTF8.self)]],
+        let response = try await model.inference.streamResponse(input: [["role": "user", "content": String(decoding: JSONSerialization.data(withJSONObject: decisionInput, options: .sortedKeys), as: UTF8.self)]],
             instructions: EmailSummary.assessmentInstructions + " " + EmailRelevanceRules.instructions + " " + ReviewPolicyRules.instructions + " Assess each invented email independently using the one complete guide. No other personal facts are supplied. Return ONLY {assessments:[{id:exact supplied ID,assessment:the normal assessment object}]}, one row for each email.",
             model: selected, purpose: .diagnostic) { _ in }
         try validate()

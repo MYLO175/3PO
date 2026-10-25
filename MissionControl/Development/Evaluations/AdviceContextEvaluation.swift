@@ -8,7 +8,7 @@ import Synchronization
 /// Actual consumer projections, fictional data and disposable storage; zero subscription requests.
 @MainActor enum AdviceContextEvaluation {
     private static func activityOutcomeChecks(_ model:DashboardModel)throws->[String:Bool] {
-        let registration=model.chatGPT.activeID,usage=model.aiUsage.state.records.count
+        let registration=model.inference.activeID,usage=model.aiUsage.state.records.count
         let id=model.assistant.openReview(key:"fictional-pill-answer",title:"Fictional action question",sourceKind:"mail",accountID:"fictional-mail",messageID:"fictional-question",identity:nil,chatID:nil,seeds:[])!
         let response=UUID()
         precondition(model.assistant.appendReview("Which time should I use?",conversationID:id,turnID:response))
@@ -114,7 +114,7 @@ import Synchronization
     }
     private static func resolutionConsumerChecks(_ model:DashboardModel)throws->[String:Bool] {
         try ReviewInboxEvaluation.seedResolutionPreview(model)
-        let saved=model.emailSummaries.records,request=saved.first{$0.id == "assessment-request"}!,confirmation=saved.first{$0.id == "assessment-confirmation"}!,original=request.message!,now=Date.now,owner=model.chatGPT.activeID
+        let saved=model.emailSummaries.records,request=saved.first{$0.id == "assessment-request"}!,confirmation=saved.first{$0.id == "assessment-confirmation"}!,original=request.message!,now=Date.now,owner=model.inference.activeID
         let revision=model.emailSummaries.resolutionRevision(model)
         var checks:[String:Bool]=[:]
         checks["later submission removes original assessment from active email/review/brief"] = !model.emailSummaries.highlights(model).contains{$0.0.id == original.id} && !model.reviewInbox.emails.contains{$0.0.id == original.id} && !model.briefings.currentEmails(model).contains{$0.0.id == original.id}
@@ -259,7 +259,7 @@ import Synchronization
         let mail=model.mailData,summaries=model.emailSummaries.records,usage=model.aiUsage.state.records.count
         var addedMemories:[UUID]=[]
         defer {model.mailData=mail;try? model.emailSummaries.seedAdviceFixture(summaries);for id in addedMemories {_=model.assistant.memory.forget(id)}}
-        let body="Fictional routine newsletter with optional events.",registration=model.chatGPT.activeID
+        let body="Fictional routine newsletter with optional events.",registration=model.inference.activeID
         let fields:[String:Any]=["id":"feedback-refresh-fixture","accountID":"fictional-mail","account":"Fictional Mail","messageID":1,"internetMessageID":"feedback-refresh@example.invalid","sender":"Fictional newsletter","subject":"Optional events","received":Date.now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
         let message=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:fields))
         let summary=EmailSummary(id:message.id,registration:registration,fingerprint:EmailSummary.fingerprint(message),summary:"Optional events",attention:false,reason:"",evidence:body,bodyFingerprint:EmailSummary.fingerprintBody(body),message:message)
@@ -274,7 +274,7 @@ import Synchronization
                 let memory=PAMemory(registration:registration,text:"Fictional unrelated preference "+UUID().uuidString,kind:.preference,provenance:"Fictional human")
                 guard model.assistant.memory.put(memory) else {throw SummaryFailure.invalid};addedMemories.append(memory.id)
             }
-            let result=try await ReviewFeedbackRules.prepare(source,words:"These can stay quiet",about:message.subject,model:model.chatGPT.selectedModel,isCurrent:current,readBody:{
+            let result=try await ReviewFeedbackRules.prepare(source,words:"These can stay quiet",about:message.subject,model:model.inference.selectedModel,isCurrent:current,readBody:{
                 reads += 1;await Task.yield()
                 if phase == "body read" {model.sourceRevision += 1}
                 if phase == "memory during body read" {try addMemory()}
@@ -291,7 +291,7 @@ import Synchronization
         return checks
     }
     private static func capturedEmailContextChecks(_ model:DashboardModel)async throws->[String:Bool] {
-        let memory=model.assistant.memory,projects=model.assistant.projects,registration=model.chatGPT.activeID,usage=model.aiUsage.state.records.count
+        let memory=model.assistant.memory,projects=model.assistant.projects,registration=model.inference.activeID,usage=model.aiUsage.state.records.count
         let originalMemoryIDs=Set(memory.records.map(\.id)),originalProjectIDs=Set(projects.state.items.map(\.id))
         defer {
             for record in memory.records where !originalMemoryIDs.contains(record.id) {_=memory.forget(record.id)}
@@ -347,7 +347,7 @@ import Synchronization
         // installed diagnostic even when a held validation throws.
         let savedSummaryError=UserDefaults.standard.object(forKey:"emailSummaryError")
         defer {UserDefaults.standard.set(savedSummaryError,forKey:"emailSummaryError")}
-        let registration=model.chatGPT.activeID,now=Date.now,store=model.assistant.memory
+        let registration=model.inference.activeID,now=Date.now,store=model.assistant.memory
         let identity=MemorySourceIdentity(kind:.calendar,accountID:"fictional-provider",containerID:"fictional-study",itemID:"fictional-orion")
         let quote="Prepare four sensors for the Orion supervision."
         let source=MemorySourceEvidence(identity:identity,revision:"fictional-v1",label:"Fictional Studies",quote:quote,observed:now,sourceDate:now)

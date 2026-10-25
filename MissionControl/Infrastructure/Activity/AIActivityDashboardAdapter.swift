@@ -56,7 +56,7 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
         scheduleReviewWork()
     }
     var currentAIActivity:AIActivityRecord? {
-        let registration=chatGPT.activeID
+        let registration=inference.activeID
         let records=aiActivity.state.records
         if heartbeat.busy,heartbeat.activeRegistration == registration,let runID=heartbeat.ownedRunID {
             let progress=heartbeat.progress.flatMap{$0.runID == runID ? $0 : nil}
@@ -88,7 +88,7 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
         return nil
     }
     func syncFeedbackActivity() {
-        for job in emailSummaries.feedback.items(chatGPT.activeID) {
+        for job in emailSummaries.feedback.items(inference.activeID) {
             let status:AIActivityStatus
             switch job.state {case .queued:status = .queued;case .learning,.saving:status = .running;case .saved:status = .succeeded;case .failed:status = .failed;case .interrupted:status = .interrupted;case .stopped:status = .stopped}
             let message=job.error ?? (status == .succeeded ? "Your feedback was saved" : status == .queued ? "Feedback queued for the next heartbeat" : "Working on your feedback…")
@@ -97,22 +97,22 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
     }
     func reviewCompletedActions(_ source:ReviewWorkSource)->Int {
         guard reviewPermits(source) else {return 0}
-        let saved=Set(proactive.state.records.filter{$0.registration == chatGPT.activeID && reviewSource($0).key == source.key && reviewDiscoveryCompleted($0)}.map(\.id))
-        let work=reviewWork.jobs(chatGPT.activeID).filter{$0.source.key == source.key}
+        let saved=Set(proactive.state.records.filter{$0.registration == inference.activeID && reviewSource($0).key == source.key && reviewDiscoveryCompleted($0)}.map(\.id))
+        let work=reviewWork.jobs(inference.activeID).filter{$0.source.key == source.key}
         return saved.union(work.flatMap{$0.actions.filter{$0.phase == .saved}.map(\.id)}).count+work.filter{$0.mode == .conversation}.reduce(0){$0+($1.conversationActionCount ?? 0)}
     }
     func openReviewSource(_ message:MailMessage) {
-        let records=proactive.state.records.filter{$0.registration == chatGPT.activeID && $0.mailID == message.id && $0.sourceKind != "whatsapp"}
+        let records=proactive.state.records.filter{$0.registration == inference.activeID && $0.mailID == message.id && $0.sourceKind != "whatsapp"}
         if !records.isEmpty {openReviewConversation(records);return}
         let source=ReviewWorkSource(key:"mail:"+message.id,title:message.subject,kind:"mail",accountID:message.accountID,messageID:message.id)
         guard reviewPermits(source) else {return}
-        let summary=emailSummaries.records.first{$0.id == message.id && $0.registration == chatGPT.activeID}
+        let summary=emailSummaries.records.first{$0.id == message.id && $0.registration == inference.activeID}
         let seeds=summary.map{[AssistantTurn(role:"assistant",content:$0.summary,completed:true,deliveryID:"summary:"+message.id)]} ?? []
         guard let id=assistant.openReview(key:source.key,title:source.title,sourceKind:source.kind,accountID:source.accountID,messageID:source.messageID,identity:nil,chatID:nil,seeds:seeds) else {return}
         reviewPresentation = .init(id:id)
     }
     func activityVisible(_ record:AIActivityRecord)->Bool {
-        guard record.registration == chatGPT.activeID else {return false}
+        guard record.registration == inference.activeID else {return false}
         if record.kind == .chat {
             guard record.id.hasPrefix("chat:"),let turn=UUID(uuidString:String(record.id.dropFirst(5))),case let .assistant(id)=record.destination,let id,let conversation=UUID(uuidString:id),let context=assistant.activityContext(conversation) else {return false}
             return AIActivityWork.includes(context.attemptedTools[turn] ?? [])
@@ -127,11 +127,11 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
             }
             return reviewPermits(.init(key:key,title:context.title,kind:context.reviewSourceKind ?? "mail",accountID:context.reviewAccountID,messageID:context.reviewMessageID,identity:context.reviewSourceIdentity,chatID:context.reviewSourceChatID))
         }
-        if case let .feedback(id)=record.destination,let id,let uuid=UUID(uuidString:id),let job=emailSummaries.feedback.records.first(where:{$0.id == uuid && $0.registration == chatGPT.activeID}) {return reviewPermits(.init(key:"mail:"+job.messageID,title:job.about,kind:"mail",accountID:job.accountID,messageID:job.messageID))}
-        return record.registration == chatGPT.activeID
+        if case let .feedback(id)=record.destination,let id,let uuid=UUID(uuidString:id),let job=emailSummaries.feedback.records.first(where:{$0.id == uuid && $0.registration == inference.activeID}) {return reviewPermits(.init(key:"mail:"+job.messageID,title:job.about,kind:"mail",accountID:job.accountID,messageID:job.messageID))}
+        return record.registration == inference.activeID
     }
     func activityPresentation(_ record:AIActivityRecord)->AIActivityRecord {
-        guard record.registration == chatGPT.activeID else {return record}
+        guard record.registration == inference.activeID else {return record}
         if case let .assistant(id)=record.destination,let conversation=id.flatMap(UUID.init(uuidString:)),let context=assistant.activityContext(conversation) {
             if context.resolvedActivityIDs.contains(record.id) {
                 var result=record;result.state = .resolved;result.message="Resolved by a later correction";return result
@@ -208,7 +208,7 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
         return result
     }
     func relatedActivityDestinations(_ record:AIActivityRecord)->[AIActivityDestination] {
-        guard record.kind == .review,record.id.hasPrefix("review:"),let id=UUID(uuidString:String(record.id.dropFirst(7).prefix(36))),let job=reviewWork.job(id),job.scope.registration == chatGPT.activeID,reviewPermits(job.source) else {return []}
+        guard record.kind == .review,record.id.hasPrefix("review:"),let id=UUID(uuidString:String(record.id.dropFirst(7).prefix(36))),let job=reviewWork.job(id),job.scope.registration == inference.activeID,reviewPermits(job.source) else {return []}
         var destinations:[AIActivityDestination]=[]
         for action in job.actions where action.phase == .saved || action.phase == .uncertain {
             guard let payload=try? JSONDecoder().decode(ReviewPreparedPayload.self,from:action.payload) else {continue}
@@ -237,7 +237,7 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
         #endif
         if let page=workspace.state.pages.first(where:{$0.widgets.contains{$0.kind == kind}}) {workspace.select(page.id)}
         else {workspace.addPage(kind.title);workspace.addWidget(kind);if let widget=workspace.selected.widgets.first {workspace.fullPage(widget)}}
-        if let widget=workspace.selected.widgets.first(where:{$0.kind == kind}) {activityNavigation = .init(registration:chatGPT.activeID,widgetID:widget.id,projectID:project)}
+        if let widget=workspace.selected.widgets.first(where:{$0.kind == kind}) {activityNavigation = .init(registration:inference.activeID,widgetID:widget.id,projectID:project)}
     }
 }
 private extension ReviewWorkPhase {var isFinished:Bool {self != .running && self != .queued}}
@@ -246,7 +246,7 @@ private extension ReviewWorkPhase {var isFinished:Bool {self != .running && self
 @MainActor enum AIActivityWorkPreview {
     static func seed(_ model:DashboardModel) {
         if ProcessInfo.processInfo.arguments.contains("--activity-expiry-preview") {
-            let now=Date.now,registration=model.chatGPT.activeID
+            let now=Date.now,registration=model.inference.activeID
             for (id,finished) in [("expired",now.addingTimeInterval(-AIActivitySummary.notificationDuration-1)),
                                   ("expiring",now.addingTimeInterval(-AIActivitySummary.notificationDuration+30))] {
                 _=model.aiActivity.upsert(.init(id:"fictional-"+id,registration:registration,kind:.heartbeat,state:.failed,
@@ -257,7 +257,7 @@ private extension ReviewWorkPhase {var isFinished:Bool {self != .running && self
             return
         }
         if ProcessInfo.processInfo.arguments.contains("--heartbeat-failure-preview") {
-            let registration=model.chatGPT.activeID,now=Date.now
+            let registration=model.inference.activeID,now=Date.now
             let runs:[(String,String,Bool,String?)]=[
                 ("failed","failed",false,"Fictional provider unavailable; no brief was saved."),
                 ("partial","failed",true,"Fictional memory analysis failed; the completed brief is saved."),
@@ -280,7 +280,7 @@ private extension ReviewWorkPhase {var isFinished:Bool {self != .running && self
             precondition(model.aiActivity.state.records.isEmpty,"Manual feedback must not enter AI Activity")
             return
         }
-        let registration=model.chatGPT.activeID,conversation=model.assistant.openPA() ?? UUID()
+        let registration=model.inference.activeID,conversation=model.assistant.openPA() ?? UUID()
         _=model.aiActivity.upsert(.init(id:"chat:"+UUID().uuidString,registration:registration,kind:.chat,state:.succeeded,title:"3PO chat",message:"Hello! How can I help?",destination:.assistant(targetID:conversation.uuidString)))
         model.assistantActivityFinished(.init(registration:registration,conversationID:conversation,humanTurnID:UUID(),responseTurnID:UUID(),phase:"completed",message:"This ordinary greeting must stay out of activity",receipts:[],errors:[]))
         model.assistantActivityFinished(.init(registration:registration,conversationID:conversation,humanTurnID:UUID(),responseTurnID:UUID(),phase:"completed",message:"This general chat prose must not replace the action receipt",receipts:["Added two dated project tasks"],errors:[],confirmedActions:2,attemptedTools:["create_life_items"]))
@@ -305,9 +305,9 @@ struct DashboardAIActivityPill:View {
     var palette:WorkspacePalette
     var openChat:()->Void
     var body:some View {
-        AIActivityPill(store:model.aiActivity,registration:model.chatGPT.activeID,current:model.currentAIActivity,feedback:model.nativeWriteFeedback,palette:palette,openChat:openChat,openDestination:model.openAIActivityDestination,isVisible:model.activityVisible,relatedDestinations:model.relatedActivityDestinations,presentation:model.activityPresentation)
+        AIActivityPill(store:model.aiActivity,registration:model.inference.activeID,current:model.currentAIActivity,feedback:model.nativeWriteFeedback,palette:palette,openChat:openChat,openDestination:model.openAIActivityDestination,isVisible:model.activityVisible,relatedDestinations:model.relatedActivityDestinations,presentation:model.activityPresentation)
             .task {model.syncFeedbackActivity()}
-            .onChange(of:model.chatGPT.activeID) {model.syncFeedbackActivity();model.scheduleReviewWork()}
+            .onChange(of:model.inference.activeID) {model.syncFeedbackActivity();model.scheduleReviewWork()}
             .onChange(of:model.emailSummaries.feedback.records) {model.syncFeedbackActivity()}
     }
 }

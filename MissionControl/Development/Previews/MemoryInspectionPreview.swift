@@ -26,7 +26,7 @@ struct MemoryInspectionPreview:View {
         }
     }
     @MainActor private static func seedContextPages(_ model: DashboardModel) throws {
-        let owner = model.chatGPT.activeID
+        let owner = model.inference.activeID
         guard !owner.isEmpty else { throw ContextPageFailure.unavailable }
         let project = LifeItem(registration: owner, kind: .space, title: "Fictional Lark optics", notes: "Compare two camera-calibration methods.")
         _ = try model.assistant.projects.create([project], receipt: .init(id: "fictional-context-preview", registration: owner, result: "Fictional context preview prepared"))
@@ -73,9 +73,9 @@ struct MemoryInspectionPreview:View {
     }
     @MainActor static func validate(_ model:DashboardModel) async {
         if ProcessInfo.processInfo.arguments.contains("--prompt-cache-only") { await validatePromptCache(model); return }
-        let registration=model.chatGPT.activeID,selected=model.chatGPT.selectedModel
+        let registration=model.inference.activeID,selected=model.inference.selectedModel
         var checks:[String:Bool]=[:],report:[String:Any]=["storage":"Fictional input; in-memory store; no source startup","selectedModel":selected]
-        guard !registration.isEmpty,model.assistant.memory.enabled,model.chatGPT.inferenceVerified,!model.chatGPT.usagePaused else {
+        guard !registration.isEmpty,model.assistant.memory.enabled,model.inference.inferenceVerified,!model.inference.usagePaused else {
             report["error"]="Existing account/memory access is unavailable. No setting changed and no request made."
             write(report);return
         }
@@ -98,7 +98,7 @@ struct MemoryInspectionPreview:View {
         if let capture=turn?.contextCapture {
             checks["exact initial selection"]=Set(capture.memoryIDs) == expected
             checks["no cached source snapshot"] = !capture.sourceSnapshotIncluded && capture.sourceSnapshotBytes == 0
-            checks["preserved model"]=capture.model == selected && model.chatGPT.selectedModel == selected
+            checks["preserved model"]=capture.model == selected && model.inference.selectedModel == selected
             checks["no other-account or unavailable source fact"]=capture.memoryIDs.allSatisfy{id in model.assistant.memory.records.contains{$0.id == id && $0.registration == registration && $0.source == nil && MemoryRules.usable($0,registration:registration)}}
             checks["current human replayed"]=capture.historyTurnIDs.contains{ id in model.assistant.feed?.turns.contains{$0.id == id && $0.role == "user"} == true }
             if let data=try? JSONEncoder().encode(turn),let restored=try? JSONDecoder().decode(AssistantTurn?.self,from:data) { checks["capture round trip"]=restored.contextCapture == capture }
@@ -114,7 +114,7 @@ struct MemoryInspectionPreview:View {
     /// Four declared fictional requests: changing combined instructions, then a stable message boundary.
     /// No tools execute, no personal context is read, and a failed request is never retried.
     @MainActor private static func validatePromptCache(_ model: DashboardModel) async {
-        let registration = model.chatGPT.activeID, selected = model.chatGPT.selectedModel
+        let registration = model.inference.activeID, selected = model.inference.selectedModel
         let diagnosticKey = "chatgptLastDiagnostic"
         let savedDiagnostic = UserDefaults.standard.string(forKey: diagnosticKey)
         let indices = ProcessInfo.processInfo.arguments.contains("--warm-boundary-only") ? [2, 3] : Array(0..<4)
@@ -134,7 +134,7 @@ struct MemoryInspectionPreview:View {
                 try? data.write(to: EvaluationOutput.url("/tmp/missioncontrol-guide-cache-evaluation.json"), options: .atomic)
             }
         }
-        guard !registration.isEmpty, model.chatGPT.inferenceVerified, !model.chatGPT.usagePaused else {
+        guard !registration.isEmpty, model.inference.inferenceVerified, !model.inference.usagePaused else {
             report["error"] = "Current account/model is unavailable for this bounded cache test. No setting changed."; return
         }
         let guide = """
@@ -147,8 +147,8 @@ struct MemoryInspectionPreview:View {
         report["toolsFingerprint"] = ContextKnowledgeRules.fingerprint(ContextKnowledgeRules.json(tools))
         do {
             for index in indices {
-                guard registration == model.chatGPT.activeID, selected == model.chatGPT.selectedModel,
-                      !model.chatGPT.busy, !model.chatGPT.usagePaused else { throw MemoryLearningFailure.changed }
+                guard registration == model.inference.activeID, selected == model.inference.selectedModel,
+                      !model.inference.busy, !model.inference.usagePaused else { throw MemoryLearningFailure.changed }
                 let current = "Fictional current clock/context snapshot \(index). No actions are requested."
                 let question: [String: Any] = ["role": "user", "content": "Reply with exactly: cache-check-\(index). Do not call any tool."]
                 let history = (index == 3 ? priorBoundaryHistory : []) + [question]
@@ -156,7 +156,7 @@ struct MemoryInspectionPreview:View {
                 let input = separated ? AssistantRequestPrompt(stable: stable, current: current).input(around: history) : history
                 let requestStartIDs = Set(model.aiUsage.state.records.map(\.id))
                 requestCount += 1
-                let response = try await model.chatGPT.toolResponse(input: input, instructions: separated ? "" : stable + "\n" + current,
+                let response = try await model.inference.toolResponse(input: input, instructions: separated ? "" : stable + "\n" + current,
                     tools: tools, model: selected, purpose: .connectionCheck) { _ in }
                 guard response.calls.isEmpty, !response.text.isEmpty else { throw IntegrationError.verification }
                 // A new ordinary chat turn replays saved text. Encrypted reasoning/output
@@ -171,7 +171,7 @@ struct MemoryInspectionPreview:View {
                 rows.append(row)
             }
             checks["Declared fictional requests completed without retries or tool execution"] = requestCount == indices.count && rows.allSatisfy { $0["completed"] as? Bool == true }
-            checks["Selected model/account remain unchanged"] = selected == model.chatGPT.selectedModel && registration == model.chatGPT.activeID
+            checks["Selected model/account remain unchanged"] = selected == model.inference.selectedModel && registration == model.inference.activeID
             checks["Stable developer message boundary is accepted by the configured route"] = rows.count == indices.count
             checks["Warm request preserves actual earlier human and completed output history"] = !priorBoundaryHistory.isEmpty && indices.last == 3
             report["warmBoundaryCacheHit"] = (rows.last?["cachedTokens"] as? Int ?? 0) > 0

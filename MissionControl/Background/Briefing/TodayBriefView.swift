@@ -33,7 +33,7 @@ struct TodayBriefView: View {
                 Menu {
                     Toggle("Show weather",isOn:showsWeather)
                     Divider()
-                    Button("Edit brief prompt…") {editingPrompt=BriefPromptEdit(capture:briefings.writingPrompt(model.chatGPT.activeID))}.disabled(model.chatGPT.activeID.isEmpty)
+                    Button("Edit brief prompt…") {editingPrompt=BriefPromptEdit(capture:briefings.writingPrompt(model.inference.activeID))}.disabled(model.inference.activeID.isEmpty)
                 } label: {Image(systemName:"ellipsis")}
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                     .help("Brief options").accessibilityLabel("Brief options")
@@ -58,7 +58,7 @@ struct TodayBriefView: View {
                                         if let source = record.sources.first(where: { $0.id == id }) {
                                             if source.kind == "mail", let message = model.reviewInbox.highlights.first(where:{ $0.0.id == source.originalID })?.0 { Button(source.label) { model.select(message) }.buttonStyle(.link).font(.caption) }
                                             else if source.kind == "weather" { Link(source.label,destination:WeatherRules.provider).font(.caption) }
-                                            else if source.kind == "whatsapp" { WhatsAppBriefSource(service:model.whatsapp,registration:model.chatGPT.activeID,source:source) }
+                                            else if source.kind == "whatsapp" { WhatsAppBriefSource(service:model.whatsapp,registration:model.inference.activeID,source:source) }
                                             else if source.kind == "memory" { Button(source.label) { showMemory=true }.buttonStyle(.link).font(.caption) }
                                             else { Label(source.label,systemImage:source.kind == "calendar" ? "calendar" : "checklist").font(.caption).foregroundStyle(.secondary) }
                                         }
@@ -70,14 +70,14 @@ struct TodayBriefView: View {
                 }
             } else {
                 if showsWeather.wrappedValue {WeatherBriefCard(weather:model.weather)}
-                ContentUnavailableView("Your day at a glance",systemImage:"sun.horizon",description:Text(!model.assistant.contextEnabled ? "Enable assistant source context in Settings." : briefings.busy ? "Your PA is preparing today’s brief…" : model.chatGPT.usagePaused ? "Subscription access is paused. Your Apple sources remain available." : "Updated with each heartbeat. Refresh here for a manual update."))
+                ContentUnavailableView("Your day at a glance",systemImage:"sun.horizon",description:Text(!model.assistant.contextEnabled ? "Enable assistant source context in Settings." : briefings.busy ? "Your PA is preparing today’s brief…" : model.inference.usagePaused ? "Subscription access is paused. Your Apple sources remain available." : "Updated with each heartbeat. Refresh here for a manual update."))
             }
             if let error = briefings.error { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
-            if model.chatGPT.usagePaused { Button("Check subscription access") { model.chatGPT.testConnection() }.controlSize(.small).disabled(model.chatGPT.busy || model.assistant.busy) }
+            if model.inference.usagePaused { Button("Check subscription access") { model.chatGPT.testConnection() }.controlSize(.small).disabled(model.inference.busy || model.assistant.busy) }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
-        .sheet(isPresented:$showMemory) { PAMemoryView(memory:model.assistant.memory,registration:model.chatGPT.activeID,model:model) }
+        .sheet(isPresented:$showMemory) { PAMemoryView(memory:model.assistant.memory,registration:model.inference.activeID,model:model) }
         .sheet(item:$editingPrompt) {edit in BriefPromptEditor(model:model,briefings:briefings,capture:edit.capture)}
-        .onChange(of:model.chatGPT.activeID) { showMemory=false;editingPrompt=nil }
+        .onChange(of:model.inference.activeID) { showMemory=false;editingPrompt=nil }
     }
 }
 
@@ -126,7 +126,7 @@ struct BriefPromptEditor:View {
                     do {try briefings.saveWritingPrompt(draft,expected:capture,model:model);dismiss()}
                     catch {self.error=error.localizedDescription}
                 }.keyboardShortcut(.defaultAction)
-                    .disabled(draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || draft.trimmingCharacters(in:.whitespacesAndNewlines).count > BriefingRules.writingPromptLimit || capture.registration != model.chatGPT.activeID)
+                    .disabled(draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || draft.trimmingCharacters(in:.whitespacesAndNewlines).count > BriefingRules.writingPromptLimit || capture.registration != model.inference.activeID)
             }
         }.padding(24).frame(width:620,height:520)
     }

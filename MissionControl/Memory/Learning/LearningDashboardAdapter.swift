@@ -5,7 +5,7 @@ extension WhatsAppService: WhatsAppLearningReading {}
 
 @MainActor extension DashboardModel {
     func learningRuntime(heartbeatRequest request:HeartbeatChildRequest? = nil) -> LearningRuntime {
-        let runtime = LearningRuntime(assistant: assistant, inference: chatGPT, learningBudget: learningBudget, whatsapp: whatsapp,
+        let runtime = LearningRuntime(assistant: assistant, inference: inference, learningBudget: learningBudget, whatsapp: whatsapp,
             activity: { [weak self] in
                 guard let self else { return .unavailable }
                 var lanes = Set<LearningLane>()
@@ -20,7 +20,7 @@ extension WhatsAppService: WhatsAppLearningReading {}
             nativeItems: { [weak self] kind, now in
                 guard let self else {return nil}
                 if kind == .mail,let request {
-                    return NativeSourceAdapters.collectedMail(self.mailData,index:self.mailIndex,summaries:self.emailSummaries.records,registration:self.chatGPT.activeID,excluded:self.assistant.excludedAccounts,now:now,scope:request.mailReview)
+                    return NativeSourceAdapters.collectedMail(self.mailData,index:self.mailIndex,summaries:self.emailSummaries.records,registration:self.inference.activeID,excluded:self.assistant.excludedAccounts,now:now,scope:request.mailReview)
                 }
                 return self.nativeLearningItems(kind,now:now)
             },ownership:request.map{value in .init(runID:value.runID,validate:value.validate,claim:value.claim)},
@@ -33,7 +33,7 @@ extension WhatsAppService: WhatsAppLearningReading {}
                 }
             },reviewWhatsAppPermission:{[weak self] in
                 guard let self else {return false}
-                let access=self.whatsapp.access(for:self.chatGPT.activeID)
+                let access=self.whatsapp.access(for:self.inference.activeID)
                 return access.briefEnabled || access.includeInSuggestions == true || self.heartbeat.whatsappEnabled
             },reviewWhatsAppRevision:{[weak self] in self?.heartbeat.whatsappLearningAccessRevision})
         runtime.canOfferQuestion = { [weak self] registration, now in
@@ -42,7 +42,7 @@ extension WhatsAppService: WhatsAppLearningReading {}
         }
         runtime.instructionTargets = { [weak self] _ in
             guard let self else { return [] }
-            return self.contextLearningTargets(registration: self.chatGPT.activeID)
+            return self.contextLearningTargets(registration: self.inference.activeID)
         }
         return runtime
     }

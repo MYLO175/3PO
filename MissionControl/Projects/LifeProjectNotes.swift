@@ -25,14 +25,14 @@ struct LifeNotesSection:View {
                 Spacer()
                 Button { edit(.init(item:item,noteID:nil)) } label: {Image(systemName:"plus").frame(width:26,height:26).contentShape(Rectangle())}
                     .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("Add note").help("Add a note")
-                    .disabled(model.assistant.projects.readOnly || item.registration != model.chatGPT.activeID)
+                    .disabled(model.assistant.projects.readOnly || item.registration != model.inference.activeID)
             }
             if item.noteCards.isEmpty {
                 Button { edit(.init(item:item,noteID:nil)) } label: {
                     Label("Add a note",systemImage:"plus").font(.callout).foregroundStyle(.secondary)
                         .frame(maxWidth:.infinity,minHeight:72,alignment:.leading).padding(16)
                         .background(palette[.accent].opacity(0.06),in:RoundedRectangle(cornerRadius:12))
-                }.buttonStyle(.plain).frame(maxWidth:320).disabled(model.assistant.projects.readOnly || item.registration != model.chatGPT.activeID)
+                }.buttonStyle(.plain).frame(maxWidth:320).disabled(model.assistant.projects.readOnly || item.registration != model.inference.activeID)
             } else {
                 LazyVGrid(columns:[GridItem(.adaptive(minimum:ProjectNotesLayout.minimumWidth(availableWidth),maximum:360),spacing:14,alignment:.top)],alignment:.leading,spacing:14) {
                     ForEach(item.noteCards) { note in
@@ -44,7 +44,7 @@ struct LifeNotesSection:View {
         }.padding(.top,10)
     }
     private func remove(_ note:LifeNote) {
-        guard item.registration == model.chatGPT.activeID else {error="Account changed. Reopen this note.";return}
+        guard item.registration == model.inference.activeID else {error="Account changed. Reopen this note.";return}
         var value=item
         if note.id == item.id {value.notes="";value.notesFormatting=nil}
         else {value.additionalNotes?.removeAll{$0.id == note.id}}
@@ -128,7 +128,7 @@ struct LifeProjectNotesSheet:View {
                 Button("Cancel") {dismiss()}.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("Save") {save()}.keyboardShortcut("s",modifiers:.command)
-                    .disabled(capture.item.registration != model.chatGPT.activeID || model.assistant.projects.readOnly || editor.text.count > 12000)
+                    .disabled(capture.item.registration != model.inference.activeID || model.assistant.projects.readOnly || editor.text.count > 12000)
             }
         }.padding(24).frame(width:620,height:520)
     }
@@ -138,7 +138,7 @@ struct LifeProjectNotesSheet:View {
             .buttonStyle(.plain).help(label+" ("+shortcut+")").accessibilityLabel(label).accessibilityValue(selected ? "On" : "Off")
     }
     private func save() {
-        guard capture.item.registration == model.chatGPT.activeID else {error="Account changed; your draft has not been saved.";return}
+        guard capture.item.registration == model.inference.activeID else {error="Account changed; your draft has not been saved.";return}
         guard editor.text.count <= 12000 else {error="Keep each note within 12,000 characters.";return}
         var value=capture.item
         if let id=capture.noteID {

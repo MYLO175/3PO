@@ -11,7 +11,7 @@ struct ProductionReviewConversationView:View {
     @State private var preparing=true
     @State private var draft=""
     private var conversation:AssistantConversation? {model.assistant.conversation(conversationID)}
-    private var jobs:[ReviewWorkJob] {model.reviewWork.jobs(model.chatGPT.activeID,conversation:conversationID)}
+    private var jobs:[ReviewWorkJob] {model.reviewWork.jobs(model.inference.activeID,conversation:conversationID)}
     private var usable:Bool {model.reviewConversationAvailable(conversationID)}
     private var displayedRows:[ReviewPreparedRow] {rowGroups.compactMap {group in
         group.first(where:isSaved) ?? group.first(where:isReserved) ?? group.first(where:{selected.contains($0.id)}) ?? group.first
@@ -19,7 +19,7 @@ struct ProductionReviewConversationView:View {
     private var selectedActions:[ReviewWorkAction] {displayedRows.filter{selected.contains($0.id) && !isSaved($0) && !isReserved($0)}.compactMap(\.action)}
     private var turns:[AssistantTurn] {conversation?.turns.filter{$0.role == "user" || ($0.deliveryID == nil && $0.role == "assistant")} ?? []}
     private var opening:String {
-        if let id=conversation?.reviewMessageID,let summary=model.emailSummaries.records.first(where:{$0.id == id && $0.registration == model.chatGPT.activeID}) {return summary.summary}
+        if let id=conversation?.reviewMessageID,let summary=model.emailSummaries.records.first(where:{$0.id == id && $0.registration == model.inference.activeID}) {return summary.summary}
         return conversation?.turns.first(where:{$0.deliveryID != nil})?.content ?? "Review the suggested actions below."
     }
     private var completedCount:Int {
@@ -88,9 +88,9 @@ struct ProductionReviewConversationView:View {
             } else {ContentUnavailableView("Source access changed",systemImage:"lock",description:Text("Enable this source in 3PO’s settings to view its saved review conversation.")).frame(maxWidth:.infinity,maxHeight:.infinity)}
         }.frame(width:700,height:model.reviewSheetHeight).foregroundStyle(palette[.text]).background(palette[.canvas]).tint(palette[.accent])
         .task {
-            draft=model.reviewWork.draft(model.chatGPT.activeID,conversation:conversationID)
+            draft=model.reviewWork.draft(model.inference.activeID,conversation:conversationID)
             guard let conversation,let source=model.reviewSource(conversation),usable else {preparing=false;return}
-            let oldPlan=model.reviewWork.plan(model.chatGPT.activeID,conversation:conversationID)
+            let oldPlan=model.reviewWork.plan(model.inference.activeID,conversation:conversationID)
             if let oldPlan {load(oldPlan)}
             let records=model.reviewActionRecords(source)
             let seen=Set(oldPlan?.seenProposalIDs ?? oldPlan?.actions.map(\.id) ?? [])
@@ -109,25 +109,25 @@ struct ProductionReviewConversationView:View {
                 }
                 var plan=ReviewWorkPlan(conversationID:conversationID,scope:model.reviewWorkScope(),source:source,actions:rows.compactMap(\.action),selected:selected.sorted())
                 plan.presentationVersion=ReviewSelectionRules.version;plan.seenProposalIDs=seen.union(records.map(\.id)).sorted();plan.unpreparedProposalIDs=rows.filter{$0.action == nil}.map(\.id)
-                if !model.reviewWork.savePlan(plan,expected:oldPlan?.revision),let current=model.reviewWork.plan(model.chatGPT.activeID,conversation:conversationID) {load(current)}
+                if !model.reviewWork.savePlan(plan,expected:oldPlan?.revision),let current=model.reviewWork.plan(model.inference.activeID,conversation:conversationID) {load(current)}
             }
             rowGroups=DashboardModel.reviewRowGroups(rows)
             preparing=false
-        }.onChange(of:draft) {_,value in model.reviewWork.setDraft(value,registration:model.chatGPT.activeID,conversation:conversationID)}
-        .onChange(of:model.reviewWork.plan(model.chatGPT.activeID,conversation:conversationID)?.revision) {if let plan=model.reviewWork.plan(model.chatGPT.activeID,conversation:conversationID) {load(plan)}}
+        }.onChange(of:draft) {_,value in model.reviewWork.setDraft(value,registration:model.inference.activeID,conversation:conversationID)}
+        .onChange(of:model.reviewWork.plan(model.inference.activeID,conversation:conversationID)?.revision) {if let plan=model.reviewWork.plan(model.inference.activeID,conversation:conversationID) {load(plan)}}
         .onExitCommand {dismiss()}
     }
     private func isSaved(_ row:ReviewPreparedRow)->Bool {
         model.proactive.state.records.first{$0.id == row.id}.map(model.reviewDiscoveryCompleted) == true || jobs.contains{$0.actions.contains{$0.id == row.id && $0.phase == .saved}}
     }
     private func isReserved(_ row:ReviewPreparedRow)->Bool {
-        model.reviewWork.reserved(row.id,registration:model.chatGPT.activeID)
+        model.reviewWork.reserved(row.id,registration:model.inference.activeID)
     }
     @ViewBuilder private func preparedRow(_ row:ReviewPreparedRow)->some View {
         let saved=isSaved(row)
         HStack(alignment:.top,spacing:10) {
             if saved {Image(systemName:"checkmark.circle.fill").foregroundStyle(palette[.accent])}
-            else if row.action != nil {Toggle("",isOn:Binding(get:{selected.contains(row.id)},set:{if $0 {selected.insert(row.id)} else {selected.remove(row.id)};model.reviewWork.selectPlan(selected,registration:model.chatGPT.activeID,conversation:conversationID)})).labelsHidden().toggleStyle(.checkbox).disabled(isReserved(row))}
+            else if row.action != nil {Toggle("",isOn:Binding(get:{selected.contains(row.id)},set:{if $0 {selected.insert(row.id)} else {selected.remove(row.id)};model.reviewWork.selectPlan(selected,registration:model.inference.activeID,conversation:conversationID)})).labelsHidden().toggleStyle(.checkbox).disabled(isReserved(row))}
             else {Image(systemName:"questionmark.circle").foregroundStyle(.secondary)}
             VStack(alignment:.leading,spacing:5) {
                 Text(PAProse.display(row.title)).font(.callout.weight(.medium))

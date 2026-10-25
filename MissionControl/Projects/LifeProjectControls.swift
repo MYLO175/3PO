@@ -64,7 +64,7 @@ struct LifeDeleteSheet:View {
         }.padding(24).frame(width:480).onAppear { revision=model.assistant.projects.revision }
     }
     private func remove(_ keep:Bool) {
-        guard item.registration == model.chatGPT.activeID,let revision else { error="Account changed. Reopen this item.";return }
+        guard item.registration == model.inference.activeID,let revision else { error="Account changed. Reopen this item.";return }
         do { try model.assistant.projects.trash(item.id,registration:item.registration,keepChildren:keep,expectedRevision:revision);close() } catch { self.error=error.localizedDescription }
     }
 }
@@ -89,7 +89,7 @@ struct LifeMoveSheet:View {
         }.padding(24).frame(width:500).onAppear { parent=item.parentID;revision=model.assistant.projects.revision }.onChange(of:parent) { before=nil }
     }
     private func move() {
-        guard item.registration == model.chatGPT.activeID,let revision else { error="Account changed. Reopen this item.";return }
+        guard item.registration == model.inference.activeID,let revision else { error="Account changed. Reopen this item.";return }
         do { try model.assistant.projects.move(item.id,registration:item.registration,parent:parent,before:before,expectedRevision:revision);close() } catch { self.error=error.localizedDescription }
     }
 }
@@ -105,7 +105,7 @@ struct LifeRecentlyDeleted:View {
             HStack { Text("Recently deleted").font(.title2.weight(.semibold));Spacer();Button("Done") { dismiss() } }
             Text("Restore keeps the same items, contents and relationships. Nothing is permanently erased here.").font(.caption).foregroundStyle(.secondary)
             ScrollView { LazyVStack(alignment:.leading,spacing:12) {
-                ForEach(roots) { item in HStack { Label(item.title,systemImage:item.kind.symbol);Spacer();Button("Restore") { do { guard registration == model.chatGPT.activeID else { throw LifeWorkspaceFailure.message("Account changed.") };try model.assistant.projects.restore(item.id,registration:registration,expectedRevision:model.assistant.projects.revision) } catch { self.error=error.localizedDescription } } } }
+                ForEach(roots) { item in HStack { Label(item.title,systemImage:item.kind.symbol);Spacer();Button("Restore") { do { guard registration == model.inference.activeID else { throw LifeWorkspaceFailure.message("Account changed.") };try model.assistant.projects.restore(item.id,registration:registration,expectedRevision:model.assistant.projects.revision) } catch { self.error=error.localizedDescription } } } }
                 if deleted.isEmpty { Text("No deleted projects or items.").foregroundStyle(.secondary) }
             } }
             if let error { Text(error).font(.caption).foregroundStyle(.orange) }
@@ -141,7 +141,7 @@ struct LifeIdentitySheet:View {
         return nil
     }
     private func match(_ entity:LifeEntity) {
-        guard issue(entity) == nil,item.registration == model.chatGPT.activeID,revision == model.assistant.memory.revision,entities.contains(where:{$0.id == entity.id}) else { error="Account or memory changed. Reopen this view.";return }
+        guard issue(entity) == nil,item.registration == model.inference.activeID,revision == model.assistant.memory.revision,entities.contains(where:{$0.id == entity.id}) else { error="Account or memory changed. Reopen this view.";return }
         var value=item;value.notebookEntityID=entity.id
         do { _ = try model.assistant.projects.save(value,expected:item.revision);close() } catch { self.error=error.localizedDescription }
     }

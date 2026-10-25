@@ -58,18 +58,18 @@ struct ReviewPreparedRow:Identifiable {
     }
     var reviewConversationOwnsAssistant:Bool {
         guard assistant.busy,let id=reviewWork.activeID,let job=reviewWork.job(id) else {return false}
-        return job.mode == .conversation && job.phase == .running && job.scope.registration == chatGPT.activeID && job.scope.storage == reviewStorageIdentity && assistant.requestConversationID == job.conversationID && assistant.requestTurnID == job.responseTurnID
+        return job.mode == .conversation && job.phase == .running && job.scope.registration == inference.activeID && job.scope.storage == reviewStorageIdentity && assistant.requestConversationID == job.conversationID && assistant.requestTurnID == job.responseTurnID
     }
     var reviewStorageIdentity:String {container?.configurations.map{$0.url.absoluteString}.sorted().joined(separator:"|") ?? "unavailable"}
     func reviewWorkScope()->ReviewWorkScope {
-        let wa=whatsapp.access(for:chatGPT.activeID)
+        let wa=whatsapp.access(for:inference.activeID)
         let choices=proactive.sourceSettingsScope(self)+"|"+String(wa.enabled)+"|"+String(wa.includeInSuggestions == true)+"|"+whatsapp.linkedIdentity+"|"+wa.chats.sorted().joined(separator:"|")
-        return .init(registration:chatGPT.activeID,model:chatGPT.selectedModel,sourceChoices:choices,storage:reviewStorageIdentity)
+        return .init(registration:inference.activeID,model:inference.selectedModel,sourceChoices:choices,storage:reviewStorageIdentity)
     }
     func reviewPermits(_ source:ReviewWorkSource)->Bool {
         guard assistant.contextEnabled else {return false}
         if source.kind == "whatsapp" {
-            let access=whatsapp.access(for:chatGPT.activeID)
+            let access=whatsapp.access(for:inference.activeID)
             return access.enabled && access.includeInSuggestions == true && source.identity == whatsapp.linkedIdentity && source.chatID.map{access.chats.contains($0)} == true
         }
         return emailSummaries.enabled && source.accountID.map{id in !assistant.excludedAccounts.contains(id) && mailData.accounts.contains{$0.id == id}} == true
@@ -84,7 +84,7 @@ struct ReviewPreparedRow:Identifiable {
     }
     func reviewConversationAvailable(_ id:UUID)->Bool {assistant.conversation(id).flatMap(reviewSource).map(reviewPermits) == true}
     func openReviewConversation(_ records:[PADiscovery]) {
-        guard let first=records.first,first.registration == chatGPT.activeID else {return}
+        guard let first=records.first,first.registration == inference.activeID else {return}
         let source=reviewSource(first)
         guard reviewPermits(source) else {return}
         let seeds=records.map {record -> AssistantTurn in
@@ -96,15 +96,15 @@ struct ReviewPreparedRow:Identifiable {
         reviewPresentation = .init(id:id)
     }
     func reviewRecords(_ source:ReviewWorkSource)->[PADiscovery] {
-        proactive.state.records.filter{record in record.registration == chatGPT.activeID && reviewSource(record).key == source.key && record.supersededBy == nil && record.retiredAt == nil && !record.dismissed}
+        proactive.state.records.filter{record in record.registration == inference.activeID && reviewSource(record).key == source.key && record.supersededBy == nil && record.retiredAt == nil && !record.dismissed}
     }
     func reviewSummaryDraft(_ source:ReviewWorkSource)->PADiscovery? {
-        guard source.kind == "mail",let summary=emailSummaries.records.first(where:{$0.id == source.messageID && $0.registration == chatGPT.activeID}),let message=summary.message ?? mailData.messages.first(where:{$0.id == source.messageID && $0.accountID == source.accountID}),message.accountID == source.accountID,let draft=summary.replyDraft,!draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,
+        guard source.kind == "mail",let summary=emailSummaries.records.first(where:{$0.id == source.messageID && $0.registration == inference.activeID}),let message=summary.message ?? mailData.messages.first(where:{$0.id == source.messageID && $0.accountID == source.accountID}),message.accountID == source.accountID,let draft=summary.replyDraft,!draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,
               !reviewRecords(source).contains(where:{$0.replyDraft == draft}) else {return nil}
-        let hash=SHA256.hash(data:Data((chatGPT.activeID+"|"+source.key+"|"+draft).utf8)).map{String(format:"%02x",$0)}.joined()
+        let hash=SHA256.hash(data:Data((inference.activeID+"|"+source.key+"|"+draft).utf8)).map{String(format:"%02x",$0)}.joined()
         let h=Array(hash.prefix(32))
         let id=[String(h[0..<8]),String(h[8..<12]),String(h[12..<16]),String(h[16..<20]),String(h[20..<32])].joined(separator:"-")
-        return .init(id:id,registration:chatGPT.activeID,mailID:summary.id,kind:"reply",message:"Copy this saved reply draft to the clipboard for review in Mail.",evidence:summary.evidence,created:message.received,scope:proactive.sourceSettingsScope(self),sourceTitle:message.subject,replyDraft:draft)
+        return .init(id:id,registration:inference.activeID,mailID:summary.id,kind:"reply",message:"Copy this saved reply draft to the clipboard for review in Mail.",evidence:summary.evidence,created:message.received,scope:proactive.sourceSettingsScope(self),sourceTitle:message.subject,replyDraft:draft)
     }
     func reviewActionRecords(_ source:ReviewWorkSource)->[PADiscovery] {
         var records=reviewRecords(source).filter{$0.kind != "update"}
@@ -114,7 +114,7 @@ struct ReviewPreparedRow:Identifiable {
     func reviewSummaryDraftCompleted(_ message:MailMessage)->Bool {
         let source=ReviewWorkSource(key:"mail:"+message.id,title:message.subject,kind:"mail",accountID:message.accountID,messageID:message.id)
         guard let draft=reviewSummaryDraft(source) else {return false}
-        return reviewWork.jobs(chatGPT.activeID).contains{$0.source.key == source.key && $0.actions.contains{$0.id == draft.id && $0.phase == .saved}}
+        return reviewWork.jobs(inference.activeID).contains{$0.source.key == source.key && $0.actions.contains{$0.id == draft.id && $0.phase == .saved}}
     }
     func preparedCreationRequest(_ record:PADiscovery)->NativeCreationRequest? {
         guard record.nativeTarget == nil,["calendar","reminder"].contains(record.kind),let id=UUID(uuidString:record.id),let snapshot=preparedApprovalSnapshot(record) else {return nil}
@@ -168,7 +168,7 @@ struct ReviewPreparedRow:Identifiable {
                 session=try await eventKit.creationSession(request)
                 #endif
                 try Task.checkCancellation()
-                guard scope.registration == chatGPT.activeID,scope.storage == reviewStorageIdentity,payload.source.map(reviewPermits) == true,capturedDraft || currentPreparedApproval(record) else {throw ActionFailure.message("The account, source access, storage or suggestion changed while preparing this plan.")}
+                guard scope.registration == inference.activeID,scope.storage == reviewStorageIdentity,payload.source.map(reviewPermits) == true,capturedDraft || currentPreparedApproval(record) else {throw ActionFailure.message("The account, source access, storage or suggestion changed while preparing this plan.")}
                 var fields=NativeCreationRules.applyingSuggestion(request,to:session.item)
                 if let chosen=record.proposedCalendarDestination {
                     guard request.kind == .event,session.sources.contains(where:{chosen.matches($0) && !assistant.excludedCalendars.contains($0.id)}) else {throw ActionFailure.message("The proposed Calendar destination is no longer available for this account. Ask below for an alternative.")}
@@ -206,7 +206,7 @@ struct ReviewPreparedRow:Identifiable {
         #endif
         let scope=reviewWorkScope(),session=try await eventKit.editSession(target)
         try Task.checkCancellation()
-        guard scope.registration == chatGPT.activeID,scope.storage == reviewStorageIdentity,reviewPermits(source),
+        guard scope.registration == inference.activeID,scope.storage == reviewStorageIdentity,reviewPermits(source),
               !(session.item.kind == .event ? assistant.excludedCalendars : assistant.excludedLists).contains(session.item.sourceID) else {throw ActionFailure.message("The account, source access, storage or exact native destination changed while opening this plan.")}
         return session
     }
@@ -214,7 +214,7 @@ struct ReviewPreparedRow:Identifiable {
     /// cannot substitute another payload or veto it through an evidence revision.
     func acceptedPreparedApproval(_ payload:ReviewPreparedPayload)->Bool {
         let proposal=payload.proposal
-        guard proposal.registration == chatGPT.activeID,
+        guard proposal.registration == inference.activeID,
               reviewPermits(payload.source ?? reviewSource(proposal)),preparedApprovalSnapshot(proposal) == payload.approval,
               let identity=UUID(uuidString:proposal.id) else {return false}
         if let baseline=payload.nativeBaseline {
@@ -350,15 +350,15 @@ struct ReviewPreparedRow:Identifiable {
         return runtime
     }
     var reviewWorkReady:Bool {
-        let needsInference=reviewWork.jobs(chatGPT.activeID).first(where:{$0.phase == .queued})?.mode != .approval
-        return !heartbeat.busy && !assistant.busy && !chatGPT.busy && (!needsInference || (!chatGPT.usagePaused && chatGPT.inferenceVerified)) && !writing && !proactive.busy && !emailSummaries.busy && emailSummaries.feedback.activeID == nil && !briefings.busy && !memoryLearning.busy && !sourceLearning.busy && !nativeSourceLearning.busy && !memoryMaintenance.busy && !lifeOrganisation.busy && !projectPlacement.busy && heartbeat.deviceAvailable && !heartbeat.reviewComposerActive
+        let needsInference=reviewWork.jobs(inference.activeID).first(where:{$0.phase == .queued})?.mode != .approval
+        return !heartbeat.busy && !assistant.busy && !inference.busy && (!needsInference || (!inference.usagePaused && inference.inferenceVerified)) && !writing && !proactive.busy && !emailSummaries.busy && emailSummaries.feedback.activeID == nil && !briefings.busy && !memoryLearning.busy && !sourceLearning.busy && !nativeSourceLearning.busy && !memoryMaintenance.busy && !lifeOrganisation.busy && !projectPlacement.busy && heartbeat.deviceAvailable && !heartbeat.reviewComposerActive
     }
     func scheduleReviewWork() {
         guard reviewQueuePump == nil,reviewWork.readable else {return}
         reviewQueuePump=Task { @MainActor [weak self] in
             guard let self else {return}
             defer {self.reviewQueuePump=nil}
-            while !Task.isCancelled,self.reviewWork.readable,(self.reviewWork.waiting(self.chatGPT.activeID)>0 || self.reviewWork.busy) {
+            while !Task.isCancelled,self.reviewWork.readable,(self.reviewWork.waiting(self.inference.activeID)>0 || self.reviewWork.busy) {
                 self.reviewWork.drive(self.reviewWorkRuntime())
                 do {try await Task.sleep(for:.milliseconds(250))} catch {return}
             }
@@ -391,7 +391,7 @@ struct ReviewPreparedRow:Identifiable {
         }
         let job=ReviewWorkJob(conversationID:conversationID,scope:reviewWorkScope(),source:source,mode:concreteApproval ? .approval : .conversation,human:text,humanControl:humanControl ? true : nil,selectionActive:selectionActive ? true : nil,focusAreas:focus.map(\.rawValue),actions:actions)
         guard reviewWork.submit(job) else {return false}
-        if !assistant.busy,!chatGPT.busy {foregroundSendStarted(interruptReview:false)}
+        if !assistant.busy,!inference.busy {foregroundSendStarted(interruptReview:false)}
         reviewJobChanged(job);scheduleReviewWork();return true
     }
 }

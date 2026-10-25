@@ -134,7 +134,7 @@ import Observation
         guard !selected.isEmpty else { return .init(failure: "A context page exceeded its bounded input; its changes remain pending.", detail: "Context input remains pending.", skipped: false) }
         let tools = ContextConsolidationRules.tools(selected)
         guard !tools.isEmpty else { return .init(failure: "The bounded context result could not be prepared. Saved pages and changes are retained.", detail: "Context input remains pending.", skipped: false) }
-        let selectedModel = model.chatGPT.selectedModel
+        let selectedModel = model.inference.selectedModel
         let memoryPermission = model.assistant.memory.useRevision
         let learningPermission = model.assistant.memory.controlsRevision
         let expected = Dictionary(selected.compactMap { target in model.contextPages.page(id: target.id, registration: registration).map { (target.id, $0.revision) } }, uniquingKeysWith: { first, _ in first })
@@ -143,15 +143,15 @@ import Observation
         defer { busy = false; ownedHeartbeatRunID = nil }
         do {
             try request.validate(); try request.claim()
-            let response = try await model.chatGPT.toolResponse(input: [["role": "user", "content": input]], instructions: ContextConsolidationRules.instructions,
-                tools: tools, model: selectedModel, purpose: .learning) { _ in }
+            let response = try await model.inference.typedResult(input: [["role": "user", "content": input]], instructions: ContextConsolidationRules.instructions,
+                tools: tools, model: selectedModel, effort: "medium", purpose: .learning)
             guard response.calls.count == 1, let call = response.calls.first,
                   (call.namespace == "pa" && call.name == ContextConsolidationRules.resultTool) || (call.namespace == nil && call.name == "pa." + ContextConsolidationRules.resultTool) else {
                 throw ContextPageFailure.invalid("consolidation result")
             }
             let text = call.arguments
             try Task.checkCancellation(); try request.validate()
-            guard registration == model.chatGPT.activeID, model.assistant.memory.enabled, model.assistant.memory.learningEnabled,
+            guard registration == model.inference.activeID, model.assistant.memory.enabled, model.assistant.memory.learningEnabled,
                   memoryPermission == model.assistant.memory.useRevision, learningPermission == model.assistant.memory.controlsRevision else { throw MemoryLearningFailure.changed }
             let dependencies = selected.flatMap { $0.references + $0.structuralReferences }
             let current = model.contextKnowledge(registration: registration, includeTopics: false, retainingReferences: Dictionary(dependencies.map { ($0.contextKey, $0.revision) }, uniquingKeysWith: { first, _ in first }), purpose: .maintenance)

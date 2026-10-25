@@ -24,7 +24,7 @@ struct ContextPagesView: View {
 
     init(model: DashboardModel, registration: String? = nil, projectID: UUID? = nil, feature: ContextFeature? = nil, pageID: String? = nil) {
         self.model = model
-        let registration = registration ?? model.chatGPT.activeID
+        let registration = registration ?? model.inference.activeID
         self.registration = registration
         storage = model.container.map(ObjectIdentifier.init)
         let page = pageID.flatMap { id in model.contextPages.pages(registration: registration).first { $0.id == id } }
@@ -98,7 +98,7 @@ struct ContextPagesView: View {
                     organiseContext: { model.lifeOrganisation.check(model, manual: true, topic: contextTopic) }, model: model)
             }
             .sheet(item: $instructions) { request in
-                if request.registration == model.chatGPT.activeID {
+                if request.registration == model.inference.activeID {
                     if let capture = request.brief { BriefPromptEditor(model: model, briefings: model.briefings, capture: capture) }
                     else { ReviewPolicyView(model: model) }
                 } else { Text("The account changed. Reopen the instructions.").padding(24) }
@@ -115,7 +115,7 @@ struct ContextPagesView: View {
                 Button("Cancel", role: .cancel) { forgetting = nil }
                 Button("Forget page", role: .destructive) { forget() }
             } message: { Text("This removes the human page and its saved history. Its project, source records and other memories stay saved.") }
-            .onChange(of: model.chatGPT.activeID) { editor = nil; history = nil; instructions = nil; showingSupportingFacts = false; choosingProject = false; nextEditor = nil; forgetting = nil; dismiss() }
+            .onChange(of: model.inference.activeID) { editor = nil; history = nil; instructions = nil; showingSupportingFacts = false; choosingProject = false; nextEditor = nil; forgetting = nil; dismiss() }
     }
 
     private func pageList(pages: [ContextPage], records: [ContextKnowledgeRecord]) -> some View {
@@ -648,7 +648,7 @@ private struct ContextMaintenanceStatusView: View {
                 Spacer()
                 Button("Run heartbeat") { model.heartbeat.check(model, manual: true) }
                     .controlSize(.small).help(model.heartbeat.manualCheckHelp(model))
-                    .disabled(registration != model.chatGPT.activeID || model.heartbeat.manualCheckBlockReason(model) != nil)
+                    .disabled(registration != model.inference.activeID || model.heartbeat.manualCheckBlockReason(model) != nil)
             }
             if updating {
                 Text(model.contextConsolidation.status).font(.caption).foregroundStyle(.secondary)
@@ -835,7 +835,7 @@ private struct ContextPageEditRequest: Identifiable {
     }
     static func note(registration: String) -> Self { .init(registration: registration, kind: .note, key: UUID().uuidString, title: "") }
     @MainActor static func scoped(_ scope: ContextInstructionScope, model: DashboardModel, registration: String, records: [ContextKnowledgeRecord]) throws -> Self {
-        guard registration == model.chatGPT.activeID else { throw ContextPageFailure.unavailable }
+        guard registration == model.inference.activeID else { throw ContextPageFailure.unavailable }
         guard ContextInstructionScope(key: scope.key) == scope else { throw ContextPageFailure.unsupportedPage }
         let id = ContextPage.stableID(registration: registration, kind: .instruction, key: scope.key)
         guard model.contextPages.identityStatus(id: id, registration: registration) != .preserved else { throw ContextPageFailure.unsupportedPage }
@@ -877,7 +877,7 @@ private struct ContextPageEditRequest: Identifiable {
 
 @MainActor private enum ContextPagesAccess {
     static func owned(_ model: DashboardModel, registration: String, storage: ObjectIdentifier?) -> Bool {
-        registration == model.chatGPT.activeID && storage == model.container.map(ObjectIdentifier.init)
+        registration == model.inference.activeID && storage == model.container.map(ObjectIdentifier.init)
     }
     static func calendarAccess(_ model: DashboardModel) -> Bool {
         model.assistant.contextEnabled && EKEventStore.authorizationStatus(for: .event) == .fullAccess
@@ -887,7 +887,7 @@ private struct ContextPageEditRequest: Identifiable {
         return model.calendarData.sources.filter { !model.assistant.excludedCalendars.contains($0.id) }.sorted { ($0.label, $0.id) < ($1.label, $1.id) }
     }
     static func eligible(_ page: ContextPage, model: DashboardModel, registration: String, records: [ContextKnowledgeRecord]) -> Bool {
-        guard page.registration == registration, registration == model.chatGPT.activeID else { return false }
+        guard page.registration == registration, registration == model.inference.activeID else { return false }
         if page.kind == .calendarPurpose {
             return page.owner == .human && calendars(model).contains { model.calendarPageKey($0) == page.key }
         }
@@ -919,7 +919,7 @@ private struct ContextPageEditRequest: Identifiable {
               revision: ContextKnowledgeRules.fingerprint(item.registration + ":" + item.id.uuidString + ":" + (item.conversationID?.uuidString ?? "shared")))
     }
     static func currentProjectIdentity(_ reference: ContextPageReference, model: DashboardModel, registration: String) -> Bool {
-        guard reference.kind == "projectIdentity", registration == model.chatGPT.activeID,
+        guard reference.kind == "projectIdentity", registration == model.inference.activeID,
               let item = model.assistant.projects.items(registration, includeTopics: true).first(where: { !$0.kind.isWork && $0.id.uuidString == reference.key }) else { return false }
         return item.registration == registration && projectIdentity(item) == reference
     }
@@ -992,7 +992,7 @@ private struct ContextPageHumanEditor: View {
                 Button("Save") { save() }.keyboardShortcut(.defaultAction).disabled(!readable || !validText || !model.contextPages.canSave)
             }
         }.padding(24).frame(width: 680, height: 620)
-            .onChange(of: model.chatGPT.activeID) { dismiss() }
+            .onChange(of: model.inference.activeID) { dismiss() }
     }
     private func save() {
         guard owned, bindingCurrent, readable, validText, request.expected?.owner == nil || request.expected?.owner == .human else { error = "The account, page or supporting identity changed. Reopen the editor before saving."; return }
@@ -1060,7 +1060,7 @@ private struct ContextPageHistoryView: View {
                     .disabled(!owned || !model.contextPages.canSave || current?.revision != request.page.revision || selected == current?.revision || !versions.contains { $0.id == selected && ContextPagesAccess.eligible($0.page, model: model, registration: request.page.registration, records: records) })
             }
         }.padding(24).frame(width: 700, height: 620)
-            .onChange(of: model.chatGPT.activeID) { dismiss() }
+            .onChange(of: model.inference.activeID) { dismiss() }
     }
     private func restore() {
         guard owned, let selected,
@@ -1100,7 +1100,7 @@ private struct ContextProjectPurposePicker: View {
             }
             if let error { Text(error).font(.caption).foregroundStyle(.orange) }
         }.padding(24).frame(width: 580, height: 470)
-            .onChange(of: model.chatGPT.activeID) { dismiss() }
+            .onChange(of: model.inference.activeID) { dismiss() }
     }
 }
 

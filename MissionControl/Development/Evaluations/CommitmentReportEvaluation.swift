@@ -6,8 +6,8 @@ import SwiftUI
 @MainActor enum CommitmentReportEvaluation {
     /// One production native-learning request with fictional Mail excerpts; never starts sources.
     static func run(_ model:DashboardModel)async throws->[String:Any] {
-        let selected=model.chatGPT.selectedModel,account=model.chatGPT.activeID
-        guard !account.isEmpty,model.chatGPT.inferenceVerified,!model.chatGPT.usagePaused else { throw MemoryLearningFailure.changed }
+        let selected=model.inference.selectedModel,account=model.inference.activeID
+        guard !account.isEmpty,model.inference.inferenceVerified,!model.inference.usagePaused else { throw MemoryLearningFailure.changed }
         let now=Date.now
         let texts=["Alex asks the recipient: Would you be able to prepare the Orion prototype presentation for Friday?", "A different Alex reports: The Orion prototype presentation is cancelled; no presentation is needed.", "Supervisor Jordan reports: The Vega engineering project report you submitted this morning has been received."]
         let messages=try texts.enumerated().map{index,_ -> MailMessage in
@@ -21,8 +21,8 @@ import SwiftUI
         guard items.count == texts.count else {throw MemoryLearningFailure.invalid}
         let profile=[["text":"My current engineering projects are Orion and Vega. Preparing prototype presentations and writing supervisor reports are significant ongoing responsibilities for me.","certainty":"Directly stated by user"]]
         let input=try NativeLearningRules.input(items:items,candidates:[],existing:profile,coverage:"Three separate fictional Mail excerpts relevant to the stated engineering projects. Matching Orion titles and Alex names do not establish a shared person/plan. No live sources or writes.")
-        let output=try await model.chatGPT.streamResponse(input:[["role":"user","content":input]],instructions:NativeLearningRules.instructions,model:selected,purpose:.diagnostic) { _ in }
-        guard account == model.chatGPT.activeID,selected == model.chatGPT.selectedModel,let facts=NativeLearningRules.decode(output,items:items,candidates:[],registration:"fictional",now:now) else { throw MemoryLearningFailure.invalid }
+        let output=try await model.inference.streamResponse(input:[["role":"user","content":input]],instructions:NativeLearningRules.instructions,model:selected,purpose:.diagnostic) { _ in }
+        guard account == model.inference.activeID,selected == model.inference.selectedModel,let facts=NativeLearningRules.decode(output,items:items,candidates:[],registration:"fictional",now:now) else { throw MemoryLearningFailure.invalid }
         let container=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true)),store=PAMemoryStore(container:container)
         store.sourceIsPermitted={NativeLearningRules.permitted($0,items:items)}
         var checks:[String:Bool]=[:]
@@ -34,7 +34,7 @@ import SwiftUI
         let projection=CommitmentRules.context(store.context("fictional"))
         checks["independent reports remain singleton plans"]=(projection["plans"] as? [[String:Any]])?.allSatisfy{($0["reportIDs"] as? [String])?.count == 1} == true
         checks["no native or personal memory mutations"]=model.assistant.memory.records.isEmpty && model.assistant.projects.state.items.isEmpty && !model.writing
-        checks["account and model preserved"]=account == model.chatGPT.activeID && selected == model.chatGPT.selectedModel
+        checks["account and model preserved"]=account == model.inference.activeID && selected == model.inference.selectedModel
         return ["completed":Date.now.ISO8601Format(),"model":selected,"requests":1,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"facts":facts.map{["text":$0.text,"quote":$0.source?.quote ?? "","reportedState":$0.sourceState?.rawValue ?? "unknown"]},"storage":"Fictional Mail excerpts, disposable stores before source startup. One narrow quality scenario, not a multi-turn benchmark or live Mail/WhatsApp scheduler/UI acceptance."]
     }
 }

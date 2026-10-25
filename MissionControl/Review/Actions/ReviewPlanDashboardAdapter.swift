@@ -46,7 +46,7 @@ struct ReviewDraftEvidence:Codable,Equatable {
         let target=String(decoding:try JSONSerialization.data(withJSONObject:targets,options:[.sortedKeys]),as:UTF8.self)
         let args:[String:Any]=["revision":input.revision.uuidString,"actions":input.actions,"authorization":input.authorization]
         let history=assistant.conversation(job.conversationID)?.turns.filter{$0.completed}.suffix(8).map{["role":$0.role,"content":$0.content]} ?? []
-        _=try await PAToolAuthorization.check(call:call,args:args,human:job.human,history:history,target:target,model:self)
+        _=try await PAToolAuthorization.check(call:call,args:args,human:job.human,history:history,target:target,model:self,inferenceModel:job.scope.model)
         guard valid() else {throw ActionFailure.message("This request changed before any action was issued.")}
         let results=try await reviewWork.performCaptured(job.id,revision:input.revision,actions:input.actions,valid:valid,didSave:{action in
             let payload=try? JSONDecoder().decode(ReviewPreparedPayload.self,from:action.payload)

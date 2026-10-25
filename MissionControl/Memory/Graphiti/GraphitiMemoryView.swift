@@ -41,9 +41,9 @@ struct GraphitiMemoryView: View {
             }.font(.callout)
             HStack {
                 Button("Index next record") { model.graphiti.update(model) }
-                    .disabled(!model.graphiti.runtimeAvailable || model.graphiti.busy || model.assistant.busy || model.chatGPT.busy || model.heartbeat.busy || !model.assistant.memory.enabled || !model.assistant.memory.learningEnabled)
+                    .disabled(!model.graphiti.runtimeAvailable || model.graphiti.busy || model.assistant.busy || model.inference.busy || model.heartbeat.busy || !model.assistant.memory.enabled || !model.assistant.memory.learningEnabled)
                 Button("Index all pending") { model.graphiti.update(model, all: true) }
-                    .disabled(model.graphiti.busy || model.assistant.busy || model.chatGPT.busy || model.heartbeat.busy || !model.graphiti.runtimeAvailable)
+                    .disabled(model.graphiti.busy || model.assistant.busy || model.inference.busy || model.heartbeat.busy || !model.graphiti.runtimeAvailable)
                 if model.graphiti.busy {
                     ProgressView().controlSize(.small)
                     Button("Stop") { searchTask?.cancel(); model.graphiti.cancel() }
@@ -54,7 +54,7 @@ struct GraphitiMemoryView: View {
             HStack {
                 TextField("Index a person or topic, e.g. Cipolla", text: $indexingFocus)
                 Button("Index matching background") { model.graphiti.update(model, focus: indexingFocus) }
-                    .disabled(indexingFocus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || indexingFocus.utf8.count > 200 || !model.graphiti.runtimeAvailable || model.graphiti.busy || model.assistant.busy || model.chatGPT.busy || model.heartbeat.busy || !model.assistant.memory.enabled || !model.assistant.memory.learningEnabled)
+                    .disabled(indexingFocus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || indexingFocus.utf8.count > 200 || !model.graphiti.runtimeAvailable || model.graphiti.busy || model.assistant.busy || model.inference.busy || model.heartbeat.busy || !model.assistant.memory.enabled || !model.assistant.memory.learningEnabled)
             }
             Text("Processes up to six pending original records containing this phrase. Existing relationships are retained; this does not add a new memory.").font(.caption).foregroundStyle(.secondary)
             Text("The first background-only update rebuilds the earlier broad experimental index. Original records and context pages stay saved. Records with no lasting background are marked processed without adding relationships.").font(.caption).foregroundStyle(.secondary)
@@ -123,8 +123,8 @@ struct GraphitiMemoryView: View {
             }.frame(maxWidth: .infinity, alignment: .leading)
 
         }.padding(24).frame(width: 960, height: 760)
-            .disabled(registration != model.chatGPT.activeID || !model.graphiti.readable)
-            .onChange(of: model.chatGPT.activeID) { searchTask?.cancel(); result = ""; dismiss() }
+            .disabled(registration != model.inference.activeID || !model.graphiti.readable)
+            .onChange(of: model.inference.activeID) { searchTask?.cancel(); result = ""; dismiss() }
             .onDisappear { searchTask?.cancel() }
     }
     private func lookup(browse: Bool) {

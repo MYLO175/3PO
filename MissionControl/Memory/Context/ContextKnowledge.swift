@@ -52,7 +52,7 @@ import EventKit
         case .mail: return emailSummaries.enabled && (accountID.map { mailAccounts?.contains($0) ?? true } ?? true)
         case .whatsapp:
             guard whatsappReady else { return false }
-            let access = whatsapp.access(for: chatGPT.activeID)
+            let access = whatsapp.access(for: inference.activeID)
             guard chatID.map({ access.chats.contains($0) }) ?? true else { return false }
             switch purpose {
             case .brief: return access.briefEnabled
@@ -100,7 +100,7 @@ import EventKit
     /// Ordinary chat starts with a map, rather than a selection of personal knowledge.
     /// Actual page/source reads keep their own precise evidence and permission receipts.
     func conversationContextDirectory(registration: String) -> AssistantPageContext {
-        guard registration == chatGPT.activeID, assistant.memory.enabled else { return .init() }
+        guard registration == inference.activeID, assistant.memory.enabled else { return .init() }
         let routes: [String: Any] = [
             "topics": ContextTopicRoute.all.map(\.input),
             "instructions": ContextInstructionRoute.all.map(\.input),
@@ -131,7 +131,7 @@ import EventKit
         ]
         return .init(text: ContextKnowledgeRules.json(payload), referenceVersions: [guidance.reference.contextKey: guidance.reference.revision],
                      guideText: guide, guideFingerprint: ContextKnowledgeRules.fingerprint(guide), validate: { [weak self] ignored in
-            guard let self, readable, registration == self.chatGPT.activeID, self.assistant.memory.enabled,
+            guard let self, readable, registration == self.inference.activeID, self.assistant.memory.enabled,
                   permission == self.assistant.memory.useRevision, self.contextPages.isReadable, self.assistant.memory.isReadable else { return false }
             let current = self.featureInstruction(.assistant, registration: registration)
             return current.available && (ignored.contains(guidance.reference.contextKey) || current.reference == guidance.reference)
@@ -139,7 +139,7 @@ import EventKit
     }
 
     func contextLearningTargets(registration: String) -> [MemoryInstructionTarget] {
-        guard registration == chatGPT.activeID, contextPages.isReadable else { return [] }
+        guard registration == inference.activeID, contextPages.isReadable else { return [] }
         var targets: [MemoryInstructionTarget] = ContextFeature.allCases.compactMap { feature in
             let value = featureInstruction(feature, registration: registration)
             guard value.available else { return nil }
@@ -172,7 +172,7 @@ import EventKit
         #if DEBUG
         contextKnowledgeBuildCount += 1
         #endif
-        guard assistant.memory.enabled, registration == chatGPT.activeID else { return [] }
+        guard assistant.memory.enabled, registration == inference.activeID else { return [] }
         contextRecordProjections.prepare(registration:registration,memory:assistant.memory.revision,project:assistant.projects.revision)
         var records: [ContextKnowledgeRecord] = assistant.memory.permittedRecords.filter {
             MemoryRules.usable($0, registration: registration) && MemoryRules.inScope($0, conversationID: topic, includeTopics: includeTopics) &&
@@ -289,7 +289,7 @@ import EventKit
     }
 
     func contextPageEligible(_ page: ContextPage, records: [ContextKnowledgeRecord]) -> Bool {
-        guard page.registration == chatGPT.activeID, assistant.memory.enabled else { return false }
+        guard page.registration == inference.activeID, assistant.memory.enabled else { return false }
         if page.kind == .calendarPurpose { return false } // Only supplied alongside current permitted calendar identities.
         if page.kind == .project, !records.contains(where: { $0.reference.kind == "project" && $0.reference.key == page.key }) { return false }
         if page.owner == .generated, page.references.isEmpty { return false }
@@ -300,7 +300,7 @@ import EventKit
     func captureContextPages(registration: String, query: String?, topic: UUID? = nil, includeTopics: Bool = true,
                              everyday: Bool = false, pageID requestedPageID: String? = nil, allowedMemoryIDs: Set<UUID>? = nil, pageOffset: Int = 0,
                              purpose: ContextKnowledgePurpose = .conversation, mailAccounts: Set<String>? = nil, whatsappReady: Bool = true, includeSourceChanges: Bool = true) -> AssistantPageContext {
-        guard assistant.memory.enabled, registration == chatGPT.activeID else { return .init() }
+        guard assistant.memory.enabled, registration == inference.activeID else { return .init() }
         let areaKey = requestedPageID.flatMap { value -> String? in
             guard value.hasPrefix("area:") else { return nil }
             let key = String(value.dropFirst(5))
@@ -535,7 +535,7 @@ import EventKit
         let whatsappScope = expected.contains { $0.kind == "whatsapp" } ? whatsapp.scope(for: registration, purpose: whatsappPurpose) : nil
         return .init(text: ContextKnowledgeRules.json(payload), pageIDs: suppliedPages.map(\.id),
                      memoryIDs: Set(selectedRecords.compactMap(\.memoryID)), workspaceIDs: Set(selectedRecords.compactMap(\.projectID)), referenceVersions: Dictionary(expected.map { ($0.contextKey, $0.revision) }, uniquingKeysWith: { first, _ in first }), guideText: navigation.text, guideFingerprint: navigation.text.isEmpty ? nil : ContextKnowledgeRules.fingerprint(navigation.text), validate: { [weak self] ignored in
-            guard let self, registration == self.chatGPT.activeID, self.assistant.memory.enabled else { return false }
+            guard let self, registration == self.inference.activeID, self.assistant.memory.enabled else { return false }
             if let whatsappScope, whatsappScope != self.whatsapp.scope(for: registration, purpose: whatsappPurpose) { return false }
             let ignoredProjects = Set(ignored.filter { $0.hasPrefix("project:") }.map { String($0.dropFirst(8)) })
             let retained = Dictionary(expected.map { ($0.contextKey, $0.revision) }, uniquingKeysWith: { first, _ in first })
@@ -556,17 +556,17 @@ import EventKit
 
     func reviewGuidanceCapture(registration: String) -> AssistantPageContext {
         let policy = emailSummaries.policy(registration)
-        let available = registration == chatGPT.activeID && emailSummaries.policyAvailable(policy)
+        let available = registration == inference.activeID && emailSummaries.policyAvailable(policy)
         return .init(text: ContextKnowledgeRules.json(available ? policy.input : ["unavailable": "Saved Review guidance is unavailable."]),
                      referenceVersions: ["instruction:review": reviewInstructionRevision(registration)], validate: { [weak self] _ in
-            guard let self, available, registration == self.chatGPT.activeID else { return false }
+            guard let self, available, registration == self.inference.activeID else { return false }
             return self.emailSummaries.policyAvailable(policy)
         })
     }
 
     func contextKnowledgeAvailable(registration: String, versions: [String: String], ignoring: Set<String> = []) -> Bool {
         guard !versions.isEmpty else { return true }
-        guard registration == chatGPT.activeID else { return false }
+        guard registration == inference.activeID else { return false }
         if versions.keys.allSatisfy({ $0 == "instruction:review" }) {
             return emailSummaries.reviewPolicies.readable && versions["instruction:review"] == reviewInstructionRevision(registration)
         }
@@ -601,7 +601,7 @@ import EventKit
             purposes.formUnion(captured.isEmpty ? [.conversation] : captured)
         }
         var current: [ContextKnowledgePurpose: [String: String]] = [:]
-        if assistant.memory.enabled, registration == chatGPT.activeID {
+        if assistant.memory.enabled, registration == inference.activeID {
             for purpose in purposes.sorted(by: { $0.rawValue < $1.rawValue }) {
                 let records = contextKnowledge(registration: registration, retainingReferenceVersions: retained, purpose: purpose)
                 current[purpose] = contextDependencyVersions(registration: registration, records: records)
@@ -609,7 +609,7 @@ import EventKit
         }
         return body { versions in
             ContextPageDependencyRules.available(versions) { versions in
-                guard active, registration == self.chatGPT.activeID else { return false }
+                guard active, registration == self.inference.activeID else { return false }
                 if versions.keys.allSatisfy({ $0 == "instruction:review" }) {
                     return self.contextKnowledgeAvailable(registration: registration, versions: versions)
                 }
@@ -679,7 +679,7 @@ import EventKit
     }
 
     func contextReferencesForMemoryMutation(registration: String, call: PAFunctionCall) -> Set<String> {
-        guard registration == chatGPT.activeID, call.name == "change_memory",
+        guard registration == inference.activeID, call.name == "change_memory",
               let arguments = try? PAToolProtocol.arguments(call), let rawID = arguments["id"] as? String,
               let id = UUID(uuidString: rawID), let record = assistant.memory.records.first(where: { $0.id == id && $0.registration == registration }) else { return [] }
         let forgetting = arguments["operation"] as? String == "forget"
@@ -711,7 +711,7 @@ import EventKit
     /// Previously recorded human guidance remains usable without creating a second editable authority.
     /// Generated summaries and source interpretations cannot supply calendar-purpose instructions.
     func calendarHumanGuidance(registration: String) -> [ContextKnowledgeRecord] {
-        guard assistant.memory.enabled, assistant.contextEnabled, registration == chatGPT.activeID,
+        guard assistant.memory.enabled, assistant.contextEnabled, registration == inference.activeID,
               contextPages.isReadable, contextCalendarAllowed else { return [] }
         let candidates = contextKnowledge(registration: registration, includeTopics: false, includeRecent: false, purpose: .email)
             .filter { ($0.reference.kind == "memory" || $0.reference.kind == "page") &&
@@ -730,7 +730,7 @@ import EventKit
         return selected
     }
     func calendarPurposeCapture(sources: [SourceOption], registration: String) -> AssistantPageContext {
-        guard assistant.memory.enabled, assistant.contextEnabled, registration == chatGPT.activeID,
+        guard assistant.memory.enabled, assistant.contextEnabled, registration == inference.activeID,
               contextCalendarAllowed else { return .init() }
         guard contextPages.isReadable else { return .init(text: ContextKnowledgeRules.json(["unavailable": "Saved calendar guidance could not be read. Original data is preserved."])) }
         let enabled = sources.filter { !assistant.excludedCalendars.contains($0.id) }
@@ -756,7 +756,7 @@ import EventKit
         let expected = versions
         let supplied = captured
         return .init(text: ContextKnowledgeRules.json(payload(rows)), referenceVersions: versions, validate: { [weak self] _ in
-            guard let self, self.assistant.memory.enabled, self.assistant.contextEnabled, self.chatGPT.activeID == registration,
+            guard let self, self.assistant.memory.enabled, self.assistant.contextEnabled, self.inference.activeID == registration,
                   self.contextPages.isReadable, self.contextCalendarAllowed,
                   self.contextKnowledgeAvailable(registration: registration, versions: guidanceVersions) else { return false }
             return supplied.allSatisfy { source in

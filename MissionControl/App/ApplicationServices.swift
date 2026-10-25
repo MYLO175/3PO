@@ -8,6 +8,7 @@ import SwiftData
     private let container: ModelContainer?
     private let injectedNativeSources: (any NativeSourceReading)?
     let chatGPT = ChatGPTConnection()
+    lazy var inference = PAInferenceRouter(chatGPT: chatGPT)
     let eventKit = EventKitService()
     let mail = MailService()
     let mailLookup = MailLookup()
@@ -18,7 +19,7 @@ import SwiftData
     var nativeSources: any NativeSourceReading { injectedNativeSources ?? eventKit }
     lazy var weather = WeatherService(container: container)
     lazy var aiUsage = AIUsageStore(container: container)
-    lazy var assistant = AssistantService(connection: chatGPT, container: container, engine: conversationEngine)
+    lazy var assistant = AssistantService(connection: inference, container: container, engine: conversationEngine)
     lazy var assistantActions = AssistantActions(container: container)
     lazy var emailSummaries = EmailSummaryService(container: container, memory: assistant.memory)
     lazy var heartbeat = HeartbeatService(container: container)

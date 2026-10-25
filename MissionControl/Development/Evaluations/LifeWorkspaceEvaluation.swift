@@ -7,9 +7,9 @@ import SwiftData
     static func run(_ model: DashboardModel) async throws -> [String:Any] {
         let container = try ModelContainer(for:CachedDashboard.self, configurations:ModelConfiguration(isStoredInMemoryOnly:true))
         let projects = LifeWorkspaceStore(container:container), memory = PAMemoryStore(container:container)
-        let registration = model.chatGPT.activeID, selectedModel = model.chatGPT.selectedModel
+        let registration = model.inference.activeID, selectedModel = model.inference.selectedModel
         let realProjectRevision = model.assistant.projects.revision, realMemoryRevision = model.assistant.memory.revision
-        guard !registration.isEmpty, model.chatGPT.hasSession, model.chatGPT.inferenceVerified, !model.chatGPT.usagePaused else { throw ActionFailure.message("The existing subscription connection must be verified and available. No settings were changed.") }
+        guard !registration.isEmpty, model.inference.hasSession, model.inference.inferenceVerified, !model.inference.usagePaused else { throw ActionFailure.message("The existing subscription connection must be verified and available. No settings were changed.") }
         let definitions = (PAToolProtocol.tools.first?["tools"] as? [[String:Any]] ?? []).filter { LifeWorkspaceTools.names.contains($0["name"] as? String ?? "") && $0["name"] as? String != "show_project_view" || $0["name"] as? String == "ask_clarification" }
         let tools: [[String:Any]] = [["type":"namespace", "name":"pa", "description":"Disposable fictional local project check", "tools":definitions]]
         var history: [[String:String]] = [], runs: [[String:Any]] = [], checks: [String:Bool] = [:]
@@ -23,12 +23,12 @@ import SwiftData
             var input: [[String:Any]] = requestHistory.map { $0 as [String:Any] }
             var callCount = 0, names: [String] = [], errors: [String] = [], seen = Set<String>()
             var expected = projects.revision
-            func valid() -> Bool { registration == model.chatGPT.activeID && selectedModel == model.chatGPT.selectedModel && expected == projects.revision && realProjectRevision == model.assistant.projects.revision && realMemoryRevision == model.assistant.memory.revision }
+            func valid() -> Bool { registration == model.inference.activeID && selectedModel == model.inference.selectedModel && expected == projects.revision && realProjectRevision == model.assistant.projects.revision && realMemoryRevision == model.assistant.memory.revision }
             let instructions = "You are a practical PA in a FICTIONAL evaluation. Do not access real sources or save real personal facts. Act on understood human requests using the supplied local project tools; no command templates/repeated confirmations. Read actual local records before changing them; never invent targets. Use a single atomic create_life_items batch for a requested hierarchy, with batch:N parents, instead of a chain of one-item creates. Report actual tool outcomes, retain completed changes, and do not retry a failed storage write. " + LifeWorkspaceTools.instructions
             for round in 0..<PAToolProtocol.evaluationMaxRounds {
                 guard valid() else { throw ActionFailure.message("Evaluation configuration changed.") }
                 try PAToolProtocol.boundedInput(input)
-                let result = try await model.chatGPT.toolResponse(input:input, instructions:instructions + " Current round: \(round + 1) of \(PAToolProtocol.evaluationMaxRounds). Group independent calls when possible and reserve a round for the final reply.", tools:tools, model:selectedModel,purpose:.diagnostic) { _ in }
+                let result = try await model.inference.toolResponse(input:input, instructions:instructions + " Current round: \(round + 1) of \(PAToolProtocol.evaluationMaxRounds). Group independent calls when possible and reserve a round for the final reply.", tools:tools, model:selectedModel,purpose:.diagnostic) { _ in }
                 guard valid() else { throw ActionFailure.message("Evaluation changed during inference.") }
                 if result.calls.isEmpty {
                     history.append(["role":"user", "content":human]); history.append(["role":"assistant", "content":result.text])

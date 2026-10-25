@@ -8,7 +8,7 @@ struct MemoryAdviceEvidenceView:View {
     var use:AutomaticMemoryUse
     @State private var expanded=false
     var body:some View {
-        if registration == model.chatGPT.activeID {
+        if registration == model.inference.activeID {
             if let dependencies {
                 DisclosureGroup("Memory supplied (\(dependencies.count) facts)",isExpanded:$expanded) {
                     if expanded {

@@ -130,6 +130,7 @@ struct CalendarRemovalReviewSession:Identifiable {
     @ObservationIgnored lazy var mcpBridge = MCPBridgeService(model: self)
     var weather: WeatherService { get { services.weather } set { services.weather = newValue } }
     var chatGPT: ChatGPTConnection { services.chatGPT }
+    var inference: PAInferenceRouter { services.inference }
     var aiUsage: AIUsageStore { get { services.aiUsage } set { services.aiUsage = newValue } }
     @ObservationIgnored lazy var workspace = WorkspaceStore(container:container,calendars:excludedCalendars,lists:excludedLists,accounts:excludedAccounts,date:selectedDate)
     @ObservationIgnored lazy var widgetCalendars = WidgetCalendarStore(service:eventKit)
@@ -149,7 +150,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         service.memory.sourcePermissionProjection = { [weak self,weak service] in
             guard let self,let service,service.contextEnabled else { return [] }
             return self.nativeLearningValidation.permittedMemory {
-                let registration=self.chatGPT.activeID
+                let registration=self.inference.activeID
                 var result=Set<UUID>()
                 // Hash each native snapshot once per projection, rather than once per saved fact.
                 let sourceRecords=service.memory.records.filter{$0.registration == registration && $0.source != nil}
@@ -315,7 +316,7 @@ struct CalendarRemovalReviewSession:Identifiable {
             Task {
                 let result: [String: Any]
                 do { result = try await GraphitiMemoryEvaluation.run(self) }
-                catch { result = ["error": error.localizedDescription, "providerDiagnostic": chatGPT.diagnostic, "model": chatGPT.selectedModel, "storage": "Fictional source-free Graphiti check; disposable stores only"] }
+                catch { result = ["error": error.localizedDescription, "providerDiagnostic": chatGPT.diagnostic, "model": inference.selectedModel, "storage": "Fictional source-free Graphiti check; disposable stores only"] }
                 if let data = try? JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]) { try? data.write(to: EvaluationOutput.url("/tmp/missioncontrol-graphiti-evaluation.json"), options: .atomic) }
                 NSApp.terminate(nil)
             }; return
@@ -331,7 +332,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         if ProcessInfo.processInfo.arguments.contains("--inspect-luna-access") {
             Task {
                 let result:[String:Any]
-                do {result=try await chatGPT.inspectLunaAccess()} catch {result=["error":error.localizedDescription,"personalSourcesSent":false,"selectedModel":chatGPT.selectedModel]}
+                do {result=try await chatGPT.inspectLunaAccess()} catch {result=["error":error.localizedDescription,"personalSourcesSent":false,"selectedModel":inference.selectedModel]}
                 if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-luna-access.json"),options:.atomic)}
                 NSApp.terminate(nil)
             };return
@@ -537,7 +538,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         Task { await refreshCalendar() }
     }
     private var nativeCollectionScope: NativeCollectionScope {
-        .init(registration:chatGPT.activeID,sourceRevision:sourceRevision,writeGeneration:nativeWriteGeneration,storage:container.map(ObjectIdentifier.init))
+        .init(registration:inference.activeID,sourceRevision:sourceRevision,writeGeneration:nativeWriteGeneration,storage:container.map(ObjectIdentifier.init))
     }
     /// Only verified writes call this. Receipts are durable before collection begins.
     private func reconcileVerifiedNativeWrite(_ kind: NativeItemKind, owner: NativeCollectionScope) {
@@ -545,7 +546,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         if kind == .event { widgetCalendars.invalidate();orientationCollectionRevision = -1 }
         else { reminderCollectionRevision = -1;completedReminderCollectionRevision = -1 }
         nativeReconciliation.schedule(kind == .event ? .calendar : .reminders) { [weak self] kind in
-            guard let self,owner.registration == self.chatGPT.activeID,owner.storage == self.container.map(ObjectIdentifier.init) else { return }
+            guard let self,owner.registration == self.inference.activeID,owner.storage == self.container.map(ObjectIdentifier.init) else { return }
             switch kind {
             case .calendar:
                 await self.refreshCalendar()
@@ -740,10 +741,10 @@ struct CalendarRemovalReviewSession:Identifiable {
         }
     }
     func newNativeItem(_ kind: NativeItemKind, date: Date? = nil) {
-        editTarget = .create(NativeCreationRequest(kind:kind,registration:chatGPT.activeID,preferredDate:date))
+        editTarget = .create(NativeCreationRequest(kind:kind,registration:inference.activeID,preferredDate:date))
     }
     func reviewDiscovery(_ record:PADiscovery,as kind:NativeItemKind? = nil) {
-        guard proactive.preparedReviewAvailable(record,model:self),currentPreparedApproval(record),!record.needsDateClarification,record.registration == chatGPT.activeID,let id=UUID(uuidString:record.id) else { return }
+        guard proactive.preparedReviewAvailable(record,model:self),currentPreparedApproval(record),!record.needsDateClarification,record.registration == inference.activeID,let id=UUID(uuidString:record.id) else { return }
         if let removal=record.proposedRemoval,let event=(paOrientation?.calendar ?? calendarData).events.first(where:{$0.id == removal.target.itemID}) {
             editTarget = .event(event);return
         }
@@ -771,7 +772,7 @@ struct CalendarRemovalReviewSession:Identifiable {
     func approveDiscovery(_ record:PADiscovery) async {
         if record.proposedRemoval != nil {await approveCalendarRemoval(record);return}
         guard !sample,!writing,!assistant.busy,approvingDiscoveryID == nil,
-              record.registration == chatGPT.activeID,proactive.canReview(record.id,model:self),
+              record.registration == inference.activeID,proactive.canReview(record.id,model:self),
               let current=proactive.state.records.first(where:{$0.id == record.id && $0.registration == record.registration}),
               currentPreparedApproval(record),
               let target=dateReviewTarget(current) else {return}
@@ -786,24 +787,24 @@ struct CalendarRemovalReviewSession:Identifiable {
             #endif
             let session=try await eventKit.editSession(target)
             try Task.checkCancellation()
-            guard review.registration == chatGPT.activeID,proactive.canReview(review.discoveryID,model:self),currentPreparedApproval(record) else {throw ActionFailure.message("The proposal changed. Reopen it before approving it.")}
+            guard review.registration == inference.activeID,proactive.canReview(review.discoveryID,model:self),currentPreparedApproval(record) else {throw ActionFailure.message("The proposal changed. Reopen it before approving it.")}
             let edited=try review.applying(to:session.item)
             // A repeating item needs an explicit occurrence/series choice in the native form.
             if session.item.recurring {editTarget=target;return}
             writing=false
             try await saveNativeEdit(baseline:session.item,edited:edited,review:review)
         } catch {
-            if review.registration == chatGPT.activeID {
+            if review.registration == inference.activeID {
                 reviewApprovalError=error.localizedDescription;reviewApprovalErrorID=record.id;reviewApprovalErrorAccount=record.registration
             }
         }
     }
     private func approveCalendarRemoval(_ record:PADiscovery) async {
-        guard !sample,!writing,!assistant.busy,approvingDiscoveryID == nil,record.registration == chatGPT.activeID,
+        guard !sample,!writing,!assistant.busy,approvingDiscoveryID == nil,record.registration == inference.activeID,
               proactive.canReview(record.id,model:self),let current=proactive.state.records.first(where:{$0.id == record.id}),currentPreparedApproval(record),
               let removal=current.proposedRemoval,removal.valid,
               let event=(paOrientation?.calendar ?? calendarData).events.first(where:{$0.id == removal.target.itemID}) else {return}
-        let selectedModel=chatGPT.selectedModel,sourceScope=proactive.sourceSettingsScope(self)
+        let selectedModel=inference.selectedModel,sourceScope=proactive.sourceSettingsScope(self)
         // Exact native/project evidence is rechecked by running AI consumers.
         approvingDiscoveryID=record.id;reviewApprovalError=nil;reviewApprovalErrorID=nil;reviewApprovalErrorAccount=nil;writing=true
         defer {writing=false;approvingDiscoveryID=nil}
@@ -818,11 +819,11 @@ struct CalendarRemovalReviewSession:Identifiable {
             writing=false
             try await saveCalendarRemoval(record,baseline:session.item,selectedModel:selectedModel,sourceScope:sourceScope)
         } catch {
-            if record.registration == chatGPT.activeID {reviewApprovalError=error.localizedDescription;reviewApprovalErrorID=record.id;reviewApprovalErrorAccount=record.registration}
+            if record.registration == inference.activeID {reviewApprovalError=error.localizedDescription;reviewApprovalErrorID=record.id;reviewApprovalErrorAccount=record.registration}
         }
     }
     func validateCalendarRemoval(_ record:PADiscovery,baseline:NativeEditDetails)throws {
-        guard record.registration == chatGPT.activeID,proactive.canReview(record.id,model:self),
+        guard record.registration == inference.activeID,proactive.canReview(record.id,model:self),
               currentPreparedApproval(record),let removal=record.proposedRemoval,removal.valid,
               baseline.kind == .event,baseline.writable,baseline.occurrenceID == removal.target.itemID,baseline.sourceID == removal.target.sourceID,
               baseline.title == removal.target.title,baseline.start == removal.target.start,baseline.end == removalEditorEnd(removal.target),
@@ -847,7 +848,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         var claimed=false
         do {
             let valid:NativeWriteValidity = { [self] in
-                registration == chatGPT.activeID && nativeOwner.storage == nativeCollectionScope.storage && record.proposedRemoval?.valid == true &&
+                registration == inference.activeID && nativeOwner.storage == nativeCollectionScope.storage && record.proposedRemoval?.valid == true &&
                 currentPreparedApproval(record) && (additionalValidity?() ?? true)
             }
             let claim:NativeWriteClaim = { [self] in
@@ -890,7 +891,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         return currentPreparedApproval(record.id,registration:record.registration,snapshot:snapshot)
     }
     private func currentPreparedApproval(_ id:String,registration:String,snapshot:Data?)->Bool {
-        guard registration == chatGPT.activeID,let snapshot,
+        guard registration == inference.activeID,let snapshot,
               let current=proactive.state.records.first(where:{$0.id == id && $0.registration == registration}),
               proactive.preparedReviewAvailable(current,model:self) else {return false}
         return preparedApprovalSnapshot(current) == snapshot
@@ -899,7 +900,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         guard currentPreparedApproval(record) else {throw ActionFailure.message("This suggestion changed. Reopen it from Review inbox.")}
     }
     func savePreparedProjectItem(_ value:LifeItem,proposal:PADiscovery,additionalValidity:(@MainActor ()->Bool)? = nil,acceptedSnapshot:ReviewPreparedPayload? = nil)throws {
-        guard !writing,(!assistant.busy || (acceptedSnapshot != nil && reviewConversationOwnsAssistant && additionalValidity?() == true)),!assistant.projects.readOnly,value.registration == chatGPT.activeID,
+        guard !writing,(!assistant.busy || (acceptedSnapshot != nil && reviewConversationOwnsAssistant && additionalValidity?() == true)),!assistant.projects.readOnly,value.registration == inference.activeID,
               value.registration == proposal.registration else {throw LifeWorkspaceFailure.message("Another operation or account change is in progress. Your draft is kept.")}
         guard additionalValidity?() ?? true else {throw LifeWorkspaceFailure.message("This request stopped before saving.")}
         if let acceptedSnapshot {guard acceptedPreparedApproval(acceptedSnapshot) else {throw LifeWorkspaceFailure.message("The approved concrete action changed.")}} else {try validatePreparedApproval(proposal)}
@@ -923,7 +924,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {throw ActionFailure.message("Fictional preview is read-only; no Apple write.")}
         #endif
-        guard !sample, !writing, (!assistant.busy || (acceptedSnapshot != nil && reviewConversationOwnsAssistant && additionalValidity?() == true)), request.registration == chatGPT.activeID,additionalValidity?() ?? true else { throw ActionFailure.message("Another change or account switch is in progress; reopen the form when ready.") }
+        guard !sample, !writing, (!assistant.busy || (acceptedSnapshot != nil && reviewConversationOwnsAssistant && additionalValidity?() == true)), request.registration == inference.activeID,additionalValidity?() ?? true else { throw ActionFailure.message("Another change or account switch is in progress; reopen the form when ready.") }
         if request.requiresDateSelection && !dateSelected { throw ActionFailure.message("Choose the event's date and time before creating it.") }
         // The explicit action owns the foreground; saved context is not re-analysed.
         // Exact native/project evidence is rechecked by running AI consumers.
@@ -937,7 +938,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         try nativeCreations.begin(request)
         writeError = nil; nativeWriteFeedback = nil
         do {
-            let receipt = try await eventKit.createItem(request:request,baseline:baseline,edited:edited,scope:sourceScope,valid:{request.registration == self.chatGPT.activeID && ownedStorage == self.nativeCollectionScope.storage && (!self.assistant.busy || (acceptedSnapshot != nil && self.reviewConversationOwnsAssistant)) && (additionalValidity?() ?? true) && (acceptedSnapshot.map(self.acceptedPreparedApproval) ?? (request.discoveryID.map{self.currentPreparedApproval($0,registration:request.registration,snapshot:request.discoveryApproval)} ?? true))})
+            let receipt = try await eventKit.createItem(request:request,baseline:baseline,edited:edited,scope:sourceScope,valid:{request.registration == self.inference.activeID && ownedStorage == self.nativeCollectionScope.storage && (!self.assistant.busy || (acceptedSnapshot != nil && self.reviewConversationOwnsAssistant)) && (additionalValidity?() ?? true) && (acceptedSnapshot.map(self.acceptedPreparedApproval) ?? (request.discoveryID.map{self.currentPreparedApproval($0,registration:request.registration,snapshot:request.discoveryApproval)} ?? true))})
             try nativeCreations.complete(request,receipt:receipt)
             showFeedback("Created " + receipt.title + " · " + receipt.destination)
             reconcileVerifiedNativeWrite(request.kind,owner:nativeOwner)
@@ -975,10 +976,10 @@ struct CalendarRemovalReviewSession:Identifiable {
         var claimedReview=false
         do {
             let valid:NativeWriteValidity = { [self] in
-                nativeOwner.registration == chatGPT.activeID && nativeOwner.storage == nativeCollectionScope.storage && (validity?() ?? true) && (review.map{$0.registration == chatGPT.activeID && $0.expectedModified == baseline.modified && currentPreparedApproval($0.discoveryID,registration:$0.registration,snapshot:$0.discoveryApproval)} ?? true)
+                nativeOwner.registration == inference.activeID && nativeOwner.storage == nativeCollectionScope.storage && (validity?() ?? true) && (review.map{$0.registration == inference.activeID && $0.expectedModified == baseline.modified && currentPreparedApproval($0.discoveryID,registration:$0.registration,snapshot:$0.discoveryApproval)} ?? true)
             }
             let claim:NativeWriteClaim = { [self] in if let review {
-                guard review.registration == chatGPT.activeID else {throw ActionFailure.message("Review account changed; reopen the inbox.")}
+                guard review.registration == inference.activeID else {throw ActionFailure.message("Review account changed; reopen the inbox.")}
                 try proactive.beginReview(review.discoveryID,model:self);claimedReview=true
             } }
             let saved = try await eventKit.saveEdit(baseline:baseline,edited:edited,scope:scope,valid:valid,claim:review == nil ? nil : claim)
@@ -1002,28 +1003,28 @@ struct CalendarRemovalReviewSession:Identifiable {
     }
     func clearNativeEditUndo() { editUndo=nil }
     func recordAssistantEditUndo(_ receipt: NativeEditUndo) { editUndo = receipt; widgetCalendars.invalidate() }
-    func showFeedback(_ text: String) { nativeWriteFeedback = .init(registration:chatGPT.activeID,message:text) }
+    func showFeedback(_ text: String) { nativeWriteFeedback = .init(registration:inference.activeID,message:text) }
     var latestUndo: String? {
-        UndoOrder.latest(layout:workspace.canUndo ? workspace.undoDate : nil,completion:undoToken == nil ? nil : completionUndoDate,edit:editUndo?.created,email:emailSummaries.undoDate(chatGPT.activeID),discovery:proactive.undoDate(chatGPT.activeID),question:memoryLearning.undoDate(chatGPT.activeID),project:assistant.projects.undoDate(chatGPT.activeID),memoryReview:memoryMaintenance.undoDate(chatGPT.activeID),reviewQuestion:briefings.undoQuestionDate(chatGPT.activeID),activity:aiActivity.undoDate(chatGPT.activeID))
+        UndoOrder.latest(layout:workspace.canUndo ? workspace.undoDate : nil,completion:undoToken == nil ? nil : completionUndoDate,edit:editUndo?.created,email:emailSummaries.undoDate(inference.activeID),discovery:proactive.undoDate(inference.activeID),question:memoryLearning.undoDate(inference.activeID),project:assistant.projects.undoDate(inference.activeID),memoryReview:memoryMaintenance.undoDate(inference.activeID),reviewQuestion:briefings.undoQuestionDate(inference.activeID),activity:aiActivity.undoDate(inference.activeID))
     }
     var latestUndoDate: Date? {
         switch latestUndo {
-        case "activity":return aiActivity.undoDate(chatGPT.activeID)
+        case "activity":return aiActivity.undoDate(inference.activeID)
         case "layout": return workspace.undoDate
         case "completion": return completionUndoDate
         case "edit": return editUndo?.created
-        case "email": return emailSummaries.undoDate(chatGPT.activeID)
-        case "discovery": return proactive.undoDate(chatGPT.activeID)
-        case "question": return memoryLearning.undoDate(chatGPT.activeID)
-        case "reviewQuestion": return briefings.undoQuestionDate(chatGPT.activeID)
-        case "memoryReview": return memoryMaintenance.undoDate(chatGPT.activeID)
-        case "project": return assistant.projects.undoDate(chatGPT.activeID)
+        case "email": return emailSummaries.undoDate(inference.activeID)
+        case "discovery": return proactive.undoDate(inference.activeID)
+        case "question": return memoryLearning.undoDate(inference.activeID)
+        case "reviewQuestion": return briefings.undoQuestionDate(inference.activeID)
+        case "memoryReview": return memoryMaintenance.undoDate(inference.activeID)
+        case "project": return assistant.projects.undoDate(inference.activeID)
         default: return nil
         }
     }
     var undoLabel: String {
         switch latestUndo {
-        case "activity":return aiActivity.undoLabel(chatGPT.activeID) ?? "Undo acknowledgement"
+        case "activity":return aiActivity.undoLabel(inference.activeID) ?? "Undo acknowledgement"
         case "edit": return "Undo edit"
         case "completion": return "Undo reminder completion"
         case "layout": return "Undo dashboard change"
@@ -1051,16 +1052,16 @@ struct CalendarRemovalReviewSession:Identifiable {
     }
     func undoLatest() {
         guard !writing, !assistant.busy else { return }
-        if latestUndo == "activity" {_ = aiActivity.undoAcknowledgement(chatGPT.activeID);return}
+        if latestUndo == "activity" {_ = aiActivity.undoAcknowledgement(inference.activeID);return}
         if latestUndo == "project" {
-            do { try assistant.projects.undo(chatGPT.activeID); showFeedback("Project edit undone") } catch { writeError = error.localizedDescription }
+            do { try assistant.projects.undo(inference.activeID); showFeedback("Project edit undone") } catch { writeError = error.localizedDescription }
             return
         }
-        if latestUndo == "memoryReview" { memoryMaintenance.undo(chatGPT.activeID); return }
+        if latestUndo == "memoryReview" { memoryMaintenance.undo(inference.activeID); return }
         if latestUndo == "email" { emailSummaries.undoDismiss(self); return }
         if latestUndo == "discovery" { proactive.undo(self); return }
-        if latestUndo == "question" { memoryLearning.undoQuestion(chatGPT.activeID); return }
-        if latestUndo == "reviewQuestion" { briefings.undoQuestion(chatGPT.activeID);return }
+        if latestUndo == "question" { memoryLearning.undoQuestion(inference.activeID); return }
+        if latestUndo == "reviewQuestion" { briefings.undoQuestion(inference.activeID);return }
         if latestUndo == "layout" { workspace.undo(); if workspace.error == nil { showFeedback("Dashboard change undone") }; return }
         if latestUndo == "completion" { undo(); return }
         guard latestUndo == "edit", let ticket = editUndo else { return }
@@ -1169,7 +1170,7 @@ struct AssistantFocusRequest: Equatable {
 
 
 extension DashboardModel: NativeActionRuntime {
-    var actionRegistration: String { chatGPT.activeID }
+    var actionRegistration: String { inference.activeID }
     var actionContextEnabled: Bool { assistant.contextEnabled }
     var actionAssistantBusy: Bool { assistant.busy }
     var actionExcludedCalendars: Set<String> { assistant.excludedCalendars }

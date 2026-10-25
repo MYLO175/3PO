@@ -20,7 +20,7 @@ import Foundation
             var input:[[String:Any]]=[["role":"user","content":fixture.human]]
             var finalName="",passed=false,refusals:[String]=[]
             for round in 0..<2 {
-                let response=try await model.chatGPT.toolResponse(input:input,instructions:instructions,tools:PAToolProtocol.tools,model:model.chatGPT.selectedModel,purpose:.diagnostic) { _ in }
+                let response=try await model.inference.toolResponse(input:input,instructions:instructions,tools:PAToolProtocol.tools,model:model.inference.selectedModel,purpose:.diagnostic) { _ in }
                 guard response.calls.count == 1,let call=response.calls.first else {throw ActionFailure.message("Fictional capability evaluation did not return one completed proposal.")}
                 let args=try PAToolProtocol.arguments(call);finalName=call.name
                 passed=call.name == fixture.tool
@@ -48,7 +48,7 @@ import Foundation
             }
             checks.append(["human":fixture.human,"tool":finalName,"passed":passed,"refusedProposals":refusals])
         }
-        return ["completed":Date.now.ISO8601Format(),"model":model.chatGPT.selectedModel,"passed":checks.filter{$0["passed"] as? Bool == true}.count,"total":checks.count,"checks":checks,"scope":"Fictional completed tool proposals and source-free intent validation; no Apple writes, no personal source input."]
+        return ["completed":Date.now.ISO8601Format(),"model":model.inference.selectedModel,"passed":checks.filter{$0["passed"] as? Bool == true}.count,"total":checks.count,"checks":checks,"scope":"Fictional completed tool proposals and source-free intent validation; no Apple writes, no personal source input."]
     }
 }
 #endif

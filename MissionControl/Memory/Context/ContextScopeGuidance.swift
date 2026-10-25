@@ -43,7 +43,7 @@ enum ContextHierarchyRules {
 @MainActor extension DashboardModel {
     func contextScopedInstruction(_ scope: ContextInstructionScope, registration: String,
                                   records: [ContextKnowledgeRecord]) -> ContextPage? {
-        guard registration == chatGPT.activeID, contextPages.isReadable, ContextInstructionScope(key: scope.key) == scope else { return nil }
+        guard registration == inference.activeID, contextPages.isReadable, ContextInstructionScope(key: scope.key) == scope else { return nil }
         let id = ContextPage.stableID(registration: registration, kind: .instruction, key: scope.key)
         guard let page = contextPages.page(id: id, registration: registration), page.owner == .human else { return nil }
         switch scope {
@@ -59,7 +59,7 @@ enum ContextHierarchyRules {
 
     /// Every existing space has a row immediately. Description content has its own owner/evidence.
     func contextSpaceDescriptions(registration: String, items: [LifeItem], records: [ContextKnowledgeRecord]) -> [ContextSpaceDescription] {
-        guard registration == chatGPT.activeID else { return [] }
+        guard registration == inference.activeID else { return [] }
         let pages = contextPages.pages(registration: registration)
         return items.filter { $0.registration == registration && !$0.kind.isWork }.map { item in
             let id = ContextPage.stableID(registration: registration, kind: .project, key: item.id.uuidString)
@@ -116,7 +116,7 @@ enum ContextHierarchyRules {
 
     /// No clock, counters or current source bodies. Stable ordering makes unchanged maps reusable.
     func contextNavigationGuide(registration: String, items: [LifeItem], records: [ContextKnowledgeRecord]) -> (text: String, references: [ContextPageReference]) {
-        guard registration == chatGPT.activeID, assistant.memory.enabled else { return ("", []) }
+        guard registration == inference.activeID, assistant.memory.enabled else { return ("", []) }
         let descriptions = contextSpaceDescriptions(registration: registration, items: items, records: records)
         let ids = Set(descriptions.map(\.id))
         let roots = descriptions.filter { $0.parentID == nil || !ids.contains($0.parentID!) }.sorted { ($0.title, $0.id.uuidString) < ($1.title, $1.id.uuidString) }

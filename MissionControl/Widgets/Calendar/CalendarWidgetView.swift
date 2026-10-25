@@ -70,7 +70,7 @@ struct CalendarWidgetView: View {
             .onAppear { mounted=true; returnToToday() }
             .onDisappear { mounted=false; dragCapture=nil }
             .onChange(of:widgetID) { dragCapture=nil; returnToToday() }
-            .onChange(of:model.chatGPT.activeID) { dragCapture=nil }
+            .onChange(of:model.inference.activeID) { dragCapture=nil }
             .onChange(of:model.sourceRevision) { dragCapture=nil }
             .onChange(of:configuration.calendarMode) { dragCapture=nil }
             .onChange(of:configuration.sourceExclusions) { dragCapture=nil }
@@ -109,10 +109,10 @@ struct CalendarWidgetView: View {
     }
     private func beginDrag(_ event: AgendaEvent) {
         guard dragCapture == nil, canDrag(event) else { return }
-        dragCapture = CalendarEventDragCapture(event:event,account:model.chatGPT.activeID,sourceRevision:model.sourceRevision,widgetID:widgetID,date:configuration.date,mode:mode,exclusions:configuration.sourceExclusions)
+        dragCapture = CalendarEventDragCapture(event:event,account:model.inference.activeID,sourceRevision:model.sourceRevision,widgetID:widgetID,date:configuration.date,mode:mode,exclusions:configuration.sourceExclusions)
     }
     private func dragStillValid(_ capture: CalendarEventDragCapture) -> Bool {
-        mounted && capture.account == model.chatGPT.activeID && capture.sourceRevision == model.sourceRevision && capture.widgetID == widgetID && capture.date == configuration.date && capture.mode == mode && capture.exclusions == configuration.sourceExclusions
+        mounted && capture.account == model.inference.activeID && capture.sourceRevision == model.sourceRevision && capture.widgetID == widgetID && capture.date == configuration.date && capture.mode == mode && capture.exclusions == configuration.sourceExclusions
     }
     private func move(_ event: AgendaEvent, to start: Date?) {
         let capture = dragCapture; dragCapture=nil

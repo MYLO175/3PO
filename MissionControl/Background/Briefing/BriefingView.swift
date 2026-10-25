@@ -7,7 +7,7 @@ struct BriefingView: View {
         DisclosureGroup("Saved briefings") {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Button("Prepare today") { briefings.check(model, manual: true) }.disabled(model.chatGPT.usagePaused || briefings.busy || model.chatGPT.busy || !model.chatGPT.inferenceVerified)
+                    Button("Prepare today") { briefings.check(model, manual: true) }.disabled(model.inference.usagePaused || briefings.busy || model.inference.busy || !model.inference.inferenceVerified)
                     if briefings.busy { ProgressView().controlSize(.small); Button("Stop") { briefings.cancel() } }
                 }
                 if let error = briefings.error { Text(error).font(.caption).foregroundStyle(.orange) }
@@ -31,7 +31,7 @@ struct BriefingView: View {
                                     if let source = record.sources.first(where: { $0.id == id }) {
                                         if ["mail","mailResolution"].contains(source.kind), let message = model.mailData.messages.first(where: { $0.id == (source.originalID ?? id) }) ?? model.emailSummaries.sourceAssessments(model).first(where: { $0.0.id == (source.originalID ?? id) })?.0, !model.assistant.excludedAccounts.contains(message.accountID) {
                                             Button(source.label) { model.select(message) }.buttonStyle(.link).font(.caption)
-                                        } else if source.kind == "whatsapp" { WhatsAppBriefSource(service:model.whatsapp,registration:model.chatGPT.activeID,source:source) }
+                                        } else if source.kind == "whatsapp" { WhatsAppBriefSource(service:model.whatsapp,registration:model.inference.activeID,source:source) }
                                         else { Text(source.label).font(.caption).foregroundStyle(.secondary) }
                                     }
                                 }

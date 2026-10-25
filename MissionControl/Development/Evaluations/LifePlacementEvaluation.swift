@@ -3,8 +3,8 @@ import Foundation
 
 @MainActor enum LifePlacementEvaluation {
     static func run(_ model:DashboardModel) async throws -> [String:Any] {
-        let registration=model.chatGPT.activeID,selectedModel=model.chatGPT.selectedModel,store=model.assistant.projects
-        guard !registration.isEmpty,model.chatGPT.inferenceVerified,!model.chatGPT.usagePaused else { throw LifeWorkspaceFailure.message("Verify the existing subscription before the disposable check.") }
+        let registration=model.inference.activeID,selectedModel=model.inference.selectedModel,store=model.assistant.projects
+        guard !registration.isEmpty,model.inference.inferenceVerified,!model.inference.usagePaused else { throw LifeWorkspaceFailure.message("Verify the existing subscription before the disposable check.") }
         var results:[[String:Any]]=[],checks:[String:Bool]=[:]
         let university=LifeItem(registration:registration,kind:.organisation,title:"Example University",areas:[.studies])
         let course=LifeItem(registration:registration,kind:.course,title:"Engineering",parentID:university.id,areas:[.studies])
@@ -52,7 +52,7 @@ import Foundation
         let savedCourse=store.items(registration).first{$0.title == "Aeronautics"},savedCollege=store.items(registration).first{$0.title == "Example College"}
         checks["memory-only home becomes durable"]=materialised.parentID == savedCourse?.id && savedCourse?.parentID == savedCollege?.id && savedCourse != nil && savedCollege != nil
         checks["materialised memory anchor is same identity"]=model.assistant.memory.notebook(registration).entities.filter{$0.kind == .course && $0.label == "Aeronautics"}.count == 1
-        checks["selected model unchanged"]=model.chatGPT.selectedModel == selectedModel
+        checks["selected model unchanged"]=model.inference.selectedModel == selectedModel
         return ["completed":Date.now.ISO8601Format(),"model":selectedModel,"passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"results":results,"boundary":"Actual bounded subscription placement service on fictional disposable data only; no source startup or Apple writes, settings/model unchanged."]
     }
 }

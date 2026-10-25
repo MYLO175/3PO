@@ -16,7 +16,7 @@ struct EmailOverviewView: View {
             HStack {
                 Label("Email summary",systemImage:"envelope.badge").font(.title3.weight(.semibold)); Spacer()
                 Button {showRelevance=true} label:{Image(systemName:"slider.horizontal.3")}.help("Review guidance").accessibilityLabel("Review guidance")
-                Button { summaries.process(model,resume:true) } label: { Image(systemName:"arrow.clockwise") }.help("Check incoming mail").accessibilityLabel("Check incoming mail").disabled(!summaries.enabled || summaries.busy || model.chatGPT.busy || model.assistant.busy || model.chatGPT.usagePaused || !model.chatGPT.inferenceVerified)
+                Button { summaries.process(model,resume:true) } label: { Image(systemName:"arrow.clockwise") }.help("Check incoming mail").accessibilityLabel("Check incoming mail").disabled(!summaries.enabled || summaries.busy || model.inference.busy || model.assistant.busy || model.inference.usagePaused || !model.inference.inferenceVerified)
                 if summaries.busy { ProgressView().controlSize(.small); Button("Stop") { summaries.cancel() } }
             }
             HStack {
@@ -59,14 +59,14 @@ struct EmailOverviewView: View {
                         VStack(alignment:.leading,spacing:8) {
                             Text(summaries.coverage(model)).font(.caption).foregroundStyle(.secondary)
                             Text("AI suggestions can be mistaken. Reply flags are hints; email is read-only here. Dismiss hides a suggestion without changing Mail.").font(.caption).foregroundStyle(.secondary)
-                            if summaries.rejectedCount(model) > 0 { Button("Retry skipped assessments") { summaries.retryRejected(model) }.disabled(summaries.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
+                            if summaries.rejectedCount(model) > 0 { Button("Retry skipped assessments") { summaries.retryRejected(model) }.disabled(summaries.busy || model.inference.busy || model.inference.usagePaused) }
                         }.padding(.top,6)
                     }.font(.caption)
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
-            if summaries.paused || model.chatGPT.usagePaused { Text(model.chatGPT.usagePaused ? "Subscription processing paused; saved suggestions are available." : "Monitoring paused. Check incoming mail to resume one bounded batch.").font(.caption).foregroundStyle(.orange) }
+            if summaries.paused || model.inference.usagePaused { Text(model.inference.usagePaused ? "Subscription processing paused; saved suggestions are available." : "Monitoring paused. Check incoming mail to resume one bounded batch.").font(.caption).foregroundStyle(.orange) }
             if let error = summaries.error { DisclosureGroup("Monitoring details") { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }.font(.caption) }
-        }.sheet(isPresented:$showRelevance) {ReviewPolicyView(model:model)}.onChange(of:model.chatGPT.activeID) {showRelevance=false}.onChange(of:filter) { limit = 6 }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+        }.sheet(isPresented:$showRelevance) {ReviewPolicyView(model:model)}.onChange(of:model.inference.activeID) {showRelevance=false}.onChange(of:filter) { limit = 6 }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
     }
 }
 struct EmailSummarySettings: View {
@@ -97,12 +97,12 @@ struct ReviewFeedbackButton:View {
     @State private var savedRule:String?
     var body:some View {
         VStack(alignment:.leading,spacing:6) {
-            Button("Feedback") {showingFeedback=true}.controlSize(.small).help("Let your PA learn what matters from your feedback and this email").disabled(email.flatMap{model.emailSummaries.feedback.latest(model.chatGPT.activeID,messageID:$0.message.id)}.map{$0.pending && model.emailSummaries.feedbackMemory($0,model:model) == nil} ?? false)
-            if let email,let job=model.emailSummaries.feedback.latest(model.chatGPT.activeID,messageID:email.message.id) {ReviewFeedbackProgressView(model:model,job:job)}
+            Button("Feedback") {showingFeedback=true}.controlSize(.small).help("Let your PA learn what matters from your feedback and this email").disabled(email.flatMap{model.emailSummaries.feedback.latest(model.inference.activeID,messageID:$0.message.id)}.map{$0.pending && model.emailSummaries.feedbackMemory($0,model:model) == nil} ?? false)
+            if let email,let job=model.emailSummaries.feedback.latest(model.inference.activeID,messageID:email.message.id) {ReviewFeedbackProgressView(model:model,job:job)}
             else if let savedRule {DisclosureGroup("Saved preference") {Text(savedRule).font(.caption).textSelection(.enabled)}.font(.caption)}
         }
         .sheet(isPresented:$showingFeedback) {ReviewFeedbackEditor(model:model,topic:topic,email:email,isCurrent:isCurrent,onSaved:{savedRule=$0})}
-        .onChange(of:model.chatGPT.activeID) {showingFeedback=false;savedRule=nil}
+        .onChange(of:model.inference.activeID) {showingFeedback=false;savedRule=nil}
     }
 }
 struct ReviewFeedbackEditor:View {
@@ -119,7 +119,7 @@ struct ReviewFeedbackEditor:View {
     @State private var learnedRule:String
     @State private var error:String?
     init(model:DashboardModel,topic:String="",email:ReviewFeedbackEmail?=nil,expected:PAMemory?=nil,isCurrent:@escaping ()->Bool={true},onSaved:@escaping (String)->Void={_ in}) {
-        self.model=model;self.topic=topic;self.email=email;self.expected=expected;self.isCurrent=isCurrent;self.onSaved=onSaved;registration=model.chatGPT.activeID
+        self.model=model;self.topic=topic;self.email=email;self.expected=expected;self.isCurrent=isCurrent;self.onSaved=onSaved;registration=model.inference.activeID
         _words=State(initialValue:expected?.reviewFeedback ?? expected?.evidence ?? expected?.text ?? "")
         _about=State(initialValue:expected?.reviewContext ?? String(topic.prefix(300)))
         _learnedRule=State(initialValue:expected?.reviewInterpretation?.rule ?? "")
@@ -149,12 +149,12 @@ struct ReviewFeedbackEditor:View {
                 Button(email != nil && expected == nil ? "Submit feedback" : "Save to memory") {save()}.keyboardShortcut(.defaultAction).disabled(words.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || words.count > 2000 || about.count > 300 || learnedRule.count > 1200)
             }
         }.padding(24).frame(width:560)
-        .onChange(of:model.chatGPT.activeID) {dismiss()}
+        .onChange(of:model.inference.activeID) {dismiss()}
         .onChange(of:words) {if expected?.reviewInterpretation != nil {learnedRule=""}}
         .onChange(of:about) {if expected?.reviewInterpretation != nil {learnedRule=""}}
     }
     private func save() {
-        guard registration == model.chatGPT.activeID,isCurrent() else {error="The item or account changed. Reopen Feedback before saving.";return}
+        guard registration == model.inference.activeID,isCurrent() else {error="The item or account changed. Reopen Feedback before saving.";return}
         if let email,expected == nil {
             guard model.emailSummaries.submitReviewFeedback(email,words:words,about:about,model:model) else {error=model.emailSummaries.feedback.error;return}
             dismiss();return
@@ -192,7 +192,7 @@ struct ReviewRelevancePreferencesView:View {
     @State private var editingMemory:PAMemory?
     @State private var addingMemory=false
     @State private var error:String?
-    init(model:DashboardModel) {self.model=model;registration=model.chatGPT.activeID}
+    init(model:DashboardModel) {self.model=model;registration=model.inference.activeID}
     var body:some View {
         VStack(alignment:.leading,spacing:16) {
             HStack {Text("Review preferences").font(.title2.weight(.semibold));Spacer();Button("Done") {dismiss()}}
@@ -219,6 +219,6 @@ struct ReviewRelevancePreferencesView:View {
                 Button("Add preference…") {addingMemory=true}
                 Spacer()
             }
-        }.padding(24).frame(width:620,height:430).sheet(item:$editingMemory) {ReviewFeedbackEditor(model:model,expected:$0)}.sheet(isPresented:$addingMemory) {ReviewFeedbackEditor(model:model)}.onChange(of:model.chatGPT.activeID) {dismiss()}
+        }.padding(24).frame(width:620,height:430).sheet(item:$editingMemory) {ReviewFeedbackEditor(model:model,expected:$0)}.sheet(isPresented:$addingMemory) {ReviewFeedbackEditor(model:model)}.onChange(of:model.inference.activeID) {dismiss()}
     }
 }

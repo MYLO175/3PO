@@ -16,7 +16,7 @@ struct DashboardView: View {
     private var accountExclusions: Binding<Set<String>> { widgetConfiguration.map { binding in Binding(get:{ binding.wrappedValue.sourceExclusions },set:{ binding.wrappedValue.sourceExclusions = $0 }) } ?? $model.excludedAccounts }
     private var visibleReminders: [TaskItem] { model.reminderData.reminders.filter { !listExclusions.wrappedValue.contains($0.listID) } }
     private func reminderListExpanded(_ listID:String)->Binding<Bool> {
-        let registration=model.chatGPT.activeID
+        let registration=model.inference.activeID
         return Binding(get:{
             if let widgetConfiguration {return !(widgetConfiguration.wrappedValue.reminderCollapsedLists?[registration] ?? []).contains(listID)}
             return !(legacyCollapsedReminderLists[registration] ?? []).contains(listID)
@@ -420,7 +420,7 @@ struct SettingsView: View {
                     }
                 case "Connections":
                     ChatGPTConnectionView(connection:model.chatGPT)
-                    WhatsAppSettings(service:model.whatsapp,registration:model.chatGPT.activeID,heartbeatReviewEnabled:model.heartbeat.whatsappEnabled)
+                    WhatsAppSettings(service:model.whatsapp,registration:model.inference.activeID,heartbeatReviewEnabled:model.heartbeat.whatsappEnabled)
                     WeatherSettings(weather:model.weather)
                 case "Assistant":
                     AssistantSourceSettings(model:model,assistant:model.assistant,page:.assistant)
@@ -450,8 +450,8 @@ struct SettingsView: View {
             .accessibilityLabel("\(selectedPage == "Memory" ? "Context" : selectedPage) settings")
         }
         .frame(minWidth:760,minHeight:620)
-        .sheet(isPresented:$inspectMemory) { ContextPagesView(model:model,registration:model.chatGPT.activeID) }
-        .onChange(of:model.chatGPT.activeID) { inspectMemory=false }
+        .sheet(isPresented:$inspectMemory) { ContextPagesView(model:model,registration:model.inference.activeID) }
+        .onChange(of:model.inference.activeID) { inspectMemory=false }
     }
     private func icon(for page:String)->String {
         switch page {
@@ -508,7 +508,7 @@ struct PAHelpSections:View {
                 Text("New briefs and Tasks suggestions can use permitted source memories. Sources and coverage → Memory supplied shows the facts they received, with evidence. Changed facts, withdrawn access, revised email assessments or later WhatsApp replies can set advice aside. Refresh prepares the current brief using available sources.").font(.callout)
             }
             Section("Background review and usage") {
-                Text(model.heartbeat.statusFor(model.chatGPT.activeID)).font(.callout).foregroundStyle(.secondary)
+                Text(model.heartbeat.statusFor(model.inference.activeID)).font(.callout).foregroundStyle(.secondary)
                 Text(model.emailSummaries.enabled ? "Incoming email assessment is on. It starts from new mail and coverage can be partial." : "Incoming email assessment is off.").font(.callout).foregroundStyle(.secondary)
                 Text("Mail collection can continue without AI. A review can use multiple model calls; the advanced daily call cap applies to email and proactive communication review only. It is separate from your ChatGPT account's subscription availability.").font(.callout)
                 Text("Mail accounts are reviewed independently after their arrival checks finish. Unavailable accounts keep their cache and pending work; their old emails and source memories do not enter the fresh comparison. Settings → Background shows which accounts were reviewed and which are waiting. Email assessment can continue while a Calendar/Reminders comparison is waiting. Source collection retries unavailable accounts. A failed heartbeat keeps completed work and checks fresh information at the next scheduled interval.").font(.callout)

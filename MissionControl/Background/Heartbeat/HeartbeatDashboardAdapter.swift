@@ -88,13 +88,13 @@ import SwiftData
         func otherLearning(_ busy:Bool,_ runID:String?)->Bool {busy && !(runID.map{model.heartbeat.ownsLearningRun($0)} ?? false)}
         let learning=otherLearning(model.graphiti.busy,model.graphiti.ownedHeartbeatRunID) || otherLearning(model.contextConsolidation.busy,model.contextConsolidation.ownedHeartbeatRunID) || otherLearning(model.sourceLearning.busy,model.sourceLearning.ownedHeartbeatRunID) || otherLearning(model.nativeSourceLearning.busy,model.nativeSourceLearning.ownedHeartbeatRunID) || otherLearning(model.memoryMaintenance.busy,model.memoryMaintenance.ownedHeartbeatRunID) || otherLearning(model.memoryLearning.busy,model.memoryLearning.ownedHeartbeatRunID) || otherLearning(model.lifeOrganisation.busy,model.lifeOrganisation.ownedHeartbeatRunID)
         let feedback=model.emailSummaries.feedback.activeID != nil && !(model.emailSummaries.feedback.ownedHeartbeatRunID.map{model.heartbeat.ownsLearningRun($0)} ?? false)
-        let foreground=model.reviewWork.busy || feedback || model.assistant.busy || model.chatGPT.busy || model.projectPlacement.busy || learning
-        let proposals=model.proactive.state.accounts[model.chatGPT.activeID]
+        let foreground=model.reviewWork.busy || feedback || model.assistant.busy || model.inference.busy || model.projectPlacement.busy || learning
+        let proposals=model.proactive.state.accounts[model.inference.activeID]
         let preview=["--sample","--preview-review-inbox","--preview-settings"].contains{ProcessInfo.processInfo.arguments.contains($0)}
-        return .init(registration:model.chatGPT.activeID,model:model.chatGPT.selectedModel,sourceSettings:model.proactive.sourceSettingsScope(model),scope:model.proactive.scope(model),whatsappChoices:model.whatsapp.choicesRevision,whatsappIdentity:model.whatsapp.linkedIdentity,contextEnabled:model.assistant.contextEnabled,inferenceVerified:model.chatGPT.inferenceVerified,usagePaused:model.chatGPT.usagePaused,workBusy:foreground || model.writing || model.briefings.busy || model.proactive.busy || model.emailSummaries.busy,foregroundBusy:foreground,permitted:!preview,emailEnabled:model.emailSummaries.enabled,proposalsEnabled:model.proactive.enabled,proposalAllowanceReached:proposals?.day == BriefingRules.day(model.heartbeat.currentTime) && (proposals?.attempts ?? 0) >= 96)
+        return .init(registration:model.inference.activeID,model:model.inference.selectedModel,sourceSettings:model.proactive.sourceSettingsScope(model),scope:model.proactive.scope(model),whatsappChoices:model.whatsapp.choicesRevision,whatsappIdentity:model.whatsapp.linkedIdentity,contextEnabled:model.assistant.contextEnabled,inferenceVerified:model.inference.inferenceVerified,usagePaused:model.inference.usagePaused,workBusy:foreground || model.writing || model.briefings.busy || model.proactive.busy || model.emailSummaries.busy,foregroundBusy:foreground,permitted:!preview,emailEnabled:model.emailSummaries.enabled,proposalsEnabled:model.proactive.enabled,proposalAllowanceReached:proposals?.day == BriefingRules.day(model.heartbeat.currentTime) && (proposals?.attempts ?? 0) >= 96)
     }
     private static func sources(_ model:DashboardModel,whatsappReady:Bool)->HeartbeatSources {
-        let registration=model.chatGPT.activeID,access=model.whatsapp.access(for:registration)
+        let registration=model.inference.activeID,access=model.whatsapp.access(for:registration)
         let accounts=model.mailData.accounts.filter{!model.assistant.excludedAccounts.contains($0.id)}
         return .init(mailReview:.collected(index:model.mailIndex,snapshot:model.mailData,excluded:model.assistant.excludedAccounts),accounts:accounts,enabledMail:Set(accounts.map(\.id)),nativeReady:model.heartbeatNativeReady,wantsWhatsApp:(model.heartbeat.whatsappEnabled || access.briefEnabled) && access.enabled && !access.chats.isEmpty,whatsappReady:whatsappReady)
     }
@@ -104,7 +104,7 @@ import SwiftData
             var one=mailReview;one.windows=one.windows.filter{$0.key == id}
             return model.emailSummaries.hasPendingIncoming(model,mailReview:one) || !nativeReady || (model.proactive.enabled && model.proactive.hasPendingSources(model,mailReview:mailReview,whatsappReady:whatsappReady,mailAccountID:id))
         })
-        return .init(any:model.emailSummaries.reviewGuidancePending(model.chatGPT.activeID) || model.emailSummaries.feedback.items(model.chatGPT.activeID).contains{$0.state == .queued && $0.heartbeatEligible == true} || model.emailSummaries.hasPendingIncoming(model,mailReview:mailReview) || (nativeReady && proposals),mailAccounts:accounts,proposals:proposals || (model.proactive.enabled && environment(model).proposalAllowanceReached))
+        return .init(any:model.emailSummaries.reviewGuidancePending(model.inference.activeID) || model.emailSummaries.feedback.items(model.inference.activeID).contains{$0.state == .queued && $0.heartbeatEligible == true} || model.emailSummaries.hasPendingIncoming(model,mailReview:mailReview) || (nativeReady && proposals),mailAccounts:accounts,proposals:proposals || (model.proactive.enabled && environment(model).proposalAllowanceReached))
     }
     private static func activity(_ model:DashboardModel,registration:String,runID:String)->HeartbeatActivity {
         .init(preparedItems:model.proactive.state.records.filter{$0.registration == registration}.count,emailDrafts:model.emailSummaries.records.filter{$0.registration == registration && $0.replyDraft != nil}.count,whatsappDrafts:model.proactive.state.records.filter{$0.registration == registration && $0.replyDraft != nil}.count,handled:model.emailSummaries.records.filter{$0.registration == registration && $0.handling != nil}.count,briefUpdated:model.briefings.state.updatedBriefs?[registration]?.heartbeatID == runID,questions:model.briefings.state.reviewQuestions?.filter{$0.snapshot.registration == registration && $0.snapshot.heartbeatID == runID}.count ?? 0)
@@ -114,7 +114,7 @@ import SwiftData
         return SHA256.hash(data:Data(values.joined(separator:"\n").utf8)).map{String(format:"%02x",$0)}.joined()
     }
     private static func sourceFingerprint(_ model:DashboardModel,mailReview:MailReviewScope,whatsappReady:Bool,whatsappEnabled:Bool)->String {
-        let a=model.assistant,registration=model.chatGPT.activeID
+        let a=model.assistant,registration=model.inference.activeID
         let mail=mailReview.accountIDs.sorted().map{$0+":"+mailFingerprint(model,account:$0)}
         let access=model.whatsapp.access(for:registration)
         let wa=whatsappReady && whatsappEnabled && access.enabled && model.whatsapp.connected ? model.whatsapp.messages.filter{access.chats.contains($0.chat)}.map{SourceContextRules.revision($0)}.sorted() : []
@@ -122,7 +122,7 @@ import SwiftData
         let events=calendar.events.filter{!a.excludedCalendars.contains($0.calendarID)}.map{$0.id+":"+$0.title+":"+$0.start.ISO8601Format()+":"+$0.end.ISO8601Format()}.sorted()
         let tasks=model.reminderData.reminders.filter{!a.excludedLists.contains($0.listID)}.map{$0.id+":"+$0.title+":"+($0.due?.ISO8601Format() ?? "")}.sorted()
         let life=a.projects.items(registration).map{$0.id.uuidString+":"+$0.revision.uuidString}.sorted()
-        let value=[model.proactive.scope(model),String(whatsappEnabled),String(model.emailSummaries.enabled),String(model.proactive.enabled),model.chatGPT.selectedModel,EmailNativeEvidence.hash(model.completedReminders),EmailNativeEvidence.hash(model.emailSummaries.dismissalContext(model))]+mail+wa+events+tasks+life
+        let value=[model.proactive.scope(model),String(whatsappEnabled),String(model.emailSummaries.enabled),String(model.proactive.enabled),model.inference.selectedModel,EmailNativeEvidence.hash(model.completedReminders),EmailNativeEvidence.hash(model.emailSummaries.dismissalContext(model))]+mail+wa+events+tasks+life
         return SHA256.hash(data:Data(value.joined(separator:"\n").utf8)).map{String(format:"%02x",$0)}.joined()
     }
 }
@@ -135,7 +135,7 @@ import SwiftData
     func scheduleStatus(_ model:DashboardModel)->String {scheduleStatus(runtime:HeartbeatDashboardAdapter.runtime(model))}
     func manualCheckBlockReason(_ model:DashboardModel)->String? {manualCheckBlockReason(runtime:HeartbeatDashboardAdapter.runtime(model))}
     func manualCheckHelp(_ model:DashboardModel)->String {manualCheckHelp(runtime:HeartbeatDashboardAdapter.runtime(model))}
-    func mailReviewStatus(_ model:DashboardModel)->String {mailReviewStatus(registration:model.chatGPT.activeID,accounts:model.mailData.accounts.filter{!model.assistant.excludedAccounts.contains($0.id)})}
+    func mailReviewStatus(_ model:DashboardModel)->String {mailReviewStatus(registration:model.inference.activeID,accounts:model.mailData.accounts.filter{!model.assistant.excludedAccounts.contains($0.id)})}
 }
 
 #if DEBUG

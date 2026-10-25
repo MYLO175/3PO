@@ -14,9 +14,9 @@ struct ReviewPolicyView: View {
     @State private var error: String?
     init(model: DashboardModel) {
         self.model = model
-        registration = model.chatGPT.activeID
+        registration = model.inference.activeID
         storage = model.container.map(ObjectIdentifier.init)
-        let capture = model.emailSummaries.policy(model.chatGPT.activeID)
+        let capture = model.emailSummaries.policy(model.inference.activeID)
         _expected = State(initialValue: capture); _text = State(initialValue: capture.text)
     }
     var body: some View {
@@ -64,10 +64,10 @@ struct ReviewPolicyView: View {
             if let error = error ?? model.emailSummaries.reviewPolicies.error {Text(error).font(.caption).foregroundStyle(.orange)}
         }.padding(24).frame(width: 680, height: 660)
         .sheet(isPresented: $showFeedback) {ReviewRelevancePreferencesView(model: model)}
-        .onChange(of: model.chatGPT.activeID) {dismiss()}
+        .onChange(of: model.inference.activeID) {dismiss()}
     }
     private func save() {
-        guard registration == model.chatGPT.activeID, storage == model.container.map(ObjectIdentifier.init) else {error = "The account changed. Reopen Review guidance before saving."; return}
+        guard registration == model.inference.activeID, storage == model.container.map(ObjectIdentifier.init) else {error = "The account changed. Reopen Review guidance before saving."; return}
         let saved: Bool
         if resetting && text == ReviewPolicyRules.defaultText {saved = model.emailSummaries.resetPolicy(registration: registration, expected: expected)}
         else if let selectedVersion, text == selectedVersion.text {saved = model.emailSummaries.restorePolicy(selectedVersion, expected: expected)}

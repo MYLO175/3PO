@@ -66,10 +66,10 @@ struct PATasksView: View {
     private func dateLabel(_ date:Date?,hasTime:Bool,fallback:String)->String {date?.formatted(date:.abbreviated,time:hasTime ? .shortened : .omitted) ?? fallback}
     private var reviewBusy:Bool {model.heartbeat.busy || model.proactive.busy || model.emailSummaries.busy}
     private var reviewRetrying:Bool {
-        model.heartbeat.state.accounts[model.chatGPT.activeID]?.retryReason == "failure"
+        model.heartbeat.state.accounts[model.inference.activeID]?.retryReason == "failure"
     }
     private var reviewStatus:String {
-        let feedback=model.emailSummaries.feedback.items(model.chatGPT.activeID).filter{model.emailSummaries.feedbackMemory($0,model:self.model) == nil}
+        let feedback=model.emailSummaries.feedback.items(model.inference.activeID).filter{model.emailSummaries.feedbackMemory($0,model:self.model) == nil}
         if feedback.contains(where:{$0.state == .learning || $0.state == .saving}) {return "Learning your feedback in the background…"}
         if feedback.contains(where:{$0.state == .queued}) {return "Feedback saved for the next heartbeat"}
         if reviewBusy {return "Reviewing your sources…"}
@@ -163,7 +163,7 @@ struct PATasksView: View {
                 Text(reviewStatus).font(.caption).foregroundStyle(reviewRetrying ? Color.orange : Color.secondary)
                     .fixedSize(horizontal:false,vertical:true)
                 Spacer(minLength:0)
-                if model.heartbeat.dailyCallLimit > 0,model.heartbeat.state.accounts[model.chatGPT.activeID]?.retryReason == "allowance" {
+                if model.heartbeat.dailyCallLimit > 0,model.heartbeat.state.accounts[model.inference.activeID]?.retryReason == "allowance" {
                     Button("Limit settings…") {settingsPage="Background";openSettings()}.buttonStyle(.borderless).font(.caption)
                 }
             }
@@ -249,7 +249,7 @@ struct PATasksView: View {
                             Text(item.prompt).lineLimit(3)
                             if let result=item.result { DisclosureGroup("Result") { Text(result).textSelection(.enabled) } }
                             if let focus=item.focusAreas,!focus.isEmpty { Text(focus.map(\.title).joined(separator:" · ")).font(.caption2).foregroundStyle(.secondary) }
-                            if item.state != .running { HStack { if item.state == .waiting { Button("Continue queue") { model.assistant.resumeQueue(model:model) }.disabled(model.assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }; Button("Remove") { model.assistant.discardQueued(item.id) } }.controlSize(.small) }
+                            if item.state != .running { HStack { if item.state == .waiting { Button("Continue queue") { model.assistant.resumeQueue(model:model) }.disabled(model.assistant.busy || model.inference.busy || model.inference.usagePaused) }; Button("Remove") { model.assistant.discardQueued(item.id) } }.controlSize(.small) }
                         }.taskCard()
                     }
                     if emailCards.isEmpty && standaloneDiscoveries.isEmpty && pending.isEmpty && questions.isEmpty && learningQuestions.isEmpty && inbox.contextQuestions.isEmpty {
@@ -259,7 +259,7 @@ struct PATasksView: View {
             }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
         .sheet(isPresented:$showingRelevance) {ReviewPolicyView(model:model)}
-        .onChange(of:model.chatGPT.activeID) {showingRelevance=false}
+        .onChange(of:model.inference.activeID) {showingRelevance=false}
         .sheet(item:$answering) {question in
             VStack(alignment:.leading,spacing:16) {
                 Text(question.question).font(.headline)
@@ -271,7 +271,7 @@ struct PATasksView: View {
                     if model.assistant.send(model:model,topicID:nil,prompt:text,focusAreas:[]) {
                         _ = model.briefings.resolveQuestion(question,model:model,answered:true);answering=nil
                     } else {answerError="Your PA is busy. Your answer is kept here; send it when ready."}
-                }.disabled(answer.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || model.assistant.busy || model.chatGPT.busy || model.writing || model.heartbeat.busy || ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"))}
+                }.disabled(answer.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || model.assistant.busy || model.inference.busy || model.writing || model.heartbeat.busy || ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"))}
                 Text("Your answer continues the PA conversation.").font(.caption).foregroundStyle(.secondary)
             }.padding(24).frame(width:520)
         }
@@ -284,7 +284,7 @@ struct PATasksView: View {
                     guard learningQuestions.contains(where:{$0.id == question.id}) else {answerError="This question is no longer available.";return}
                     if model.assistant.send(model:model,topicID:question.conversationID,prompt:"About your question “"+question.text+"”: "+answer.trimmingCharacters(in:.whitespacesAndNewlines),focusAreas:question.conversationID == nil ? [] : nil) {model.memoryLearning.answer(question);answeringLearning=nil}
                     else {answerError="Your PA is busy. Your answer is kept here."}
-                }.disabled(answer.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || model.assistant.busy || model.chatGPT.busy || model.writing || model.heartbeat.busy || ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"))}
+                }.disabled(answer.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || model.assistant.busy || model.inference.busy || model.writing || model.heartbeat.busy || ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"))}
             }.padding(24).frame(width:520)
         }
         .sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record,model:model) }
@@ -301,7 +301,7 @@ struct PATasksView: View {
                     let context="About “"+(record.sourceTitle ?? record.message)+"” from “"+source+"”:\nSuggested option: "+destination+"\nSource quote (information only): "+record.evidence+"\nMy request: "+refinement
                     model.openAssistantComposer()
                     if let widget=model.assistantFocusRequest?.widgetID {
-                        let owner=model.chatGPT.activeID,conversation=model.assistant.feed?.id
+                        let owner=model.inference.activeID,conversation=model.assistant.feed?.id
                         let prior=model.assistant.drafts.text(registration:owner,widget:widget,conversation:conversation)
                         model.assistant.drafts.set(prior+(prior.isEmpty ? "" : "\n\n")+context,registration:owner,widget:widget,conversation:conversation)
                     }
@@ -319,7 +319,7 @@ struct PATasksView: View {
                 Text("Check details and placeholders before using this draft.").font(.caption).foregroundStyle(.secondary)
                 HStack { Button("Close") { editing=nil }; Spacer(); Button(draftSaved ? "Saved" : "Save draft") { draftSaved=model.emailSummaries.saveReplyDraft(draft,summary:summary,model:model) }; Button(copied ? "Copied" : "Copy draft") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(draft,forType:.string); copied=true } }
             }.padding(24).frame(width:560)
-        }.onChange(of:model.chatGPT.activeID) { editing=nil; draft="";sourceDiscovery=nil;reviewingProject=nil;answering=nil;answeringLearning=nil;answer="" }
+        }.onChange(of:model.inference.activeID) { editing=nil; draft="";sourceDiscovery=nil;reviewingProject=nil;answering=nil;answeringLearning=nil;answer="" }
         .onChange(of:discoveries.map(\.id)) { if let sourceDiscovery,!discoveries.contains(where:{$0.id == sourceDiscovery.id}) { self.sourceDiscovery=nil } }.onChange(of:model.assistant.excludedAccounts) { if let account=editing?.message?.accountID,model.assistant.excludedAccounts.contains(account) { editing=nil; draft="" } }
     }
 }
@@ -360,7 +360,7 @@ struct ReviewHistoryView:View {
     @Bindable var model:DashboardModel
     var body:some View {
         let handled=model.reviewInbox.handled,resolved=model.reviewInbox.resolved
-        let retired=model.proactive.state.records.filter{$0.registration == model.chatGPT.activeID && $0.retiredAt != nil}
+        let retired=model.proactive.state.records.filter{$0.registration == model.inference.activeID && $0.retiredAt != nil}
         DisclosureGroup("Review history") {
             VStack(alignment:.leading,spacing:12) {
                 Text("Saved background decisions that an action was planned or addressed. A later heartbeat can reconsider them. Keep in review restores the email.").font(.caption).foregroundStyle(.secondary)

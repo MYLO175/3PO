@@ -72,7 +72,7 @@ import Foundation
     static func approvalAvailable(_ proposal:AssistantActionProposal,model:DashboardModel)->Bool {
         guard proposal.snapshot.count <= 600_000,let value=try? JSONDecoder().decode(ApprovalSnapshot.self,from:proposal.snapshot) else {return false}
         let assistant=model.assistant
-        return value.registration == model.chatGPT.activeID && value.storage == model.reviewStorageIdentity && value.contextEnabled == assistant.contextEnabled && value.calendars == assistant.excludedCalendars && value.lists == assistant.excludedLists && value.accounts == assistant.excludedAccounts && value.whatsappIdentity == model.whatsapp.linkedIdentity && value.whatsappAccess == model.whatsapp.access(for:value.registration)
+        return value.registration == model.inference.activeID && value.storage == model.reviewStorageIdentity && value.contextEnabled == assistant.contextEnabled && value.calendars == assistant.excludedCalendars && value.lists == assistant.excludedLists && value.accounts == assistant.excludedAccounts && value.whatsappIdentity == model.whatsapp.linkedIdentity && value.whatsappAccess == model.whatsapp.access(for:value.registration)
     }
     static func performApproval(_ proposal:AssistantActionProposal,model:DashboardModel,valid:@escaping NativeWriteValidity) async throws->String {
         guard Self.approvableTools.contains(proposal.toolName),approvalAvailable(proposal,model:model),model.heartbeat.deviceAvailable else {throw ActionFailure.message("The captured account, source access or storage is unavailable. No change was attempted.")}
@@ -191,7 +191,7 @@ import Foundation
     /// Native revisions, source permissions, durable receipts and readback still apply.
     func executeMCP(_ call: PAFunctionCall, requestID: UUID?, valid: @escaping NativeWriteValidity) async throws -> String {
         guard MCPBridgeContract.nativeReads.contains(call.name) || MCPBridgeContract.nativeWrites.contains(call.name),
-              valid(), registration == model.chatGPT.activeID,
+              valid(), registration == model.inference.activeID,
               !MCPBridgeContract.nativeWrites.contains(call.name) || requestID != nil else { throw ActionFailure.message("External invocation is unavailable.") }
         if LifeWorkspaceTools.mutations.contains(call.name), !externalWorkspaceRead { throw ActionFailure.message("Read Projects before changing project data or its display.") }
         externalHostInvocation = true
@@ -213,7 +213,7 @@ import Foundation
         self.evaluationMemory=evaluationMemory;self.evaluationProjects=evaluationProjects;self.focusAreas=focusAreas
         self.historyLookup = historyLookup
         self.localMail = mail ?? MailLookup(); self.history = history; self.memoryBackend = memoryBackend
-        self.model = model;self.inferenceModel=inferenceModel ?? model.chatGPT.selectedModel; self.human = human; self.humanContext = humanContext; self.topicID = topicID; self.turnID = turnID; registration = model.chatGPT.activeID
+        self.model = model;self.inferenceModel=inferenceModel ?? model.inference.selectedModel; self.human = human; self.humanContext = humanContext; self.topicID = topicID; self.turnID = turnID; registration = model.inference.activeID
         if evaluationMemory == nil && evaluationProjects == nil {
             emails = Dictionary(uniqueKeysWithValues:model.mailData.messages.filter { !model.assistant.excludedAccounts.contains($0.accountID) }.map { ($0.id,$0) })
         }
@@ -221,7 +221,7 @@ import Foundation
     private func json(_ value: Any) throws -> String { String(data:try JSONSerialization.data(withJSONObject:value,options:[.sortedKeys]),encoding:.utf8)! }
     func execute(_ call: PAFunctionCall, valid: @escaping NativeWriteValidity) async throws -> String {
         try Task.checkCancellation()
-        guard registration == model.chatGPT.activeID else { throw ActionFailure.message("Account changed; tool stopped.") }
+        guard registration == model.inference.activeID else { throw ActionFailure.message("Account changed; tool stopped.") }
         var args = try PAToolProtocol.arguments(call)
         if ["save_memory","remember_context"].contains(call.name) {
             if let quote=MemoryEvidence.match(args["evidence"] as? String,human:human) { args["evidence"]=quote }
@@ -369,7 +369,7 @@ import Foundation
             let terms = args["terms"] as! [String], names = args["folders"] as! [String]
             guard !names.isEmpty, names.count <= 3, names.allSatisfy({ MailFolderRole(rawValue:$0) != nil }) else { throw ActionFailure.message("Unknown mail folder role.") }
             let plan = MailLookupPlan(message:"",terms:terms,start:text("start"),end:text("end"))
-            let output = try await localMail.context(request:humanContext,model:model,suppliedPlan:plan,suppliedRoles:Set(names.compactMap(MailFolderRole.init(rawValue:))))
+            let output = try await localMail.context(request:humanContext,model:model,suppliedPlan:plan,suppliedRoles:Set(names.compactMap(MailFolderRole.init(rawValue:))),inferenceModel:inferenceModel)
             localMail.commitAnswer()
             for message in localMail.results { emails[message.id] = message; issuedLifeMail.insert(message.id) }
             return output
@@ -377,7 +377,7 @@ import Foundation
             guard localMail.hasMore || localMail.hasUnavailable else { return try json(["coverage":"No pending search in this turn. Start search_mail using the current thread's human query."]) }
             let retry = args["retryUnavailable"] as? Bool == true
             guard !retry || externalHostInvocation || MailLookupRules.retryRequested(human) else { throw ActionFailure.message("Failed Mail reads require an explicit request to try again.") }
-            let output = try await localMail.context(request:retry ? "Retry unavailable mail reads." : "Continue the email search.",model:model)
+            let output = try await localMail.context(request:retry ? "Retry unavailable mail reads." : "Continue the email search.",model:model,inferenceModel:inferenceModel)
             localMail.commitAnswer(); for message in localMail.results { emails[message.id] = message; issuedLifeMail.insert(message.id) }; return output
         case "read_email":
             guard let message = emails[text("id")!], !assistant.excludedAccounts.contains(message.accountID) else { throw ActionFailure.message("Read/search an enabled email's exact ID first.") }
@@ -500,7 +500,7 @@ import Foundation
             guard LifeMemoryOrganisation.valid(value,record:record) else { throw ActionFailure.message("Unsupported organisation or self identity; memory was not changed.") }
             let revision=memory.revision
             // Original evidence, not source titles/instructions, is used for independent classification.
-            let checked=try await model.chatGPT.streamResponse(input:[["role":"user","content":LifeOrganisationRules.input([record])+"\nProposed metadata DATA: "+String(data:try JSONEncoder().encode(LifeOrganisationEntry(id:id,organisation:value)),encoding:.utf8)!]],instructions:LifeOrganisationRules.instructions,model:inferenceModel,purpose:.organisation) { _ in }
+            let checked=try await model.inference.streamResponse(input:[["role":"user","content":LifeOrganisationRules.input([record])+"\nProposed metadata DATA: "+String(data:try JSONEncoder().encode(LifeOrganisationEntry(id:id,organisation:value)),encoding:.utf8)!]],instructions:LifeOrganisationRules.instructions,model:inferenceModel,purpose:.organisation) { _ in }
             try Task.checkCancellation()
             guard valid(),let accepted=LifeOrganisationRules.decode(checked,records:[record]),let final=accepted.first(where:{$0.id == id}) else { throw ActionFailure.message("Organisation did not match its original human evidence. Existing facts are preserved.") }
             guard memory.organise(id,value:final.organisation,expectedRevision:revision) else { throw ActionFailure.message(memory.error ?? "Organisation could not be saved.") }

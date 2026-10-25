@@ -43,7 +43,7 @@ struct LifeProjectWidget: View {
     @State private var viewportHeight:CGFloat=0
     @State private var precedingNotesHeight:CGFloat=0
     @State private var boardScroll=LifeBoardScrollController()
-    private var registration: String { previewRegistration ?? model.chatGPT.activeID }
+    private var registration: String { previewRegistration ?? model.inference.activeID }
     private var store: LifeWorkspaceStore { model.assistant.projects }
     @State private var projectionCache = LifeProjectProjectionCache()
     private var index: LifeProjectIndex {
@@ -253,7 +253,7 @@ struct LifeProjectWidget: View {
     }
     private func complete(_ item:LifeItem) { setStatus(item,item.status == .done ? .planned : .done) }
     private func setStatus(_ item:LifeItem,_ status:LifeItemStatus) {
-        guard registration == model.chatGPT.activeID,item.registration == registration else { return }
+        guard registration == model.inference.activeID,item.registration == registration else { return }
         var value=item;value.status=status
         do { _ = try store.save(value,expected:item.revision);notice=nil } catch { notice=error.localizedDescription }
     }
@@ -326,7 +326,7 @@ struct LifeProjectWidget: View {
     private func folderGesture(_ item:LifeItem)->some Gesture {
         DragGesture(minimumDistance:6,coordinateSpace:.named("project-folders"))
             .onChanged { value in
-                guard !store.readOnly,registration == model.chatGPT.activeID else { return }
+                guard !store.readOnly,registration == model.inference.activeID else { return }
                 if folderDrag == nil {
                     folderDrag = .init(capture:.init(id:item.id,registration:registration,revision:store.revision),page:current?.id,parent:item.parentID,peers:reorderPeers(item).map(\.id),frames:folderFrames,translation:.zero)
                 }
@@ -339,7 +339,7 @@ struct LifeProjectWidget: View {
                 guard let captured=folderDrag,captured.capture.id == item.id,
                       let insertion=LifeFolderOrder.insertion(at:value.location,dragging:item.id,orderedIDs:captured.peers,frames:captured.frames) else { return }
                 do {
-                    try LifeFolderReorder.apply(item.id,before:insertion.before,parent:captured.parent,capturedPage:captured.page,currentPage:current?.id,registration:captured.capture.registration,activeRegistration:model.chatGPT.activeID,capturedIDs:Set(captured.peers),currentIDs:Set(reorderPeers(item).map(\.id)),expectedRevision:captured.capture.revision,store:store)
+                    try LifeFolderReorder.apply(item.id,before:insertion.before,parent:captured.parent,capturedPage:captured.page,currentPage:current?.id,registration:captured.capture.registration,activeRegistration:model.inference.activeID,capturedIDs:Set(captured.peers),currentIDs:Set(reorderPeers(item).map(\.id)),expectedRevision:captured.capture.revision,store:store)
                     notice=nil
                 } catch { notice=error.localizedDescription }
             }
@@ -349,7 +349,7 @@ struct LifeProjectWidget: View {
         guard let index=peers.firstIndex(where:{$0.id == item.id}),earlier ? index > 0 : index+1 < peers.count else { return }
         let before=earlier ? peers[index-1].id : peers.dropFirst(index+2).first?.id
         do {
-            try LifeFolderReorder.apply(item.id,before:before,parent:item.parentID,capturedPage:current?.id,currentPage:current?.id,registration:registration,activeRegistration:model.chatGPT.activeID,capturedIDs:Set(peers.map(\.id)),currentIDs:Set(peers.map(\.id)),expectedRevision:store.revision,store:store)
+            try LifeFolderReorder.apply(item.id,before:before,parent:item.parentID,capturedPage:current?.id,currentPage:current?.id,registration:registration,activeRegistration:model.inference.activeID,capturedIDs:Set(peers.map(\.id)),currentIDs:Set(peers.map(\.id)),expectedRevision:store.revision,store:store)
             notice=nil
         } catch { notice=error.localizedDescription }
     }
@@ -382,7 +382,7 @@ struct LifeProjectWidget: View {
                 Button("Edit details…") { editing=item };Button("Edit notes…") { notesEditing=LifeNoteEditing(item:item,noteID:item.notes.isEmpty ? nil : item.id) };Button("Move…") { moving=item };Button("Link something…") { linking=item };Button("Match PA understanding…") { matching=item };Divider();Button("Delete…",role:.destructive) { deleting=item }
             }
         if filing {
-            actions.onDrag { drag = .init(id:item.id,registration:registration,revision:store.revision);let provider=NSItemProvider();provider.registerDataRepresentation(forTypeIdentifier:LifeProjectDrag.type.identifier,visibility:.ownProcess) { complete in complete(Data(item.id.uuidString.utf8),nil);return nil };return provider }.onDrop(of:[LifeProjectDrag.type],delegate:LifeProjectDrop(target:item.id,parent:item.kind.isWork ? item.parentID : item.id,before:item.kind.isWork ? item.id : nil,drag:$drag,hover:$dropHover,key:item.id.uuidString,store:store,activeRegistration:{model.chatGPT.activeID},report:{notice=$0}))
+            actions.onDrag { drag = .init(id:item.id,registration:registration,revision:store.revision);let provider=NSItemProvider();provider.registerDataRepresentation(forTypeIdentifier:LifeProjectDrag.type.identifier,visibility:.ownProcess) { complete in complete(Data(item.id.uuidString.utf8),nil);return nil };return provider }.onDrop(of:[LifeProjectDrag.type],delegate:LifeProjectDrop(target:item.id,parent:item.kind.isWork ? item.parentID : item.id,before:item.kind.isWork ? item.id : nil,drag:$drag,hover:$dropHover,key:item.id.uuidString,store:store,activeRegistration:{model.inference.activeID},report:{notice=$0}))
             .overlay(RoundedRectangle(cornerRadius:12).stroke(dropHover == item.id.uuidString ? palette[.accent] : .clear,lineWidth:2))
         } else {actions}
     }
@@ -407,7 +407,7 @@ struct LifeProjectWidget: View {
                 let depth=max(0,index.path(item).count-(current.map{index.path($0).count} ?? 0)-1)
                 VStack(spacing:0) {
                     if drag != nil { Rectangle().fill(dropHover == "before:"+item.id.uuidString ? palette[.accent] : palette[.border].opacity(0.4)).frame(height:6)
-                        .onDrop(of:[LifeProjectDrag.type],delegate:LifeProjectDrop(target:item.id,parent:item.parentID,before:item.id,drag:$drag,hover:$dropHover,key:"before:"+item.id.uuidString,store:store,activeRegistration:{model.chatGPT.activeID},report:{notice=$0})) }
+                        .onDrop(of:[LifeProjectDrag.type],delegate:LifeProjectDrop(target:item.id,parent:item.parentID,before:item.id,drag:$drag,hover:$dropHover,key:"before:"+item.id.uuidString,store:store,activeRegistration:{model.inference.activeID},report:{notice=$0})) }
                     HStack(spacing:5) {
                         if !index.children(of:item.id).isEmpty { Button { toggle(item.id) } label:{Image(systemName:collapsed(item.id) ? "chevron.right" : "chevron.down").frame(width:16)}.buttonStyle(.plain).accessibilityLabel((collapsed(item.id) ? "Expand " : "Collapse ")+item.title) }
                         else { Color.clear.frame(width:16,height:1) }
@@ -463,13 +463,13 @@ struct LifeProjectWidget: View {
     private func boardGesture(_ item:LifeItem)->some Gesture {
         DragGesture(minimumDistance:6,coordinateSpace:.named("project-board"))
             .onChanged { value in
-                guard !store.readOnly,registration == model.chatGPT.activeID else { return }
+                guard !store.readOnly,registration == model.inference.activeID else { return }
                 if boardDrag == nil { boardDrag = .init(capture:.init(id:item.id,registration:registration,revision:store.revision),parent:current?.id,permittedIDs:Set(work.map(\.id)),translation:.zero) }
                 guard boardDrag?.capture.id == item.id else { return }
                 boardDrag?.translation=value.translation
                 dropHover=LifeTaskStage.allCases.first(where:{stageFrames[$0.id]?.contains(value.location) == true}).map{"stage:"+$0.id}
                 boardScroll.track(value.location) { delta,point in
-                    guard boardDrag?.capture.id == item.id,boardDrag?.capture.revision == store.revision,registration == model.chatGPT.activeID else {boardScroll.stop();return}
+                    guard boardDrag?.capture.id == item.id,boardDrag?.capture.revision == store.revision,registration == model.inference.activeID else {boardScroll.stop();return}
                     boardDrag?.translation.height += delta
                     dropHover=LifeTaskStage.allCases.first(where:{stageFrames[$0.id]?.contains(point) == true}).map{"stage:"+$0.id}
                 }
@@ -480,7 +480,7 @@ struct LifeProjectWidget: View {
                 guard let captured=boardDrag,captured.capture.id == item.id,
                       let stage=LifeTaskStage.allCases.first(where:{stageFrames[$0.id]?.contains(location) == true}) else { return }
                 do {
-                    try LifeTaskStageChange.applyDrag(captured.capture.id,stage:stage,capturedParent:captured.parent,currentParent:current?.id,registration:captured.capture.registration,activeRegistration:model.chatGPT.activeID,capturedIDs:captured.permittedIDs,currentIDs:Set(work.map(\.id)),expectedRevision:captured.capture.revision,store:store)
+                    try LifeTaskStageChange.applyDrag(captured.capture.id,stage:stage,capturedParent:captured.parent,currentParent:current?.id,registration:captured.capture.registration,activeRegistration:model.inference.activeID,capturedIDs:captured.permittedIDs,currentIDs:Set(work.map(\.id)),expectedRevision:captured.capture.revision,store:store)
                     notice=nil
                 } catch { notice=error.localizedDescription }
             }
@@ -622,7 +622,7 @@ struct LifeItemEditor: View {
             }.formStyle(.grouped).disabled(saving)
             if item.kind.isWork { Text("Project tasks are separate from Apple Reminders.").font(.caption).foregroundStyle(.secondary) }
             if let error { Text(error).foregroundStyle(.orange).font(.callout) }
-            HStack { Button("Cancel", action: close).keyboardShortcut(.cancelAction).disabled(saving); Spacer(); Button(reviewedSuggestion == nil ? "Save" : "Approve and save") { Task {await save()} }.keyboardShortcut(.defaultAction).disabled(saving || item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || item.registration != model.chatGPT.activeID) }
+            HStack { Button("Cancel", action: close).keyboardShortcut(.cancelAction).disabled(saving); Spacer(); Button(reviewedSuggestion == nil ? "Save" : "Approve and save") { Task {await save()} }.keyboardShortcut(.defaultAction).disabled(saving || item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || item.registration != model.inference.activeID) }
         }.padding(24).frame(width: 500).frame(maxHeight: 720).interactiveDismissDisabled(saving)
         .onChange(of:item.parentID) { parentChanged=true }
         .onAppear {
@@ -634,7 +634,7 @@ struct LifeItemEditor: View {
     }
     private func save() async {
         guard !saving else {return};saving=true;defer{saving=false}
-        guard item.registration == model.chatGPT.activeID else { error = "Account changed; your draft has not been saved."; return }
+        guard item.registration == model.inference.activeID else { error = "Account changed; your draft has not been saved."; return }
         let value = estimate.trimmingCharacters(in: .whitespacesAndNewlines)
         if !value.isEmpty, Int(value).map({ (1...100000).contains($0) }) != true { error = "Enter a positive estimate in minutes, or leave it empty."; return }
         if [.space,.project,.section,.task,.milestone,.resource].contains(item.kind) { item.ownership="workspace" }
@@ -690,9 +690,9 @@ struct LifeItemLinkEditor: View {
             HStack {
                 Button("Cancel", action: close).keyboardShortcut(.cancelAction); Spacer()
                 Button("Link") {
-                    guard item.registration == model.chatGPT.activeID, let selected, LifeWorkspaceContext.resolve(selected, model: model, registration: item.registration, topic: item.conversationID, includeTopics: false) != nil else { error = "The account, source or item changed. Choose a current item."; return }
+                    guard item.registration == model.inference.activeID, let selected, LifeWorkspaceContext.resolve(selected, model: model, registration: item.registration, topic: item.conversationID, includeTopics: false) != nil else { error = "The account, source or item changed. Choose a current item."; return }
                     do { _ = try model.assistant.projects.link(.init(registration: item.registration, conversationID: item.conversationID, from: item.id, relation: relation, target: selected), expected: item.revision); close() } catch { self.error = error.localizedDescription }
-                }.keyboardShortcut(.defaultAction).disabled(selected == nil || item.registration != model.chatGPT.activeID)
+                }.keyboardShortcut(.defaultAction).disabled(selected == nil || item.registration != model.inference.activeID)
             }
         }.padding(24).frame(width: 500)
         .onChange(of: kind) { selected = nil }

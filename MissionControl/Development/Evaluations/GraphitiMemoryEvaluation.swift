@@ -5,9 +5,9 @@ import SwiftData
 /// Live subscription + real local Graphiti; no personal database or native startup.
 @MainActor enum GraphitiMemoryEvaluation {
     static func run(_ model: DashboardModel) async throws -> [String: Any] {
-        let registration = model.chatGPT.activeID
-        guard !registration.isEmpty, model.chatGPT.inferenceVerified, !model.chatGPT.usagePaused else {
-            throw ActionFailure.message("A verified subscription connection is required for the fictional check (selected: \(!registration.isEmpty), session: \(model.chatGPT.hasSession), verified: \(model.chatGPT.inferenceVerified), usage paused: \(model.chatGPT.usagePaused), saved accounts: \(model.chatGPT.accounts.count), initialization: \(model.chatGPT.message)).")
+        let registration = model.inference.activeID
+        guard !registration.isEmpty, model.inference.inferenceVerified, !model.inference.usagePaused else {
+            throw ActionFailure.message("A verified subscription connection is required for the fictional check (selected: \(!registration.isEmpty), session: \(model.inference.hasSession), verified: \(model.inference.inferenceVerified), usage paused: \(model.inference.usagePaused), saved accounts: \(model.chatGPT.accounts.count), initialization: \(model.chatGPT.message)).")
         }
         let root = EvaluationOutput.url("/tmp/graphiti-live-" + UUID().uuidString)
         let suite = "3po-graphiti-fictional-" + UUID().uuidString
@@ -16,7 +16,7 @@ import SwiftData
         settings.set(true, forKey: "paMemoryLearningEnabled")
         settings.set(false, forKey: "assistantContextEnabled")
         defer { settings.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
-        model.assistant = AssistantService(connection: model.chatGPT, container: model.container, settings: settings, imageDirectory: root.appendingPathComponent("images"))
+        model.assistant = AssistantService(connection:model.inference, container: model.container, settings: settings, imageDirectory: root.appendingPathComponent("images"))
         model.graphiti = GraphitiMemoryService(container: model.container, root: root)
         var extractionResults: [[String: Any]] = []
         model.graphiti.extractionObserver = { name, result in
@@ -96,7 +96,7 @@ import SwiftData
         let outcome = try await PAConversationEngine().run(base: [["role": "user", "content": "What should I prepare for my meeting tomorrow? Check what I am currently working on and tell me when the meeting is. Do not change anything."]], allowedTools: allowed, valid: { true }, receipts: { [] }, infer: { input, delta in
             requests += 1
             guard requests <= 8 else { throw ActionFailure.message("Source integration diagnostic exceeded its budget.") }
-            return try await model.chatGPT.toolResponse(input: input, instructions: "You are 3PO. Today is 24 October 2026 in Europe/London. Calendar and Projects are available through the supplied tools. Do not invent their contents. " + runtime.memoryBackendInstructions, tools: tools, model: model.chatGPT.selectedModel, purpose: .diagnostic, onDelta: delta)
+            return try await model.inference.toolResponse(input: input, instructions: "You are 3PO. Today is 24 October 2026 in Europe/London. Calendar and Projects are available through the supplied tools. Do not invent their contents. " + runtime.memoryBackendInstructions, tools: tools, model: model.inference.selectedModel, purpose: .diagnostic, onDelta: delta)
         }, execute: { call in
             let arguments = try PAToolProtocol.arguments(call)
             used.insert(call.name)
@@ -142,7 +142,7 @@ import SwiftData
                 "initialFocusedMotivationEvidence": focusedMotivation.text, "correctedEvidence": correctedEvidence,
                 "extractionResults": extractionResults, "sourcePreparationAnswer": sourceAnswer, "sourcePreparationTools": used.sorted(), "backgroundEvidence": background.text,
                 "assistantAnswer": reply?.content ?? "", "assistantError": model.assistant.error ?? "",
-                "model": model.chatGPT.selectedModel,
+                "model": model.inference.selectedModel,
                 "storage": "Fictional original, in-memory app storage and temporary graph deleted after check; no native sources started. Cross-episode and correction acceptance, not evidence of superiority over context pages."]
     }
 }

@@ -24,8 +24,8 @@ import SwiftData
 
     /// One production learning request over invented dialogue. No saved personal inputs or mutations.
     static func consolidateDialogue(_ model: DashboardModel) async throws -> [String:Any] {
-        let owner = model.chatGPT.activeID, selectedModel = model.chatGPT.selectedModel
-        guard !owner.isEmpty, model.chatGPT.hasSession, model.chatGPT.inferenceVerified, !model.chatGPT.usagePaused else { throw Failure.ownership }
+        let owner = model.inference.activeID, selectedModel = model.inference.selectedModel
+        guard !owner.isEmpty, model.inference.hasSession, model.inference.inferenceVerified, !model.inference.usagePaused else { throw Failure.ownership }
         let now = Date.now
         let turns: [MemoryLearningTurn] = [
             .init(id:"review",text:"Those campus-wide weekly newsletters aren't important to me, but personal requests still are.",created:now,
@@ -42,9 +42,9 @@ import SwiftData
             .init(id:"brief",scope:"brief",title:"Brief instructions",text:"A useful concise daily brief.",revision:"v1")
         ]
         let input = try MemoryLearningRules.input(turns:turns,existing:[],timezone:"Europe/London",targets:targets)
-        let response = try await model.chatGPT.toolResponse(input:[["role":"user","content":input]],instructions:MemoryLearningRules.instructions + " " + MemoryLearningRules.resultInstructions,
+        let response = try await model.inference.toolResponse(input:[["role":"user","content":input]],instructions:MemoryLearningRules.instructions + " " + MemoryLearningRules.resultInstructions,
             tools:MemoryLearningRules.tools(turns:turns,targets:targets,existing:[],questionAllowed:false),model:selectedModel,purpose:.diagnostic) { _ in }
-        guard owner == model.chatGPT.activeID, selectedModel == model.chatGPT.selectedModel else { throw Failure.ownership }
+        guard owner == model.inference.activeID, selectedModel == model.inference.selectedModel else { throw Failure.ownership }
         guard response.calls.count == 1, let call = response.calls.first,
               (call.namespace == "pa" && call.name == MemoryLearningRules.resultTool) || (call.namespace == nil && call.name == "pa." + MemoryLearningRules.resultTool) else {
             return ["error":"The fictional model did not return the one typed preparation result.","requests":1,"fictionalOutput":String(response.text.prefix(16000))]
@@ -70,9 +70,9 @@ import SwiftData
     static func run(_ model: DashboardModel) async throws -> [String: Any] {
         if ProcessInfo.processInfo.arguments.contains("--review-guidance-only") { return try await ReviewGuidanceModelEvaluation.run(model) }
         if ProcessInfo.processInfo.arguments.contains("--chat-on-demand-only") { return try await OnDemandChatModelEvaluation.run(model) }
-        let registration=model.chatGPT.activeID, selectedModel=model.chatGPT.selectedModel
+        let registration=model.inference.activeID, selectedModel=model.inference.selectedModel
         let pagesOnly=ProcessInfo.processInfo.arguments.contains("--context-pages-only"), requestLimit=pagesOnly ? 1 : 20
-        guard !registration.isEmpty, model.chatGPT.hasSession, model.chatGPT.inferenceVerified, !model.chatGPT.usagePaused else {
+        guard !registration.isEmpty, model.inference.hasSession, model.inference.inferenceVerified, !model.inference.usagePaused else {
             throw ActionFailure.message("The existing configured subscription connection must be verified and available. No settings were changed.")
         }
         let allowed: Set<String>=["read_context_page","read_memory","search_mail","read_email","list_whatsapp_chats","search_whatsapp","read_calendar","read_attention"]
@@ -99,7 +99,7 @@ import SwiftData
         ]
         var requestCount=0, toolCount=0, observedToolCalls=0, rejectedTools=0
         var rows:[[String: Any]]=[], checks:[String: Bool]=[:], allNames:[String]=[]
-        func valid()->Bool { registration == model.chatGPT.activeID && selectedModel == model.chatGPT.selectedModel && model.chatGPT.hasSession && !model.chatGPT.usagePaused }
+        func valid()->Bool { registration == model.inference.activeID && selectedModel == model.inference.selectedModel && model.inference.hasSession && !model.inference.usagePaused }
         func json(_ value:[String: Any]) throws -> String {
             String(decoding:try JSONSerialization.data(withJSONObject:value,options:[.sortedKeys]),as:UTF8.self)
         }
@@ -135,7 +135,7 @@ import SwiftData
                     guard requestCount < requestLimit else { throw Failure.requestBudget }
                     requestCount += 1
                     visibleEmailIDs=issuedEmailIDs
-                    let response=try await model.chatGPT.toolResponse(input:input,instructions:instructions,tools:tools,model:selectedModel,purpose:.diagnostic,onDelta:delta)
+                    let response=try await model.inference.toolResponse(input:input,instructions:instructions,tools:tools,model:selectedModel,purpose:.diagnostic,onDelta:delta)
                     guard valid() else { throw Failure.ownership }
                     observedToolCalls += response.calls.count
                     names.append(contentsOf:response.calls.map(\.name));allNames.append(contentsOf:response.calls.map(\.name))
@@ -260,7 +260,7 @@ import SwiftData
         var pageOutput = ""
         let decodedPages: [(ContextPage, String?)]
         do {
-            let response = try await model.chatGPT.toolResponse(input: [["role": "user", "content": pageInput]],
+            let response = try await model.inference.toolResponse(input: [["role": "user", "content": pageInput]],
                 instructions: ContextConsolidationRules.instructions, tools: pageTools, model: selectedModel, purpose: .diagnostic) { _ in }
             pageOutput = response.calls.first?.arguments ?? response.text
             guard valid() else { throw Failure.ownership }

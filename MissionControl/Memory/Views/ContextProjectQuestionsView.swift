@@ -20,7 +20,7 @@ import SwiftUI
     /// Actionable saved questions use only current local human ownership/activity, never source reconstruction.
     func visibleContextProjectQuestions() -> [ContextProjectQuestion] {
         guard assistant.memory.enabled else { return [] }
-        let registration = chatGPT.activeID
+        let registration = inference.activeID
         let projects = assistant.projects.items(registration, includeTopics: true)
         let purposePages = contextPages.pages(registration: registration).filter { $0.owner == .human && $0.kind == .note && $0.key.hasPrefix("project-purpose:") }
         return contextQuestions.questions(registration: registration).filter { question in
@@ -34,8 +34,8 @@ import SwiftUI
     /// its current pending clarification; dismissal and answer history are never reopened.
     @discardableResult func acknowledgeProjectPurpose(_ page: ContextPage) throws -> Bool {
         guard page.kind == .note, page.key.hasPrefix("project-purpose:") else { return false }
-        guard page.registration == chatGPT.activeID, let identity = page.references.first,
-              ContextProjectQuestionRules.purpose(page, registration: chatGPT.activeID, identity: identity),
+        guard page.registration == inference.activeID, let identity = page.references.first,
+              ContextProjectQuestionRules.purpose(page, registration: inference.activeID, identity: identity),
               let project = assistant.projects.items(page.registration, includeTopics: true).first(where: { !$0.kind.isWork && $0.id.uuidString == identity.key }),
               contextProjectIdentity(project) == identity,
               contextPages.page(id: page.id, registration: page.registration) == page else { throw ContextProjectQuestionFailure.stale }
@@ -46,7 +46,7 @@ import SwiftUI
     }
     func saveProjectPurpose(_ answer: String, question: ContextProjectQuestion, expectedPage: ContextPage?) throws {
         let text = answer.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard assistant.memory.enabled, question.registration == chatGPT.activeID, !text.isEmpty, text.count <= 6000,
+        guard assistant.memory.enabled, question.registration == inference.activeID, !text.isEmpty, text.count <= 6000,
               let project = assistant.projects.items(question.registration, includeTopics: true).first(where: { $0.id == question.projectID }),
               contextProjectIdentity(project) == question.identity,
               contextQuestions.questions(registration: question.registration).contains(where: { $0 == question }) else { throw ContextProjectQuestionFailure.stale }
@@ -90,7 +90,7 @@ struct ContextProjectQuestionsSection: View {
                 }.controlSize(.small)
             }.padding(12).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
         }
-        if let dismissed, dismissed.registration == model.chatGPT.activeID {
+        if let dismissed, dismissed.registration == model.inference.activeID {
             HStack {
                 Text("Question dismissed").font(.caption).foregroundStyle(.secondary)
                 Button("Undo") {
@@ -102,7 +102,7 @@ struct ContextProjectQuestionsSection: View {
         if let error { Text(error).font(.caption).foregroundStyle(.orange) }
         if let error = model.contextQuestions.error { Text(error).font(.caption).foregroundStyle(.orange) }
         EmptyView().sheet(item: $answering) { question in ContextProjectPurposeAnswerView(model: model, question: question) }
-            .onChange(of: model.chatGPT.activeID) { answering = nil; dismissed = nil; error = nil }
+            .onChange(of: model.inference.activeID) { answering = nil; dismissed = nil; error = nil }
     }
 }
 private struct ContextProjectPurposeAnswerView: View {
@@ -129,8 +129,8 @@ private struct ContextProjectPurposeAnswerView: View {
                 Button("Save context") {
                     do { try model.saveProjectPurpose(answer, question: question, expectedPage: expectedPage); dismiss() }
                     catch { self.error = error.localizedDescription }
-                }.keyboardShortcut(.defaultAction).disabled(answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || answer.count > 6000 || question.registration != model.chatGPT.activeID)
+                }.keyboardShortcut(.defaultAction).disabled(answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || answer.count > 6000 || question.registration != model.inference.activeID)
             }
-        }.padding(24).frame(width: 540).onChange(of: model.chatGPT.activeID) { dismiss() }
+        }.padding(24).frame(width: 540).onChange(of: model.inference.activeID) { dismiss() }
     }
 }

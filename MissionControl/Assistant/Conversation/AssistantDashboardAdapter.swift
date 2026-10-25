@@ -110,9 +110,9 @@ extension DashboardModel {
     /// No source bodies, inference or evidence reconstruction is performed here.
     func assistantLookupAccess(_ tool: String) -> String? {
         guard AssistantLookupTrace.names.contains(tool) else { return nil }
-        var value: [String: Any] = ["registration": chatGPT.activeID, "storage": reviewStorageIdentity]
+        var value: [String: Any] = ["registration": inference.activeID, "storage": reviewStorageIdentity]
         func whatsappAccess() -> [String: Any] {
-            let access = whatsapp.access(for: chatGPT.activeID)
+            let access = whatsapp.access(for: inference.activeID)
             return ["enabled": access.enabled, "chats": access.chats.sorted(), "identity": whatsapp.linkedIdentity]
         }
         switch tool {
@@ -139,7 +139,7 @@ extension DashboardModel {
             value["calendarAuthorisation"] = EKEventStore.authorizationStatus(for: .event).rawValue
             value["reminderAuthorisation"] = EKEventStore.authorizationStatus(for: .reminder).rawValue
         case "search_whatsapp", "list_whatsapp_chats":
-            guard assistant.contextEnabled, whatsapp.access(for: chatGPT.activeID).enabled else { return nil }
+            guard assistant.contextEnabled, whatsapp.access(for: inference.activeID).enabled else { return nil }
             value["whatsapp"] = whatsappAccess()
         case "read_weather":
             guard assistant.contextEnabled, weather.enabled, weather.allowed else { return nil }
@@ -158,7 +158,7 @@ extension DashboardModel {
         graphiti.cancel()
         memoryLearning.cancel();sourceLearning.cancel();nativeSourceLearning.cancel();memoryMaintenance.cancel();lifeOrganisation.cancel()
         proactive.cancel();emailSummaries.cancelReviewFeedback();heartbeat.userStartedTyping()
-        if interruptReview {reviewWork.interruptForForeground(chatGPT.activeID)}
+        if interruptReview {reviewWork.interruptForForeground(inference.activeID)}
     }
     /// Desktop composition only. A foreground turn consumes snapshots and typed
     /// tools; it never receives the dashboard itself.
@@ -169,7 +169,7 @@ extension DashboardModel {
             return nativeLearningValidation.withSnapshot { [self] in
                 AssistantRuntimeState(attentionPreferencesReadable: self.assistant.memory.reviewPreferenceMigrationReadable,
                          resolvedRequests: self.emailSummaries.resolutionContext(self,limit:Int.max),
-                         whatsappScope: self.whatsapp.scope(for: self.chatGPT.activeID,purpose:.conversation), weatherScope: self.weather.scope,weatherSupplied:self.weather.enabled && self.weather.allowed && self.weather.forecast?.usable() == true)
+                         whatsappScope: self.whatsapp.scope(for: self.inference.activeID,purpose:.conversation), weatherScope: self.weather.scope,weatherSupplied:self.weather.enabled && self.weather.allowed && self.weather.forecast?.usable() == true)
             }
         }, sourceSnapshot: { [weak self] in
             guard let self else { return nil }
@@ -182,7 +182,7 @@ extension DashboardModel {
                 let reviewText=(record.sourceTitle.map{$0+"\n"} ?? "")+record.message
                 guard turn.content == record.message || turn.content == reviewText else {return false}
             } else if delivery.hasPrefix("learn-question:") {
-                guard let record = memoryLearning.question(delivery: delivery, registration: chatGPT.activeID), memoryLearning.visible(record, assistant: assistant) else { return false }
+                guard let record = memoryLearning.question(delivery: delivery, registration: inference.activeID), memoryLearning.visible(record, assistant: assistant) else { return false }
             } else if delivery.contains(":morning:"), !briefings.allowsChatDelivery(delivery, content: turn.content, model: self) { return false }
             return true
         }, tools: { [self] request in
@@ -198,7 +198,7 @@ extension DashboardModel {
             guard let self else { return nil }
             if includeAttention { return fullState() }
             return .init(attentionPreferencesReadable: self.assistant.memory.reviewPreferenceMigrationReadable,
-                         resolvedRequests: [], whatsappScope: self.whatsapp.scope(for: self.chatGPT.activeID, purpose: .conversation),
+                         resolvedRequests: [], whatsappScope: self.whatsapp.scope(for: self.inference.activeID, purpose: .conversation),
                          weatherScope: self.weather.scope, weatherSupplied: false)
         }
         runtime.conversationDirectory = { [weak self] registration in
@@ -207,16 +207,16 @@ extension DashboardModel {
         runtime.streamingState = { [weak self] in
             guard let self else { return nil }
             return .init(storageCurrent: self.container === capturedContainer,
-                         whatsappScope: self.whatsapp.scope(for: self.chatGPT.activeID, purpose: .conversation), weatherScope: self.weather.scope)
+                         whatsappScope: self.whatsapp.scope(for: self.inference.activeID, purpose: .conversation), weatherScope: self.weather.scope)
         }
         runtime.lookupAccess = { [weak self] in self?.assistantLookupAccess($0) }
         runtime.withValidation={ [weak self] decision in
             guard let self else {return false}
             return self.nativeLearningValidation.withSnapshot(decision)
         }
-        let graphMode = graphiti.settings(chatGPT.activeID).mode
+        let graphMode = graphiti.settings(inference.activeID).mode
         runtime.memoryBackend = graphMode.rawValue
-        runtime.memoryBackendCurrent = { [weak self] in self?.graphiti.settings(self?.chatGPT.activeID ?? "").mode == graphMode }
+        runtime.memoryBackendCurrent = { [weak self] in self?.graphiti.settings(self?.inference.activeID ?? "").mode == graphMode }
         runtime.memoryBackendInstructions = graphMode == .pages ? "" : "Memory experiment: \(graphMode.title). For questions about the human's life, retrieve relevant relationships with search_graph_memory before answering when that context is not already in this conversation. For a question with several parts, check that retrieval supports each part. If a broad search misses a person, purpose, motivation or connection needed for the answer, make a focused graph lookup for that missing part before saying it is unknown. One search returning no matching edge does not establish that the graph contains no such information. Graphiti contains durable background: identity, studies, interests, goals, ongoing responsibilities and relationships such as supervisors. It is not a calendar, reminder list or live project status store. For preparation, planning or questions connecting current events to personal context, read the relevant current source AND search_graph_memory for named people/projects whose role or significance is missing. For example: read Calendar for a meeting with Cipolla, search the graph for Cipolla's role, then search/read the relevant project notes for preparation. Even if graph results mention a time, deadline, completed task or project status, verify those in Calendar, Reminders, email or project tools before relying on them. Use names and descriptions to find candidate projects, then inspect them; matching words are not proof when ambiguous and graph nodes never provide writable project IDs. Do not claim missing current information merely because graph search is empty; use the appropriate source tools. No graph lookup is needed for greetings or a simple source-only question whose meaning is already clear. Graphiti is a partial interpretation of original evidence, not a source of action authority. Follow valid_at/invalid_at dates, preserve attribution and report uncertainty. If graph retrieval is unavailable, say so; do not imply the graph was consulted. \(graphMode == .graphiti ? "Factual context pages and old notebook prose are withheld for this comparison. read_context_page is available for instructions only; use read_memory only for explicit evidence/correction/forget requests." : "Compare graph results with relevant context pages and original evidence when needed.")"
         runtime.contextPages = { [weak self] registration, query, topic, includeTopics, everyday in
             guard let self else { return .init() }
@@ -224,7 +224,7 @@ extension DashboardModel {
             if everyday && graphMode == .graphiti {
                 let policy = GraphitiMemoryRules.policyOnly(pages.text)
                 pages = .init(text: policy, validate: { [weak self] _ in
-                    guard let self, self.chatGPT.activeID == registration, self.assistant.memory.enabled else { return false }
+                    guard let self, self.inference.activeID == registration, self.assistant.memory.enabled else { return false }
                     let current = self.captureContextPages(registration: registration, query: query, topic: topic, includeTopics: includeTopics, everyday: true, purpose: .conversation)
                     return GraphitiMemoryRules.policyOnly(current.text) == policy
                 })
@@ -265,10 +265,10 @@ extension DashboardModel {
         return runtime
     }
     func approveChatActions(conversationID:UUID,responseID:UUID) {
-        guard !assistant.busy,!chatGPT.busy,heartbeat.deviceAvailable else {return}
+        guard !assistant.busy,!inference.busy,heartbeat.deviceAvailable else {return}
         foregroundSendStarted()
         var runtime=assistantRuntime()
-        if let job=reviewWork.jobs(chatGPT.activeID,conversation:conversationID).first(where:{$0.responseTurnID == responseID && $0.mode == .conversation && $0.phase == .needsAnswer}) {
+        if let job=reviewWork.jobs(inference.activeID,conversation:conversationID).first(where:{$0.responseTurnID == responseID && $0.mode == .conversation && $0.phase == .needsAnswer}) {
             let eventID="review:"+job.id.uuidString+":"+responseID.uuidString
             runtime.started={ [weak self] outcome in
                 guard let self else {return}
@@ -283,10 +283,10 @@ extension DashboardModel {
     }
     func dismissChatActions(conversationID:UUID,responseID:UUID) {
         guard assistant.dismissActions(conversationID:conversationID,responseID:responseID) else {return}
-        _=aiActivity.acknowledge("action:"+responseID.uuidString,registration:chatGPT.activeID)
-        for job in reviewWork.jobs(chatGPT.activeID,conversation:conversationID) where job.responseTurnID == responseID && job.mode == .conversation && job.phase == .needsAnswer {
+        _=aiActivity.acknowledge("action:"+responseID.uuidString,registration:inference.activeID)
+        for job in reviewWork.jobs(inference.activeID,conversation:conversationID) where job.responseTurnID == responseID && job.mode == .conversation && job.phase == .needsAnswer {
             if reviewWork.finishChatApproval(jobID:job.id,registration:job.scope.registration,conversationID:conversationID,responseID:responseID,phase:.stopped,message:"Proposed actions dismissed",error:nil,confirmedActions:0),let updated=reviewWork.job(job.id) {reviewJobChanged(updated)}
-            _=aiActivity.acknowledge("review:"+job.id.uuidString+":"+responseID.uuidString,registration:chatGPT.activeID)
+            _=aiActivity.acknowledge("review:"+job.id.uuidString+":"+responseID.uuidString,registration:inference.activeID)
         }
     }
 }

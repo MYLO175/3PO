@@ -28,7 +28,7 @@ import Foundation
         struct Decision: Decodable { var authorized: Bool; var reason: String;var organisationValid:Bool? }
         let decision:Decision
         do {
-            let answer = try await model.chatGPT.streamResponse(input:[["role":"user","content":value]],instructions:instructions,model:inferenceModel,purpose:.intentCheck) { _ in }
+            let answer = try await model.inference.streamResponse(input:[["role":"user","content":value]],instructions:instructions,model:inferenceModel,purpose:.intentCheck) { _ in }
             decision = try JSONDecoder().decode(Decision.self,from:Data(answer.utf8))
         } catch is CancellationError {throw CancellationError()}
         catch {throw PAIntentFailure(reason:error.localizedDescription,kind:.unavailable)}

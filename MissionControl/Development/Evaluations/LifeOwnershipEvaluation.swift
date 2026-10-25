@@ -4,11 +4,11 @@ import SwiftData
 @MainActor enum LifeOwnershipEvaluation {
     static func run(_ model:DashboardModel) async throws -> [String:Any] {
         let container=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
-        let account=model.chatGPT.activeID,selected=model.chatGPT.selectedModel,store=LifeWorkspaceStore(container:container)
+        let account=model.inference.activeID,selected=model.inference.selectedModel,store=LifeWorkspaceStore(container:container)
         var checks:[String:Bool]=[:]
         func call(_ name:String,_ args:[String:Any]) throws -> PAFunctionCall { .init(id:UUID().uuidString,name:name,namespace:"pa",arguments:String(decoding:try JSONSerialization.data(withJSONObject:args,options:.sortedKeys),as:UTF8.self)) }
         func session(_ human:String,_ history:[[String:String]]=[])->PAToolSession { .init(model:model,human:human,humanContext:human,topicID:nil,turnID:UUID(),history:history,evaluationProjects:store) }
-        let valid:NativeWriteValidity = { model.chatGPT.activeID == account && model.chatGPT.selectedModel == selected }
+        let valid:NativeWriteValidity = { model.inference.activeID == account && model.inference.selectedModel == selected }
         let read:[String:Any]=["query":"","root":NSNull(),"unfinished":false,"dueBefore":NSNull(),"maxMinutes":NSNull(),"deleted":false]
         func entry(_ title:String,_ kind:String,_ parent:Any=NSNull())->[String:Any] { ["title":title,"kind":kind,"parent":parent,"notes":"","due":NSNull(),"estimateMinutes":NSNull(),"areas":[]] }
         let mention="I am studying Optics this year."

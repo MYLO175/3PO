@@ -14,15 +14,15 @@ struct PALifeMapWidget: View {
     @State private var showContext=false
     private var topic:UUID? { nil }
     private var focusAreas:[LifeArea] {
-        if let saved=configuration.wrappedValue.lifeFocusSelections?[model.chatGPT.activeID] { return LifeFocusRules.normalised(saved) }
-        let legacy=configuration.wrappedValue.paTopicSelections?[model.chatGPT.activeID].flatMap(UUID.init(uuidString:))
+        if let saved=configuration.wrappedValue.lifeFocusSelections?[model.inference.activeID] { return LifeFocusRules.normalised(saved) }
+        let legacy=configuration.wrappedValue.paTopicSelections?[model.inference.activeID].flatMap(UUID.init(uuidString:))
         return model.assistant.conversation(legacy)?.notebookAreas ?? []
     }
     private var focusBinding:Binding<[LifeArea]> { Binding(get:{focusAreas},set:{ areas in
         var value=configuration.wrappedValue;if value.lifeFocusSelections == nil { value.lifeFocusSelections=[:] }
-        value.lifeFocusSelections?[model.chatGPT.activeID]=areas.map(\.rawValue);configuration.wrappedValue=value;selectedArea=nil;areaDetails=nil;areaMemory=nil
+        value.lifeFocusSelections?[model.inference.activeID]=areas.map(\.rawValue);configuration.wrappedValue=value;selectedArea=nil;areaDetails=nil;areaMemory=nil
     }) }
-    private var notebook:LifeNotebook { model.assistant.memory.notebook(model.chatGPT.activeID,includeTopics:true) }
+    private var notebook:LifeNotebook { model.assistant.memory.notebook(model.inference.activeID,includeTopics:true) }
     private var notes:[LifeAreaNote] { notebook.notes.filter { focusAreas.isEmpty || focusAreas.contains($0.area) } }
     var body:some View {
         VStack(alignment:.leading,spacing:10) {
@@ -53,19 +53,19 @@ struct PALifeMapWidget: View {
                 Menu("Context") {
                     Button("Context pages and instructions…") { showContext=true }
                     if model.lifeOrganisation.busy { Button("Stop organising") { model.lifeOrganisation.cancel() } }
-                    else { Button("Organise supporting facts · AI") { model.lifeOrganisation.check(model,manual:true,topic:topic) }.disabled(!model.assistant.memory.enabled || !model.assistant.memory.learningEnabled || model.chatGPT.busy || model.assistant.busy || !model.chatGPT.inferenceVerified || model.chatGPT.usagePaused) }
+                    else { Button("Organise supporting facts · AI") { model.lifeOrganisation.check(model,manual:true,topic:topic) }.disabled(!model.assistant.memory.enabled || !model.assistant.memory.learningEnabled || model.inference.busy || model.assistant.busy || !model.inference.inferenceVerified || model.inference.usagePaused) }
                 }
             }.controlSize(.small) }
             if presentation != "Structure",let error=model.lifeOrganisation.error { Text(error).font(.caption).foregroundStyle(.orange).lineLimit(3) }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
-        .sheet(isPresented:$showContext) { ContextPagesView(model:model,registration:model.chatGPT.activeID) }
+        .sheet(isPresented:$showContext) { ContextPagesView(model:model,registration:model.inference.activeID) }
         .sheet(item:$areaDetails) { area in
-            LifeMapAreaDetails(model:model,registration:model.chatGPT.activeID,area:area) { areaMemory=$0 }
+            LifeMapAreaDetails(model:model,registration:model.inference.activeID,area:area) { areaMemory=$0 }
                 .sheet(item:$areaMemory) { memory in memoryDetails(memory,fromArea:true) }
         }
         .sheet(item:$selected) { memory in memoryDetails(memory)
         }
-        .onChange(of:model.chatGPT.activeID) { selected=nil;areaDetails=nil;areaMemory=nil;detailOrganising=nil;detailPlanReports=nil;detailShowMemory=false;showContext=false;selectedArea=nil }
+        .onChange(of:model.inference.activeID) { selected=nil;areaDetails=nil;areaMemory=nil;detailOrganising=nil;detailPlanReports=nil;detailShowMemory=false;showContext=false;selectedArea=nil }
     }
     private func memoryDetails(_ memory:PAMemory,fromArea:Bool=false)->some View {
             VStack(alignment:.leading,spacing:14) {
@@ -75,7 +75,7 @@ struct PALifeMapWidget: View {
             }.padding(24).frame(width:480)
                 .sheet(item:$detailOrganising) { memory in LifeOrganisationEditor(memory:model.assistant.memory,record:memory) }
                 .sheet(item:$detailPlanReports) { memory in CommitmentReportsView(memory:model.assistant.memory,recordID:memory.id,registration:memory.registration) }
-                .sheet(isPresented:$detailShowMemory) { PAMemoryView(memory:model.assistant.memory,registration:model.chatGPT.activeID,conversationID:topic,topicTitle:model.assistant.conversation(topic)?.title,learning:model.memoryLearning,assistant:model.assistant,checkContext:{model.memoryLearning.check(model,manual:true)},organisation:model.lifeOrganisation,organiseContext:{model.lifeOrganisation.check(model,manual:true,topic:topic)},model:model,focusAreas:focusAreas) }
+                .sheet(isPresented:$detailShowMemory) { PAMemoryView(memory:model.assistant.memory,registration:model.inference.activeID,conversationID:topic,topicTitle:model.assistant.conversation(topic)?.title,learning:model.memoryLearning,assistant:model.assistant,checkContext:{model.memoryLearning.check(model,manual:true)},organisation:model.lifeOrganisation,organiseContext:{model.lifeOrganisation.check(model,manual:true,topic:topic)},model:model,focusAreas:focusAreas) }
 
     }
 }
@@ -86,7 +86,7 @@ private struct LifeMemoryInspection:View {
     var id:UUID
     private var store:PAMemoryStore {model.assistant.memory}
     private var permitted:Set<UUID> {Set(store.permittedRecords.map(\.id))}
-    private var record:PAMemory? {store.records.first{$0.id == id && $0.registration == model.chatGPT.activeID}}
+    private var record:PAMemory? {store.records.first{$0.id == id && $0.registration == model.inference.activeID}}
     var body:some View {
         VStack(alignment:.leading,spacing:14) {
             if let record {
@@ -172,6 +172,6 @@ struct LifeMapAreaDetails:View {
                 }
             }
         }.padding(24).frame(width:560,height:640)
-        .onChange(of:model.chatGPT.activeID) { dismiss() }
+        .onChange(of:model.inference.activeID) { dismiss() }
     }
 }

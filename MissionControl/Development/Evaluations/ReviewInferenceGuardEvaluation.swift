@@ -58,8 +58,8 @@ import Foundation
             settings.set(true,forKey:"assistantContextEnabled")
             settings.set("Fictional concise prototype guidance",forKey:"assistantPreferences")
             defer {settings.removePersistentDomain(forName:suite)}
-            model.assistant=AssistantService(connection:model.chatGPT,container:model.container,settings:settings)
-            let owner=model.chatGPT.activeID,store=model.assistant.memory
+            model.assistant=AssistantService(connection:model.inference,container:model.container,settings:settings)
+            let owner=model.inference.activeID,store=model.assistant.memory
             guard model.assistant.contextEnabled,store.enabled,model.emailSummaries.enabled,model.proactive.enabled else {throw ActionFailure.message("The fictional Review guard evaluation requires existing source/memory controls to be enabled; none were changed.")}
             let json:[String:Any]=["id":"fictional-mail","accountID":"fictional-account","account":"Fictional Mail","messageID":1,"internetMessageID":"fictional-mail@example.invalid","sender":"Fictional tutor","subject":"Orion prototype","received":now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
             func mail(_ changes:[String:Any]=[:])throws->MailMessage {try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:json.merging(changes,uniquingKeysWith:{$1})))}
@@ -270,8 +270,8 @@ import Foundation
             isolated.set(true,forKey:"assistantContextEnabled");isolated.set("Fictional original preferences",forKey:"assistantPreferences")
             defer {isolated.removePersistentDomain(forName:suite)}
             model.chatGPT.activeID="fictional-brief-"+mode;model.chatGPT.selectedModel="fictional-original-model";model.chatGPT.inferenceVerified=true
-            model.assistant=AssistantService(connection:model.chatGPT,container:model.container,settings:isolated)
-            let service=model.briefings,owner=model.chatGPT.activeID
+            model.assistant=AssistantService(connection:model.inference,container:model.container,settings:isolated)
+            let service=model.briefings,owner=model.inference.activeID
             let originalPrompt=service.writingPrompt(owner)
             service.evaluationWeather={ ("fictional-no-weather",["status":"Fictional fixture supplies no weather"]) }
             service.evaluationInference={await hold.infer($0,prompt:$1,preferences:$2,model:$3)}
@@ -306,7 +306,7 @@ import Foundation
                 service.check(model,manual:true,live:true)
                 for _ in 0..<40_000 {if hold.gate != nil || !service.busy {break};await Task.yield()}
                 guard hold.gate != nil else {throw ActionFailure.message("The next fictional brief \(mode) did not reach inference")}
-                checks["Brief \(mode) applies new choices only to the next explicit refresh"]=hold.calls == 2 && hold.selectedModel == model.chatGPT.selectedModel && hold.prompt == service.writingPrompt(owner).text && hold.preferences == model.assistant.preferences
+                checks["Brief \(mode) applies new choices only to the next explicit refresh"]=hold.calls == 2 && hold.selectedModel == model.inference.selectedModel && hold.prompt == service.writingPrompt(owner).text && hold.preferences == model.assistant.preferences
                 hold.release()
                 for _ in 0..<40_000 {if !service.busy {break};await Task.yield()}
                 checks["Brief next explicit \(mode) refresh completes once"] = !service.busy && service.error == nil && hold.calls == 2

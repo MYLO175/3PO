@@ -6,7 +6,7 @@ import SwiftData
 @MainActor final class DashboardModel {
     let container: ModelContainer?
     var storageOwnershipBlocked = false
-    var chatGPT = Connection()
+    var inference = Connection()
     var assistant = Assistant()
     var reviewStorageIdentity = "disposable-mcp-store"
     var writing = false
@@ -56,7 +56,7 @@ struct AssistantActionProposal: Codable {
     let model: DashboardModel
     init(model: DashboardModel) { self.model = model }
     static func permissionScope(_ model: DashboardModel) -> String {
-        [model.chatGPT.activeID, model.reviewStorageIdentity, String(model.assistant.contextEnabled), model.assistant.excludedCalendars.sorted().joined(), model.assistant.excludedLists.sorted().joined()].joined(separator: "|")
+        [model.inference.activeID, model.reviewStorageIdentity, String(model.assistant.contextEnabled), model.assistant.excludedCalendars.sorted().joined(), model.assistant.excludedLists.sorted().joined()].joined(separator: "|")
     }
     func execute(_ call: PAFunctionCall, requestID: UUID?, valid: @escaping NativeWriteValidity) async throws -> String {
         if let requestID {
@@ -166,7 +166,7 @@ struct AssistantActionProposal: Codable {
         let legacyID = UUID()
         let legacyCall = try MCPBridgeContract.call(name: "change_calendar", arguments: draft(legacyID))
         let legacyProposal = AssistantActionProposal(id: legacyID, toolName: legacyCall.name, arguments: legacyCall.arguments, snapshot: Data(), outline: ["Legacy fixture"], details: [])
-        let legacy = MCPActionRecord(id: legacyID, registration: model.chatGPT.activeID, client: "Legacy host", tool: legacyCall.name, arguments: legacyCall.arguments, proposal: try JSONEncoder().encode(legacyProposal))
+        let legacy = MCPActionRecord(id: legacyID, registration: model.inference.activeID, client: "Legacy host", tool: legacyCall.name, arguments: legacyCall.arguments, proposal: try JSONEncoder().encode(legacyProposal))
         try LocalRecordRepository(container: container).save(bridge.records + [legacy], key: "externalMCPActions")
         bridge = MCPBridgeService(model: model, connectionFile: file, defaults: defaults)
         bridge.setEnabled(true); try await ready()

@@ -20,13 +20,13 @@ import Foundation
         var review: ReviewPolicyCapture?
     }
     init(model: DashboardModel) {
-        self.model = model; registration = model.chatGPT.activeID
+        self.model = model; registration = model.inference.activeID
         tools = PAToolSession(model: model, human: MCPBridgeContract.hostProvenance,
                               humanContext: "External MCP host session", topicID: nil, turnID: UUID(), focusAreas: [])
     }
     static func permissionScope(_ model: DashboardModel) -> String {
-        let access = model.whatsapp.access(for: model.chatGPT.activeID)
-        return [model.chatGPT.activeID, model.reviewStorageIdentity, String(model.assistant.contextEnabled),
+        let access = model.whatsapp.access(for: model.inference.activeID)
+        return [model.inference.activeID, model.reviewStorageIdentity, String(model.assistant.contextEnabled),
                 String(model.assistant.memory.enabled), model.assistant.excludedCalendars.sorted().joined(separator: "\n"),
                 model.assistant.excludedLists.sorted().joined(separator: "\n"), model.assistant.excludedAccounts.sorted().joined(separator: "\n"),
                 model.whatsapp.linkedIdentity, String(access.enabled), String(access.includeInSuggestions == true), access.chats.sorted().joined(separator: "\n")].joined(separator: "\u{0}")
@@ -49,7 +49,7 @@ import Foundation
         }
     }
     private func executeApp(_ call: PAFunctionCall, requestID: UUID?, valid: @escaping NativeWriteValidity, willMutate: () -> Void) async throws -> String {
-        guard registration == model.chatGPT.activeID, valid() else { throw ActionFailure.message("The external account or source access changed.") }
+        guard registration == model.inference.activeID, valid() else { throw ActionFailure.message("The external account or source access changed.") }
         let args = try JSONSerialization.jsonObject(with: Data(call.arguments.utf8)) as! [String: Any]
         func text(_ key: String) -> String? { args[key] as? String }
         if MCPBridgeContract.nativeReads.contains(call.name) || MCPBridgeContract.nativeWrites.contains(call.name) {

@@ -6,7 +6,7 @@ import SwiftData
 /// No personal sources, mutation ports, retries or normal app startup are available.
 @MainActor enum OnDemandChatModelEvaluation {
     static func run(_ model: DashboardModel) async throws -> [String:Any] {
-        let provider = BoundedChatInference(model.chatGPT)
+        let provider = BoundedChatInference(model.inference)
         guard provider.hasSession, provider.inferenceVerified, !provider.usagePaused else { throw IntegrationError.verification }
         let suite="3PO.on-demand-chat."+UUID().uuidString
         guard let settings=UserDefaults(suiteName:suite) else {throw IntegrationError.verification}

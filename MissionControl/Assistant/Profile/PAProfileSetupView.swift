@@ -8,13 +8,13 @@ struct PAProfileSetupPanel: View {
     let topicID:UUID?
     let registration:String
     @FocusState private var answerFocused:Bool
-    private var owned:Bool { model.chatGPT.activeID == registration }
+    private var owned:Bool { model.inference.activeID == registration }
     private var session:UUID? { assistant.profileSession(topicID) }
     private var turns:[AssistantTurn] { owned ? assistant.profileTurns(topicID) : [] }
     private var reply:AssistantTurn? { turns.last(where:{$0.role == "assistant"}) }
     private var working:Bool { owned && assistant.profileBusy(topicID) }
     private var active:Bool { owned && assistant.setupActive(topicID) && session != nil }
-    private var ready:Bool { owned && !assistant.busy && !model.chatGPT.busy && !model.chatGPT.usagePaused && model.chatGPT.inferenceVerified }
+    private var ready:Bool { owned && !assistant.busy && !model.inference.busy && !model.inference.usagePaused && model.inference.inferenceVerified }
     private var answer:Binding<String> {
         Binding(get:{ guard let session else { return "" }; return assistant.drafts.text(registration:registration,widget:session,conversation:topicID) },set:{ text in
             guard owned,let session else { return }
@@ -78,10 +78,10 @@ struct PAProfileSetupPanel: View {
                 }
             }
             if !assistant.memory.enabled { Text("Memory saving is off. Answers stay in this interview; enable memory in Settings to retain facts.").font(.caption).foregroundStyle(.orange) }
-            if !model.chatGPT.inferenceVerified || model.chatGPT.usagePaused { Text("Verify your ChatGPT connection or check its usage in Settings to continue.").font(.caption).foregroundStyle(.secondary) }
+            if !model.inference.inferenceVerified || model.inference.usagePaused { Text("Verify your ChatGPT connection or check its usage in Settings to continue.").font(.caption).foregroundStyle(.secondary) }
         }.padding(28).frame(width:640,height:570)
         .onChange(of:working) { _,busy in if !busy { answerFocused=true } }
-        .onChange(of:model.chatGPT.activeID) { dismiss() }
+        .onChange(of:model.inference.activeID) { dismiss() }
         .onDisappear { assistant.drafts.flush() }
     }
 }

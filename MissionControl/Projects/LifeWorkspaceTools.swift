@@ -36,7 +36,7 @@ import CryptoKit
         return store.receipt(try operationKey(call,args:args),registration:registration) != nil
     }
     func completedReceipt(_ call: PAFunctionCall, args: [String:Any]) throws -> String? {
-        guard registration == model.chatGPT.activeID else { throw LifeWorkspaceFailure.message("Account changed; project operation stopped.") }
+        guard registration == model.inference.activeID else { throw LifeWorkspaceFailure.message("Account changed; project operation stopped.") }
         guard LifeWorkspaceTools.mutations.contains(call.name),let receipt = store.receipt(try operationKey(call,args:args),registration:registration) else { return nil }
         return try json(["saved":true,"alreadySaved":true,"result":receipt.result,"instruction":"This operation already has a durable receipt. Read current records before doing anything else."])
     }
@@ -77,7 +77,7 @@ import CryptoKit
     /// Local read preparation precedes semantic checking. Previously issued
     /// stale targets are rejected rather than silently rebased onto new content.
     func prepareExactReferences(_ call: PAFunctionCall, args: [String:Any]) throws {
-        guard registration == model.chatGPT.activeID else { throw LifeWorkspaceFailure.message("Account changed; project operation stopped.") }
+        guard registration == model.inference.activeID else { throw LifeWorkspaceFailure.message("Account changed; project operation stopped.") }
         if try hasReceipt(call,args:args) { return }
         let restoring = call.name == "restore_life_item"
         let all = store.items(registration,topic:topic,includeTopics:includeTopics,includeDeleted:restoring)
@@ -131,7 +131,7 @@ import CryptoKit
     /// Approval adopts only captured identities. A creation's destination keeps
     /// its identity when descriptive fields change; edits retain exact revisions.
     func restoreApprovalCapture(_ value: Capture, call: PAFunctionCall, args: [String:Any]) throws {
-        guard registration == model.chatGPT.activeID else { throw LifeWorkspaceFailure.message("Account changed; project approval stopped.") }
+        guard registration == model.inference.activeID else { throw LifeWorkspaceFailure.message("Account changed; project approval stopped.") }
         if try hasReceipt(call,args:args) { return }
         guard value.issued.count <= 80 else { throw LifeWorkspaceFailure.message("The captured project read exceeds its bounded allowance.") }
         let references = try exactReferences(call,args:args)
@@ -226,7 +226,7 @@ import CryptoKit
     }
     func execute(_ call: PAFunctionCall, args: [String:Any], reference: LifeReference? = nil) throws -> String {
         func text(_ key: String) -> String? { args[key] as? String }
-        guard registration == model.chatGPT.activeID else { throw LifeWorkspaceFailure.message("Account changed; project operation stopped.") }
+        guard registration == model.inference.activeID else { throw LifeWorkspaceFailure.message("Account changed; project operation stopped.") }
         let operationKey = try operationKey(call,args:args)
         if let receipt = try completedReceipt(call,args:args) { return receipt }
         switch call.name {

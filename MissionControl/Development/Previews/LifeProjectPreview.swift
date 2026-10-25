@@ -4,7 +4,7 @@ import AppKit
 
 @MainActor enum LifeProjectPreview {
     static func seed(_ model: DashboardModel) -> (String, LifeItem, LifeItem, LifeItem)? {
-        let registration = model.chatGPT.activeID.isEmpty ? "fictional-preview" : model.chatGPT.activeID
+        let registration = model.inference.activeID.isEmpty ? "fictional-preview" : model.inference.activeID
         let university = LifeItem(registration:registration, kind:.organisation, title:"Example University", areas:[.studies])
         let engineering = LifeItem(registration:registration, kind:.course, title:"Engineering", parentID:university.id, areas:[.studies])
         var project = LifeItem(registration:registration, kind:.project, title:"Sensor Garden", parentID:engineering.id, notes:"A fictional sensor prototype, from research to a tested baseline.", status:.active, areas:[.studies,.projects])

@@ -138,8 +138,8 @@ import SwiftData
                 guard !assistant.busy,registration == model.inference.activeID,memory.enabled,memory.learningEnabled,assistant.contextEnabled,memoryCurrent() else { throw MemoryLearningFailure.changed }
                 let input = try MemoryLearningRules.input(turns:batch,existing:existing,timezone:TimeZone.current.identifier,questionAllowed:questionAllowed,targets:targets)
                 try model.claimInference()
-                let response = try await model.inference.toolResponse(input:[["role":"user","content":input]],instructions:MemoryLearningRules.instructions + " " + MemoryLearningRules.resultInstructions,
-                    tools:MemoryLearningRules.tools(turns:batch,targets:targets,existing:issuedMemories,questionAllowed:questionAllowed),model:selectedModel,purpose:.learning) { _ in }
+                let response = try await model.inference.typedResult(input:[["role":"user","content":input]],instructions:MemoryLearningRules.instructions + " " + MemoryLearningRules.resultInstructions,
+                    tools:MemoryLearningRules.tools(turns:batch,targets:targets,existing:issuedMemories,questionAllowed:questionAllowed),model:selectedModel,effort:"medium",purpose:.learning)
                 try model.validateOwnership()
                 guard registration == model.inference.activeID, memory.enabled, memory.learningEnabled, assistant.contextEnabled,
                       !assistant.busy,memoryCurrent() else { throw MemoryLearningFailure.changed }
@@ -206,8 +206,8 @@ import SwiftData
             MemoryLearningTurn(id:"hypothetical",text:"For a hypothetical example only: I dislike blue. This is not a fact about me.",created:model.now())
         ]
         let input = try MemoryLearningRules.input(turns:batch,existing:[],timezone:TimeZone.current.identifier)
-        let response = try await model.inference.toolResponse(input:[["role":"user","content":input]],instructions:MemoryLearningRules.instructions + " " + MemoryLearningRules.resultInstructions,
-            tools:MemoryLearningRules.tools(turns:batch,targets:[],existing:[],questionAllowed:false),model:model.inference.selectedModel,purpose:.diagnostic) { _ in }
+        let response = try await model.inference.typedResult(input:[["role":"user","content":input]],instructions:MemoryLearningRules.instructions + " " + MemoryLearningRules.resultInstructions,
+            tools:MemoryLearningRules.tools(turns:batch,targets:[],existing:[],questionAllowed:false),model:model.inference.selectedModel,effort:"medium",purpose:.diagnostic)
         guard response.calls.count == 1, let call = response.calls.first,
               (call.namespace == "pa" && call.name == MemoryLearningRules.resultTool) || (call.namespace == nil && call.name == "pa." + MemoryLearningRules.resultTool) else { throw MemoryLearningFailure.invalid }
         let learned = try MemoryLearningRules.decode(call.arguments,turns:batch)

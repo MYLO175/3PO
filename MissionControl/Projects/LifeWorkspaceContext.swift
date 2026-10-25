@@ -8,7 +8,7 @@ struct LifeLinkOption: Identifiable {
 }
 @MainActor enum LifeWorkspaceContext {
     static func options(_ model: DashboardModel, registration: String, topic: UUID?, includeTopics: Bool) -> [LifeLinkOption] {
-        guard registration == model.chatGPT.activeID else { return [] }
+        guard registration == model.inference.activeID else { return [] }
         let assistant = model.assistant
         var options: [LifeLinkOption] = assistant.projects.items(registration, topic: topic, includeTopics: includeTopics).map {
             .init(reference: .init(kind: .item, id: $0.id.uuidString), title: $0.title, detail: $0.kind.title)
@@ -38,7 +38,7 @@ struct LifeLinkOption: Identifiable {
         return options
     }
     static func resolve(_ reference: LifeReference, model: DashboardModel, registration: String, topic: UUID?, includeTopics: Bool) -> LifeLinkOption? {
-        guard registration == model.chatGPT.activeID else { return nil }
+        guard registration == model.inference.activeID else { return nil }
         let assistant = model.assistant
         switch reference.kind {
         case .item:

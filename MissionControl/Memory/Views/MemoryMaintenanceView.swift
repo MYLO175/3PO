@@ -5,7 +5,7 @@ struct MemoryMaintenanceView:View {
     var inspect:([UUID])->Void
     @State private var retired:PAMemory?
     var body:some View {
-        let service=model.memoryMaintenance,memory=model.assistant.memory,registration=model.chatGPT.activeID
+        let service=model.memoryMaintenance,memory=model.assistant.memory,registration=model.inference.activeID
         VStack(alignment:.leading,spacing:10) {
             Text("Memory review").font(.headline)
             Text("The AI can flag repeated facts, possible conflicts and old provisional assumptions. Suggestions never rewrite facts, merge identities, delete evidence or edit your projects. This reviews human memories only, in a bounded sample.").font(.caption).foregroundStyle(.secondary)
@@ -13,7 +13,7 @@ struct MemoryMaintenanceView:View {
             Text("Off by default. An enabled review shares the existing learning allowance; it is not an extra daily job. Review now explicitly assesses one sample.").font(.caption).foregroundStyle(.secondary)
             HStack {
                 Button(service.paused(registration) ? "Resume review now" : "Review now") { service.check(model,manual:true) }
-                    .disabled(service.busy || model.chatGPT.busy || model.assistant.busy || !memory.enabled || !memory.learningEnabled || !model.chatGPT.inferenceVerified || model.chatGPT.usagePaused)
+                    .disabled(service.busy || model.inference.busy || model.assistant.busy || !memory.enabled || !memory.learningEnabled || !model.inference.inferenceVerified || model.inference.usagePaused)
                 if service.busy { Button("Stop review") { service.cancel() } }
             }
             Text(service.status).font(.caption).foregroundStyle(.secondary)

@@ -76,7 +76,7 @@ struct WorkspaceView: View {
             .task { model.start() }
             .onChange(of:store.selected.id) { focusedWidgetID = nil }
             .onChange(of:model.activityNavigation?.id) {
-                guard let request=model.activityNavigation,request.registration == model.chatGPT.activeID else {model.activityNavigation=nil;return}
+                guard let request=model.activityNavigation,request.registration == model.inference.activeID else {model.activityNavigation=nil;return}
                 editing=false;focusedWidgetID=request.widgetID
                 if request.projectID == nil {model.activityNavigation=nil}
             }

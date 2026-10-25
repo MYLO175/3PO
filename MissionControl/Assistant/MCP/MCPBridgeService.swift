@@ -128,21 +128,21 @@ import Observation
                 if name == "refresh_connection" { output = ["refreshed": true, "instruction": "Read fresh targets. Existing mutation requestIDs and receipts are retained."] }
                 else if name == "action_status" {
                     guard Set(args.keys) == ["requestID"], let id = (args["requestID"] as? String).flatMap(UUID.init(uuidString:)),
-                          let record = records.first(where: { $0.id == id && $0.registration == model.chatGPT.activeID }) else { throw ActionFailure.message("That external action is unavailable. Check the original item; do not resubmit an uncertain change.") }
+                          let record = records.first(where: { $0.id == id && $0.registration == model.inference.activeID }) else { throw ActionFailure.message("That external action is unavailable. Check the original item; do not resubmit an uncertain change.") }
                     output = record.output
                 } else {
                     let call = try MCPBridgeContract.call(name: name, arguments: args)
                     if MCPBridgeContract.writes.contains(name) {
                         let id = UUID(uuidString: args["requestID"] as! String)!
                         if let existing = records.first(where: { $0.id == id }) {
-                            guard existing.registration == model.chatGPT.activeID, existing.tool == name, existing.arguments == call.arguments else { throw ActionFailure.message("This requestID belongs to a different payload or account. It cannot be reused.") }
+                            guard existing.registration == model.inference.activeID, existing.tool == name, existing.arguments == call.arguments else { throw ActionFailure.message("This requestID belongs to a different payload or account. It cannot be reused.") }
                             output = existing.output
                         } else {
                             guard records.count < 10_000 else { throw ActionFailure.message("External action history is full. Existing receipts have been preserved.") }
                             guard activeMutation == nil, !model.writing, !model.assistant.busy else { throw ActionFailure.message("Another change is running. Wait for it to finish, then submit this same requestID.") }
                             // The host invoked this concrete payload through its own
                             // permission controls. Save a claim before ANY app mutation.
-                            var record = MCPActionRecord(id: id, registration: model.chatGPT.activeID, client: client, tool: name, arguments: call.arguments, proposal: Data())
+                            var record = MCPActionRecord(id: id, registration: model.inference.activeID, client: client, tool: name, arguments: call.arguments, proposal: Data())
                             record.phase = .attempted; record.permission = "mcp-host"
                             try replace(records + [record])
                             activeMutation = id
@@ -187,7 +187,7 @@ import Observation
     func approve(_ id: UUID) async {
         guard enabled, let model, !model.storageOwnershipBlocked, !model.assistant.busy, !model.writing,
               let index = records.firstIndex(where: { $0.id == id && $0.phase == .pending }),
-              let proposal = proposal(for: records[index]), records[index].registration == model.chatGPT.activeID else { error = "This action is unavailable or 3PO is busy. No change was attempted."; return }
+              let proposal = proposal(for: records[index]), records[index].registration == model.inference.activeID else { error = "This action is unavailable or 3PO is busy. No change was attempted."; return }
         error = nil
         let captured = generation, currentScope = scope(model)
         var values = records; values[index].phase = .attempted

@@ -1095,7 +1095,7 @@ import SwiftData
         guard valid(), writes == 0 else { throw IntegrationError.verification }
         if let projectID {
             guard call.name == "delete_life_item" else { throw IntegrationError.verification }
-            try model.assistant.projects.trash(projectID, registration: model.chatGPT.activeID, keepChildren: false, expectedRevision: model.assistant.projects.revision)
+            try model.assistant.projects.trash(projectID, registration: model.inference.activeID, keepChildren: false, expectedRevision: model.assistant.projects.revision)
         } else {
             guard call.name == "change_memory", model.assistant.memory.forget(memoryID) else { throw IntegrationError.verification }
         }

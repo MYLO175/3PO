@@ -180,7 +180,7 @@ struct PAContextCaptureView:View {
             .sheet(item: $pageInspection) { request in ContextPagesView(model: model, registration: registration, pageID: request.pageID) }
     }
     private func lookupAvailable(_ fingerprint: String?, tool: String) -> Bool {
-        guard let fingerprint, (capture.registration ?? registration) == model.chatGPT.activeID else { return false }
+        guard let fingerprint, (capture.registration ?? registration) == model.inference.activeID else { return false }
         return fingerprint == model.assistantLookupAccess(tool)
     }
     @ViewBuilder private var initialMemoryContext: some View {

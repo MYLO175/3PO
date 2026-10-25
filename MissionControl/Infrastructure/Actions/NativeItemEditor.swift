@@ -138,7 +138,7 @@ struct NativeItemEditor: View {
             if let creation,creation.suggestedStart != nil { edited=NativeCreationRules.applyingSuggestion(creation,to:session.item);dateSelected=true }
             if let proposedMove { edited = try NativeEditRules.moved(session.item,proposal:proposedMove) }
             if let review {
-                guard review.registration == model.chatGPT.activeID,model.proactive.canReview(review.discoveryID,model:model),session.item.modified == review.expectedModified else { throw ActionFailure.message("The proposal, source or Apple item changed. Return to Review inbox for current work.") }
+                guard review.registration == model.inference.activeID,model.proactive.canReview(review.discoveryID,model:model),session.item.modified == review.expectedModified else { throw ActionFailure.message("The proposal, source or Apple item changed. Return to Review inbox for current work.") }
                 edited=try review.applying(to:session.item)
             }
         } catch is CancellationError {} catch {if review != nil {baseline=nil;edited=nil};self.error = error.localizedDescription }
