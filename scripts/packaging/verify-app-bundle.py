@@ -19,6 +19,7 @@ def verify(app: Path) -> None:
         contents / "MacOS" / info["CFBundleExecutable"],
         resources / "MCPBridge/run.sh",
         resources / "MCPBridge/server.mjs",
+        resources / "MCPBridge/tool-schema-server.mjs",
         resources / "MCPBridge/package.json",
         resources / "WhatsAppBridge/Runtime/node",
         resources / "Graphiti/helper.py",
