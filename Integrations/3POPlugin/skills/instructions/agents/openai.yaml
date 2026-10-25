@@ -1,0 +1,3 @@
+interface:
+  display_name: "3PO / 3PO instructions"
+  short_description: "Inspect and update the appropriate explicit or learned policy."

@@ -1,0 +1,3 @@
+interface:
+  display_name: "3PO / Connection and action status"
+  short_description: "Diagnose availability, scope and interrupted operations."

@@ -20,7 +20,9 @@ xcuserdata/
 !WhatsAppBridge/package-lock.json
 !MCPBridge/package.json
 !MCPBridge/package-lock.json
+!Integrations/3POPlugin/catalog.json
 node_modules/
+__pycache__/
 WhatsAppBridge/Runtime/
 
 # Local credentials, personal storage and developer configuration

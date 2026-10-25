@@ -1,0 +1,3 @@
+interface:
+  display_name: "3PO / Recover a change"
+  short_description: "Inspect supported latest undo and restore exact local records."

@@ -1,0 +1,350 @@
+{
+  "name": "3po",
+  "displayName": "3PO",
+  "version": "0.1.0",
+  "description": "Your day, projects and personal context, through 3PO.",
+  "defaultPrompts": [
+    "Plan tomorrow using my calendar and project priorities.",
+    "Go through my Review inbox with me.",
+    "Show my projects and help me choose the next useful step."
+  ],
+  "toolNames": [
+    "about_3po",
+    "action_status",
+    "change_calendar",
+    "change_context_note",
+    "change_instructions",
+    "change_life_item",
+    "change_memory",
+    "change_project_note",
+    "change_reminder",
+    "continue_mail",
+    "create_life_items",
+    "delete_life_item",
+    "dismiss_review_item",
+    "dismiss_suggestion",
+    "link_life_item",
+    "list_whatsapp_chats",
+    "read_attention",
+    "read_calendar",
+    "read_context_notes",
+    "read_context_page",
+    "read_email",
+    "read_instructions",
+    "read_item_details",
+    "read_life_items",
+    "read_life_notebook",
+    "read_memory",
+    "read_memory_records",
+    "read_project_notes",
+    "read_reminders",
+    "read_review_inbox",
+    "read_weather",
+    "refresh_connection",
+    "reorder_life_item",
+    "restore_life_item",
+    "save_memory",
+    "search_mail",
+    "search_whatsapp",
+    "show_project_view",
+    "undo_apple_change",
+    "undo_life_edit",
+    "unlink_life_item"
+  ],
+  "workflows": [
+    {
+      "name": "setup",
+      "displayName": "Get started",
+      "goal": "Orient to 3PO and prove the app connection.",
+      "skill": "skills/setup/SKILL.md",
+      "claudeCommand": "/3po:setup",
+      "openaiEntry": "3PO / Get started",
+      "writePolicy": "orientation",
+      "primaryTools": [
+        "about_3po"
+      ],
+      "relatedTools": [],
+      "commonTools": [
+        "about_3po",
+        "read_instructions"
+      ]
+    },
+    {
+      "name": "status",
+      "displayName": "Connection and action status",
+      "goal": "Diagnose availability, scope and interrupted operations.",
+      "skill": "skills/status/SKILL.md",
+      "claudeCommand": "/3po:status",
+      "openaiEntry": "3PO / Connection and action status",
+      "writePolicy": "read_and_session_refresh",
+      "primaryTools": [
+        "action_status",
+        "refresh_connection"
+      ],
+      "relatedTools": [],
+      "commonTools": [
+        "about_3po",
+        "read_instructions"
+      ]
+    },
+    {
+      "name": "day",
+      "displayName": "Plan a day",
+      "goal": "Give a brief or a realistic plan for one day.",
+      "skill": "skills/day/SKILL.md",
+      "claudeCommand": "/3po:day",
+      "openaiEntry": "3PO / Plan a day",
+      "writePolicy": "proposal_unless_requested",
+      "primaryTools": [
+        "read_attention",
+        "read_weather"
+      ],
+      "relatedTools": [
+        "read_calendar",
+        "read_reminders",
+        "read_life_items",
+        "read_context_page"
+      ],
+      "commonTools": [
+        "about_3po",
+        "read_instructions"
+      ]
+    },
+    {
+      "name": "week",
+      "displayName": "Plan a week",
+      "goal": "Review progress and plan a bounded week.",
+      "skill": "skills/week/SKILL.md",
+      "claudeCommand": "/3po:week",
+      "openaiEntry": "3PO / Plan a week",
+      "writePolicy": "proposal_unless_requested",
+      "primaryTools": [],
+      "relatedTools": [
+        "read_calendar",
+        "read_reminders",
+        "read_life_items",
+        "read_context_page",
+        "read_memory"
+      ],
+      "commonTools": [
+        "about_3po",
+        "read_instructions"
+      ]
+    },
+    {
+      "name": "calendar",
+      "displayName": "Calendar",
+      "goal": "Read availability and make requested native event changes.",
+      "skill": "skills/calendar/SKILL.md",
+      "claudeCommand": "/3po:calendar",
+      "openaiEntry": "3PO / Calendar",
+      "writePolicy": "read_or_requested_write",
+      "primaryTools": [
+        "read_calendar",
+        "read_item_details",
+        "change_calendar"
+      ],
+      "relatedTools": [],
+      "commonTools": [
+        "about_3po",
+        "read_instructions"
+      ]
+    },
+    {
+      "name": "reminders",
+      "displayName": "Reminders",
+      "goal": "Manage native lists, dates, repeats and completion.",
+      "skill": "skills/reminders/SKILL.md",
+      "claudeCommand": "/3po:reminders",
+      "openaiEntry": "3PO / Reminders",
+      "writePolicy": "read_or_requested_write",
+      "primaryTools": [
+        "read_reminders",
+        "change_reminder"
+      ],
+      "relatedTools": [
+        "read_item_details"
+      ],
+      "commonTools": [
+        "about_3po",
+        "read_instructions"
+      ]
+    },
+    {
+      "name": "projects",
+      "displayName": "Projects",
+      "goal": "Manage nested work, notes, order and relationships.",
+      "skill": "skills/projects/SKILL.md",
+      "claudeCommand": "/3po:projects",
+      "openaiEntry": "3PO / Projects",
+      "writePolicy": "read_or_requested_write",
+      "primaryTools": [
+        "read_life_items",
+        "create_life_items",
+        "change_life_item",
+        "delete_life_item",
+        "reorder_life_item",
+        "link_life_item",
+        "unlink_life_item",
+        "read_project_notes",
+        "change_project_note",
+        "show_project_view"
+      ],
+      "relatedTools": [
+        "read_context_page",
+        "restore_life_item"
+      ],
+      "commonTools": [
+        "about_3po",
+        "read_instructions"
+      ]
+    },
+    {
+      "name": "review",
+      "displayName": "Review inbox",
+      "goal": "Discuss saved cards and apply or acknowledge requested decisions.",
+      "skill": "skills/review/SKILL.md",
+      "claudeCommand": "/3po:review",
+      "openaiEntry": "3PO / Review inbox",
+      "writePolicy": "read_or_requested_write",
+      "primaryTools": [
+        "read_review_inbox",
+        "dismiss_review_item",
+        "dismiss_suggestion"
+      ],
+      "relatedTools": [
+        "read_attention",
+        "read_email",
+        "change_calendar",
+        "change_reminder",
+        "change_life_item",
+        "save_memory",
+        "change_instructions"
+      ],
+      "commonTools": [
+        "about_3po",
+        "read_instructions"
+      ]
+    },
+    {
+      "name": "find",
+      "displayName": "Find personal information",
+      "goal": "Retrieve relevant permitted sources and supporting evidence.",
+      "skill": "skills/find/SKILL.md",
+      "claudeCommand": "/3po:find",
+      "openaiEntry": "3PO / Find personal information",
+      "writePolicy": "read_only",
+      "primaryTools": [
+        "search_mail",
+        "continue_mail",
+        "read_email",
+        "list_whatsapp_chats",
+        "search_whatsapp"
+      ],
+      "relatedTools": [
+        "read_calendar",
+        "read_reminders",
+        "read_item_details",
+        "read_life_items",
+        "read_memory",
+        "read_context_page",
+        "read_life_notebook"
+      ],
+      "commonTools": [
+        "about_3po",
+        "read_instructions"
+      ]
+    },
+    {
+      "name": "memory",
+      "displayName": "Memory",
+      "goal": "Inspect and maintain human-requested shared knowledge.",
+      "skill": "skills/memory/SKILL.md",
+      "claudeCommand": "/3po:memory",
+      "openaiEntry": "3PO / Memory",
+      "writePolicy": "read_or_requested_write",
+      "primaryTools": [
+        "read_memory",
+        "read_life_notebook",
+        "read_memory_records",
+        "save_memory",
+        "change_memory"
+      ],
+      "relatedTools": [],
+      "commonTools": [
+        "about_3po",
+        "read_instructions"
+      ]
+    },
+    {
+      "name": "context",
+      "displayName": "Context and notes",
+      "goal": "Explain maintained context and edit human-owned notes.",
+      "skill": "skills/context/SKILL.md",
+      "claudeCommand": "/3po:context",
+      "openaiEntry": "3PO / Context and notes",
+      "writePolicy": "read_or_requested_write",
+      "primaryTools": [
+        "read_context_page",
+        "read_context_notes",
+        "change_context_note"
+      ],
+      "relatedTools": [
+        "read_life_items",
+        "read_memory",
+        "read_life_notebook"
+      ],
+      "commonTools": [
+        "about_3po",
+        "read_instructions"
+      ]
+    },
+    {
+      "name": "instructions",
+      "displayName": "3PO instructions",
+      "goal": "Inspect and update the appropriate explicit or learned policy.",
+      "skill": "skills/instructions/SKILL.md",
+      "claudeCommand": "/3po:instructions",
+      "openaiEntry": "3PO / 3PO instructions",
+      "writePolicy": "read_or_requested_write",
+      "primaryTools": [
+        "read_instructions",
+        "change_instructions"
+      ],
+      "relatedTools": [
+        "read_calendar",
+        "read_life_items",
+        "change_memory"
+      ],
+      "commonTools": [
+        "about_3po",
+        "read_instructions"
+      ]
+    },
+    {
+      "name": "undo",
+      "displayName": "Recover a change",
+      "goal": "Inspect supported latest undo and restore exact local records.",
+      "skill": "skills/undo/SKILL.md",
+      "claudeCommand": "/3po:undo",
+      "openaiEntry": "3PO / Recover a change",
+      "writePolicy": "read_before_requested_recovery",
+      "primaryTools": [
+        "undo_apple_change",
+        "undo_life_edit",
+        "restore_life_item"
+      ],
+      "relatedTools": [
+        "action_status",
+        "read_calendar",
+        "read_reminders",
+        "read_item_details",
+        "read_life_items"
+      ],
+      "commonTools": [
+        "about_3po",
+        "read_instructions"
+      ]
+    }
+  ]
+}

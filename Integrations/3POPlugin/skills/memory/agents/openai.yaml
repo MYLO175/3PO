@@ -1,0 +1,3 @@
+interface:
+  display_name: "3PO / Memory"
+  short_description: "Inspect and maintain human-requested shared knowledge."

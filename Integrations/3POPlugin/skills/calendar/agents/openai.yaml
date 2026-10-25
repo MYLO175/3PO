@@ -1,0 +1,3 @@
+interface:
+  display_name: "3PO / Calendar"
+  short_description: "Read availability and make requested native event changes."

@@ -2,6 +2,8 @@
 
 The MCP adapter exposes 3PO’s personal workspace to external assistants. It uses the official MCP SDK and a private, authenticated connection to the running Mac app. It makes no model requests of its own.
 
+For installable ChatGPT/Codex and Claude packages with thirteen workflow skills, see the [3PO plugins](../Integrations/3POPlugin/README.md). Both reuse this app-backed adapter; the standalone MCP connection remains available.
+
 Tools cover Calendar and Reminders reads/writes, nested Projects and tasks, relationships, original and additional project notes, Review inbox reads and acknowledgements, personal memory, human context notes and editable feature/scoped instructions. Mail and selected WhatsApp chats are read-only. Generated context pages remain read-only; edit the underlying facts or human notes. `about_3po` supplies the live information map and capabilities, with a static guide resource and assistant prompt for hosts that support them.
 
 The connected assistant owns conversational intent and its normal tool approval UI. If permission is needed, it is requested in Claude Desktop or ChatGPT, where the human is talking. Host settings determine whether a tool asks each time or is allowed automatically. 3PO does not run a second AI intent check or require a second approval in its settings for a new external invocation. Tool arguments cannot select this authority: a private typed app entry point supplies it. Existing in-app chat checks retain their normal behaviour. Native revisions, source choices, recurrence scope, account ownership, durable claims and verified readback still apply.
