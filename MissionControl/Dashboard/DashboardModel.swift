@@ -127,6 +127,7 @@ struct CalendarRemovalReviewSession:Identifiable {
     private(set) var storageOwnershipBlocked = false
     @ObservationIgnored private var personalStorageLease: LocalRecordFileLease?
     @ObservationIgnored private lazy var services = ApplicationServices(container: container, nativeSources: injectedNativeSources)
+    @ObservationIgnored lazy var mcpBridge = MCPBridgeService(model: self)
     var weather: WeatherService { get { services.weather } set { services.weather = newValue } }
     var chatGPT: ChatGPTConnection { services.chatGPT }
     var aiUsage: AIUsageStore { get { services.aiUsage } set { services.aiUsage = newValue } }
@@ -134,6 +135,10 @@ struct CalendarRemovalReviewSession:Identifiable {
     @ObservationIgnored lazy var widgetCalendars = WidgetCalendarStore(service:eventKit)
     @ObservationIgnored lazy var assistant:AssistantService = {
         let service=services.assistant
+        service.prepareMemoryLearning = { [weak self, weak service] in
+            guard let self, let service else { return }
+            self.memoryLearning.capturePending(service)
+        }
         service.memory.sourceIsPermitted = { [weak self,weak service] record in
             guard let self,service?.contextEnabled == true else { return false }
             if record.source?.identity.kind == .whatsapp {
@@ -258,7 +263,7 @@ struct CalendarRemovalReviewSession:Identifiable {
             Task {
                 if ProcessInfo.processInfo.arguments.contains("--working-context-model") {
                     let report:[String:Any]
-                    do {report=try await WorkingContextModelEvaluation.run(self)}
+                    do {report=try await (ProcessInfo.processInfo.arguments.contains("--memory-consolidation-only") ? WorkingContextModelEvaluation.consolidateDialogue(self) : WorkingContextModelEvaluation.run(self))}
                     catch {report=["error":error.localizedDescription,"requests":NSNull(),"requestCountKnown":false,"storage":"Fictional read-only ports; normal source startup did not run. This outer failure does not establish how many requests were attempted."]}
                     if let data=try? JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-working-context-model-evaluation.json"),options:.atomic)}
                     NSApp.terminate(nil);return
@@ -454,8 +459,10 @@ struct CalendarRemovalReviewSession:Identifiable {
         }
         if ProcessInfo.processInfo.arguments.contains("--validate-life-notebook") { validateLifeNotebook();return }
         #endif
+        memoryLearning.capturePending(assistant)
         if !sample { whatsapp.resumeAtLaunch() }
         if sample { loadSample(); return }
+        mcpBridge.resume()
         weather.startRefresh(allowPrompt:true)
         observers.append(NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in

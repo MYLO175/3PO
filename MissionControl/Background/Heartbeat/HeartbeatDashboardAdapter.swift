@@ -41,12 +41,14 @@ import SwiftData
         },learning:{request in
             let result=try await model.runHeartbeatLearning(request:request)
             try request.validate()
+            let guidance = try await model.emailSummaries.consolidateReviewGuidance(model, request: request)
+            try request.validate()
             let pages = try await populateContextPages(model, request: request)
             try request.validate()
             let graph = try await model.graphiti.runHeartbeat(model, request: request)
             try request.validate()
-            let failures = [result.failure, pages.failure, graph.failure].compactMap { $0 }
-            return .init(failure:failures.isEmpty ? nil : failures.joined(separator:" · "),detail:result.detail + " " + pages.detail + " " + graph.detail,skipped:result.skipped && pages.skipped && graph.skipped)
+            let failures = [result.failure, guidance.failure, pages.failure, graph.failure].compactMap { $0 }
+            return .init(failure:failures.isEmpty ? nil : failures.joined(separator:" · "),detail:[result.detail, guidance.detail, pages.detail, graph.detail].joined(separator:" "),skipped:result.skipped && guidance.skipped && pages.skipped && graph.skipped)
         },started:{model.heartbeatActivityStarted($0,$1,$2)},finished:{model.heartbeatActivityFinished($0,$1)})
     }
 
@@ -102,7 +104,7 @@ import SwiftData
             var one=mailReview;one.windows=one.windows.filter{$0.key == id}
             return model.emailSummaries.hasPendingIncoming(model,mailReview:one) || !nativeReady || (model.proactive.enabled && model.proactive.hasPendingSources(model,mailReview:mailReview,whatsappReady:whatsappReady,mailAccountID:id))
         })
-        return .init(any:model.emailSummaries.feedback.items(model.chatGPT.activeID).contains{$0.state == .queued && $0.heartbeatEligible == true} || model.emailSummaries.hasPendingIncoming(model,mailReview:mailReview) || (nativeReady && proposals),mailAccounts:accounts,proposals:proposals || (model.proactive.enabled && environment(model).proposalAllowanceReached))
+        return .init(any:model.emailSummaries.reviewGuidancePending(model.chatGPT.activeID) || model.emailSummaries.feedback.items(model.chatGPT.activeID).contains{$0.state == .queued && $0.heartbeatEligible == true} || model.emailSummaries.hasPendingIncoming(model,mailReview:mailReview) || (nativeReady && proposals),mailAccounts:accounts,proposals:proposals || (model.proactive.enabled && environment(model).proposalAllowanceReached))
     }
     private static func activity(_ model:DashboardModel,registration:String,runID:String)->HeartbeatActivity {
         .init(preparedItems:model.proactive.state.records.filter{$0.registration == registration}.count,emailDrafts:model.emailSummaries.records.filter{$0.registration == registration && $0.replyDraft != nil}.count,whatsappDrafts:model.proactive.state.records.filter{$0.registration == registration && $0.replyDraft != nil}.count,handled:model.emailSummaries.records.filter{$0.registration == registration && $0.handling != nil}.count,briefUpdated:model.briefings.state.updatedBriefs?[registration]?.heartbeatID == runID,questions:model.briefings.state.reviewQuestions?.filter{$0.snapshot.registration == registration && $0.snapshot.heartbeatID == runID}.count ?? 0)

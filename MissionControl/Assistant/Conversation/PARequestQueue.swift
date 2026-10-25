@@ -14,6 +14,7 @@ struct PAQueuedRequest: Identifiable, Codable, Equatable {
     var finished: Date? = nil
     var focusAreas:[LifeArea]? = nil
     var images:[ChatImageAttachment]? = nil
+    var chatSessionID:UUID? = nil
 }
 enum PAQueueRules {
     static func recover(_ values: [PAQueuedRequest]) -> [PAQueuedRequest] {
@@ -39,10 +40,10 @@ enum PAQueueRules {
             }
         } catch { writable=false; self.error="Saved requests could not be read; the original record is preserved." }
     }
-    @discardableResult func add(registration:String,topicID:UUID?,prompt:String,focusAreas:[LifeArea]? = nil,images:[ChatImageAttachment] = [])->Bool {
+    @discardableResult func add(registration:String,topicID:UUID?,prompt:String,focusAreas:[LifeArea]? = nil,images:[ChatImageAttachment] = [],chatSessionID:UUID? = nil)->Bool {
         guard !registration.isEmpty, (!prompt.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || !images.isEmpty),images.count <= 4,images.allSatisfy({$0.registration == registration}), ConversationRules.acceptsPrompt(prompt) else { error="The queued message or its images are invalid or too large. Your draft is kept."; return false }
         return change { values in
-            values.append(.init(registration:registration,topicID:topicID,prompt:prompt,focusAreas:focusAreas,images:images.isEmpty ? nil : images))
+            values.append(.init(registration:registration,topicID:topicID,prompt:prompt,focusAreas:focusAreas,images:images.isEmpty ? nil : images,chatSessionID:chatSessionID))
         }
     }
     @discardableResult func mark(_ id:UUID,_ state:PAQueuedState)->Bool { change { values in if let i=values.firstIndex(where:{$0.id == id}) { values[i].state=state } } }

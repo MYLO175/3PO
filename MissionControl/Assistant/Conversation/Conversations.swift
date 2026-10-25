@@ -9,6 +9,8 @@ struct AssistantTurn: Codable, Identifiable, Equatable {
     var created: Date? = .now
     /// Context captured when sent; changing a widget's topic never retargets a reply.
     var contextID: UUID?
+    /// Nil retains the original conversation. Starting a chat never moves old turns.
+    var chatSessionID: UUID? = nil
     var choices: [String]? = nil
     var profileSessionID: UUID? = nil
     var profileControl: Bool? = nil
@@ -20,6 +22,8 @@ struct AssistantTurn: Codable, Identifiable, Equatable {
     var sourceMemoryIDs:[UUID]? = nil
     /// Exact page/working reference versions, without source prose or model reasoning.
     var contextKnowledgeVersions: [String: String]? = nil
+    /// Exact access metadata for supplied raw sources, retained across trace pruning.
+    var sourceAccessFingerprints: [String:String]? = nil
     var focusAreas:[LifeArea]? = nil
     var images:[ChatImageAttachment]? = nil
     /// IDs/counts only. A prepared input trace, not an assertion of model attention or write success.
@@ -69,11 +73,13 @@ struct AssistantLookupTrace: Codable, Equatable, Identifiable {
     var pageIDs: [String]?
     static func queryExcerpt(_ text: String) -> String { ConversationRules.utf8Prefix(text, bytes: 400) + (text.utf8.count > 400 ? "…" : "") }
 
-    static let names: Set<String> = ["read_assistant_context", "read_context_page", "search_graph_memory", "read_memory", "read_life_notebook", "read_life_items", "read_calendar", "read_reminders", "read_item_details", "search_mail", "continue_mail", "read_email", "list_whatsapp_chats", "search_whatsapp", "read_weather", "read_attention"]
+    static let names: Set<String> = ["read_assistant_context", "search_chat_history", "read_chat_history", "read_context_page", "search_graph_memory", "read_memory", "read_life_notebook", "read_life_items", "read_calendar", "read_reminders", "read_item_details", "search_mail", "continue_mail", "read_email", "list_whatsapp_chats", "search_whatsapp", "read_weather", "read_attention"]
     var title: String {
         switch tool {
         case "read_assistant_context": return "Assistant tools"
         case "search_graph_memory": return "Graphiti memory"
+        case "search_chat_history": return "Earlier chat search"
+        case "read_chat_history": return "Earlier chat opened"
         case "read_context_page": return "Context pages"
         case "read_memory": return "Supporting facts"
         case "read_life_notebook": return "Life context"
@@ -101,7 +107,7 @@ struct AssistantLookupTrace: Codable, Equatable, Identifiable {
         if tool == "read_reminders" { value.filters.append("Incomplete reminders") }
         if tool == "read_life_items", args["unfinished"] as? Bool == true { value.filters.append("Unfinished work") }
         if tool == "read_context_page", let offset = args["offset"] as? String, offset != "0" { value.filters.append("Page continuation") }
-        if ["read_context_page", "read_life_items"].contains(tool), let target = (args["id"] ?? args["root"]) as? String { value.targetID = String(target.prefix(180)) }
+        if ["read_context_page", "read_life_items", "read_chat_history"].contains(tool), let target = (args["id"] ?? args["root"]) as? String { value.targetID = String(target.prefix(180)) }
         if tool == "search_whatsapp" {
             if let chat = args["chat"] as? String { value.targetID = String(chat.prefix(180)) }
             else { value.filters.append("All selected chats") }
@@ -114,6 +120,7 @@ struct AssistantLookupTrace: Codable, Equatable, Identifiable {
         if object["available"] as? Bool == false || object["unavailable"] != nil { status = "unavailable"; return }
         let key: String? = switch tool {
         case "search_graph_memory": "facts"
+        case "search_chat_history", "read_chat_history": "turns"
         case "read_context_page": "pages"
         case "read_memory", "read_life_notebook": "records"
         case "read_life_items": "items"
@@ -208,7 +215,7 @@ struct AssistantActivityContext:Equatable {
         // the prior response finishing. Prose and streamed completion flags are excluded.
         var laterHuman:[String:UUID]=[:]
         for turn in conversation.turns.reversed() {
-            let scope=(turn.contextID?.uuidString ?? "general")+"|"+(turn.profileSessionID?.uuidString ?? "")
+            let scope=(turn.contextID?.uuidString ?? "general")+"|"+(turn.profileSessionID?.uuidString ?? "")+"|"+(turn.chatSessionID?.uuidString ?? "original")
             if turn.role == "user",turn.deliveryID == nil {laterHuman[scope]=turn.id}
             else if turn.role == "assistant",let reply=laterHuman[scope] {repliesAfter[turn.id]=reply}
         }
@@ -241,6 +248,13 @@ struct AssistantConversation: Codable, Identifiable, Equatable {
     var focus: String?
     var isTopic: Bool?
     var notebookAreas:[LifeArea]? = nil
+    var chatSession: AssistantChatSession? = nil
+    var pastChatSessions: [AssistantChatSession]? = nil
+}
+
+struct AssistantChatSession: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var started: Date
 }
 
 struct AssistantTranscriptRow:Identifiable {
@@ -250,6 +264,14 @@ struct AssistantTranscriptRow:Identifiable {
 }
 
 enum ConversationRules {
+    static let chatIdleInterval: TimeInterval = 8 * 60 * 60
+    static func chatTurns(feed: AssistantConversation, topic: AssistantConversation? = nil, sessionID: UUID?) -> [AssistantTurn] {
+        thread(feed: feed, topic: topic).filter { $0.profileSessionID == nil && $0.chatSessionID == sessionID }
+    }
+    static func needsFreshChat(_ feed: AssistantConversation, now: Date) -> Bool {
+        guard let last = chatTurns(feed: feed, sessionID: feed.chatSession?.id).last(where: { $0.deliveryID == nil })?.created else { return false }
+        return now.timeIntervalSince(last) >= chatIdleInterval
+    }
     /// One visibility check per turn; separators retain preceding hidden-by-pagination history.
     static func transcript(_ turns:[AssistantTurn],visible:(AssistantTurn)->Bool,calendar:Calendar = .current)->[AssistantTranscriptRow] {
         var rows:[AssistantTranscriptRow]=[],previous:AssistantTurn?,previousHuman:AssistantTurn?
@@ -281,8 +303,8 @@ enum ConversationRules {
     static func profileThread(feed:AssistantConversation,topic:AssistantConversation?,session:UUID)->[AssistantTurn] {
         thread(feed:feed,topic:topic).filter { $0.profileSessionID == session }
     }
-    static func history(feed: AssistantConversation, topic: AssistantConversation?, excludedDeliveries: Set<String> = []) -> [AssistantTurn] {
-        let eligible=thread(feed:feed,topic:topic).filter { $0.completed && $0.profileSessionID == nil && ($0.deliveryID.map { !excludedDeliveries.contains($0) } ?? true) }
+    static func history(feed: AssistantConversation, topic: AssistantConversation?, excludedDeliveries: Set<String> = [], sessionID: UUID? = nil, filterSession: Bool = false) -> [AssistantTurn] {
+        let eligible=thread(feed:feed,topic:topic).filter { $0.completed && $0.profileSessionID == nil && (!filterSession || $0.chatSessionID == sessionID) && ($0.deliveryID.map { !excludedDeliveries.contains($0) } ?? true) }
         // Background deliveries must not evict the actual human conversation.
         let updates=eligible.filter{$0.deliveryID != nil && $0.role != "user"}.suffix(4)
         let dialogue=eligible.filter{$0.deliveryID == nil || $0.role == "user"}.suffix(20-updates.count)

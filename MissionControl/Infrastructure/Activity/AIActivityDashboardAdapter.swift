@@ -245,6 +245,17 @@ private extension ReviewWorkPhase {var isFinished:Bool {self != .running && self
 #if DEBUG
 @MainActor enum AIActivityWorkPreview {
     static func seed(_ model:DashboardModel) {
+        if ProcessInfo.processInfo.arguments.contains("--activity-expiry-preview") {
+            let now=Date.now,registration=model.chatGPT.activeID
+            for (id,finished) in [("expired",now.addingTimeInterval(-AIActivitySummary.notificationDuration-1)),
+                                  ("expiring",now.addingTimeInterval(-AIActivitySummary.notificationDuration+30))] {
+                _=model.aiActivity.upsert(.init(id:"fictional-"+id,registration:registration,kind:.heartbeat,state:.failed,
+                    title:"Fictional heartbeat",message:"Fictional notification expiry",created:finished.addingTimeInterval(-10),finished:finished))
+            }
+            precondition(model.aiActivity.records(registration).count == 2,"Expired outcomes remain saved")
+            precondition(AIActivitySummary.recent(model.aiActivity.records(registration),current:nil,registration:registration,now:now).map(\.id) == ["fictional-expiring"],"Only the unexpired notification is presented")
+            return
+        }
         if ProcessInfo.processInfo.arguments.contains("--heartbeat-failure-preview") {
             let registration=model.chatGPT.activeID,now=Date.now
             let runs:[(String,String,Bool,String?)]=[

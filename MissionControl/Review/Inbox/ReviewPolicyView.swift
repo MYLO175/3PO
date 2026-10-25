@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Edits the same policy used by email and background Review; feedback remains canonical memory.
+/// Edits the complete document used by email and background Review.
 struct ReviewPolicyView: View {
     @Bindable var model: DashboardModel
     private let registration: String
@@ -19,9 +19,6 @@ struct ReviewPolicyView: View {
         let capture = model.emailSummaries.policy(model.chatGPT.activeID)
         _expected = State(initialValue: capture); _text = State(initialValue: capture.text)
     }
-    private var feedback: [PAMemory] {
-        model.assistant.memory.reviewPreferences(registration).filter {MemoryRules.inScope($0, conversationID: nil, includeTopics: true)}
-    }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -31,11 +28,11 @@ struct ReviewPolicyView: View {
                 Button("Save") {save()}.keyboardShortcut(.defaultAction)
                     .disabled(!ReviewPolicyRules.validText(text) || !model.emailSummaries.reviewPolicies.writable || registration.isEmpty)
             }
-            Text("Describe what deserves your attention. This guidance applies whenever 3PO reviews new information. Your source access and action approvals stay separate.").font(.callout).foregroundStyle(.secondary)
+            Text("This complete guide is supplied whenever 3PO assesses information for Review. Heartbeats merge new learned guidance into it. Edit it here to correct what matters to you.").font(.callout).foregroundStyle(.secondary)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Your Review policy").font(.headline)
-                    TextEditor(text: $text).font(.body).frame(minHeight: 210).padding(6).border(Color.secondary.opacity(0.25)).accessibilityLabel("Review policy Markdown")
+                    Text("Your Review guidance").font(.headline)
+                    TextEditor(text: $text).font(.body).frame(height: 300).padding(6).border(Color.secondary.opacity(0.25)).accessibilityLabel("Review guidance text")
                     HStack {
                         Text("Plain text or Markdown · \(text.count)/\(ReviewPolicyRules.textLimit)").font(.caption).foregroundStyle(.secondary)
                         Spacer()
@@ -47,6 +44,7 @@ struct ReviewPolicyView: View {
                                 VStack(alignment: .leading, spacing: 5) {
                                     HStack {
                                         Text(version.created.formatted(date: .abbreviated, time: .shortened)).font(.caption.weight(.semibold))
+                                        Text(version.consolidatedFrom == nil ? "Edited by you" : "Consolidated by 3PO").font(.caption).foregroundStyle(.secondary)
                                         if version.id.uuidString == expected.revision {Text("Current").font(.caption).foregroundStyle(.secondary)}
                                         Spacer()
                                         Button("Use this version") {text = version.text; resetting = false; selectedVersion = version}.controlSize(.small)
@@ -58,20 +56,9 @@ struct ReviewPolicyView: View {
                         }.padding(.top, 6)
                     }
                     Divider()
-                    HStack {Text("What your feedback has taught 3PO").font(.headline); Spacer(); Button("Manage feedback…") {showFeedback = true}.controlSize(.small)}
-                    Text("These saved preferences keep their original words, scope and history. They guide relevant messages alongside your policy; opening this page does not reinterpret emails.").font(.caption).foregroundStyle(.secondary)
-                    ForEach(feedback) {value in
-                        VStack(alignment: .leading, spacing: 5) {
-                            if let topic = value.reviewContext, !topic.isEmpty {Text(topic).font(.callout.weight(.semibold))}
-                            Text(value.text).font(.callout).textSelection(.enabled)
-                            Text(value.conversationID == nil ? "Shared Review feedback" : "Earlier conversation scope").font(.caption).foregroundStyle(.secondary)
-                            if let original = value.reviewFeedback, value.reviewInterpretation != nil {
-                                DisclosureGroup("Your original feedback") {Text(original).font(.caption).textSelection(.enabled)}.font(.caption)
-                            }
-                        }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
-                    }
-                    if feedback.isEmpty {Text("Use Feedback on a Review item to explain what matters. Dismiss acknowledges the item without teaching a preference.").font(.caption).foregroundStyle(.secondary)}
-                    if !model.assistant.memory.enabled {Text("Memory use is paused. Your policy still applies; saved feedback becomes available when memory use resumes.").font(.caption).foregroundStyle(.secondary)}
+                    Button("Original feedback and history…") {showFeedback = true}.controlSize(.small)
+                    Text("Your original words remain available for inspection. Review decisions receive the guidance above. Source access and approval of actions remain separate.").font(.caption).foregroundStyle(.secondary)
+                    if !model.assistant.memory.enabled {Text("Memory use is paused. Saved learned guidance becomes available when memory use resumes.").font(.caption).foregroundStyle(.secondary)}
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
             if let error = error ?? model.emailSummaries.reviewPolicies.error {Text(error).font(.caption).foregroundStyle(.orange)}

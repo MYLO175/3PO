@@ -264,7 +264,6 @@ struct ProactiveReviewContext {
         let whatsapp=waAccess.enabled && !waScope.linkedIdentity.isEmpty && (!heartbeat || heartbeatWhatsAppReady) && ProactiveRules.whatsappReviewEnabled(manual:manual,heartbeat:heartbeat,suggestions:waAccess.includeInSuggestions == true,heartbeatSource:model.heartbeat.whatsappEnabled) ? SourceContextRules.batch(waRecent,progress:.init()) : []
         let reconsider=earlierCandidates(model,mailReview:mailReview,whatsappReady:memoryWhatsAppReady).filter{progress.reviewedProposalContexts?[$0.id] != context}
         guard !emails.isEmpty || !whatsapp.isEmpty || !reconsider.isEmpty else { return }
-        let recentChat = (assistant.feed.map { assistant.sourceSafeHistory(model,feed:$0,topic:nil) } ?? []).filter{($0.sourceMemoryIDs ?? []).isEmpty}.suffix(12).map { ["role":$0.role,"text":String($0.content.prefix(1500))] }
         let heartbeatRevision=model.heartbeat.controlsRevision
         let memoryUseRevision=assistant.memory.useRevision
         let memoryUse:AutomaticMemoryUse = manual ? .manualSuggestions : heartbeat ? .heartbeatSuggestions : .suggestions
@@ -366,7 +365,7 @@ struct ProactiveReviewContext {
                     row["actionEvidence"]=(pair.1.actionEvidence ?? []).enumerated().map{["id":"mail_\(index):action_\($0.offset)","quote":$0.element]}
                     if let relevance=pair.1.personalRelevance {row["personalRelevanceReason"]=relevance.reason}
                     return row
-                },"paMemory":memory,"recentGeneralChat":recentChat,"preferences":preferences,"deliveredSuggestions":self.currentAdvice(model).suffix(20).map{ProactiveRules.reviewProjection($0).message}]
+                },"paMemory":memory,"preferences":preferences,"deliveredSuggestions":self.currentAdvice(model).suffix(20).map{ProactiveRules.reviewProjection($0).message}]
                 input["reviewPolicy"]=capturedReviewPolicy.input
                 input["calendarPurposes"]=guideObject
                 input["featureInstructions"]=featureCaptures.compactMap{(try? JSONSerialization.jsonObject(with:Data($0.text.utf8))) as? [String:Any]}.compactMap{$0["instructions"]}

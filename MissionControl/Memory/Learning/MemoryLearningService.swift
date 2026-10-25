@@ -15,6 +15,7 @@ import SwiftData
     private(set) var error: String?
     private let container: ModelContainer?
     private var readable = true
+    private var loadedBytes: Data?
     private var task: Task<Void,Never>?
     func cancelAndWait(heartbeatRunID:String) async {guard ownedHeartbeatRunID == heartbeatRunID else {return};let active=task;active?.cancel();await active?.value}
     init(container: ModelContainer?, settings: UserDefaults = .standard) {
@@ -22,26 +23,67 @@ import SwiftData
         self.settings = settings
         if settings.object(forKey:"paLearningQuestionsEnabled") != nil { questionsEnabled = settings.bool(forKey:"paLearningQuestionsEnabled") }
         do {
-            if let record = try LocalRecordRepository.read("paMemoryLearning", container: container) {
+            loadedBytes = try LocalRecordRepository.read("paMemoryLearning", container: container)
+            if let record = loadedBytes {
                 state = try JSONDecoder().decode(MemoryLearningState.self,from: record)
                 guard state.version == 1 else { throw MemoryLearningFailure.invalid }
             }
         } catch { readable = false; self.error = "Saved memory-learning progress is unavailable; its original record is preserved." }
         restoringSettings = false
     }
+    /// The saved transcript/receipts are the durable queue. Only progress is duplicated here.
+    /// Establish the existing-history baseline before new work arrives, without inference or source reads.
+    func capturePending(_ assistant: any LearningAssistantReading) {
+        let owner = assistant.connection.activeID
+        guard readable, !busy, !owner.isEmpty else { return }
+        let prior = state.accounts[owner]
+        let legacyPause = prior?.paused == true && prior?.pausedTurnIDs == nil
+        guard prior == nil || prior?.actionsBaselined != true || legacyPause else { return }
+        let turns = assistant.learningTurns()
+        var progress = MemoryLearningRules.progress(turns: turns, prior: prior, suppressed: assistant.memory.suppressed(owner), day: BriefingRules.day(.now))
+        if legacyPause {
+            // Older claims did not save their input IDs. Hold all pending human input from
+            // before the claim: changed suppression/scope could otherwise replay part of it.
+            let atClaim = turns.filter { turn in !turn.isAction && MemoryRules.explicitRequest(turn.text) == nil &&
+                !progress.seen.contains(turn.id) &&
+                (progress.lastAttempt.map { date in turn.created <= date } ?? true) }
+            progress.pausedTurnIDs = Set(atClaim.map(\.id))
+        }
+        if progress.actionsBaselined != true {
+            progress.seen.formUnion(turns.filter(\.isAction).map(\.id)); progress.actionsBaselined = true
+            for turn in turns where turn.isAction {
+                if let revision = turn.revision {
+                    if progress.revisions == nil { progress.revisions = [:] }
+                    progress.revisions?[turn.id] = revision
+                }
+            }
+        }
+        let previous = state; state.accounts[owner] = progress
+        do { try save() } catch { state = previous; self.error = error.localizedDescription }
+    }
+    func pendingTurnIDs(_ assistant: any LearningAssistantReading) -> Set<String> {
+        let owner = assistant.connection.activeID
+        let progress = state.accounts[owner]
+        let seen = progress?.seen ?? [], revisions = progress?.revisions ?? [:]
+        let suppressed = assistant.memory.suppressed(owner)
+        return Set(assistant.learningTurns().filter { MemoryLearningRules.pending($0, seen:seen, revisions:revisions) && !suppressed.contains($0.id) }.map(\.id))
+    }
     func status(_ assistant: any LearningAssistantReading) -> String {
         let progress = state.accounts[assistant.connection.activeID]
-        let count = MemoryLearningRules.batch(assistant.learningTurns(),seen:progress?.seen ?? [],suppressed:assistant.memory.suppressed(assistant.connection.activeID)).count
-        if busy { return "Learning useful context from a small conversation batch…" }
+        let count = pendingTurnIDs(assistant).count
+        if busy { return "Consolidating useful chat, activity and feature guidance…" }
         if !assistant.memory.enabled { return "Saved memory use is off; automatic learning is also on hold." }
         if !assistant.connection.inferenceVerified { return "Verify your ChatGPT connection to enable learning. Explicit memory still works locally." }
         if assistant.connection.usagePaused { return "ChatGPT access is paused. Saved and explicit memories remain available." }
         if !assistant.contextEnabled { return "Assistant source context is off; automatic learning is on hold." }
         if assistant.hasDraft { return "A visible chat draft is open. Finish or clear it before learning new context." }
         if !assistant.memory.learningEnabled { return "Automatic learning paused. Explicit Remember requests still work." }
-        if progress?.paused == true { return "Learning paused after a stopped or failed attempt. Check context to try once when ready." }
+        if progress?.paused == true {
+            if let held = progress?.pausedTurnIDs { return "\(count) saved items pending · \(held.count) attempted items await an explicit retry. Other changes remain eligible during a heartbeat." }
+            return "Learning paused after a stopped or failed attempt. Check context to try once when ready."
+        }
         if progress == nil { return "Initial orientation will inspect only the eight most recent eligible messages." }
-        return "\(count) messages in next batch · \(progress?.day == BriefingRules.day(.now) ? progress?.attempts ?? 0 : 0) attempts today (automatic budget: 4) · \(progress?.skippedAtOrientation ?? 0) older messages outside initial orientation"
+        return "\(count) saved chat/activity items pending · up to 8 per pass · \(progress?.day == BriefingRules.day(.now) ? progress?.attempts ?? 0 : 0) attempts today (automatic budget: 4) · \(progress?.skippedAtOrientation ?? 0) older messages outside initial orientation"
     }
     func check(_ model: LearningRuntime, manual: Bool = false) {
         guard (try? model.validateOwnership()) != nil else {return}
@@ -51,11 +93,13 @@ import SwiftData
         let turns = assistant.learningTurns(), day = BriefingRules.day(now)
         var progress = MemoryLearningRules.progress(turns:turns,prior:state.accounts[registration],suppressed:memory.suppressed(registration),day:day)
         guard MemoryLearningRules.allowed(progress,now:now,manual:manual) else { return }
-        let batch = MemoryLearningRules.batch(turns,seen:progress.seen,suppressed:memory.suppressed(registration))
+        let held = manual ? Set<String>() : progress.pausedTurnIDs ?? []
+        let batch = MemoryLearningRules.batch(turns,seen:progress.seen,suppressed:memory.suppressed(registration),offsets:progress.offsets ?? [:],revisions:progress.revisions ?? [:],paused:held)
         guard !batch.isEmpty else { if state.accounts[registration] == nil { let old = state; state.accounts[registration] = progress; do { try save() } catch { state = old; self.error = error.localizedDescription } }; return }
         guard model.learningBudget.claim(registration,manual:manual,now:model.now(),lane:.conversation) else { return }
         let previous = state
         progress.lastAttempt = now; progress.attempts += 1; progress.paused = true
+        progress.pausedTurnIDs = (progress.pausedTurnIDs ?? []).union(batch.map(MemoryLearningRules.pauseKey))
         state.accounts[registration] = progress
         do { try save() } catch { state = previous; self.error = error.localizedDescription; return }
         // Persist a paused claim before requesting inference. An interrupted job is never retried silently on launch.
@@ -65,9 +109,16 @@ import SwiftData
         let questionAllowed = questionsEnabled && model.canOfferQuestion(registration, now) && (batch.first?.conversationID == nil || assistant.topics.contains { $0.id == batch.first?.conversationID }) && LearningQuestionRules.allowed(progress:progress,records:state.questions ?? [],registration:registration,day:day)
         // Depend only on supplied beliefs and correction history. Other local edits
         // remain in the current envelope when the supported result is merged.
-        let selectedMemory=Array(memory.context(registration,conversationID:batch.first?.conversationID,query:batch.map(\.text).joined(separator:" "),now:model.now()).prefix(20))
+        let targets = model.instructionTargets(batch)
+        let scopes = Set(targets.map(\.scope))
+        let routed = memory.permittedRecords.filter { $0.source == nil && MemoryRules.usable($0, registration: registration, now: now) &&
+            MemoryRules.inScope($0, conversationID: batch.first?.conversationID) && $0.effectiveInstructionScope.map(scopes.contains) == true }.prefix(12).map(MemoryRetrieval.record)
+        var selectedMemory=Array(memory.context(registration,conversationID:batch.first?.conversationID,query:batch.map(\.text).joined(separator:" "),now:model.now()).prefix(20))
+        selectedMemory += routed.filter { row in !selectedMemory.contains(where: { $0["id"] == row["id"] }) }
         let memoryDependencies=MemoryDependencyRules.capture(selectedMemory)
-        var existing = selectedMemory.map { ["text":String(($0["text"] ?? "").prefix(500)),"kind":$0["kind"] ?? "context","areas":$0["areas"] ?? "","connections":$0["connections"] ?? "","organisation":$0["organisation"] ?? "","certainty":$0["certainty"] ?? "unknown","sourceEvidence":$0["sourceEvidence"] ?? ""] }
+        let issuedIDs = Set(selectedMemory.compactMap { $0["id"] })
+        let issuedMemories = memory.permittedRecords.filter { issuedIDs.contains($0.id.uuidString) }
+        var existing = selectedMemory.map { ["id":$0["id"] ?? "", "instruction":$0["instructionScope"] ?? "", "text":String(($0["text"] ?? "").prefix(500)),"kind":$0["kind"] ?? "context","areas":$0["areas"] ?? "","connections":$0["connections"] ?? "","organisation":$0["organisation"] ?? "","certainty":$0["certainty"] ?? "unknown","sourceEvidence":$0["sourceEvidence"] ?? ""] }
         let batchIDs=Set(batch.map(\.id))
         let historical=Array(memory.records.filter { $0.registration == registration && $0.conversationID == batch.first?.conversationID && $0.supersededBy != nil && $0.sourceTurnID.map{batchIDs.contains($0)} == true }.prefix(8))
         let suppressedBatch=memory.suppressed(registration).intersection(batchIDs)
@@ -78,29 +129,40 @@ import SwiftData
                 let current=memory.permittedRecords.filter {MemoryRules.usable($0,registration:registration,now:model.now()) && MemoryRules.inScope($0,conversationID:batch.first?.conversationID)}.map(MemoryRetrieval.record)
                 return memoryControls == memory.controlsRevision && contextControls == assistant.contextRevision &&
                     MemoryDependencyRules.available(memoryDependencies,records:current) &&
+                    model.instructionTargets(batch) == targets &&
+                    turns.filter({ batchIDs.contains($0.id) }) == assistant.learningTurns().filter({ batchIDs.contains($0.id) }) &&
                     historical.allSatisfy{memory.records.contains($0)} && memory.suppressed(registration).intersection(batchIDs) == suppressedBatch
             }
             do {
                 try model.validateOwnership()
                 guard !assistant.busy,registration == model.inference.activeID,memory.enabled,memory.learningEnabled,assistant.contextEnabled,memoryCurrent() else { throw MemoryLearningFailure.changed }
-                let input = try MemoryLearningRules.input(turns:batch,existing:existing,timezone:TimeZone.current.identifier,questionAllowed:questionAllowed)
+                let input = try MemoryLearningRules.input(turns:batch,existing:existing,timezone:TimeZone.current.identifier,questionAllowed:questionAllowed,targets:targets)
                 try model.claimInference()
-                let output = try await model.inference.streamResponse(input:[["role":"user","content":input]],instructions:MemoryLearningRules.instructions,model:selectedModel,purpose:.learning) { _ in }
+                let response = try await model.inference.toolResponse(input:[["role":"user","content":input]],instructions:MemoryLearningRules.instructions + " " + MemoryLearningRules.resultInstructions,
+                    tools:MemoryLearningRules.tools(turns:batch,targets:targets,existing:issuedMemories,questionAllowed:questionAllowed),model:selectedModel,purpose:.learning) { _ in }
                 try model.validateOwnership()
                 guard registration == model.inference.activeID, memory.enabled, memory.learningEnabled, assistant.contextEnabled,
                       !assistant.busy,memoryCurrent() else { throw MemoryLearningFailure.changed }
-                let assessment = try MemoryLearningRules.assessment(output,turns:batch,questionAllowed:questionAllowed)
+                guard response.calls.count == 1, let call = response.calls.first,
+                      (call.namespace == "pa" && call.name == MemoryLearningRules.resultTool) || (call.namespace == nil && call.name == "pa." + MemoryLearningRules.resultTool) else { throw MemoryLearningFailure.invalid }
+                let assessment = try MemoryLearningRules.assessment(call.arguments,turns:batch,questionAllowed:questionAllowed,targets:targets,existing:issuedMemories)
                 let learned = assessment.memories
-                guard memory.merge(learned,registration:registration,sourceDates:Dictionary(batch.filter(\.dateKnown).map { ($0.id,$0.created) },uniquingKeysWith:{ first,_ in first }),sourceTopics:Dictionary(batch.compactMap { turn in turn.conversationID.map { (turn.id,$0) } },uniquingKeysWith:{ first,_ in first }),now:model.now()) else { throw MemoryLearningFailure.storage }
-                assistant.acknowledgeLearned(learned)
-                let beforeResult = state
+                var next = state
                 let questionScopeAvailable=batch.first?.conversationID.map{topic in assistant.topics.contains{$0.id == topic}} ?? true
                 if self.questionsEnabled,model.canOfferQuestion(registration, model.now()),questionScopeAvailable,let draft = assessment.question, let record = LearningQuestionRules.record(draft,turns:batch,prior:state.questions ?? [],registration:registration,now:model.now()) {
-                    state.questions = (state.questions ?? []) + [record]
-                    state.accounts[registration]?.lastQuestionDay = BriefingRules.day(record.created)
+                    next.questions = (next.questions ?? []) + [record]
+                    next.accounts[registration]?.lastQuestionDay = BriefingRules.day(record.created)
                 }
-                state.accounts[registration]?.seen.formUnion(batch.map(\.id)); state.accounts[registration]?.paused = false
-                do { try save() } catch { state = beforeResult; throw error }
+                if var completed = next.accounts[registration] {
+                    MemoryLearningRules.acknowledge(batch, progress: &completed)
+                    completed.pausedTurnIDs?.subtract(batch.map(MemoryLearningRules.pauseKey)); completed.paused = completed.pausedTurnIDs?.isEmpty == false
+                    next.accounts[registration] = completed
+                }
+                let bytes = try LocalRecordCoding.preservingUnknown(next, original: loadedBytes)
+                guard memory.merge(learned,registration:registration,sourceDates:Dictionary(batch.filter(\.dateKnown).map { ($0.id,$0.created) },uniquingKeysWith:{ first,_ in first }),sourceTopics:Dictionary(batch.compactMap { turn in turn.conversationID.map { (turn.id,$0) } },uniquingKeysWith:{ first,_ in first }),now:model.now(),
+                    committing:["paMemoryLearning":bytes],expected:["paMemoryLearning":LocalRecordVersion(loadedBytes)]) else { throw MemoryLearningFailure.storage }
+                state = next; loadedBytes = bytes
+                assistant.acknowledgeLearned(learned)
                 recoverDelivery(model)
             } catch is CancellationError { self.error = "Memory learning stopped. Saved progress remains paused." }
             catch { self.error = error.localizedDescription }
@@ -144,8 +206,11 @@ import SwiftData
             MemoryLearningTurn(id:"hypothetical",text:"For a hypothetical example only: I dislike blue. This is not a fact about me.",created:model.now())
         ]
         let input = try MemoryLearningRules.input(turns:batch,existing:[],timezone:TimeZone.current.identifier)
-        let output = try await model.inference.streamResponse(input:[["role":"user","content":input]],instructions:MemoryLearningRules.instructions,purpose:.diagnostic) { _ in }
-        let learned = try MemoryLearningRules.decode(output,turns:batch)
+        let response = try await model.inference.toolResponse(input:[["role":"user","content":input]],instructions:MemoryLearningRules.instructions + " " + MemoryLearningRules.resultInstructions,
+            tools:MemoryLearningRules.tools(turns:batch,targets:[],existing:[],questionAllowed:false),model:model.inference.selectedModel,purpose:.diagnostic) { _ in }
+        guard response.calls.count == 1, let call = response.calls.first,
+              (call.namespace == "pa" && call.name == MemoryLearningRules.resultTool) || (call.namespace == nil && call.name == "pa." + MemoryLearningRules.resultTool) else { throw MemoryLearningFailure.invalid }
+        let learned = try MemoryLearningRules.decode(call.arguments,turns:batch)
         guard learned.count == 1, learned.first?.turnID == "preference", learned.first?.kind == .preference else { throw MemoryLearningFailure.invalid }
         return "PASS: production memory prompt selected the stated preference and rejected quoted spam, search-only and hypothetical content. No fictional memory saved."
     }
@@ -153,6 +218,8 @@ import SwiftData
     func cancel() { task?.cancel() }
     private func save() throws {
         guard let container else { throw MemoryLearningFailure.storage }
-        try LocalRecordRepository(container: container).save(state, key: "paMemoryLearning")
+        let bytes = try LocalRecordCoding.preservingUnknown(state, original: loadedBytes)
+        try LocalRecordRepository(container: container).write(["paMemoryLearning":bytes], expected:["paMemoryLearning":LocalRecordVersion(loadedBytes)])
+        loadedBytes = bytes
     }
 }

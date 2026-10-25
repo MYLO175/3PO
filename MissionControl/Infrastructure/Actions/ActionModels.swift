@@ -1,6 +1,9 @@
 import Foundation
 import CryptoKit
 
+/// Invocation authority is supplied by app code, never decoded from tool arguments.
+enum ActionToolAuthority { case conversation, externalMCPHost }
+
 enum ActionKind: String, Codable { case createReminder, editReminder, completeReminder, createEvent, editEvent, deleteEvent, deleteReminder }
 struct ActionDraft: Codable {
     var kind: ActionKind

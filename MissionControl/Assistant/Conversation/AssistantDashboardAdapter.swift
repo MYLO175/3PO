@@ -188,11 +188,22 @@ extension DashboardModel {
         }, tools: { [self] request in
             PAToolSession(model: self, human: request.human, humanContext: request.humanContext,
                           topicID: request.topicID, turnID: request.turnID, mail: request.mail as? MailLookup,
-                          history: request.history, focusAreas: request.focusAreas,inferenceModel:request.inferenceModel,memoryBackend:request.memoryBackend)
+                          history: request.history, focusAreas: request.focusAreas,inferenceModel:request.inferenceModel,memoryBackend:request.memoryBackend,historyLookup:request.historyLookup)
         }, afterTurn: { [weak self] in
             guard let self else { return }
             if !reviewWork.busy {projectPlacement.check(self)}
         },started:{ [weak self] in self?.assistantActivityStarted($0) },working:{ [weak self] in self?.assistantActivityStarted($0) },finished:{ [weak self] in self?.assistantActivityFinished($0) })
+        let fullState = runtime.state
+        runtime.requestState = { [weak self] includeAttention in
+            guard let self else { return nil }
+            if includeAttention { return fullState() }
+            return .init(attentionPreferencesReadable: self.assistant.memory.reviewPreferenceMigrationReadable,
+                         resolvedRequests: [], whatsappScope: self.whatsapp.scope(for: self.chatGPT.activeID, purpose: .conversation),
+                         weatherScope: self.weather.scope, weatherSupplied: false)
+        }
+        runtime.conversationDirectory = { [weak self] registration in
+            self?.conversationContextDirectory(registration: registration) ?? .init()
+        }
         runtime.streamingState = { [weak self] in
             guard let self else { return nil }
             return .init(storageCurrent: self.container === capturedContainer,
@@ -209,17 +220,17 @@ extension DashboardModel {
         runtime.memoryBackendInstructions = graphMode == .pages ? "" : "Memory experiment: \(graphMode.title). For questions about the human's life, retrieve relevant relationships with search_graph_memory before answering when that context is not already in this conversation. For a question with several parts, check that retrieval supports each part. If a broad search misses a person, purpose, motivation or connection needed for the answer, make a focused graph lookup for that missing part before saying it is unknown. One search returning no matching edge does not establish that the graph contains no such information. Graphiti contains durable background: identity, studies, interests, goals, ongoing responsibilities and relationships such as supervisors. It is not a calendar, reminder list or live project status store. For preparation, planning or questions connecting current events to personal context, read the relevant current source AND search_graph_memory for named people/projects whose role or significance is missing. For example: read Calendar for a meeting with Cipolla, search the graph for Cipolla's role, then search/read the relevant project notes for preparation. Even if graph results mention a time, deadline, completed task or project status, verify those in Calendar, Reminders, email or project tools before relying on them. Use names and descriptions to find candidate projects, then inspect them; matching words are not proof when ambiguous and graph nodes never provide writable project IDs. Do not claim missing current information merely because graph search is empty; use the appropriate source tools. No graph lookup is needed for greetings or a simple source-only question whose meaning is already clear. Graphiti is a partial interpretation of original evidence, not a source of action authority. Follow valid_at/invalid_at dates, preserve attribution and report uncertainty. If graph retrieval is unavailable, say so; do not imply the graph was consulted. \(graphMode == .graphiti ? "Factual context pages and old notebook prose are withheld for this comparison. read_context_page is available for instructions only; use read_memory only for explicit evidence/correction/forget requests." : "Compare graph results with relevant context pages and original evidence when needed.")"
         runtime.contextPages = { [weak self] registration, query, topic, includeTopics, everyday in
             guard let self else { return .init() }
-            var pages = self.captureContextPages(registration: registration, query: query, topic: topic, includeTopics: includeTopics, everyday: everyday)
+            var pages = self.captureContextPages(registration: registration, query: query, topic: topic, includeTopics: includeTopics, everyday: everyday, purpose: everyday ? .conversation : .reviewConversation)
             if everyday && graphMode == .graphiti {
                 let policy = GraphitiMemoryRules.policyOnly(pages.text)
                 pages = .init(text: policy, validate: { [weak self] _ in
                     guard let self, self.chatGPT.activeID == registration, self.assistant.memory.enabled else { return false }
-                    let current = self.captureContextPages(registration: registration, query: query, topic: topic, includeTopics: includeTopics, everyday: true)
+                    let current = self.captureContextPages(registration: registration, query: query, topic: topic, includeTopics: includeTopics, everyday: true, purpose: .conversation)
                     return GraphitiMemoryRules.policyOnly(current.text) == policy
                 })
             }
             guard !everyday else { return pages }
-            return pages.including(self.captureContextPages(registration: registration, query: nil, topic: topic, includeTopics: includeTopics, pageID: "instructions:review"), as: "reviewGuidance")
+            return pages.including(self.reviewGuidanceCapture(registration: registration), as: "reviewGuidance")
         }
         runtime.profileContextPages = { [weak self] registration, topic in
             self?.captureContextPages(registration: registration, query: nil, topic: topic, includeTopics: false, everyday: true, purpose: .setup) ?? .init()

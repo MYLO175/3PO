@@ -308,6 +308,16 @@ import SwiftData
                     try step("feedback","failed",error)
                 } else {try step("feedback",feedback.skipped ? "skipped" : "done",feedback.detail)}
                 if !PAHeartbeatRules.canClaim(state.accounts[registration] ?? account,day:BriefingRules.day(clock()),limit:dailyCallLimit) {throw HeartbeatBudgetExhausted()}
+                // Consolidate chat/action guidance before classifying incoming information.
+                try step("learning","running")
+                try requireOwned()
+                let learning=try await runtime.learning(.init(registration:registration,manual:manual,runID:runID,mailReview:mailReview,whatsappReady:whatsappReady,claim:{try self.claimCall(registration,runID:runID)},validate:{try requireOwned()}))
+                try requireOwned()
+                if let error=learning.failure {
+                    stageFailures.append("Memory: "+String(error.prefix(400)))
+                    try step("learning","failed",error)
+                } else {try step("learning",learning.skipped ? "skipped" : "done",learning.detail)}
+                if !PAHeartbeatRules.canClaim(state.accounts[registration] ?? account,day:BriefingRules.day(clock()),limit:dailyCallLimit) {throw HeartbeatBudgetExhausted()}
                 try step("email",runtime.environment().emailEnabled ? "running" : "skipped")
                 // Existing classifier is serial, selective and preserves its
                 // original monitoring start/decisions; this is not a new backlog.
@@ -325,14 +335,6 @@ import SwiftData
                     try step("email","failed",error)
                 } else {try step("email",runtime.environment().emailEnabled ? "done" : "skipped","Existing assessments reused; new permitted mail reviewed when available.")}
                 if !PAHeartbeatRules.canClaim(state.accounts[registration] ?? account,day:BriefingRules.day(clock()),limit:dailyCallLimit) { throw HeartbeatBudgetExhausted() }
-                try step("learning","running")
-                try requireOwned()
-                let learning=try await runtime.learning(.init(registration:registration,manual:manual,runID:runID,mailReview:mailReview,whatsappReady:whatsappReady,claim:{try self.claimCall(registration,runID:runID)},validate:{try requireOwned()}))
-                try requireOwned()
-                if let error=learning.failure {
-                    stageFailures.append("Memory: "+String(error.prefix(400)))
-                    try step("learning","failed",error)
-                } else {try step("learning",learning.skipped ? "skipped" : "done",learning.detail)}
                 // Do not compare new inputs with an earlier stage's pre-request cache.
                 // Proactive and briefing jobs capture and validate their own fresh inputs.
                 nativeReady=runtime.currentSources(whatsappReady).nativeReady
@@ -645,7 +647,7 @@ import SwiftData
             if scenario == "capped email failure" {
                 checks["final allowed call retains its actual email failure before allowance wait"] = history?.steps?.first{$0.id == "email"}?.detail == "fixture transport failure" && history?.steps?.first{$0.id == "email"}?.status == "failed" && !updated && saved?.retryReason == "allowance" && saved?.calls == 8
             } else if scenario == "foreground stop" {
-                checks["orchestration stops all later stages when foreground takes ownership"] = !cycle.busy && !updated && order == ["snapshots","feedback","email"] && history?.phase == "interrupted"
+                checks["orchestration stops all later stages when foreground takes ownership"] = !cycle.busy && !updated && order == ["snapshots","feedback","learning","email"] && history?.phase == "interrupted"
             } else {
                 checks["orchestration writes brief after \(scenario)"] = !cycle.busy && updated && order.last == "brief" && history?.briefUpdated == true
                 if scenario.hasSuffix("failure") {
@@ -654,7 +656,7 @@ import SwiftData
                 }
                 if scenario == "source failure isolation" {checks["one child source failure survives a changed parent scope without blocking the brief"]=history?.steps?.first{$0.id == "email"}?.status == "failed" && history?.outcome() == "Partly completed" && saved?.pending == true}
                 if scenario == "missing sources" {checks["missing native cache does not start suggestions or block cached brief"] = !order.contains("suggestions") && history?.steps?.first{$0.id == "sources"}?.status == "waiting"}
-                if scenario == "successful cycle" {checks["full orchestration records all six stages in order"] = order == ["snapshots","feedback","email","learning","suggestions","brief"] && history?.outcome() == "Completed"}
+                if scenario == "successful cycle" {checks["full orchestration consolidates guidance before Review assessment"] = order == ["snapshots","feedback","learning","email","suggestions","brief"] && history?.outcome() == "Completed"}
             }
             checks["completed child cannot claim or save after parent ended: \(scenario)"] = {guard let expired else{return false};do{try expired.validate();return false}catch{do{try expired.claim();return false}catch{return true}}}()
         }

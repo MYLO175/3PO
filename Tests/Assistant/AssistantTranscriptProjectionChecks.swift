@@ -14,6 +14,7 @@ enum AssistantTranscriptProjectionChecks {
     @MainActor static func run() {
         let origin = Date(timeIntervalSince1970: 1_790_000_000), account = "fictional-transcript"
         var feed = AssistantConversation(accountID: account, title: "Fixture")
+        feed.created = origin
         feed.turns = (0..<150).map { number in .init(role: number.isMultiple(of: 3) ? "user" : "assistant", content: "Turn \(number)", completed: true, created: origin.addingTimeInterval(Double(number)*600)) }
         feed.turns[80].created = nil
         var topic = AssistantConversation(accountID: account, title: "Legacy topic")
@@ -77,6 +78,33 @@ enum AssistantTranscriptProjectionChecks {
         let changedExpected = ConversationRules.transcript(ConversationRules.thread(feed: state.feed, topic: nil).filter { $0.profileSessionID == nil }, visible: { _ in true }, calendar: changedCalendar)
         precondition(same(changed.rows, Array(changedExpected.suffix(40))), "Timezone/calendar changes rebuild date separators")
 
+        // Moving the input window must retain original turns while selecting an
+        // exact session, including the legacy session represented by nil.
+        let olderSession = UUID(), freshSession = UUID(), excludedSession = UUID(), draftOnlySession = UUID()
+        let oldHuman = AssistantTurn(role: "user", content: " Earlier   session\nquestion ", completed: true, created: origin.addingTimeInterval(500_000), chatSessionID: olderSession)
+        let oldReply = AssistantTurn(role: "assistant", content: "Older response", completed: false, created: origin.addingTimeInterval(500_001), chatSessionID: olderSession)
+        state.feed.turns += [oldHuman, oldReply,
+            .init(role: "user", content: "Setup stays separate", completed: true, created: origin, chatSessionID: excludedSession, profileSessionID: UUID()),
+            .init(role: "user", content: "Topic stays separate", completed: true, created: origin, contextID: topic.id, chatSessionID: excludedSession)]
+        state.feed.chatSession = .init(id: freshSession, started: origin.addingTimeInterval(600_000))
+        state.feed.pastChatSessions = [.init(id: olderSession, started: origin.addingTimeInterval(500_000)), .init(id: draftOnlySession, started: origin.addingTimeInterval(550_000))]
+        revision = UUID()
+        let saved = state.feed, scoped = AssistantTranscriptProjectionCache()
+        func scopedPage(_ sessionID: UUID?) -> AssistantTranscriptPage {
+            scoped.value(owner: state, revision: revision, registration: account, feed: state.feed, topic: nil, activeTurnID: oldReply.id, limit: 500, sessionID: sessionID, filterSession: true, visible: visible)
+        }
+        precondition(scopedPage(freshSession).rows.isEmpty, "An empty fresh chat cannot display the preceding session")
+        let beforeScopedCalls = calls.value
+        precondition(scopedPage(olderSession).rows.map(\.id) == [oldHuman.id, oldReply.id], "History selects the exact old session without topic/setup leakage")
+        precondition(calls.value == beforeScopedCalls, "Reading an unrelated session never revalidates deliveries outside that session")
+        let scopedBuilds = scoped.threadBuilds
+        state.feed.turns[state.feed.turns.firstIndex { $0.id == oldReply.id }!].content = "Captured older job still streams"
+        precondition(scopedPage(olderSession).rows.last?.turn.content == "Captured older job still streams" && scoped.threadBuilds == scopedBuilds, "A captured old job streams in its own history without rebuilding stable history")
+        precondition(scopedPage(nil).rows.map(\.id) == ConversationRules.chatTurns(feed: saved, sessionID: nil).map(\.id), "The original nil session remains independently readable")
+        let historyEntries = AssistantChatHistoryEntry.entries(state.feed)
+        precondition(historyEntries.count == 3 && historyEntries[0].sessionID == draftOnlySession && historyEntries[1].sessionID == olderSession && historyEntries[1].title == "Earlier session question", "History lists saved sessions by date with a readable human title, retaining draft-only sessions and excluding current/setup/topic-only sessions")
+        precondition(saved.turns.count == state.feed.turns.count && saved.turns.map(\.id) == state.feed.turns.map(\.id), "Session projection preserves every stored turn identity")
+
         // A non-observable wall-clock expiry still cannot leave a displayed
         // source-backed row visible; a backwards clock rechecks hidden support.
         let temporal = AssistantTranscriptProjectionCache(), stamp = UUID()
@@ -131,6 +159,6 @@ enum AssistantTranscriptProjectionChecks {
             baseline.sort(); warm.sort()
             print(String(format: "TRANSCRIPT n=%d previous median=%.3fms cold=%.3fms streaming median=%.6fms p95=%.6fms (200 deltas; one history/separator build)", count, baseline[1], cold, warm[100], warm[189]))
         }
-        print("PASS: transcript exact order/visibility/pagination/separators, real Observation withdrawal/restore, scope/metadata invalidation, 200-delta bounded projection and user-controlled bottom following")
+        print("PASS: transcript exact order/visibility/pagination/separators, chat-session isolation/history, real Observation withdrawal/restore, scope/metadata invalidation, 200-delta bounded projection and user-controlled bottom following")
     }
 }

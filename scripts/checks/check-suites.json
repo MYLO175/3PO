@@ -24,6 +24,24 @@
   },
   "suites": [
     {
+      "id": "mcp-bridge",
+      "tier": "source-free",
+      "script": "scripts/checks/test-mcp-bridge.sh",
+      "effects": [
+        "fictional values",
+        "disposable SwiftData",
+        "temporary discovery file",
+        "private fixture preferences",
+        "loopback bridge",
+        "local MCP subprocesses"
+      ],
+      "requires": [
+        "Xcode",
+        "Node",
+        "installed MCPBridge dependencies"
+      ]
+    },
+    {
       "id": "actions",
       "tier": "source-free",
       "script": "scripts/checks/test-actions.sh",
@@ -1020,6 +1038,19 @@
       ]
     },
     {
+      "id": "chat-on-demand-model",
+      "tier": "model",
+      "arguments": [
+        "--validate-review-inbox",
+        "--working-context-model",
+        "--chat-on-demand-only"
+      ],
+      "report": "missioncontrol-working-context-model-evaluation.json",
+      "effects": [
+        "Configured subscription model using actual foreground preparation on three fictional requests: self-contained answer, optional past-chat search, relevant page read; maximum8 requests, no retry, personal sources or mutation ports"
+      ]
+    },
+    {
       "id": "context-pages-model",
       "tier": "model",
       "arguments": [
@@ -1035,9 +1066,15 @@
     {
       "id": "guide-cache-model",
       "tier": "model",
-      "arguments": ["--validate-memory-inspection", "--prompt-cache-only", "--warm-boundary-only"],
+      "arguments": [
+        "--validate-memory-inspection",
+        "--prompt-cache-only",
+        "--warm-boundary-only"
+      ],
       "report": "missioncontrol-guide-cache-evaluation.json",
-      "effects": ["Two declared fictional configured-model requests retaining prior human/completed output history across a changed current snapshot and stable initial developer message boundary; no retries, tool execution, personal sources, native writes or setting changes"]
+      "effects": [
+        "Two declared fictional configured-model requests retaining prior human/completed output history across a changed current snapshot and stable initial developer message boundary; no retries, tool execution, personal sources, native writes or setting changes"
+      ]
     },
     {
       "id": "review-inference-guards",
@@ -1089,6 +1126,63 @@
       "script": "scripts/checks/test-context-source-deltas.sh",
       "effects": [
         "fictional source delta/version receipts; no app, model or source reads"
+      ],
+      "requires": [
+        "Xcode"
+      ]
+    },
+    {
+      "id": "app-mcp-workspace",
+      "tier": "app-memory",
+      "arguments": [
+        "--validate-advice-context",
+        "--mcp-workspace-only"
+      ],
+      "report": "missioncontrol-advice-context-evaluation.json",
+      "effects": [
+        "signed DEBUG app launch",
+        "fictional ports",
+        "disposable SwiftData",
+        "isolated fixture preferences",
+        "no inference or native source calls"
+      ],
+      "requires": [
+        "integration-owner startup/output audit",
+        "signed DEBUG candidate"
+      ]
+    },
+    {
+      "id": "memory-consolidation-model",
+      "tier": "model",
+      "arguments": [
+        "--validate-review-inbox",
+        "--working-context-model",
+        "--memory-consolidation-only"
+      ],
+      "report": "missioncontrol-working-context-model-evaluation.json",
+      "effects": [
+        "One configured subscription request on invented human dialogue, app outcomes and exact feature/calendar targets. Production learning prompt/decoder; no personal source content or saved changes; no retry."
+      ]
+    },
+    {
+      "id": "review-guidance-model",
+      "tier": "model",
+      "arguments": [
+        "--validate-review-inbox",
+        "--working-context-model",
+        "--review-guidance-only"
+      ],
+      "report": "missioncontrol-working-context-model-evaluation.json",
+      "effects": [
+        "Two configured subscription requests over one long fictional Review guide and invented emails. Private policy store, production synthesis and classification contracts; no personal sources, native actions, app policy changes or retry."
+      ]
+    },
+    {
+      "id": "graphiti-process",
+      "tier": "source-free",
+      "script": "scripts/checks/test-graphiti-process.sh",
+      "effects": [
+        "fictional subprocess transport, cancellation and timeout checks; no app, model or personal sources"
       ],
       "requires": [
         "Xcode"

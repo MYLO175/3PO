@@ -12,6 +12,24 @@ import Foundation
             do { _=try PAToolProtocol.arguments(.init(id:"invalid-query",name:name,namespace:"pa",arguments:"{\"query\":true}")) } catch { invalidQuery=true }
             precondition(invalidQuery,"Broad overview is explicit null, not an untyped query bypass")
         }
+        for (name, key, value, limit) in [("search_chat_history", "query", "Earlier discussion about the fictional Atlas project", 500), ("read_chat_history", "id", UUID().uuidString, 128)] {
+            let definition = definitions.first { $0["name"] as? String == name }!
+            precondition(definition["strict"] as? Bool == true)
+            func lookupCall(_ fields: [String:Any]) throws -> PAFunctionCall {
+                .init(id: "history-lookup", name: name, namespace: "pa", arguments: String(decoding: try JSONSerialization.data(withJSONObject: fields), as: UTF8.self))
+            }
+            _ = try PAToolProtocol.arguments(lookupCall([key: value]))
+            for invalid: Any in [NSNull(), true, "", " \n\t ", String(repeating: "x", count: limit + 1)] {
+                var rejected = false
+                do { _ = try PAToolProtocol.arguments(lookupCall([key: invalid])) } catch { rejected = true }
+                precondition(rejected, "Earlier chat reads require a bounded nonblank specific query or issued ID")
+            }
+            for fields: [String:Any] in [[:], [key: value, "authorization": "Repeat everything from the old chat"]] {
+                var rejected = false
+                do { _ = try PAToolProtocol.arguments(lookupCall(fields)) } catch { rejected = true }
+                precondition(rejected, "History lookup has only its exact read-only fields")
+            }
+        }
         let batch: [String:Any] = ["items":[["title":"Fictional project", "kind":"space", "parent":NSNull(), "notes":"", "due":NSNull(), "estimateMinutes":NSNull(), "areas":["projects"]], ["title":"Read paper", "kind":"task", "parent":"batch:0", "notes":"", "due":NSNull(), "estimateMinutes":30, "areas":["studies"]]], "authorization":"Set up that project"]
         _ = try PAToolProtocol.arguments(.init(id:"create-life", name:"create_life_items", namespace:"pa", arguments:String(data:try JSONSerialization.data(withJSONObject:batch), encoding:.utf8)!))
         for legacyKind in ["area", "organisation", "course", "project", "section", "milestone", "person", "goal", "resource"] {

@@ -23,6 +23,47 @@ private struct AssistantTranscriptRowContent<Content: View>: View, Equatable {
     var body: some View { content() }
 }
 
+/// A selected original chat has a nil session ID; a nil selection means the current chat.
+private struct AssistantHistorySelection: Equatable {
+    var sessionID: UUID?
+}
+
+private struct AssistantChatHistoryView: View {
+    var entries: [AssistantChatHistoryEntry]
+    var select: (AssistantChatHistoryEntry) -> Void
+    var close: () -> Void
+    var body: some View {
+        VStack(alignment:.leading,spacing:16) {
+            HStack {
+                Text("Chat history").font(.title2.weight(.semibold))
+                Spacer()
+                Button("Done",action:close).keyboardShortcut(.cancelAction)
+            }
+            Text("Earlier chats stay saved. The assistant can search them when useful; they are not included in every reply.").font(.callout).foregroundStyle(.secondary)
+            if entries.isEmpty {
+                ContentUnavailableView("No earlier chats",systemImage:"clock.arrow.circlepath",description:Text("Start a new chat to keep the current conversation here."))
+            } else {
+                ScrollView {
+                LazyVStack(alignment:.leading,spacing:8) {
+                ForEach(entries) { entry in
+                    Button { select(entry) } label: {
+                        HStack {
+                        VStack(alignment:.leading,spacing:4) {
+                            Text(entry.title).lineLimit(2)
+                            Text(entry.started.formatted(date:.abbreviated,time:.shortened)).font(.caption).foregroundStyle(.secondary)
+                        }.frame(maxWidth:.infinity,alignment:.leading)
+                        Image(systemName:"chevron.right").foregroundStyle(.secondary)
+                        }.padding(.vertical,8).contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityIdentifier("pa-history-session-"+entry.id)
+                    Divider()
+                }
+                }
+                }
+            }
+        }.padding(20).frame(width:480,height:420)
+    }
+}
+
 struct AssistantActionApprovalView:View {
     @Bindable var model:DashboardModel
     var conversationID:UUID
@@ -84,8 +125,17 @@ struct AssistantPanel: View {
     var configuration: Binding<WidgetConfiguration>? = nil
     @State private var showRename = false
     @State private var composerFocused = false
+    @State private var historySelection: AssistantHistorySelection?
+    @State private var historyEntries: [AssistantChatHistoryEntry] = []
+    @State private var showHistory = false
     private var selectedID: UUID? { assistant.feed?.id }
     private var selectedTopicID:UUID? { nil }
+    private var currentSessionID: UUID? { assistant.feed?.chatSession?.id }
+    private var displayedSessionID: UUID? {
+        if let historySelection { return historySelection.sessionID }
+        return currentSessionID
+    }
+    private var viewingHistory: Bool { historySelection != nil }
     private var focusAreas:[LifeArea] {
         if configuration == nil { return LifeFocusRules.normalised(assistant.standaloneFocusSelections[model.chatGPT.activeID] ?? []) }
         if let saved=configuration?.wrappedValue.lifeFocusSelections?[model.chatGPT.activeID] { return LifeFocusRules.normalised(saved) }
@@ -99,9 +149,9 @@ struct AssistantPanel: View {
         value.lifeFocusSelections?[model.chatGPT.activeID]=areas.map(\.rawValue);configuration.wrappedValue=value
     }) }
     private var topic: AssistantConversation? { assistant.conversation(selectedTopicID) }
-    private var draftKey: UUID? { selectedTopicID ?? selectedID }
-    private var sendingHere: Bool { assistant.busy && !assistant.profileBusy(selectedTopicID) && assistant.requestConversationID == selectedID && assistant.requestTopicID == selectedTopicID }
-    private var errorHere: Bool { assistant.errorProfileSessionID == nil && (assistant.errorConversationID == nil || (assistant.errorConversationID == selectedID && assistant.errorTopicID == selectedTopicID)) }
+    private var draftKey: UUID? { currentSessionID ?? selectedTopicID ?? selectedID }
+    private var sendingHere: Bool { !viewingHistory && assistant.busy && !assistant.profileBusy(selectedTopicID) && assistant.requestConversationID == selectedID && assistant.requestTopicID == selectedTopicID && assistant.requestChatSessionID == currentSessionID }
+    private var errorHere: Bool { !viewingHistory && assistant.errorProfileSessionID == nil && (assistant.errorConversationID == nil || (assistant.errorConversationID == selectedID && assistant.errorTopicID == selectedTopicID && assistant.errorChatSessionID == currentSessionID)) }
     private var draft: Binding<String> {
         Binding(get:{ if let widgetID { return assistant.drafts.text(registration:model.chatGPT.activeID,widget:widgetID,conversation:draftKey) }; return assistant.draft },set:{ text in
             let current=widgetID.map{assistant.drafts.text(registration:model.chatGPT.activeID,widget:$0,conversation:draftKey)} ?? assistant.draft
@@ -144,6 +194,7 @@ struct AssistantPanel: View {
         }
     }
     private func send() {
+        guard !viewingHistory else { return }
         let attachments=attachedImages
         let value = draft.wrappedValue, contextID = selectedTopicID, key = draftKey, registration = model.chatGPT.activeID
         if assistant.send(model:model,topicID:contextID,prompt:value,focusAreas:focusAreas,images:attachments) {
@@ -157,6 +208,14 @@ struct AssistantPanel: View {
     private func showDraft() {
         assistant.drafts.show(registration:model.chatGPT.activeID,widget:imageDraftWidget,conversation:draftKey)
         imageError=nil
+    }
+    private func startNewChat() {
+        assistant.drafts.flush()
+        guard assistant.drafts.error == nil, assistant.newChat() else { return }
+        historySelection = nil
+        visibleTurnLimit = 40
+        transcriptScroll.reset()
+        composerFocused = true
     }
     @State private var dictation = DictationService()
     @State private var showDictation = false
@@ -215,9 +274,24 @@ struct AssistantPanel: View {
         if capture.preparationNotes == nil {capture.preparationNotes=(turn.toolErrors ?? []).filter(PAReadPrerequisite.legacyPreparation)}
         inspectingContext=capture
     }
+    @ViewBuilder private var historicalDraft: some View {
+        let key = displayedSessionID ?? selectedID
+        let text = assistant.drafts.text(registration:model.chatGPT.activeID,widget:imageDraftWidget,conversation:key)
+        let images = assistant.drafts.images(registration:model.chatGPT.activeID,widget:imageDraftWidget,conversation:key)
+        if !text.isEmpty || !images.isEmpty {
+            DisclosureGroup("Unsent draft") {
+                ScrollView {
+                    VStack(alignment:.leading,spacing:8) {
+                        if !text.isEmpty { Text(text).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading) }
+                        ForEach(images) { image in PAImagePreview(image:image,store:assistant.images,registration:model.chatGPT.activeID,compact:true) }
+                    }
+                }.frame(maxHeight:140)
+            }.font(.caption)
+        }
+    }
     var body: some View {
         let conversation=assistant.feed
-        let page=transcriptCache.value(owner:assistant,revision:assistant.transcriptRevision,registration:model.chatGPT.activeID,feed:conversation,topic:topic,activeTurnID:assistant.requestTurnID,limit:visibleTurnLimit,visible:turnVisible)
+        let page=transcriptCache.value(owner:assistant,revision:assistant.transcriptRevision,registration:model.chatGPT.activeID,feed:conversation,topic:topic,activeTurnID:assistant.requestTurnID,limit:visibleTurnLimit,sessionID:displayedSessionID,filterSession:true,visible:turnVisible)
         let displayedTurns=page.rows
         let discoveryEntries=lastDiscoveryEntries(displayedTurns)
         VStack(spacing: 8) {
@@ -233,7 +307,15 @@ struct AssistantPanel: View {
                     }
                 }
                 LifeFocusPicker(selection:focusBinding).frame(maxWidth:160,alignment:.trailing)
+                Button { startNewChat() } label: { Image(systemName:"square.and.pencil") }
+                    .disabled(assistant.busy || model.chatGPT.busy || assistant.setupActive(selectedTopicID))
+                    .help("New chat — keep earlier chats and saved memory")
+                    .accessibilityLabel("New chat").accessibilityIdentifier("pa-new-chat")
                 Menu {
+                    Button("Chat history…",systemImage:"clock.arrow.circlepath") {
+                        historyEntries = AssistantChatHistoryEntry.entries(assistant.feed)
+                        showHistory = true
+                    }
                     Button("Name your PA…") { showRename = true }.disabled(assistant.busy)
                     Button("Context…") { showMemory = true }
                     Button(assistant.setupActive(selectedTopicID) ? "Continue context setup…" : "Set up my PA…") { showProfileSetup=true }.disabled(assistant.busy)
@@ -241,10 +323,21 @@ struct AssistantPanel: View {
                 } label: { Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("PA options").accessibilityLabel("PA options")
                 if supportsReadingMode { Button { readingMode.toggle() } label: { Image(systemName:readingMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") }.help(readingMode ? "Compact chat" : "Expand chat") }
             }.buttonStyle(.borderless).controlSize(.small)
+            if viewingHistory {
+                HStack {
+                    Label("Earlier chat",systemImage:"clock.arrow.circlepath").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if assistant.busy && assistant.requestConversationID == selectedID && assistant.requestChatSessionID == displayedSessionID {
+                        Button("Stop") { assistant.cancel() }.controlSize(.small)
+                    }
+                    Button("Return to current chat") { historySelection = nil;composerFocused = true }.controlSize(.small)
+                        .accessibilityIdentifier("pa-return-current-chat")
+                }
+            }
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
-                        if page.threadCount == 0 {
+                        if page.threadCount == 0 && !viewingHistory {
                             VStack(alignment:.leading,spacing:12) {
                                 Text("A little clarity for your day").font(.headline)
                                 Text("Ask about what's coming up, find an email, or tell me what needs doing.").font(.callout).foregroundStyle(.secondary)
@@ -260,7 +353,7 @@ struct AssistantPanel: View {
                         ForEach(displayedTurns) { row in
                             let turn=row.turn
                             if let separator=row.separator { Text(separator).font(.caption.weight(.medium)).foregroundStyle(.secondary).frame(maxWidth:.infinity).padding(.vertical,6) }
-                            let replyingHere = turn.role == "assistant" && sendingHere && assistant.requestTurnID == turn.id
+                            let replyingHere = turn.role == "assistant" && assistant.busy && assistant.requestConversationID == selectedID && assistant.requestTurnID == turn.id
                             AssistantTranscriptRowContent(key:.init(turn:turn,registration:model.chatGPT.activeID,conversationID:selectedID,topicID:selectedTopicID,lastTurnID:page.lastThreadTurnID,replying:replyingHere,toolStatus:replyingHere ? assistant.toolStatus : "",discoveryEntries:discoveryEntries),colors:palette.colors) {
                             HStack(alignment:.top) {
                             if turn.role == "user" { Spacer(minLength:35) }
@@ -280,7 +373,7 @@ struct AssistantPanel: View {
                                     AssistantReplyText(content:turn.content,completed:turn.completed,errors:turn.toolErrors).equatable().id(turn.completed)
                                     if let selectedID {AssistantActionApprovalView(model:model,conversationID:selectedID,turn:turn)}
                                 } else if !turn.content.isEmpty { Text(turn.content).textSelection(.enabled) }
-                                if turn.completed, turn.role == "assistant",turn.id == page.lastThreadTurnID,let choices=turn.choices {
+                                if !viewingHistory, turn.completed, turn.role == "assistant",turn.id == page.lastThreadTurnID,let choices=turn.choices {
                                     ViewThatFits(in:.horizontal) {
                                         HStack { ForEach(choices,id:\.self) { choice in Button(choice) { draft.wrappedValue=choice; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) } }
                                         VStack(alignment:.leading) { ForEach(choices,id:\.self) { choice in Button(choice) { draft.wrappedValue=choice; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) } }
@@ -302,8 +395,8 @@ struct AssistantPanel: View {
                                             if !lookup.results.isEmpty {
                                                 Menu("Mail sources") { ForEach(lookup.results) { message in Button(message.account + " · " + message.subject) { model.select(message) } } }
                                             }
-                                            if lookup.hasUnavailable { Button("Retry unavailable reads") { draft.wrappedValue = "Retry unavailable mail reads."; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
-                                            if lookup.hasMore { Button("Continue mail search") { draft.wrappedValue = "Continue the email search."; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
+                                            if !viewingHistory && lookup.hasUnavailable { Button("Retry unavailable reads") { draft.wrappedValue = "Retry unavailable mail reads."; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
+                                            if !viewingHistory && lookup.hasMore { Button("Continue mail search") { draft.wrappedValue = "Continue the email search."; send() }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused) }
                                         }.controlSize(.small)
                                     }.font(.caption).accessibilityIdentifier("pa-mail-search-details")
                                 }
@@ -354,8 +447,11 @@ struct AssistantPanel: View {
                 .onChange(of:page.lastVisibleTurn?.id) { if transcriptScroll.followsBottom,let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
                 .onChange(of:selectedID) { visibleTurnLimit=40;transcriptScroll.reset();if let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
                 .onChange(of:selectedTopicID) { visibleTurnLimit=40;transcriptScroll.reset();if let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
+                .onChange(of:displayedSessionID) { visibleTurnLimit=40;transcriptScroll.reset();if let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
+                .onChange(of:viewingHistory) { visibleTurnLimit=40;transcriptScroll.reset();if let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
                 .onAppear { if let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
             }
+            if viewingHistory { historicalDraft }
             if model.memoryLearning.canUndoQuestion(model.chatGPT.activeID) { HStack { Text("Question dismissed").font(.caption).foregroundStyle(.secondary); Button("Undo") { model.memoryLearning.undoQuestion(model.chatGPT.activeID) }.controlSize(.small); Spacer() } }
             if let error = assistant.error, errorHere, !model.chatGPT.usagePaused { DisclosureGroup("Request didn’t complete") { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }.font(.caption) }
             if model.chatGPT.usagePaused {
@@ -366,13 +462,13 @@ struct AssistantPanel: View {
                 }
                 DisclosureGroup("Access details") { Text(model.chatGPT.message).font(.caption).foregroundStyle(.orange) }.font(.caption)
             }
-            if model.chatGPT.busy && !assistant.busy {
+            if !viewingHistory && model.chatGPT.busy && !assistant.busy {
                 HStack(spacing:6) {
                     ProgressView().controlSize(.mini)
                     Text(model.briefings.busy ? "Preparing today’s brief… You can draft a message while it finishes." : model.memoryLearning.busy ? "Learning conversation context… Start drafting to pause learning." : model.proactive.busy ? "Checking useful suggestions… Start drafting to pause the check." : model.emailSummaries.busy ? "Checking incoming mail… You can draft a message while it finishes." : "Checking your ChatGPT connection…").font(.caption).foregroundStyle(.secondary)
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
-            let queued=assistant.queue.items.filter { $0.registration == model.chatGPT.activeID && $0.topicID == selectedTopicID && $0.state != .completed }
+            let queued=assistant.queue.items.filter { $0.registration == model.chatGPT.activeID && $0.topicID == selectedTopicID && $0.chatSessionID == displayedSessionID && $0.state != .completed }
             if !queued.isEmpty {
                 DisclosureGroup("Queued requests (\(queued.count))") {
                     ForEach(queued) { item in
@@ -385,6 +481,7 @@ struct AssistantPanel: View {
                     Button("Continue waiting requests") { assistant.resumeQueue(model:model) }.disabled(assistant.busy || model.chatGPT.busy || model.chatGPT.usagePaused)
                 }.font(.caption)
             }
+            if !viewingHistory {
             if let queueError=assistant.queue.error { Text(queueError).font(.caption).foregroundStyle(.orange) }
             if let error = assistant.drafts.error, widgetID != nil { Text(error).font(.caption).foregroundStyle(.orange) }
             if let imageError { Text(imageError).font(.caption).foregroundStyle(.orange) }
@@ -417,20 +514,23 @@ struct AssistantPanel: View {
                     ForEach(model.assistantActions.targets) { Text($0.label).tag($0.id) }
                 }
             }
+            }
         }.onAppear {
             if selectedID == nil { assistant.openPA() }
             showDraft()
         }.task(id:model.assistantFocusRequest?.id) {
             guard let request = model.assistantFocusRequest, request.widgetID == widgetID else { return }
             // Navigation first mounts the selected widget and its saved draft.
+            historySelection = nil
             await Task.yield()
             guard !Task.isCancelled, model.assistantFocusRequest == request else { return }
             composerFocused = true
             model.assistantFocusRequest = nil
         }.onDisappear { assistant.drafts.hide(widget:imageDraftWidget); assistant.drafts.flush() }
-        .onChange(of:selectedID) { showDraft() }
+        .onChange(of:selectedID) { historySelection=nil;showHistory=false;historyEntries=[];showDraft() }
         .onChange(of:selectedTopicID) { showProfileSetup=false; showDraft() }
-        .onChange(of:model.chatGPT.activeID) { assistant.drafts.flush(); assistant.openPA(); showMemory = false; showSupportingFacts = false; inspectingContext=nil;showProfileSetup=false;sourceDiscovery=nil; showDraft() }
+        .onChange(of:currentSessionID) { visibleTurnLimit=40;transcriptScroll.reset();showDraft() }
+        .onChange(of:model.chatGPT.activeID) { assistant.drafts.flush(); assistant.openPA(); historySelection=nil;historyEntries=[];showHistory=false;showMemory = false; showSupportingFacts = false; inspectingContext=nil;showProfileSetup=false;sourceDiscovery=nil; showDraft() }
         .onChange(of:sourceDiscovery.map{model.proactive.visible($0,model:model)}) { _,available in if available == false {sourceDiscovery=nil} }
         .onChange(of:model.chatGPT.usagePaused) { _, paused in
             if !paused, assistant.error?.contains("subscription_sharing_usage_limit_exceeded") == true { assistant.error = nil }
@@ -440,6 +540,8 @@ struct AssistantPanel: View {
             PAProfileSetupPanel(model:model,assistant:assistant,topicID:selectedTopicID,registration:model.chatGPT.activeID)
         }.sheet(isPresented:$showDictation) {
             DictationView(dictation:dictation) { text in draft.wrappedValue = draft.wrappedValue.isEmpty ? text : draft.wrappedValue + " " + text }
+        }.sheet(isPresented:$showHistory) {
+            AssistantChatHistoryView(entries:historyEntries,select:{ entry in historySelection = .init(sessionID:entry.sessionID);showHistory=false },close:{showHistory=false})
         }.padding(16)
     }
 }
@@ -462,7 +564,7 @@ struct AssistantSourceSettings: View {
                         .disabled(model.chatGPT.activeID.isEmpty)
                     Text("Read and edit the same guidance in Context → Assistant instructions.").font(.caption).foregroundStyle(.secondary)
                     Toggle("Use source context in assistant replies", isOn: $assistant.contextEnabled)
-                    Text("When on, a reply may send the enabled Calendar and Reminders snapshots, recent email headers, saved email summaries, and separately enabled WhatsApp context to OpenAI through your ChatGPT connection. Dashboard refresh itself makes no AI requests.").font(.caption).foregroundStyle(.secondary)
+                    Text("When on, the assistant can look up relevant Calendar events, Reminders, email and separately enabled WhatsApp context when needed. Replies begin with the current chat, your instructions and a small guide to available context. Dashboard refresh itself makes no AI requests.").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Assistant source scope") {
                     sourceMenu("Calendar sources", sources: model.calendarData.sources, excluded: $assistant.excludedCalendars)

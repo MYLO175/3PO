@@ -17,7 +17,12 @@ import SwiftData
     func streamResponse(input: [[String:String]], instructions: String, model: String?, effort: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> String {
         calls += 1;requestedModels.append(model ?? "");inputs.append(input);onCall?();if let hold {await hold()};return answer
     }
-    func toolResponse(input: [[String:Any]], instructions: String, tools: [[String:Any]], model: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> PAResponse { fatalError("Learning cannot execute foreground tools") }
+    func toolResponse(input: [[String:Any]], instructions: String, tools: [[String:Any]], model: String, purpose: AIRequestPurpose, onDelta: @escaping (String) -> Void) async throws -> PAResponse {
+        precondition((tools.first?["tools"] as? [[String:Any]])?.first?["name"] as? String == MemoryLearningRules.resultTool,"Learning exposes only its preparation-result tool")
+        let rows = input.map { ["role":$0["role"] as? String ?? "user", "content":$0["content"] as? String ?? ""] }
+        let result = try await streamResponse(input:rows,instructions:instructions,model:model,effort:"",purpose:purpose,onDelta:onDelta)
+        return .init(text:"",output:[],calls:[.init(id:"memory-result",name:MemoryLearningRules.resultTool,namespace:"pa",arguments:result)])
+    }
 }
 @MainActor private final class FictionalAssistant: LearningAssistantReading {
     let connection: any PAInferenceConnection
@@ -305,7 +310,129 @@ import SwiftData
         }
         try await capturedSourceMemoryChecks(now:now,check:check)
         try await conversationContextChecks(now:now,check:check)
-        print("PASS \(count) actual learning-service checks: injected providers/clock, persistence, foreground priority, exact supplied memory/candidate guards, source/account drift, pauses, explicit recovery; no dashboard, credentials or personal sources.")
+        try await consolidationChecks(check:check)
+        try await pausedConsolidationChecks(check:check)
+        print("PASS \(count) actual learning-service checks: durable chat/action backlog, routed preferences, atomic progress, exact supplied context, persistence, foreground priority and explicit recovery; no dashboard, credentials or personal sources.")
+    }
+    @MainActor private static func pausedConsolidationChecks(check:(Bool,String)->Void) async throws {
+        let isolated = try ModelContainer(for:CachedDashboard.self, configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+        let suite = "3PO.paused-consolidation." + UUID().uuidString
+        let settings = UserDefaults(suiteName:suite)!
+        defer { settings.removePersistentDomain(forName:suite) }
+        let provider = FictionalInference(), memory = PAMemoryStore(container:isolated,settings:settings)
+        let assistant = FictionalAssistant(provider,memory:memory)
+        var clock = Date.now
+        let topic = UUID()
+        assistant.turns = [.init(id:"old-1",text:"An earlier saved statement.",created:clock.addingTimeInterval(-4000),conversationID:topic),
+            .init(id:"old-2",text:"Another earlier saved statement.",created:clock.addingTimeInterval(-3900)),
+            .init(id:"new-1",text:"A later statement that has never been attempted.",created:clock)]
+        assistant.turns += (3...10).map { .init(id:"old-\($0)",text:"An earlier statement in another topic.",created:clock.addingTimeInterval(-3800),conversationID:topic) }
+        let suppressed = PAMemory(registration:"fixture",text:"Forgotten earlier input",kind:.context,explicit:false,provenance:"Fictional human",sourceTurnID:"old-1")
+        check(memory.put(suppressed) && memory.forget(suppressed.id),"Legacy fixture changes suppression after its failed claim")
+        let held = Set((1...10).map { "old-\($0)" })
+        let progress = MemoryLearningProgress(lastAttempt:clock.addingTimeInterval(-3600),day:BriefingRules.day(clock),attempts:1,paused:true)
+        try LocalRecordRepository(container:isolated).save(MemoryLearningState(accounts:["fixture":progress]),key:"paMemoryLearning")
+        let runtime = LearningRuntime(assistant:assistant,inference:provider,learningBudget:LearningBudget(container:isolated),whatsapp:FictionalWhatsApp(),now:{clock},activity:{.init()},writing:{false},sourceRevision:{0},nativeItems:{_,_ in nil})
+        let service = MemoryLearningService(container:isolated,settings:settings)
+        service.capturePending(assistant)
+        check(service.state.accounts["fixture"]?.pausedTurnIDs == held && provider.calls == 0,"Legacy migration conservatively holds historical input across scopes and suppression changes without replay")
+        func run() async {
+            service.check(runtime)
+            for _ in 0..<10000 { if !service.busy { break }; await Task.yield() }
+        }
+        await run()
+        let input = try JSONSerialization.jsonObject(with:Data(provider.inputs.last!.first!["content"]!.utf8)) as! [String:Any]
+        check((input["messages"] as? [[String:Any]])?.compactMap{$0["id"] as? String} == ["new-1"],"An automatic pass processes only never-attempted later changes")
+        check(service.state.accounts["fixture"]?.seen.contains("new-1") == true && service.state.accounts["fixture"]?.pausedTurnIDs == held,"New progress cannot acknowledge the paused legacy batch")
+        clock.addTimeInterval(1801); assistant.turns.append(.init(id:"failed-new",text:"A newly attempted statement.",created:clock))
+        provider.onCall = { provider.activeID = "other" }; await run(); provider.onCall = nil; provider.activeID = "fixture"
+        clock.addTimeInterval(1801); assistant.turns.append(.init(id:"after-failure",text:"A statement saved after the failed job.",created:clock))
+        await run()
+        check(provider.calls == 3 && service.state.accounts["fixture"]?.seen.contains("after-failure") == true && service.state.accounts["fixture"]?.pausedTurnIDs?.contains("failed-new") == true,"A new failed batch pauses itself while later evidence remains eligible")
+        let reopened = MemoryLearningService(container:isolated,settings:settings)
+        check(reopened.state.accounts["fixture"]?.pausedTurnIDs == service.state.accounts["fixture"]?.pausedTurnIDs,"Paused identities and later successful progress survive reopening")
+    }
+
+    @MainActor private static func consolidationChecks(check:(Bool,String)->Void) async throws {
+        let isolated = try ModelContainer(for:CachedDashboard.self, configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+        let suite = "3PO.consolidation." + UUID().uuidString
+        let settings = UserDefaults(suiteName:suite)!
+        defer { settings.removePersistentDomain(forName:suite) }
+        let provider = FictionalInference(), memory = PAMemoryStore(container:isolated, settings:settings)
+        let assistant = FictionalAssistant(provider, memory:memory), budget = LearningBudget(container:isolated)
+        let service = MemoryLearningService(container:isolated, settings:settings)
+        var clock = Date.now
+        var targets = [MemoryInstructionTarget(id:"review",scope:"review",title:"Review",text:"Direct requests matter.",revision:"one"),
+                       MemoryInstructionTarget(id:"calendar_0",scope:"calendar:exact-provider-account",title:"Tentative",text:"",revision:"one")]
+        let runtime = LearningRuntime(assistant:assistant,inference:provider,learningBudget:budget,whatsapp:FictionalWhatsApp(),now:{clock},activity:{.init()},writing:{false},sourceRevision:{0},nativeItems:{_,_ in nil})
+        runtime.instructionTargets = { _ in targets }
+        service.capturePending(assistant)
+        check(service.state.accounts["fixture"] != nil && provider.calls == 0,"Queue baseline is persisted without inference")
+        let words = "Routine university newsletters are unimportant to me, but direct requests matter."
+        assistant.turns = (0..<42).map { .init(id:"chat-\($0)",text:$0 == 0 ? words : "Incidental conversation \($0)",created:clock.addingTimeInterval(Double($0))) }
+        func response(_ values:[LearnedMemory]) throws -> String {
+            let data = try JSONEncoder().encode(values)
+            return "{\"memories\":" + String(data:data,encoding:.utf8)! + "}"
+        }
+        func run(_ current:MemoryLearningService) async {
+            clock.addTimeInterval(1801); current.check(runtime,manual:true)
+            for _ in 0..<10000 { if !current.busy { break }; await Task.yield() }
+            check(!current.busy,"Bounded fictional consolidation finishes")
+        }
+        provider.answer = try response([.init(turnID:"chat-0",text:"Keep routine university newsletters quiet; direct personal requests still matter.",kind:.preference,evidence:words,certainty:.stated,durability:.stable,instruction:"review")])
+        await run(service)
+        let original = memory.reviewPreferences("fixture").first!
+        check(original.reviewFeedback == words && original.instructionScope == "review","Ordinary chat becomes canonical scoped Review feedback with original words")
+        check(memory.reviewPreferences("other").isEmpty && service.pendingTurnIDs(assistant).count == 34,"Processed batches preserve every older pending item and account ownership")
+        let reopened = MemoryLearningService(container:isolated,settings:settings)
+        check(reopened.pendingTurnIDs(assistant).count == 34,"Pending queue survives reopening beyond the former 32-message window")
+        provider.answer = "{\"memories\":[]}"
+        for _ in 0..<5 { await run(reopened) }
+        check(reopened.pendingTurnIDs(assistant).isEmpty,"No-op decisions acknowledge their exact processed batch")
+        assistant.turns.append(.init(id:"before-yield",text:"An incidental saved message.",created:clock))
+        provider.onCall = { assistant.turns.append(.init(id:"during-yield",text:"A new message during consolidation.",created:clock)) }
+        await run(reopened); provider.onCall = nil
+        check(reopened.pendingTurnIDs(assistant) == ["during-yield"],"Changes arriving during inference remain pending")
+        await run(reopened)
+        let correction = "Actually, routine university newsletters are important to me now."
+        assistant.turns.append(.init(id:"correction",text:correction,created:clock))
+        provider.answer = try response([.init(turnID:"correction",text:"Show routine university newsletters as useful reading.",kind:.preference,evidence:correction,certainty:.stated,durability:.stable,instruction:"review",replaces:original.id.uuidString)])
+        await run(reopened)
+        let corrected = memory.reviewPreferences("fixture").first!
+        check(corrected.supersedes == original.id && memory.records.first(where:{$0.id == original.id})?.supersededBy == corrected.id,"An explicit correction versions the rule without losing its original")
+        var equivalent = PAMemory(registration:"fixture",text:"Show campus newsletters and direct requests.",kind:.preference,provenance:"Human",certainty:.stated,durability:.stable)
+        equivalent.instructionScope = "review"; equivalent.reviewPreference = true
+        check(memory.put(equivalent),"Equivalent-rule fixture saves")
+        assistant.turns.append(.init(id:"equivalent-correction",text:correction,created:clock))
+        provider.answer = try response([.init(turnID:"equivalent-correction",text:equivalent.text,kind:.preference,evidence:correction,certainty:.stated,durability:.stable,instruction:"review",replaces:corrected.id.uuidString)])
+        await run(reopened)
+        check(memory.records.first(where:{$0.id == corrected.id})?.supersededBy != nil,"Text deduplication cannot discard an explicit correction to another current rule's wording")
+        let calendarWords = "The Tentative calendar is only for tentative plans."
+        assistant.turns.append(.init(id:"calendar",text:calendarWords,created:clock))
+        provider.answer = try response([.init(turnID:"calendar",text:"Use this calendar only for tentative plans.",kind:.preference,evidence:calendarWords,certainty:.stated,durability:.stable,instruction:"calendar_0")])
+        await run(reopened)
+        check(memory.instructionPreferences(targets[1].scope,registration:"fixture").count == 1 && memory.instructionPreferences("calendar:other-provider-account",registration:"fixture").isEmpty,"Calendar guidance binds the issued exact identity")
+        assistant.turns.append(.init(id:"stale-target",text:calendarWords,created:clock))
+        provider.answer = try response([.init(turnID:"stale-target",text:"Keep provisional dates in this calendar.",kind:.preference,evidence:calendarWords,certainty:.stated,durability:.stable,instruction:"calendar_0")])
+        provider.onCall = { targets[1].revision = "two" }
+        let countBefore = memory.records.count
+        await run(reopened); provider.onCall = nil
+        check(reopened.error != nil && memory.records.count == countBefore && reopened.pendingTurnIDs(assistant).contains("stale-target"),"Changed target guidance rejects late output without acknowledging its message")
+        provider.answer = "{\"memories\":[]}"; await run(reopened)
+        assistant.turns.append(.init(id:"atomic",text:words,created:clock))
+        provider.answer = try response([.init(turnID:"atomic",text:"An additional narrowly scoped reading preference.",kind:.preference,evidence:words,certainty:.stated,durability:.stable,instruction:"review")])
+        let savedMemory = try LocalRecordRepository.read("paMemory",container:isolated)
+        provider.onCall = {
+            let repository = LocalRecordRepository(container:isolated)
+            var json = try! JSONSerialization.jsonObject(with:repository.read("paMemoryLearning")!) as! [String:Any]
+            json["externalRevision"] = true
+            try! repository.write(["paMemoryLearning":JSONSerialization.data(withJSONObject:json)])
+        }
+        await run(reopened); provider.onCall = nil
+        let afterMemory = try LocalRecordRepository.read("paMemory",container:isolated)
+        check(reopened.error != nil && afterMemory == savedMemory,"A progress CAS failure rolls back all memory changes atomically")
+        let afterFailure = MemoryLearningService(container:isolated,settings:settings)
+        check(afterFailure.pendingTurnIDs(assistant).contains("atomic") && afterFailure.state.accounts["fixture"]?.paused == true,"A failed atomic save retains the backlog and paused claim across reopen")
     }
     @MainActor private static func conversationContextChecks(now:Date,check:(Bool,String)->Void)async throws {
         let successes:Set<String>=["unrelated save","unrelated Forget","questions disabled","model changed","draft opened","unrelated native edit"]

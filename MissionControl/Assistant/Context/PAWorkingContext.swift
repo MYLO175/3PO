@@ -9,6 +9,7 @@ enum PAContextPurpose: String {
     var recordLimit: Int { self == .emailHeader ? 2 : self == .emailBody ? 6 : 40 }
     var preferenceLimit: Int { self == .emailHeader ? 2 : 4 }
     var notebookBytes: Int { self == .emailHeader ? 1800 : self == .emailBody ? 4000 : 8000 }
+    var usesReviewGuide: Bool { [.emailHeader, .emailBody, .dailyBrief, .suggestions, .reviewConversation].contains(self) }
 }
 
 struct PAWorkingContext {
@@ -53,11 +54,12 @@ struct PAWorkingContext {
         let question = retrievalQuestion(query, previousHuman: previousHuman)
         let sources = includeSources && !purpose.humanOnly
         let prepared = memory.selectionContext(registration, conversationID: conversationID, includeTopics: includeTopics,
-                                    query: question.query, focus: focus, includeSources: sources, sourceFilter: sourceFilter, now: now)
+                                    query: question.query, focus: focus, includeSources: sources, sourceFilter: sourceFilter,
+                                    recordFilter: purpose.usesReviewGuide ? { $0.reviewPreference != true } : nil, now: now)
         let base = prepared.selection
         // These are canonical human memories, subject to the same relevance,
         // scope and expiry rules. No separate preference database or fallback.
-        let preferences = memory.enabled ? memory.reviewPreferences(registration).filter {
+        let preferences = memory.enabled && !purpose.usesReviewGuide ? memory.reviewPreferences(registration).filter {
             MemoryRules.inScope($0, conversationID: conversationID, includeTopics: includeTopics)
         } : []
         let preferred = MemoryRetrieval.select(preferences, registration: registration, conversationID: conversationID,

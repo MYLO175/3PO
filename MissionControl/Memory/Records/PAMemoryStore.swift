@@ -17,6 +17,8 @@ import SwiftData
     @ObservationIgnored private var restoringSettings = true
     private let container: ModelContainer?
     private var writable = true
+    /// A failed decode/migration must not make saved learned policy look empty.
+    var isReadable: Bool { writable }
     private var loadedBytes: Data?
     private var reviewPreferenceMigration: ReviewPreferenceConversion.Receipt?
     private(set) var reviewPreferenceMigrationReadable = true
@@ -86,6 +88,11 @@ import SwiftData
     func reviewPreferences(_ registration:String,includeRetired:Bool=false)->[PAMemory] {
         records.filter{$0.registration == registration && $0.source == nil && $0.reviewPreference == true && $0.supersededBy == nil && (includeRetired || MemoryRules.usable($0,registration:registration))}.sorted{$0.created == $1.created ? $0.id.uuidString < $1.id.uuidString : $0.created > $1.created}
     }
+    func instructionPreferences(_ scope: String, registration: String) -> [PAMemory] {
+        guard enabled else { return [] }
+        return records.filter { $0.source == nil && $0.supportsInstructionScope && $0.conversationID == nil && $0.effectiveInstructionScope == scope &&
+            MemoryRules.usable($0, registration: registration) }.sorted { $0.created == $1.created ? $0.id.uuidString < $1.id.uuidString : $0.created > $1.created }
+    }
     /// Exact human evidence stays separate from optional contextual interpretation.
     @discardableResult func saveReviewPreference(_ text:String,registration:String,expected:PAMemory? = nil,about:String="",interpretation:ReviewFeedbackInterpretation? = nil,id:UUID=UUID())->Bool {
         let words=text.trimmingCharacters(in:.whitespacesAndNewlines)
@@ -102,6 +109,7 @@ import SwiftData
     @discardableResult func put(_ memory: PAMemory) -> Bool {
         guard !memory.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, !memory.registration.isEmpty else { return false }
         var value = memory; value.text = String(value.text.prefix(2000)); value.reviewed = .now
+        if !value.supportsInstructionScope { value.instructionScope = nil }
         if value.reviewInterpretation?.rule != nil,value.reviewInterpretation?.rule != value.text {value.reviewInterpretation=nil;value.reviewFeedback=value.text}
         let old=records.first{$0.id == value.id}
         if let old,old.reviewPreference == true,value.kind != .preference {
@@ -273,6 +281,7 @@ import SwiftData
         guard let old=records.first(where:{$0.id == id}),old.supersededBy == nil,old.registration == replacement.registration,
               replacement.id != id,!records.contains(where:{$0.id == replacement.id}),!replacement.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { error="This is no longer the current memory, or its replacement is invalid.";return false }
         var next=replacement;next.text=String(next.text.prefix(2000));next.supersedes=id;next.supersededBy=nil;next.created = .now;next.reviewed = .now
+        if !next.supportsInstructionScope { next.instructionScope = nil }
         if next.kind != .preference,next.reviewPreference == true {next.reviewPreference=nil;next.reviewInterpretation=nil;next.reviewFeedback=nil;next.reviewContext=nil}
         if next.reviewInterpretation?.rule != nil,next.reviewInterpretation?.rule != next.text {next.reviewInterpretation=nil;next.reviewFeedback=next.text}
         next.commitmentGroup=next.kind == .commitment && next.conversationID == old.conversationID ? old.commitmentGroup : nil
@@ -292,8 +301,16 @@ import SwiftData
         if restored.conversationID != nil { restored.organisation?.selfName=nil }
         return correct(current.id,with:restored)
     }
-    @discardableResult func merge(_ learned: [LearnedMemory], registration: String, sourceDates: [String:Date] = [:], sourceTopics: [String:UUID] = [:], now: Date = .now) -> Bool {
-        change { state in
+    @discardableResult func merge(_ learned: [LearnedMemory], registration: String, sourceDates: [String:Date] = [:], sourceTopics: [String:UUID] = [:], now: Date = .now,
+                                 committing: [String:Data] = [:], expected: [String:LocalRecordVersion] = [:]) -> Bool {
+        // A late correction cannot replace a different account, scope, disabled or changed belief.
+        guard learned.allSatisfy({ entry in
+            guard let id = entry.replaces else { return true }
+            return records.contains { $0.id.uuidString == id && $0.source == nil && $0.registration == registration &&
+                $0.conversationID == sourceTopics[entry.turnID] && MemoryRules.usable($0, registration: registration, now: now) &&
+                $0.kind == entry.kind && $0.effectiveInstructionScope == entry.instruction }
+        }), Set(learned.compactMap(\.replaces)).count == learned.compactMap(\.replaces).count else { error = "A memory selected for correction changed."; return false }
+        return change(committing: committing, expected: expected) { state in
             for entry in learned where !state.suppressed[registration,default:[]].contains(entry.turnID) {
                 // Revisiting an old human turn must not resurrect its corrected belief under new prose.
                 // Other distinct evidence in that rich turn remains eligible to be learned.
@@ -301,8 +318,16 @@ import SwiftData
                     old.registration == registration && old.conversationID == sourceTopics[entry.turnID] && old.sourceTurnID == entry.turnID && (old.supersededBy != nil || old.retiredAt != nil) &&
                     (MemoryLearningRules.normalised(old.text) == MemoryLearningRules.normalised(entry.text) || old.evidence.map{MemoryLearningRules.normalised($0) == MemoryLearningRules.normalised(entry.evidence)} == true)
                 }) else { continue }
-                guard !state.records.contains(where:{  $0.source == nil && $0.registration == registration && $0.conversationID == sourceTopics[entry.turnID] && $0.supersededBy == nil && $0.resolved == nil && MemoryLearningRules.normalised($0.text) == MemoryLearningRules.normalised(entry.text) }) else { continue }
-                state.records.append(PAMemory(registration:registration,text:entry.text,kind:entry.kind,explicit:false,provenance:"Learned from your conversation",created:now,reviewed:now,sourceTurnID:entry.turnID,evidence:entry.evidence,sourceDate:sourceDates[entry.turnID],conversationID:sourceTopics[entry.turnID],certainty:entry.certainty,durability:entry.durability,connections:entry.connections,organisation:entry.organisation))
+                guard entry.replaces != nil || !state.records.contains(where:{  $0.source == nil && $0.registration == registration && $0.conversationID == sourceTopics[entry.turnID] && $0.supersededBy == nil && $0.resolved == nil && $0.effectiveInstructionScope == entry.instruction && MemoryLearningRules.normalised($0.text) == MemoryLearningRules.normalised(entry.text) }) else { continue }
+                var value = PAMemory(registration:registration,text:entry.text,kind:entry.kind,explicit:false,provenance:"Consolidated from your saved conversation and activity",created:now,reviewed:now,sourceTurnID:entry.turnID,evidence:entry.evidence,sourceDate:sourceDates[entry.turnID],conversationID:sourceTopics[entry.turnID],certainty:entry.certainty,durability:entry.durability,connections:entry.connections,organisation:entry.organisation)
+                value.instructionScope = entry.instruction
+                if entry.instruction == "review" {
+                    value.reviewPreference = true; value.reviewFeedback = entry.evidence; value.reviewContext = "Learned from conversation"
+                }
+                if let previous = entry.replaces, let index = state.records.firstIndex(where: { $0.id.uuidString == previous }) {
+                    value.supersedes = state.records[index].id; state.records[index].supersededBy = value.id
+                }
+                state.records.append(value)
             }
         }
     }
@@ -342,9 +367,11 @@ import SwiftData
         return selectionContext(registration,conversationID:conversationID,includeTopics:includeTopics,query:query,focus:focus,includeSources:includeSources,sourceFilter:sourceFilter,now:now).selection
     }
     /// Selection and notebook share one permission-filtered, current snapshot.
-    func selectionContext(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, focus:[LifeArea] = [],includeSources:Bool = true,sourceFilter:((PAMemory)->Bool)? = nil,now:Date = .now) -> (selection:MemorySelection,notebook:LifeNotebook) {
+    func selectionContext(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil, focus:[LifeArea] = [],includeSources:Bool = true,sourceFilter:((PAMemory)->Bool)? = nil,recordFilter:((PAMemory)->Bool)? = nil,now:Date = .now) -> (selection:MemorySelection,notebook:LifeNotebook) {
         guard enabled else { return (MemorySelection(records:[],eligibleCount:0),prepareNotebook([],registration:registration,topic:conversationID,includeTopics:includeTopics,now:now)) }
-        let candidates=(includeSources ? permittedRecords : records.filter{$0.source == nil}).filter{$0.source == nil || (sourceFilter?($0) ?? true)}
+        let candidates=(includeSources ? permittedRecords : records.filter{$0.source == nil}).filter {
+            ($0.source == nil || (sourceFilter?($0) ?? true)) && (recordFilter?($0) ?? true)
+        }
         let projected=prepareNotebook(candidates,registration:registration,topic:conversationID,includeTopics:includeTopics,now:now)
         if preparedLexical?.revision != revision { preparedLexical = (revision, MemoryLexicalIndex(records)) }
         return (MemoryRetrieval.select(candidates,registration:registration,conversationID:conversationID,includeTopics:includeTopics,query:query,now:now,focus:focus,notebook:projected,lexical:preparedLexical?.value),projected)
@@ -352,7 +379,7 @@ import SwiftData
     func context(_ registration: String, conversationID: UUID? = nil, includeTopics: Bool = false, query: String? = nil,includeSources:Bool = true,now:Date = .now) -> [[String:String]] {
         selection(registration,conversationID:conversationID,includeTopics:includeTopics,query:query,includeSources:includeSources,now:now).records
     }
-    private func change(_ mutation: (inout MemoryEnvelope) -> Void) -> Bool {
+    private func change(committing: [String:Data] = [:], expected: [String:LocalRecordVersion] = [:], _ mutation: (inout MemoryEnvelope) -> Void) -> Bool {
         guard writable, let container else { error = "Memory storage is unavailable; nothing was changed."; return false }
         let old = state,previousGroups=CommitmentRules.memberships(state.records); mutation(&state)
         let groups=CommitmentRules.memberships(state.records)
@@ -362,7 +389,9 @@ import SwiftData
         }
         do {
             let data = try LocalRecordCoding.preservingUnknown(state, original: ReviewPreferenceConversion.envelopeOriginal(loadedBytes))
-            try LocalRecordRepository(container: container).write(["paMemory": data], expected: ["paMemory": LocalRecordVersion(loadedBytes)])
+            var updates = committing, versions = expected
+            updates["paMemory"] = data; versions["paMemory"] = LocalRecordVersion(loadedBytes)
+            try LocalRecordRepository(container: container).write(updates, expected: versions)
             loadedBytes = data
             revision = UUID(); error = nil; return true
         } catch { state = old; self.error = "Memory change could not be saved."; return false }

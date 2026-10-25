@@ -18,6 +18,8 @@ xcuserdata/
 # WhatsApp reader dependency manifests are public; sessions never live here.
 !WhatsAppBridge/package.json
 !WhatsAppBridge/package-lock.json
+!MCPBridge/package.json
+!MCPBridge/package-lock.json
 node_modules/
 WhatsAppBridge/Runtime/
 

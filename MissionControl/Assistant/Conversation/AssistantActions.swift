@@ -21,8 +21,8 @@ struct ActionTarget: Identifiable { var id: String; var label: String }
     }
     /// Executes a completed model tool call using only identities issued in this turn.
     /// The latest human message authorises the operation; imported records never do.
-    func performTool(_ draft: ActionDraft, human: String, authorization: String?, turnID: UUID, model: any NativeActionRuntime, calendar: CalendarSnapshot, reminders: ReminderSnapshot, expectedDetails: NativeEditDetails? = nil, valid: NativeWriteValidity? = nil) async throws -> String {
-        try PAToolProtocol.evidence(authorization,human:human)
+    func performTool(_ draft: ActionDraft, human: String, authorization: String?, turnID: UUID, model: any NativeActionRuntime, calendar: CalendarSnapshot, reminders: ReminderSnapshot, expectedDetails: NativeEditDetails? = nil, valid: NativeWriteValidity? = nil, authority: ActionToolAuthority = .conversation) async throws -> String {
+        if authority == .conversation { try PAToolProtocol.evidence(authorization,human:human) }
         try ActionRules.validate(draft)
         guard model.actionContextEnabled, !model.writing, !ProcessInfo.processInfo.arguments.contains("--sample") else { throw ActionFailure.message("Apple writes are unavailable; no change attempted.") }
         let reminder = reminders.reminders.first { $0.id == draft.target }, event = calendar.events.first { $0.id == draft.target }

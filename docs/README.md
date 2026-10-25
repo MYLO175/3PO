@@ -17,6 +17,7 @@
 | --- | --- |
 | What can I do in the app? | [Features](guides/FEATURES.md) |
 | How do I build and connect sources? | [Getting started](guides/GETTING_STARTED.md) |
+| How can Claude Desktop or ChatGPT use Calendar tools? | [MCP connection setup](../MCPBridge/README.md) |
 | How does a message become an answer or change? | [Architecture](architecture/ARCHITECTURE.md) |
 | Where do my data go? | [Privacy](guides/PRIVACY.md) |
 | How do recall, evidence and corrections work? | [Memory and context](architecture/MEMORY_AND_CONTEXT.md) |

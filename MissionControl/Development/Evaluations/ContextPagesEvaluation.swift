@@ -7,18 +7,126 @@ import SwiftData
 @MainActor enum ContextPagesEvaluation {
     static func run() async throws -> [String: Bool] {
         guard ProcessInfo.processInfo.arguments.contains("--validate-advice-context") else { throw IntegrationError.verification }
+        if ProcessInfo.processInfo.arguments.contains("--mcp-workspace-only") { return try await mcpWorkspaceChecks() }
         var checks = try consolidationChecks()
         checks.merge(try humanEvidenceChecks(), uniquingKeysWith: { $1 })
         checks.merge(try await pageReadChecks(), uniquingKeysWith: { $1 })
         checks.merge(try instructionChecks(), uniquingKeysWith: { $1 })
+        checks.merge(try await reviewGuidanceChecks(), uniquingKeysWith: { $1 })
+        checks.merge(try learnedInstructionChecks(), uniquingKeysWith: { $1 })
         checks.merge(try emailPageChecks(), uniquingKeysWith: { $1 })
         checks.merge(try primaryContextChecks(), uniquingKeysWith: { $1 })
         checks.merge(try projectionReuseChecks(), uniquingKeysWith: { $1 })
         checks.merge(try hierarchyGuideChecks(), uniquingKeysWith: { $1 })
         checks.merge(try navigationDirectoryChecks(), uniquingKeysWith: { $1 })
+        checks.merge(try conversationDirectoryChecks(), uniquingKeysWith: { $1 })
         checks.merge(try guideOverflowChecks(), uniquingKeysWith: { $1 })
         checks.merge(try largeAncestryChecks(), uniquingKeysWith: { $1 })
         checks.merge(try await ownedMutationChecks(), uniquingKeysWith: { $1 })
+        return checks
+    }
+
+    private static func mcpWorkspaceChecks() async throws -> [String: Bool] {
+        let fixture = try ContextPagesFixture()
+        defer { fixture.clean() }
+        let model = fixture.model, owner = fixture.registration
+        let session = MCPAppToolSession(model: model)
+        var checks: [String: Bool] = [:]
+        func call(_ name: String, _ fields: [String: Any] = [:]) async throws -> [String: Any] {
+            var args = fields
+            let id = MCPBridgeContract.writes.contains(name) ? UUID() : nil
+            if let id { args["requestID"] = id.uuidString }
+            let request = try MCPBridgeContract.call(name: name, arguments: args)
+            return try object(await session.execute(request, requestID: id, valid: { true }))
+        }
+        func refused(_ name: String, _ fields: [String: Any]) async -> Bool {
+            do { _ = try await call(name, fields); return false } catch { return true }
+        }
+        func projects() async throws -> [String: Any] {
+            try await call("read_life_items", ["query": "", "root": NSNull(), "unfinished": false, "dueBefore": NSNull(), "maxMinutes": NSNull(), "deleted": false])
+        }
+        let guide = try await call("about_3po")
+        checks["MCP live orientation explains host permission and separate app records"] = (guide["instructions"] as? String)?.contains("normal tool approval controls") == true && (guide["purpose"] as? String)?.contains("Projects") == true
+        let batch: [[String: Any]] = [
+            ["title": "Fictional MCP optics", "kind": "space", "parent": NSNull(), "notes": "Original purpose", "due": NSNull(), "estimateMinutes": NSNull(), "areas": ["studies"]],
+            ["title": "Fictional MCP report", "kind": "task", "parent": "batch:0", "notes": "Draft the report", "due": NSNull(), "estimateMinutes": NSNull(), "areas": ["studies"]]
+        ]
+        checks["MCP project writes require a structure read"] = await refused("create_life_items", ["items": batch])
+        _ = try await projects()
+        let created = try await call("create_life_items", ["items": batch])
+        let items = created["items"] as! [[String: Any]], spaceID = items[0]["id"] as! String
+        checks["MCP host authority creates an atomic hierarchy without app inference"] = created["saved"] as? Bool == true && items.count == 2 && fixture.provider.calls == 0
+        let notes = try await call("read_project_notes", ["id": spaceID])
+        let added = try await call("change_project_note", ["id": spaceID, "revision": notes["revision"]!, "noteID": NSNull(), "text": "A second note card"])
+        checks["MCP edits the real additional project note cards"] = added["saved"] as? Bool == true && model.assistant.projects.items(owner).first { $0.id.uuidString == spaceID }?.additionalNotes?.first?.text == "A second note card"
+        checks["MCP refuses stale project note edits"] = await refused("change_project_note", ["id": spaceID, "revision": notes["revision"]!, "noteID": NSNull(), "text": "Should never save"])
+        _ = try await projects()
+        let latestNotes = try await call("read_project_notes", ["id": spaceID])
+        _ = try await call("change_project_note", ["id": spaceID, "revision": latestNotes["revision"]!, "noteID": spaceID, "text": "Revised original note"])
+        checks["MCP original-note edits preserve other cards and hierarchy"] = model.assistant.projects.items(owner).first { $0.id.uuidString == spaceID }?.additionalNotes?.first?.text == "A second note card" && model.assistant.projects.items(owner).count == 2
+        _ = try await projects()
+        for target in ["assistant", "projects", "reminders", "brief", "review", "topic:studies", "space:" + spaceID] {
+            let prior = try await call("read_instructions", ["target": target])
+            let saved = try await call("change_instructions", ["target": target, "revision": prior["revision"]!, "text": "Fictional host-approved guidance for " + target])
+            let current = try await call("read_instructions", ["target": target])
+            checks["MCP saves the canonical instruction owner for " + target] = saved["saved"] as? Bool == true && current["text"] as? String == "Fictional host-approved guidance for " + target
+            checks["MCP refuses stale instruction revision for " + target] = await refused("change_instructions", ["target": target, "revision": prior["revision"]!, "text": "Stale text"])
+        }
+        var learned = PAMemory(registration: owner, text: "Fictional learned reminder guidance", kind: .preference, explicit: false, provenance: "Fictional conversation", certainty: .stated, durability: .stable)
+        learned.instructionScope = "reminders"
+        guard model.assistant.memory.put(learned) else { throw IntegrationError.verification }
+        let learnedRead = try await call("read_instructions", ["target": "reminders"])
+        let learnedRows = learnedRead["learnedGuidance"] as? [[String: String]] ?? []
+        checks["MCP instruction reads include current learned guidance without overwriting explicit policy"] = learnedRows.first?["id"] == learned.id.uuidString && (learnedRead["text"] as? String)?.contains("Fictional host-approved guidance") == true
+        _ = try await call("change_memory", ["id": learned.id.uuidString, "operation": "correct", "text": "Fictional revised reminder guidance", "evidence": "Please revise my reminder preference"])
+        checks["MCP corrections retain learned instruction scope and prior evidence"] = model.learnedInstructionText("reminders", registration: owner).contains("Fictional revised reminder guidance") && model.assistant.memory.records.first { $0.id == learned.id }?.supersededBy != nil
+        checks["MCP learned-guidance changes invalidate a prior instruction read"] = await refused("change_instructions", ["target": "reminders", "revision": learnedRead["revision"]!, "text": "Stale replacement"])
+        let first = try await call("read_instructions", ["target": "assistant"])
+        _ = try await call("change_instructions", ["target": "assistant", "revision": first["revision"]!, "text": "A second saved instruction version"])
+        let instructionID = ContextPage.stableID(registration: owner, kind: .instruction, key: "assistant")
+        checks["MCP feature instructions retain immutable history"] = model.contextPages.history(id: instructionID, registration: owner).count == 2
+        session.tools.calendar.sources = [.init(id: "fictional-mcp-calendar", title: "Fictional MCP Calendar", account: "Fictional", writable: true)]
+        let calendar = try await call("read_instructions", ["target": "calendar:fictional-mcp-calendar"])
+        _ = try await call("change_instructions", ["target": "calendar:fictional-mcp-calendar", "revision": calendar["revision"]!, "text": "Fictional course sessions only"])
+        checks["MCP calendar guidance uses the actual human-owned purpose page"] = model.contextPages.pages(registration: owner).contains { $0.kind == .calendarPurpose && $0.markdown == "Fictional course sessions only" }
+        let note = try await call("change_context_note", ["operation": "create", "id": NSNull(), "revision": NSNull(), "title": "Fictional context note", "markdown": "First human-owned text"])
+        let noteID = note["id"] as! String
+        let noteRead = try await call("read_context_notes", ["id": noteID])
+        let page = noteRead["page"] as! [String: Any]
+        _ = try await call("change_context_note", ["operation": "edit", "id": noteID, "revision": page["revision"]!, "title": "Fictional context note", "markdown": "Second human-owned text"])
+        checks["MCP context edits preserve version history"] = model.contextPages.history(id: noteID, registration: owner).count == 2
+        checks["MCP refuses stale context edits"] = await refused("change_context_note", ["operation": "edit", "id": noteID, "revision": page["revision"]!, "title": "Stale", "markdown": "Stale"])
+        _ = try await call("read_context_notes", ["id": noteID])
+        let latest = model.contextPages.page(id: noteID, registration: owner)!
+        _ = try await call("change_context_note", ["operation": "forget", "id": noteID, "revision": latest.revision.uuidString, "title": NSNull(), "markdown": NSNull()])
+        checks["MCP explicit context Forget removes only its selected human note"] = model.contextPages.page(id: noteID, registration: owner) == nil && model.contextPages.page(id: instructionID, registration: owner) != nil
+        let generated = try model.contextPages.save(.init(registration: owner, kind: .overview, key: "everyday", owner: .generated, title: "Fictional generated page", markdown: "Generated data", references: [model.contextProjectIdentity(model.assistant.projects.items(owner).first { $0.id.uuidString == spaceID }!)]), expectedRevision: nil)
+        _ = try await call("read_context_notes", ["id": generated.id])
+        checks["MCP refuses generated-page replacement"] = await refused("change_context_note", ["operation": "edit", "id": generated.id, "revision": generated.revision.uuidString, "title": "Overwrite", "markdown": "Must not save"])
+        let fact = try await call("save_memory", ["text": "Fictional MCP preference for morning optics", "kind": "preference", "evidence": "Please remember that I prefer morning optics"])
+        let factID = fact["id"] as! String
+        _ = try await call("read_memory_records", ["query": "morning optics", "state": "current", "offset": 0])
+        let correction = try await call("change_memory", ["id": factID, "operation": "correct", "text": "Fictional MCP preference for afternoon optics", "evidence": "Actually I prefer afternoon optics"])
+        let correctedID = correction["id"] as! String
+        checks["MCP memory correction preserves original wording and honest external provenance"] = model.assistant.memory.records.first { $0.id.uuidString == factID }?.supersededBy?.uuidString == correctedID && model.assistant.memory.records.first { $0.id.uuidString == correctedID }?.provenance.contains("external MCP") == true
+        checks["MCP refuses stale memory targets after correction"] = await refused("change_memory", ["id": factID, "operation": "forget", "text": NSNull(), "evidence": "Forget that old fact"])
+        _ = try await call("read_memory_records", ["query": "afternoon optics", "state": "current", "offset": 0])
+        _ = try await call("change_memory", ["id": correctedID, "operation": "resolve", "text": NSNull(), "evidence": "That commitment is finished"])
+        let resolved = try await call("read_memory_records", ["query": "afternoon optics", "state": "resolved", "offset": 0])
+        _ = try await call("change_memory", ["id": correctedID, "operation": "reopen", "text": NSNull(), "evidence": "Reopen that commitment"])
+        checks["MCP can inspect and reopen an explicitly resolved memory"] = (resolved["records"] as? [[String: Any]])?.count == 1 && model.assistant.memory.records.first { $0.id.uuidString == correctedID }?.resolved == nil
+        _ = try await call("read_memory_records", ["query": "afternoon optics", "state": "current", "offset": 0])
+        _ = try await call("change_memory", ["id": correctedID, "operation": "forget", "text": NSNull(), "evidence": "Forget this optics preference"])
+        checks["MCP memory Forget removes the selected correction lineage"] = !model.assistant.memory.records.contains { [$0.id.uuidString, $0.supersedes?.uuidString ?? ""].contains(factID) }
+        let question = try model.contextQuestions.offer(registration: owner, projectID: UUID(uuidString: spaceID)!, identity: model.contextProjectIdentity(model.assistant.projects.items(owner).first { $0.id.uuidString == spaceID }!), question: "What is this fictional optics space for?")!
+        let inbox = try await call("read_review_inbox", ["offset": 0])
+        let row = (inbox["items"] as! [[String: Any]]).first { $0["id"] as? String == "project:" + question.id }!
+        _ = try await call("dismiss_review_item", ["id": row["id"]!, "revision": row["revision"]!])
+        checks["MCP Review dismissal acknowledges a current exact question without task completion"] = model.contextQuestions.questions(registration: owner, includeFinished: true).first { $0.id == question.id }?.status == .dismissed && model.assistant.projects.items(owner).first { $0.id.uuidString == items[1]["id"] as? String }?.status == .planned
+        checks["MCP Review rejects a repeated or stale acknowledgement"] = await refused("dismiss_review_item", ["id": row["id"]!, "revision": row["revision"]!])
+        model.assistant.memory.enabled = false
+        checks["MCP does not expose saved memory after use is withdrawn"] = await refused("read_memory_records", ["query": NSNull(), "state": "all", "offset": 0])
+        checks["MCP workspace operations make no inference or native-source calls"] = fixture.provider.calls == 0 && fixture.sources.reads == 0 && model.aiUsage.state.records.isEmpty
         return checks
     }
 
@@ -66,6 +174,55 @@ import SwiftData
         }
         checks["Context formatting capacity overflow preserves warmed entries without scan thrashing"] = bounded.builds == 1026
         checks["Context formatting reuse makes no model or source calls"] = fixture.provider.calls == 0 && fixture.sources.reads == 0
+        return checks
+    }
+
+    private static func conversationDirectoryChecks() throws -> [String:Bool] {
+        let fixture = try ContextPagesFixture()
+        defer { fixture.clean() }
+        let model=fixture.model,owner=fixture.registration
+        var checks:[String:Bool]=[:]
+        let empty=model.conversationContextDirectory(registration:owner)
+        checks["Conversation directory empty valid stores retain complete Assistant defaults"] = empty.current() && empty.text.contains(model.assistant.preferences)
+        let fact=PAMemory(registration:owner,text:"PRIVATE_FACT_MARKER",kind:.context,provenance:"Fictional human")
+        guard model.assistant.memory.put(fact) else {throw IntegrationError.verification}
+        let space=LifeItem(registration:owner,kind:.space,title:"PRIVATE_PROJECT_MARKER",notes:"PRIVATE_PROJECT_BODY")
+        _=try model.assistant.projects.create([space],receipt:.init(id:UUID().uuidString,registration:owner,result:"Fixture",itemID:space.id))
+        var topic=try model.contextPages.save(.init(registration:owner,kind:.topic,key:"directory-fixture",owner:.human,title:"PRIVATE_TOPIC_MARKER",markdown:"PRIVATE_TOPIC_BODY"),expectedRevision:nil)
+        _=try model.contextPages.save(.init(registration:owner,kind:.instruction,key:"review",owner:.human,title:"Review",markdown:"PRIVATE_REVIEW_POLICY"),expectedRevision:nil)
+        let fullPolicy=String(repeating:"Give practical fictional explanations. ",count:200)+"FINAL_ASSISTANT_POLICY_MARKER"
+        var policy=try model.contextPages.save(.init(registration:owner,kind:.instruction,key:"assistant",owner:.human,title:"Assistant",markdown:fullPolicy),expectedRevision:nil)
+        let builds=model.contextKnowledgeBuildCount,capture=model.conversationContextDirectory(registration:owner)
+        checks["Conversation directory contains complete Assistant policy without personal knowledge"] = capture.current() && capture.text.contains(fullPolicy) && !["PRIVATE_FACT_MARKER","PRIVATE_PROJECT_MARKER","PRIVATE_PROJECT_BODY","PRIVATE_TOPIC_BODY","PRIVATE_REVIEW_POLICY"].contains(where:(capture.text+capture.guideText).contains) && capture.pageIDs.isEmpty && capture.memoryIDs.isEmpty && capture.workspaceIDs.isEmpty
+        checks["Conversation directory never builds a knowledge projection"] = model.contextKnowledgeBuildCount == builds
+        let receipts=Array(repeating:capture.referenceVersions,count:40)
+        let availability=model.withContextPageAvailability(registration:owner,captures:receipts) { available in receipts.map { available($0) } }
+        checks["Conversation directory validates forty history receipts without projecting personal knowledge"] = availability.allSatisfy{$0} && model.contextKnowledgeBuildCount == builds
+        var changed=fact;changed.text="Unrelated fact changed";guard model.assistant.memory.put(changed) else {throw IntegrationError.verification}
+        topic.markdown="Unrelated topic changed";topic=try model.contextPages.save(topic,expectedRevision:topic.revision)
+        checks["Conversation directory ignores unrelated facts and page changes"] = capture.current() && model.contextKnowledgeAvailable(registration:owner,versions:capture.referenceVersions)
+        policy.markdown="Revised Assistant policy";policy=try model.contextPages.save(policy,expectedRevision:policy.revision)
+        checks["Conversation directory invalidates live and historical supplied policy on edit"] = !capture.current() && !model.contextKnowledgeAvailable(registration:owner,versions:capture.referenceVersions)
+        let beforeLearning=model.conversationContextDirectory(registration:owner)
+        guard model.assistant.memory.merge([.init(turnID:"fictional-policy",text:"Explain one unfamiliar concept at a time.",kind:.preference,evidence:"Explain one unfamiliar concept at a time.",certainty:.stated,durability:.stable,instruction:"assistant")],registration:owner) else {throw IntegrationError.verification}
+        let learned=model.conversationContextDirectory(registration:owner)
+        checks["Conversation directory tracks learned Assistant guidance without injecting unrelated memory"] = !beforeLearning.current() && learned.current() && learned.text.contains("one unfamiliar concept") && learned.memoryIDs.isEmpty
+        model.assistant.memory.enabled=false
+        checks["Conversation directory memory-use withdrawal invalidates supplied policy"] = !learned.current() && !model.contextKnowledgeAvailable(registration:owner,versions:learned.referenceVersions)
+        model.assistant.memory.enabled=true
+        let account=model.conversationContextDirectory(registration:owner)
+        model.chatGPT.activeID="other-fictional-account"
+        checks["Conversation directory retains captured account ownership"] = !account.current()
+        checks["Conversation directory checks perform no inference or native collection"] = fixture.provider.calls == 0 && fixture.sources.reads == 0
+        for key in ["paMemory",ContextPageStore.recordKey] {
+            let broken=try ContextPagesFixture();defer {broken.clean()}
+            let valid=broken.model.conversationContextDirectory(registration:broken.registration)
+            try LocalRecordRepository(container:broken.model.container!).write([key:Data("corrupt fictional record".utf8)])
+            if key == "paMemory" {broken.model.assistant=AssistantService(connection:broken.provider,container:broken.model.container,settings:broken.settings,imageDirectory:broken.images)}
+            else {_=broken.model.contextPages.reload()}
+            let failed=broken.model.conversationContextDirectory(registration:broken.registration)
+            checks["Conversation directory corrupt \(key) cannot silently discard human policy"] = !failed.current() && !broken.model.contextKnowledgeAvailable(registration:broken.registration,versions:valid.referenceVersions) && broken.provider.calls == 0
+        }
         return checks
     }
 
@@ -423,7 +580,7 @@ import SwiftData
         checks["Primary context separate orientation allowance retains a relevant topic beside two overviews"] = ordinary.pageIDs.contains(topic.id) && ordinary.pageIDs.count == 3
         checks["Primary context automatic pages resolve support beyond old lexical fact selection"] = automatic.records.isEmpty && automatic.contextPageDependencies[reference.contextKey] == reference.revision && automatic.pageContext.contains("Cobalt optics")
         checks["Primary context preserves captured feature purpose for later dependency checks"] = automatic.contextPageDependencies["context-purpose:brief"] == "1" && model.contextPageDependenciesAvailable(automatic.contextPageDependencies, registration: registration)
-        checks["Primary context ordinary chat automatically receives human feature guidance"] = (broad["featureInstructions"] as? [[String: String]])?.count == ContextFeature.allCases.count
+        checks["Primary context explicit broad page captures retain purpose-specific feature guidance"] = (broad["featureInstructions"] as? [[String: String]])?.count == ContextFeature.allCases.count
         let email = model.captureContextPages(registration: registration, query: "Cobalt optics", includeTopics: false, purpose: .email)
         let emailObject = try object(email.text)
         checks["Primary context email resolves all relevant human support without raw working context"] = email.pageIDs.contains(topic.id) && ((emailObject["workingChanges"] as? [[String: String]]) ?? []).isEmpty
@@ -585,6 +742,62 @@ import SwiftData
         return checks
     }
 
+    private static func reviewGuidanceChecks() async throws -> [String: Bool] {
+        var checks: [String: Bool] = [:]
+        for scenario in ["success", "stop", "policy edit", "disabled rule"] {
+            let fixture = try ContextPagesFixture()
+            defer { fixture.clean() }
+            let model = fixture.model, owner = fixture.registration
+            let raw = "ORIGINAL_REVIEW_WORDS_" + UUID().uuidString
+            let turnID = UUID()
+            try fixture.human(raw, id: turnID)
+            var memory = PAMemory(registration: owner, text: "Routine fictional violet newsletters can stay quiet; direct personal deadlines still matter.", kind: .preference,
+                                  explicit: false, provenance: "Fictional interpreted feedback", sourceTurnID: turnID.uuidString, evidence: raw, certainty: .stated, durability: .stable)
+            memory.reviewPreference = true; memory.reviewFeedback = raw
+            guard model.assistant.memory.put(memory) else { throw IntegrationError.verification }
+            let service = model.emailSummaries
+            let captured = service.policy(owner)
+            let automatic = model.automaticMemory(.brief, query: "violet newsletters")
+            checks["Review guide excludes raw feedback from routine context: " + scenario] = !captured.text.contains(raw) && !automatic.context.contains(raw) && !automatic.records.contains { $0["purpose"] == "review preference" }
+            let reviewInput = model.assistantRuntime().contextPages(owner, "violet newsletters", nil, false, false)
+            checks["Review conversation supplies the guide without raw working feedback: " + scenario] = reviewInput.current() && !reviewInput.text.contains(raw) && reviewInput.text.contains("reviewGuidance") && !reviewInput.referenceVersions.keys.contains("memory:" + memory.id.uuidString)
+            var claims = 0, calls = 0, owned = true
+            var held: CheckedContinuation<Void, Never>?
+            var supplied = ""
+            let request = HeartbeatChildRequest(registration: owner, manual: true, runID: "fictional-review-guide", mailReview: .init(windows: [:], issues: [:]), whatsappReady: false,
+                claim: { guard owned else { throw CancellationError() }; claims += 1 }, validate: { if !owned || Task.isCancelled { throw CancellationError() } })
+            let rewritten = "# My Review guidance\n\nKeep routine fictional violet newsletters quiet; direct personal deadlines still matter."
+            let infer: (String) async throws -> PAResponse = { input in
+                calls += 1; supplied = input
+                if scenario != "success" { await withCheckedContinuation { held = $0 } }
+                let args = String(decoding: try JSONSerialization.data(withJSONObject: ["text": rewritten]), as: UTF8.self)
+                return .init(text: "", output: [], calls: [.init(id: "fictional-result", name: ReviewGuidanceRules.toolName, namespace: "pa", arguments: args)])
+            }
+            let task = Task { try await service.consolidateReviewGuidance(model, request: request, infer: infer) }
+            if scenario != "success" {
+                await waitUntil { held != nil }
+                switch scenario {
+                case "stop": owned = false; task.cancel()
+                case "policy edit": guard service.savePolicy("My independently edited Review guidance.", registration: owner, expected: captured) else { throw IntegrationError.verification }
+                default: guard model.assistant.memory.retire(memory.id, retired: true, expectedRevision: model.assistant.memory.revision) else { throw IntegrationError.verification }
+                }
+                held?.resume(); held = nil
+            }
+            var cancelled = false
+            let result: HeartbeatLearningResult?
+            do { result = try await task.value } catch is CancellationError { cancelled = true; result = nil }
+            checks["Review consolidation claims one owned request: " + scenario] = calls == 1 && claims == 1 && !supplied.contains(raw)
+            if scenario == "success" {
+                let second = try await service.consolidateReviewGuidance(model, request: request, infer: infer)
+                checks["Review synthesis saves once and skips unchanged later heartbeats"] = result?.failure == nil && service.policy(owner).text == rewritten && second.skipped && calls == 1 && claims == 1
+            } else {
+                checks["Review synthesis rejects late completion: " + scenario] = service.policy(owner).text != rewritten && (cancelled || result?.failure != nil)
+            }
+            checks["Review consolidation fixture performs no real source or model calls: " + scenario] = fixture.sources.reads == 0 && fixture.provider.calls == 0
+        }
+        return checks
+    }
+
     private static func instructionChecks() throws -> [String: Bool] {
         let fixture = try ContextPagesFixture()
         defer { fixture.clean() }
@@ -604,11 +817,18 @@ import SwiftData
             guard model.assistant.memory.saveReviewPreference("Fictional cobalt feedback \(index): " + String(repeating: "\"\\🌱", count: 400), registration: registration, about: String(repeating: "f", count: 280)) else { throw IntegrationError.verification }
         }
         let review = model.captureContextPages(registration: registration, query: nil, pageID: "instructions:review")
-        let reviewObject = try object(review.text), feedback = reviewObject["feedback"] as? [[String: String]] ?? []
-        checks["Context pages Review policy and feedback obey one final payload bound"] = review.current() && review.text.utf8.count <= 32_000 && reviewObject["unavailable"] == nil && !feedback.isEmpty && (reviewObject["feedbackCount"] as? Int) == 18
-        checks["Context pages Review policy capture retains canonical feedback receipts"] = review.referenceVersions["instruction:review"] != nil && review.referenceVersions.keys.filter { $0.hasPrefix("memory:") }.count == feedback.count
+        let reviewObject = try object(review.text)
+        checks["Context pages Review browsing pages one document without a parallel feedback list"] = review.current() && review.text.utf8.count <= 32_000 && reviewObject["unavailable"] == nil && reviewObject["feedback"] == nil && (reviewObject["instructions"] as? [String: String])?["nextOffset"] != "end"
+        let fullReview = model.reviewGuidanceCapture(registration: registration)
+        checks["Review decisions receive every rule beyond the browsing excerpt"] = fullReview.current() && (0..<18).allSatisfy { fullReview.text.contains("Fictional cobalt feedback \($0):") } && fullReview.text.count > 6000
+        checks["Review policy captures one exact complete guidance revision"] = review.referenceVersions["instruction:review"] != nil && review.referenceVersions.keys.filter { $0.hasPrefix("memory:") }.isEmpty && fullReview.referenceVersions == review.referenceVersions.filter { $0.key == "instruction:review" }
         guard model.emailSummaries.savePolicy("Only surface meaningful revised fictional cobalt changes.", registration: registration, expected: model.emailSummaries.policy(registration)) else { throw IntegrationError.verification }
         checks["Context pages Review edit invalidates exact prior policy capture"] = !review.current() && !model.contextKnowledgeAvailable(registration: registration, versions: review.referenceVersions)
+        checks["Review complete guide also rejects stale completion after an edit"] = !fullReview.current()
+        model.assistant.memory.enabled = false
+        let withoutMemory = model.reviewGuidanceCapture(registration: registration)
+        checks["Review retains explicit guidance while learned memory is paused"] = withoutMemory.current() && withoutMemory.text.contains("Only surface meaningful revised fictional cobalt changes.") && model.contextKnowledgeAvailable(registration: registration, versions: withoutMemory.referenceVersions)
+        model.assistant.memory.enabled = true
         checks["Context pages feature instructions share existing saved authorities"] = model.contextPages.pages(registration: registration).isEmpty
         let currentBrief = model.captureContextPages(registration: registration, query: nil, pageID: "instructions:brief")
         let currentReview = model.captureContextPages(registration: registration, query: nil, pageID: "instructions:review")
@@ -658,6 +878,52 @@ import SwiftData
         return checks
     }
 
+    private static func learnedInstructionChecks() throws -> [String: Bool] {
+        let fixture = try ContextPagesFixture()
+        defer { fixture.clean() }
+        let model = fixture.model, owner = fixture.registration
+        var checks: [String:Bool] = [:]
+        let base = "Give practical answers with clear uncertainty."
+        _ = try model.contextPages.save(.init(registration:owner,kind:.instruction,key:"assistant",owner:.human,title:"Assistant",markdown:base),expectedRevision:nil)
+        let additions = [LearnedMemory(turnID:"human-assistant",text:"Use short explanations before technical detail.",kind:.preference,evidence:"I prefer short explanations before technical detail.",certainty:.stated,durability:.stable,instruction:"assistant"),
+            .init(turnID:"human-brief",text:"Start morning briefs with upcoming commitments.",kind:.preference,evidence:"Start my morning brief with upcoming commitments.",certainty:.stated,durability:.stable,instruction:"brief"),
+            .init(turnID:"human-review",text:"Keep routine university newsletters quiet unless they contain a direct personal request.",kind:.preference,evidence:"Routine newsletters are unimportant; direct requests matter.",certainty:.stated,durability:.stable,instruction:"review")]
+        guard model.assistant.memory.merge(additions,registration:owner) else { throw IntegrationError.verification }
+        let effective = model.featureInstruction(.assistant,registration:owner)
+        checks["Learned instructions reach feature input without copying into human prose"] = effective.baseText == base && effective.text.contains(additions[0].text) && model.contextPages.pages(registration:owner).first?.markdown == base
+        let captured = model.captureContextPages(registration:owner,query:nil,pageID:"instructions:assistant")
+        checks["Learned instructions are visible in exact instruction reads"] = captured.current() && captured.text.contains(additions[0].text)
+        let brief = model.captureContextPages(registration:owner,query:nil,pageID:"instructions:brief")
+        checks["Learned brief preferences share the versioned instruction route"] = brief.current() && brief.text.contains(additions[1].text) && !brief.text.contains(additions[0].text)
+        let review = model.captureContextPages(registration:owner,query:nil,pageID:"instructions:review")
+        checks["Chat-derived Review guidance is the canonical feedback preference"] = review.current() && review.text.contains(additions[2].text) && model.assistant.memory.reviewPreferences(owner).count == 1
+        let rule = model.assistant.memory.instructionPreferences("assistant",registration:owner).first!
+        guard model.assistant.memory.retire(rule.id,retired:true,expectedRevision:model.assistant.memory.revision) else { throw IntegrationError.verification }
+        checks["Disabling learned guidance removes it and invalidates supplied instructions"] = !captured.current() && model.featureInstruction(.assistant,registration:owner).text == base
+        guard model.assistant.memory.retire(rule.id,retired:false,expectedRevision:model.assistant.memory.revision) else { throw IntegrationError.verification }
+        model.contextCalendarAccess = { true }
+        let calendar = SourceOption(id:"calendar",title:"Tentative",account:"Primary account",writable:true,providerID:"exact-provider")
+        model.calendarData = .init(sources:[calendar],events:[])
+        let scope = "calendar:" + model.calendarPageKey(calendar)
+        let calendarRule = LearnedMemory(turnID:"human-calendar",text:"Use this calendar only for tentative plans.",kind:.context,evidence:"This calendar is only for tentative plans.",certainty:.stated,durability:.stable,instruction:scope)
+        guard model.assistant.memory.merge([calendarRule],registration:owner) else { throw IntegrationError.verification }
+        let guide = model.calendarPurposeCapture(sources:[calendar],registration:owner)
+        let guideObject = try object(guide.text)
+        let rows = guideObject["calendars"] as? [[String:Any]] ?? []
+        checks["Chat calendar purpose reaches the exact destination guide"] = guide.current() && (rows.first?["learnedGuidance"] as? String)?.contains(calendarRule.text) == true
+        checks["Scoped calendar instructions never enter unrelated generic calendar guidance"] = (guideObject["humanGuidance"] as? [[String:Any]] ?? []).isEmpty
+        let targets = model.contextLearningTargets(registration:owner)
+        checks["Learning receives exact permitted instruction targets"] = targets.contains{$0.scope == scope} && targets.contains{$0.scope == "review"} && targets.contains{$0.scope == "brief"}
+        var reused = calendar; reused.providerID = "different-provider"
+        model.calendarData = .init(sources:[reused],events:[])
+        let otherRows = try object(model.calendarPurposeCapture(sources:[reused],registration:owner).text)["calendars"] as? [[String:Any]]
+        checks["Learned calendar guidance cannot follow a reused source ID across providers"] = !guide.current() && otherRows?.first?["learnedGuidance"] as? String == ""
+        model.assistant.memory.enabled = false
+        checks["Memory-off withdraws learned feature instructions"] = model.featureInstruction(.assistant,registration:owner).text == base
+        checks["Learned instruction production fixtures make no inference or native reads"] = fixture.provider.calls == 0 && fixture.sources.reads == 0
+        return checks
+    }
+
     private static func ownedMutationChecks() async throws -> [String: Bool] {
         var checks: [String: Bool] = [:]
         for kind in ["memory", "project"] {
@@ -688,8 +954,10 @@ import SwiftData
                 fixture.provider.holdFinal = true
                 var runtime = model.assistantRuntime(), capturedReferences: [String: String] = [:]
                 let capture = runtime.contextPages
-                runtime.contextPages = { registration, query, topic, includeTopics, everyday in
-                    let value = capture(registration, query, topic, includeTopics, everyday)
+                // Deliberately supply this page to exercise exact mutation adoption.
+                // Production ordinary chat receives only its directory until a read.
+                runtime.conversationDirectory = { registration in
+                    let value = capture(registration, prompt, nil, false, false)
                     capturedReferences = value.referenceVersions
                     return value
                 }
@@ -762,6 +1030,7 @@ import SwiftData
         images = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
         settings.set(true, forKey: "assistantContextEnabled"); settings.set(true, forKey: "paMemoryEnabled")
         model.assistant = AssistantService(connection: provider, container: container, settings: settings, imageDirectory: images)
+        model.emailSummaries = EmailSummaryService(container: container, memory: model.assistant.memory)
         model.chatGPT.activeID = provider.activeID
         model.contextCalendarAccess = { false }
     }
