@@ -1,5 +1,15 @@
 # How 3PO works: detailed reference
 
+## 25 October: ChatGPT or Claude
+
+Settings → Connections has one **AI provider** switch. Requests go to ChatGPT or Claude, one at a time, each on its own subscription plan. Saved data, memory and source permissions stay the same when you switch. Choosing Claude the first time asks you to confirm that permitted context will be sent to Anthropic. Each job keeps the provider of the model it started with.
+
+Anthropic doesn't let other apps offer a Claude sign-in or handle Claude credentials, so 3PO uses your own installed Claude Code. Settings opens Anthropic's installer and sign-in in Terminal, then one source-free access check confirms your plan. 3PO only runs a binary signed by Anthropic as Claude Code, and refuses any run that reports API-key authentication, so no API billing occurs.
+
+Each inference round is one short headless Claude Code run: built-in tools off; your personal Claude settings, plugins, commands and auto-memory excluded; no saved session; and an environment that carries no API keys. 3PO keeps its own tool loop. A hold-only schema server lists 3PO's tools to Claude, the round ends at the completed tool request, and 3PO executes it through the same guarded tool session, checks and receipts used with ChatGPT. Single-result jobs such as the brief use Claude Code's JSON-schema mode. A rejected usage window pauses new requests until Check access succeeds, as with ChatGPT quota.
+
+Measured on Claude Code 2.1.310 with fictional content: about 1–2 seconds per round including startup, with prompt caching reused across runs. That is a small sample, not a latency guarantee.
+
 ## 23 October: one Review guide
 
 **Context → Review guidance** shows one complete document describing what matters to you. Every Review assessment receives the whole guide, including all active shared preferences, rather than a few preferences selected by matching words. Original feedback remains under **Original feedback and history…**; it is not repeated alongside learned guidance in routine AI input.

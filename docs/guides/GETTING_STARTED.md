@@ -14,9 +14,9 @@
 | npm and a development Node installation | WhatsApp dependency preparation; optional connector runtime packaging |
 | Internet for initial preparation | Dependency and checksum-pinned runtime downloads |
 | Suitable Apple Development signing identity | Current project generator contains the original developer's team |
-| Eligible connected ChatGPT subscription, for AI | Inference uses the app's documented registration flow and available account models |
+| A ChatGPT subscription, or a Claude Pro/Max plan with Claude Code installed, for AI | ChatGPT uses the app's documented registration flow; Claude uses your own signed-in Claude Code |
 
-The native dashboard can be built independently of signing into ChatGPT. AI eligibility/model allowance depends on the connected account; a successful build does not prove inference.
+The native dashboard can be built independently of connecting an AI provider. AI eligibility/model allowance depends on the connected account; a successful build does not prove inference.
 
 ## Build from source
 
@@ -54,7 +54,7 @@ This DEBUG sample dashboard bypasses normal source collection, helper connection
 For an existing installation, follow [Updating an existing installation](../development/DEVELOPMENT.md#updating-an-existing-installation): quit the app, make a complete recoverable backup, and verify the signed replacement and saved records. For a first normal launch, open the built app without `--sample`.
 
 1. **Choose native sources.** Grant Calendar/Reminders permissions and Mail Automation only for the integrations you want. Check source status and source filters. Denied/unavailable access is different from an empty source.
-2. **Connect the assistant.** In Settings, use **Continue with ChatGPT** and the app's registration flow. Pick a model offered by the connected account, then choose **Check account access · 1 request** to verify inference. Sign-in/model discovery alone is not an inference check. Credentials stay in Keychain; there is no API-key fallback.
+2. **Connect the assistant.** In Settings → Connections, choose an **AI provider**. For ChatGPT, use **Continue with ChatGPT** and the app's registration flow, pick a model offered by the connected account, then choose **Check account access · 1 request**. For Claude, confirm the one-time context notice, then follow the Claude section: **Install Claude Code…** (Anthropic's installer in Terminal), **Sign in with Claude…** (Anthropic's own sign-in) and **Check access · 1 request**. Sign-in/model discovery alone is not an inference check. ChatGPT credentials stay in Keychain; Claude Code keeps its own sign-in, which 3PO never reads. There is no API-key fallback for either.
 3. **Choose AI context.** Review Calendar/list/Mail account and optional WhatsApp controls before permitting personal content in inference. Brief/suggestion use and foreground use retain purpose-specific controls. Review-permitted sources may teach bounded source memory under the global memory controls, alongside explicit learning opt-ins.
 4. **Set up memory deliberately.** The native setup interview starts only when you choose Start. Review memory-use and conversation/source-learning controls. New source-learning opt-ins baseline old content rather than indexing all history.
 5. **Arrange the dashboard.** Add widgets/pages, choose colours and place project spaces. Browsing a Projects folder does not set its default opening folder; use that explicit menu action.

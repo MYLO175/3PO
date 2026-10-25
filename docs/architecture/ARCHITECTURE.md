@@ -62,7 +62,7 @@ Arrows show calls or supplied context, not unrestricted access. Source services 
 | Desktop | `DashboardModel`, `WorkspaceView`, feature views | Navigation, mounted widgets, forms, layout, feedback and lifecycle hooks |
 | Composition | `ApplicationServices` | Constructs production services; construction alone does not start collection or inference |
 | Conversation | `AssistantService`, `AssistantRuntime`, `AssistantDashboardAdapter`, `PAConversationEngine` | Captured request, draft, Focus/setup/queue state, preparation, completed tool rounds and persisted replies |
-| Provider | `PAInferenceConnection`, `ChatGPTConnection`, `ChatGPTStream` | Narrow inference protocol, registration/renewal and streaming subscription transport |
+| Provider | `PAInferenceConnection`, `PAInferenceRouter`, `ChatGPTConnection`, `ChatGPTStream`, `ClaudeCodeConnection` | Narrow inference protocol; the router reports one workspace registration and routes each job by its captured model to ChatGPT's streaming transport or a headless run of the user's own Claude Code |
 | Sources | `EventKitService`, `NativeSourceReading`, `MailService`, `WhatsAppService`, `WeatherService` | Current source identity, availability, cache and bounded reads; native read port is distinct from write operations |
 | Memory | `PAMemoryStore`, `PAMemory`, `LifeNotebook`, `LifeCanonicalNotebook` | Evidence, belief versions, usable records, deterministic recall and canonical workspace anchors |
 | Projects | `LifeWorkspaceStore`, `LifeWorkspaceTools`, `LifeWorkspaceContext` | Human-owned spaces/tasks, notes, stages, hierarchy, exact bindings and tombstones |

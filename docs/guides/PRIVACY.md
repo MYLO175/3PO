@@ -15,6 +15,7 @@
 | Weather | Optional one-fix location and Open-Meteo forecast | Rounded 0.1-degree request; coordinates are not retained in cache/context/logs |
 | Dictation | Optional macOS microphone/speech integration | Separate native permissions |
 | ChatGPT connection | Subscription model inference on permitted prepared input | Account model/plan eligibility applies; no API-key billing fallback |
+| Claude, through your Claude Code | Subscription model inference on permitted prepared input, when Claude is the selected provider | Runs only Anthropic's signed Claude Code; your Claude settings, plugins and auto-memory are excluded, no session history is saved, and API-key sign-in is refused |
 
 macOS permission allows source access; the app's source/AI/learning controls decide the purpose and scope of that access. Life-area Focus is relevance rather than permission. Current review access can also permit bounded source-attributed learning under global memory controls; explicit learning opt-ins remain available. Newly permitted scope baselines existing content. Background proposals need approval before native changes. Imported content, saved memory, evidence links and previous model replies do not independently authorise writes.
 
@@ -36,7 +37,7 @@ Current source/permission/version checks apply before new reasoning, advice or s
 
 SwiftData records and supporting caches live under `~/Library/Application Support/Mission Control`. They include transcripts, memory/version history, workspace, briefs, queues and operation receipts. These records are not all application-encrypted. Additional encryption and broader deletion/retention measurement remain planned.
 
-ChatGPT credentials and the WhatsApp encryption key use macOS Keychain. WhatsApp session/messages/names/source selections are encrypted locally. Reception can cache text from unselected chats; chat selection gates AI use rather than collection. The helper uses its own session rather than another application's registration. The unofficial Baileys connection requires a human QR scan and can break or face account restrictions; its local cache does not guarantee complete WhatsApp history.
+ChatGPT credentials and the WhatsApp encryption key use macOS Keychain. 3PO never stores or reads Claude credentials; Claude Code keeps its own sign-in. WhatsApp session/messages/names/source selections are encrypted locally. Reception can cache text from unselected chats; chat selection gates AI use rather than collection. The helper uses its own session rather than another application's registration. The unofficial Baileys connection requires a human QR scan and can break or face account restrictions; its local cache does not guarantee complete WhatsApp history.
 
 Personal stores, auth/session files, credentials, QR codes, source bodies, caches, screenshots and private backups stay outside Git. Repository artwork and fictional diagrams contain no personal-source capture. `.gitignore` is a useful boundary, not a substitute for reviewing staged files and outgoing history.
 

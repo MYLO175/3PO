@@ -16,7 +16,7 @@
 
 ---
 
-**3PO** is the current product name; **Mission Control** is the codebase and stable storage identity. Built with SwiftUI and SwiftData for **macOS 26+**, it combines a customisable dashboard with an ongoing assistant conversation powered by a connected ChatGPT subscription. This repository is a development project, with source, focused checks and implementation documentation. It is not a packaged public release.
+**3PO** is the current product name; **Mission Control** is the codebase and stable storage identity. Built with SwiftUI and SwiftData for **macOS 26+**, it combines a customisable dashboard with an ongoing assistant conversation powered by your own ChatGPT or Claude subscription, one at a time. This repository is a development project, with source, focused checks and implementation documentation. It is not a packaged public release.
 
 ## One place for the day and the longer view
 
@@ -74,6 +74,8 @@ open /private/tmp/3po-docs-example/derived-data/Build/Products/Debug/3PO.app --a
 The explicit build root makes the output predictable; by default each build gets a unique temporary directory. `--sample` opens a fictional DEBUG dashboard with normal source collection and automatic scheduling bypassed. It still shares existing app storage and Keychain. For normal use and account/source setup, follow [Getting started](docs/guides/GETTING_STARTED.md). The build bundles a checksum-pinned Node runtime for optional WhatsApp, so the installed app does not need a separate Node installation.
 
 ## Privacy and control
+
+Choose **ChatGPT or Claude** in Settings. With Claude, 3PO runs your own installed Claude Code and never handles your Claude login or an API key; see [AI providers](docs/architecture/HOW_IT_WORKS.md#25-october-chatgpt-or-claude).
 
 Mail and WhatsApp are **read-only**. Reply drafts stay local for review, editing, saving and copying. Calendar, Reminders, Mail Automation and optional location/dictation use macOS permissions. Separate AI/source controls determine which personal context can be sent to the connected provider. Memory use, source learning and background work have their own controls. Review permission may also enable bounded source learning under the global controls; newly permitted sources baseline existing content.
 

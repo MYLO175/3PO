@@ -52,6 +52,8 @@ The PA uses the same guarded native operations for an understood current human r
 
 ## Personal assistant
 
+Choose **ChatGPT or Claude** in Settings → Connections; requests use that provider's plan, one at a time. Claude runs through your own installed Claude Code ([how it works](../architecture/HOW_IT_WORKS.md#25-october-chatgpt-or-claude)).
+
 There is one ongoing general conversation, with optional multi-select **Life-area Focus**. Focus makes the request more relevant; it does not grant source access or action permission. Older topic conversations, drafts and tags remain saved.
 
 Ask naturally, then follow up with references such as “do that” when the proposal is clear. The app supplies bounded recent dialogue, relevant usable memories and permitted context; the model can ask local tools for more details. Each job keeps its original account, conversation, Focus, model and permissions. A late result cannot move to a new account or draft.
