@@ -235,6 +235,9 @@ import EventKit
         if heartbeat {
             guard let heartbeatRequest,heartbeatRequest.registration == model.inference.activeID,heartbeatRequest.runID == heartbeatID else {return}
             do {try heartbeatRequest.validate()} catch {return}
+            // The heartbeat reads `error` as this stage's outcome; a skipped stage
+            // must not report an earlier run's failure.
+            error=nil
         }
         guard BriefingRules.requestAllowed(manual:manual,heartbeat:heartbeat) else {return}
         let now = Date.now, calendar = Calendar.current

@@ -235,6 +235,9 @@ struct ProactiveReviewContext {
         if heartbeat {
             guard let heartbeatRequest,heartbeatRequest.registration == model.inference.activeID else {return}
             do {try heartbeatRequest.validate()} catch {return}
+            // The heartbeat reads `error` as this stage's outcome; a throttled or
+            // skipped stage must not report an earlier run's failure.
+            error=nil
         }
         sourceReadError=nil
         let assistant = model.assistant, registration = model.inference.activeID, now = Date.now
@@ -242,7 +245,6 @@ struct ProactiveReviewContext {
         guard manual || now.timeIntervalSince(lastCheck) >= 300 else { return }
         guard model.emailSummaries.policyAvailable(capturedReviewPolicy),(!model.heartbeat.busy || heartbeat), readable, model.assistant.memory.reviewPreferenceMigrationReadable, enabled, !busy, assistant.contextEnabled, (heartbeat ? !model.heartbeat.composerActive : !assistant.hasDraft), !assistant.busy, !model.writing, !model.inference.busy,!model.projectPlacement.busy, model.inference.inferenceVerified, !model.inference.usagePaused, !model.briefings.busy, !model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy, !model.memoryLearning.busy, !model.emailSummaries.busy, !registration.isEmpty else { return }
         lastCheck = now
-        if heartbeat {error=nil}
         let day = BriefingRules.day(now),timeZoneID=TimeZone.current.identifier
         var progress = state.accounts[registration] ?? ProactiveProgress()
         if progress.day != day { progress.day = day; progress.attempts = 0; progress.delivered = 0 }
