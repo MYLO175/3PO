@@ -457,10 +457,10 @@ struct AssistantPanel: View {
             if model.inference.usagePaused {
                 HStack {
                     Text("Subscription access was rejected; saved sources remain available.").font(.caption).foregroundStyle(.secondary)
-                    Button("Check access") { model.chatGPT.testConnection() }.disabled(model.inference.busy || assistant.busy)
-                    Button("Usage") { NSWorkspace.shared.open(URL(string:"https://chatgpt.com/settings/usage")!) }
+                    Button("Check access") { model.checkProviderAccess() }.disabled(model.inference.busy || assistant.busy)
+                    Button("Usage") { NSWorkspace.shared.open(model.inference.provider.usageURL) }
                 }
-                DisclosureGroup("Access details") { Text(model.chatGPT.message).font(.caption).foregroundStyle(.orange) }.font(.caption)
+                DisclosureGroup("Access details") { Text(model.providerAccessMessage).font(.caption).foregroundStyle(.orange) }.font(.caption)
             }
             if !viewingHistory && model.inference.busy && !assistant.busy {
                 HStack(spacing:6) {
@@ -533,7 +533,7 @@ struct AssistantPanel: View {
         .onChange(of:model.inference.activeID) { assistant.drafts.flush(); assistant.openPA(); historySelection=nil;historyEntries=[];showHistory=false;showMemory = false; showSupportingFacts = false; inspectingContext=nil;showProfileSetup=false;sourceDiscovery=nil; showDraft() }
         .onChange(of:sourceDiscovery.map{model.proactive.visible($0,model:model)}) { _,available in if available == false {sourceDiscovery=nil} }
         .onChange(of:model.inference.usagePaused) { _, paused in
-            if !paused, assistant.error?.contains("subscription_sharing_usage_limit_exceeded") == true { assistant.error = nil }
+            if !paused, let error = assistant.error, PAProvider.isUsageLimitError(error) { assistant.error = nil }
         }.sheet(item:$reviewingProject) { record in
             LifeItemEditor(model:model,item:.init(registration:record.registration,kind:.space,title:String((record.sourceTitle ?? "New space").prefix(160)),notes:record.evidence),close:{reviewingProject=nil},reviewedSuggestion:record)
         }.sheet(isPresented:$showRename) { PANameEditor(assistant:assistant) }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { ContextPagesView(model:model,registration:model.inference.activeID) }.sheet(isPresented:$showSupportingFacts) { PAMemoryView(memory:assistant.memory,registration:model.inference.activeID,conversationID:selectedTopicID,topicTitle:topic?.title,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) },organisation:model.lifeOrganisation,organiseContext:{ model.lifeOrganisation.check(model,manual:true,topic:selectedTopicID) },model:model,focusAreas:focusAreas) }.sheet(item:$inspectingContext) { capture in PAContextCaptureView(capture:capture,model:model,registration:model.inference.activeID) }.sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record,model:model) }.sheet(isPresented:$showProfileSetup) {

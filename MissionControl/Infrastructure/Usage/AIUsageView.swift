@@ -43,8 +43,7 @@ struct AIUsageView: View {
             }
             Section(model.inference.provider == .claudeCode ? "Your Claude allowance" : "Your ChatGPT allowance") {
                 Text("This connection does not provide a verified remaining-allowance percentage. Open your provider's usage page for account-wide limits and available controls. Local call limits control 3PO's work; they are separate from your plan allowance.").font(.callout)
-                if model.inference.provider == .claudeCode { Button("See Claude plan usage") { NSWorkspace.shared.open(URL(string: "https://claude.ai/settings/usage")!) } }
-                else { Button("Manage ChatGPT usage") { NSWorkspace.shared.open(URL(string: "https://chatgpt.com/settings/usage")!) } }
+                Button(model.inference.provider.usageLinkTitle) { NSWorkspace.shared.open(model.inference.provider.usageURL) }
                 if model.inference.usagePaused { Text("New AI requests are paused after an allowance failure. Source collection and completed results are retained.").font(.caption).foregroundStyle(.orange) }
                 Text("Usage history contains only dates, model names, categories, outcomes and reported counts. No conversations, source content or credentials are stored here. Up to 30 days / 5,000 calls are kept locally.").font(.caption).foregroundStyle(.secondary)
             }

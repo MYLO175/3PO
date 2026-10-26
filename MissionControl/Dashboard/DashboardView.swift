@@ -515,8 +515,7 @@ struct PAHelpSections:View {
                 Text("Useful observations, missing plans and proposed date changes appear in Review inbox, without adding background messages to normal chat. A distinctive message can suggest changing an existing event or reminder even without a manual plan connection. The card shows the exact quote, proposed date and inferred connection. Approve applies that change; Dismiss leaves the original unchanged. View/edit opens the original item with the proposed change prefilled. Repeating items need an occurrence or series choice before approval. Ambiguous targets stay informational. There is no daily cap on useful inbox items.").font(.callout)
                 Text("Open it from Dashboard → Open Review inbox or add the Review inbox widget. Settings → Background controls heartbeats, which review sources and update Today’s brief. Failed heartbeats try again at the next interval. Settings → Context controls selective learning, organisation and optional weekly memory review. Delegated work resumes through Continue queue.").font(.callout)
                 Text("3PO works while the app is running and the Mac is awake. Missed heartbeats catch up once on opening or waking. Interrupted foreground requests and queued work need explicit continuation; uncertain writes are never replayed automatically.").font(.callout)
-                if model.inference.provider == .claudeCode { Link("See Claude plan usage",destination:URL(string:"https://claude.ai/settings/usage")!) }
-                else { Link("Manage ChatGPT usage",destination:URL(string:"https://chatgpt.com/settings/usage")!) }
+                Link(model.inference.provider.usageLinkTitle,destination:model.inference.provider.usageURL)
             }
             if let openHelpWindow {
                 Section { Button("Open Help in its own window",action:openHelpWindow) }

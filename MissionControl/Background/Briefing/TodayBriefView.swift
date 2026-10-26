@@ -73,7 +73,7 @@ struct TodayBriefView: View {
                 ContentUnavailableView("Your day at a glance",systemImage:"sun.horizon",description:Text(!model.assistant.contextEnabled ? "Enable assistant source context in Settings." : briefings.busy ? "Your PA is preparing today’s brief…" : model.inference.usagePaused ? "Subscription access is paused. Your Apple sources remain available." : "Updated with each heartbeat. Refresh here for a manual update."))
             }
             if let error = briefings.error { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
-            if model.inference.usagePaused { Button("Check subscription access") { model.chatGPT.testConnection() }.controlSize(.small).disabled(model.inference.busy || model.assistant.busy) }
+            if model.inference.usagePaused { Button("Check subscription access") { model.checkProviderAccess() }.controlSize(.small).disabled(model.inference.busy || model.assistant.busy) }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
         .sheet(isPresented:$showMemory) { PAMemoryView(memory:model.assistant.memory,registration:model.inference.activeID,model:model) }
         .sheet(item:$editingPrompt) {edit in BriefPromptEditor(model:model,briefings:briefings,capture:edit.capture)}

@@ -147,7 +147,7 @@ import SwiftData
         return nil
     }
     func manualCheckHelp(runtime:HeartbeatRuntime)->String {
-        manualCheckBlockReason(runtime:runtime) ?? "Run heartbeat: analyse collected mail and enabled context with AI, then update your brief and Review inbox. Mail collection continues independently. Uses your ChatGPT connection."
+        manualCheckBlockReason(runtime:runtime) ?? "Run heartbeat: analyse collected mail and enabled context with AI, then update your brief and Review inbox. Mail collection continues independently. Uses your selected AI provider."
     }
     func mailReviewStatus(registration:String,accounts:[MailAccount])->String {
         let lanes=state.accounts[registration]?.mailLanes ?? [:]
