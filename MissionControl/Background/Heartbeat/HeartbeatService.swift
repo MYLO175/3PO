@@ -458,7 +458,7 @@ import SwiftData
         checks["actual cache recovery schedules fresh assessing work"] = restored.state.accounts[registration]?.phase == "idle" && restored.state.accounts[registration]?.retryAfter == now.addingTimeInterval(Double(restored.intervalMinutes)*60)
         checks["actual cache recovery preserves calls and review identity"] = restored.state.accounts[registration]?.calls == 1 && restored.state.accounts[registration]?.reviews?.first?.id == run.id
         checks["unfinished restored run is not labelled running"] = !restored.reviewInProgress(run,registration:registration)
-        var history=run;history.steps=PAHeartbeatRules.stages();history.steps?[0].status="done";history.steps?[1].status="failed";history.failure="Fictional email failure";history.finished=now;history.phase="paused";history.briefUpdated=false
+        var history=run;history.steps=PAHeartbeatRules.stages();history.steps?[0].status="done";history.steps?[1].status="failed";history.failure="Fictional email failure";history.finished=now;history.phase="failed";history.briefUpdated=false
         try service.recordReview(registration,run:history)
         let historyReopened=HeartbeatService(container:store,settings:validationSettings,clock:{now},deviceState:{device})
         checks["stage history and failure survive actual cache reopening without copying source bodies"] = historyReopened.state.accounts[registration]?.reviews?.last?.steps?[1].status == "failed" && historyReopened.state.accounts[registration]?.reviews?.last?.failure == history.failure
@@ -538,12 +538,7 @@ import SwiftData
         checks["72-slot persisted timeline retains partial lanes, source retries, quota waits and one catch-up"] = timelineValid && cycles > 20 && outages > 0
         checks["completed account cannot be finished by an idle service"] = {do {timeline.busy=false;try timeline.finishAssessment(timelineOwner,account:timeline.state.accounts[timelineOwner]!);return false} catch {return true}}()
         checks["failed recovered inference catches up after missed intervals"] = PAHeartbeatRules.due(restored.state.accounts[registration]!,now:now.addingTimeInterval(86400),minutes:restored.intervalMinutes)
-        let recoveryTime=restored.state.accounts[registration]!.checked!
-        var legacyPause=restored.state.accounts[registration]!;legacyPause.phase="paused";legacyPause.retryAfter=nil;legacyPause.retryReason=nil
-        service.state.accounts[registration]=legacyPause;try service.save()
-        let legacyRecovered=HeartbeatService(container:store,settings:validationSettings,clock:{now},deviceState:{device})
-        checks["old paused cache migrates without postponing retry or losing receipts"] = legacyRecovered.state.accounts[registration]?.retryAfter == recoveryTime.addingTimeInterval(Double(legacyRecovered.intervalMinutes)*60) && legacyRecovered.state.accounts[registration]?.calls == legacyPause.calls && legacyRecovered.state.accounts[registration]?.reviews?.first?.id == legacyPause.reviews?.first?.id
-        let firstRetry=PAHeartbeatRules.failed(legacyPause,now:now,minutes:service.intervalMinutes)
+        let firstRetry=PAHeartbeatRules.failed(restored.state.accounts[registration]!,now:now,minutes:service.intervalMinutes)
         service.state.accounts[registration]=firstRetry;try service.save()
         let reopenedFailure=HeartbeatService(container:store,settings:validationSettings,clock:{now.addingTimeInterval(30)})
         checks["failed run cannot retry early after actual reopening"] = !PAHeartbeatRules.due(reopenedFailure.state.accounts[registration]!,now:now.addingTimeInterval(30),minutes:service.intervalMinutes)

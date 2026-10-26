@@ -330,12 +330,13 @@ import SwiftData
         let suppressed = PAMemory(registration:"fixture",text:"Forgotten earlier input",kind:.context,explicit:false,provenance:"Fictional human",sourceTurnID:"old-1")
         check(memory.put(suppressed) && memory.forget(suppressed.id),"Legacy fixture changes suppression after its failed claim")
         let held = Set((1...10).map { "old-\($0)" })
-        let progress = MemoryLearningProgress(lastAttempt:clock.addingTimeInterval(-3600),day:BriefingRules.day(clock),attempts:1,paused:true)
+        var progress = MemoryLearningProgress(lastAttempt:clock.addingTimeInterval(-3600),day:BriefingRules.day(clock),attempts:1,paused:true)
+        progress.pausedTurnIDs = held
         try LocalRecordRepository(container:isolated).save(MemoryLearningState(accounts:["fixture":progress]),key:"paMemoryLearning")
         let runtime = LearningRuntime(assistant:assistant,inference:provider,learningBudget:LearningBudget(container:isolated),whatsapp:FictionalWhatsApp(),now:{clock},activity:{.init()},writing:{false},sourceRevision:{0},nativeItems:{_,_ in nil})
         let service = MemoryLearningService(container:isolated,settings:settings)
         service.capturePending(assistant)
-        check(service.state.accounts["fixture"]?.pausedTurnIDs == held && provider.calls == 0,"Legacy migration conservatively holds historical input across scopes and suppression changes without replay")
+        check(service.state.accounts["fixture"]?.pausedTurnIDs == held && provider.calls == 0,"A paused claim keeps holding its saved input across scopes and suppression changes without replay")
         func run() async {
             service.check(runtime)
             for _ in 0..<10000 { if !service.busy { break }; await Task.yield() }

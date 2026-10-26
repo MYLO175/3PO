@@ -46,14 +46,7 @@ struct MCPBridgeSettings: View {
                         }
                         if record.proposal.isEmpty { Text(record.tool.replacingOccurrences(of: "_", with: " ")).fontWeight(.medium) }
                         if record.permission == "mcp-host" { Text("Permission managed by the connected assistant").font(.caption).foregroundStyle(.secondary) }
-                        if record.phase == .pending {
-                            HStack {
-                                Button("Approve") { Task { await bridge.approve(record.id) } }.disabled(!bridge.enabled)
-                                Button("Decline") { bridge.dismiss(record.id) }
-                            }
-                        } else {
-                            Text(record.result ?? "The outcome is unconfirmed. Check the original item before continuing; do not retry.").font(.callout).textSelection(.enabled)
-                        }
+                        Text(record.result ?? "The outcome is unconfirmed. Check the original item before continuing; do not retry.").font(.callout).textSelection(.enabled)
                     }.padding(.vertical, 6)
                 }
             }

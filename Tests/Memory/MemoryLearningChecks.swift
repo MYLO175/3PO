@@ -47,7 +47,7 @@ import Foundation
         next.paused = true; next.attempts = 0
         precondition(!MemoryLearningRules.allowed(next,now:now,manual:false))
         let memory = PAMemory(registration:"one",text:"Existing explicit",kind:.preference,provenance:"User")
-        let old = try MemoryEnvelope.decode(JSONEncoder().encode([memory]))
+        let old = try MemoryEnvelope.decode(JSONEncoder().encode(MemoryEnvelope(records:[memory])))
         precondition(old.records[0].explicit && old.suppressed.isEmpty)
         var envelope = old; envelope.suppressed["one"] = ["12"]
         let restored = try MemoryEnvelope.decode(JSONEncoder().encode(envelope))

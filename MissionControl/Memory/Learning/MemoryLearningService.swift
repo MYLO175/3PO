@@ -37,18 +37,9 @@ import SwiftData
         let owner = assistant.connection.activeID
         guard readable, !busy, !owner.isEmpty else { return }
         let prior = state.accounts[owner]
-        let legacyPause = prior?.paused == true && prior?.pausedTurnIDs == nil
-        guard prior == nil || prior?.actionsBaselined != true || legacyPause else { return }
+        guard prior == nil || prior?.actionsBaselined != true else { return }
         let turns = assistant.learningTurns()
         var progress = MemoryLearningRules.progress(turns: turns, prior: prior, suppressed: assistant.memory.suppressed(owner), day: BriefingRules.day(.now))
-        if legacyPause {
-            // Older claims did not save their input IDs. Hold all pending human input from
-            // before the claim: changed suppression/scope could otherwise replay part of it.
-            let atClaim = turns.filter { turn in !turn.isAction && MemoryRules.explicitRequest(turn.text) == nil &&
-                !progress.seen.contains(turn.id) &&
-                (progress.lastAttempt.map { date in turn.created <= date } ?? true) }
-            progress.pausedTurnIDs = Set(atClaim.map(\.id))
-        }
         if progress.actionsBaselined != true {
             progress.seen.formUnion(turns.filter(\.isAction).map(\.id)); progress.actionsBaselined = true
             for turn in turns where turn.isAction {

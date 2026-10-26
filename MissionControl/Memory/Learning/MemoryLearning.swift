@@ -42,7 +42,6 @@ struct MemoryEnvelope: Codable {
     var sourceForgetOwners:[String:[String:Set<UUID>]]? = nil
     var sourceSuppressionBaseline:[String:Set<String>]? = nil
     static func decode(_ data: Data) throws -> Self {
-        if let legacy = try? JSONDecoder().decode([PAMemory].self,from:data) { return Self(records:legacy) }
         let state = try JSONDecoder().decode(Self.self,from:data)
         guard state.version == 1 else { throw MemoryLearningFailure.invalid }
         return state

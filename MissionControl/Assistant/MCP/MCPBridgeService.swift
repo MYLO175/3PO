@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// The connected MCP host owns conversational permission and its approval UI.
-/// Durable claims precede mutations; legacy native-UI proposals remain explicit.
+/// Durable claims precede mutations.
 /// No external request enters the inference/intent-check or background pipeline.
 @MainActor @Observable final class MCPBridgeService {
     private weak var model: DashboardModel?
@@ -179,34 +179,4 @@ import Observation
         return (try? JSONSerialization.data(withJSONObject: output, options: [.sortedKeys])) ?? Data("{}".utf8)
     }
     func proposal(for record: MCPActionRecord) -> AssistantActionProposal? { try? JSONDecoder().decode(AssistantActionProposal.self, from: record.proposal) }
-    func dismiss(_ id: UUID) {
-        guard let index = records.firstIndex(where: { $0.id == id && $0.phase == .pending }) else { return }
-        var values = records; values[index].phase = .dismissed; values[index].result = "Declined in 3PO. Nothing was changed."
-        do { try replace(values) } catch { self.error = error.localizedDescription }
-    }
-    func approve(_ id: UUID) async {
-        guard enabled, let model, !model.storageOwnershipBlocked, !model.assistant.busy, !model.writing,
-              let index = records.firstIndex(where: { $0.id == id && $0.phase == .pending }),
-              let proposal = proposal(for: records[index]), records[index].registration == model.inference.activeID else { error = "This action is unavailable or 3PO is busy. No change was attempted."; return }
-        error = nil
-        let captured = generation, currentScope = scope(model)
-        var values = records; values[index].phase = .attempted
-        do { try replace(values) } catch { self.error = "Could not save the action claim. Nothing was attempted."; return }
-        let valid: NativeWriteValidity = { [weak self, weak model] in
-            guard let self, let model else { return false }
-            return self.enabled && self.generation == captured && !model.storageOwnershipBlocked && self.scope(model) == currentScope
-        }
-        do {
-            let result = try await PAToolSession.performApproval(proposal, model: model, valid: valid)
-            var completed = records; completed[index].phase = .completed; completed[index].result = result
-            try replace(completed)
-        } catch {
-            var failed = records
-            // A receipt persistence failure can follow a verified native save.
-            // Only the writer's typed pre-save proof establishes no mutation.
-            failed[index].phase = error is NativePreSaveFailure ? .failed : .uncertain
-            failed[index].result = String(error.localizedDescription.prefix(1000))
-            do { try replace(failed) } catch { self.error = "The action outcome could not be saved. Check the original item; do not retry it." }
-        }
-    }
 }

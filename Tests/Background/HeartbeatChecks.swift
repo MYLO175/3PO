@@ -53,7 +53,7 @@ import Foundation
         precondition(PAHeartbeatRules.callCount(budget,day:"2026-10-06") == 2)
         budget.pending=true
         precondition(PAHeartbeatRules.needsAssessment(budget,fingerprint:budget.fingerprint ?? "",manual:false))
-        budget.phase="paused"
+        budget.phase="assessing"
         precondition(!PAHeartbeatRules.needsAssessment(budget,fingerprint:"new",manual:false))
         budget.phase="idle"
         let next=try PAHeartbeatRules.claim(budget,day:"2026-10-07",limit:2)
@@ -76,14 +76,14 @@ import Foundation
         precondition(narrowed.mailLanes?.count == 1 && narrowed.calls == lanes.calls)
         let legacy=try JSONDecoder().decode(PAHeartbeatAccount.self,from:Data(#"{"phase":"idle"}"#.utf8))
         precondition(legacy.mailLanes == nil)
-        let run=PAReviewRun(id:"run",started:now,finished:now,manual:true,phase:"paused",detail:"Rejected target",calls:2,checkedAccounts:1,waitingAccounts:1,preparedItems:0,drafts:1,handled:0)
+        let run=PAReviewRun(id:"run",started:now,finished:now,manual:true,phase:"failed",detail:"Rejected target",calls:2,checkedAccounts:1,waitingAccounts:1,preparedItems:0,drafts:1,handled:0)
         var collectedRun=run;collectedRun.phase="waiting";collectedRun.briefUpdated=true;collectedRun.mailCollectionIndependent=true
         precondition(collectedRun.outcome() == "Completed" && collectedRun.summary.contains("Mail collection issue") && !collectedRun.summary.contains("accounts waiting"),"Completed analysis reports collection issues separately")
         let cachedLane=PAHeartbeatRules.completedMail(lanes,fingerprints:["healthy":"collected-v2"],pending:[],now:now,issues:["healthy":"Background arrival check unfinished"])
         precondition(cachedLane.mailLanes?["healthy"]?.assessed == now && cachedLane.mailLanes?["healthy"]?.issue != nil && cachedLane.mailLanes?["healthy"]?.pending == true,"AI completion retains separate collection coverage and pending work")
         let retainedRun=try JSONDecoder().decode(PAReviewRun.self,from:JSONEncoder().encode(collectedRun))
         precondition(retainedRun.mailCollectionIndependent == true && run.mailCollectionIndependent == nil,"New history metadata is additive; old history retains its wording")
-        let activity=try JSONDecoder().decode(PAHeartbeatAccount.self,from:JSONEncoder().encode(PAHeartbeatAccount(phase:"paused",reviews:[run])))
+        let activity=try JSONDecoder().decode(PAHeartbeatAccount.self,from:JSONEncoder().encode(PAHeartbeatAccount(phase:"idle",reviews:[run])))
         precondition(activity.reviews?.first?.calls == 2 && activity.reviews?.first?.detail == "Rejected target" && legacy.reviews == nil)
         let interruptedCollection=PAHeartbeatRules.interrupted(PAHeartbeatAccount(checked:now,phase:"refreshing",budgetDay:"2026-10-06",calls:1,mailLanes:lanes.mailLanes,reviews:[run]),now:now,foreground:true)
         precondition(interruptedCollection.phase == "idle" && interruptedCollection.pending == true && interruptedCollection.retryReason == "foreground")
@@ -130,9 +130,6 @@ import Foundation
             precondition(failed.calls == lanes.calls && failed.mailLanes?["healthy"]?.fingerprint == lanes.mailLanes?["healthy"]?.fingerprint)
             let persisted=try JSONDecoder().decode(PAHeartbeatAccount.self,from:JSONEncoder().encode(failed))
             precondition(PAHeartbeatRules.recovered(persisted,now:retry.addingTimeInterval(300),minutes:minutes).retryAfter == retry,"Reopening never postpones a due retry")
-            var legacyPause=failed;legacyPause.phase="paused";legacyPause.retryAfter=nil;legacyPause.retryReason=nil
-            let migrated=PAHeartbeatRules.recovered(legacyPause,now:retry.addingTimeInterval(600),minutes:minutes)
-            precondition(migrated.checked == now && migrated.retryAfter == retry && PAHeartbeatRules.due(migrated,now:retry,minutes:minutes))
             let repeated=PAHeartbeatRules.failed(persisted,now:retry,minutes:minutes)
             precondition(!PAHeartbeatRules.due(repeated,now:retry.addingTimeInterval(1),minutes:minutes),"A second failure cannot create an immediate request loop")
         }
@@ -166,7 +163,7 @@ import Foundation
         precondition(completed.outcome() == "Completed","Pending source lanes do not relabel a saved brief as a failed heartbeat")
         let newHistory=try JSONDecoder().decode(PAReviewRun.self,from:JSONEncoder().encode(completed))
         precondition(newHistory.steps?[3].status == "done" && newHistory.briefUpdated == true)
-        precondition(run.steps == nil && run.failure == nil && run.outcome() == "Stopped")
+        precondition(run.steps == nil && run.failure == nil && run.outcome() == "Failed")
         var failedHistory=completed;failedHistory.phase="failed"
         precondition(failedHistory.outcome() == "Partly completed")
         failedHistory.briefUpdated=false;precondition(failedHistory.outcome() == "Failed")

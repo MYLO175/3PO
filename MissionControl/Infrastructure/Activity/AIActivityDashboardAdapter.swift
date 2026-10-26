@@ -49,8 +49,8 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
         _=aiActivity.upsert(.init(id:id,registration:job.scope.registration,kind:.review,state:.running,title:job.source.title,message:"Working on "+job.source.title,created:job.created,destination:.review(targetID:job.conversationID.uuidString)))
     }
     func heartbeatActivityFinished(_ registration:String,_ run:PAReviewRun) {
-        let failed=run.failure != nil || ["failed","interrupted","suspended","paused"].contains(run.phase)
-        let state:AIActivityStatus=run.phase == "suspended" || run.phase == "interrupted" ? .interrupted : run.phase == "paused" ? .stopped : failed ? (run.briefUpdated == true ? .partial : .failed) : .succeeded
+        let failed=run.failure != nil || ["failed","interrupted","suspended"].contains(run.phase)
+        let state:AIActivityStatus=run.phase == "suspended" || run.phase == "interrupted" ? .interrupted : failed ? (run.briefUpdated == true ? .partial : .failed) : .succeeded
         let message=[run.summary,run.failure].compactMap{$0}.joined(separator:" · ")
         _=aiActivity.upsert(.init(id:"heartbeat:"+run.id,registration:registration,kind:.heartbeat,state:state,title:"Heartbeat",message:message,progress:state == .succeeded ? 1 : nil,created:run.started,finished:run.finished,destination:.heartbeat(targetID:run.id)))
         scheduleReviewWork()

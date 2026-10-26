@@ -35,8 +35,8 @@ struct PAReviewRun:Codable,Identifiable {
     func outcome(running:Bool = false)->String {
         if finished == nil {return running ? "Running" : "Interrupted"}
         if phase == "suspended" { return "Paused for sleep" }
-        if briefUpdated == true {return ["paused","failed","interrupted"].contains(phase) ? "Partly completed" : "Completed"}
-        return phase == "failed" ? "Failed" : phase == "interrupted" ? "Interrupted" : phase == "paused" ? "Stopped" : phase == "waiting" ? "Waiting" : "Checked"
+        if briefUpdated == true {return ["failed","interrupted"].contains(phase) ? "Partly completed" : "Completed"}
+        return phase == "failed" ? "Failed" : phase == "interrupted" ? "Interrupted" : phase == "waiting" ? "Waiting" : "Checked"
     }
     var summary:String {
         var parts=[briefUpdated == nil ? "Earlier review saved" : briefUpdated == true ? "Brief updated" : "Brief not updated"]
@@ -97,7 +97,7 @@ enum PAHeartbeatRules {
     }
     static let defaultMinutes = 60
     static func nextReview(_ account:PAHeartbeatAccount,now:Date,minutes:Int = defaultMinutes,day:String? = nil,allowance:Int? = nil)->Date {
-        if account.phase != "paused",let retry=account.retryAfter {
+        if let retry=account.retryAfter {
             if account.retryReason == "failure",let checked=account.checked {return checked.addingTimeInterval(Double(minutes)*60)}
             if account.retryReason == "allowance",let day,account.budgetDay != day {return now}
             if account.retryReason == "allowance",let day,let allowance,canClaim(account,day:day,limit:allowance) {return now}
@@ -106,12 +106,11 @@ enum PAHeartbeatRules {
         return account.checked?.addingTimeInterval(Double(minutes)*60) ?? now
     }
     static func due(_ account: PAHeartbeatAccount, now: Date, minutes:Int = defaultMinutes,day:String? = nil,allowance:Int? = nil) -> Bool {
-        account.phase != "paused" && nextReview(account,now:now,minutes:minutes,day:day,allowance:allowance) <= now
+        nextReview(account,now:now,minutes:minutes,day:day,allowance:allowance) <= now
     }
     enum WaitReason:String {case foreground,sources,allowance}
     static func deferred(_ account:PAHeartbeatAccount,now:Date,reason:WaitReason,calendar:Calendar = .current)->PAHeartbeatAccount {
         var value=account;value.pending=true
-        guard value.phase != "paused" else {value.retryAfter=nil;value.retryReason=nil;return value}
         value.phase="idle";value.retryReason=reason.rawValue
         value.retryAfter=reason == .allowance ? calendar.date(byAdding:.day,value:1,to:calendar.startOfDay(for:now)) : now.addingTimeInterval(reason == .foreground ? 60 : 300)
         return value
@@ -121,7 +120,6 @@ enum PAHeartbeatRules {
     }
     static func quiet(_ account:PAHeartbeatAccount,fingerprint:String,ready:Set<String>,pending:Bool)->PAHeartbeatAccount {
         var value=clearWait(account)
-        guard value.phase != "paused" else {value.pending=true;return value}
         value.phase="idle";value.pending=pending;value.fingerprint=fingerprint
         for id in ready where value.mailLanes?[id] != nil {value.mailLanes?[id]?.pending=false}
         return value
@@ -139,13 +137,11 @@ enum PAHeartbeatRules {
         return value
     }
     static func interrupted(_ account:PAHeartbeatAccount,now:Date,foreground:Bool,minutes:Int = defaultMinutes)->PAHeartbeatAccount {
-        if account.phase == "assessing" || account.phase == "paused" {
-            return failed(account,now:now,minutes:minutes)
-        }
+        if account.phase == "assessing" { return failed(account,now:now,minutes:minutes) }
         return deferred(account,now:now,reason:foreground ? .foreground : .sources)
     }
     static func needsAssessment(_ account: PAHeartbeatAccount, fingerprint: String, manual: Bool,pendingSources:Bool = false) -> Bool {
-        manual || (account.phase != "paused" && account.phase != "assessing")
+        manual || account.phase != "assessing"
     }
     static func callCount(_ account:PAHeartbeatAccount,day:String)->Int { account.budgetDay == day ? account.calls ?? 0 : 0 }
     // Zero disables only the optional daily cap. Calls are still persisted.
@@ -159,7 +155,7 @@ enum PAHeartbeatRules {
     static func recovered(_ account: PAHeartbeatAccount,now:Date = .now,minutes:Int = defaultMinutes) -> PAHeartbeatAccount {
         // Recovery starts a new run, never replays an interrupted request. Keep
         // its original timing so repeated launches cannot postpone the next check.
-        if account.phase == "assessing" || account.phase == "paused" {return failed(account,now:account.checked ?? now,minutes:minutes)}
+        if account.phase == "assessing" {return failed(account,now:account.checked ?? now,minutes:minutes)}
         if account.phase == "refreshing" {return deferred(account,now:now,reason:.sources)}
         return account
     }
