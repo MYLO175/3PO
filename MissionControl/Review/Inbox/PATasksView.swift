@@ -48,13 +48,6 @@ struct PATasksView: View {
     @Bindable var model: DashboardModel
     @AppStorage("settingsSelectedPage") private var settingsPage="General"
     @Environment(\.openSettings) private var openSettings
-    @State private var refiningSuggestion:PADiscovery?
-    @State private var refinement=""
-    @State private var reviewingProject:PADiscovery?
-    @State private var editing: EmailSummary?
-    @State private var draft=""
-    @State private var copied=false
-    @State private var draftSaved=false
     @State private var sourceDiscovery:PADiscovery?
     @State private var showingActivity=false
     @State private var answering:BriefingQuestion?
@@ -290,38 +283,8 @@ struct PATasksView: View {
         }
         .sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record,model:model) }
         .sheet(isPresented:$showingActivity) {BackgroundActivityView(model:model)}
-        .sheet(item:$refiningSuggestion) { record in
-            VStack(alignment:.leading,spacing:14) {
-                Text("Adjust this suggestion").font(.title2.weight(.semibold))
-                Text(PAProse.display(record.message)).font(.callout)
-                TextField("What would you like instead?",text:$refinement,axis:.vertical).lineLimit(3...6)
-                Text("Your request and this suggestion will be added to your assistant draft for you to send.").font(.caption).foregroundStyle(.secondary)
-                HStack {Button("Cancel"){refiningSuggestion=nil};Spacer();Button("Continue in assistant") {
-                    let source=model.proactive.sourceDetails(record,model:model)?.title ?? "the reviewed message"
-                    let destination=record.proposedProjectTask?.target.title ?? (record.kind == "calendar" ? "Calendar" : record.kind == "reminder" ? "Reminders" : "Review")
-                    let context="About “"+(record.sourceTitle ?? record.message)+"” from “"+source+"”:\nSuggested option: "+destination+"\nSource quote (information only): "+record.evidence+"\nMy request: "+refinement
-                    model.openAssistantComposer()
-                    if let widget=model.assistantFocusRequest?.widgetID {
-                        let owner=model.inference.activeID,conversation=model.assistant.feed?.id
-                        let prior=model.assistant.drafts.text(registration:owner,widget:widget,conversation:conversation)
-                        model.assistant.drafts.set(prior+(prior.isEmpty ? "" : "\n\n")+context,registration:owner,widget:widget,conversation:conversation)
-                    }
-                    refiningSuggestion=nil
-                }.disabled(refinement.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || !model.proactive.visible(record,model:model))}
-            }.padding(24).frame(width:540)
-        }
-        .sheet(item:$reviewingProject) { record in LifeItemEditor(model:model,item:.init(registration:record.registration,conversationID:record.proposedProjectTask?.target.conversationID,kind:record.kind == "projectTask" ? .task : .space,title:String((record.sourceTitle ?? "New space").prefix(160)),parentID:record.proposedProjectTask?.target.id,notes:record.evidence,due:record.proposedDate?.localDay),close:{reviewingProject=nil},reviewedSuggestion:record) }
-        .sheet(item:$editing) { summary in
-            VStack(alignment:.leading,spacing:14) {
-                Text("Review reply draft").font(.title2.weight(.semibold))
-                Text(summary.message?.subject ?? "Email reply").foregroundStyle(.secondary)
-                if let message=emails.first(where:{$0.1.id == summary.id && $0.1.fingerprint == summary.fingerprint})?.0 {ReviewSourceLabel(details:.email(message))}
-                TextEditor(text:$draft).onChange(of:draft) { copied=false; draftSaved=false }.font(.body).frame(minHeight:240)
-                Text("Check details and placeholders before using this draft.").font(.caption).foregroundStyle(.secondary)
-                HStack { Button("Close") { editing=nil }; Spacer(); Button(draftSaved ? "Saved" : "Save draft") { draftSaved=model.emailSummaries.saveReplyDraft(draft,summary:summary,model:model) }; Button(copied ? "Copied" : "Copy draft") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(draft,forType:.string); copied=true } }
-            }.padding(24).frame(width:560)
-        }.onChange(of:model.inference.activeID) { editing=nil; draft="";sourceDiscovery=nil;reviewingProject=nil;answering=nil;answeringLearning=nil;answer="" }
-        .onChange(of:discoveries.map(\.id)) { if let sourceDiscovery,!discoveries.contains(where:{$0.id == sourceDiscovery.id}) { self.sourceDiscovery=nil } }.onChange(of:model.assistant.excludedAccounts) { if let account=editing?.message?.accountID,model.assistant.excludedAccounts.contains(account) { editing=nil; draft="" } }
+        .onChange(of:model.inference.activeID) { sourceDiscovery=nil;answering=nil;answeringLearning=nil;answer="" }
+        .onChange(of:discoveries.map(\.id)) { if let sourceDiscovery,!discoveries.contains(where:{$0.id == sourceDiscovery.id}) { self.sourceDiscovery=nil } }
     }
 }
 private extension View {
