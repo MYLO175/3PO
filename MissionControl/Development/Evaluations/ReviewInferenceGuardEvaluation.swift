@@ -295,7 +295,7 @@ import Foundation
             guard !service.busy else {throw ActionFailure.message("Fictional brief \(mode) did not settle")}
             let rejected=["memory controls","stop","account","source access"].contains(mode)
             let saved=service.state.updatedBriefs?[owner]
-            checks["Brief \(mode) preserves actual ownership and access conflicts"]=rejected ? saved == nil && service.error != nil : saved?.message == "Fictional captured prototype brief" && service.error == nil && service.state.overviewPaused == false
+            checks["Brief \(mode) preserves actual ownership and access conflicts"]=rejected ? saved == nil && service.error != nil : saved?.message == "Fictional captured prototype brief" && service.error == nil
             checks["Brief \(mode) keeps one captured model request without subscription access"]=hold.calls == 1 && hold.selectedModel == "fictional-original-model" && model.aiUsage.state.records.isEmpty
             checks["Brief \(mode) uses captured prompt and preferences"]=hold.prompt == originalPrompt.text && hold.preferences == "Fictional original preferences"
             if mode == "prompt" {checks["Brief merge preserves the newer saved prompt"]=service.writingPrompt(owner).text == "New prompt for the next fictional brief"}

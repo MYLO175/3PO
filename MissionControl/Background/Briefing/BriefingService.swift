@@ -17,7 +17,6 @@ import EventKit
         #endif
         return model.weather.scope
     }
-    var enabled = UserDefaults.standard.bool(forKey: "dailyBriefingEnabled") { didSet { UserDefaults.standard.set(enabled, forKey: "dailyBriefingEnabled") } }
     private(set) var state = BriefingState()
     var busy = false
     private(set) var phase=""
@@ -168,7 +167,7 @@ import EventKit
     init(container: ModelContainer?) {
         self.container = container
         do { if let saved = try LocalRecordRepository.read("dailyBriefings", container: container) { state = try JSONDecoder().decode(BriefingState.self, from: saved) } }
-        catch { readable=false; self.error = "Saved briefings could not be loaded."; state.paused = true }
+        catch { readable=false; self.error = "Saved briefings could not be loaded." }
     }
     func today(_ model: DashboardModel) -> DailyBriefing? {
         guard model.assistant.contextEnabled else { return nil }
@@ -191,7 +190,6 @@ import EventKit
     func invalidateToday(_ model: DashboardModel) {
         let previous = state
         for index in state.records.indices where state.records[index].registration == model.inference.activeID && state.records[index].day == BriefingRules.day(.now) { state.records[index].invalidated = true }
-        state.paused = true
         do { try save(); error = "Earlier test briefing retained but invalidated. Prepare today rebuilds it; no second notification will be scheduled." }
         catch { state = previous; self.error = "Could not invalidate the test briefing." }
     }
@@ -246,8 +244,9 @@ import EventKit
         guard readable,!busy else { return }
         if let reason=availability(model).reason { if manual { error=reason };return }
         guard !backgroundBusy(model) || (heartbeat && model.heartbeat.busy && !model.emailSummaries.busy && !model.proactive.busy && !model.sourceLearning.busy && !model.nativeSourceLearning.busy && !model.memoryMaintenance.busy && !model.memoryLearning.busy && !model.lifeOrganisation.busy && !model.projectPlacement.busy) else { if manual { error="Background work is running. Use Update brief to wait for it." };return }
-        guard live || (!completed.contains(day) && (manual || (!state.paused && BriefingRules.due(now:now,completed:completed)))) else { return }
-        if live { state.overviewPaused = false } else { state.paused = false }; error = nil; busy = true;phase="Reading your current sources…"
+        // requestAllowed admits only manual and heartbeat runs; a manual run makes the day's morning record once.
+        guard live || !completed.contains(day) else { return }
+        error = nil; busy = true;phase="Reading your current sources…"
         let morning = morningAnchor(model)
         let registration = model.inference.activeID, selectedModel = model.inference.selectedModel, preferences = model.featureInstruction(.assistant, registration: model.inference.activeID).text
         var writingPrompt=state.writingPrompt(registration)
@@ -285,7 +284,7 @@ import EventKit
                         (calendar.timeZone == Calendar.current.timeZone,"local timezone"),
                         (suppliedWeatherScope.map{$0 == self.weatherScope(model)} ?? true,"weather permissions"),
                         (whatsappAccess.briefEnabled == model.whatsapp.access(for:registration).briefEnabled && (!whatsappAccess.briefEnabled || whatsappScope == model.whatsapp.scope(for:model.inference.activeID,purpose:.brief)),"WhatsApp connection or selection"),
-                        (model.assistant.contextEnabled && (heartbeat || manual || enabled),"brief access"),
+                        (model.assistant.contextEnabled,"brief access"),
                         (memoryUseRevision == model.assistant.memory.useRevision,"memory use"),
                         (model.assistant.memory.reviewPreferenceMigrationReadable,"saved attention preferences"),
                         (contextWasEnabled == model.assistant.contextEnabled,"source access"),
@@ -428,11 +427,7 @@ import EventKit
                 try validatePreparation()
                 // Source collection can take time. Supply the current local period immediately before inference.
                 input.merge(BriefingRules.clockInput(.now,calendar:calendar)) { _,new in new }
-                var stableInput = input; stableInput.removeValue(forKey:"now"); stableInput["localDay"] = day
-                stableInput["briefWritingPrompt"]=writingPrompt.text
                 try validateMessages()
-                let fingerprint = SHA256.hash(data:try JSONSerialization.data(withJSONObject:stableInput,options:[.sortedKeys])).map { String(format:"%02x",$0) }.joined()
-                if live && !manual && !heartbeat && state.overviewFingerprints?[registration] == fingerprint { return }
                 phase="Writing today’s brief…"
                 if heartbeat {
                     if recovery.omittedKinds.isEmpty {
@@ -475,7 +470,6 @@ import EventKit
                 }
                 if live {
                     if state.updatedBriefs == nil { state.updatedBriefs = [:] }; state.updatedBriefs?[registration] = record
-                    if state.overviewFingerprints == nil { state.overviewFingerprints = [:] }; state.overviewFingerprints?[registration] = fingerprint
                 } else { state.records.append(record) }
                 do { try save() } catch { state = previous; throw error }
                 if heartbeat,let question {await notifyQuestion(question,model:model)}
@@ -485,8 +479,8 @@ import EventKit
                 if recovery.advance(change) { phase="Refreshing changed evidence for today’s brief…"; continue }
                 error="The supplied \(change.kinds.sorted().joined(separator:", ")) evidence is still changing. Completed review work is saved; the next heartbeat uses fresh context."
                 return
-            } catch is CancellationError { error = "Briefing stopped; no completed update was saved."; if live { state.overviewPaused = true } else { state.paused = true }; try? save();return }
-            catch { self.error = error.localizedDescription; if live { state.overviewPaused = true } else { state.paused = true }; try? save();return }
+            } catch is CancellationError { error = "Briefing stopped; no completed update was saved."; return }
+            catch { self.error = error.localizedDescription; return }
             }
         }
     }

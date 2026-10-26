@@ -100,10 +100,6 @@ struct DailyBriefing: Codable, Identifiable {
 struct BriefingState: Codable {
     var records: [DailyBriefing] = []
     var notificationClaims: Set<String> = []
-    var paused = false
-    var overviews: [String:DailyBriefing]? = nil
-    var overviewPaused: Bool? = nil
-    var overviewFingerprints: [String:String]? = nil
     var updatedBriefs: [String:DailyBriefing]? = nil
     var reviewQuestions:[BriefingQuestion]? = nil
     var writingPrompts:[String:String]? = nil
@@ -197,11 +193,6 @@ enum BriefingRules {
     static func clockInput(_ now: Date, calendar: Calendar = .current) -> [String:String] {
         ["now":DateRules.localTimestamp(now,calendar:calendar),"timezone":calendar.timeZone.identifier,
          "localDay":day(now,calendar:calendar),"dayPeriod":period(now,calendar:calendar),"greeting":greeting(now,calendar:calendar)]
-    }
-    static func due(now: Date, completed: Set<String>, calendar: Calendar = .current) -> Bool {
-        let today = day(now, calendar: calendar)
-        guard !completed.contains(today), let scheduled = calendar.date(bySettingHour: 7, minute: 30, second: 0, of: now) else { return false }
-        return now >= scheduled
     }
     static func message(_ text: String) throws -> String? {
         struct Output: Decodable { var message: String? }

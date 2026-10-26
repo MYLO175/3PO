@@ -62,14 +62,6 @@ import Foundation
         for localDay in [date(2026,3,29,12),date(2026,10,25,12)] {
             precondition(BriefingRules.greeting(localDay,calendar:c) == "Good afternoon.","Noon remains afternoon across DST changes")
         }
-        for day in [date(2026,3,29,7),date(2026,10,25,7),date(2026,12,31,7)] {
-            assert(!BriefingRules.due(now: day, completed: [], calendar: c))
-            let scheduled = c.date(bySettingHour: 7, minute: 30, second: 0, of: day)!
-            assert(BriefingRules.due(now: scheduled, completed: [], calendar: c))
-            let late = c.date(byAdding: .hour, value: 9, to: scheduled)!
-            assert(BriefingRules.due(now: late, completed: [], calendar: c), "Catch up after sleep")
-            assert(!BriefingRules.due(now: late, completed: [BriefingRules.day(late, calendar: c)], calendar: c), "No duplicate on relaunch")
-        }
         var state = BriefingState()
         assert(state.claimNotification(day: "2026-10-02")); assert(!state.claimNotification(day: "2026-10-02"))
         let data = try JSONEncoder().encode(state)
@@ -165,7 +157,6 @@ import Foundation
         let allRecords=[laterMorning,otherMorning,invalidMorning,morning,update]
         assert(BriefingRules.morning(records:allRecords,registration:"account",day:morning.day)?.id==morning.id)
         assert(BriefingRules.completedDays(records:allRecords,registration:"account")==[morning.day])
-        assert(!BriefingRules.due(now:noon,completed:BriefingRules.completedDays(records:allRecords,registration:"account"),calendar:c))
         assert(BriefingRules.morning(records:allRecords,registration:"missing",day:morning.day)==nil)
         assert(BriefingRules.morning(records:allRecords,registration:"account",day:"2026-10-03")==nil)
         assert(BriefingRules.earlierMessage(morning:morning,sourceScope:"scope")=="Good morning")
