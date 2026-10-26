@@ -48,14 +48,14 @@ import SwiftData
         guard let container else { throw WorkspaceFailure.storage }
         try LocalRecordRepository(container: container).save(state, key: "workspace")
     }
-    private func change(_ body: (inout WorkspaceState) -> Void, undoable: Bool = true) {
+    private func change(undoable: Bool = true, _ body: (inout WorkspaceState) -> Void) {
         guard readable else { return }
         let old = state
         body(&state)
         do { try save(); if undoable && old != state { previous = old; undoDate = .now }; error = nil }
         catch { state = old; self.error = "Workspace change was not saved. " + error.localizedDescription }
     }
-    func select(_ id: UUID) { guard state.selectedPageID != id,state.pages.contains(where: { $0.id == id }) else { return }; change({ $0.selectedPageID = id },undoable:false) }
+    func select(_ id: UUID) { guard state.selectedPageID != id,state.pages.contains(where: { $0.id == id }) else { return }; change(undoable:false) { $0.selectedPageID = id } }
     func addPage(_ title: String = "New dashboard", symbol: String? = nil) {
         var page = DashboardPage(title:String(title.trimmingCharacters(in:.whitespacesAndNewlines).prefix(80)).isEmpty ? "New dashboard" : String(title.prefix(80)),widgets:[],canvasRows:8)
         page.symbol = symbol.flatMap { DashboardSymbols.choices.contains($0) ? $0 : nil }
@@ -90,7 +90,8 @@ import SwiftData
     }
     func update(_ widget: WidgetPlacement) {
         guard GridRules.valid(widget.rect,among:selected.widgets,excluding:widget.id,rowLimit:GridRules.rows(selected)) else { return }
-        change { state in if let p = state.pages.firstIndex(where: { $0.id == state.selectedPageID }), let w = state.pages[p].widgets.firstIndex(where: { $0.id == widget.id }) { state.pages[p].widgets[w] = widget } }
+        let undoable = selected.widgets.first { $0.id == widget.id }.map { $0.rect != widget.rect || $0.kindRaw != widget.kindRaw || $0.configuration.settings != widget.configuration.settings } ?? true
+        change(undoable: undoable) { state in if let p = state.pages.firstIndex(where: { $0.id == state.selectedPageID }), let w = state.pages[p].widgets.firstIndex(where: { $0.id == widget.id }) { state.pages[p].widgets[w] = widget } }
     }
     func removeWidget(_ id: UUID) { change { state in if let p = state.pages.firstIndex(where: { $0.id == state.selectedPageID }) { state.pages[p].widgets.removeAll { $0.id == id } } } }
     func fullPage(_ widget: WidgetPlacement) {

@@ -169,6 +169,15 @@ struct WidgetConfiguration: Codable, Equatable {
     var projectOnlyUnfinished: Bool? = nil
     /// Account/folder presentation only. Unknown section names survive later edits.
     var projectHiddenSections:[String:[String:[String]]]? = nil
+    /// Browsing state (visible date, view modes, collapsed rows, open chat) changes
+    /// constantly; only layout and genuine setting changes become the dashboard Undo.
+    var settings: WidgetConfiguration {
+        var value = self
+        value.date = .distantPast; value.calendarMode = ""; value.reminderGrouping = ""; value.reminderCollapsedLists = nil
+        value.conversationID = nil; value.conversationSelections = nil
+        value.projectCollapsed = nil; value.lifeMapView = nil; value.projectView = nil; value.projectFolderViews = nil; value.projectOnlyUnfinished = nil
+        return value
+    }
     func showsProjectSection(_ section:ProjectPageSection,registration:String,folder:UUID)->Bool {
         !(projectHiddenSections?[registration]?[folder.uuidString] ?? []).contains(section.rawValue)
     }

@@ -27,9 +27,21 @@ struct WorkspaceChecks {
         precondition(ProjectNotesLayout.previewHeight(availableHeight:-300,width:240,count:1) == crowded,"A crowded page keeps a readable preview even below the fold")
         print("Project section persistence, legacy defaults, account/folder isolation and responsive notes passed")
     }
+    static func browsingIsNotUndoableChecks() {
+        let original=WidgetConfiguration()
+        var browsed=original; browsed.date=original.date.addingTimeInterval(7*86_400); browsed.calendarMode="week"; browsed.reminderCollapsedLists=["fictional":["list-a"]]
+        browsed.projectView="Board"; browsed.projectCollapsed=["fictional":["folder-1"]]; browsed.conversationID=UUID()
+        precondition(browsed != original && browsed.settings == original.settings,"Paging, view modes, collapsing and chat selection are browsing, not dashboard Undo")
+        var coloured=original; coloured.colourProfiles=["light":["accent":"#336699"]]
+        var excluded=original; excluded.sourceExclusions=["calendar-a"]
+        var rooted=original; rooted.projectRoots=["fictional":"folder-1"]
+        precondition(coloured.settings != original.settings && excluded.settings != original.settings && rooted.settings != original.settings,"Colours, source choices and default folders stay undoable")
+        print("Widget browsing state stays out of dashboard Undo")
+    }
     static func main() throws {
         try savedThemeChecks()
         try projectPageChecks()
+        browsingIsNotUndoableChecks()
         var folderConfig=WidgetConfiguration();folderConfig.projectView="Overview";folderConfig.projectFolderViews=["fictional-a":["folder-1":"Board","folder-2":"List"],"fictional-b":["folder-1":"Outline"]]
         let folderRestored=try JSONDecoder().decode(WidgetConfiguration.self,from:JSONEncoder().encode(folderConfig))
         precondition(folderRestored == folderConfig && folderRestored.projectFolderViews?["fictional-a"]?["folder-1"] == "Board")
