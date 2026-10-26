@@ -32,6 +32,14 @@ import SwiftData
         var answer=PAQueuedRequest(registration:"one",prompt:"Book a trip",focusAreas:[.studies,.career]);answer.state = .needsAnswer
         precondition(PAQueueRules.handoffs([greeting,answer],registration:"one").map(\.id) == [answer.id])
         let captured=try JSONDecoder().decode(PAQueuedRequest.self,from:JSONEncoder().encode(answer));precondition(captured.focusAreas == [.studies,.career])
+        let trimmedContainer=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))
+        let trimmed=PARequestQueue(container:trimmedContainer)
+        for index in 0..<(PAQueueRules.completedHistory+10) {
+            precondition(trimmed.add(registration:"one",topicID:nil,prompt:"Finished \(index)") && trimmed.finish(trimmed.items.last!.id,result:"Done",needsAnswer:false))
+        }
+        precondition(trimmed.add(registration:"one",topicID:nil,prompt:"Still waiting") && trimmed.add(registration:"two",topicID:nil,prompt:"Other account"))
+        precondition(trimmed.items.filter{$0.state == .completed}.count == PAQueueRules.completedHistory,"Completed history is trimmed to its limit")
+        precondition(trimmed.items.contains{$0.prompt == "Still waiting" && $0.state == .waiting} && trimmed.items.contains{$0.registration == "two"},"Waiting work and other accounts are never trimmed")
         print("PASS: uncapped request-count admission/reopen, retained completed receipts, captured topic/account/Focus, FIFO, interrupted no-replay state, removal, unavailable storage and per-request bounds")
     }
 }

@@ -168,8 +168,9 @@ import SwiftData
             rolling.markdown = "Fictional version \(index)."
             rolling = try projections.save(rolling, expectedRevision: rolling.revision, now: clock.addingTimeInterval(Double(index)))
         }
-        check(projections.history(id: rolling.id, registration: account).count == 66, "History must not have a silent hard cap")
-        check(ContextPageStore(container: projectionDB).history(id: rolling.id, registration: account).first?.page == many[0], "Old history remains immutable after many edits")
+        let rollingLimit = rolling.owner == .generated ? ContextPageLimits.generatedVersionHistory : 66
+        check(projections.history(id: rolling.id, registration: account).count == rollingLimit, "Only generated page history is trimmed, to its documented limit")
+        check(ContextPageStore(container: projectionDB).history(id: rolling.id, registration: account) == projections.history(id: rolling.id, registration: account), "Kept history is unchanged after many edits and a reopen")
 
         for bad in [Data("not json".utf8), Data("{\"schemaVersion\":99,\"futurePayload\":[1,2]}".utf8), try bytes(["schemaVersion": 1, "pages": [object(try JSONEncoder().encode(original)), object(try JSONEncoder().encode(original))]]), Data("[]".utf8), Data("{\"schemaVersion\":null}".utf8), Data("{\"pages\":null}".utf8)] {
             let corruptDB = try container(), corruptRepo = LocalRecordRepository(container: corruptDB)
@@ -300,6 +301,24 @@ import SwiftData
         expectFailure("Invalid lineage accepted a write") { _ = try broken.save(sample("replacement"), expectedRevision: nil) }
         check(try brokenLineageRepo.read(ContextPageStore.recordKey) == brokenBytes, "Invalid lineage bytes are preserved")
         check(try repository.read("paMemory") == nil, "Context pages never write canonical memory")
+
+        // Generated pages keep their newest versions; human pages keep everything.
+        let retentionDB = try container(), retention = ContextPageStore(container: retentionDB)
+        var generated = try retention.save(sample("retained-generated", kind: .topic, owner: .generated), expectedRevision: nil, now: clock)
+        var human = try retention.save(sample("retained-human"), expectedRevision: nil, now: clock)
+        let firstGenerated = generated.revision
+        for step in 1...24 {
+            var nextGenerated = sample("retained-generated", kind: .topic, owner: .generated); nextGenerated.markdown += "\nRevision \(step)"
+            generated = try retention.save(nextGenerated, expectedRevision: generated.revision, now: clock.addingTimeInterval(Double(step)))
+            var nextHuman = sample("retained-human"); nextHuman.markdown += "\nRevision \(step)"
+            human = try retention.save(nextHuman, expectedRevision: human.revision, now: clock.addingTimeInterval(Double(step)))
+        }
+        let generatedHistory = retention.history(id: generated.id, registration: account)
+        check(generatedHistory.count == ContextPageLimits.generatedVersionHistory && generatedHistory.last?.page == generated && !generatedHistory.contains { $0.id == firstGenerated }, "Generated page history keeps only its newest versions")
+        check(retention.history(id: human.id, registration: account).count == 25, "Human page history is never trimmed")
+        let reopened = ContextPageStore(container: retentionDB)
+        check(reopened.isReadable && reopened.history(id: generated.id, registration: account).count == ContextPageLimits.generatedVersionHistory, "A trimmed history reopens with its lineage accepted")
+        expectFailure("Restore of a trimmed version succeeded") { _ = try reopened.restore(id: generated.id, registration: account, revision: firstGenerated, expectedRevision: generated.revision) }
         print("PASS: \(checks) context-page checks; fictional in-memory storage only, no model/source/app operations")
     }
 }

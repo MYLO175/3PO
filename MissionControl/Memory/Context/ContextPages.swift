@@ -154,6 +154,21 @@ enum ContextPageLimits {
     static let maximumPageReferences = 512
     static let maximumDirectoryBytes = 8_000
     static let maximumProviderBytes = 32_000
+    /// Heartbeats rewrite generated pages often; older versions add little and grew
+    /// the record by about 1 MB a day. Human-owned pages keep their whole history.
+    static let generatedVersionHistory = 20
+
+    /// Newest versions first per page; the current version is always the newest.
+    static func retained(_ versions: [ContextPageVersion]) -> [ContextPageVersion] {
+        var counts: [String: Int] = [:]
+        let kept = versions.reversed().filter { version in
+            guard version.page.owner == .generated else { return true }
+            let key = version.page.registration + "\u{0}" + version.page.id
+            counts[key, default: 0] += 1
+            return counts[key]! <= generatedVersionHistory
+        }
+        return kept.reversed()
+    }
 
     static func encoder() -> JSONEncoder {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]; return encoder

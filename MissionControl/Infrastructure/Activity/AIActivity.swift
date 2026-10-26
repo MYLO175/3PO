@@ -348,7 +348,17 @@ struct AIActivityState: Codable, Equatable {
         return true
     }
 
-    private func commit(_ candidate: AIActivityState) -> Bool {
+    /// Finished records older than the newest few thousand no longer appear anywhere
+    /// (notifications expire after a day); running records are always kept.
+    static let finishedHistory = 2_000
+    static func retained(_ records: [AIActivityRecord]) -> [AIActivityRecord] {
+        let finished = records.filter { $0.state.isTerminal }
+        guard finished.count > finishedHistory else { return records }
+        let keep = Set(finished.sorted { ($0.finished ?? $0.created) > ($1.finished ?? $1.created) }.prefix(finishedHistory).map { $0.registration + "\u{0}" + $0.id })
+        return records.filter { !$0.state.isTerminal || keep.contains($0.registration + "\u{0}" + $0.id) }
+    }
+    private func commit(_ proposed: AIActivityState) -> Bool {
+        var candidate = proposed; candidate.records = Self.retained(candidate.records)
         guard candidate != state else { return true }
         do { try Self.validate(candidate); try save(candidate); error = nil; return true }
         catch { self.error = "AI activity could not be saved. Its previous history is preserved."; return false }

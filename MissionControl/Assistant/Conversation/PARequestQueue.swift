@@ -21,6 +21,17 @@ enum PAQueueRules {
         values.map { value in var item=value; if item.state == .running { item.state = .interrupted }; return item }
     }
     static func handoffs(_ values:[PAQueuedRequest],registration:String)->[PAQueuedRequest] { values.filter { $0.registration == registration && $0.state != .completed } }
+    /// Completed requests are presentation history only; keep the newest per account.
+    /// Waiting, running, interrupted and needs-answer items are never dropped.
+    static let completedHistory = 50
+    static func retained(_ values:[PAQueuedRequest]) -> [PAQueuedRequest] {
+        var counts:[String:Int] = [:]
+        let keep = Set(values.filter { $0.state == .completed }.sorted { ($0.finished ?? $0.created) > ($1.finished ?? $1.created) }.filter { item in
+            counts[item.registration, default:0] += 1
+            return counts[item.registration]! <= completedHistory
+        }.map(\.id))
+        return values.filter { $0.state != .completed || keep.contains($0.id) }
+    }
     static func next(_ values:[PAQueuedRequest],registration:String) -> PAQueuedRequest? {
         values.first { $0.registration == registration && $0.state == .waiting }
     }
@@ -53,7 +64,7 @@ enum PAQueueRules {
     @discardableResult func remove(_ id:UUID)->Bool { change { $0.removeAll { $0.id == id } } }
     private func change(_ action:(inout [PAQueuedRequest])->Void)->Bool {
         guard writable,let container else { error="Request storage is unavailable. Your draft is kept."; return false }
-        var revised=items; action(&revised)
+        var revised=items; action(&revised); revised=PAQueueRules.retained(revised)
         do {
             try LocalRecordRepository(container: container).save(revised, key: "paRequestQueue")
             items=revised; error=nil; return true

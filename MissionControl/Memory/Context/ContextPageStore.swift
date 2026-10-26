@@ -186,8 +186,10 @@ import SwiftData
         return ContextPageDirectory(entries: entries, omittedCount: eligible.count - entries.count)
     }
 
-    private func commit(_ next: ContextPageEnvelope, now: Date) throws {
+    private func commit(_ candidate: ContextPageEnvelope, now: Date) throws {
         guard let repository else { throw ContextPageFailure.unavailable }
+        var next = candidate
+        next.versions = next.versions.map(ContextPageLimits.retained)
         try Self.validate(next)
         let bytes = try LocalRecordCoding.preservingUnknown(next, original: loadedBytes)
         try repository.write([Self.recordKey: bytes], now: now, expected: [Self.recordKey: LocalRecordVersion(loadedBytes)])
@@ -208,10 +210,13 @@ import SwiftData
         for version in versions {
             try validatePage(version.page)
             guard version.id == version.page.revision, pages[version.page.id] != nil else { throw ContextPageFailure.corrupt }
-            if let parent = version.parentRevision {
-                guard prior[parent]?.page.id == version.page.id, latest[version.page.id]?.id == parent else { throw ContextPageFailure.corrupt }
-            } else if latest[version.page.id] != nil { throw ContextPageFailure.corrupt }
-            if let restored = version.restoredFrom, prior[restored]?.page.id != version.page.id { throw ContextPageFailure.corrupt }
+            // Retention may drop a generated page's oldest versions, so the first kept
+            // version can name a parent (or restore source) that is no longer stored.
+            guard version.parentRevision != version.id else { throw ContextPageFailure.corrupt }
+            if let previous = latest[version.page.id] {
+                guard version.parentRevision == previous.id else { throw ContextPageFailure.corrupt }
+            } else if let parent = version.parentRevision, prior[parent] != nil { throw ContextPageFailure.corrupt }
+            if let restored = version.restoredFrom, let source = prior[restored], source.page.id != version.page.id { throw ContextPageFailure.corrupt }
             prior[version.id] = version; latest[version.page.id] = version
         }
         for page in envelope.pages { guard latest[page.id]?.page == page else { throw ContextPageFailure.corrupt } }

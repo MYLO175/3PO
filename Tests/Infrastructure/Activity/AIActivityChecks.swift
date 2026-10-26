@@ -312,6 +312,12 @@ import Foundation
         }
         check(AIActivityStatus.failed.needsAttention && AIActivityStatus.uncertain.needsAttention && !AIActivityStatus.succeeded.needsAttention, "Failures and uncertain outcomes remain distinct from success")
         check(!AIActivityStatus.running.isTerminal && !AIActivityStatus.queued.isTerminal && AIActivityStatus.stopped.isTerminal, "Only final outcomes can be acknowledged")
+        let base = Date(timeIntervalSince1970: 1_900_000_000)
+        let history = (0..<(AIActivityStore.finishedHistory + 5)).map { index in
+            AIActivityRecord(id: "finished-\(index)", registration: "fictional", kind: .action, state: .succeeded, title: "Reminder created", message: "Done", created: base.addingTimeInterval(Double(index)), finished: base.addingTimeInterval(Double(index)))
+        } + [AIActivityRecord(id: "still-running", registration: "fictional", kind: .chat, state: .running, title: "Working", message: "", created: base)]
+        let kept = AIActivityStore.retained(history)
+        check(kept.count == AIActivityStore.finishedHistory + 1 && kept.contains { $0.id == "still-running" } && !kept.contains { $0.id == "finished-0" } && kept.contains { $0.id == "finished-\(AIActivityStore.finishedHistory + 4)" }, "Only the oldest finished activity is trimmed; running work stays")
         print("AI activity: \(checks)/\(checks) checks passed")
     }
 }
