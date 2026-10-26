@@ -25,7 +25,10 @@ enum ClaudeCodeError: LocalizedError {
 
     /// The last verified installation and sign-in state, so background work is ready after
     /// relaunch without starting a helper during construction. The first request re-verifies both.
-    private(set) var binary: URL? = UserDefaults.standard.string(forKey: Keys.resolvedPath).map(URL.init(fileURLWithPath:)).flatMap { FileManager.default.isExecutableFile(atPath: $0.path) ? $0 : nil } {
+    /// Claude Code's auto-updates remove old version folders, so a missing saved path falls back to the
+    /// installer's launcher (file checks only; the first request re-verifies the signature).
+    private(set) var binary: URL? = UserDefaults.standard.string(forKey: Keys.resolvedPath).map(URL.init(fileURLWithPath:)).flatMap { FileManager.default.isExecutableFile(atPath: $0.path) ? $0 : nil }
+        ?? ClaudeCodeLocator.locate(custom: UserDefaults.standard.string(forKey: Keys.customPath)) {
         didSet { UserDefaults.standard.set(binary?.path, forKey: Keys.resolvedPath) }
     }
     private(set) var version: String?
@@ -124,7 +127,8 @@ enum ClaudeCodeError: LocalizedError {
                                                       : "Finish setting up Claude in Settings first.")
         }
         busy = true; defer { busy = false }
-        if !checked { await refresh() }
+        // A background auto-update can remove the version folder this launch verified.
+        if !checked || !(binary.map { FileManager.default.isExecutableFile(atPath: $0.path) } ?? false) { await refresh() }
         guard let binary, signedIn else { throw ClaudeCodeError.message(message) }
         let registration = activeID
         let typed = mode == .typed ? try ClaudeCodeTranscript.typedTool(tools) : nil
