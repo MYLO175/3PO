@@ -54,4 +54,7 @@ for mode in ['Debug','Release']:
     obj('t'+mode,f'isa = XCBuildConfiguration; buildSettings = {{ {settings} }}; name = {mode};')
 for kind,prefix in [('project','p'),('target','t')]: obj(kind+'configs',f'isa = XCConfigurationList; buildConfigurations = ({uid(prefix+"Debug")},{uid(prefix+"Release")}); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;')
 project=root/'MissionControl.xcodeproj';project.mkdir(exist_ok=True)
-(project/'project.pbxproj').write_text('// !$*UTF8*$!\n{ archiveVersion = 1; classes = {}; objectVersion = 56; objects = {\n'+'\n'.join(objects)+f'\n}}; rootObject = {uid("project")}; }}\n')
+text='// !$*UTF8*$!\n{ archiveVersion = 1; classes = {}; objectVersion = 56; objects = {\n'+'\n'.join(objects)+f'\n}}; rootObject = {uid("project")}; }}\n'
+# Rewriting identical bytes makes iCloud Drive keep conflict copies.
+pbx=project/'project.pbxproj'
+if not pbx.exists() or pbx.read_text()!=text: pbx.write_text(text)

@@ -6,6 +6,12 @@ import struct
 import subprocess
 import tempfile
 
+# The checkout may live in iCloud Drive, which keeps "name 2.png" conflict
+# copies when files are rewritten during sync. Only replace changed bytes.
+def write_if_changed(path, data):
+    if not path.exists() or path.read_bytes() != data:
+        path.write_bytes(data)
+
 root = Path(__file__).resolve().parents[2]
 source = root / "MissionControl/Resources/AppIcon.png"
 target = source.with_suffix(".icns")
@@ -20,22 +26,25 @@ with tempfile.TemporaryDirectory(prefix="mission-control-icon-") as directory:
         png = output.read_bytes()
         chunks.append(kind.encode("ascii") + struct.pack(">I", len(png) + 8) + png)
 payload = b"".join(chunks)
-target.write_bytes(b"icns" + struct.pack(">I", len(payload) + 8) + payload)
+write_if_changed(target, b"icns" + struct.pack(">I", len(payload) + 8) + payload)
 
 # Let Xcode compile the app icon and emit its system metadata. Retain the
 # standalone ICNS for older bundle readers and an explicit Dock fallback.
 catalog = root / "MissionControl/Resources/Assets.xcassets"
 app_icon = catalog / "AppIcon.appiconset"
 app_icon.mkdir(parents=True, exist_ok=True)
-(catalog / "Contents.json").write_text(json.dumps({"info": {"author": "xcode", "version": 1}}, indent=2) + "\n")
+write_if_changed(catalog / "Contents.json", (json.dumps({"info": {"author": "xcode", "version": 1}}, indent=2) + "\n").encode())
 images = []
-for points in (16, 32, 128, 256, 512):
-    for scale in (1, 2):
-        filename = f"icon_{points}x{points}@{scale}x.png"
-        size = points * scale
-        subprocess.run(["/usr/bin/sips", "-z", str(size), str(size), str(source),
-                        "--out", str(app_icon / filename)], check=True, stdout=subprocess.DEVNULL)
-        images.append({"idiom": "mac", "size": f"{points}x{points}",
-                       "scale": f"{scale}x", "filename": filename})
-(app_icon / "Contents.json").write_text(json.dumps({"images": images,
-    "info": {"author": "xcode", "version": 1}}, indent=2) + "\n")
+with tempfile.TemporaryDirectory(prefix="mission-control-appicon-") as directory:
+    for points in (16, 32, 128, 256, 512):
+        for scale in (1, 2):
+            filename = f"icon_{points}x{points}@{scale}x.png"
+            size = points * scale
+            output = Path(directory) / filename
+            subprocess.run(["/usr/bin/sips", "-z", str(size), str(size), str(source),
+                            "--out", str(output)], check=True, stdout=subprocess.DEVNULL)
+            write_if_changed(app_icon / filename, output.read_bytes())
+            images.append({"idiom": "mac", "size": f"{points}x{points}",
+                           "scale": f"{scale}x", "filename": filename})
+write_if_changed(app_icon / "Contents.json", (json.dumps({"images": images,
+    "info": {"author": "xcode", "version": 1}}, indent=2) + "\n").encode())
