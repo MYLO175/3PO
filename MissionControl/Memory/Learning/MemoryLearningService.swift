@@ -158,9 +158,6 @@ import SwiftData
             catch { self.error = error.localizedDescription }
         }
     }
-    func question(delivery: String, registration: String) -> PALearningQuestion? {
-        state.questions?.first { $0.deliveryID == delivery && $0.registration == registration }
-    }
     func offeredQuestion(registration: String, on date: Date) -> Bool {
         !LearningQuestionRules.allowed(progress: state.accounts[registration] ?? .init(), records: state.questions ?? [], registration: registration, day: BriefingRules.day(date))
     }

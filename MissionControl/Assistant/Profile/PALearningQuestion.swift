@@ -19,7 +19,6 @@ struct PALearningQuestion: Codable, Identifiable, Equatable {
     var created: Date
     var dismissed = false
     var answered:Bool? = nil
-    var deliveryID: String { "learn-question:" + id }
 }
 enum LearningQuestionRules {
     static func allowed(progress: MemoryLearningProgress, records: [PALearningQuestion], registration: String, day: String) -> Bool {

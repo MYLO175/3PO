@@ -171,8 +171,6 @@ extension DashboardModel {
                 guard let record = proactive.record(delivery: delivery, model: self), proactive.visible(record, model: self) else { return false }
                 let reviewText=(record.sourceTitle.map{$0+"\n"} ?? "")+record.message
                 guard turn.content == record.message || turn.content == reviewText else {return false}
-            } else if delivery.hasPrefix("learn-question:") {
-                guard let record = memoryLearning.question(delivery: delivery, registration: inference.activeID), memoryLearning.visible(record, assistant: assistant) else { return false }
             } else if delivery.contains(":morning:"), !briefings.allowsChatDelivery(delivery, content: turn.content, model: self) { return false }
             return true
         }, tools: { [self] request in

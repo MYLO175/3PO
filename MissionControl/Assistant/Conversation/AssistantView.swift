@@ -166,10 +166,6 @@ struct AssistantPanel: View {
             guard let record = model.proactive.record(delivery:delivery,model:model) else { return false }
             return model.proactive.visible(record,model:model)
         }
-        if delivery.hasPrefix("learn-question:") {
-            guard let record = model.memoryLearning.question(delivery:delivery,registration:model.inference.activeID) else { return false }
-            return model.memoryLearning.visible(record,assistant:assistant)
-        }
         return true
     }
     private var imageDraftWidget:UUID { widgetID ?? UUID(uuidString:"00000000-0000-0000-0000-000000000001")! }
@@ -415,10 +411,6 @@ struct AssistantPanel: View {
                                     VStack(alignment:.leading,spacing:6) { discoveryActions(record,compact:true,showsActionEntry:discoveryEntries[model.reviewSource(record).key] == turn.id) }
                                     }.controlSize(.small)
 
-                                }
-                                if let delivery = turn.deliveryID, let question = model.memoryLearning.question(delivery:delivery,registration:model.inference.activeID) {
-                                    DisclosureGroup("Why I’m asking") { Text("“" + question.evidence + "”").font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }.font(.caption)
-                                    Button("Dismiss question") { model.memoryLearning.dismiss(question) }.controlSize(.small)
                                 }
                                 if turn.role == "assistant" && !turn.completed && assistant.requestTurnID != turn.id && !turn.content.isEmpty { Text("Partial response").font(.caption).foregroundStyle(.orange) }
                                 if let date = turn.created { Text(date.formatted(date:.omitted,time:.shortened)).font(.caption2).foregroundStyle(.secondary) }
