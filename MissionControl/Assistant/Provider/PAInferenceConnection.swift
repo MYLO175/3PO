@@ -17,6 +17,9 @@ import Foundation
     func typedResult(input: [[String: Any]], instructions: String, tools: [[String: Any]], model: String, effort: String, purpose: AIRequestPurpose) async throws -> PAResponse
 }
 
+/// Conformers must implement `streamResponse` and the effort-free `toolResponse`
+/// themselves. The same-signature methods below only add default arguments and
+/// would call themselves forever if a conformer omitted them.
 extension PAInferenceConnection {
     // No default arguments: an omitted argument would statically select this
     // implementation and bypass a provider's own typedResult.
