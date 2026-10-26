@@ -55,7 +55,6 @@ enum EvaluationLaunchGuard {
 ]
     private static let primaryFlags: Set<String> = [
         "--preview-chat-approval",
-        "--inspect-luna-access",
         "--cleanup-request-markers",
         "--preview-calendar-drag",
         "--preview-images",
@@ -64,7 +63,6 @@ enum EvaluationLaunchGuard {
         "--preview-memory-review",
         "--preview-projects",
         "--preview-review-inbox",
-        "--preview-review-conversation",
         "--preview-settings",
         "--preview-source-timeline",
         "--render-life-map",

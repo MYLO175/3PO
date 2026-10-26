@@ -654,7 +654,6 @@ struct ProactiveReviewContext {
     }
     #endif
     // Existing chat deliveries remain history. New background outputs stay in the inbox.
-    func recoverDelivery(_ model: DashboardModel) {}
     private func save() throws {
         guard let container else { throw SummaryFailure.invalid }
         try LocalRecordRepository(container: container).save(state, key: "paDiscoveries")

@@ -33,15 +33,6 @@ extension AssistantService {
         send(context: context, runtime: model.assistantRuntime())
     }
     func resumeQueue(model: DashboardModel) { resumeQueue(runtime: model.assistantRuntime()) }
-    func sourceSafeHistory(_ model: DashboardModel, feed: AssistantConversation, topic: AssistantConversation?) -> [AssistantTurn] {
-        sourceSafeHistory(runtime: model.assistantRuntime(), feed: feed, topic: topic)
-    }
-    func localDiscoveryReview(_ prompt: String, model: DashboardModel, topicID: UUID?) -> PADiscovery? {
-        guard let feed else { return nil }
-        let turns = ConversationRules.thread(feed:feed,topic:conversation(topicID)).filter { $0.profileSessionID == nil }
-        let records = model.proactive.currentAdvice(model).filter { $0.registration == connection.activeID && UUID(uuidString:$0.id) != nil }
-        return ProactiveReviewRules.reference(prompt,turns:turns,records:records)
-    }
     func snapshot(_ model: DashboardModel) -> String? {
         guard contextEnabled else { return nil }
         let events = model.paOrientation?.events(excluding:excludedCalendars) ?? model.calendarData.events.filter { !excludedCalendars.contains($0.calendarID) }

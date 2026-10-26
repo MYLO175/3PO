@@ -196,51 +196,6 @@ struct WorkspaceView: View {
     private func saveName() { if let naming { store.configurePage(naming,title:name,symbol:dashboardSymbol) } else { store.addPage(name,symbol:dashboardSymbol) }; showName = false }
     private func widgetBinding(_ original: WidgetPlacement) -> Binding<WidgetPlacement> { Binding(get:{ store.selected.widgets.first { $0.id == original.id } ?? original },set:{ store.update($0) }) }
 }
-/// Observe heartbeat updates here so stage changes do not rebuild dashboard tiles.
-private struct HeartbeatToolbarProgress:View {
-    var heartbeat:HeartbeatService
-    var palette:WorkspacePalette
-    @State private var completion:PAHeartbeatProgress?
-    var body:some View {
-        Group {
-            if let progress=heartbeat.busy ? heartbeat.progress : completion {
-                HeartbeatProgressBar(progress:progress,palette:palette)
-            }
-        }
-        .onChange(of:heartbeat.busy) { _,busy in
-            completion = !busy && heartbeat.progress?.percentage == 100 ? heartbeat.progress : nil
-        }
-        .task(id:completion?.runID) {
-            guard completion != nil else {return}
-            do {try await Task.sleep(for:.milliseconds(1200))} catch {return}
-            completion=nil
-        }
-    }
-}
-private struct HeartbeatProgressBar:View {
-    var progress:PAHeartbeatProgress
-    var palette:WorkspacePalette
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    var body:some View {
-        HStack(spacing:8) {
-            GeometryReader { geometry in
-                ZStack(alignment:.leading) {
-                    Capsule().fill(palette[.text].opacity(0.1))
-                    Capsule().fill(palette[.accent])
-                        .frame(width:geometry.size.width*Double(progress.percentage)/100)
-                }
-            }.frame(width:86,height:4)
-            Text("\(progress.percentage)%")
-                .font(.caption.monospacedDigit()).foregroundStyle(palette[.text].opacity(0.65))
-                .frame(width:32,alignment:.trailing)
-        }.frame(height:24)
-            .animation(reduceMotion ? nil : .easeInOut(duration:0.25),value:progress.percentage)
-            .accessibilityElement(children:.ignore)
-            .accessibilityLabel("Heartbeat progress")
-            .accessibilityValue("\(progress.percentage) percent, \(progress.stage)")
-            .help("Heartbeat · \(progress.stage) · \(progress.percentage)% of stages finished")
-    }
-}
 #if DEBUG
 struct HeartbeatProgressPreviewScreen:View {
     var model:DashboardModel
@@ -252,35 +207,7 @@ struct HeartbeatProgressPreviewScreen:View {
         }
     }
     var body:some View {
-        WorkspaceView(model:model).task {
-            HeartbeatProgressPreview.render()
-            await model.heartbeat.previewProgress()
-        }
-    }
-}
-@MainActor enum HeartbeatProgressPreview {
-    static func render() {
-        for mode in ["light","dark"] {
-            let palette=WorkspacePalette.resolved(raw:"{}",mode:mode,theme:"warm",accent:"sage")
-            let view=VStack(alignment:.leading,spacing:24) {
-                ForEach([0,50,100],id:\.self) { percent in
-                    HStack {
-                        Text("3PO").font(.caption.weight(.semibold)).foregroundStyle(palette[.text].opacity(0.65))
-                        Spacer()
-                        HeartbeatProgressBar(progress:previewProgress(percent),palette:palette)
-                        Image(systemName:"waveform.path.ecg").foregroundStyle(palette[.text].opacity(0.65))
-                    }
-                }
-            }.padding(20).frame(width:400).background(palette[.sidebar]).preferredColorScheme(mode == "dark" ? .dark : .light)
-            let renderer=ImageRenderer(content:view);renderer.scale=2
-            if let image=renderer.nsImage,let tiff=image.tiffRepresentation,let bitmap=NSBitmapImageRep(data:tiff),let data=bitmap.representation(using:.png,properties:[:]) {
-                try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-heartbeat-progress-"+mode+".png"),options:.atomic)
-            }
-        }
-    }
-    private static func previewProgress(_ percent:Int)->PAHeartbeatProgress {
-        var value=PAHeartbeatProgress(runID:"fictional",steps:[])
-        value.percentage=percent;value.stage="Today’s brief";return value
+        WorkspaceView(model:model).task { await model.heartbeat.previewProgress() }
     }
 }
 #endif

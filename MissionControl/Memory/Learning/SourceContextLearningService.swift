@@ -45,11 +45,6 @@ import SwiftData
         let access=model.whatsappLearningAccess
         return .init(permitted:model.assistant.contextEnabled && access.enabled && access.learnContext == true && !access.chats.isEmpty,chats:Set(access.chats.map(SourceContextRules.chatKey)),revision:access.learningAccessRevision,reviewRevision:model.whatsappReviewLearningRevision)
     }
-    func lastAssessment(_ model:LearningRuntime)->Date {
-        let scope=model.whatsapp.scope(for:model.inference.activeID),access=model.whatsappLearningAccess
-        guard access.enabled,access.learnContext == true,state.scopes[key(scope)]?.paused != true else { return .distantFuture }
-        return state.scopes[key(scope)]?.coverage?.lastAssessment ?? .distantPast
-    }
     func status(_ model:LearningRuntime)->String {
         if busy { return "Learning from a small recent WhatsApp batch…" }
         let scope=model.whatsapp.scope(for:model.inference.activeID),access=model.whatsappLearningAccess

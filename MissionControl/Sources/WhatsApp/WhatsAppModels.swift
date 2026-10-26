@@ -131,7 +131,6 @@ enum WhatsAppSearchFailure: LocalizedError {
 }
 
 struct WhatsAppReadEvent: Decodable {
-    var snapshotID: String?
     var status: String?
     var connected: Bool?
     var png: String?

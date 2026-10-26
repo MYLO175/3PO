@@ -38,11 +38,6 @@ import SwiftData
             } else { try save() }
         } catch { readable = false; self.error = "Saved workspace could not be read. Its original record is preserved; changes are disabled. " + error.localizedDescription }
     }
-    private static func savedWorkspace()->FetchDescriptor<CachedDashboard> {
-        var request=FetchDescriptor<CachedDashboard>(predicate:#Predicate{$0.key == "workspace"})
-        request.fetchLimit=1
-        return request
-    }
     private func save() throws {
         guard !sample else { return }
         guard let container else { throw WorkspaceFailure.storage }
@@ -60,10 +55,6 @@ import SwiftData
         var page = DashboardPage(title:String(title.trimmingCharacters(in:.whitespacesAndNewlines).prefix(80)).isEmpty ? "New dashboard" : String(title.prefix(80)),widgets:[],canvasRows:8)
         page.symbol = symbol.flatMap { DashboardSymbols.choices.contains($0) ? $0 : nil }
         change { $0.pages.append(page); $0.selectedPageID = page.id }
-    }
-    func rename(_ id: UUID, title: String) {
-        let value = String(title.trimmingCharacters(in:.whitespacesAndNewlines).prefix(80)); guard !value.isEmpty else { return }
-        change { if let i = $0.pages.firstIndex(where: { $0.id == id }) { $0.pages[i].title = value } }
     }
     func configurePage(_ id: UUID, title: String, symbol: String?) {
         let title=String(title.trimmingCharacters(in:.whitespacesAndNewlines).prefix(80))

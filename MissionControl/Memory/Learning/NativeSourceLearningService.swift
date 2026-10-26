@@ -61,12 +61,6 @@ import SwiftData
             error=nil
         } catch { state=prior;self.error=error.localizedDescription }
     }
-    func lastAssessment(_ registration:String)->Date {
-        NativeLearningRules.kinds.compactMap { kind -> Date? in
-            let progress=state.scopes[NativeLearningRules.key(registration,kind)]
-            return progress?.enabled == true && progress?.paused != true ? progress?.lastAssessment ?? .distantPast : nil
-        }.min() ?? .distantFuture
-    }
     func permits(_ record:PAMemory,model:LearningRuntime)->Bool {
         guard record.registration == model.inference.activeID,let kind=record.source?.identity.kind,permittedKind(kind,model:model),let items=model.nativeLearningItems(kind) else { return false }
         return NativeLearningRules.permitted(record,items:items)

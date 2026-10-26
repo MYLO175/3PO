@@ -50,13 +50,11 @@ extension WhatsAppService: WhatsAppLearningReading {}
 
 @MainActor extension MemoryLearningService {
     func check(_ model: DashboardModel, manual: Bool = false) { check(model.learningRuntime(), manual: manual) }
-    func recoverDelivery(_ model: DashboardModel) { recoverDelivery(model.learningRuntime()) }
     #if DEBUG
     func validate(_ model: DashboardModel) async throws -> String { try await validate(model.learningRuntime()) }
     #endif
 }
 @MainActor extension SourceContextLearningService {
-    func lastAssessment(_ model: DashboardModel) -> Date { lastAssessment(model.learningRuntime()) }
     func status(_ model: DashboardModel) -> String { status(model.learningRuntime()) }
     func check(_ model: DashboardModel, manual: Bool = false) { check(model.learningRuntime(), manual: manual) }
 }

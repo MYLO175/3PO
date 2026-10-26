@@ -22,10 +22,6 @@ import Observation
         sentIDs.formUnion(pendingIDs); pendingIDs = []
         hasMore = MailLookupCoverage.hasMore(windows,failedFolders:Set(failedFolders.keys),results:results,delivered:sentIDs)
     }
-    func discardAnswer() {
-        pendingIDs = []
-        hasMore = MailLookupCoverage.hasMore(windows,failedFolders:Set(failedFolders.keys),results:results,delivered:sentIDs)
-    }
     func context(request: String, model: DashboardModel, suppliedPlan: MailLookupPlan? = nil, suppliedRoles: Set<MailFolderRole>? = nil, inferenceModel: String? = nil) async throws -> String {
         guard model.assistant.contextEnabled, !ProcessInfo.processInfo.arguments.contains("--sample") else { throw ActionFailure.message("Enable assistant source context to search Apple Mail. Sample mode never reads Apple apps.") }
         let continuing = MailLookupRules.continues(request) && (hasMore || hasUnavailable) && registration == model.inference.activeID && exclusions == model.assistant.excludedAccounts

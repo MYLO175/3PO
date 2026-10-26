@@ -171,15 +171,6 @@ import Observation
         for conversation in allConversations where next[conversation.id] == nil {next[conversation.id]=AssistantActivityContext(conversation)}
         if next != activityContexts {activityContexts=next}
     }
-    @discardableResult func createTopic(title: String, focus: String, areas:[LifeArea]? = nil) -> UUID? {
-        guard !busy, !connection.activeID.isEmpty, !title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { return nil }
-        let previous = allConversations
-        var topic = AssistantConversation(accountID:connection.activeID,title:String(title.trimmingCharacters(in:.whitespacesAndNewlines).prefix(80)))
-        topic.focus = String(focus.prefix(2000)); topic.notebookAreas=areas; topic.isTopic = true
-        allConversations.append(topic)
-        guard save() else { allConversations = previous; return nil }
-        return topic.id
-    }
     @discardableResult func openPA() -> UUID? {
         guard !connection.activeID.isEmpty else { return nil }
         if let primary = conversations.first(where:{ $0.isPrimary == true }) { activeID = primary.id; return primary.id }
@@ -354,22 +345,6 @@ import Observation
             return result
         }
     }
-    private func remember(_ supplied: String, prompt: String) {
-        guard !busy else { return }
-        prepareMemoryLearning()
-        if active == nil { openPA() }
-        guard let id = activeID, let index = allConversations.firstIndex(where:{ $0.id == id && $0.accountID == connection.activeID }) else { return }
-        let text = supplied.isEmpty ? ConversationRules.chatTurns(feed:allConversations[index],topic:conversation(activeTopicID),sessionID:allConversations[index].chatSession?.id).last(where:{ $0.completed && $0.profileSessionID == nil && !$0.content.isEmpty })?.content : supplied
-        guard let text, !text.isEmpty else { error = "Tell me the specific fact you want me to remember; there is no previous message in the current context to refer to."; return }
-        let previous = allConversations
-        let turn = AssistantTurn(role:"user",content:prompt,completed:true,contextID:activeTopicID,chatSessionID:allConversations[index].chatSession?.id)
-        let entry = PAMemory(registration:connection.activeID,text:text,kind:.context,provenance:"Conversation \(id.uuidString), user turn \(turn.id.uuidString)",sourceTurnID:turn.id.uuidString,conversationID:activeTopicID)
-        guard memory.put(entry) else { error = memory.error ?? "Memory was not saved."; return }
-        allConversations[index].turns.append(turn)
-        allConversations[index].turns.append(.init(role:"assistant",content:activeTopicID == nil ? "I’ve saved that in shared PA memory. You can edit or forget it in Memory." : "I’ve saved that in this topic’s memory. You can edit or move it to shared memory in Memory.",completed:true,contextID:activeTopicID,chatSessionID:turn.chatSessionID))
-        draft = ""; error = nil
-        if !save() { allConversations = previous; error = "The memory was saved, but its chat acknowledgement could not be saved." }
-    }
 
     #if DEBUG
     func seedChatApprovalPreview(_ proposal:AssistantActionProposal) {
@@ -414,36 +389,6 @@ import Observation
         let message = BriefingRules.prose(record)
         allConversations[index].turns.append(AssistantTurn(role:"assistant",content:message,completed:true,deliveryID:delivery,chatSessionID:allConversations[index].chatSession?.id))
         if !save() { allConversations = previous }
-    }
-    @discardableResult func deliverDiscovery(_ record: PADiscovery) -> Bool {
-        guard record.registration == connection.activeID, conversationsWritable,
-              !ConversationRules.hasDelivery(allConversations,registration:record.registration,key:record.deliveryID) else { return false }
-        let previous = allConversations
-        let index: Int
-        if let existing = allConversations.firstIndex(where:{ $0.accountID == record.registration && $0.isPrimary == true }) { index = existing }
-        else { var primary = AssistantConversation(accountID:record.registration,title:"Your PA"); primary.isPrimary = true; allConversations.append(primary); index = allConversations.count-1 }
-        allConversations[index].turns.append(.init(role:"assistant",content:record.message,completed:true,deliveryID:record.deliveryID))
-        if !save() { allConversations = previous;return false }
-        return true
-    }
-    func deliverLearningQuestion(_ record: PALearningQuestion) {
-        guard record.registration == connection.activeID, conversationsWritable,
-              record.conversationID == nil || topics.contains(where:{ $0.id == record.conversationID }),
-              !ConversationRules.hasDelivery(allConversations,registration:record.registration,key:record.deliveryID) else { return }
-        let previous = allConversations
-        let index: Int
-        if let existing = allConversations.firstIndex(where:{ $0.accountID == record.registration && $0.isPrimary == true }) { index = existing }
-        else { var primary = AssistantConversation(accountID:record.registration,title:"Your PA"); primary.isPrimary = true; allConversations.append(primary); index = allConversations.count-1 }
-        allConversations[index].turns.append(.init(role:"assistant",content:record.text,completed:true,deliveryID:record.deliveryID,contextID:record.conversationID))
-        if !save() { allConversations = previous }
-    }
-    @discardableResult func configureTopic(_ id: UUID, title: String, focus: String, areas:[LifeArea]? = nil) -> Bool {
-        guard !busy, let index = allConversations.firstIndex(where:{ $0.id == id && $0.accountID == connection.activeID && $0.isPrimary != true }) else { return false }
-        let previous = allConversations
-        allConversations[index].title = String(title.trimmingCharacters(in:.whitespacesAndNewlines).prefix(80))
-        if allConversations[index].title.isEmpty { allConversations[index].title = "New topic" }
-        allConversations[index].focus = String(focus.prefix(2000)); if let areas { allConversations[index].notebookAreas=areas }; allConversations[index].isTopic = true
-        guard save() else { allConversations = previous; return false }; return true
     }
     func acknowledgeLearned(_ learned: [LearnedMemory]) {
         guard !learned.isEmpty, let primaryID = openPA() else { return }

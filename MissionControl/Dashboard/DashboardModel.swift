@@ -209,7 +209,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         defer {loadingFilters=false}
         injectedNativeSources = nativeSources
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--preview-review-conversation") || ProcessInfo.processInfo.arguments.contains("--preview-chat-approval") {
+        if ProcessInfo.processInfo.arguments.contains("--preview-chat-approval") {
             do {container=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true))}
             catch {storageError="Trial storage unavailable"}
             return
@@ -229,7 +229,7 @@ struct CalendarRemovalReviewSession:Identifiable {
             if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") {
                 container=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true));return
             }
-            if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") || ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") || ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") || ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") || ProcessInfo.processInfo.arguments.contains("--validate-advice-context") || ProcessInfo.processInfo.arguments.contains("--validate-native-memory") || ProcessInfo.processInfo.arguments.contains("--preview-memory-review") || ProcessInfo.processInfo.arguments.contains("--inspect-luna-access") || ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") || ProcessInfo.processInfo.arguments.contains("--validate-memory-inspection") {
+            if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") || ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") || ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") || ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") || ProcessInfo.processInfo.arguments.contains("--validate-advice-context") || ProcessInfo.processInfo.arguments.contains("--validate-native-memory") || ProcessInfo.processInfo.arguments.contains("--preview-memory-review") || ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") || ProcessInfo.processInfo.arguments.contains("--validate-memory-inspection") {
                 container=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true));return
             }
             if ProcessInfo.processInfo.arguments.contains("--validate-source-timeline") || ProcessInfo.processInfo.arguments.contains("--preview-source-timeline") || ProcessInfo.processInfo.arguments.contains("--preview-settings") || ProcessInfo.processInfo.arguments.contains("--validate-images") || ProcessInfo.processInfo.arguments.contains("--preview-images") || ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-projects") || ProcessInfo.processInfo.arguments.contains("--preview-projects") || ProcessInfo.processInfo.arguments.contains("--validate-placement") || ProcessInfo.processInfo.arguments.contains("--validate-ownership") || ProcessInfo.processInfo.arguments.contains("--validate-mail-monitoring") || ProcessInfo.processInfo.arguments.contains("--validate-mail-dates") {
@@ -257,7 +257,7 @@ struct CalendarRemovalReviewSession:Identifiable {
         guard !storageOwnershipBlocked else { return }
         guard !started else { return }; started = true
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--preview-review-conversation") || ProcessInfo.processInfo.arguments.contains("--preview-chat-approval") { return }
+        if ProcessInfo.processInfo.arguments.contains("--preview-chat-approval") { return }
         if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") { return }
         if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") || ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") || ProcessInfo.processInfo.arguments.contains("--preview-memory-review") || ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") {return}
         if ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") {
@@ -317,14 +317,6 @@ struct CalendarRemovalReviewSession:Identifiable {
                 let result:[String:Any]
                 do { result=try await NativeMemoryEvaluation.run(self) } catch { result=["error":error.localizedDescription,"storage":"Fictional data; disposable storage; sources never started"] }
                 if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-native-memory-evaluation.json"),options:.atomic) }
-                NSApp.terminate(nil)
-            };return
-        }
-        if ProcessInfo.processInfo.arguments.contains("--inspect-luna-access") {
-            Task {
-                let result:[String:Any]
-                do {result=try await chatGPT.inspectLunaAccess()} catch {result=["error":error.localizedDescription,"personalSourcesSent":false,"selectedModel":inference.selectedModel]}
-                if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:"/tmp/missioncontrol-luna-access.json"),options:.atomic)}
                 NSApp.terminate(nil)
             };return
         }
@@ -496,7 +488,7 @@ struct CalendarRemovalReviewSession:Identifiable {
                 if let self {
                     self.heartbeat.check(self)
                     if !self.heartbeat.busy && !self.briefings.busy {
-                        self.projectPlacement.check(self);self.memoryLearning.recoverDelivery(self);self.proactive.recoverDelivery(self)
+                        self.projectPlacement.check(self)
                     }
                 }
                 try? await Task.sleep(for: .seconds(60))

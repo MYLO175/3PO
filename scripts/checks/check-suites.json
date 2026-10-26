@@ -357,17 +357,6 @@
       ]
     },
     {
-      "id": "memory-graph",
-      "tier": "source-free",
-      "script": "scripts/checks/test-memory-graph.sh",
-      "effects": [
-        "fictional values"
-      ],
-      "requires": [
-        "Xcode"
-      ]
-    },
-    {
       "id": "memory-inspection",
       "tier": "source-free",
       "script": "scripts/checks/test-memory-inspection.sh",
@@ -932,15 +921,6 @@
       "script": "scripts/checks/test-evaluation-launch.sh",
       "effects": [
         "pure startup decisions; no application launch"
-      ]
-    },
-    {
-      "id": "review-conversation-trial",
-      "tier": "source-free",
-      "script": "scripts/checks/test-review-conversation-trial.sh",
-      "effects": [
-        "scripted in-memory Review actions, serial job outcomes and DEBUG launch guard",
-        "no app launch, source access, inference, personal storage or native writes"
       ]
     },
     {

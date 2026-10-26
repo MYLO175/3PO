@@ -163,7 +163,6 @@ import SwiftData
                     committing:["paMemoryLearning":bytes],expected:["paMemoryLearning":LocalRecordVersion(loadedBytes)]) else { throw MemoryLearningFailure.storage }
                 state = next; loadedBytes = bytes
                 assistant.acknowledgeLearned(learned)
-                recoverDelivery(model)
             } catch is CancellationError { self.error = "Memory learning stopped. Saved progress remains paused." }
             catch { self.error = error.localizedDescription }
         }
@@ -176,10 +175,6 @@ import SwiftData
     }
     func visible(_ record: PALearningQuestion, assistant: any LearningAssistantReading) -> Bool {
         record.registration == assistant.connection.activeID && !record.dismissed && record.answered != true && assistant.memory.enabled && assistant.contextEnabled && (record.conversationID == nil || assistant.topics.contains { $0.id == record.conversationID }) && !assistant.memory.suppressed(record.registration).contains(record.turnID)
-    }
-    func recoverDelivery(_ model: LearningRuntime) {
-        guard readable, !model.assistant.busy else { return }
-        // New background questions are read from Review inbox; preserve older chat deliveries.
     }
     func answer(_ record:PALearningQuestion) {
         guard let index=state.questions?.firstIndex(where:{$0.id == record.id && $0.registration == record.registration}) else {return}

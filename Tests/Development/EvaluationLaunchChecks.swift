@@ -22,7 +22,7 @@ import Foundation
             guard case .exit(let code,_) = EvaluationLaunchGuard.decision(arguments:["3PO",flag], isDebug:true) else { preconditionFailure("Unknown mode must fail before services") }
             check(code != 0)
         }
-        for flag in ["--inspect-luna-access","--cleanup-request-markers"] {
+        for flag in ["--cleanup-request-markers"] {
             check(EvaluationLaunchGuard.decision(arguments:["3PO",flag],isDebug:true) == .proceed)
             guard case .exit(let code,_) = EvaluationLaunchGuard.decision(arguments:["3PO",flag],isDebug:false) else {preconditionFailure("Release diagnostics must refuse before services")}
             check(code != 0)

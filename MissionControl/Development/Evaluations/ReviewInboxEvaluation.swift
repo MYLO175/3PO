@@ -1143,7 +1143,6 @@ import EventKit
         try model.proactive.beginReview(record.id,model:model);try model.proactive.finishReview(record.id,registration:account)
         checks["approved output leaves active inbox"] = !model.proactive.visible(model.proactive.state.records[0],model:model)
         checks["inbox recovery does not add a chat turn"] = model.assistant.feed?.turns.isEmpty ?? true
-        model.proactive.recoverDelivery(model)
         checks["inbox stays separate from normal chat"] = model.assistant.feed?.turns.isEmpty ?? true
         // One current production prompt/decode request; only fictional selected WhatsApp messages.
         let texts=["The Orion prototype report deadline has moved to 20 October 2026.","Alex's meeting has moved to 21 October 2026.","If we moved the Vega report to 22 October it might help, but the deadline has NOT changed."]

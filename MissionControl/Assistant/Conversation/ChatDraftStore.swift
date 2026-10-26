@@ -24,11 +24,6 @@ import AppKit
         } catch { writable = false; self.error = "Saved drafts are unavailable. Their original record is preserved; editing is disabled." }
         termination = NotificationCenter.default.addObserver(forName:NSApplication.willTerminateNotification,object:nil,queue:.main) { [weak self] _ in MainActor.assumeIsolated { self?.flush() } }
     }
-    private static func savedDraft()->FetchDescriptor<CachedDashboard> {
-        var request=FetchDescriptor<CachedDashboard>(predicate:#Predicate{$0.key == "assistantDrafts"})
-        request.fetchLimit=1
-        return request
-    }
     func text(registration: String, widget: UUID, conversation: UUID?) -> String { state.values[ChatDraftRules.key(registration:registration,widget:widget,conversation:conversation)] ?? "" }
     func set(_ text: String, registration: String, widget: UUID, conversation: UUID?) {
         guard writable, !registration.isEmpty else { return }
