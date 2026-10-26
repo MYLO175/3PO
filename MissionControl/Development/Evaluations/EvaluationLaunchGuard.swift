@@ -6,7 +6,6 @@ enum EvaluationLaunchGuard {
     enum Decision: Equatable { case proceed; case exit(code: Int32, output: String) }
     static let protocolVersion = 1
     static let modes: [[String]] = [
-        ["--validate-graphiti-memory"],
         ["--validate-advice-context", "--mcp-workspace-only"],
         ["--validate-review-inbox","--working-context-model"],
         ["--validate-review-inbox","--working-context-model","--context-pages-only"],
@@ -55,7 +54,6 @@ enum EvaluationLaunchGuard {
         ]
 ]
     private static let primaryFlags: Set<String> = [
-        "--validate-graphiti-memory",
         "--preview-chat-approval",
         "--inspect-luna-access",
         "--cleanup-request-markers",

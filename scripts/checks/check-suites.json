@@ -1200,17 +1200,6 @@
       "effects": [
         "Two configured subscription requests over one long fictional Review guide and invented emails. Private policy store, production synthesis and classification contracts; no personal sources, native actions, app policy changes or retry."
       ]
-    },
-    {
-      "id": "graphiti-process",
-      "tier": "source-free",
-      "script": "scripts/checks/test-graphiti-process.sh",
-      "effects": [
-        "fictional subprocess transport, cancellation and timeout checks; no app, model or personal sources"
-      ],
-      "requires": [
-        "Xcode"
-      ]
     }
   ]
 }

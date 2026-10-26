@@ -1,8 +1,5 @@
 # Memory and context in 3PO
 
-## Optional Graphiti experiment
-
-The existing page-first system remains the default. An account-owned comparison setting now selects Context pages, Graphiti, or both for ordinary chat. Graphiti uses a separate local temporal graph and local semantic embeddings, with extraction through the existing subscription connection. Original records and pages remain canonical and recoverable. Review and briefs retain their existing input contracts. See [Trying Graphiti memory](../guides/GRAPHITI.md) for setup, source boundaries, comparison behaviour and validation limits.
 ## One Review guide
 
 Review decisions receive one complete guidance document containing the current policy and every active shared Review preference. Header triage, body assessment, proposal preparation and Review conversations use that guide independently of lexical fact retrieval. Relevant factual/project context and exact source evidence remain separate. Original feedback and interpretation metadata stay in the canonical ledger for inspection, correction and history; routine Review inputs do not repeat them as preference records or recent chat.

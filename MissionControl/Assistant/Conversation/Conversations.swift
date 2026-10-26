@@ -77,6 +77,7 @@ struct AssistantLookupTrace: Codable, Equatable, Identifiable {
     var title: String {
         switch tool {
         case "read_assistant_context": return "Assistant tools"
+        // Retired Graphiti trial; kept so earlier reply traces still display.
         case "search_graph_memory": return "Graphiti memory"
         case "search_chat_history": return "Earlier chat search"
         case "read_chat_history": return "Earlier chat opened"

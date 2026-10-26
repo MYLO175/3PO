@@ -22,7 +22,6 @@ def verify(app: Path) -> None:
         resources / "MCPBridge/tool-schema-server.mjs",
         resources / "MCPBridge/package.json",
         resources / "WhatsAppBridge/Runtime/node",
-        resources / "Graphiti/helper.py",
     ]
     missing = [str(path.relative_to(app)) for path in required if not path.is_file()]
     if missing:
@@ -38,7 +37,7 @@ def verify(app: Path) -> None:
          "await import('@modelcontextprotocol/sdk/types.js');"],
         cwd=resources / "MCPBridge", check=True, timeout=20,
     )
-    print("App bundle verified: MCP bridge, SDK, bundled Node and Graphiti helper present.")
+    print("App bundle verified: MCP bridge, SDK, and bundled Node present.")
 
 
 if __name__ == "__main__":

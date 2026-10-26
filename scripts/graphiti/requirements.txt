@@ -1,4 +1,0 @@
-# Tested on macOS 26 arm64, Python 3.13. Python 3.12+ required by FalkorDBLite.
-graphiti-core[falkordblite]==0.31.2
-falkordblite==0.11.0
-fastembed==0.9.0

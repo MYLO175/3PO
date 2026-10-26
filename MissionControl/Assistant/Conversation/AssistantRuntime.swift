@@ -46,7 +46,6 @@ struct AssistantToolRequest {
     var history: [[String: String]]
     var focusAreas: [LifeArea]?
     var inferenceModel:String? = nil
-    var memoryBackend: String = "pages"
     /// Explicit historical reads return data and receipts, never human authority.
     var historyLookup: (String?, String?) -> AssistantPageContext = { _,_ in .init(text: "{\"available\":false}") }
 }
@@ -159,9 +158,6 @@ extension AssistantMailCursor { var searchTerms: [String] { [] } }
     /// Lookup metadata is recorded only at tool boundaries, never per text fragment.
     var lookupAccess: (String) -> String? = { _ in nil }
     var contextPages: (String, String?, UUID?, Bool, Bool) -> AssistantPageContext = { _,_,_,_,_ in .init() }
-    var memoryBackend: String = "pages"
-    var memoryBackendCurrent: () -> Bool = { true }
-    var memoryBackendInstructions: String = ""
     var profileContextPages: (String, UUID?) -> AssistantPageContext = { _,_ in .init() }
     var pageKnowledgeAvailable: (String, [String: String]) -> Bool = { _,_ in true }
     /// One fresh synchronous projection for a bounded history selection; no result

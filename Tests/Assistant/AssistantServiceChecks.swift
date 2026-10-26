@@ -161,27 +161,11 @@ private final class ObservationCounter:@unchecked Sendable {
         }
 
         do {
-            let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("graphiti-comparison"))
+            let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("pages-only"))
             p.replies=[final("PRIVATE_PAGE_BACKED_ANSWER")]
             check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Tell me about Orion"),"Page comparison baseline starts")
             await until { !value.busy }
-            check(!p.toolNames.last!.contains("search_graph_memory"),"Default page mode does not advertise experimental graph search")
-            var runtime=c.runtime();runtime.memoryBackend="graphiti"
-            runtime.memoryBackendInstructions="Use the fictional graph tool."
-            c.configure={session,request in
-                check(request.memoryBackend == "graphiti","Tool sessions capture the ordinary turn backend")
-                session.executeBody={call,_ in call.name == "search_graph_memory" ? "{\"facts\":[{\"text\":\"Fictional graph relationship\"}]}" : "{}" }
-            }
-            p.replies=[tools(["search_graph_memory"]),final("PRIVATE_GRAPH_BACKED_ANSWER")]
-            check(value.send(runtime:runtime,topicID:nil,prompt:"Search the graph for Orion relationships"),"Graph comparison request starts")
-            await until { !value.busy }
-            check(p.toolNames.last!.contains("search_graph_memory") && !p.toolNames.last!.contains("read_life_notebook"),"Graph mode offers graph search without the old notebook tool")
-            check(!String(describing:p.inputs.suffix(2)).contains("PRIVATE_PAGE_BACKED_ANSWER"),"Graph comparison withholds prior page-backed assistant prose")
-            check(value.feed?.turns.last?.contextCapture?.memoryBackend == "graphiti" && value.feed?.turns.last?.contextCapture?.lookups?.first?.tool == "search_graph_memory","Backend and actual graph lookup survive on the reply capture")
-            c.configure=nil;p.replies=[final("Back on pages")]
-            check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Compare Orion from pages"),"Returning to page mode starts")
-            await until { !value.busy }
-            check(!String(describing:p.inputs.last!).contains("PRIVATE_GRAPH_BACKED_ANSWER") && String(describing:p.inputs.last!).contains("PRIVATE_PAGE_BACKED_ANSWER"),"Returning to pages replays only matching assistant context, preserving the original baseline")
+            check(!p.toolNames.last!.contains("search_graph_memory"),"Ordinary chat does not advertise the retired graph search")
         }
 
         do {

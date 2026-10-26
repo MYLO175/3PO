@@ -13,7 +13,6 @@ struct CalendarRemovalReviewSession:Identifiable {
 
 @MainActor @Observable final class DashboardModel {
     let preparedReview = PreparedReviewStore()
-    @ObservationIgnored lazy var graphiti = GraphitiMemoryService(container: container)
     @ObservationIgnored lazy var contextPages = ContextPageStore(container: container)
     @ObservationIgnored let contextRecordProjections = ContextRecordProjectionCache()
     #if DEBUG
@@ -230,7 +229,7 @@ struct CalendarRemovalReviewSession:Identifiable {
             if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") {
                 container=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true));return
             }
-            if ProcessInfo.processInfo.arguments.contains("--validate-graphiti-memory") || ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") || ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") || ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") || ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") || ProcessInfo.processInfo.arguments.contains("--validate-advice-context") || ProcessInfo.processInfo.arguments.contains("--validate-native-memory") || ProcessInfo.processInfo.arguments.contains("--preview-memory-review") || ProcessInfo.processInfo.arguments.contains("--inspect-luna-access") || ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") || ProcessInfo.processInfo.arguments.contains("--validate-memory-inspection") {
+            if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") || ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") || ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") || ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") || ProcessInfo.processInfo.arguments.contains("--validate-advice-context") || ProcessInfo.processInfo.arguments.contains("--validate-native-memory") || ProcessInfo.processInfo.arguments.contains("--preview-memory-review") || ProcessInfo.processInfo.arguments.contains("--inspect-luna-access") || ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") || ProcessInfo.processInfo.arguments.contains("--validate-memory-inspection") {
                 container=try ModelContainer(for:CachedDashboard.self,configurations:ModelConfiguration(isStoredInMemoryOnly:true));return
             }
             if ProcessInfo.processInfo.arguments.contains("--validate-source-timeline") || ProcessInfo.processInfo.arguments.contains("--preview-source-timeline") || ProcessInfo.processInfo.arguments.contains("--preview-settings") || ProcessInfo.processInfo.arguments.contains("--validate-images") || ProcessInfo.processInfo.arguments.contains("--preview-images") || ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-projects") || ProcessInfo.processInfo.arguments.contains("--preview-projects") || ProcessInfo.processInfo.arguments.contains("--validate-placement") || ProcessInfo.processInfo.arguments.contains("--validate-ownership") || ProcessInfo.processInfo.arguments.contains("--validate-mail-monitoring") || ProcessInfo.processInfo.arguments.contains("--validate-mail-dates") {
@@ -312,15 +311,6 @@ struct CalendarRemovalReviewSession:Identifiable {
             if let data=try? JSONSerialization.data(withJSONObject:result,options:[.prettyPrinted,.sortedKeys]) { try? data.write(to:EvaluationOutput.url("/tmp/missioncontrol-advice-context-evaluation.json"),options:.atomic) }
             NSApp.terminate(nil)
             };return
-        }
-        if ProcessInfo.processInfo.arguments.contains("--validate-graphiti-memory") {
-            Task {
-                let result: [String: Any]
-                do { result = try await GraphitiMemoryEvaluation.run(self) }
-                catch { result = ["error": error.localizedDescription, "providerDiagnostic": chatGPT.diagnostic, "model": inference.selectedModel, "storage": "Fictional source-free Graphiti check; disposable stores only"] }
-                if let data = try? JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]) { try? data.write(to: EvaluationOutput.url("/tmp/missioncontrol-graphiti-evaluation.json"), options: .atomic) }
-                NSApp.terminate(nil)
-            }; return
         }
         if ProcessInfo.processInfo.arguments.contains("--validate-native-memory") {
             Task {
