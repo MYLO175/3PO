@@ -7,6 +7,13 @@ struct LifeLinkOption: Identifiable {
     var id: String { reference.kind.rawValue + ":" + (reference.containerID ?? "") + ":" + reference.id }
 }
 @MainActor enum LifeWorkspaceContext {
+    /// The 90-day orientation snapshot plus the widget's visible week, so a link to a
+    /// later or earlier event keeps resolving once it leaves the 7-day window.
+    private static func events(_ model: DashboardModel) -> [AgendaEvent] {
+        let orientation = model.paOrientation?.calendar.events ?? []
+        let known = Set(orientation.map { $0.calendarID + "\u{0}" + $0.id })
+        return orientation + model.calendarData.events.filter { !known.contains($0.calendarID + "\u{0}" + $0.id) }
+    }
     static func options(_ model: DashboardModel, registration: String, topic: UUID?, includeTopics: Bool) -> [LifeLinkOption] {
         guard registration == model.inference.activeID else { return [] }
         let assistant = model.assistant
@@ -19,7 +26,7 @@ struct LifeLinkOption: Identifiable {
             }
         }
         guard assistant.contextEnabled else { return options }
-        options += model.calendarData.events.filter { !assistant.excludedCalendars.contains($0.calendarID) }.map {
+        options += events(model).filter { !assistant.excludedCalendars.contains($0.calendarID) }.map {
             .init(reference: .init(kind: .event, id: $0.id, containerID: $0.calendarID), title: $0.title, detail: "Calendar · " + $0.start.formatted(date: .abbreviated, time: .shortened))
         }
         options += model.reminderData.reminders.filter { !assistant.excludedLists.contains($0.listID) }.map {
@@ -48,7 +55,7 @@ struct LifeLinkOption: Identifiable {
             guard assistant.memory.enabled, let id = UUID(uuidString:reference.id), let item = assistant.memory.permittedRecords.first(where: { $0.id == id && MemoryRules.usable($0,registration:registration) && (includeTopics || MemoryRules.inScope($0,conversationID:topic)) }) else { return nil }
             return .init(reference:reference, title:item.text, detail:item.attribution)
         case .event:
-            guard assistant.contextEnabled, let item = model.calendarData.events.first(where: { $0.id == reference.id && $0.calendarID == reference.containerID && !assistant.excludedCalendars.contains($0.calendarID) }) else { return nil }
+            guard assistant.contextEnabled, let item = events(model).first(where: { $0.id == reference.id && $0.calendarID == reference.containerID && !assistant.excludedCalendars.contains($0.calendarID) }) else { return nil }
             return .init(reference:reference, title:item.title, detail:"Calendar · " + item.start.formatted(date:.abbreviated,time:.shortened))
         case .reminder:
             guard assistant.contextEnabled, let item = model.reminderData.reminders.first(where: { $0.id == reference.id && $0.listID == reference.containerID && !assistant.excludedLists.contains($0.listID) }) else { return nil }
