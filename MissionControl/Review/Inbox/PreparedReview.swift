@@ -59,20 +59,31 @@ struct PreparedReviewAccess {
             MainActor.assumeIsolated {self?.cached=nil;self?.revision += 1}
         }
         cached=value
+        scheduleExpiry(value.expiresAt)
         #if DEBUG
         builds += 1
         #endif
         return value
     }
+    /// One local wakeup when the next reading card's week ends. No source read or inference.
+    @ObservationIgnored private var expiry:Task<Void,Never>?
+    private func scheduleExpiry(_ date:Date?) {
+        expiry?.cancel();expiry=nil
+        guard let date else {return}
+        expiry=Task { @MainActor [weak self] in
+            try? await Task.sleep(for:.seconds(max(1,date.timeIntervalSinceNow)))
+            guard !Task.isCancelled,let self else {return}
+            self.cached=nil;self.revision += 1
+        }
+    }
 }
 
 @MainActor extension DashboardModel {
-    func buildPreparedReview()->ReviewInboxProjection {
+    func buildPreparedReview(now:Date = .now)->ReviewInboxProjection {
         let owner=inference.activeID,access=PreparedReviewAccess(self)
         let questions=briefings.preparedQuestions(self)
         let learning=(memoryLearning.state.questions ?? []).filter{memoryLearning.visible($0,assistant:assistant)}
         let projectQuestions = visibleContextProjectQuestions()
-        let discoveries=proactive.state.records.filter{!reviewDiscoveryCompleted($0) && proactive.preparedReviewAvailable($0,model:self,access:access)}.map(ProactiveRules.reviewProjection)
         let currentMessages=Dictionary(mailData.messages.map{($0.id,$0)},uniquingKeysWith:{first,_ in first})
         let saved:[(MailMessage,EmailSummary)]=emailSummaries.records.compactMap {summary in
             guard access.enabled,access.mailEnabled,summary.registration == owner,
@@ -85,7 +96,11 @@ struct PreparedReviewAccess {
         }
         func handled(_ summary:EmailSummary)->EmailHandling? {summary.keepInReview == true ? nil : summary.handling}
         func resolved(_ summary:EmailSummary)->EmailResolution? {summary.keepInReview == true ? nil : summary.resolution}
-        let emails=highlights.filter{EmailHighlightRules.needsReview($0.1,replied:$0.0.replied) && handled($0.1) == nil && resolved($0.1) == nil}
+        let admitted=Set(highlights.filter{EmailHighlightRules.needsReview($0.1,replied:$0.0.replied,now:now)}.map{$0.0.id})
+        // Mail suggestions follow their email's current verdict and stay saved while hidden.
+        // Proposed changes to an existing Calendar or Reminders item always concern the human.
+        let discoveries=proactive.state.records.filter{!reviewDiscoveryCompleted($0) && proactive.preparedReviewAvailable($0,model:self,access:access) && ($0.sourceKind == "whatsapp" || $0.nativeTarget != nil || admitted.contains($0.mailID))}.map(ProactiveRules.reviewProjection)
+        let emails=highlights.filter{admitted.contains($0.0.id) && handled($0.1) == nil && resolved($0.1) == nil}
         let actionable=Set(emails.map{$0.0.id})
         let grouped=Dictionary(grouping:discoveries.filter{$0.sourceKind != "whatsapp"},by:{$0.mailID})
         var attachedIDs=Set<String>()
@@ -101,7 +116,8 @@ struct PreparedReviewAccess {
         let resolutions=saved.compactMap {message,summary in !cardIDs.contains(message.id) ? resolved(summary).map{(message,summary,$0)} : nil}
         let pending=PAQueueRules.handoffs(assistant.queue.items,registration:owner)
         let count=questions.count+learning.count+projectQuestions.count+standalone.count+cards.count+pending.filter{$0.state == .needsAnswer || $0.state == .interrupted}.count
-        return .init(questions:questions,learningQuestions:learning,discoveries:discoveries,emails:emails,highlights:highlights,emailCards:cards,standaloneDiscoveries:standalone,handled:history,resolved:resolutions,pending:pending,pendingCount:count,contextQuestions:projectQuestions)
+        let expiresAt=highlights.filter{EmailHighlightRules.readingAdmitted($0.1,now:now)}.map{EmailHighlightRules.readingExpiry($0.1)}.min()
+        return .init(questions:questions,learningQuestions:learning,discoveries:discoveries,emails:emails,highlights:highlights,emailCards:cards,standaloneDiscoveries:standalone,handled:history,resolved:resolutions,pending:pending,pendingCount:count,contextQuestions:projectQuestions,expiresAt:expiresAt)
     }
 }
 

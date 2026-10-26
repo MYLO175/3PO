@@ -432,6 +432,13 @@ import Synchronization
         checks["explicit source withdrawal immediately hides prepared cards"] = model.reviewInbox.discoveries.isEmpty && model.reviewInbox.emailCards.isEmpty
         model.assistant.excludedAccounts=excludedBefore
         checks["restored source access exposes the same saved cards"] = model.reviewInbox.discoveries.count == 40
+        // Suggestions follow their email's verdict: a quiet reassessment hides them without deleting them.
+        var quietSummary=summary;quietSummary.attention=false;quietSummary.worthReading=false;quietSummary.reviewPolicyVersion=EmailSummary.reviewPolicyVersion
+        try model.emailSummaries.seedAdviceFixture([quietSummary])
+        checks["suggestions on a quiet email leave Review"] = model.reviewInbox.discoveries.isEmpty && model.reviewInbox.emailCards.isEmpty && model.reviewInbox.standaloneDiscoveries.isEmpty
+        checks["hidden suggestions stay saved"] = model.proactive.state.records.count == 40
+        try model.emailSummaries.seedAdviceFixture([summary])
+        checks["suggestions return when their email is admitted again"] = model.reviewInbox.discoveries.count == 40 && model.reviewInbox.emailCards.count == 1
         permitted=true
         try model.proactive.seedAdviceFixture([savedAdvice],model:model)
         permitted=false
@@ -617,7 +624,7 @@ import Synchronization
         let feedbackContext=model.emailSummaries.relevanceContext(example,model:model,body:"Please complete your Orion Labs coding assessment.")
         checks["human feedback reaches every assessment in the exact policy instead of duplicate memory rows"] = model.emailSummaries.policy(registration).text.contains(words) && !feedbackContext.memories.contains{$0["id"] == reviewMemory.id.uuidString} && !feedbackContext.memoryReceipts.contains{$0.id == reviewMemory.id.uuidString} && !model.emailSummaries.relevanceContext(example,model:model,header:true).memories.contains{$0["id"] == reviewMemory.id.uuidString}
         checks["feedback does not fill unrelated email context"] = !model.emailSummaries.relevanceContext(model.mailData.messages[0],model:model,body:"Orion project review attendance").memories.contains{$0["id"] == reviewMemory.id.uuidString}
-        var currentAssessment=EmailSummary(id:example.id,registration:registration,fingerprint:EmailSummary.fingerprint(example),summary:"Coding assessment invitation",attention:true,reason:"Complete coding assessment",evidence:"Please complete your Orion Labs coding assessment.",bodyFingerprint:"fixture",message:example,worthReading:true,needsReply:false,reviewPreferenceRevision:model.emailSummaries.reviewPreferenceStamp(example,model:model,evidence:"Coding assessment invitation Please complete your Orion Labs coding assessment."),reviewPolicyVersion:2)
+        var currentAssessment=EmailSummary(id:example.id,registration:registration,fingerprint:EmailSummary.fingerprint(example),summary:"Coding assessment invitation",attention:true,reason:"Complete coding assessment",evidence:"Please complete your Orion Labs coding assessment.",bodyFingerprint:"fixture",message:example,worthReading:true,needsReply:false,reviewPreferenceRevision:model.emailSummaries.reviewPreferenceStamp(example,model:model,evidence:"Coding assessment invitation Please complete your Orion Labs coding assessment."),reviewPolicyVersion:EmailSummary.reviewPolicyVersion)
         currentAssessment.reviewContext = .init(policy:model.emailSummaries.policy(registration),memories:feedbackContext.memories,discoveryRevision:currentAssessment.reviewPreferenceRevision,contextPageDependencies:feedbackContext.contextPageDependencies)
         checks["unchanged feedback does not repeatedly reassess saved email"] = !model.emailSummaries.preferenceNeedsRecheck(currentAssessment,message:example,model:model)
         guard model.assistant.memory.saveReviewPreference("Assessment invitations matter; successful submission confirmations do not need review.",registration:registration,expected:reviewMemory) else {throw SummaryFailure.invalid}
@@ -700,7 +707,7 @@ import Synchronization
         informational.worthReading=true
         try model.emailSummaries.seedAdviceFixture([informational])
         checks["older informational reading judgements await quiet-policy recheck without filling Review"] = model.reviewInbox.emailCards.isEmpty && model.reviewInbox.pendingCount == 0 && model.emailSummaries.records.count == 1
-        informational.reviewPolicyVersion=2
+        informational.reviewPolicyVersion=EmailSummary.reviewPolicyVersion
         try model.emailSummaries.seedAdviceFixture([informational])
         checks["freshly assessed worthwhile reading appears once without an invented task"] = model.reviewInbox.emailCards.count == 1 && model.reviewInbox.pendingCount == 1 && model.reviewInbox.emailCards[0].summary.attention == false
         try model.emailSummaries.seedAdviceFixture(savedAssessments);try model.proactive.seedAdviceFixture([proposal],model:model)

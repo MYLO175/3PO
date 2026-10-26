@@ -1,5 +1,15 @@
 # How 3PO works: detailed reference
 
+## 26 October: a more selective Review inbox
+
+Review now holds back email that doesn't concern you specifically. An email gets in when you need to do or decide something, or when it tells you something new about one of your own projects, applications, course requirements, responsibilities, commitments or people you know. A general interest, hobby or field of study isn't enough on its own. For example, a gig that matches your music taste, or an optional talk in your subject, stays quiet unless your Review guide asks for that kind of email. The app enforces this itself as well: a match supported only by a taste ("preference") memory leaves the email quiet.
+
+Confirmations, tickets, receipts and travel reminders for things you already arranged also stay out. So do welcome and profile-completion prompts, automated invitations, and sign-in or app-access notices that only report activity. They still appear if they report a problem, a change you didn't make, a cancellation, a failed payment or another required action. Guide exceptions about you, such as "unless I am featured", need you to be the person named.
+
+"Worth reading" cards leave Review a week after the email arrived. Action cards stay until they're dealt with, because elapsed time never proves something is done. Suggestions follow their email's verdict: when an email is judged quiet, its suggestions are hidden but stay saved, and they return if the email is admitted again. Proposed changes to an existing Calendar or Reminders item always show.
+
+Older assessments are re-checked once under the new rules. Older "worth reading" cards are hidden straight away and come back only if they pass the stricter check. Older action cards stay visible until their re-check, which runs first. Only emails that were showing in Review (from the last 30 days) are re-checked, a few per heartbeat; quiet ones aren't, because stricter rules can only remove cards. Saved assessments, Dismiss choices and history are kept. See [Memory and context](MEMORY_AND_CONTEXT.md#one-review-guide).
+
 ## 25 October: ChatGPT or Claude
 
 Settings → Connections has one **AI provider** switch. Requests go to ChatGPT or Claude, one at a time, each on its own subscription plan. Saved data, memory and source permissions stay the same when you switch. Choosing Claude the first time asks you to confirm that permitted context will be sent to Anthropic. Each job keeps the provider of the model it started with.

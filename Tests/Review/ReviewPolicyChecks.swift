@@ -172,15 +172,47 @@ enum ReviewPolicyChecks {
         do {_ = try assessment(quote, additional: ["policyRelevance": policyMatch]); preconditionFailure("Default policy used as a positive personal priority")} catch SummaryFailure.unsupportedEvidence {}
         let foreign = ReviewPolicyCapture(registration: "other", revision: humanPolicy.revision, text: humanPolicy.text, isDefault: false)
         do {_ = try assessment(quote, policy: foreign); preconditionFailure("Foreign policy accepted")} catch SummaryFailure.unsupportedEvidence {}
-        // Saved informational cards remain persistent data; only new completed classifications are tightened.
+        // A taste alone cannot admit an email; a life fact, project or explicit priority still can.
+        let tasteQuote = "The Lantern Quartet play the Riverside Hall next Saturday at 8pm."
+        let taste: [String: String] = ["id": UUID().uuidString, "text": "You enjoy jazz concerts.", "kind": "preference"]
+        let course: [String: String] = ["id": UUID().uuidString, "text": "You study geology.", "kind": "context"]
+        let tasteContext = EmailRelevanceContext(memories: [taste, course], workspace: context.workspace, memoryReceipts: MemoryDependencyRules.capture([taste, course]))
+        func cited(_ ids: [String: Any]) throws -> EmailSummary {
+            try assessment(tasteQuote, additional: ["personalRelevance": (["reason": "Matches a stated interest", "evidence": tasteQuote] as [String: Any]).merging(ids) {_, next in next}, "followUpDate": "2026-10-31", "followUpEvidence": "next Saturday at 8pm"], context: tasteContext)
+        }
+        let tasteOnly = try cited(["memoryIDs": [taste["id"]!]])
+        precondition(tasteOnly.worthReading == false && tasteOnly.personalRelevance == nil && tasteOnly.followUpDate == nil && !EmailHighlightRules.visible(tasteOnly), "A taste alone leaves the email quiet without rejecting the assessment")
+        let lifeFact = try cited(["memoryIDs": [course["id"]!]]), withProject = try cited(["memoryIDs": [taste["id"]!], "workspaceIDs": [projectID]])
+        precondition(lifeFact.worthReading == true, "A life fact remains specific support")
+        precondition(withProject.worthReading == true, "A current project remains specific support")
+        precondition(citedResults.worthReading == true, "An explicit Review priority is not a taste")
+        do {_ = try cited(["memoryIDs": [UUID().uuidString]]); preconditionFailure("Unsupplied memory admitted")} catch SummaryFailure.unsupportedEvidence {}
+        // Saved informational cards remain persistent data. Older reading judgements wait for the bounded
+        // reassessment lane; current ones stay in Review for one week after receipt.
+        let received = message.received
         var previous = broadcast; previous.worthReading = true; previous.reviewPolicyVersion = 2
         let previousData = try JSONEncoder().encode(previous)
         let previousReadback = try JSONDecoder().decode(EmailSummary.self, from: previousData)
-        precondition(previousReadback.worthReading == true && EmailHighlightRules.needsReview(previousReadback, replied: false))
+        precondition(previousReadback.worthReading == true && previousReadback.reviewPolicyVersion == 2 && !EmailHighlightRules.needsReview(previousReadback, replied: false, now: received))
+        precondition(EmailHighlightRules.visible(previousReadback, now: received), "Older reading stays eligible for its reassessment")
+        var current = previous; current.reviewPolicyVersion = EmailSummary.reviewPolicyVersion
+        precondition(EmailHighlightRules.readingExpiry(current) == received.addingTimeInterval(7*86400))
+        precondition(EmailHighlightRules.needsReview(current, replied: false, now: received.addingTimeInterval(6*86400)))
+        precondition(!EmailHighlightRules.needsReview(current, replied: false, now: received.addingTimeInterval(7*86400)), "Reading leaves Review after a week")
+        var olderAction = direct; olderAction.reviewPolicyVersion = 2
+        precondition(EmailHighlightRules.needsReview(olderAction, replied: false, now: received.addingTimeInterval(30*86400)), "Action items never expire and stay until reassessed")
+        // Suggestions follow the email's verdict: a date alone never feeds the suggestion pass.
+        var datedQuiet = previous; datedQuiet.followUpDate = "2026-10-30"
+        precondition(!EmailHighlightRules.suggestionSource(datedQuiet, replied: false, heartbeat: true, now: received))
+        var datedCurrent = current; datedCurrent.followUpDate = "2026-10-30"
+        precondition(EmailHighlightRules.suggestionSource(datedCurrent, replied: false, heartbeat: false, now: received))
+        precondition(EmailHighlightRules.suggestionSource(current, replied: false, heartbeat: true, now: received) && !EmailHighlightRules.suggestionSource(current, replied: false, heartbeat: false, now: received))
+        precondition(!EmailHighlightRules.suggestionSource(current, replied: false, heartbeat: true, now: received.addingTimeInterval(8*86400)))
+        precondition(EmailHighlightRules.suggestionSource(direct, replied: false, heartbeat: false, now: received))
         var withReceipt = priority; withReceipt.reviewContext = receipt
         let readback = try JSONDecoder().decode(EmailSummary.self, from: JSONEncoder().encode(withReceipt))
         precondition(readback.reviewContext == receipt && readback.policyRelevance == priority.policyRelevance)
         precondition(withReceipt.adviceRevision(replied: false) != priority.adviceRevision(replied: false))
-        print("PASS Review policy: account ownership, global capture, persistence/CAS/readback, history/reset/restore, exact policy capture rollout, supplied feedback citation requirements, negative feedback receipts, quiet broadcasts/promotions, supported opportunities, direct requests/changes and preserved saved cards. No AI or source reads.")
+        print("PASS Review policy: account ownership, global capture, persistence/CAS/readback, history/reset/restore, exact policy capture rollout, supplied feedback citation requirements, negative feedback receipts, quiet broadcasts/promotions, taste-only relevance, supported opportunities, direct requests/changes, one-week reading cards, verdict-led suggestion sources and preserved saved cards. No AI or source reads.")
     }
 }

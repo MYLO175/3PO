@@ -22,6 +22,7 @@ struct ReviewInboxProjection {
     var pending:[PAQueuedRequest]
     var pendingCount:Int
     var contextQuestions: [ContextProjectQuestion] = []
+    var expiresAt: Date? = nil
 }
 extension DashboardModel {
     func reviewCreationClaim(_ item:PADiscovery)->NativeCreationClaim? {

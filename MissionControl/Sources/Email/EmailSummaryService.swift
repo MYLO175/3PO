@@ -252,7 +252,9 @@ import SwiftData
     }
     func preferenceNeedsRecheck(_ summary:EmailSummary,message:MailMessage,model:DashboardModel)->Bool {
         guard !ReviewAcknowledgementRules.emailDismissed(summary,message:message,registration:model.inference.activeID),message.received >= Date.now.addingTimeInterval(-30*86400) else {return false}
-        return summary.reviewPolicyVersion != 2 || !reviewContextCurrent(summary.reviewContext,message:message,model:model,evidence:summary.summary+" "+summary.evidence)
+        // A stricter policy can only quiet an assessment, so only currently surfaced ones are revisited.
+        let outdated=(summary.reviewPolicyVersion ?? 0) < 2 || (summary.reviewPolicyVersion != EmailSummary.reviewPolicyVersion && EmailHighlightRules.visible(summary))
+        return outdated || !reviewContextCurrent(summary.reviewContext,message:message,model:model,evidence:summary.summary+" "+summary.evidence)
     }
     func actionEvidenceNeedsRecheck(_ summary:EmailSummary,message:MailMessage,model:DashboardModel)->Bool {
         guard model.mailData.messages.contains(where:{$0.id == message.id && EmailSummary.fingerprint($0) == summary.fingerprint}),
@@ -586,6 +588,9 @@ import SwiftData
                     let a=current(first,model:model).map{EmailReplyDraftRules.needsBackgroundDraft($0,message:first)} ?? false
                     let b=current(second,model:model).map{EmailReplyDraftRules.needsBackgroundDraft($0,message:second)} ?? false
                     if a != b {return a}
+                    // Action cards stay visible until rechecked, so they go before hidden reading cards.
+                    let x=current(first,model:model)?.attention == true,y=current(second,model:model)?.attention == true
+                    if x != y {return x}
                     return (current(first,model:model)?.bodyCheckedAt ?? .distantPast) < (current(second,model:model)?.bodyCheckedAt ?? .distantPast)
                 }
                 let batch = Array(newMessages.prefix(rechecks.isEmpty ? 3 : 2)) + Array(rechecks.prefix(newMessages.isEmpty ? 3 : 1))
@@ -664,7 +669,7 @@ import SwiftData
                     }
                     phase = "Saving validated summary"
                     var summary = decoded
-                    summary.bodyFingerprint = bodyHash; summary.bodyCheckedAt = .now;summary.completionEvidenceChecked=true;summary.reviewPolicyVersion=2
+                    summary.bodyFingerprint = bodyHash; summary.bodyCheckedAt = .now;summary.completionEvidenceChecked=true;summary.reviewPolicyVersion=EmailSummary.reviewPolicyVersion
                     summary.reviewPreferenceRevision=EmailNativeEvidence.hash(MemoryDependencyRules.capture(relevanceContext.memories.filter{$0["purpose"] == "review preference"}))
                     summary.reviewContext = .init(policy:capturedPolicy,memories:relevanceContext.memories,discoveryRevision:reviewPreferenceStamp(message,model:model,evidence:summary.summary+" "+summary.evidence,humanPageSnapshot:discoveryHumanPages),contextPageDependencies:relevanceContext.contextPageDependencies)
                     summary.replyDraftCheckedBody=bodyHash

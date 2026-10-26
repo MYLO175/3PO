@@ -142,6 +142,9 @@ import EventKit
         let deadline=DateRules.localDate(Calendar.current.date(byAdding:.day,value:3,to:now)!)
         let fact=PAMemory(registration:owner,text:"I am building the four-sensor Orion prototype this term.",kind:.context,provenance:"Fictional human",evidence:"I am building the four-sensor Orion prototype this term.")
         guard model.assistant.memory.put(fact) else {throw SummaryFailure.invalid}
+        // A taste is a broad interest; it must not admit every matching promotion by itself.
+        let taste=PAMemory(registration:owner,text:"I enjoy jazz concerts.",kind:.preference,provenance:"Fictional human",evidence:"I enjoy jazz concerts.")
+        guard model.assistant.memory.put(taste) else {throw SummaryFailure.invalid}
         guard model.assistant.memory.saveReviewPreference("Routine Lakeside Club match availability requests can stay quiet.",registration:owner,about:"Routine Lakeside Club match availability requests") else {throw SummaryFailure.invalid}
         let reviewWords="These can stay quiet. Invitations to complete assessments, new assessment stages and results are important to me."
         guard model.assistant.memory.saveReviewPreference(reviewWords,registration:owner,about:"Assessment submission confirmations"),
@@ -179,7 +182,12 @@ import EventKit
             ("project_opportunity","Prototype laboratory <lab@example.invalid>","Four-sensor Orion prototype testing sessions","Free test-lab sessions are now available for four-sensor Orion prototypes being built this term. Optional booking is open; no personal response or action is required."),
             ("general_opportunity","Student careers bulletin <careers@example.invalid>","Innovation careers and skills webinar","This broadcast for all students offers an optional webinar on innovation careers and entrepreneurial skills. It may be interesting, but no personal action or reply is requested."),
             ("policy_broadcast","Summer placements bulletin <placements@example.invalid>","Summer conservation placements bulletin","Applications are open for fully funded summer conservation placements in Devon. This general broadcast invites anyone interested to read the details; no personal reply or action is requested."),
-            ("policy_roundup","Summer placements bulletin <placements@example.invalid>","Optional networking lunch roundup","This general bulletin lists optional networking lunches and business talks. No personal reply or action is requested.")]
+            ("policy_roundup","Summer placements bulletin <placements@example.invalid>","Optional networking lunch roundup","This general bulletin lists optional networking lunches and business talks. No personal reply or action is requested."),
+            ("taste_event","Gig alerts <alerts@gigs.example.invalid>","Next week: the Lantern Quartet live","The Lantern Quartet, a jazz group, play the Riverside Hall next Saturday at 8pm. Tickets are on sale now."),
+            ("booking_receipt","Fictional Rail <no-reply@rail.example.invalid>","Your booking confirmation for Northtown to Southport","Your train from Northtown to Southport on \(deadline) at 09:10 is booked. Your e-ticket is attached. No action is needed."),
+            ("onboarding","Fictional Careers <hello@careers.example.invalid>","Welcome to Fictional Careers","Welcome aboard! Complete your profile to get better job matches and personalised opportunities."),
+            ("signin_notice","Fictional AI <noreply@ai.example.invalid>","New sign-in to your account","We noticed a new sign-in to your Fictional AI account from the Orion prototype test dashboard. If this was you, no action is needed. If not, review your account security."),
+            ("squad_other","Lakeside Club <club@example.invalid>","Lakeside Club squad for Saturday","Saturday's first team: Avery, Brooks, Chen (c), Dalton, Ellis, Fraser, Grant. Kick-off 2pm.")]
         var messages:[String:MailMessage]=[:],contexts:[String:EmailRelevanceContext]=[:],headerContexts:[String:EmailRelevanceContext]=[:],headers:[[String:Any]]=[],bodies:[[String:Any]]=[]
         var headerCases:[String:String]=[:]
         for (index,entry) in cases.enumerated() {
@@ -238,9 +246,13 @@ import EventKit
         checks["current-project opportunity has exact human support without urgency"] = decoded["project_opportunity"]?.worthReading == true && decoded["project_opportunity"]?.personalRelevance?.memories.contains{$0.id == fact.id.uuidString} == true && decoded["project_opportunity"]?.attention == false && decoded["project_opportunity"]?.followUpDate == nil
         checks["general-interest opportunity is quiet without current personal support"] = decoded["general_opportunity"]?.worthReading == false && decoded["general_opportunity"]?.attention == false
         checks["untracked conservation broadcast stays quiet under default policy"] = decoded["policy_broadcast"]?.worthReading == false && decoded["policy_broadcast"]?.attention == false && decoded["policy_broadcast"]?.followUpDate == nil
+        checks["event matching only a taste stays quiet"] = decoded["taste_event"]?.worthReading == false && decoded["taste_event"]?.attention == false && decoded["taste_event"]?.followUpDate == nil
+        checks["booking confirmation needs no attention or reading"] = decoded["booking_receipt"]?.attention == false && decoded["booking_receipt"]?.worthReading == false
+        checks["welcome onboarding prompt needs no attention or reading"] = decoded["onboarding"]?.attention == false && decoded["onboarding"]?.worthReading == false
+        checks["routine sign-in notice stays quiet despite a current-project mention"] = decoded["signin_notice"]?.attention == false && decoded["signin_notice"]?.worthReading == false
         // Changing guidance affects future inference; it must not reconstruct or erase a prepared card.
         guard var savedGuide=decoded["guide"],let guideMessage=messages["guide"] else {throw SummaryFailure.invalid}
-        savedGuide.reviewPolicyVersion = 2
+        savedGuide.reviewPolicyVersion = EmailSummary.reviewPolicyVersion
         savedGuide.reviewContext = .init(policy:capturedPolicy,memories:contexts["guide"]!.memories,discoveryRevision:nil)
         model.emailSummaries.enableMailReviewFixture()
         model.mailData = .init(messages:[guideMessage],accounts:[.init(id:"fictional-mail",title:"Fictional Mail")],errors:[])
@@ -250,12 +262,12 @@ import EventKit
         checks["supported guide is present before the policy edit"] = hadPreparedGuide
         let guideEncoder=JSONEncoder();guideEncoder.outputFormatting=[.sortedKeys]
         let guideSnapshot=try guideEncoder.encode(savedGuide)
-        var legacyGuide=savedGuide;legacyGuide.reviewContext=nil;legacyGuide.reviewPreferenceRevision=nil;legacyGuide.reviewPolicyVersion=2
+        var legacyGuide=savedGuide;legacyGuide.reviewContext=nil;legacyGuide.reviewPreferenceRevision=nil;legacyGuide.reviewPolicyVersion=EmailSummary.reviewPolicyVersion
         checks["legacy version2 without captured policy schedules bounded reassessment"] = model.emailSummaries.preferenceNeedsRecheck(legacyGuide,message:guideMessage,model:model)
         checks["legacy recall remains available while reassessment is pending"] = model.emailSummaries.reviewAssessmentAvailable(legacyGuide,model:model)
-        let customWords=capturedPolicy.text+"\n\n## Priorities I have chosen\nTell me about fully funded summer conservation placements in Devon, including general broadcasts. Keep unrelated networking lunches and business-talk roundups quiet."
+        let customWords=capturedPolicy.text+"\n\n## Priorities I have chosen\nTell me about fully funded summer conservation placements in Devon, including general broadcasts. Keep unrelated networking lunches and business-talk roundups quiet.\nKeep Lakeside Club squad announcements quiet unless I am specifically featured."
         guard model.emailSummaries.savePolicy(customWords,registration:owner,expected:capturedPolicy) else {throw SummaryFailure.invalid}
-        let customPolicy=try capturePolicy(model),customIDs:Set<String>=["policy_broadcast","policy_roundup"]
+        let customPolicy=try capturePolicy(model),customIDs:Set<String>=["policy_broadcast","policy_roundup","squad_other"]
         checks["policy edit invalidates the exact earlier capture"] = !model.emailSummaries.policyAvailable(capturedPolicy) && customPolicy.revision != capturedPolicy.revision && !customPolicy.isDefault
         checks["policy edit preserves exact saved assessment bytes"] = model.emailSummaries.records.first(where:{$0.id == guideMessage.id}).flatMap{try? guideEncoder.encode($0)} == guideSnapshot
         checks["policy edit keeps the prepared guide visible"] = model.reviewInbox.emailCards.contains{$0.id == guideMessage.id}
@@ -281,6 +293,7 @@ import EventKit
         checks["same broadcast gains supported reading priority only under explicit human policy"] = custom["policy_broadcast"]?.worthReading == true && custom["policy_broadcast"]?.policyRelevance?.policy?.matches(customPolicy) == true && custom["policy_broadcast"]?.personalRelevance == nil
         checks["custom tracked broadcast invents no action reply or deadline"] = custom["policy_broadcast"]?.attention == false && custom["policy_broadcast"]?.needsReply != true && custom["policy_broadcast"]?.followUpDate == nil
         checks["custom category is not a blanket sender whitelist"] = custom["policy_roundup"]?.worthReading == false && custom["policy_roundup"]?.attention == false
+        checks["another named player does not meet an 'unless I am featured' exception"] = custom["squad_other"]?.worthReading == false && custom["squad_other"]?.attention == false
         try Data(customTriage.utf8).write(to:EvaluationOutput.url("/tmp/3po-review-policy-fictional-headers.json"),options:.atomic)
         try Data(customResponse.utf8).write(to:EvaluationOutput.url("/tmp/3po-review-policy-fictional-assessments.json"),options:.atomic)
         checks["model and account selection remain unchanged"] = owner == model.inference.activeID && selected == model.inference.selectedModel
