@@ -211,7 +211,7 @@ import SwiftData
         checks["Conversation directory memory-use withdrawal invalidates supplied policy"] = !learned.current() && !model.contextKnowledgeAvailable(registration:owner,versions:learned.referenceVersions)
         model.assistant.memory.enabled=true
         let account=model.conversationContextDirectory(registration:owner)
-        model.chatGPT.activeID="other-fictional-account"
+        model.inference.useChatGPTForFictionalEvaluation();model.chatGPT.activeID="other-fictional-account"
         checks["Conversation directory retains captured account ownership"] = !account.current()
         checks["Conversation directory checks perform no inference or native collection"] = fixture.provider.calls == 0 && fixture.sources.reads == 0
         for key in ["paMemory",ContextPageStore.recordKey] {
@@ -378,7 +378,7 @@ import SwiftData
         checks["Context hierarchy malformed ancestry terminates without mutating identities"] = ContextHierarchyRules.ancestors(of: cycleA.id, items: [cycleA, cycleB]).map(\.id) == [cycleB.id]
         checks["Context hierarchy unknown instruction scopes remain unavailable"] = ContextInstructionScope(key: "topic:unsupported-future-area") == nil
         checks["Context guide and scope fixtures make zero model/source calls"] = fixture.provider.calls == 0 && fixture.sources.reads == 0 && model.aiUsage.state.records.isEmpty
-        model.chatGPT.activeID = "fictional-other-owner"
+        model.inference.useChatGPTForFictionalEvaluation();model.chatGPT.activeID = "fictional-other-owner"
         checks["Context guide and inherited instructions stay account bound"] = !afterMove.current() && model.captureContextPages(registration: owner, query: nil, everyday: true).guideText.isEmpty
         return checks
     }
@@ -628,7 +628,7 @@ import SwiftData
         guard model.assistant.memory.forget(fact.id) else { throw IntegrationError.verification }
         let afterForget = model.withContextPageAvailability(registration: registration, captures: [currentConversation.referenceVersions]) { $0(currentConversation.referenceVersions) }
         checks["Primary context a later advice pass rebuilds after supporting evidence is forgotten"] = !afterForget
-        model.chatGPT.activeID = "fictional-other-context-owner"
+        model.inference.useChatGPTForFictionalEvaluation();model.chatGPT.activeID = "fictional-other-context-owner"
         checks["Primary context source-free policies remain account scoped"] = !guidance.current() && !ordinary.current()
         checks["Primary context inspection and captures make no model or source calls"] = fixture.provider.calls == 0 && fixture.sources.reads == 0 && model.aiUsage.state.records.isEmpty
         return checks
@@ -679,7 +679,7 @@ import SwiftData
                 checks["Context pages correction keeps the current replacement available"] = current.contains { $0.memoryID == replacementID && $0.text.contains("amber laboratory") }
                 checks["Context pages correction preserves original canonical lineage"] = model.assistant.memory.records.first(where: { $0.id == fact.id })?.supersededBy == replacementID
             }
-            fixture.model.chatGPT.activeID = "fictional-other-account"
+            fixture.model.inference.useChatGPTForFictionalEvaluation();fixture.model.chatGPT.activeID = "fictional-other-account"
             checks["Context pages \(operation) cannot retrieve another account's facts or pages"] = model.contextKnowledge(registration: registration).isEmpty && model.captureContextPages(registration: registration, query: nil).text == "{}"
         }
         return checks
@@ -832,9 +832,9 @@ import SwiftData
         checks["Context pages feature instructions share existing saved authorities"] = model.contextPages.pages(registration: registration).isEmpty
         let currentBrief = model.captureContextPages(registration: registration, query: nil, pageID: "instructions:brief")
         let currentReview = model.captureContextPages(registration: registration, query: nil, pageID: "instructions:review")
-        model.chatGPT.activeID = "fictional-other-account"
+        model.inference.useChatGPTForFictionalEvaluation();model.chatGPT.activeID = "fictional-other-account"
         checks["Context pages feature instruction captures reject account changes"] = !currentBrief.current() && !currentReview.current() && model.captureContextPages(registration: registration, query: nil, pageID: "instructions:brief").text == "{}" && model.captureContextPages(registration: registration, query: nil, pageID: "instructions:review").text == "{}"
-        model.chatGPT.activeID = registration
+        model.inference.useChatGPTForFictionalEvaluation();model.chatGPT.activeID = registration
 
         model.contextCalendarAccess = { true }
         let calendars = (0..<80).map { SourceOption(id: "fictional-calendar-\($0)", title: "Calendar \($0)", account: "Fictional calendar account", writable: true, providerID: "fictional-provider-\($0)") }
@@ -869,9 +869,9 @@ import SwiftData
         checks["Context pages calendar exclusion revokes supplied guidance"] = !permitted.current() && excludedRows?.isEmpty == true
         model.assistant.excludedCalendars.remove(calendars[0].id)
         let owned = model.calendarPurposeCapture(sources: [calendars[0]], registration: registration)
-        model.chatGPT.activeID = "fictional-other-account"
+        model.inference.useChatGPTForFictionalEvaluation();model.chatGPT.activeID = "fictional-other-account"
         checks["Context pages calendar guide rejects a changed connected account"] = !owned.current() && model.calendarPurposeCapture(sources: calendars, registration: registration).text == "{}"
-        model.chatGPT.activeID = registration
+        model.inference.useChatGPTForFictionalEvaluation();model.chatGPT.activeID = registration
         model.contextCalendarAccess = { false }
         checks["Context pages calendar permission withdrawal revokes guidance without OS reads"] = !owned.current() && model.calendarPurposeCapture(sources: calendars, registration: registration).text == "{}"
         checks["Context pages instruction fixtures make zero inference requests"] = fixture.provider.calls == 0 && fixture.sources.reads == 0 && model.aiUsage.state.records.isEmpty
@@ -1031,7 +1031,7 @@ import SwiftData
         settings.set(true, forKey: "assistantContextEnabled"); settings.set(true, forKey: "paMemoryEnabled")
         model.assistant = AssistantService(connection: provider, container: container, settings: settings, imageDirectory: images)
         model.emailSummaries = EmailSummaryService(container: container, memory: model.assistant.memory)
-        model.chatGPT.activeID = provider.activeID
+        model.inference.useChatGPTForFictionalEvaluation();model.chatGPT.activeID = provider.activeID
         model.contextCalendarAccess = { false }
     }
     func clean() { provider.release(); settings.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: images) }

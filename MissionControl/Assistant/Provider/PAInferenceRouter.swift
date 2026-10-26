@@ -70,6 +70,12 @@ enum PAInferenceRouteError: LocalizedError, Equatable {
         defaults.set(next.rawValue, forKey: Keys.provider)
     }
 
+    #if DEBUG
+    /// Fictional evaluations simulate accounts through ChatGPT's own state. They own their
+    /// process, so this in-memory selection is never saved and never changes the human's choice.
+    func useChatGPTForFictionalEvaluation() { provider = .chatGPT }
+    #endif
+
     /// A nil model means the current selection; captured models keep their provider.
     func backend(for model: String?) throws -> any PAInferenceConnection {
         switch model.map(PAProvider.init(model:)) ?? provider {

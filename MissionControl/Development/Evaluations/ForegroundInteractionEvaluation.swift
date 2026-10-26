@@ -54,7 +54,7 @@ import SwiftData
             defer {settings.removePersistentDomain(forName:suite);try? FileManager.default.removeItem(at:images)}
             settings.set(true,forKey:"assistantContextEnabled");settings.set(true,forKey:"paMemoryEnabled")
             let assistant=AssistantService(connection:provider,container:container,settings:settings,imageDirectory:images)
-            model.assistant=assistant;model.chatGPT.activeID=provider.activeID;model.chatGPT.selectedModel=provider.selectedModel
+            model.assistant=assistant;model.inference.useChatGPTForFictionalEvaluation();model.chatGPT.activeID=provider.activeID;model.chatGPT.selectedModel=provider.selectedModel
             let fields:[String:Any]=["id":"fictional-unrelated-mail","accountID":"fictional-mail","account":"Fictional Mail","messageID":1,"internetMessageID":"fixture@example.invalid","sender":"Fictional newsletter","subject":"Unrelated announcement","received":Date.now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
             let message=try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:fields))
             let summary=EmailSummary(id:message.id,registration:provider.activeID,fingerprint:EmailSummary.fingerprint(message),summary:"Unrelated announcement",attention:false,reason:"Optional reading",evidence:"Optional reading",bodyFingerprint:"fictional-body",message:message,worthReading:true)

@@ -52,7 +52,7 @@ import Foundation
         let modes=["unrelated-memory","selected-memory","unrelated-project","selected-project","native-hint","native-change","writing","writing-native-change","native-addition","native-after-cap","native-outside-window","native-repeated-hints","completion-health","completion-change","mail-flags","unrelated-assessment","selected-assessment","historical-ack-display","historical-ack-support","human-dismiss","unrelated-dismiss","selected-source-dismiss","individual-dismiss","undo-independent","pending-change","permission","account","model","stop","memory-controls-cycle","learning-controls-cycle","preferences","draft editing","historical-row-current","historical-row-source-stale","historical-row-changed","historical-row-retire-stale-source","historical-row-retire-changed"]
         for mode in modes + ["nested-projects","selected-nested-project"] {
             let now=Date.now,reader=ReviewGuardNativeFixture(now:Date.now),hold=ReviewGuardHold(),model=DashboardModel(nativeSources:reader)
-            model.chatGPT.activeID="fictional-review-guard-"+mode;model.chatGPT.inferenceVerified=true;model.chatGPT.selectedModel="fictional-model"
+            model.inference.useChatGPTForFictionalEvaluation();model.chatGPT.activeID="fictional-review-guard-"+mode;model.chatGPT.inferenceVerified=true;model.chatGPT.selectedModel="fictional-model"
             let suite="ReviewCapturedInput-"+UUID().uuidString
             let settings=UserDefaults(suiteName:suite)!
             settings.set(true,forKey:"assistantContextEnabled")
@@ -188,7 +188,7 @@ import Foundation
             case "human-dismiss":model.emailSummaries.dismiss(message.id,model:model,expectedRegistration:owner,expectedVersion:ReviewAcknowledgementRules.emailVersion(message,summary))
             case "pending-change":var changed=model.proactive.state.records;changed[0].message="Changed pending concern";try model.proactive.seedAdviceFixture(changed,model:model)
             case "permission":model.proactive.evaluationNativeAccess={false}
-            case "account":model.chatGPT.activeID="fictional-foreign-owner"
+            case "account":model.inference.useChatGPTForFictionalEvaluation();model.chatGPT.activeID="fictional-foreign-owner"
             case "model":model.chatGPT.selectedModel="fictional-new-model"
             case "preferences":model.assistant.preferences="New fictional preference for subsequent jobs"
             case "draft editing":model.assistant.draft="An independent unsent draft";model.heartbeat.noteDraftEditing()
@@ -269,7 +269,7 @@ import Foundation
             let isolated=UserDefaults(suiteName:suite)!
             isolated.set(true,forKey:"assistantContextEnabled");isolated.set("Fictional original preferences",forKey:"assistantPreferences")
             defer {isolated.removePersistentDomain(forName:suite)}
-            model.chatGPT.activeID="fictional-brief-"+mode;model.chatGPT.selectedModel="fictional-original-model";model.chatGPT.inferenceVerified=true
+            model.inference.useChatGPTForFictionalEvaluation();model.chatGPT.activeID="fictional-brief-"+mode;model.chatGPT.selectedModel="fictional-original-model";model.chatGPT.inferenceVerified=true
             model.assistant=AssistantService(connection:model.inference,container:model.container,settings:isolated)
             let service=model.briefings,owner=model.inference.activeID
             let originalPrompt=service.writingPrompt(owner)
@@ -286,7 +286,7 @@ import Foundation
             case "writing":model.writing=true
             case "learning controls":let original=model.assistant.memory.learningEnabled;model.assistant.memory.learningEnabled.toggle();model.assistant.memory.learningEnabled=original
             case "memory controls":model.assistant.memory.enabled=false;model.assistant.memory.enabled=true
-            case "account":model.chatGPT.activeID="fictional-different-account"
+            case "account":model.inference.useChatGPTForFictionalEvaluation();model.chatGPT.activeID="fictional-different-account"
             case "source access":model.assistant.contextEnabled=false
             default:service.cancel()
             }
