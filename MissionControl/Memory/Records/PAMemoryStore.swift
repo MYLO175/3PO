@@ -388,7 +388,7 @@ import SwiftData
             for index in state.records.indices where state.records[index].supersededBy == nil && CommitmentRules.groupKey(state.records[index]) == key { state.records[index].commitmentGroupRevision=version }
         }
         do {
-            let data = try LocalRecordCoding.preservingUnknown(state, original: ReviewPreferenceConversion.envelopeOriginal(loadedBytes))
+            let data = try LocalRecordCoding.preservingUnknown(state, original: loadedBytes)
             var updates = committing, versions = expected
             updates["paMemory"] = data; versions["paMemory"] = LocalRecordVersion(loadedBytes)
             try LocalRecordRepository(container: container).write(updates, expected: versions)
@@ -421,13 +421,6 @@ enum ReviewPreferenceConversion {
         var original: Data
         var migratedAt: Date
         var items: [Item]
-    }
-    /// Preserve opaque fields even when converting the old bare memory array.
-    static func envelopeOriginal(_ data: Data?) throws -> Data? {
-        guard let data else { return nil }
-        let value = try JSONSerialization.jsonObject(with: data)
-        guard value is [Any] else { return data }
-        return Data("{\"version\":1,\"records\":".utf8) + data + Data(",\"suppressed\":{}}".utf8)
     }
     @MainActor static func run(repository: LocalRecordRepository, now: Date = .now) throws -> Receipt? {
         let legacyBytes = try repository.read(legacyKey)
@@ -463,7 +456,7 @@ enum ReviewPreferenceConversion {
         }
         envelope.records.append(contentsOf: items.map(\.memory))
         let proof = Receipt(original: legacyBytes, migratedAt: now, items: items)
-        let data = try LocalRecordCoding.preservingUnknown(envelope, original: envelopeOriginal(memoryBytes))
+        let data = try LocalRecordCoding.preservingUnknown(envelope, original: memoryBytes)
         try repository.write(["paMemory": data, receiptKey: JSONEncoder().encode(proof)], removing: [legacyKey], now: now, expected: [legacyKey: .bytes(legacyBytes), "paMemory": LocalRecordVersion(memoryBytes), receiptKey: .missing])
         return proof
     }

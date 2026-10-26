@@ -106,14 +106,9 @@ import SwiftData
         let beforeStaleSave = try staleRepo.read("paMemory")!
         check(!beforeConversion.put(existing))
         try check(staleRepo.read("paMemory") == beforeStaleSave)
-        // Bare legacy memory arrays retain future per-record fields when wrapped.
-        let (_, arrayRepo) = try fixture()
-        try arrayRepo.write(["paMemory": JSONSerialization.data(withJSONObject: rows), ReviewPreferenceConversion.legacyKey: original])
-        _ = try ReviewPreferenceConversion.run(repository: arrayRepo, now: now)
-        try check((object(arrayRepo.read("paMemory")!)["records"] as! [[String: Any]])[0]["futureFact"] != nil)
         let (_, numericRepo) = try fixture()
-        let arrayBytes = try JSONEncoder().encode([existing])
-        let numericText = String(decoding: arrayBytes, as: UTF8.self).replacingOccurrences(of: "[{", with: "[{\"futureNumber\":1e127,")
+        let envelopeBytes = try JSONEncoder().encode(MemoryEnvelope(records: [existing]))
+        let numericText = String(decoding: envelopeBytes, as: UTF8.self).replacingOccurrences(of: "\"records\":[{", with: "\"records\":[{\"futureNumber\":1e127,")
         let numericBytes = Data(numericText.utf8)
         try numericRepo.write(["paMemory": numericBytes, ReviewPreferenceConversion.legacyKey: original])
         do { _ = try ReviewPreferenceConversion.run(repository: numericRepo); preconditionFailure("Expected opaque numeric refusal") } catch {}
