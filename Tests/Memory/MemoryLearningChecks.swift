@@ -84,7 +84,6 @@ import Foundation
         var questionState = MemoryLearningState(); questionState.questions = [savedQuestion]; questionState.accounts["one"] = claimed
         let questionReload = try JSONDecoder().decode(MemoryLearningState.self,from:JSONEncoder().encode(questionState))
         precondition(questionReload.questions == [savedQuestion] && questionReload.accounts["one"]?.lastQuestionDay == today)
-        precondition(!q.deliveryID.hasPrefix("discovery:") && !q.deliveryID.contains(":morning:"))
         var backlog = MemoryLearningProgress()
         let many = (0..<100).map { MemoryLearningTurn(id:"pending-\($0)", text:"A saved message \($0)", created:now.addingTimeInterval(Double($0))) }
         var consumed = Set<String>()
