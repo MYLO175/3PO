@@ -68,7 +68,7 @@ Right-click a reply and choose **Context details…** to inspect supplied memory
 
 Memory stores preferences, context and commitments with evidence, dates, certainty and version history. Human facts and separately permitted source interpretations remain distinguishable. Source text never overwrites a human fact or grants action authority.
 
-Open **PA menu → Context** or **Settings → Context** for the everyday overview, project/topic pages, working changes and feature instructions. Each project has a direct Context shortcut. Pages update during heartbeats; an explicit Run heartbeat finishes the captured pending-page backlog. Original facts, evidence, correction history and learning controls are under **Supporting facts and controls**. Opening/searching/inspection makes no AI or source request.
+Open **PA menu → Context** or **Settings → Context** for the everyday overview, project/topic pages, working changes and feature instructions. Each project has a direct Context shortcut. Pages update during heartbeats; an explicit Run heartbeat finishes the captured pending-page backlog. Each generated page keeps its 20 most recent versions for History and Restore; pages you write keep their full history. Original facts, evidence, correction history and learning controls are under **Supporting facts and controls**. Opening/searching/inspection makes no AI or source request.
 
 Corrections retain earlier wording and evidence; Restore makes a new version. Retiring outdated human context removes it from current recall while preserving history. Forget is a separate operation. Memory resolution does not complete a project task or native Reminder.
 
