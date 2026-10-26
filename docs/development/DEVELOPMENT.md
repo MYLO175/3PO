@@ -43,6 +43,8 @@ MISSIONCONTROL_BUILD_ROOT=/private/tmp/3po-my-change ./scripts/build.sh
 
 The script sets `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`, prepares helper dependencies/runtime, regenerates the icon and `MissionControl.xcodeproj`, then calls Xcode. Generated project/icon/runtime files still have one checkout writer. [generate-project.py](../../scripts/project/generate-project.py) contains signing settings; [package-whatsapp-runtime.py](../../scripts/packaging/package-whatsapp-runtime.py) packages the checksum-pinned helper runtime. The installed helper does not need the build machine's Node installation.
 
+`./scripts/build.sh --release` builds the optimised app under `derived-data/Build/Products/Release/3PO.app`. Use Release for everyday installation; the evaluation tiers below need a Debug candidate, which also includes the Developer checks menu and previews. The generators only rewrite files whose bytes change, so a checkout in iCloud Drive does not collect conflict copies.
+
 Open the generated Xcode project for source editing. A compile does not install, launch or establish UI/model acceptance.
 
 ## Choose the right checks
@@ -85,6 +87,8 @@ Use native/model tiers only for their documented effects and authorised scope. T
 - **Storage:** edit only owned keys atomically; preserve legacy/unknown supported data and refuse corrupt-state overwrite.
 
 ## Updating an existing installation
+
+`scripts/install.sh [--dry-run] [--launch] [path/to/3PO.app]` does this end to end: it checks the candidate's identity and signature, refuses if another 3PO copy is running, quits the installed app, backs up its records, helper data, preferences and previous app under `~/Library/Application Support/3PO Development Backups/`, swaps the app atomically and confirms that the saved records are byte-identical before any launch. Without a path it installs the Release product of `MISSIONCONTROL_BUILD_ROOT`.
 
 Quit the existing app and make a recoverable backup of its complete store and supporting files before replacing it. Preserve the bundle, registration, helper and Keychain identities. Verify the replacement's signature and saved records, and run only one normal copy against personal data.
 
