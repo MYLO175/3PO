@@ -47,6 +47,14 @@ The script sets `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`, prep
 
 Open the generated Xcode project for source editing. A compile does not install, launch or establish UI/model acceptance.
 
+To try a visible change before it is merged, open a source-free preview:
+
+```sh
+./scripts/preview.sh --preview-calendar-scroll
+```
+
+[preview.sh](../../scripts/preview.sh) builds Debug into `/private/tmp/3po-preview` (or `MISSIONCONTROL_PREVIEW_ROOT`; `--no-build` reuses it) and opens a copy named **3PO Preview** with its own bundle ID. It runs beside the installed 3PO without sharing its preferences or window, and only the named preview runs. `--preview-calendar-scroll` shows the Calendar widget's continuous week strip with fictional, read-only events and a Wide/Narrow width switch.
+
 ## Choose the right checks
 
 ```sh
