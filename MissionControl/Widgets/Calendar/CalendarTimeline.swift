@@ -46,10 +46,52 @@ enum CalendarTimelineFocus {
         }
         return calendar.date(bySettingHour:target,minute:0,second:0,of:start) ?? start
     }
-    static func anchor(_ date: Date) -> String { "calendar-hour:" + String(Int(date.timeIntervalSince1970)) }
+    /// Elapsed time from midnight, so repeated DST hours keep distinct offsets.
+    static func offset(_ date: Date, calendar: Calendar = .current) -> Double {
+        date.timeIntervalSince(calendar.startOfDay(for:date))/3600*hourHeight
+    }
     static func workingHours(on day: Date, calendar: Calendar = .current) -> DateInterval {
         DateInterval(start:calendar.date(bySettingHour:9,minute:0,second:0,of:day)!,end:calendar.date(bySettingHour:18,minute:0,second:0,of:day)!)
     }
+}
+
+// Week view is one long strip of days, so horizontal scrolling runs across
+// week boundaries. Only columns near the viewport are built and events load in
+// four-week blocks; the strip is re-based only near its far ends.
+enum CalendarWeekStrip {
+    static let weeksEachSide = 104
+    static let days = (2*weeksEachSide+1)*7
+    static let buffer = 7
+    static let block = 28
+    static func start(around day: Date, calendar: Calendar = .current) -> Date {
+        calendar.date(byAdding:.weekOfYear,value:-weeksEachSide,to:calendar.dateInterval(of:.weekOfYear,for:day)!.start)!
+    }
+    /// Calendar days, not elapsed time, so DST days count once.
+    static func index(of day: Date, from start: Date, calendar: Calendar = .current) -> Int {
+        calendar.dateComponents([.day],from:calendar.startOfDay(for:start),to:calendar.startOfDay(for:day)).day ?? 0
+    }
+    static func day(_ index: Int, from start: Date, calendar: Calendar = .current) -> Date {
+        calendar.date(byAdding:.day,value:index,to:calendar.startOfDay(for:start))!
+    }
+    static func visibleColumns(viewport: Double, columnWidth: Double) -> Int {
+        guard viewport > 0, columnWidth > 0 else { return 1 }
+        return max(1,Int(((viewport+8)/(columnWidth+8)+0.01).rounded(.down)))
+    }
+    /// Lead with the week's first day when the date still fits on screen; otherwise with the date.
+    static func leading(for date: Date, visible: Int, calendar: Calendar = .current) -> Date {
+        let week = calendar.dateInterval(of:.weekOfYear,for:date)!.start
+        return index(of:date,from:week,calendar:calendar) < visible ? week : calendar.startOfDay(for:date)
+    }
+    static func rendered(leading: Int, visible: Int) -> Range<Int> {
+        let lower = min(days,max(0,leading-buffer))
+        return lower..<min(days,max(lower,leading+visible+buffer))
+    }
+    /// The leading column's block plus one either side: the visible days are always loaded.
+    static func loaded(leading: Int, start: Date, calendar: Calendar = .current) -> DateInterval {
+        let current = max(0,min(days-1,leading))/block
+        return DateInterval(start:day(max(0,(current-1)*block),from:start,calendar:calendar),end:day(min(days,(current+2)*block),from:start,calendar:calendar))
+    }
+    static func comfortable(_ leading: Int, visible: Int) -> Bool { leading >= 2*block && leading+visible <= days-2*block }
 }
 
 enum CalendarTimelineMove {

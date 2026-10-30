@@ -81,6 +81,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 ChatApprovalPreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") {
                 CalendarDragPreview(model:model)
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-calendar-scroll") {
+                CalendarScrollPreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {
                 if ProcessInfo.processInfo.arguments.contains("--heartbeat-progress-preview") {HeartbeatProgressPreviewScreen(model:model)}
                 else if ProcessInfo.processInfo.arguments.contains("--workspace-colours-preview") {WorkspaceThemePreview()}

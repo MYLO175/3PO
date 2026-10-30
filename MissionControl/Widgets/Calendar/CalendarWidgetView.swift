@@ -7,6 +7,7 @@ struct CalendarWidgetView: View {
     var widgetID: UUID? = nil
     #if DEBUG
     var previewFixture: CalendarDragFixture? = nil
+    var previewSnapshot: ((DateInterval) -> CalendarSnapshot)? = nil
     #endif
     @State private var snapshot = CalendarSnapshot(sources:[],events:[])
     @State private var loading = false
@@ -20,6 +21,13 @@ struct CalendarWidgetView: View {
     @State private var pendingMove: AgendaEvent?
     @State private var moveError: String?
     @State private var mounted = false
+    @State private var timelinePosition = ScrollPosition()
+    @State private var timelineWidth = 0.0
+    @State private var weekStrip: Date?
+    @State private var leadingIndex = 0
+    @State private var placedLeading: Date?
+    @State private var writtenDate: Date?
+    @State private var placement = 0
     private var calendar: Calendar { .current }
     private var mode: String { configuration.calendarMode }
     private var range: DateInterval {
@@ -28,9 +36,20 @@ struct CalendarWidgetView: View {
             let start = calendar.dateInterval(of:.weekOfYear,for:month.start)!.start
             return DateInterval(start:start,end:calendar.date(byAdding:.day,value:42,to:start)!)
         }
-        if mode == "week" { return calendar.dateInterval(of:.weekOfYear,for:configuration.date)! }
+        if mode == "week" { return CalendarWeekStrip.loaded(leading:weekStrip == nil ? CalendarWeekStrip.index(of:configuration.date,from:stripStart) : leadingIndex,start:stripStart) }
         let start = calendar.startOfDay(for:configuration.date)
         return DateInterval(start:start,end:calendar.date(byAdding:.day,value:mode == "day" ? 1 : 7,to:start)!)
+    }
+    private var stripStart: Date { weekStrip ?? CalendarWeekStrip.start(around:configuration.date) }
+    private var weekColumnWidth: Double { CalendarTimelineFocus.columnWidth(available:max(1,timelineWidth),days:7) }
+    private var visibleColumns: Int { CalendarWeekStrip.visibleColumns(viewport:timelineWidth,columnWidth:weekColumnWidth) }
+    private var dateTitle: String {
+        if mode == "month" { return configuration.date.formatted(.dateTime.month(.wide).year()) }
+        if mode == "week", weekStrip != nil, timelineWidth > 0 {
+            let first = CalendarWeekStrip.day(leadingIndex,from:stripStart), last = CalendarWeekStrip.day(leadingIndex+visibleColumns-1,from:stripStart)
+            return first < last ? (first..<last).formatted(.interval.day().month(.abbreviated)) : first.formatted(.dateTime.weekday(.abbreviated).day().month(.wide))
+        }
+        return configuration.date.formatted(.dateTime.weekday(.abbreviated).day().month(.wide))
     }
     private var events: [AgendaEvent] {
         snapshot.events.filter { !configuration.sourceExclusions.contains($0.calendarID) }.map { event in
@@ -53,7 +72,7 @@ struct CalendarWidgetView: View {
             }.buttonStyle(.borderless).controlSize(.small)
             HStack(spacing:8) {
                 Button { showDatePicker.toggle() } label: {
-                    HStack(spacing:4) { Text(configuration.date.formatted(mode == "month" ? .dateTime.month(.wide).year() : .dateTime.weekday(.abbreviated).day().month(.wide))).font(.callout.weight(.medium)); Image(systemName:"chevron.down").font(.caption2) }
+                    HStack(spacing:4) { Text(dateTitle).font(.callout.weight(.medium)); Image(systemName:"chevron.down").font(.caption2) }
                 }.help("Choose calendar date").accessibilityLabel("Choose calendar date").popover(isPresented:$showDatePicker) {
                     DatePicker("Calendar date",selection:$configuration.date,displayedComponents:.date).datePickerStyle(.graphical).labelsHidden().padding(12)
                 }
@@ -90,7 +109,8 @@ struct CalendarWidgetView: View {
         do {
             let value: CalendarSnapshot
             #if DEBUG
-            if let previewFixture { value = try await model.eventKit.calendarDragSnapshot(previewFixture,range:range) }
+            if let previewSnapshot { value = previewSnapshot(range) }
+            else if let previewFixture { value = try await model.eventKit.calendarDragSnapshot(previewFixture,range:range) }
             else { value = ProcessInfo.processInfo.arguments.contains("--sample") ? model.calendarData : try await model.widgetCalendars.load(range) }
             #else
             value = ProcessInfo.processInfo.arguments.contains("--sample") ? model.calendarData : try await model.widgetCalendars.load(range)
@@ -99,7 +119,63 @@ struct CalendarWidgetView: View {
         } catch is CancellationError {} catch { self.error = error.localizedDescription }
     }
     private func navigate(_ direction: Int) {
+        // Week arrows scroll the strip by seven days from wherever it rests.
+        if mode == "week", let placed = placedLeading, timelineWidth > 0 {
+            let leading = CalendarWeekStrip.day(leadingIndex+7*direction,from:stripStart)
+            advanceDate(CalendarWeekStrip.index(of:leading,from:placed),leading:leading)
+            showWeek(from:leading,animated:true)
+            return
+        }
         configuration.date = calendar.date(byAdding:mode == "month" ? .month : .day,value:direction * (mode == "week" ? 7 : 1),to:configuration.date)!
+    }
+    /// Outside date changes, Now and view switches place the timeline; scrolling never refocuses it.
+    private func placeTimeline() {
+        guard timelineWidth > 0, mode == "day" || mode == "week" else { return }
+        let week = mode == "week", visible = week ? visibleColumns : 1
+        let leading = week ? CalendarWeekStrip.leading(for:configuration.date,visible:visible) : calendar.startOfDay(for:configuration.date)
+        let shown = DateInterval(start:leading,end:CalendarWeekStrip.day(visible,from:leading))
+        let focus = focusRequest > 0 && shown.contains(.now) ? max(calendar.dateInterval(of:.hour,for:.now)!.start.addingTimeInterval(-3600),calendar.startOfDay(for:.now)) : CalendarTimelineFocus.hour(on:leading,now:.now,events:events)
+        guard week else { timelinePosition.scrollTo(y:CalendarTimelineFocus.offset(focus)); return }
+        placedLeading = leading
+        showWeek(from:leading,y:CalendarTimelineFocus.offset(focus))
+    }
+    private func showWeek(from leading: Date, y: Double? = nil, animated: Bool = false) {
+        var index = CalendarWeekStrip.index(of:leading,from:stripStart)
+        if weekStrip == nil || !CalendarWeekStrip.comfortable(index,visible:visibleColumns) {
+            weekStrip = CalendarWeekStrip.start(around:leading); index = CalendarWeekStrip.index(of:leading,from:stripStart)
+        } else if animated {
+            withAnimation { timelinePosition.scrollTo(x:Double(index)*(weekColumnWidth+8)) }
+            return
+        }
+        leadingIndex = index
+        let x = Double(index)*(weekColumnWidth+8)
+        if let y { timelinePosition.scrollTo(point:CGPoint(x:x,y:y)) } else { timelinePosition.scrollTo(x:x) }
+    }
+    /// Once scrolling rests, the remembered date moves with the strip so it keeps its place on screen.
+    private func settleWeek() {
+        guard mode == "week", dragCapture == nil, let placed = placedLeading else { return }
+        let leading = CalendarWeekStrip.day(leadingIndex,from:stripStart), moved = CalendarWeekStrip.index(of:leading,from:placed)
+        if moved != 0 { advanceDate(moved,leading:leading) }
+        if !CalendarWeekStrip.comfortable(leadingIndex,visible:visibleColumns) { showWeek(from:leading) }
+    }
+    private func advanceDate(_ days: Int, leading: Date) {
+        let date = calendar.date(byAdding:.day,value:days,to:configuration.date)!
+        placedLeading = leading; writtenDate = date; configuration.date = date
+    }
+    private func timelineColumns(_ indices: Range<Int>, from start: Date) -> [CalendarTimelineColumn] {
+        let days = indices.map { CalendarWeekStrip.day($0,from:start) }
+        guard let first = days.first, let last = days.last, let end = calendar.date(byAdding:.day,value:1,to:last) else { return [] }
+        let nearby = events.filter { $0.start < end && $0.end >= first }
+        return zip(indices,days).map { index,day in CalendarTimelineColumn(id:index,day:day,events:nearby.filter { DateRules.overlaps($0,day:day) }) }
+    }
+    private func mostAllDayEvents(in interval: DateInterval) -> Int {
+        let allDay = events.filter { $0.allDay && $0.start < interval.end && $0.end >= interval.start }
+        var day = interval.start, most = 0
+        while !allDay.isEmpty, day < interval.end {
+            most = max(most,allDay.filter { DateRules.overlaps($0,day:day) }.count)
+            day = calendar.date(byAdding:.day,value:1,to:day)!
+        }
+        return most
     }
     private func color(_ event: AgendaEvent) -> Color { DashboardView(model:model).sourceColor(event.calendarID,explicit:snapshot.sources.first { $0.id == event.calendarID }?.color) }
     private func dayEvents(_ date: Date) -> [AgendaEvent] { events.filter { DateRules.overlaps($0,day:date) } }
@@ -180,58 +256,64 @@ struct CalendarWidgetView: View {
     }
     private var timelineView: some View {
         GeometryReader { geometry in
-            let days = mode == "week" ? 7 : 1
-            let width = CalendarTimelineFocus.columnWidth(available:max(1,geometry.size.width-14),days:days)
-            let focusDay = days == 7 && range.contains(Date.now) ? Date.now : range.start
-            let focus = focusRequest > 0 && range.contains(Date.now) ? max(Calendar.current.dateInterval(of:.hour,for:.now)!.start.addingTimeInterval(-3600),Calendar.current.startOfDay(for:.now)) : CalendarTimelineFocus.hour(on:focusDay,now:.now,events:events)
-            let allDayCount = (0..<days).map { dayEvents(calendar.date(byAdding:.day,value:$0,to:range.start)!).filter(\.allDay).count }.max() ?? 0
+            let week = mode == "week"
+            let width = week ? weekColumnWidth : CalendarTimelineFocus.columnWidth(available:max(1,geometry.size.width-14),days:1)
+            let indices = week ? CalendarWeekStrip.rendered(leading:leadingIndex,visible:visibleColumns) : 0..<1
+            let columns = timelineColumns(indices,from:week ? stripStart : calendar.startOfDay(for:configuration.date))
+            // Counted over the loaded block, so the header height holds steady while scrolling.
+            let allDayCount = mostAllDayEvents(in:range)
             let allDayHeight = Double(min(3,allDayCount))*24 + (allDayCount > 3 ? 20 : 0)
-            ScrollViewReader { proxy in
-                ScrollView(days == 1 ? .vertical : [.horizontal,.vertical]) {
-                    LazyVStack(spacing:0,pinnedViews:[.sectionHeaders]) {
-                        Section {
-                            HStack(alignment:.top,spacing:8) {
-                                ForEach(0..<days,id:\.self) { offset in
-                                    let day = calendar.date(byAdding:.day,value:offset,to:range.start)!
-                                    CalendarDayTimeline(events:dayEvents(day).filter { !$0.allDay },day:day,color:color,select:select,canDrag:canDrag,coordinateSpace:timelineSpace,activeDragID:dragCapture?.event.id,beginDrag:beginDrag,previewStart:{ start,dx,dy in
-                                        CalendarTimelineMove.destination(start:start,day:day,dx:dx,dy:dy,columnWidth:width,visibleDays:days,range:range)
-                                    },move:move).frame(width:width)
-                                        .zIndex(dayEvents(day).contains(where:{ $0.id == dragCapture?.event.id }) ? 1 : 0)
-                                }
-                            }.coordinateSpace(name:timelineSpace).padding(.bottom,10)
-                        } header: {
-                            HStack(alignment:.top,spacing:8) {
-                                ForEach(0..<days,id:\.self) { offset in
-                                    let day = calendar.date(byAdding:.day,value:offset,to:range.start)!
-                                    VStack(alignment:.leading,spacing:6) {
-                                        Text(day.formatted(.dateTime.weekday(.abbreviated).day())).font(.subheadline.weight(.semibold)).foregroundStyle(calendar.isDateInToday(day) ? Color.accentColor : Color.primary)
-                                        if allDayCount > 0 {
-                                            let items = dayEvents(day).filter(\.allDay)
-                                            VStack(alignment:.leading,spacing:3) {
-                                                ForEach(items.prefix(3)) { event in Button { select(event) } label: { Text("All day · " + event.title).font(.caption2).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading).padding(4).background(color(event).opacity(0.12),in:RoundedRectangle(cornerRadius:4)) }.buttonStyle(.plain).help(event.title) }
-                                                if items.count > 3 { Button("+\(items.count-3) all-day events") { configuration.date = day; configuration.calendarMode = "agenda" }.font(.caption2).buttonStyle(.borderless) }
-                                            }.frame(height:allDayHeight,alignment:.top)
-                                        }
-                                    }.frame(width:width,alignment:.leading)
-                                }
-                            }.padding(.vertical,8)
-                                .background(palette[.widget])
-                                .overlay(alignment:.bottom) { Rectangle().fill(Color.primary.opacity(0.08)).frame(height:1) }
-                        }
-                    }.frame(width:Double(days)*width+Double(days-1)*8)
-
-                }
-                .task(id:"\(mode):\(range.start.timeIntervalSince1970):\(focusRequest)") {
-                    await Task.yield()
-                    proxy.scrollTo(CalendarTimelineFocus.anchor(focus),anchor:.top)
-                }
+            let inset = Double(indices.lowerBound)*(width+8)
+            ScrollView(week ? [.horizontal,.vertical] : .vertical) {
+                LazyVStack(alignment:.leading,spacing:0,pinnedViews:[.sectionHeaders]) {
+                    Section {
+                        HStack(alignment:.top,spacing:8) {
+                            ForEach(columns) { column in
+                                CalendarDayTimeline(events:column.events.filter { !$0.allDay },day:column.day,color:color,select:select,canDrag:canDrag,coordinateSpace:timelineSpace,activeDragID:dragCapture?.event.id,beginDrag:beginDrag,previewStart:{ start,dx,dy in
+                                    CalendarTimelineMove.destination(start:start,day:column.day,dx:dx,dy:dy,columnWidth:width,visibleDays:week ? 7 : 1,range:range)
+                                },move:move).frame(width:width)
+                                    .zIndex(column.events.contains(where:{ $0.id == dragCapture?.event.id }) ? 1 : 0)
+                            }
+                        }.coordinateSpace(name:timelineSpace).padding(.leading,inset).padding(.bottom,10)
+                    } header: {
+                        HStack(alignment:.top,spacing:8) {
+                            ForEach(columns) { column in
+                                let day = column.day
+                                VStack(alignment:.leading,spacing:6) {
+                                    Text(day.formatted(calendar.component(.day,from:day) == 1 ? .dateTime.weekday(.abbreviated).day().month(.abbreviated) : .dateTime.weekday(.abbreviated).day())).font(.subheadline.weight(.semibold)).foregroundStyle(calendar.isDateInToday(day) ? Color.accentColor : Color.primary)
+                                    if allDayCount > 0 {
+                                        let items = column.events.filter(\.allDay)
+                                        VStack(alignment:.leading,spacing:3) {
+                                            ForEach(items.prefix(3)) { event in Button { select(event) } label: { Text("All day · " + event.title).font(.caption2).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading).padding(4).background(color(event).opacity(0.12),in:RoundedRectangle(cornerRadius:4)) }.buttonStyle(.plain).help(event.title) }
+                                            if items.count > 3 { Button("+\(items.count-3) all-day events") { configuration.date = day; configuration.calendarMode = "agenda" }.font(.caption2).buttonStyle(.borderless) }
+                                        }.frame(height:allDayHeight,alignment:.top)
+                                    }
+                                }.frame(width:width,alignment:.leading)
+                            }
+                        }.padding(.leading,inset).padding(.vertical,8).frame(maxWidth:.infinity,alignment:.leading)
+                            .background(palette[.widget])
+                            .overlay(alignment:.bottom) { Rectangle().fill(Color.primary.opacity(0.08)).frame(height:1) }
+                    }
+                }.frame(width:Double(week ? CalendarWeekStrip.days : 1)*(width+8)-8,alignment:.leading)
             }
+            .scrollPosition($timelinePosition)
+            // A four-year strip's scroller thumb is a sliver that jumps months; scrolling and the arrows suffice.
+            .scrollIndicators(.never,axes:.horizontal)
+            .onScrollGeometryChange(for:Int.self) { week ? Int(($0.contentOffset.x/(width+8)).rounded()) : 0 } action: { _,leading in if week { leadingIndex = leading } }
         }
+        .onGeometryChange(for:Double.self) { $0.size.width } action: { timelineWidth = $0 }
+        .task(id:"\(mode):\(focusRequest):\(placement):\(timelineWidth > 0)") { await Task.yield(); placeTimeline() }
+        .task(id:leadingIndex) { try? await Task.sleep(for:.milliseconds(500)); if !Task.isCancelled { settleWeek() } }
+        .onChange(of:configuration.date) { _,date in if date == writtenDate { writtenDate = nil } else { placement += 1 } }
+        .onChange(of:timelineWidth) { old,_ in if old > 0, mode == "week", let placedLeading { showWeek(from:placedLeading) } }
     }
 }
 private struct CalendarEventSelection: Identifiable {
     let id = UUID()
     var event: AgendaEvent
+}
+private struct CalendarTimelineColumn: Identifiable {
+    var id: Int; var day: Date; var events: [AgendaEvent]
 }
 private struct CalendarEventDragCapture {
     var event: AgendaEvent; var account: String?; var sourceRevision: Int; var widgetID: UUID?
@@ -252,15 +334,13 @@ private struct CalendarDayTimeline: View {
         let work = CalendarTimelineFocus.workingHours(on:day)
         ZStack(alignment:.topLeading) {
             Rectangle().fill(Color.accentColor.opacity(0.035)).padding(.leading,40).frame(height:work.duration/3600*hourHeight).offset(y:work.start.timeIntervalSince(interval.start)/3600*hourHeight)
-            // Real stacked row bounds let ScrollViewReader locate each hour.
-            // Offset-only rows all retain their midnight layout origin.
             VStack(spacing:0) {
                 ForEach(0..<hours,id:\.self) { hour in
                     let date = Calendar.current.date(byAdding:.hour,value:hour,to:interval.start)!
                     HStack(alignment:.top,spacing:4) {
                         Text(date.formatted(.dateTime.hour().minute())).font(.system(size:10)).foregroundStyle(.secondary).frame(width:36)
                         Rectangle().fill(Color.primary.opacity(0.07)).frame(height:1)
-                    }.frame(height:hourHeight,alignment:.top).id(CalendarTimelineFocus.anchor(date))
+                    }.frame(height:hourHeight,alignment:.top)
                         .help(date.formatted(date:.omitted,time:.shortened) + " " + (Calendar.current.timeZone.abbreviation(for:date) ?? ""))
                 }
             }

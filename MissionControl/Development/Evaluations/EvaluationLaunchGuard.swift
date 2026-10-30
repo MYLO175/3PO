@@ -57,6 +57,7 @@ enum EvaluationLaunchGuard {
         "--preview-chat-approval",
         "--cleanup-request-markers",
         "--preview-calendar-drag",
+        "--preview-calendar-scroll",
         "--preview-images",
         "--preview-life-and-plans",
         "--preview-memory-inspection",

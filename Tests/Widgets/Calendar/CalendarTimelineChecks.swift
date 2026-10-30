@@ -29,7 +29,26 @@ import Foundation
         let work = CalendarTimelineFocus.workingHours(on:fall.start,calendar:calendar)
         assert(calendar.component(.hour,from:work.start) == 9 && calendar.component(.hour,from:work.end) == 18)
         assert(work.duration == 9*3600)
-        assert(CalendarTimelineFocus.anchor(fall.start.addingTimeInterval(3600)) != CalendarTimelineFocus.anchor(fall.start.addingTimeInterval(7200)))
+        assert(CalendarTimelineFocus.offset(second,calendar:calendar)-CalendarTimelineFocus.offset(first,calendar:calendar) == CalendarTimelineFocus.hourHeight)
+        // Week strip: whole calendar days across DST, week-boundary continuity and bounded work.
+        let strip = CalendarWeekStrip.start(around:fall.start,calendar:calendar), centre = CalendarWeekStrip.weeksEachSide*7
+        assert(CalendarWeekStrip.index(of:fall.start.addingTimeInterval(13*3600),from:strip,calendar:calendar) == centre)
+        assert(CalendarWeekStrip.day(centre,from:strip,calendar:calendar) == fall.start && CalendarWeekStrip.day(centre+1,from:strip,calendar:calendar) == fall.end)
+        assert(CalendarWeekStrip.day(CalendarWeekStrip.index(of:day(2026,3,29).start,from:strip,calendar:calendar),from:strip,calendar:calendar) == day(2026,3,29).start)
+        let saturday = CalendarWeekStrip.day(centre+6,from:strip,calendar:calendar), sunday = CalendarWeekStrip.day(centre+7,from:strip,calendar:calendar)
+        assert(calendar.dateComponents([.day],from:saturday,to:sunday).day == 1 && calendar.isDate(sunday,equalTo:saturday.addingTimeInterval(86400),toGranularity:.day))
+        assert(CalendarWeekStrip.visibleColumns(viewport:1200,columnWidth:CalendarTimelineFocus.columnWidth(available:1200,days:7)) == 7)
+        assert(CalendarWeekStrip.visibleColumns(viewport:400,columnWidth:125) == 3 && CalendarWeekStrip.visibleColumns(viewport:0,columnWidth:125) == 1)
+        let thursday = day(2026,10,29).start.addingTimeInterval(15*3600)
+        assert(CalendarWeekStrip.leading(for:thursday,visible:7,calendar:calendar) == fall.start)
+        assert(CalendarWeekStrip.leading(for:thursday,visible:3,calendar:calendar) == day(2026,10,29).start)
+        assert(CalendarWeekStrip.rendered(leading:centre,visible:7) == centre-7..<centre+14)
+        assert(CalendarWeekStrip.rendered(leading:0,visible:3) == 0..<10 && CalendarWeekStrip.rendered(leading:CalendarWeekStrip.days-3,visible:7).upperBound == CalendarWeekStrip.days)
+        let loaded = CalendarWeekStrip.loaded(leading:centre,start:strip,calendar:calendar)
+        assert(loaded.contains(CalendarWeekStrip.day(centre-7,from:strip,calendar:calendar)) && loaded.contains(CalendarWeekStrip.day(centre+13,from:strip,calendar:calendar)))
+        assert(CalendarWeekStrip.index(of:loaded.end,from:loaded.start,calendar:calendar) == 3*CalendarWeekStrip.block)
+        assert(CalendarWeekStrip.loaded(leading:0,start:strip,calendar:calendar).start == strip)
+        assert(CalendarWeekStrip.comfortable(centre,visible:7) && !CalendarWeekStrip.comfortable(10,visible:7) && !CalendarWeekStrip.comfortable(CalendarWeekStrip.days-20,visible:7))
         let dropped = CalendarTimelineMove.start(on:range.start,y:9.14*CalendarTimelineFocus.hourHeight,calendar:calendar)!
         assert(dropped == range.start.addingTimeInterval(9.25*3600))
         assert(CalendarTimelineMove.start(on:range.start,y:-1,calendar:calendar) == nil && CalendarTimelineMove.start(on:range.start,y:.nan,calendar:calendar) == nil)
@@ -49,6 +68,6 @@ import Foundation
         assert(CalendarTimelineMove.destination(start:range.start.addingTimeInterval(-3600),day:range.start,dx:0,dy:52,columnWidth:900,visibleDays:1,range:range,calendar:calendar) == range.start)
         assert(CalendarTimelineMove.destination(start:start,day:range.start,dx:-500,dy:0,columnWidth:125,visibleDays:7,range:range,calendar:calendar) == nil)
         assert(CalendarTimelineMove.destination(start:second,day:fall.start,dx:0,dy:0,columnWidth:900,visibleDays:1,range:fall,calendar:calendar) == second)
-        print("PASS: overlap lanes, clipped overnight moves, quarter-hour direct drops, week boundaries, viewport focus and distinct repeated DST hours")
+        print("PASS: overlap lanes, clipped overnight moves, quarter-hour direct drops, week boundaries, viewport focus, distinct repeated DST hours and the continuous week strip")
     }
 }
