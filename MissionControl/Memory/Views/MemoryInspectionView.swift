@@ -225,7 +225,7 @@ struct PAContextCaptureView:View {
                                 Text("Chat: " + (model.whatsapp.chats.first { $0.id == id }?.name ?? "Selected chat")).font(.caption).foregroundStyle(.secondary)
                             }
                             if let id = lookup.targetID.flatMap(UUID.init(uuidString:)), lookup.tool == "read_life_items" {
-                                Text("Space: " + (model.assistant.projects.items(registration, includeTopics: true).first { $0.id == id }?.title ?? "Unavailable space")).font(.caption).foregroundStyle(.secondary)
+                                Text("Project: " + (model.assistant.projects.items(registration, includeTopics: true).first { $0.id == id }?.title ?? "Unavailable space")).font(.caption).foregroundStyle(.secondary)
                             }
                             ForEach((lookup.pageIDs ?? []).filter { $0 != lookup.targetID }, id: \.self) { id in pageLink(id) }
                             Text(lookupOutcome(lookup)).font(.caption).foregroundStyle(lookup.status == "failed" ? Color.orange : Color.secondary)

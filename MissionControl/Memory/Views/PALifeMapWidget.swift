@@ -145,7 +145,7 @@ struct LifeMapAreaDetails:View {
                 ScrollView {
                     VStack(alignment:.leading,spacing:12) {
                         Text("Saved workspace items · \(items.count)").font(.headline)
-                        Text("Your folders, projects, notes and work items. Open one to see its contents.").font(.caption).foregroundStyle(.secondary)
+                        Text("Your projects, notes and tasks. Open one to see its contents.").font(.caption).foregroundStyle(.secondary)
                         if items.isEmpty { Text("No saved workspace items in this area yet.").font(.callout).foregroundStyle(.secondary) }
                         ForEach(items) { item in
                             Button {

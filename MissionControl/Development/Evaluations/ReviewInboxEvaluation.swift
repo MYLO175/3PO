@@ -486,7 +486,7 @@ import EventKit
         }
         var space=record;space.id=UUID().uuidString;space.kind="project";space.sourceTitle="Orion follow-up";space.proposedRemoval=nil;space.message="Create a space for this follow-up?"
         let spaceRow=await model.prepareReviewRow(space,capturedDraft:true)
-        checks["shared space row captures a concrete new space at Projects home"]=spaceRow.action != nil && spaceRow.destination == "Projects home · New space"
+        checks["shared space row captures a concrete new space at Projects home"]=spaceRow.action != nil && spaceRow.destination == "Projects home · New project"
         if let action=spaceRow.action {
             let job=ReviewWorkJob(conversationID:UUID(),scope:model.reviewWorkScope(),source:model.reviewSource(space),mode:.approval,human:"yes",actions:[action])
             let saved=try await model.performReviewAction(job,action,valid:{true})

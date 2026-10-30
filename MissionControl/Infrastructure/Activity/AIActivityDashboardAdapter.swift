@@ -150,7 +150,7 @@ struct AIActivityNavigation:Identifiable {var id=UUID();var registration:String;
                         let label:String
                         if let baseline=payload.nativeBaseline {label=(baseline.kind == .event ? "Calendar event" : "Reminder")+(payload.nativeOperation == "remove" ? " removed" : " updated")}
                         else if let request=payload.nativeRequest {label=request.kind == .event ? "Calendar event created" : "Reminder created"}
-                        else if let project=payload.project {label=project.kind == .space ? "Space created" : "Task created"}
+                        else if let project=payload.project {label=project.kind == .space ? "Project created" : "Task created"}
                         else if payload.localDraft != nil {label="Reply draft copied"}
                         else {return result}
                         let title=payload.project?.title ?? payload.nativeFields?.title ?? payload.nativeBaseline?.title ?? action.title

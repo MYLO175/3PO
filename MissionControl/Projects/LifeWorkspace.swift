@@ -8,7 +8,7 @@ enum LifeItemKind: String, Codable, CaseIterable, Identifiable {
     static let allCases: [LifeItemKind] = [.space, .task]
     var workspaceKind: LifeItemKind { isWork ? .task : .space }
     var id: String { rawValue }
-    var title: String { isWork ? "Task" : "Space" }
+    var title: String { isWork ? "Task" : "Project" }
     var symbol: String { isWork ? "checkmark.circle" : "folder" }
     var isWork: Bool { self == .task || self == .milestone }
 }
@@ -137,10 +137,10 @@ enum LifeWorkspaceRules {
     static func validateChange(_ item: LifeItem, from old: LifeItem?, in items: [LifeItem]) throws {
         if old == nil || item.parentID != old?.parentID, let parent = item.parentID,
            items.first(where: { $0.id == parent })?.kind.isWork == true {
-            throw LifeWorkspaceFailure.message("Choose a space to put this item inside. Tasks cannot contain other items.")
+            throw LifeWorkspaceFailure.message("Choose a project to put this item inside. Tasks cannot contain other items.")
         }
         if item.kind.isWork, old?.kind.isWork == false, items.contains(where: { $0.parentID == item.id }) {
-            throw LifeWorkspaceFailure.message("Move this space’s contents before changing it into a task.")
+            throw LifeWorkspaceFailure.message("Move this project’s contents before changing it into a task.")
         }
     }
     static func key(_ label: String) -> String { label.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_GB")).split(whereSeparator: { $0.isWhitespace }).joined(separator: " ") }

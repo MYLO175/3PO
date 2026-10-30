@@ -226,7 +226,7 @@ enum AIActivitySummary {
             let remainder=String(text.dropFirst(prefix.count)).trimmingCharacters(in:.whitespacesAndNewlines)
             return compact || remainder.isEmpty ? label : label+": "+remainder
         }
-        let natural=["Reminder created","Reminder updated","Reminder removed","Calendar event created","Calendar event updated","Calendar event removed","Space created","Task created","Reply draft copied","Feedback saved"]
+        let natural=["Reminder created","Reminder updated","Reminder removed","Calendar event created","Calendar event updated","Calendar event removed","Project created","Space created","Task created","Reply draft copied","Feedback saved"]
         if compact,let label=natural.first(where:{text.hasPrefix($0+": ") || text == $0}) {return label}
         // Older verified Review outcomes used quoted titles in the final reply.
         // A captured typed operation supplies the kind; prose never establishes a save.

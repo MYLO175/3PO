@@ -60,7 +60,7 @@ struct LifeDeleteSheet:View {
         VStack(alignment:.leading,spacing:16) {
             Text("Delete “\(item.title)”?").font(.title2.weight(.semibold))
             Text("It will move to Recently deleted with its saved identity and links. Calendar, Reminders and historical memory stay saved.").font(.callout)
-            if descendants > 0 { Text("This branch contains \(descendants) items.").foregroundStyle(.secondary);Button("Delete folder, keep contents") { remove(true) };Text("Contents move to this folder’s parent.").font(.caption).foregroundStyle(.secondary) }
+            if descendants > 0 { Text("This branch contains \(descendants) items.").foregroundStyle(.secondary);Button("Delete project, keep contents") { remove(true) };Text("Contents move to the project it sits in.").font(.caption).foregroundStyle(.secondary) }
             if let error { Text(error).font(.caption).foregroundStyle(.orange) }
             HStack { Button("Cancel",action:close).keyboardShortcut(.cancelAction);Spacer();Button(descendants > 0 ? "Move entire branch to Recently deleted" : "Move to Recently deleted",role:.destructive) { remove(false) } }
         }.padding(24).frame(width:480).onAppear { revision=model.assistant.projects.revision }
@@ -85,7 +85,7 @@ struct LifeMoveSheet:View {
             Text("Move “\(item.title)”").font(.title2.weight(.semibold))
             Picker("Into",selection:$parent) { Text("Projects home").tag(Optional<UUID>.none);ForEach(parents) { value in Text(LifeItemQuery.path(value,in:all).map(\.title).joined(separator:" / ")).tag(Optional(value.id)) } }
             Picker("Position",selection:$before) { Text("At the end").tag(Optional<UUID>.none);ForEach(all.filter{$0.parentID == parent && $0.id != item.id}) { value in Text("Before "+value.title).tag(Optional(value.id)) } }
-            Text("Contents and relationships move with this item. The PA keeps the folder you choose.").font(.caption).foregroundStyle(.secondary)
+            Text("Contents and relationships move with this item. The PA keeps the place you choose.").font(.caption).foregroundStyle(.secondary)
             if let error { Text(error).font(.caption).foregroundStyle(.orange) }
             HStack { Button("Cancel",action:close).keyboardShortcut(.cancelAction);Spacer();Button("Move") { move() }.keyboardShortcut(.defaultAction) }
         }.padding(24).frame(width:500).onAppear { parent=item.parentID;revision=model.assistant.projects.revision }.onChange(of:parent) { before=nil }

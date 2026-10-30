@@ -139,7 +139,7 @@ enum WidgetKind: String, Codable, CaseIterable {
 enum ProjectPageSection:String,CaseIterable,Identifiable {
     case spaces,tasks,notes
     var id:String {rawValue}
-    var title:String {switch self {case .spaces:"Spaces";case .tasks:"Tasks";case .notes:"Notes"}}
+    var title:String {switch self {case .spaces:"Subprojects";case .tasks:"Tasks";case .notes:"Notes"}}
 }
 
 struct WidgetConfiguration: Codable, Equatable {

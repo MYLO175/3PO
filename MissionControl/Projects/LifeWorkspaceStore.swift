@@ -78,21 +78,21 @@ struct LifeWorkspaceEditUndo {
     }
     /// Preserve parent/placement metadata while reusing the exact structural Undo path.
     func reorderFolder(_ id:UUID,registration:String,before sibling:UUID?,expectedRevision:UUID)throws {
-        guard revision == expectedRevision,let item=items(registration,includeTopics:true).first(where:{$0.id == id}),!item.kind.isWork else { throw LifeWorkspaceFailure.message("The folder order changed.") }
+        guard revision == expectedRevision,let item=items(registration,includeTopics:true).first(where:{$0.id == id}),!item.kind.isWork else { throw LifeWorkspaceFailure.message("The project order changed.") }
         let siblings=state.items.filter{$0.registration == registration && $0.parentID == item.parentID && $0.conversationID == item.conversationID && $0.deletedAt == nil}
         let old=LifeWorkspaceRules.ordered(siblings).filter{!$0.kind.isWork}
         var peers=old.filter{$0.id != id}
         if let sibling {
-            guard let index=peers.firstIndex(where:{$0.id == sibling}) else { throw LifeWorkspaceFailure.message("The insertion folder changed.") }
+            guard let index=peers.firstIndex(where:{$0.id == sibling}) else { throw LifeWorkspaceFailure.message("The project order changed.") }
             peers.insert(item,at:index)
         } else { peers.append(item) }
         guard peers.map(\.id) != old.map(\.id) else {return}
-        guard !old.contains(where:{$0.placement?.status == "running"}) else { throw LifeWorkspaceFailure.message("Folder organisation is running. Wait until it finishes before reordering.") }
+        guard !old.contains(where:{$0.placement?.status == "running"}) else { throw LifeWorkspaceFailure.message("Project organisation is running. Wait until it finishes before reordering.") }
         // Reuse folder slots; task records and their editor/operation revisions stay exact.
         let positions=Dictionary(uniqueKeysWithValues:siblings.enumerated().map{($0.element.id,$0.offset)})
         var slots=old.map{$0.sortOrder ?? positions[$0.id] ?? 0}.sorted()
         for index in slots.indices.dropFirst() where slots[index] <= slots[index-1] {
-            guard slots[index-1] < Int.max else { throw LifeWorkspaceFailure.message("This folder order cannot be adjusted.") }
+            guard slots[index-1] < Int.max else { throw LifeWorkspaceFailure.message("This project order cannot be adjusted.") }
             slots[index]=slots[index-1]+1
         }
         var candidate=state,originals:[LifeItem]=[]
@@ -252,13 +252,13 @@ struct LifeWorkspaceEditUndo {
     /// A board that includes subprojects checks the page and, separately, the task's own captured folder.
     static func applyDrag(_ id:UUID,stage:LifeTaskStage,taskParent:UUID?,capturedParent:UUID?,currentParent:UUID?,registration:String,activeRegistration:String,capturedIDs:Set<UUID>,currentIDs:Set<UUID>,expectedRevision:UUID,store:LifeWorkspaceStore)throws {
         guard registration == activeRegistration,capturedParent == currentParent else {
-            throw LifeWorkspaceFailure.message("This folder changed. Try moving the task again.")
+            throw LifeWorkspaceFailure.message("This project changed. Try moving the task again.")
         }
         try apply(id,stage:stage,parent:taskParent,registration:registration,permittedIDs:capturedIDs.intersection(currentIDs),expectedRevision:expectedRevision,store:store)
     }
     static func apply(_ id:UUID,stage:LifeTaskStage,parent:UUID?,registration:String,permittedIDs:Set<UUID>,expectedRevision:UUID,store:LifeWorkspaceStore)throws {
         guard store.revision == expectedRevision,permittedIDs.contains(id),let item=store.items(registration,includeTopics:true).first(where:{$0.id == id}),item.kind.isWork,item.parentID == parent,item.status != .archived else {
-            throw LifeWorkspaceFailure.message("This folder changed. Try moving the task again.")
+            throw LifeWorkspaceFailure.message("This project changed. Try moving the task again.")
         }
         guard item.status != stage.status else { return }
         var value=item;value.status=stage.status
@@ -272,16 +272,16 @@ struct LifeWorkspaceEditUndo {
         let permitted=capturedIDs.intersection(currentIDs)
         guard registration == activeRegistration,capturedPage == currentPage,store.revision == expectedRevision,permitted.contains(id),
               let item=store.items(registration,includeTopics:true).first(where:{$0.id == id}),!item.kind.isWork,item.parentID == parent else {
-            throw LifeWorkspaceFailure.message("This folder changed. Try reordering it again.")
+            throw LifeWorkspaceFailure.message("This project changed. Try reordering it again.")
         }
         if let before {
             guard before != id,permitted.contains(before),store.items(registration,includeTopics:true).contains(where:{$0.id == before && !$0.kind.isWork && $0.parentID == parent && $0.conversationID == item.conversationID}) else {
-                throw LifeWorkspaceFailure.message("The folder order changed. Try reordering it again.")
+                throw LifeWorkspaceFailure.message("The project order changed. Try reordering it again.")
             }
         }
         // A missing legacy parent must never turn a reorder into an implicit filing operation.
         if let parent,!store.items(registration,topic:item.conversationID).contains(where:{$0.id == parent}) {
-            throw LifeWorkspaceFailure.message("Choose a current parent with Move before reordering this folder.")
+            throw LifeWorkspaceFailure.message("Choose a current parent with Move before reordering this project.")
         }
         try store.reorderFolder(id,registration:registration,before:before,expectedRevision:expectedRevision)
     }

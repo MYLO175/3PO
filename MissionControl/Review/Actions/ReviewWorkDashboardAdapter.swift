@@ -144,12 +144,12 @@ struct ReviewPreparedRow:Identifiable {
                 let old=session.item.kind == .event ? session.item.start : session.item.due,new=edited.kind == .event ? edited.start : edited.due
                 row.detail=(old?.formatted(date:.abbreviated,time:.shortened) ?? "No date")+" → "+(new?.formatted(date:.abbreviated,time:review.hasTime ? .shortened : .omitted) ?? "No date")+"\n"+record.message
             } else if record.kind == "project" {
-                guard let id=UUID(uuidString:record.id),!title.isEmpty else {throw ActionFailure.message("This space needs a concrete name before approval.")}
+                guard let id=UUID(uuidString:record.id),!title.isEmpty else {throw ActionFailure.message("This project needs a concrete name before approval.")}
                 payload.project = .init(id:id,registration:record.registration,kind:.space,title:String(title.prefix(160)),notes:record.evidence,due:record.proposedDate?.localDay)
-                row.title="Create space: "+title;row.destination="Projects home · New space"
+                row.title="Create project: "+title;row.destination="Projects home · New project"
                 row.detail="Name: "+title+"\n"+record.message
             } else if record.kind == "projectTask" {
-                guard let target=record.proposedProjectTask?.target,let id=UUID(uuidString:record.id) else {row.error="Choose an existing project space below before adding this task.";return row}
+                guard let target=record.proposedProjectTask?.target,let id=UUID(uuidString:record.id) else {row.error="Choose an existing project below before adding this task.";return row}
                 payload.project = .init(id:id,registration:record.registration,conversationID:target.conversationID,kind:.task,title:String(title.prefix(160)),parentID:target.id,notes:record.evidence,due:record.proposedDate?.localDay)
                 row.destination="Task in "+target.title
                 row.detail=(record.proposedDate?.localDay.map{"Due "+$0+"\n"} ?? "No deadline assigned\n")+record.message

@@ -157,7 +157,7 @@ struct ContextPagesView: View {
                         projectRow(row, description: descriptions[row.id, default: "Awaiting first context page"], searching: searching)
                             .tag(ContextPageDestination.project(row.id))
                     }
-                    if rows.isEmpty { Text(searching ? "No matching projects" : "No project spaces yet").font(.caption).foregroundStyle(.secondary) }
+                    if rows.isEmpty { Text(searching ? "No matching projects" : "No projects yet").font(.caption).foregroundStyle(.secondary) }
                 }
                 Section("Topics", isExpanded: sectionExpanded(.topics, searching: searching)) {
                     ForEach(ContextTopicRoute.all) { route in
@@ -207,7 +207,7 @@ struct ContextPagesView: View {
                         .contentShape(Rectangle())
                 }.buttonStyle(.borderless).disabled(searching)
                     .accessibilityLabel((row.expanded ? "Collapse " : "Expand ") + row.item.title)
-                    .help(searching ? "Matching project paths stay open during search" : row.expanded ? "Hide nested spaces" : "Show nested spaces")
+                    .help(searching ? "Matching project paths stay open during search" : row.expanded ? "Hide subprojects" : "Show subprojects")
             } else { Color.clear.frame(width: 16, height: 20).accessibilityHidden(true) }
             VStack(alignment: .leading, spacing: 3) {
                 Label(row.item.title, systemImage: row.item.displaySymbol).lineLimit(1)
@@ -321,15 +321,15 @@ struct ContextPagesView: View {
         let roots = projects.filter { $0.parentID == nil || !ids.contains($0.parentID!) }
         return VStack(alignment: .leading, spacing: 18) {
             Text("3PO guide").font(.title2.weight(.semibold))
-            Text("3PO starts ordinary chats with a compact guide to your information, then opens relevant pages and tools. This map covers your spaces, topics and instructions; viewing it makes no AI request.").foregroundStyle(.secondary)
+            Text("3PO starts ordinary chats with a compact guide to your information, then opens relevant pages and tools. This map covers your projects, topics and instructions; viewing it makes no AI request.").foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 8) {
                 Text("Where to look").font(.headline)
                 Text("Projects and topics explain background and purpose. Calendar and Reminders provide current schedules and tasks. Feature instructions describe how you want help. Working changes provide relevant information received since the last consolidation.")
-                Text("Spaces inherit context and guidance from their parents. More specific guidance applies inside that subspace. Your own description takes priority over the maintained summary.").font(.callout).foregroundStyle(.secondary)
+                Text("Projects inherit context and guidance from the projects they sit in. More specific guidance applies inside that subproject. Your own description takes priority over the maintained summary.").font(.callout).foregroundStyle(.secondary)
                 Button("Edit assistant instructions…") { expandedSections.insert(.instructions); selection = .feature(.assistant) }
             }.frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12).background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
-            Text("Your spaces").font(.headline)
+            Text("Your projects").font(.headline)
             spaceTable(roots, records: records)
             Text("Your topics").font(.headline)
             Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 12) {
@@ -348,7 +348,7 @@ struct ContextPagesView: View {
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
             Text("Your instructions").font(.headline)
-            Text("Open the relevant guidance for how 3PO should help. Instructions for a particular space or topic are inside its page. Instructions stay with their existing controls and do not grant access or approve actions.").font(.callout).foregroundStyle(.secondary)
+            Text("Open the relevant guidance for how 3PO should help. Instructions for a particular project or topic are inside its page. Instructions stay with their existing controls and do not grant access or approve actions.").font(.callout).foregroundStyle(.secondary)
             Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 12) {
                 GridRow { Text("Instructions").font(.caption.weight(.semibold)); Text("When to use them").font(.caption.weight(.semibold)) }
                 ForEach(ContextInstructionRoute.all) { route in
@@ -370,20 +370,20 @@ struct ContextPagesView: View {
         return VStack(alignment: .leading, spacing: 8) {
             if !path.isEmpty { Text(path.joined(separator: " › ")).font(.caption).foregroundStyle(.secondary) }
             Text(item.title).font(.title2.weight(.semibold))
-            Text(row?.text.isEmpty == false ? row!.text : "No description yet. A heartbeat will review useful context for this space.").font(.callout)
+            Text(row?.text.isEmpty == false ? row!.text : "No description yet. A heartbeat will review useful context for this project.").font(.callout)
             Text(row?.human == true ? "Description written by you" : "Description maintained by 3PO").font(.caption).foregroundStyle(.secondary)
         }
     }
     private func spaceChildren(_ item: LifeItem, records: [ContextKnowledgeRecord]) -> some View {
         let children = projects.filter { $0.parentID == item.id }
         return VStack(alignment: .leading, spacing: 10) {
-            if !children.isEmpty { Text("Subspaces").font(.headline); spaceTable(children, records: records) }
+            if !children.isEmpty { Text("Subprojects").font(.headline); spaceTable(children, records: records) }
         }.padding(.top, 18)
     }
     private func spaceTable(_ items: [LifeItem], records: [ContextKnowledgeRecord]) -> some View {
         let rows = model.contextSpaceDescriptions(registration: registration, items: items, records: records)
         return Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 12) {
-            GridRow { Text("Space").font(.caption.weight(.semibold)); Text("Description").font(.caption.weight(.semibold)) }
+            GridRow { Text("Project").font(.caption.weight(.semibold)); Text("Description").font(.caption.weight(.semibold)) }
             ForEach(rows) { row in
                 GridRow(alignment: .top) {
                     Button(row.title) { selection = .project(row.id); expandedSections.insert(.projects); expandedProjects.formUnion(ContextSidebarProjectTree(items: projects).ancestors(of: row.id)) }.buttonStyle(.link)
@@ -397,7 +397,7 @@ struct ContextPagesView: View {
     }
     private func scopedInstructions(_ scope: ContextInstructionScope, records: [ContextKnowledgeRecord]) -> some View {
         let page = model.contextScopedInstruction(scope, registration: registration, records: records)
-        let title: String = switch scope { case .space: "Instructions for this space"; case .topic: "Instructions for this area" }
+        let title: String = switch scope { case .space: "Instructions for this project"; case .topic: "Instructions for this area" }
         let inherited = model.contextGuidance(scopes: [scope], registration: registration, items: projects, records: records).rows.filter { $0["scope"] != scope.key }
         return GroupBox {
             VStack(alignment: .leading, spacing: 10) {
@@ -412,7 +412,7 @@ struct ContextPagesView: View {
                 if let page { ContextMarkdownBody(markdown: page.markdown) }
                 else { Text("Describe how you want 3PO to help here. Your instructions are kept separate from the factual description and are not rewritten by a heartbeat.").font(.callout).foregroundStyle(.secondary) }
                 if !inherited.isEmpty {
-                    DisclosureGroup("Inherited from parent spaces") {
+                    DisclosureGroup("Inherited from parent projects") {
                         ForEach(Array(inherited.enumerated()), id: \.offset) { _, row in
                             VStack(alignment: .leading, spacing: 4) { Text(row["title"] ?? "Parent instructions").font(.caption.weight(.semibold)); ContextMarkdownBody(markdown: row["markdown"] ?? "") }.padding(.top, 8)
                         }
