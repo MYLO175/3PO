@@ -388,7 +388,7 @@ struct SettingsView: View {
     @State private var contextFeature: ContextFeature?
     @Environment(\.openWindow) private var openWindow
     /// "Memory" keeps the saved identifier of the controls page, now shown as Learning.
-    private let pages = ["General", "Connections", "External assistants", "Assistant", "Background", "Context", "Memory", "Usage", "Help"]
+    private let pages = ["General", "Appearance", "Connections", "External assistants", "Assistant", "Background", "Context", "Memory", "Usage", "Help"]
     var body: some View {
         NavigationSplitView {
             List(selection:selectionBinding) {
@@ -424,6 +424,8 @@ struct SettingsView: View {
                         Text("Calendar and Reminders are read from macOS. Reminders remains the source of truth for to-do and shopping tasks. Apple Mail is read-only. Refresh collects source changes locally and makes no AI calls.").font(.callout)
                         Button("Open Privacy & Security") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security")!) }
                     }
+                case "Appearance":
+                    AppearanceSettings()
                 case "Connections":
                     AIProviderSettings(model:model)
                     WhatsAppSettings(service:model.whatsapp,registration:model.inference.activeID,heartbeatReviewEnabled:model.heartbeat.whatsappEnabled)
@@ -467,6 +469,7 @@ struct SettingsView: View {
     private func icon(for page:String)->String {
         switch page {
         case "General": "gearshape"
+        case "Appearance": "paintpalette"
         case "Connections": "link"
         case "External assistants": "point.3.connected.trianglepath.dotted"
         case "Assistant": "sparkles"
