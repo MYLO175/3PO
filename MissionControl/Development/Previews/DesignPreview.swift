@@ -135,7 +135,8 @@ private struct DesignPreviewContent: View {
                     Divider()
                     line("10:00", "Design studio · bring printed drafts")
                     line("13:00", "Lunch with Alex")
-                    line("by 17:30", "Collect the parcel")
+                    line("17:30", "Collect the parcel", due: true)
+                    line(nil, "Essay draft due", trailing: "Mon")
                 }
                 card("Calendar", "calendar") {
                     line("10:00", "Design studio")
@@ -146,9 +147,9 @@ private struct DesignPreviewContent: View {
             }
             GridRow {
                 card("Reminders", "checklist") {
-                    line("17:30", "Collect parcel")
-                    line("Tomorrow", "Email tutor about the essay")
-                    line("", "Buy printer paper")
+                    reminder("Collect parcel", time: "17:30", due: true)
+                    reminder("Email tutor about the essay", trailing: "Tomorrow")
+                    reminder("Buy printer paper")
                 }
                 card("Your PA", "sparkles") {
                     HStack { Spacer(); Text("What’s left for today?").padding(.horizontal, 12).padding(.vertical, 7).background(palette[.userBubble], in: RoundedRectangle(cornerRadius: 14)) }
@@ -172,12 +173,30 @@ private struct DesignPreviewContent: View {
         .padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .workspaceSurface(palette)
     }
-    private func line(_ time: String, _ text: String) -> some View {
+    /// Clock times sit in a fixed-width pill (red when it's a deadline); words such as
+    /// “Tomorrow” or a weekday are plain trailing text, never a pill.
+    private func line(_ time: String?, _ text: String, due: Bool = false, trailing: String? = nil) -> some View {
         HStack(spacing: 10) {
-            Text(time).font(.system(size: 11.5, weight: .semibold).monospacedDigit()).foregroundStyle(palette[.accent])
-                .frame(minWidth: 54).padding(.vertical, 3).background(palette[.accent].opacity(time.isEmpty ? 0 : 0.14), in: RoundedRectangle(cornerRadius: 8))
-            Text(text)
+            if let time { timePill(time, due: due) }
+            else { Circle().fill(palette[.accent].opacity(0.6)).frame(width: 5, height: 5).frame(width: 52) }
+            Text(text).lineLimit(1)
+            Spacer(minLength: 6)
+            if let trailing { Text(trailing).font(.system(size: 12)).foregroundStyle(palette[.text].opacity(0.55)) }
         }
+    }
+    private func reminder(_ title: String, time: String? = nil, due: Bool = false, trailing: String? = nil) -> some View {
+        HStack(spacing: 10) {
+            Circle().strokeBorder(palette[.text].opacity(0.35), lineWidth: 1.5).frame(width: 16, height: 16)
+            Text(title).lineLimit(1)
+            Spacer(minLength: 6)
+            if let time { timePill(time, due: due) }
+            if let trailing { Text(trailing).font(.system(size: 12)).foregroundStyle(palette[.text].opacity(0.55)) }
+        }
+    }
+    private func timePill(_ time: String, due: Bool) -> some View {
+        let colour = due ? Color.red : palette[.accent]
+        return Text(time).font(.system(size: 11.5, weight: .semibold).monospacedDigit()).foregroundStyle(colour)
+            .frame(width: 52).padding(.vertical, 3).background(colour.opacity(0.13), in: RoundedRectangle(cornerRadius: 8))
     }
     private func set(_ next: SwirlOrb.Mood) { run?.cancel(); mood = next }
     /// Six stages like a real heartbeat, then success for six seconds, then Ready.
