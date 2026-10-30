@@ -88,7 +88,7 @@ import SwiftData
         let feedback=model.emailSummaries.feedback.activeID != nil && !(model.emailSummaries.feedback.ownedHeartbeatRunID.map{model.heartbeat.ownsLearningRun($0)} ?? false)
         let foreground=model.reviewWork.busy || feedback || model.assistant.busy || model.inference.busy || model.projectPlacement.busy || learning
         let proposals=model.proactive.state.accounts[model.inference.activeID]
-        let preview=["--sample","--preview-review-inbox","--preview-settings"].contains{ProcessInfo.processInfo.arguments.contains($0)}
+        let preview=["--sample","--preview-review-inbox","--preview-settings","--preview-settings-context"].contains{ProcessInfo.processInfo.arguments.contains($0)}
         return .init(registration:model.inference.activeID,model:model.inference.selectedModel,sourceSettings:model.proactive.sourceSettingsScope(model),scope:model.proactive.scope(model),whatsappChoices:model.whatsapp.choicesRevision,whatsappIdentity:model.whatsapp.linkedIdentity,contextEnabled:model.assistant.contextEnabled,inferenceVerified:model.inference.inferenceVerified,usagePaused:model.inference.usagePaused,workBusy:foreground || model.writing || model.briefings.busy || model.proactive.busy || model.emailSummaries.busy,foregroundBusy:foreground,permitted:!preview,emailEnabled:model.emailSummaries.enabled,proposalsEnabled:model.proactive.enabled,proposalAllowanceReached:proposals?.day == BriefingRules.day(model.heartbeat.currentTime) && (proposals?.attempts ?? 0) >= 96)
     }
     private static func sources(_ model:DashboardModel,whatsappReady:Bool)->HeartbeatSources {

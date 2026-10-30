@@ -25,7 +25,7 @@ struct MemoryInspectionPreview:View {
             .sheet(item:$capture) { capture in PAContextCaptureView(capture:capture,model:model,registration:"fictional") }
         }
     }
-    @MainActor private static func seedContextPages(_ model: DashboardModel) throws {
+    @MainActor static func seedContextPages(_ model: DashboardModel) throws {
         let owner = model.inference.activeID
         guard !owner.isEmpty else { throw ContextPageFailure.unavailable }
         let project = LifeItem(registration: owner, kind: .space, title: "Fictional Lark optics", notes: "Compare two camera-calibration methods.")

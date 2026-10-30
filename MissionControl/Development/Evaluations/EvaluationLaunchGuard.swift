@@ -65,6 +65,7 @@ enum EvaluationLaunchGuard {
         "--preview-projects",
         "--preview-review-inbox",
         "--preview-settings",
+        "--preview-settings-context",
         "--preview-source-timeline",
         "--render-life-map",
         "--render-projects",

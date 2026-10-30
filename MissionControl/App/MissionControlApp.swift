@@ -92,6 +92,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             } else if ProcessInfo.processInfo.arguments.contains("--preview-settings") {
                 if ProcessInfo.processInfo.arguments.contains("--heartbeat-history") {BackgroundActivityView(model:model).preferredColorScheme(selectedColorScheme)}
                 else {SettingsView(model:model).preferredColorScheme(selectedColorScheme)}
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-settings-context") {
+                SettingsContextPreview(model:model).preferredColorScheme(selectedColorScheme)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-memory-review") {
                 MemoryReviewPreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-memory-inspection") {

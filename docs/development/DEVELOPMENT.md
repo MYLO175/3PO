@@ -53,7 +53,7 @@ To try a visible change before it is merged, open a source-free preview:
 ./scripts/preview.sh --preview-calendar-scroll
 ```
 
-[preview.sh](../../scripts/preview.sh) builds Debug into `/private/tmp/3po-preview` (or `MISSIONCONTROL_PREVIEW_ROOT`; `--no-build` reuses it) and opens a copy named **3PO Preview** with its own bundle ID. It runs beside the installed 3PO without sharing its preferences or window, and only the named preview runs. `--preview-calendar-scroll` shows the Calendar widget's continuous week strip with fictional, read-only events and a Wide/Narrow width switch.
+[preview.sh](../../scripts/preview.sh) builds Debug into `/private/tmp/3po-preview` (or `MISSIONCONTROL_PREVIEW_ROOT`; `--no-build` reuses it) and opens a copy named **3PO Preview** with its own bundle ID. It runs beside the installed 3PO without sharing its preferences or window, and only the named preview runs. `--preview-calendar-scroll` shows the Calendar widget's continuous week strip with fictional, read-only events and a Wide/Narrow width switch. `--preview-settings-context` opens Settings on its Context page for a fictional account with sample pages in disposable storage.
 
 ## Choose the right checks
 
