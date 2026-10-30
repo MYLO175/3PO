@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 extension LifeDueUrgency {
     var color: Color { switch self { case .late: .red; case .soon: .orange; case .later: .secondary } }
@@ -93,7 +94,8 @@ struct LifeDueSoonSection: View {
     }
 }
 /// Inline task entry under a stage heading. Return saves and stays open for the next one;
-/// Esc closes. A trailing date phrase ("fri", "14 nov") becomes the local deadline.
+/// Esc, or a click elsewhere while it is still empty, closes it. A trailing date phrase
+/// ("fri", "14 nov") becomes the local deadline.
 struct LifeInlineTaskAdd: View {
     let save: (String,String?) -> Bool
     let close: () -> Void
@@ -104,11 +106,12 @@ struct LifeInlineTaskAdd: View {
         let parsed = LifeDueParser.parse(text)
         HStack(spacing:8) {
             Image(systemName:"circle").foregroundStyle(palette[.text].opacity(0.3))
-            TextField("Lab report fri",text:$text).textFieldStyle(.plain).focused($focused).onSubmit(submit).onExitCommand(perform:close)
+            TextField("Type to add a task",text:$text).textFieldStyle(.plain).focused($focused).onSubmit(submit).onExitCommand(perform:close)
             if let due = parsed.due { LifeDueChip(due:due) }
         }
         .padding(10).background(palette[.input],in:RoundedRectangle(cornerRadius:9))
         .overlay(RoundedRectangle(cornerRadius:9).strokeBorder(palette[.accent].opacity(0.6)))
+        .background(LifeOutsideClickMonitor { if text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { close() } })
         .onAppear { focused = true }
         .help("End with a date if you like: today, tomorrow, fri, next week, in 3 days, 14 nov. Return adds, Esc closes.")
     }
@@ -117,5 +120,28 @@ struct LifeInlineTaskAdd: View {
         guard !parsed.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { return }
         if save(parsed.title,parsed.due) { text = "" }
         focused = true
+    }
+}
+/// Reports a mouse-down elsewhere in the same window without consuming it.
+struct LifeOutsideClickMonitor: NSViewRepresentable {
+    let outside: () -> Void
+    func makeNSView(context: Context) -> Probe { let view = Probe(); view.outside = outside; return view }
+    func updateNSView(_ view: Probe, context: Context) { view.outside = outside }
+    static func dismantleNSView(_ view: Probe, coordinator: ()) { view.stop() }
+    final class Probe: NSView {
+        var outside: (() -> Void)?
+        private var monitor: Any?
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow(); stop()
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching:.leftMouseDown) { [weak self] event in
+                if let self, let window = self.window, event.window === window, !self.bounds.contains(self.convert(event.locationInWindow,from:nil)) {
+                    DispatchQueue.main.async { self.outside?() }
+                }
+                return event
+            }
+        }
+        func stop() { if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil }
     }
 }

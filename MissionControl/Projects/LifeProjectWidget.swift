@@ -6,7 +6,7 @@ enum LifeProjectPresentation: String, CaseIterable, Identifiable {
     // Raw values are saved layout/tool identities; only display names change.
     case overview = "Overview", list = "List", board = "Board", outline = "Outline", deadlines = "Deadlines"
     var id: String { rawValue }
-    var title:String { switch self { case .overview:"Folders";case .outline:"Tree";default:rawValue } }
+    var title:String { switch self { case .overview,.board:"Projects & tasks";case .outline:"Tree";default:rawValue } }
     var symbol:String { switch self { case .overview:"rectangle.grid.2x2";case .list:"list.bullet";case .board:"rectangle.split.3x1";case .outline:"list.bullet.indent";case .deadlines:"calendar" } }
 }
 struct LifeProjectWidget: View {
@@ -45,6 +45,8 @@ struct LifeProjectWidget: View {
     @State private var boardScroll=LifeBoardScrollController()
     @State private var addingStage:LifeTaskStage?
     @State private var showAllDone=false
+    /// A click on a stage + first closes an empty inline entry; this keeps that click from reopening it.
+    @State private var closedAdd:(stage:LifeTaskStage,at:Date)?
     private var registration: String { previewRegistration ?? model.inference.activeID }
     private var store: LifeWorkspaceStore { model.assistant.projects }
     @State private var projectionCache = LifeProjectProjectionCache()
@@ -82,7 +84,7 @@ struct LifeProjectWidget: View {
         return configuration.wrappedValue.showsProjectSection(section,registration:registration,folder:current.id)
     }
     private var displayed:[LifeItem] {filtered.filter{shows($0.kind.isWork ? .tasks : .spaces)}}
-    private var viewTitle:String { !shows(.tasks) && (presentation == .overview || presentation == .board) ? "Folders" : presentation == .overview && !atHome ? "Board" : presentation.title }
+    private var viewTitle:String { !shows(.tasks) && (presentation == .overview || presentation == .board) ? "Subprojects" : presentation.title }
     private var page: some View {
         VStack(alignment: .leading, spacing: 18) {
             ViewThatFits(in:.horizontal) {
@@ -99,7 +101,7 @@ struct LifeProjectWidget: View {
                         }
                         else if current?.kind.isWork != true {
                             if filtered.isEmpty && (shows(.spaces) || shows(.tasks)) {
-                                Text(unfinished ? "No unfinished work here." : "This folder is empty.").font(.callout).foregroundStyle(.secondary).padding(.vertical,12)
+                                Text(unfinished ? "No unfinished work here." : "This project is empty.").font(.callout).foregroundStyle(.secondary).padding(.vertical,12)
                             }
                             switch presentation {
                             case .overview,.board:
@@ -117,7 +119,7 @@ struct LifeProjectWidget: View {
                         LifeNotesSection(model:model,item:current,availableWidth:contentWidth,availableHeight:viewportHeight-precedingNotesHeight-30) {notesEditing=$0}
                     }
                     if atHome && folders.isEmpty && looseWork.isEmpty {
-                        Button { add(.space) } label: { Label("New space",systemImage:"plus").padding(.vertical,20) }.buttonStyle(.plain).foregroundStyle(palette[.accent]).disabled(store.readOnly || registration.isEmpty)
+                        Button { add(.space) } label: { Label("New project",systemImage:"plus").padding(.vertical,20) }.buttonStyle(.plain).foregroundStyle(palette[.accent]).disabled(store.readOnly || registration.isEmpty)
                     }
                     if let error = store.error ?? notice { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(.bottom,8)
@@ -171,8 +173,9 @@ struct LifeProjectWidget: View {
             }
             if !atHome,current?.kind.isWork != true {
                 Menu {
-                    ForEach([LifeProjectPresentation.overview,.list,.board]) { view in
-                        Toggle(view == .overview ? "Folders & tasks" : view.title,isOn:Binding(get:{presentation == view},set:{if $0 { setPresentation(view) }}))
+                    // Saved "Board" layouts are the same page as Projects & tasks, so they show as it.
+                    ForEach([LifeProjectPresentation.overview,.list]) { view in
+                        Toggle(view.title,isOn:Binding(get:{presentation == view || (view == .overview && presentation == .board)},set:{if $0 { setPresentation(view) }}))
                     }
                     Menu("More views") { Button("Tree") { setPresentation(.outline) };Button("Deadlines") { setPresentation(.deadlines) } }
                     Divider()
@@ -185,7 +188,7 @@ struct LifeProjectWidget: View {
                 Menu {
                     ForEach(LifeItemKind.allCases) { kind in Button(kind.title) { add(kind) } }
                 } label: { Image(systemName:"plus") }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel("Add to this folder").disabled(registration.isEmpty || store.readOnly)
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel("Add to this project").disabled(registration.isEmpty || store.readOnly)
             }
             Menu {
                 if let current {
@@ -202,13 +205,13 @@ struct LifeProjectWidget: View {
                     Button("Connections & organisation…") { inspecting=true }
                     Button("Move…") { moving=current }
                     Divider()
-                    Toggle(current.kind.isWork ? "Open this task by default" : "Open this folder by default",isOn:Binding(get:{savedRoot == current.id},set:{setRoot($0 ? current.id : nil)}))
+                    Toggle(current.kind.isWork ? "Open this task by default" : "Open this project by default",isOn:Binding(get:{savedRoot == current.id},set:{setRoot($0 ? current.id : nil)}))
                     Button("Delete…",role:.destructive) { deleting=current }
                 }
                 if savedRoot != nil { Button("Open Projects home by default") { setRoot(nil) };Divider() }
                 Button("Recently deleted…") { showDeleted=true }
             } label: { Image(systemName:"ellipsis") }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel("Folder options")
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel("Project options")
         }.foregroundStyle(palette[.accent])
     }
     private func sectionBinding(_ section:ProjectPageSection,item:LifeItem)->Binding<Bool> {
@@ -268,7 +271,7 @@ struct LifeProjectWidget: View {
     private var hasSubspaces:Bool { !unfiled && current?.kind.isWork == false && index.children(of:current?.id).contains{!$0.kind.isWork} }
     @ViewBuilder private var subprojectToggle:some View {
         if hasSubspaces {
-            HStack { Spacer();Toggle("Include subprojects",isOn:subfolderBinding).toggleStyle(.checkbox).font(.caption).help("Also show tasks from the spaces inside this one, labelled with where they live") }
+            HStack { Spacer();Toggle("Include subprojects",isOn:subfolderBinding).toggleStyle(.checkbox).font(.caption).help("Also show tasks from the subprojects inside this one, labelled with where they live") }
         }
     }
     private var subfolderBinding:Binding<Bool> {
@@ -358,7 +361,7 @@ struct LifeProjectWidget: View {
                 Button { openUnfiled() } label: {
                     VStack(alignment:.leading,spacing:9) {
                         Label("Unfiled tasks",systemImage:"tray").font(.callout.weight(.semibold)).foregroundStyle(palette[.text])
-                        Text(looseWork.count == 1 ? "1 task without a folder" : "\(looseWork.count) tasks without a folder").font(.caption).foregroundStyle(.secondary)
+                        Text(looseWork.count == 1 ? "1 task without a project" : "\(looseWork.count) tasks without a project").font(.caption).foregroundStyle(.secondary)
                     }.padding(12).frame(maxWidth:.infinity,minHeight:92,alignment:.topLeading)
                         .background(palette[.input].opacity(0.35),in:RoundedRectangle(cornerRadius:12)).contentShape(RoundedRectangle(cornerRadius:12))
                 }.buttonStyle(.plain)
@@ -477,7 +480,7 @@ struct LifeProjectWidget: View {
                     }
                 }.padding(.leading,CGFloat(min(depth,8))*14)
             }
-            if outlineItems.count > 120 { Text("Showing 120 items. Open a folder to see more.").font(.caption).foregroundStyle(.secondary) }
+            if outlineItems.count > 120 { Text("Showing 120 items. Open a project to see more.").font(.caption).foregroundStyle(.secondary) }
         }
     }
     private func stageHeader(_ stage:LifeTaskStage,count:Int)->some View {
@@ -486,7 +489,10 @@ struct LifeProjectWidget: View {
             Text(stage.rawValue).font(.caption.weight(.semibold))
             Text(String(count)).font(.caption).monospacedDigit().foregroundStyle(.secondary)
             Spacer(minLength:4)
-            Button { addingStage = addingStage == stage ? nil : stage } label: { Image(systemName:"plus").font(.system(size:12,weight:.medium)).frame(width:24,height:24).contentShape(RoundedRectangle(cornerRadius:6)) }
+            Button {
+                if addingStage == nil,let closed=closedAdd,closed.stage == stage,Date.now.timeIntervalSince(closed.at) < 0.6 { closedAdd=nil;return }
+                addingStage = addingStage == stage ? nil : stage
+            } label: { Image(systemName:"plus").font(.system(size:12,weight:.medium)).frame(width:24,height:24).contentShape(RoundedRectangle(cornerRadius:6)) }
                 .buttonStyle(.plain).foregroundStyle(.secondary).help("Add a task to "+stage.rawValue).accessibilityLabel("Add task: "+stage.rawValue).disabled(store.readOnly || registration.isEmpty)
         }.padding(.horizontal,3)
     }
@@ -496,7 +502,7 @@ struct LifeProjectWidget: View {
         return stage == .done ? tasks.sorted{$0.updated > $1.updated} : LifeDue.ordered(tasks)
     }
     private func inlineAdd(_ stage:LifeTaskStage)->some View {
-        LifeInlineTaskAdd(save:{ quickAdd($0,due:$1,stage:stage) },close:{ addingStage=nil })
+        LifeInlineTaskAdd(save:{ quickAdd($0,due:$1,stage:stage) },close:{ addingStage=nil;closedAdd=(stage,.now) })
     }
     private var taskList:some View {
         VStack(alignment:.leading,spacing:18) {
@@ -579,10 +585,10 @@ struct LifeProjectWidget: View {
                     ForEach(placement.choices) { choice in Button(choice.label) { model.projectPlacement.choose(choice,for:item,model:model) }.controlSize(.small) }
                 } else if ["paused","unplaced"].contains(placement.status) {
                     Text("The PA hasn’t finished suggesting a home for this item.").font(.callout).foregroundStyle(.secondary)
-                    Button("Suggest a folder") { model.projectPlacement.retry(item,model:model) }.disabled(model.projectPlacement.busy)
+                    Button("Suggest where it belongs") { model.projectPlacement.retry(item,model:model) }.disabled(model.projectPlacement.busy)
                     if !placement.reason.isEmpty { DisclosureGroup("Details") { Text(placement.reason).font(.caption).textSelection(.enabled) } }
                 } else if !placement.reason.isEmpty { Text(placement.reason).font(.callout).foregroundStyle(.secondary) }
-                if placement.parentPinned { Label("You chose this folder",systemImage:"pin.fill").font(.caption).foregroundStyle(.secondary) }
+                if placement.parentPinned { Label("You chose where this belongs",systemImage:"pin.fill").font(.caption).foregroundStyle(.secondary) }
             }
             if !item.kind.isWork {
                 Button("Context and purpose…") { nextContextProject=item;inspecting=false }.controlSize(.small)
@@ -640,7 +646,7 @@ struct LifeTaskProgressView:View {
                 .overlay(Capsule().strokeBorder(Color.primary.opacity(0.07),lineWidth:0.5))
         }.frame(height:compact ? 7 : 12)
             .accessibilityElement(children:.ignore).accessibilityLabel("Task progress").accessibilityValue(summary)
-            .help(summary+". Includes tasks in subfolders.")
+            .help(summary+". Includes tasks in subprojects.")
     }
 }
 
