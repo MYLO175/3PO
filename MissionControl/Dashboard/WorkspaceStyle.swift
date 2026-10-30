@@ -8,11 +8,18 @@ enum WorkspaceStyleKey {
     static let backdrop = "workspaceBackdrop"
     static let glowFollowsTime = "workspaceGlowFollowsTime"
     static let motion = "workspaceMotion"
+    static let switcher = "workspaceDashboardSwitcher"
 }
-/// The compact toolbar is 40 points tall and doesn't grow for taller items. The canvas starts right
-/// under it, and the 34-point pill leaves 3 points above and below, midway between window and dashboard.
+/// Where the dashboards are listed: icons in the top bar (full-width dashboard) or the sidebar.
+enum WorkspaceSwitcher: String, CaseIterable, Identifiable {
+    case topBar, sidebar
+    var id: String { rawValue }
+    var title: String { self == .topBar ? "Top bar" : "Sidebar" }
+}
+/// The standard (non-compact) toolbar leaves room for a larger pill with even space above and below;
+/// the canvas starts right under it, so the pill sits midway between window and dashboard.
 enum WorkspaceChrome {
-    static let toolbarItemHeight: CGFloat = 40
+    static let toolbarItemHeight: CGFloat = 52
 }
 enum WorkspaceSurface: String, CaseIterable, Identifiable {
     case glass, solid
@@ -171,6 +178,7 @@ struct AppearanceSettings: View {
     @AppStorage(WorkspaceStyleKey.glowFollowsTime) private var followsTime = true
     @AppStorage(WorkspaceStyleKey.motion) private var motion = WorkspaceMotion.full.rawValue
     @AppStorage(WorkspaceHeadlineFont.key) private var headline = WorkspaceHeadlineFont.serif.rawValue
+    @AppStorage(WorkspaceStyleKey.switcher) private var switcher = WorkspaceSwitcher.topBar.rawValue
     @Environment(\.colorScheme) private var scheme
     @State private var editingColours = false
     @State private var replacing: WorkspaceColorTheme?
@@ -195,6 +203,11 @@ struct AppearanceSettings: View {
             LabeledContent(currentName) { Button("Customise colours…") { editingColours = true } }
             Picker("Light or dark", selection: $appearance) { Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark") }
                 .pickerStyle(.segmented)
+        }
+        Section {
+            Picker("Dashboards", selection: $switcher) { ForEach(WorkspaceSwitcher.allCases) { Text($0.title).tag($0.rawValue) } }.pickerStyle(.segmented)
+        } header: { Text("Layout") } footer: {
+            Text("Top bar shows each dashboard as an icon beside the window controls, and the dashboard fills the window. Add a dashboard in Edit layout.").font(.caption).foregroundStyle(.secondary)
         }
         Section {
             Picker("Widgets", selection: $surface) { ForEach(WorkspaceSurface.allCases) { Text($0.title).tag($0.rawValue) } }.pickerStyle(.segmented)

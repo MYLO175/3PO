@@ -119,7 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             WorkspaceView(model:model).preferredColorScheme(selectedColorScheme)
             #endif
         }.defaultSize(width: ProcessInfo.processInfo.arguments.contains("--small-window") ? 820 : 1200, height: ProcessInfo.processInfo.arguments.contains("--small-window") ? 640 : 780)
-        .windowToolbarStyle(.unifiedCompact(showsTitle:false))
+        .windowToolbarStyle(.unified(showsTitle:false))
         .commands {
             WorkspaceCommands(model:model)
             HelpCommands()

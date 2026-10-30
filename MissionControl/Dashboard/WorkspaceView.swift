@@ -22,6 +22,8 @@ struct WorkspaceView: View {
     @State private var showColors = false
     @Namespace private var sidebarSelection
     @AppStorage(WorkspaceStyleKey.surface) private var surface = WorkspaceSurface.glass.rawValue
+    @AppStorage(WorkspaceStyleKey.switcher) private var switcher = WorkspaceSwitcher.topBar.rawValue
+    private var topBar: Bool { switcher == WorkspaceSwitcher.topBar.rawValue }
     private var motion = MotionPreference()
     private var store: WorkspaceStore { model.workspace }
     private var palette: WorkspacePalette { .resolved(raw:colorOverrides,mode:scheme == .dark ? "dark" : "light",theme:theme,accent:accent) }
@@ -32,7 +34,7 @@ struct WorkspaceView: View {
             if let error = store.error { HStack { Label(error,systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange); Spacer(); if store.readOnly { Button("Original dashboard") { legacy = true } } else { Button("Dismiss") { store.error = nil } } }.padding(10) }
             if let error = model.storageError ?? model.writeError { Text(error).font(.caption).foregroundStyle(.orange).frame(maxWidth:.infinity,alignment:.leading).padding(10) }
             HStack(spacing:0) {
-                sidebar.frame(width:sidebarVisible ? 190 : 56)
+                if !topBar { sidebar.frame(width:sidebarVisible ? 190 : 56) }
                 GeometryReader { geometry in
                     let width = max(1,geometry.size.width-32), height = max(1,geometry.size.height-32)
                     let rows = GridRules.rows(store.selected)
@@ -64,7 +66,7 @@ struct WorkspaceView: View {
                     }
                 }.clipped()
                     .background { WorkspaceBackdropView(palette:palette) }
-                    .clipShape(UnevenRoundedRectangle(topLeadingRadius:22,style:.continuous))
+                    .clipShape(UnevenRoundedRectangle(topLeadingRadius:topBar ? 0 : 22,style:.continuous))
 
             }
         }.background(palette[.sidebar]).tint(accentColor).foregroundStyle(palette[.text]).environment(\.workspacePalette,palette).frame(minWidth:780,minHeight:580)
@@ -100,8 +102,11 @@ struct WorkspaceView: View {
     @ToolbarContentBuilder private var windowToolbar: some CustomizableToolbarContent {
         Group {
         ToolbarItem(id:"sidebar",placement:.navigation) {
-            Button { sidebarVisible.toggle() } label: { Label("Sidebar",systemImage:"sidebar.left") }.help(sidebarVisible ? "Collapse dashboard sidebar" : "Expand dashboard sidebar")
+            if !topBar { Button { sidebarVisible.toggle() } label: { Label("Sidebar",systemImage:"sidebar.left") }.help(sidebarVisible ? "Collapse dashboard sidebar" : "Expand dashboard sidebar") }
         }.customizationBehavior(.reorderable).sharedBackgroundVisibility(.hidden)
+        ToolbarItem(id:"dashboards",placement:.navigation) {
+            if topBar { dashboardIcons }
+        }.customizationBehavior(.disabled).sharedBackgroundVisibility(.hidden)
         ToolbarSpacer(.flexible)
         ToolbarItem(id:"heartbeatProgress") {
             EmptyView()
@@ -139,7 +144,7 @@ struct WorkspaceView: View {
             Menu {
                 Button("Customise toolbar…") { customiseToolbar() }
                 Section("Actions") {
-                    Toggle("Show sidebar",isOn:$sidebarVisible)
+                    if !topBar { Toggle("Show sidebar",isOn:$sidebarVisible) }
                     Button("Assistant") { showAssistant() }
                     Button("Run heartbeat") { model.heartbeat.check(model,manual:true) }.disabled(model.heartbeat.manualCheckBlockReason(model) != nil).help(model.heartbeat.manualCheckHelp(model))
                     Button("Refresh sources only") { model.refresh() }.help("Update cached sources without AI (⌥⌘R)")
@@ -182,7 +187,7 @@ struct WorkspaceView: View {
                             .background { if page.id == store.selected.id { sidebarHighlight.matchedGeometryEffect(id:"selection",in:sidebarSelection) } }
                             .contentShape(RoundedRectangle(cornerRadius:12,style:.continuous))
                         }.buttonStyle(.plain)
-                            .contextMenu { Button("Edit name and icon…") { naming = page.id; name = page.title; dashboardSymbol=page.symbol; showName = true }; Button("Duplicate") { store.duplicate(page.id) }; Button("Move up") { store.movePage(page.id,offset:-1) }; Button("Move down") { store.movePage(page.id,offset:1) }; Divider(); Button("Remove dashboard") { store.removePage(page.id) }.disabled(store.state.pages.count == 1) }
+                            .contextMenu { pageMenu(page) }
                     }
                 }
             }.scrollIndicators(.hidden)
@@ -195,6 +200,33 @@ struct WorkspaceView: View {
                     .contentShape(RoundedRectangle(cornerRadius:12,style:.continuous))
             }.buttonStyle(.plain).help("New dashboard").accessibilityLabel("New dashboard")
         }.padding(.horizontal,8).padding(.vertical,12)
+    }
+    /// Top bar: one icon per dashboard beside the window controls; the selection slides between them.
+    /// New dashboard appears while editing the layout.
+    private var dashboardIcons: some View {
+        HStack(spacing:2) {
+            ForEach(store.state.pages) { page in
+                Button { withAnimation(motion.animation(.smooth(duration:0.32))) { store.select(page.id) } } label: {
+                    WorkspacePageLabel(model:model,title:page.title,icon:page.displayIcon,expanded:false,showsReview:page.widgets.contains(where:{$0.kind == .tasks}),height:32)
+                        .frame(width:38)
+                        .background { if page.id == store.selected.id { sidebarHighlight.matchedGeometryEffect(id:"selection",in:sidebarSelection) } }
+                        .contentShape(RoundedRectangle(cornerRadius:12,style:.continuous))
+                }.buttonStyle(.plain).contextMenu { pageMenu(page) }
+            }
+            if editing {
+                Button { newDashboard() } label: { Image(systemName:"plus").font(.system(size:14,weight:.medium)).frame(width:32,height:32).contentShape(Rectangle()) }
+                    .buttonStyle(.plain).help("New dashboard").accessibilityLabel("New dashboard")
+                    .transition(.opacity.combined(with:.scale(scale:0.8)))
+            }
+        }.animation(motion.animation(.smooth(duration:0.25)),value:editing)
+    }
+    @ViewBuilder private func pageMenu(_ page: DashboardPage) -> some View {
+        Button("Edit name and icon…") { naming = page.id; name = page.title; dashboardSymbol=page.symbol; showName = true }
+        Button("Duplicate") { store.duplicate(page.id) }
+        Button(topBar ? "Move left" : "Move up") { store.movePage(page.id,offset:-1) }
+        Button(topBar ? "Move right" : "Move down") { store.movePage(page.id,offset:1) }
+        Divider()
+        Button("Remove dashboard") { store.removePage(page.id) }.disabled(store.state.pages.count == 1)
     }
     /// Glass: a lifted pane of the widget colour; solid: an accent tint.
     @ViewBuilder private var sidebarHighlight: some View {
@@ -231,6 +263,7 @@ private struct WorkspacePageLabel:View {
     var icon:String
     var expanded:Bool
     var showsReview:Bool
+    var height:CGFloat = 40
     var body:some View {
         if showsReview {
             // Read-only time-sensitive source validity, without source reads or AI.
@@ -244,7 +277,7 @@ private struct WorkspacePageLabel:View {
             if expanded {Text(title).lineLimit(1);Spacer(minLength:0)}
             if expanded,showsReview {ReviewInboxBadge(count:count).accessibilityHidden(true)}
         }.font(.callout).padding(.horizontal,expanded ? 12 : 0)
-            .frame(maxWidth:.infinity,minHeight:40,alignment:expanded ? .leading : .center)
+            .frame(maxWidth:.infinity,minHeight:height,alignment:expanded ? .leading : .center)
             .accessibilityElement(children:.ignore)
             .accessibilityLabel(title+(showsReview && count > 0 ? ", \(count) items need review" : ""))
             .help(title+(showsReview && count > 0 ? " · \(count) items need review" : ""))
