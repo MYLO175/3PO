@@ -20,9 +20,12 @@ struct ContextPagesView: View {
     @State private var error: String?
     @State private var showingSupportingFacts = false
     private let initialProjectID: UUID?
+    /// Shown as the Settings Context page rather than a sheet; Settings recreates it when the account changes.
+    private let inSettings: Bool
 
-    init(model: DashboardModel, registration: String? = nil, projectID: UUID? = nil, feature: ContextFeature? = nil, pageID: String? = nil) {
+    init(model: DashboardModel, registration: String? = nil, projectID: UUID? = nil, feature: ContextFeature? = nil, pageID: String? = nil, inSettings: Bool = false) {
         self.model = model
+        self.inSettings = inSettings
         let registration = registration ?? model.inference.activeID
         self.registration = registration
         storage = model.container.map(ObjectIdentifier.init)
@@ -53,29 +56,37 @@ struct ContextPagesView: View {
         let records = model.contextKnowledge(registration: registration, topic: contextTopic, includeTopics: false, purpose: .inspection)
         let pages = model.contextPages.pages(registration: registration)
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("Context").font(.title2.weight(.semibold)).accessibilityIdentifier("context-pages-title")
-                Spacer()
+            HStack(alignment: inSettings ? .top : .center) {
+                if inSettings {
+                    // Links to the Learning page through the Settings window's URL handler.
+                    Text("What your PA knows and follows: everyday context, project and topic pages, recent changes and instructions. Choose what it may learn from in [Learning](missioncontrol-settings://learning).")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Context").font(.title2.weight(.semibold)).accessibilityIdentifier("context-pages-title")
+                }
+                Spacer(minLength: 12)
                 Button("Supporting facts and controls…") { showingSupportingFacts = true }
                     .controlSize(.small).disabled(!owned || registration.isEmpty)
                 Menu("Add context") {
                     Button("Everyday context…") { openOverview() }
                     Button("Note…") { editor = .note(registration: registration) }
                     Button("Project purpose…") { choosingProject = true }.disabled(projects.isEmpty)
-                }.disabled(!owned || registration.isEmpty || !model.contextPages.canSave)
-                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+                }.fixedSize().disabled(!owned || registration.isEmpty || !model.contextPages.canSave)
+                if !inSettings { Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
             }
-            Text("Your PA’s readable context, recent changes and instructions. Supporting facts keep their original evidence and history.")
-                .font(.callout).foregroundStyle(.secondary)
+            if !inSettings {
+                Text("Your PA’s readable context, recent changes and instructions. Supporting facts keep their original evidence and history.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
             if owned && !registration.isEmpty {
                 HSplitView {
                     pageList(pages: pages, records: records)
-                        .frame(minWidth: 220, idealWidth: 250, maxWidth: 300)
+                        .frame(minWidth: 200, idealWidth: 250, maxWidth: 300)
                     ScrollView {
                         detail(pages: pages, records: records)
                             .id(selection)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(16)
-                    }.frame(minWidth: 450)
+                    }.frame(minWidth: 340)
                 }
                 ContextMaintenanceStatusView(model: model, registration: registration, pages: pages, records: records, projects: projects)
             } else {
@@ -84,7 +95,7 @@ struct ContextPagesView: View {
             if let message = error ?? model.contextPages.error {
                 Text(message).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
             }
-        }.padding(22).frame(width: 980, height: 740)
+        }.padding(inSettings ? 20 : 22).frame(width: inSettings ? nil : 980, height: inSettings ? nil : 740)
             .sheet(item: $editor) { ContextPageHumanEditor(model: model, request: $0) }
             .sheet(item: $history) { ContextPageHistoryView(model: model, request: $0) }
             .sheet(isPresented: $showingSupportingFacts) {
@@ -112,7 +123,7 @@ struct ContextPagesView: View {
                 Button("Cancel", role: .cancel) { forgetting = nil }
                 Button("Forget page", role: .destructive) { forget() }
             } message: { Text("This removes the human page and its saved history. Its project, source records and other memories stay saved.") }
-            .onChange(of: model.inference.activeID) { editor = nil; history = nil; instructions = nil; showingSupportingFacts = false; choosingProject = false; nextEditor = nil; forgetting = nil; dismiss() }
+            .onChange(of: model.inference.activeID) { editor = nil; history = nil; instructions = nil; showingSupportingFacts = false; choosingProject = false; nextEditor = nil; forgetting = nil; if !inSettings { dismiss() } }
     }
 
     private func pageList(pages: [ContextPage], records: [ContextKnowledgeRecord]) -> some View {

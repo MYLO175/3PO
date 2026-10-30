@@ -384,14 +384,16 @@ struct SettingsView: View {
     @AppStorage("settingsSelectedPage") private var selectedPage = "General"
     @State private var enabled = SMAppService.mainApp.status == .enabled
     @State private var error: String?
-    @State private var inspectMemory=false
+    /// Instructions another page asked Context to show; choosing Context in the sidebar starts at the overview.
+    @State private var contextFeature: ContextFeature?
     @Environment(\.openWindow) private var openWindow
-    private let pages = ["General", "Connections", "External assistants", "Assistant", "Background", "Memory", "Usage", "Help"]
+    /// "Memory" keeps the saved identifier of the controls page, now shown as Learning.
+    private let pages = ["General", "Connections", "External assistants", "Assistant", "Background", "Context", "Memory", "Usage", "Help"]
     var body: some View {
         NavigationSplitView {
             List(selection:selectionBinding) {
                 ForEach(pages,id:\.self) { page in
-                    NavigationLink(value:page) { Label(page == "Memory" ? "Context" : page,systemImage:icon(for:page)) }
+                    NavigationLink(value:page) { Label(title(for:page),systemImage:icon(for:page)) }
                 }
             }
             .listStyle(.sidebar)
@@ -400,6 +402,10 @@ struct SettingsView: View {
         } detail: {
             Group {
             if selectedPage == "Usage" { AIUsageView(model:model) }
+            else if selectedPage == "Context" {
+                ContextPagesView(model:model,registration:model.inference.activeID,feature:contextFeature,inSettings:true)
+                    .id(model.inference.activeID + (contextFeature?.rawValue ?? ""))
+            }
             else {
             Form {
                 switch selectedPage {
@@ -423,7 +429,7 @@ struct SettingsView: View {
                     WhatsAppSettings(service:model.whatsapp,registration:model.inference.activeID,heartbeatReviewEnabled:model.heartbeat.whatsappEnabled)
                     WeatherSettings(weather:model.weather)
                 case "Assistant":
-                    AssistantSourceSettings(model:model,assistant:model.assistant,page:.assistant)
+                    AssistantSourceSettings(model:model,assistant:model.assistant,page:.assistant) { contextFeature = .assistant; selectedPage = "Context" }
                 case "External assistants":
                     MCPBridgeSettings(bridge:model.mcpBridge)
                 case "Background":
@@ -431,9 +437,8 @@ struct SettingsView: View {
                     EmailSummarySettings(model:model,summaries:model.emailSummaries)
                     BriefingSettings(model:model,briefings:model.briefings)
                 case "Memory":
-                    Section("Context pages and instructions") {
-                        Button("Open Context pages") { inspectMemory=true }
-                        Text("Read the overview, project pages, working changes and feature instructions. Supporting facts, history and learning controls remain available inside. Opening Context makes no AI request.").font(.caption).foregroundStyle(.secondary)
+                    Section {
+                        Text("Choose whether your PA uses saved context and what it may learn from. Read and edit what it knows in [Context](missioncontrol-settings://context).").font(.callout)
                     }
                     AssistantSourceSettings(model:model,assistant:model.assistant,page:.memory)
                 case "Help":
@@ -447,12 +452,18 @@ struct SettingsView: View {
             }
             .padding(.horizontal,12)
             .padding(.vertical,8)
-            .accessibilityLabel("\(selectedPage == "Memory" ? "Context" : selectedPage) settings")
+            .accessibilityLabel("\(title(for:selectedPage)) settings")
+            // Context and Learning link to each other in their descriptions.
+            .environment(\.openURL,OpenURLAction { url in
+                guard url.scheme == "missioncontrol-settings" else { return .systemAction }
+                switch url.host { case "context": selectedPage = "Context"; case "learning": selectedPage = "Memory"; default: return .discarded }
+                contextFeature = nil
+                return .handled
+            })
         }
         .frame(minWidth:760,minHeight:620)
-        .sheet(isPresented:$inspectMemory) { ContextPagesView(model:model,registration:model.inference.activeID) }
-        .onChange(of:model.inference.activeID) { inspectMemory=false }
     }
+    private func title(for page:String)->String { page == "Memory" ? "Learning" : page }
     private func icon(for page:String)->String {
         switch page {
         case "General": "gearshape"
@@ -460,13 +471,14 @@ struct SettingsView: View {
         case "External assistants": "point.3.connected.trianglepath.dotted"
         case "Assistant": "sparkles"
         case "Background": "clock.arrow.circlepath"
+        case "Context": "books.vertical"
         case "Memory": "brain"
         case "Usage": "chart.bar"
         default: "questionmark.circle"
         }
     }
     private var selectionBinding:Binding<String?> {
-        Binding(get:{selectedPage},set:{selectedPage=$0 ?? "General"})
+        Binding(get:{selectedPage},set:{ if $0 != selectedPage { contextFeature=nil };selectedPage=$0 ?? "General" })
     }
 }
 
@@ -503,7 +515,7 @@ struct PAHelpSections:View {
                 Text("Projects are durable parts of the same notebook. Exact saved bindings and memory links guide recall even after a project rename or a fact correction. Similar names alone are not an identity match. The Life map shows available facts and workspace anchors; inspect evidence and excluded records through Context → Supporting facts and controls.").font(.callout)
                 Text("Life map items are your saved workspace entries. Open an area to see and browse its folders, projects, notes and work items separately from remembered concepts/facts. For a remembered commitment, Plan reports lets you explicitly connect accounts of the same plan; their evidence and uncertainty remain separate. Reported cancellation or completion does not update Calendar or Reminders.").font(.callout)
                 Text("Learning is selective: conversation learning, optional source learning, organisation and optional weekly memory review share four automatic passes per day with a 30-minute cooldown. Receiving a message does not mean the AI has assessed it. Source learning shows baseline, waiting and assessed versions, and versions that left its bounded window.").font(.callout)
-                Text("Calendar, Reminders and Mail have separate memory opt-ins in Settings → Context. Calendar uses fresh 90-day orientation, Reminders uses incomplete items, and Mail uses exact retained quotes from recently assessed emails. Each pass is bounded. Existing content starts as a baseline; Review once explicitly assesses a small batch. Normal Refresh still makes no AI calls.").font(.callout)
+                Text("Calendar, Reminders and Mail have separate memory opt-ins in Settings → Learning. Calendar uses fresh 90-day orientation, Reminders uses incomplete items, and Mail uses exact retained quotes from recently assessed emails. Each pass is bounded. Existing content starts as a baseline; Review once explicitly assesses a small batch. Normal Refresh still makes no AI calls.").font(.callout)
                 Text("Memory Review flags possible duplicates, conflicts and stale provisional assumptions. Weekly review is optional; Review now is explicit. You inspect/correct facts or choose a reversible retirement. Similar names never silently merge people or projects.").font(.callout)
                 Text("New briefs and Tasks suggestions can use permitted source memories. Sources and coverage → Memory supplied shows the facts they received, with evidence. Changed facts, withdrawn access, revised email assessments or later WhatsApp replies can set advice aside. Refresh prepares the current brief using available sources.").font(.callout)
             }
@@ -513,7 +525,7 @@ struct PAHelpSections:View {
                 Text("Mail collection can continue without AI. A review can use multiple model calls; the advanced daily call cap applies to email and proactive communication review only. It is separate from your AI provider's plan availability.").font(.callout)
                 Text("Mail accounts are reviewed independently after their arrival checks finish. Unavailable accounts keep their cache and pending work; their old emails and source memories do not enter the fresh comparison. Settings → Background shows which accounts were reviewed and which are waiting. Email assessment can continue while a Calendar/Reminders comparison is waiting. Source collection retries unavailable accounts. A failed heartbeat keeps completed work and checks fresh information at the next scheduled interval.").font(.callout)
                 Text("Useful observations, missing plans and proposed date changes appear in Review inbox, without adding background messages to normal chat. A distinctive message can suggest changing an existing event or reminder even without a manual plan connection. The card shows the exact quote, proposed date and inferred connection. Approve applies that change; Dismiss leaves the original unchanged. View/edit opens the original item with the proposed change prefilled. Repeating items need an occurrence or series choice before approval. Ambiguous targets stay informational. There is no daily cap on useful inbox items.").font(.callout)
-                Text("Open it from Dashboard → Open Review inbox or add the Review inbox widget. Settings → Background controls heartbeats, which review sources and update Today’s brief. Failed heartbeats try again at the next interval. Settings → Context controls selective learning, organisation and optional weekly memory review. Delegated work resumes through Continue queue.").font(.callout)
+                Text("Open it from Dashboard → Open Review inbox or add the Review inbox widget. Settings → Background controls heartbeats, which review sources and update Today’s brief. Failed heartbeats try again at the next interval. Settings → Learning controls selective learning, organisation and optional weekly memory review. Delegated work resumes through Continue queue.").font(.callout)
                 Text("3PO works while the app is running and the Mac is awake. Missed heartbeats catch up once on opening or waking. Interrupted foreground requests and queued work need explicit continuation; uncertain writes are never replayed automatically.").font(.callout)
                 Link(model.inference.provider.usageLinkTitle,destination:model.inference.provider.usageURL)
             }

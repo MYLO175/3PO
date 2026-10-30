@@ -543,8 +543,9 @@ struct AssistantSourceSettings: View {
     @Bindable var assistant: AssistantService
     @Environment(\.openWindow) private var openWindow
     var page: Page = .assistant
+    /// Settings shows the instructions on its Context page.
+    var showAssistantInstructions: () -> Void = {}
     @State private var showingActivity=false
-    @State private var showingAssistantInstructions=false
     var body: some View {
         Group {
             switch page {
@@ -552,9 +553,9 @@ struct AssistantSourceSettings: View {
                 Section("Assistant") {
                     LabeledContent("PA name",value:assistant.displayName)
                     PANameSetting(assistant:assistant)
-                    Button("Assistant instructions…") { showingAssistantInstructions=true }
+                    Button("Open Assistant instructions") { showAssistantInstructions() }
                         .disabled(model.inference.activeID.isEmpty)
-                    Text("Read and edit the same guidance in Context → Assistant instructions.").font(.caption).foregroundStyle(.secondary)
+                    Text("Assistant instructions sit in Context with your other instructions.").font(.caption).foregroundStyle(.secondary)
                     Toggle("Use source context in assistant replies", isOn: $assistant.contextEnabled)
                     Text("When on, the assistant can look up relevant Calendar events, Reminders, email and separately enabled WhatsApp context when needed. Replies begin with the current chat, your instructions and a small guide to available context. Dashboard refresh itself makes no AI requests.").font(.caption).foregroundStyle(.secondary)
                 }
@@ -637,8 +638,6 @@ struct AssistantSourceSettings: View {
                 }
             }
         }.sheet(isPresented:$showingActivity) {BackgroundActivityView(model:model)}
-            .sheet(isPresented:$showingAssistantInstructions) {ContextPagesView(model:model,registration:model.inference.activeID,feature:.assistant)}
-            .onChange(of:model.inference.activeID) {showingAssistantInstructions=false}
     }
     private func sourceMenu(_ title: String, sources: [SourceOption], excluded: Binding<Set<String>>) -> some View {
         Menu(title) {
