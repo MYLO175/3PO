@@ -59,8 +59,8 @@ struct ContextPagesView: View {
             HStack(alignment: inSettings ? .top : .center) {
                 if inSettings {
                     // Links to the Learning page through the Settings window's URL handler.
-                    Text("What your PA knows and follows: everyday context, project and topic pages, recent changes and instructions. Choose what it may learn from in [Learning](missioncontrol-settings://learning).")
-                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text("What your PA knows and follows. Choose what it may learn from in [Learning](missioncontrol-settings://learning).")
+                        .font(.callout).foregroundStyle(.secondary)
                 } else {
                     Text("Context").font(.title2.weight(.semibold)).accessibilityIdentifier("context-pages-title")
                 }
@@ -95,7 +95,10 @@ struct ContextPagesView: View {
             if let message = error ?? model.contextPages.error {
                 Text(message).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
             }
-        }.padding(inSettings ? 20 : 22).frame(width: inSettings ? nil : 980, height: inSettings ? nil : 740)
+        }.padding(inSettings ? 20 : 22)
+            // An explicit size: otherwise the page list's full height becomes the Settings column's height.
+            .frame(minWidth: inSettings ? 560 : 980, idealWidth: inSettings ? 760 : 980, maxWidth: inSettings ? .infinity : 980,
+                minHeight: inSettings ? 420 : 740, idealHeight: inSettings ? 600 : 740, maxHeight: inSettings ? .infinity : 740)
             .sheet(item: $editor) { ContextPageHumanEditor(model: model, request: $0) }
             .sheet(item: $history) { ContextPageHistoryView(model: model, request: $0) }
             .sheet(isPresented: $showingSupportingFacts) {
