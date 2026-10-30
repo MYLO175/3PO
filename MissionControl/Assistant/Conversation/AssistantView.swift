@@ -65,13 +65,18 @@ private struct AssistantChatHistoryView: View {
 }
 
 struct AssistantActionApprovalView:View {
+    @Environment(\.workspacePalette) private var palette
     @Bindable var model:DashboardModel
     var conversationID:UUID
     var turn:AssistantTurn
     var body:some View {
         if let proposals=turn.actionApprovals,!proposals.isEmpty {
             let available=proposals.allSatisfy{PAToolSession.approvalAvailable($0,model:model)}
+            let done=proposals.allSatisfy{$0.phase == .completed}
+            let shape=RoundedRectangle(cornerRadius:16,style:.continuous)
             VStack(alignment:.leading,spacing:10) {
+                Text(done ? "Done" : "Proposed actions").font(.system(size:10,weight:.bold)).tracking(1.2).textCase(.uppercase)
+                    .foregroundStyle(done ? Color.green : palette[.accent])
                 if available {
                     ForEach(proposals) {proposal in
                         VStack(alignment:.leading,spacing:5) {
@@ -94,7 +99,10 @@ struct AssistantActionApprovalView:View {
                         }.disabled(model.assistant.busy || model.inference.busy || !model.heartbeat.deviceAvailable)
                     }
                 } else {Text("These proposed actions are unavailable under the current account or source choices.").font(.caption).foregroundStyle(.secondary)}
-            }.padding(12).background(.quaternary,in:RoundedRectangle(cornerRadius:10))
+            }.padding(.horizontal,14).padding(.vertical,12).frame(maxWidth:.infinity,alignment:.leading)
+                .background(done ? Color.green.opacity(0.1) : palette[.widget].opacity(0.7),in:shape)
+                .overlay(shape.strokeBorder(done ? Color.green.opacity(0.45) : palette[.text].opacity(0.09)))
+                .animation(.easeInOut(duration:0.4),value:done)
         }
     }
 }
@@ -354,7 +362,8 @@ struct AssistantPanel: View {
                             VStack(alignment: .leading, spacing: 5) {
                                 if let images=turn.images { ForEach(images) { image in PAImagePreview(image:image,store:assistant.images,registration:model.inference.activeID) } }
                                 if turn.content.isEmpty && (turn.images ?? []).isEmpty {
-                                    Text(replyingHere ? (assistant.toolStatus.isEmpty ? "Thinking…" : assistant.toolStatus) : "This request didn't complete.").foregroundStyle(.secondary)
+                                    if replyingHere && assistant.toolStatus.isEmpty { TypingDots() }
+                                    else { Text(replyingHere ? assistant.toolStatus : "This request didn't complete.").foregroundStyle(.secondary) }
                                 } else if turn.role == "assistant", turn.deliveryID?.hasPrefix("learned:") == true {
                                     HStack {
                                         Label("Provisional memory",systemImage:"brain").font(.caption.weight(.medium)).foregroundStyle(.secondary)
@@ -395,7 +404,7 @@ struct AssistantPanel: View {
                                     }.font(.caption).accessibilityIdentifier("pa-mail-search-details")
                                 }
                                 if replyingHere && !turn.content.isEmpty {
-                                    Text(assistant.toolStatus.isEmpty ? "Thinking…" : assistant.toolStatus).font(.caption).foregroundStyle(.secondary)
+                                    if assistant.toolStatus.isEmpty { TypingDots() } else { Text(assistant.toolStatus).font(.caption).foregroundStyle(.secondary) }
                                 }
                                 if turn.role == "assistant", turn.contextCapture != nil, !replyingHere {
                                     Button { inspectContext(turn) } label: { Label("Sources & searches", systemImage: "magnifyingglass") }
@@ -412,7 +421,11 @@ struct AssistantPanel: View {
                                 }
                                 if turn.role == "assistant" && !turn.completed && assistant.requestTurnID != turn.id && !turn.content.isEmpty { Text("Partial response").font(.caption).foregroundStyle(.orange) }
                                 if let date = turn.created { Text(date.formatted(date:.omitted,time:.shortened)).font(.caption2).foregroundStyle(.secondary) }
-                            }.font(.callout).padding(12).frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children:.contain).accessibilityLabel(turn.role == "user" ? "Your message" : "PA message").background(palette[turn.role == "user" ? .userBubble : .assistantBubble],in:RoundedRectangle(cornerRadius:10))
+                            }.font(.callout)
+                                .padding(.horizontal,turn.role == "user" ? 13 : 2).padding(.vertical,turn.role == "user" ? 8 : 2)
+                                .frame(maxWidth: turn.role == "user" ? nil : .infinity, alignment: .leading)
+                                .background(turn.role == "user" ? palette[.userBubble] : .clear,in:UnevenRoundedRectangle(topLeadingRadius:18,bottomLeadingRadius:18,bottomTrailingRadius:6,topTrailingRadius:18,style:.continuous))
+                                .accessibilityElement(children:.contain).accessibilityLabel(turn.role == "user" ? "Your message" : "PA message")
                             .contextMenu {
                                 if turn.contextCapture != nil {
                                     Button("Context details…") {inspectContext(turn)}
@@ -424,7 +437,7 @@ struct AssistantPanel: View {
                                 }
                             }
                             .accessibilityIdentifier("pa-turn-"+turn.id.uuidString)
-                            if turn.role != "user" { Spacer(minLength:20) }
+
                             }
                             }.equatable().id(turn.id)
                         }
@@ -493,7 +506,7 @@ struct AssistantPanel: View {
                     if draft.wrappedValue.isEmpty { Text(PAIdentity.placeholder(assistant.displayName)).foregroundStyle(.secondary).padding(.top,2).allowsHitTesting(false) }
                     PAChatComposer(text:draft,focused:Binding(get:{composerFocused},set:{composerFocused=$0}),height:$composerHeight,scope:ChatDraftRules.key(registration:model.inference.activeID,widget:imageDraftWidget,conversation:draftKey),enabled:assistant.drafts.writable,textColor:NSColor(palette[.text]),pasteImage:pasteImage,submit:send)
                         .frame(height:composerHeight)
-                }.padding(9).background(palette[.input],in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).stroke(palette[.border]))
+                }.padding(.horizontal,12).padding(.vertical,9).background(palette[.input],in:RoundedRectangle(cornerRadius:16,style:.continuous)).overlay(RoundedRectangle(cornerRadius:16,style:.continuous).stroke(palette[.border]))
                 Button(sendingHere && composerEmpty ? "Stop" : assistant.busy ? "Queue" : "Send") { if sendingHere && composerEmpty { assistant.cancel() } else { send() } }
                     .frame(width:56)
                     .disabled(!sendingHere && ((widgetID != nil && !assistant.drafts.writable) || composerEmpty || (!model.inference.inferenceVerified || (!assistant.busy && model.inference.busy) || model.inference.usagePaused)))
@@ -728,5 +741,25 @@ struct BackgroundActivityView:View {
                 model.heartbeat.seedHistoryPreview(registration,validationDetail:ReviewInboxEvaluation.dateDiagnosticPreview())
                 #endif
             }
+    }
+}
+
+/// The PA is writing: three dots rising in turn. Still with Reduce Motion.
+struct TypingDots: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(WorkspaceStyleKey.motion) private var motion = WorkspaceMotion.full.rawValue
+    var body: some View {
+        let still = reduceMotion || motion == WorkspaceMotion.reduced.rawValue
+        TimelineView(.animation(minimumInterval: nil, paused: still)) { context in
+            let time = context.date.timeIntervalSinceReferenceDate
+            HStack(spacing: 5) {
+                ForEach(0..<3, id: \.self) { index in
+                    let wave = still ? 0 : max(0, sin((time * 2 * .pi / 1.2) - Double(index) * 0.8))
+                    Circle().frame(width: 6, height: 6).opacity(0.35 + 0.5 * wave).offset(y: -4 * wave)
+                }
+            }.padding(.vertical, 6)
+        }
+        .foregroundStyle(.secondary)
+        .accessibilityElement().accessibilityLabel("Thinking")
     }
 }
