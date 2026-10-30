@@ -167,6 +167,8 @@ struct WidgetConfiguration: Codable, Equatable {
     /// Widget-local presentation, separately remembered for each account's folder.
     var projectFolderViews:[String:[String:String]]? = nil
     var projectOnlyUnfinished: Bool? = nil
+    /// Account → folders whose board and list also gather tasks from subprojects. Browsing presentation only.
+    var projectIncludeSubfolders:[String:[String]]? = nil
     /// Account/folder presentation only. Unknown section names survive later edits.
     var projectHiddenSections:[String:[String:[String]]]? = nil
     /// Browsing state (visible date, view modes, collapsed rows, open chat) changes
@@ -175,7 +177,7 @@ struct WidgetConfiguration: Codable, Equatable {
         var value = self
         value.date = .distantPast; value.calendarMode = ""; value.reminderGrouping = ""; value.reminderCollapsedLists = nil
         value.conversationID = nil; value.conversationSelections = nil
-        value.projectCollapsed = nil; value.lifeMapView = nil; value.projectView = nil; value.projectFolderViews = nil; value.projectOnlyUnfinished = nil
+        value.projectCollapsed = nil; value.lifeMapView = nil; value.projectView = nil; value.projectFolderViews = nil; value.projectOnlyUnfinished = nil; value.projectIncludeSubfolders = nil
         return value
     }
     func showsProjectSection(_ section:ProjectPageSection,registration:String,folder:UUID)->Bool {

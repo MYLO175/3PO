@@ -247,10 +247,14 @@ struct LifeWorkspaceEditUndo {
 /// Board moves only change a currently permitted task's local stage, at its captured folder revision.
 @MainActor enum LifeTaskStageChange {
     static func applyDrag(_ id:UUID,stage:LifeTaskStage,capturedParent:UUID?,currentParent:UUID?,registration:String,activeRegistration:String,capturedIDs:Set<UUID>,currentIDs:Set<UUID>,expectedRevision:UUID,store:LifeWorkspaceStore)throws {
+        try applyDrag(id,stage:stage,taskParent:capturedParent,capturedParent:capturedParent,currentParent:currentParent,registration:registration,activeRegistration:activeRegistration,capturedIDs:capturedIDs,currentIDs:currentIDs,expectedRevision:expectedRevision,store:store)
+    }
+    /// A board that includes subprojects checks the page and, separately, the task's own captured folder.
+    static func applyDrag(_ id:UUID,stage:LifeTaskStage,taskParent:UUID?,capturedParent:UUID?,currentParent:UUID?,registration:String,activeRegistration:String,capturedIDs:Set<UUID>,currentIDs:Set<UUID>,expectedRevision:UUID,store:LifeWorkspaceStore)throws {
         guard registration == activeRegistration,capturedParent == currentParent else {
             throw LifeWorkspaceFailure.message("This folder changed. Try moving the task again.")
         }
-        try apply(id,stage:stage,parent:capturedParent,registration:registration,permittedIDs:capturedIDs.intersection(currentIDs),expectedRevision:expectedRevision,store:store)
+        try apply(id,stage:stage,parent:taskParent,registration:registration,permittedIDs:capturedIDs.intersection(currentIDs),expectedRevision:expectedRevision,store:store)
     }
     static func apply(_ id:UUID,stage:LifeTaskStage,parent:UUID?,registration:String,permittedIDs:Set<UUID>,expectedRevision:UUID,store:LifeWorkspaceStore)throws {
         guard store.revision == expectedRevision,permittedIDs.contains(id),let item=store.items(registration,includeTopics:true).first(where:{$0.id == id}),item.kind.isWork,item.parentID == parent,item.status != .archived else {

@@ -20,6 +20,8 @@ struct LifeFolderFrames:PreferenceKey {
 struct LifeBoardDrag {
     var capture:LifeProjectDrag
     var parent:UUID?
+    /// The task's own folder; differs from the page when the board includes subprojects.
+    var taskParent:UUID?
     var permittedIDs:Set<UUID>
     var translation:CGSize
 }
