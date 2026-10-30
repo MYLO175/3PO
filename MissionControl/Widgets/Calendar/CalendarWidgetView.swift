@@ -51,9 +51,10 @@ struct CalendarWidgetView: View {
         }
         return configuration.date.formatted(.dateTime.weekday(.abbreviated).day().month(.wide))
     }
-    /// While showing today: the event under way and how long is left, or what's next and how soon.
+    /// Day and Agenda views of today only: the event under way and how long is left, or what's next
+    /// and how soon. Week and Month scroll through dates, so a line that comes and goes would jump.
     private func nextHeadline(_ now: Date) -> String? {
-        guard calendar.isDate(configuration.date, inSameDayAs: now) else { return nil }
+        guard mode == "day" || mode == "agenda", calendar.isDate(configuration.date, inSameDayAs: now) else { return nil }
         let today = events.filter { !$0.allDay && calendar.isDate($0.start, inSameDayAs: now) }.sorted { $0.start < $1.start }
         func span(_ seconds: TimeInterval) -> String {
             let minutes = max(1, Int((seconds / 60).rounded()))
@@ -439,10 +440,14 @@ private struct CalendarTimedEventCard: View {
         let shape = RoundedRectangle(cornerRadius:8,style:.continuous)
         return Group {
             if height < 30 {
-                HStack(alignment:.firstTextBaseline,spacing:5) {
-                    Text(event.title).font(.system(size:12,weight:.semibold)).lineLimit(1)
-                    Text(time).font(.system(size:10.5)).foregroundStyle(.secondary).lineLimit(1).fixedSize()
-                    Spacer(minLength:0)
+                // The title wins in a narrow column; the time only shows when both fit.
+                ViewThatFits(in:.horizontal) {
+                    HStack(alignment:.firstTextBaseline,spacing:5) {
+                        Text(event.title).font(.system(size:12,weight:.semibold)).lineLimit(1).fixedSize()
+                        Text(time).font(.system(size:10.5)).foregroundStyle(.secondary).lineLimit(1).fixedSize()
+                        Spacer(minLength:0)
+                    }
+                    Text(event.title).font(.system(size:12,weight:.semibold)).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading)
                 }.padding(.vertical,3)
             } else {
                 VStack(alignment:.leading,spacing:1) {
