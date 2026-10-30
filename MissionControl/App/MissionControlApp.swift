@@ -60,6 +60,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 value["TB Item Identifiers"]=(ids.contains("sidebar") ? ["sidebar"] : [])+["NSToolbarFlexibleSpaceItem","assistant","NSToolbarFlexibleSpaceItem"]+trailing
                 defaults.set(value,forKey:key);defaults.set(true,forKey:"workspaceToolbarCentredActionsV1")
             }
+            // Dashboards in the top bar (30 October): a layout saved before the item existed would hide
+            // it, leaving no way to switch dashboards. Add it once, right after the sidebar button.
+            if !defaults.bool(forKey:"workspaceToolbarDashboardsV1"),var value=defaults.dictionary(forKey:key),var ids=value["TB Item Identifiers"] as? [String] {
+                if !ids.contains("dashboards") { ids.insert("dashboards",at:ids.firstIndex(of:"sidebar").map{$0+1} ?? 0);value["TB Item Identifiers"]=ids;defaults.set(value,forKey:key) }
+                defaults.set(true,forKey:"workspaceToolbarDashboardsV1")
+            }
         }
         _model=State(initialValue:dashboard)
         #if DEBUG
