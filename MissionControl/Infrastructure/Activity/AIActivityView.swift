@@ -44,20 +44,20 @@ struct AIActivityPill: View {
         let needsYou=active == nil && (displayed?.needsAttention == true || store.error != nil)
         let statusColour:Color=success ? successColour : failed || needsYou ? .red : palette[.text]
         let progress:Double?=nil
-        let mood:SwirlOrb.Mood=active.map{$0.kind == .heartbeat ? .working($0.progress) : .thinking} ?? (busy ? .thinking : success ? .done : failed || needsYou || attention ? .attention : .ready)
+        let mood:VoiceBars.Mood=active.map{$0.kind == .heartbeat ? .working($0.progress) : .thinking} ?? (busy ? .thinking : success ? .done : failed || needsYou || attention ? .attention : .ready)
         let message=store.error ?? confirmation.map{PAProse.display($0.message)} ?? displayed.map{AIActivityPresentation.message($0,compact:true)} ?? "3PO is ready"
         let accessibilityStatus=message+(progress.map{". \(Int($0*100)) percent progress."} ?? "")+(attention ? ". An outcome needs attention." : "")
         HStack(spacing: 0) {
             Button(action: openChat) {
-                SwirlOrb(mood:mood,accent:palette[.accent],size:27,reduceMotion:motion == WorkspaceMotion.reduced.rawValue)
-                    .frame(width: 30, height: 30).contentShape(Circle())
+                VoiceBars(mood:mood,accent:palette[.accent],height:17,reduceMotion:motion == WorkspaceMotion.reduced.rawValue)
+                    .frame(width: 34, height: 30).contentShape(Circle())
             }
             .buttonStyle(.plain)
             .help("Open 3PO chat")
             .accessibilityLabel("Open 3PO chat")
             Button { activityOpen.toggle() } label: {
                 HStack(spacing: 8) {
-                    Text(message).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                    Text(message).font(.system(size: 13, weight: .medium)).lineLimit(1)
                         .truncationMode(.tail).frame(maxWidth: .infinity, alignment: .leading)
                     if active?.state == .running && progress == nil {
                         ProgressView().controlSize(.mini).frame(width: 12, height: 12)
@@ -68,7 +68,7 @@ struct AIActivityPill: View {
                             .foregroundStyle(success ? successColour : failed || attention ? Color.red : palette[.accent].opacity(0.8))
                     }
                 }.foregroundStyle(statusColour).padding(.leading, 9).padding(.trailing, 7)
-                    .frame(width: dismissible == nil ? 268 : 244, height: 30).contentShape(Rectangle())
+                    .frame(width: dismissible == nil ? 290 : 266, height: 30).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(message)

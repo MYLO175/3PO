@@ -12,11 +12,13 @@ struct PAChatComposer: NSViewRepresentable {
     var textColor:NSColor
     var pasteImage:(NSPasteboard)->Void
     var submit:()->Void
+    /// Escape: returns true when it handled the key (for example by cancelling dictation).
+    var cancel:()->Bool = { false }
     func makeCoordinator()->Coordinator { Coordinator(self) }
     func makeNSView(context:Context)->NSScrollView {
-        let scroll=NSScrollView();scroll.drawsBackground=false;scroll.hasVerticalScroller=true;scroll.autohidesScrollers=true
+        let scroll=NSScrollView();scroll.drawsBackground=false;scroll.hasVerticalScroller=true;scroll.autohidesScrollers=true;scroll.focusRingType = .none
         let editor=PAComposerTextView();editor.delegate=context.coordinator;editor.isRichText=false;editor.importsGraphics=false;editor.allowsUndo=true
-        editor.drawsBackground=false;editor.font = .systemFont(ofSize:NSFont.systemFontSize)
+        editor.drawsBackground=false;editor.focusRingType = .none;editor.font = .systemFont(ofSize:NSFont.systemFontSize)
         editor.textContainerInset=NSSize(width:0,height:2);editor.isVerticallyResizable=true;editor.isHorizontallyResizable=false
         editor.autoresizingMask=[.width];editor.textContainer?.widthTracksTextView=true;editor.textContainer?.lineFragmentPadding=0
         editor.setAccessibilityLabel("PA message");editor.setAccessibilityHelp("Type a message or paste a screenshot. Press Return to send; Shift-Return for a new line.")
@@ -28,7 +30,7 @@ struct PAChatComposer: NSViewRepresentable {
         if editor.scope != scope { editor.scope=scope;editor.undoManager?.removeAllActions() }
         if editor.string != text { editor.string=text;editor.undoManager?.removeAllActions() }
         editor.isEditable=enabled;editor.textColor=textColor
-        editor.pasteImage=pasteImage;editor.submit=submit
+        editor.pasteImage=pasteImage;editor.submit=submit;editor.cancel=cancel
         editor.focusChanged={ value in if focused != value { focused=value } }
         if focused && enabled && editor.window?.firstResponder !== editor {
             DispatchQueue.main.async { guard editor.scope == scope,editor.isEditable else { return };editor.window?.makeFirstResponder(editor) }
@@ -55,6 +57,7 @@ final class PAComposerTextView:NSTextView {
     var scope=""
     var pasteImage:((NSPasteboard)->Void)?
     var submit:(()->Void)?
+    var cancel:(()->Bool)?
     var focusChanged:((Bool)->Void)?
     override var readablePasteboardTypes:[NSPasteboard.PasteboardType] { [.png,.tiff,NSPasteboard.PasteboardType("public.jpeg")]+super.readablePasteboardTypes }
     override func paste(_ sender:Any?) {
@@ -65,6 +68,7 @@ final class PAComposerTextView:NSTextView {
         if NSApp.currentEvent?.modifierFlags.intersection([.shift,.option]).isEmpty == false { super.insertNewline(sender) }
         else { submit?() }
     }
+    override func cancelOperation(_ sender:Any?) { if cancel?() != true { super.cancelOperation(sender) } }
     override func becomeFirstResponder()->Bool { let result=super.becomeFirstResponder();if result { focusChanged?(true) };return result }
     override func resignFirstResponder()->Bool { let result=super.resignFirstResponder();if result { focusChanged?(false) };return result }
 }
