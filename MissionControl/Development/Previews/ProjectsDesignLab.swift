@@ -5,7 +5,7 @@ import SwiftUI
 /// Edits are shared between the designs and live only in memory; Reset restores the sample.
 struct ProjectsDesignLab: View {
     @State private var store = LabStore.sample()
-    @State private var design = LabDesign.cards
+    @State private var design = LabDesign.sidebar
     @State private var narrow = false
     @State private var theme = WorkspaceColorTheme.sage
     @State private var dark = false
@@ -55,7 +55,7 @@ enum LabDesign: String, CaseIterable, Identifiable {
         case .cards: "Home opens on Due soon, then project cards with progress and the next deadline. Inside a project, subprojects are cards above the board, and the board can include their tasks."
         case .timeline: "Deadlines first. A strip of the next few weeks, then every task grouped Late, This week, Next week and Later. Projects and subprojects are tiles you open."
         case .outline: "One page per project, read top to bottom. Subprojects are folding sections with their own progress; tasks read like a checklist with stage and date on the right."
-        case .sidebar: "A sidebar holds Due soon and the project tree. The right side shows the chosen project's board, with subproject tasks labelled."
+        case .sidebar: "A sidebar holds the project tree. Home lays out every project as a card with Due soon below; a project shows its subprojects, board and notes."
         }
     }
 }
@@ -351,10 +351,10 @@ struct LabOutlineSection: View {
 
 // MARK: D · Sidebar
 
-enum LabSidebarItem: Hashable { case dueSoon, project(UUID) }
+enum LabSidebarItem: Hashable { case home, project(UUID) }
 struct LabSidebarDesign: View {
     let store: LabStore
-    @State private var selection = LabSidebarItem.dueSoon
+    @State private var selection = LabSidebarItem.home
     @State private var expanded: Set<UUID> = []
     @State private var deep = true
     @State private var width: CGFloat = 900
@@ -376,14 +376,14 @@ struct LabSidebarDesign: View {
     }
     private var sidebar: some View {
         VStack(alignment:.leading,spacing:2) {
-            LabSidebarRow(icon:"calendar.badge.clock",title:"Due soon",depth:0,selected:selection == .dueSoon,late:store.lateCount(nil)) { selection = .dueSoon }
+            LabSidebarRow(icon:"square.grid.2x2",title:"All projects",depth:0,selected:selection == .home,late:store.lateCount(nil)) { selection = .home }
             Text("Projects").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top,14).padding(.leading,8).padding(.bottom,4)
             ForEach(store.children(of:nil)) { project in LabTreeRow(store:store,project:project,depth:0,selection:$selection,expanded:$expanded) }
         }
     }
     private var compactPicker: some View {
         Menu {
-            Button("Due soon") { selection = .dueSoon }
+            Button("All projects") { selection = .home }
             Divider()
             ForEach(store.flattened(under:nil)) { project in
                 Button(String(repeating:"    ",count:max(0,store.path(project.id).count-1))+project.title) { selection = .project(project.id) }
@@ -392,19 +392,22 @@ struct LabSidebarDesign: View {
     }
     private var selectionTitle: String {
         if case .project(let id) = selection, let project = store.project(id) { return project.title }
-        return "Due soon"
+        return "All projects"
     }
     @ViewBuilder private var detail: some View {
         switch selection {
-        case .dueSoon:
-            VStack(alignment:.leading,spacing:18) {
-                Text("Due soon").font(.title3.weight(.semibold))
-                LabDueSoonList(store:store,scope:nil)
+        case .home:
+            VStack(alignment:.leading,spacing:26) {
+                LabHeader(store:store,current:nil) { selection = $0.map(LabSidebarItem.project) ?? .home }
+                LabCardGrid(projects:store.children(of:nil),store:store,minimum:200,compact:true) { id in
+                    expanded.formUnion(store.path(id).map(\.id)); selection = .project(id)
+                }
+                LabSection(title:"Due soon") { LabDueSoonList(store:store,scope:nil,limit:8) }
             }
         case .project(let id):
             let subprojects = store.children(of:id)
             VStack(alignment:.leading,spacing:22) {
-                LabHeader(store:store,current:id,homeTitle:"Due soon") { selection = $0.map(LabSidebarItem.project) ?? .dueSoon }
+                LabHeader(store:store,current:id) { selection = $0.map(LabSidebarItem.project) ?? .home }
                 if !subprojects.isEmpty {
                     LabCardGrid(projects:subprojects,store:store,minimum:170,compact:true) { child in
                         expanded.formUnion(store.path(child).map(\.id)); selection = .project(child)
