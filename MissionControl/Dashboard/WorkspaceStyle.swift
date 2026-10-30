@@ -77,12 +77,14 @@ struct WorkspaceSurfaceModifier: ViewModifier {
         let dark = scheme == .dark
         content
             .background {
-                // Glass must read as a layer above the glow: more frosted, and tinted with a less saturated
-                // widget colour so it never matches the glow behind it, with its own light along the top.
+                // Glass sits clearly on top: in light mode a near-white frosted pane above a deeper canvas,
+                // in dark mode a pane a step lighter than the canvas and dense enough that the glow
+                // doesn't bleed through. Each carries its own light along the top.
                 if glass {
-                    shape.fill(palette[.widget].mix(with: dark ? Color(white: 0.1) : .white, by: dark ? 0.45 : 0.35).opacity(dark ? 0.72 : 0.68))
+                    let tint = dark ? palette[.widget].mix(with: .white, by: 0.08) : palette[.widget].mix(with: .white, by: 0.55)
+                    shape.fill(tint.opacity(dark ? 0.72 : 0.74))
                         .background(.regularMaterial, in: shape)
-                        .overlay(shape.fill(LinearGradient(colors: [.white.opacity(dark ? 0.07 : 0.3), .white.opacity(0)], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.3))))
+                        .overlay(shape.fill(LinearGradient(colors: [.white.opacity(dark ? 0.11 : 0.4), .white.opacity(0)], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.35))))
                 }
                 else { shape.fill(palette[.widget]) }
             }
@@ -90,12 +92,14 @@ struct WorkspaceSurfaceModifier: ViewModifier {
             .overlay {
                 if let highlight { shape.strokeBorder(highlight, lineWidth: 2) }
                 else {
-                    // The theme's border role still draws; glass adds a light top edge over it.
-                    shape.strokeBorder(palette[.border], lineWidth: 1)
-                    if glass { shape.strokeBorder(LinearGradient(colors: [.white.opacity(dark ? 0.12 : 0.6), .white.opacity(0)], startPoint: .top, endPoint: .center), lineWidth: 1) }
+                    // The theme's border role still draws; glass adds a crisp light edge, brightest at the top.
+                    shape.strokeBorder(palette[.border].opacity(glass ? 0.5 : 1), lineWidth: 1)
+                    if glass { shape.strokeBorder(LinearGradient(colors: [.white.opacity(dark ? 0.32 : 0.95), .white.opacity(dark ? 0.06 : 0.4)], startPoint: .top, endPoint: .bottom), lineWidth: 1) }
                 }
             }
-            .shadow(color: .black.opacity(lifted ? 0.16 : dark ? 0.45 : 0.08), radius: lifted ? 22 : 18, y: lifted ? 10 : 8)
+            // A tight contact shadow and a soft, deep one lift the pane off the background.
+            .shadow(color: .black.opacity(dark ? 0.35 : 0.06), radius: 1.5, y: 1)
+            .shadow(color: .black.opacity(lifted ? 0.2 : dark ? 0.5 : 0.11), radius: lifted ? 26 : 22, y: lifted ? 14 : 12)
     }
 }
 extension View {
@@ -115,7 +119,8 @@ struct WorkspaceBackdropView: View {
     @Environment(\.colorScheme) private var scheme
     var body: some View {
         ZStack {
-            palette[.canvas]
+            // The canvas sits a step behind the widgets: warmer and deeper in light mode, darker in dark mode.
+            palette[.canvas].mix(with: scheme == .dark ? .black : palette[.accent], by: scheme == .dark ? 0.28 : 0.06)
             if backdrop == WorkspaceBackdrop.ambient.rawValue {
                 TimelineView(.periodic(from: .now, by: 300)) { context in
                     glow(GlowPeriod(date: context.date, follows: followsTime))
@@ -131,7 +136,7 @@ struct WorkspaceBackdropView: View {
         let lift = dark ? 0.55 : 0.82
         let first = Color(tones.tone(brightness: lift)).mix(with: period.cast, by: period.castAmount)
         let second = Color(tones.tone(hueShift: 0.06, saturation: 0.8, brightness: dark ? 0.5 : 0.86)).mix(with: period.cast, by: period.castAmount)
-        let strength = (dark ? 0.32 : 0.42) * period.intensity
+        let strength = (dark ? 0.24 : 0.55) * period.intensity
         return ZStack {
             spot(first.opacity(strength), at: period.spots[0], size: 0.95)
             spot(second.opacity(strength), at: period.spots[1], size: 1.05)
@@ -222,7 +227,7 @@ struct AppearanceSettings: View {
         Section {
             Picker("Headlines", selection: $headline) { ForEach(WorkspaceHeadlineFont.allCases) { Text($0.title).tag($0.rawValue) } }.pickerStyle(.segmented)
         } header: { Text("Type") } footer: {
-            Text("Used for the brief’s greeting and the one line under a widget’s title. Numbers stay in SF Rounded.").font(.caption).foregroundStyle(.secondary)
+            Text("Used for the brief’s greeting. Numbers stay in SF Rounded.").font(.caption).foregroundStyle(.secondary)
         }
         Section {
             Picker("Animations", selection: $motion) { ForEach(WorkspaceMotion.allCases) { Text($0.title).tag($0.rawValue) } }.pickerStyle(.segmented)
