@@ -23,13 +23,13 @@ extension DesignPreview {
     /// `--preview-design --snapshot`: still orb rows for three themes in both modes (ImageRenderer),
     /// and the whole preview window offscreen, written to /tmp. Motion is held so frames are repeatable.
     @MainActor static func render(_ model: DashboardModel) async {
-        let moods: [SwirlOrb.Mood] = [.ready, .thinking, .working(0.55), .done, .attention]
+        let moods: [VoiceBars.Mood] = [.ready, .thinking, .working(0.55), .done, .attention]
         for (name, preset) in [("3po", WorkspaceColorTheme.threePO), ("ocean", .ocean), ("nebula", .nebula)] {
             for mode in ["light", "dark"] {
                 var overrides = WorkspaceColorOverrides(); overrides.profiles = preset.profiles
                 let palette = WorkspacePalette.resolved(raw: overrides.encoded, mode: mode, theme: "warm", accent: "sage")
                 let row = HStack(spacing: 24) {
-                    ForEach(Array(moods.enumerated()), id: \.offset) { _, mood in SwirlOrb(mood: mood, accent: palette[.accent], size: 120, reduceMotion: true) }
+                    ForEach(Array(moods.enumerated()), id: \.offset) { _, mood in VoiceBars(mood: mood, accent: palette[.accent], height: 80, reduceMotion: true).frame(width: 120, height: 120) }
                 }.padding(30).background(palette[.canvas])
                 let renderer = ImageRenderer(content: row); renderer.scale = 2
                 if let image = renderer.cgImage { write(NSBitmapImageRep(cgImage: image), "orbs-\(name)-\(mode)") }
@@ -64,7 +64,7 @@ private struct DesignPreviewContent: View {
     @AppStorage("workspaceAppearance") private var appearance = "system"
     @AppStorage(WorkspaceStyleKey.motion) private var motion = WorkspaceMotion.full.rawValue
     @Environment(\.colorScheme) private var systemScheme
-    @State private var mood: SwirlOrb.Mood = .ready
+    @State private var mood: VoiceBars.Mood = .ready
     @State private var run: Task<Void, Never>?
     @State private var store = AIActivityStore()
     @State private var feedbackDate = Date.now
@@ -85,9 +85,9 @@ private struct DesignPreviewContent: View {
             .foregroundStyle(palette[.text]).tint(palette[.accent])
             Divider()
             Form {
-                Section("Try the orb") {
+                Section("Try the pill") {
                     HStack(spacing: 18) {
-                        SwirlOrb(mood: mood, accent: palette[.accent], size: 120, reduceMotion: reduced)
+                        VoiceBars(mood: mood, accent: palette[.accent], height: 80, reduceMotion: reduced).frame(width: 120, height: 120)
                         VStack(alignment: .leading, spacing: 8) {
                             Button("Ready") { set(.ready) }
                             Button("Thinking") { set(.thinking) }
@@ -154,7 +154,7 @@ private struct DesignPreviewContent: View {
             .padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .workspaceSurface(palette)
     }
-    private func set(_ next: SwirlOrb.Mood) {
+    private func set(_ next: VoiceBars.Mood) {
         run?.cancel()
         store = AIActivityStore()
         if next == .attention {

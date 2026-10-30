@@ -16,7 +16,7 @@ enum WorkspaceSwitcher: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String { self == .topBar ? "Top bar" : "Sidebar" }
 }
-/// The standard (non-compact) toolbar leaves room for a larger pill with even space above and below;
+/// The standard (non-compact) toolbar is 52 points; the 34-point pill leaves even space above and below;
 /// the canvas starts right under it, so the pill sits midway between window and dashboard.
 enum WorkspaceChrome {
     static let toolbarItemHeight: CGFloat = 52
@@ -231,7 +231,7 @@ struct AppearanceSettings: View {
         Section {
             Picker("Animations", selection: $motion) { ForEach(WorkspaceMotion.allCases) { Text($0.title).tag($0.rawValue) } }.pickerStyle(.segmented)
         } header: { Text("Motion") } footer: {
-            Text("Reduced keeps the toolbar orb still and turns off moving numbers and sliding highlights. Reduce motion in System Settings does the same.").font(.caption).foregroundStyle(.secondary)
+            Text("Reduced keeps the pill’s bars still and turns off moving numbers and sliding highlights. Reduce motion in System Settings does the same.").font(.caption).foregroundStyle(.secondary)
         }
         .sheet(isPresented: $editingColours) { WorkspaceColorEditor() }
         .confirmationDialog("Replace your custom colours?", isPresented: Binding(get: { replacing != nil }, set: { if !$0 { replacing = nil } }), presenting: replacing) { preset in

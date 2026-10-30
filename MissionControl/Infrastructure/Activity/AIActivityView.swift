@@ -44,13 +44,13 @@ struct AIActivityPill: View {
         let needsYou=active == nil && (displayed?.needsAttention == true || store.error != nil)
         let statusColour:Color=success ? successColour : failed || needsYou ? .red : palette[.text]
         let progress:Double?=nil
-        let mood:SwirlOrb.Mood=active.map{$0.kind == .heartbeat ? .working($0.progress) : .thinking} ?? (busy ? .thinking : success ? .done : failed || needsYou || attention ? .attention : .ready)
+        let mood:VoiceBars.Mood=active.map{$0.kind == .heartbeat ? .working($0.progress) : .thinking} ?? (busy ? .thinking : success ? .done : failed || needsYou || attention ? .attention : .ready)
         let message=store.error ?? confirmation.map{PAProse.display($0.message)} ?? displayed.map{AIActivityPresentation.message($0,compact:true)} ?? "3PO is ready"
         let accessibilityStatus=message+(progress.map{". \(Int($0*100)) percent progress."} ?? "")+(attention ? ". An outcome needs attention." : "")
         HStack(spacing: 0) {
             Button(action: openChat) {
-                SwirlOrb(mood:mood,accent:palette[.accent],size:34,reduceMotion:motion == WorkspaceMotion.reduced.rawValue)
-                    .frame(width: 38, height: 38).contentShape(Circle())
+                VoiceBars(mood:mood,accent:palette[.accent],height:17,reduceMotion:motion == WorkspaceMotion.reduced.rawValue)
+                    .frame(width: 34, height: 30).contentShape(Circle())
             }
             .buttonStyle(.plain)
             .help("Open 3PO chat")
@@ -68,7 +68,7 @@ struct AIActivityPill: View {
                             .foregroundStyle(success ? successColour : failed || attention ? Color.red : palette[.accent].opacity(0.8))
                     }
                 }.foregroundStyle(statusColour).padding(.leading, 9).padding(.trailing, 7)
-                    .frame(width: dismissible == nil ? 290 : 266, height: 38).contentShape(Rectangle())
+                    .frame(width: dismissible == nil ? 290 : 266, height: 30).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(message)
@@ -82,7 +82,7 @@ struct AIActivityPill: View {
             if let record=dismissible {
                 Button { _=store.dismiss(record,registration:registration) } label: {
                     Image(systemName:"xmark").font(.system(size:10,weight:.semibold))
-                        .frame(width:24,height:38).contentShape(Rectangle())
+                        .frame(width:24,height:30).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(statusColour)
