@@ -291,9 +291,7 @@ struct AssistantPanel: View {
         let displayedTurns=page.rows
         let discoveryEntries=lastDiscoveryEntries(displayedTurns)
         VStack(spacing: 8) {
-            HStack(spacing:8) {
-                Label(assistant.displayName,systemImage:"sparkles").font(.title3.weight(.semibold)).lineLimit(1).truncationMode(.tail)
-                Spacer(minLength:4)
+            WidgetHeader(title:assistant.displayName,symbol:"sparkles") {
                 if let completed=model.heartbeat.state.accounts[model.inference.activeID]?.assessed {
                     TimelineView(.periodic(from:.now,by:60)) {context in
                         Text("Heartbeat \(completed.formatted(date:Calendar.current.isDate(completed,inSameDayAs:context.date) ? .omitted : .abbreviated,time:.shortened))")

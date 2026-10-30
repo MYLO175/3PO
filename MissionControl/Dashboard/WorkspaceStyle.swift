@@ -9,6 +9,11 @@ enum WorkspaceStyleKey {
     static let glowFollowsTime = "workspaceGlowFollowsTime"
     static let motion = "workspaceMotion"
 }
+/// The toolbar is the pill's height plus even space above and below; the canvas starts right under it,
+/// so the pill sits midway between the top of the window and the dashboard.
+enum WorkspaceChrome {
+    static let toolbarItemHeight: CGFloat = 54
+}
 enum WorkspaceSurface: String, CaseIterable, Identifiable {
     case glass, solid
     var id: String { rawValue }
@@ -42,6 +47,12 @@ struct ThemeTones {
 }
 extension Color {
     init(_ rgb: SIMD3<Double>) { self.init(.sRGB, red: rgb.x, green: rgb.y, blue: rgb.z) }
+}
+
+private struct InWorkspaceTileKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    /// True inside a dashboard tile, whose surface replaces a panel's own background.
+    var inWorkspaceTile: Bool { get { self[InWorkspaceTileKey.self] } set { self[InWorkspaceTileKey.self] = newValue } }
 }
 
 /// One widget surface for every tile: frosted glass over the backdrop, or a solid lifted card.
@@ -160,6 +171,7 @@ struct AppearanceSettings: View {
     @AppStorage(WorkspaceStyleKey.backdrop) private var backdrop = WorkspaceBackdrop.ambient.rawValue
     @AppStorage(WorkspaceStyleKey.glowFollowsTime) private var followsTime = true
     @AppStorage(WorkspaceStyleKey.motion) private var motion = WorkspaceMotion.full.rawValue
+    @AppStorage(WorkspaceHeadlineFont.key) private var headline = WorkspaceHeadlineFont.serif.rawValue
     @Environment(\.colorScheme) private var scheme
     @State private var editingColours = false
     @State private var replacing: WorkspaceColorTheme?
@@ -191,6 +203,11 @@ struct AppearanceSettings: View {
             Toggle("Follow the time of day", isOn: $followsTime).disabled(backdrop != WorkspaceBackdrop.ambient.rawValue)
         } header: { Text("Surfaces") } footer: {
             Text("Solid is used automatically when Reduce transparency is on. The glow always uses your theme’s colours; following the time of day only moves it and warms or cools it slightly.").font(.caption).foregroundStyle(.secondary)
+        }
+        Section {
+            Picker("Headlines", selection: $headline) { ForEach(WorkspaceHeadlineFont.allCases) { Text($0.title).tag($0.rawValue) } }.pickerStyle(.segmented)
+        } header: { Text("Type") } footer: {
+            Text("Used for the brief’s greeting and the one line under a widget’s title. Numbers stay in SF Rounded.").font(.caption).foregroundStyle(.secondary)
         }
         Section {
             Picker("Animations", selection: $motion) { ForEach(WorkspaceMotion.allCases) { Text($0.title).tag($0.rawValue) } }.pickerStyle(.segmented)

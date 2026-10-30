@@ -49,15 +49,15 @@ struct AIActivityPill: View {
         let accessibilityStatus=message+(progress.map{". \(Int($0*100)) percent progress."} ?? "")+(attention ? ". An outcome needs attention." : "")
         HStack(spacing: 0) {
             Button(action: openChat) {
-                SwirlOrb(mood:mood,accent:palette[.accent],size:25,reduceMotion:motion == WorkspaceMotion.reduced.rawValue)
-                    .frame(width: 29, height: 29).contentShape(Circle())
+                SwirlOrb(mood:mood,accent:palette[.accent],size:30,reduceMotion:motion == WorkspaceMotion.reduced.rawValue)
+                    .frame(width: 34, height: 34).contentShape(Circle())
             }
             .buttonStyle(.plain)
             .help("Open 3PO chat")
             .accessibilityLabel("Open 3PO chat")
             Button { activityOpen.toggle() } label: {
                 HStack(spacing: 8) {
-                    Text(message).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                    Text(message).font(.system(size: 12, weight: .medium)).lineLimit(1)
                         .truncationMode(.tail).frame(maxWidth: .infinity, alignment: .leading)
                     if active?.state == .running && progress == nil {
                         ProgressView().controlSize(.mini).frame(width: 12, height: 12)
@@ -68,7 +68,7 @@ struct AIActivityPill: View {
                             .foregroundStyle(success ? successColour : failed || attention ? Color.red : palette[.accent].opacity(0.8))
                     }
                 }.foregroundStyle(statusColour).padding(.leading, 9).padding(.trailing, 7)
-                    .frame(width: dismissible == nil ? 237 : 213, height: 29).contentShape(Rectangle())
+                    .frame(width: dismissible == nil ? 268 : 244, height: 34).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(message)
@@ -82,7 +82,7 @@ struct AIActivityPill: View {
             if let record=dismissible {
                 Button { _=store.dismiss(record,registration:registration) } label: {
                     Image(systemName:"xmark").font(.system(size:10,weight:.semibold))
-                        .frame(width:24,height:29).contentShape(Rectangle())
+                        .frame(width:24,height:34).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(statusColour)

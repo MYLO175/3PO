@@ -141,10 +141,8 @@ struct PATasksView: View {
         let inbox=model.reviewInbox,questions=inbox.questions,learningQuestions=inbox.learningQuestions,discoveries=inbox.discoveries,emails=inbox.emails,emailCards=inbox.emailCards,standaloneDiscoveries=inbox.standaloneDiscoveries,pending=inbox.pending
         let standaloneEntryIDs=lastSuggestionEntryIDs(standaloneDiscoveries)
         return VStack(alignment:.leading,spacing:12) {
-            HStack {
-                Label("Review inbox",systemImage:"tray.full").font(.title3.weight(.semibold))
+            WidgetHeader(title:"Review inbox",symbol:"tray.full") {
                 ReviewInboxBadge(count:inbox.pendingCount)
-                Spacer()
                 Button {showingRelevance=true} label:{Image(systemName:"slider.horizontal.3")}.buttonStyle(.borderless).help("Review guidance and feedback").accessibilityLabel("Review guidance")
                 Button { showingActivity=true } label:{Image(systemName:"clock.arrow.circlepath")}
                     .buttonStyle(.borderless).help("Background activity and details").accessibilityLabel("Background activity")

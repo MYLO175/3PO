@@ -5,9 +5,7 @@ struct WeatherWidgetView:View {
     @Bindable var weather:WeatherService
     var body:some View {
         VStack(alignment:.leading,spacing:10) {
-            HStack {
-                Label("Weather",systemImage:"cloud.sun").font(.title3.weight(.semibold))
-                Spacer()
+            WidgetHeader(title:"Weather",symbol:"cloud.sun") {
                 if weather.loading { ProgressView().controlSize(.small) }
                 Button { weather.startRefresh(allowPrompt:true,force:true) } label:{Image(systemName:"arrow.clockwise")}
                     .buttonStyle(.borderless).help("Refresh nearby forecast").accessibilityLabel("Refresh weather")

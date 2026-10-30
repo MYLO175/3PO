@@ -62,7 +62,6 @@ struct WorkspaceView: View {
                 }.clipped()
                     .background { WorkspaceBackdropView(palette:palette) }
                     .clipShape(UnevenRoundedRectangle(topLeadingRadius:22,style:.continuous))
-                    .padding(.top,8)
 
             }
         }.background(palette[.sidebar]).tint(accentColor).foregroundStyle(palette[.text]).environment(\.workspacePalette,palette).frame(minWidth:780,minHeight:580)
@@ -109,7 +108,7 @@ struct WorkspaceView: View {
             EmptyView()
         }.customizationBehavior(.disabled).sharedBackgroundVisibility(.hidden)
         ToolbarItem(id:"assistant",placement:.principal) {
-            DashboardAIActivityPill(model:model,palette:palette,openChat:showAssistant).frame(height:46,alignment:.center)
+            DashboardAIActivityPill(model:model,palette:palette,openChat:showAssistant).frame(height:WorkspaceChrome.toolbarItemHeight,alignment:.center)
         }.defaultCustomization(visible(.assistant) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
         ToolbarSpacer(.flexible)
         ToolbarItem(id:"refresh",placement:.primaryAction) {
@@ -287,7 +286,7 @@ private struct WorkspaceTile: View {
                         } label: { Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width:20).accessibilityLabel("\(widget.kind?.title ?? "Widget") layout actions")
                     }.padding(.horizontal,12).frame(height:34).background(Color.accentColor.opacity(0.08))
                 }
-                content.environment(\.workspacePalette,palette).foregroundStyle(palette[.text]).tint(palette[.accent]).allowsHitTesting(!editing).frame(maxWidth:.infinity,maxHeight:.infinity)
+                content.environment(\.workspacePalette,palette).environment(\.inWorkspaceTile,true).foregroundStyle(palette[.text]).tint(palette[.accent]).allowsHitTesting(!editing).frame(maxWidth:.infinity,maxHeight:.infinity)
             }
             // Keep content at its committed size during the gesture; only the preview shell follows the pointer.
             .frame(width:baseFrame.width,height:baseFrame.height,alignment:.topLeading)
