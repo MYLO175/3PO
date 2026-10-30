@@ -221,11 +221,15 @@ struct CalendarWidgetView: View {
             LazyVStack(alignment:.leading,spacing:12) {
                 ForEach(0..<7,id:\.self) { offset in
                     let day = calendar.date(byAdding:.day,value:offset,to:range.start)!, items = dayEvents(day)
-                    Text(day.formatted(.dateTime.weekday(.wide).day().month(.abbreviated))).font(.subheadline.weight(.semibold))
-                    if items.isEmpty { Text("Nothing scheduled").font(.callout).foregroundStyle(.secondary) }
-                    ForEach(items.filter(\.allDay)) { eventButton($0) }
-                    ForEach(items.filter { !$0.allDay }) { eventButton($0) }
-                    Divider()
+                    // One row per day: a multi-day event repeats under each day with the same ID,
+                    // and a lazy stack draws a repeated ID once, leaving blank rows elsewhere.
+                    VStack(alignment:.leading,spacing:12) {
+                        Text(day.formatted(.dateTime.weekday(.wide).day().month(.abbreviated))).font(.subheadline.weight(.semibold))
+                        if items.isEmpty { Text("Nothing scheduled").font(.callout).foregroundStyle(.secondary) }
+                        ForEach(items.filter(\.allDay)) { eventButton($0) }
+                        ForEach(items.filter { !$0.allDay }) { eventButton($0) }
+                        Divider()
+                    }
                 }
             }.frame(maxWidth:.infinity,alignment:.leading)
         }
