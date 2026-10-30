@@ -94,9 +94,9 @@ struct AssistantActionApprovalView:View {
                     }
                     if proposals.contains(where:{$0.phase == .pending}) && !proposals.contains(where:{$0.phase == .attempted || $0.phase == .failed}) {
                         HStack {
-                            Button("Approve actions",systemImage:"checkmark") {model.approveChatActions(conversationID:conversationID,responseID:turn.id)}.buttonStyle(.borderedProminent)
-                            Button("Dismiss") {model.dismissChatActions(conversationID:conversationID,responseID:turn.id)}
-                        }.disabled(model.assistant.busy || model.inference.busy || !model.heartbeat.deviceAvailable)
+                            Button("Approve actions",systemImage:"checkmark") {model.approveChatActions(conversationID:conversationID,responseID:turn.id)}.buttonStyle(.borderedProminent).tint(palette[.accent])
+                            Button("Dismiss") {model.dismissChatActions(conversationID:conversationID,responseID:turn.id)}.buttonStyle(.bordered)
+                        }.buttonBorderShape(.capsule).disabled(model.assistant.busy || model.inference.busy || !model.heartbeat.deviceAvailable)
                     }
                 } else {Text("These proposed actions are unavailable under the current account or source choices.").font(.caption).foregroundStyle(.secondary)}
             }.padding(.horizontal,14).padding(.vertical,12).frame(maxWidth:.infinity,alignment:.leading)
@@ -394,6 +394,7 @@ struct AssistantPanel: View {
                             AssistantTranscriptRowContent(key:.init(turn:turn,registration:model.inference.activeID,conversationID:selectedID,topicID:selectedTopicID,lastTurnID:page.lastThreadTurnID,replying:replyingHere,toolStatus:replyingHere ? assistant.toolStatus : "",discoveryEntries:discoveryEntries),colors:palette.colors) {
                             HStack(alignment:.top) {
                             if turn.role == "user" { Spacer(minLength:35) }
+                            VStack(alignment: turn.role == "user" ? .trailing : .leading, spacing: 3) {
                             VStack(alignment: .leading, spacing: 5) {
                                 if let images=turn.images { ForEach(images) { image in PAImagePreview(image:image,store:assistant.images,registration:model.inference.activeID) } }
                                 if turn.content.isEmpty && (turn.images ?? []).isEmpty {
@@ -455,22 +456,19 @@ struct AssistantPanel: View {
                                 .frame(maxWidth: turn.role == "user" ? nil : .infinity, alignment: .leading)
                                 .background(turn.role == "user" ? palette[.userBubble] : .clear,in:UnevenRoundedRectangle(topLeadingRadius:18,bottomLeadingRadius:18,bottomTrailingRadius:6,topTrailingRadius:18,style:.continuous))
                                 .accessibilityElement(children:.contain).accessibilityLabel(turn.role == "user" ? "Your message" : "PA message")
-                                .help(turn.created.map { $0.formatted(date:.abbreviated,time:.shortened) } ?? "")
-                                .overlay(alignment:.topTrailing) {
-                                    if turn.role == "assistant", !replyingHere {
-                                        TranscriptHoverDetails(time:turn.created,showsSources:turn.contextCapture != nil) { inspectContext(turn) }
-                                            .accessibilityIdentifier("pa-sources-searches-" + turn.id.uuidString)
-                                    }
-                                }
+                                if let date = turn.created, !replyingHere { TranscriptHoverTime(date:date).padding(.horizontal,turn.role == "user" ? 4 : 2) }
+                            }
                                 .modifier(TranscriptRowHover())
                             .contextMenu {
                                 if turn.contextCapture != nil {
-                                    Button("Context details…") {inspectContext(turn)}
+                                    Button("Sources & searches…",systemImage:"magnifyingglass") {inspectContext(turn)}
+                                        .accessibilityIdentifier("pa-sources-searches-" + turn.id.uuidString)
                                 }
+                                if !turn.content.isEmpty { Button("Copy",systemImage:"doc.on.doc") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(turn.content,forType:.string) } }
                             }
                             .accessibilityActions {
                                 if turn.contextCapture != nil {
-                                    Button("Context details") {inspectContext(turn)}
+                                    Button("Sources & searches") {inspectContext(turn)}
                                 }
                             }
                             .accessibilityIdentifier("pa-turn-"+turn.id.uuidString)
@@ -813,25 +811,15 @@ struct TypingDots: View {
     }
 }
 
-/// Shown over a PA message while the pointer is on it: the time and, when saved, its sources.
-private struct TranscriptHoverDetails: View {
-    var time: Date?
-    var showsSources: Bool
-    var inspect: () -> Void
+/// The message's time, under it, shown only while the pointer is on the message.
+private struct TranscriptHoverTime: View {
+    var date: Date
     @Environment(\.transcriptRowHovered) private var hovered
     var body: some View {
-        HStack(spacing: 8) {
-            if let time { Text(time.formatted(date: .omitted, time: .shortened)).font(.caption2).foregroundStyle(.secondary) }
-            if showsSources {
-                Button(action: inspect) { Image(systemName: "magnifyingglass").font(.caption2.weight(.semibold)) }
-                    .buttonStyle(.plain).foregroundStyle(.secondary).help("Sources & searches").accessibilityLabel("Sources & searches")
-            }
-        }
-        .padding(.horizontal, 8).padding(.vertical, 3)
-        .background(.regularMaterial, in: Capsule())
-        .offset(y: -12)
-        .opacity(hovered ? 1 : 0)
-        .animation(.easeOut(duration: 0.15), value: hovered)
+        Text(date.formatted(date: Calendar.current.isDateInToday(date) ? .omitted : .abbreviated, time: .shortened))
+            .font(.caption2).foregroundStyle(.secondary)
+            .opacity(hovered ? 1 : 0).animation(.easeOut(duration: 0.15), value: hovered)
+            .accessibilityHidden(true)
     }
 }
 private struct TranscriptRowHoverKey: EnvironmentKey { static let defaultValue = false }
