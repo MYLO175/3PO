@@ -222,7 +222,11 @@ struct AssistantPanel: View {
         composerFocused = true
     }
     @State private var dictation = DictationService()
-    @State private var showDictation = false
+    /// The draft as it was when dictation began; live words are shown after it.
+    @State private var dictationBase: String?
+    @AppStorage(WorkspaceStyleKey.motion) private var motionSetting = WorkspaceMotion.full.rawValue
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    private var motionReduced: Bool { systemReduceMotion || motionSetting == WorkspaceMotion.reduced.rawValue }
     @State private var showMemory = false
     @State private var showSupportingFacts = false
     @State private var inspectingContext:PAContextCapture?
@@ -293,6 +297,24 @@ struct AssistantPanel: View {
             }.font(.caption)
         }
     }
+    /// One click starts on-device dictation straight into the message box; the next click stops.
+    private func toggleDictation() {
+        if dictation.recording { dictation.stop(); return }
+        dictationBase = draft.wrappedValue
+        composerFocused = true
+        Task { await dictation.start() }
+    }
+    /// Escape puts the draft back as it was before dictation.
+    private func cancelDictation() {
+        dictation.cancel()
+        if let base = dictationBase { draft.wrappedValue = base }
+        dictationBase = nil
+    }
+    private func showDictated(_ words: String) {
+        guard let base = dictationBase, !words.isEmpty else { return }
+        draft.wrappedValue = base.isEmpty || base.hasSuffix(" ") ? base + words : base + " " + words
+        if !dictation.recording && !dictation.finishing && !dictation.preparing { dictationBase = nil }
+    }
     var body: some View {
         let conversation=assistant.feed
         let page=transcriptCache.value(owner:assistant,revision:assistant.transcriptRevision,registration:model.inference.activeID,feed:conversation,topic:topic,activeTurnID:assistant.requestTurnID,limit:visibleTurnLimit,sessionID:displayedSessionID,filterSession:true,visible:turnVisible)
@@ -308,12 +330,25 @@ struct AssistantPanel: View {
                             .accessibilityLabel("Last completed heartbeat \(completed.formatted(date:.abbreviated,time:.shortened))")
                     }
                 }
-                LifeFocusPicker(selection:focusBinding).frame(maxWidth:160,alignment:.trailing)
+                if !focusBinding.wrappedValue.isEmpty {
+                    Label(LifeFocusRules.label(focusBinding.wrappedValue),systemImage:"scope").font(.caption2.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
+                        .help("Chat focus. Change it in the PA menu.").accessibilityLabel("Chat focus: " + LifeFocusRules.label(focusBinding.wrappedValue))
+                }
                 Button { startNewChat() } label: { Image(systemName:"square.and.pencil") }
                     .disabled(assistant.busy || model.inference.busy || assistant.setupActive(selectedTopicID))
                     .help("New chat — keep earlier chats and saved memory")
                     .accessibilityLabel("New chat").accessibilityIdentifier("pa-new-chat")
                 Menu {
+                    Menu("Focus: " + LifeFocusRules.label(focusBinding.wrappedValue),systemImage:"scope") {
+                        Button("All areas") { focusBinding.wrappedValue = [] }
+                        Divider()
+                        ForEach(LifeArea.allCases.filter{$0 != .unsorted}) { area in
+                            Toggle(area.title,isOn:Binding(get:{focusBinding.wrappedValue.contains(area)},set:{ enabled in
+                                let values=enabled ? focusBinding.wrappedValue+[area] : focusBinding.wrappedValue.filter{$0 != area}
+                                focusBinding.wrappedValue=LifeFocusRules.normalised(values.map(\.rawValue))
+                            }))
+                        }
+                    }
                     Button("Chat history…",systemImage:"clock.arrow.circlepath") {
                         historyEntries = AssistantChatHistoryEntry.entries(assistant.feed)
                         showHistory = true
@@ -406,11 +441,6 @@ struct AssistantPanel: View {
                                 if replyingHere && !turn.content.isEmpty {
                                     if assistant.toolStatus.isEmpty { TypingDots() } else { Text(assistant.toolStatus).font(.caption).foregroundStyle(.secondary) }
                                 }
-                                if turn.role == "assistant", turn.contextCapture != nil, !replyingHere {
-                                    Button { inspectContext(turn) } label: { Label("Sources & searches", systemImage: "magnifyingglass") }
-                                        .buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
-                                        .accessibilityIdentifier("pa-sources-searches-" + turn.id.uuidString)
-                                }
                                 if turn.deliveryID?.contains(":morning:") == true { Button("Briefing and sources") { showBriefing = true }.controlSize(.small) }
                                 if let delivery = turn.deliveryID, let record = model.proactive.record(delivery:delivery,model:model) {
                                     ViewThatFits(in:.horizontal) {
@@ -420,12 +450,19 @@ struct AssistantPanel: View {
 
                                 }
                                 if turn.role == "assistant" && !turn.completed && assistant.requestTurnID != turn.id && !turn.content.isEmpty { Text("Partial response").font(.caption).foregroundStyle(.orange) }
-                                if let date = turn.created { Text(date.formatted(date:.omitted,time:.shortened)).font(.caption2).foregroundStyle(.secondary) }
                             }.font(.callout)
                                 .padding(.horizontal,turn.role == "user" ? 13 : 2).padding(.vertical,turn.role == "user" ? 8 : 2)
                                 .frame(maxWidth: turn.role == "user" ? nil : .infinity, alignment: .leading)
                                 .background(turn.role == "user" ? palette[.userBubble] : .clear,in:UnevenRoundedRectangle(topLeadingRadius:18,bottomLeadingRadius:18,bottomTrailingRadius:6,topTrailingRadius:18,style:.continuous))
                                 .accessibilityElement(children:.contain).accessibilityLabel(turn.role == "user" ? "Your message" : "PA message")
+                                .help(turn.created.map { $0.formatted(date:.abbreviated,time:.shortened) } ?? "")
+                                .overlay(alignment:.topTrailing) {
+                                    if turn.role == "assistant", !replyingHere {
+                                        TranscriptHoverDetails(time:turn.created,showsSources:turn.contextCapture != nil) { inspectContext(turn) }
+                                            .accessibilityIdentifier("pa-sources-searches-" + turn.id.uuidString)
+                                    }
+                                }
+                                .modifier(TranscriptRowHover())
                             .contextMenu {
                                 if turn.contextCapture != nil {
                                     Button("Context details…") {inspectContext(turn)}
@@ -440,8 +477,10 @@ struct AssistantPanel: View {
 
                             }
                             }.equatable().id(turn.id)
+                            .transition(.asymmetric(insertion:.opacity.combined(with:.offset(y:8)),removal:.opacity))
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
+                    .animation(motionReduced ? nil : .smooth(duration:0.3),value:page.lastVisibleTurn?.id)
                 }.onScrollGeometryChange(for:Double.self) { geometry in
                     Double(geometry.contentSize.height-geometry.visibleRect.maxY)
                 } action: { _, distance in transcriptScroll.update(distanceFromBottom:distance,userScrolling:transcriptUserScrolling) }
@@ -500,17 +539,27 @@ struct AssistantPanel: View {
                     }
                 }.frame(height:88)
             }
-            HStack {
-                Button { showDictation = true } label: { Image(systemName:"mic") }.help("Dictate a message").accessibilityLabel("Dictate a message").disabled(widgetID != nil && !assistant.drafts.writable)
+            HStack(alignment:.bottom,spacing:6) {
+                DictationButton(dictation:dictation,toggle:toggleDictation).disabled(widgetID != nil && !assistant.drafts.writable)
                 ZStack(alignment:.topLeading) {
-                    if draft.wrappedValue.isEmpty { Text(PAIdentity.placeholder(assistant.displayName)).foregroundStyle(.secondary).padding(.top,2).allowsHitTesting(false) }
-                    PAChatComposer(text:draft,focused:Binding(get:{composerFocused},set:{composerFocused=$0}),height:$composerHeight,scope:ChatDraftRules.key(registration:model.inference.activeID,widget:imageDraftWidget,conversation:draftKey),enabled:assistant.drafts.writable,textColor:NSColor(palette[.text]),pasteImage:pasteImage,submit:send)
+                    if draft.wrappedValue.isEmpty { Text(dictation.recording ? "Listening…" : PAIdentity.placeholder(assistant.displayName)).foregroundStyle(.secondary).padding(.top,2).allowsHitTesting(false) }
+                    PAChatComposer(text:draft,focused:Binding(get:{composerFocused},set:{composerFocused=$0}),height:$composerHeight,scope:ChatDraftRules.key(registration:model.inference.activeID,widget:imageDraftWidget,conversation:draftKey),enabled:assistant.drafts.writable,textColor:NSColor(palette[.text]),pasteImage:pasteImage,submit:send,cancel:{ guard dictation.recording || dictation.preparing else { return false }; cancelDictation(); return true })
                         .frame(height:composerHeight)
-                }.padding(.horizontal,12).padding(.vertical,9).background(palette[.input],in:RoundedRectangle(cornerRadius:16,style:.continuous)).overlay(RoundedRectangle(cornerRadius:16,style:.continuous).stroke(palette[.border]))
-                Button(sendingHere && composerEmpty ? "Stop" : assistant.busy ? "Queue" : "Send") { if sendingHere && composerEmpty { assistant.cancel() } else { send() } }
-                    .frame(width:56)
+                }.padding(.vertical,6)
+                let stopping = sendingHere && composerEmpty
+                Button { if stopping { assistant.cancel() } else { send() } } label: {
+                    Image(systemName:stopping ? "stop.fill" : "arrow.up").font(.system(size:13,weight:.bold))
+                        .frame(width:30,height:30).foregroundStyle(palette[.widget]).background(palette[.accent],in:Circle())
+                }.buttonStyle(.plain)
+                    .help(stopping ? "Stop" : assistant.busy ? "Queue this message" : "Send")
+                    .accessibilityLabel(stopping ? "Stop" : assistant.busy ? "Queue" : "Send")
                     .disabled(!sendingHere && ((widgetID != nil && !assistant.drafts.writable) || composerEmpty || (!model.inference.inferenceVerified || (!assistant.busy && model.inference.busy) || model.inference.usagePaused)))
             }
+            .padding(.leading,5).padding(.trailing,5).padding(.vertical,4)
+            .background(palette[.input],in:RoundedRectangle(cornerRadius:20,style:.continuous))
+            .overlay(RoundedRectangle(cornerRadius:20,style:.continuous).strokeBorder(palette[.text].opacity(composerFocused ? 0.18 : 0.1)))
+            .shadow(color:.black.opacity(0.06),radius:8,y:3)
+            if let note = dictation.note { Text(note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true) }
             if errorHere && assistant.error?.contains("Choose the specific target") == true {
                 Picker("Specific action target", selection: $model.assistantActions.selectedTarget) {
                     Text("Choose an item").tag("")
@@ -541,9 +590,9 @@ struct AssistantPanel: View {
             LifeItemEditor(model:model,item:.init(registration:record.registration,kind:.space,title:String((record.sourceTitle ?? "New space").prefix(160)),notes:record.evidence),close:{reviewingProject=nil},reviewedSuggestion:record)
         }.sheet(isPresented:$showRename) { PANameEditor(assistant:assistant) }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { ContextPagesView(model:model,registration:model.inference.activeID) }.sheet(isPresented:$showSupportingFacts) { PAMemoryView(memory:assistant.memory,registration:model.inference.activeID,conversationID:selectedTopicID,topicTitle:topic?.title,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) },organisation:model.lifeOrganisation,organiseContext:{ model.lifeOrganisation.check(model,manual:true,topic:selectedTopicID) },model:model,focusAreas:focusAreas) }.sheet(item:$inspectingContext) { capture in PAContextCaptureView(capture:capture,model:model,registration:model.inference.activeID) }.sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record,model:model) }.sheet(isPresented:$showProfileSetup) {
             PAProfileSetupPanel(model:model,assistant:assistant,topicID:selectedTopicID,registration:model.inference.activeID)
-        }.sheet(isPresented:$showDictation) {
-            DictationView(dictation:dictation) { text in draft.wrappedValue = draft.wrappedValue.isEmpty ? text : draft.wrappedValue + " " + text }
-        }.sheet(isPresented:$showHistory) {
+        }.onChange(of:dictation.transcript) { _,words in showDictated(words) }
+        .onChange(of:dictation.recording) { _,recording in if !recording && !dictation.finishing { dictationBase = nil } }
+        .sheet(isPresented:$showHistory) {
             AssistantChatHistoryView(entries:historyEntries,select:{ entry in historySelection = .init(sessionID:entry.sessionID);showHistory=false },close:{showHistory=false})
         }.padding(16)
     }
@@ -761,5 +810,59 @@ struct TypingDots: View {
         }
         .foregroundStyle(.secondary)
         .accessibilityElement().accessibilityLabel("Thinking")
+    }
+}
+
+/// Shown over a PA message while the pointer is on it: the time and, when saved, its sources.
+private struct TranscriptHoverDetails: View {
+    var time: Date?
+    var showsSources: Bool
+    var inspect: () -> Void
+    @Environment(\.transcriptRowHovered) private var hovered
+    var body: some View {
+        HStack(spacing: 8) {
+            if let time { Text(time.formatted(date: .omitted, time: .shortened)).font(.caption2).foregroundStyle(.secondary) }
+            if showsSources {
+                Button(action: inspect) { Image(systemName: "magnifyingglass").font(.caption2.weight(.semibold)) }
+                    .buttonStyle(.plain).foregroundStyle(.secondary).help("Sources & searches").accessibilityLabel("Sources & searches")
+            }
+        }
+        .padding(.horizontal, 8).padding(.vertical, 3)
+        .background(.regularMaterial, in: Capsule())
+        .offset(y: -12)
+        .opacity(hovered ? 1 : 0)
+        .animation(.easeOut(duration: 0.15), value: hovered)
+    }
+}
+private struct TranscriptRowHoverKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var transcriptRowHovered: Bool { get { self[TranscriptRowHoverKey.self] } set { self[TranscriptRowHoverKey.self] = newValue } }
+}
+private struct TranscriptRowHover: ViewModifier {
+    @State private var hovered = false
+    func body(content: Content) -> some View { content.environment(\.transcriptRowHovered, hovered).onHover { hovered = $0 } }
+}
+
+/// The mic inside the message box. While listening it turns red and its ring follows your voice.
+private struct DictationButton: View {
+    @Bindable var dictation: DictationService
+    var toggle: () -> Void
+    @Environment(\.workspacePalette) private var palette
+    var body: some View {
+        Button(action: toggle) {
+            ZStack {
+                if dictation.recording {
+                    Circle().fill(Color.red.opacity(0.18)).scaleEffect(1 + 0.45 * dictation.level).animation(.easeOut(duration: 0.12), value: dictation.level)
+                    Image(systemName: "stop.fill").font(.system(size: 11, weight: .bold)).foregroundStyle(.red)
+                } else if dictation.preparing || dictation.finishing {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "mic").font(.system(size: 14, weight: .medium)).foregroundStyle(palette[.text].opacity(0.6))
+                }
+            }.frame(width: 30, height: 30).contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(dictation.recording ? "Stop dictation (Escape cancels)" : "Dictate on this Mac")
+        .accessibilityLabel(dictation.recording ? "Stop dictation" : "Dictate a message")
     }
 }
