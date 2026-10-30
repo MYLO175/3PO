@@ -100,3 +100,22 @@ struct DueBadge: View {
             .accessibilityLabel((urgency == .overdue ? "Overdue, " : "Due ") + due.formatted(date: .abbreviated, time: hasTime ? .shortened : .omitted))
     }
 }
+
+/// Motion from Settings → Appearance and System Settings; Reduced wins either way.
+struct MotionPreference: DynamicProperty {
+    @AppStorage(WorkspaceStyleKey.motion) private var setting = WorkspaceMotion.full.rawValue
+    @Environment(\.accessibilityReduceMotion) private var system
+    var reduced: Bool { system || setting == WorkspaceMotion.reduced.rawValue }
+    func animation(_ animation: Animation) -> Animation? { reduced ? nil : animation }
+}
+/// Digits roll to their new value instead of jumping.
+struct RollingNumber<Value: Equatable>: ViewModifier {
+    var value: Value
+    private var motion = MotionPreference()
+    func body(content: Content) -> some View {
+        content.contentTransition(motion.reduced ? .identity : .numericText()).animation(motion.animation(.smooth(duration: 0.4)), value: value)
+    }
+}
+extension View {
+    func rollingNumber<Value: Equatable>(_ value: Value) -> some View { modifier(RollingNumber(value: value)) }
+}

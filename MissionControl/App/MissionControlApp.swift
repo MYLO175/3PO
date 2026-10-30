@@ -60,6 +60,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 value["TB Item Identifiers"]=(ids.contains("sidebar") ? ["sidebar"] : [])+["NSToolbarFlexibleSpaceItem","assistant","NSToolbarFlexibleSpaceItem"]+trailing
                 defaults.set(value,forKey:key);defaults.set(true,forKey:"workspaceToolbarCentredActionsV1")
             }
+            // Dashboards in the top bar (30 October): a layout saved before the item existed would hide
+            // it, leaving no way to switch dashboards. Add it once, right after the sidebar button.
+            if !defaults.bool(forKey:"workspaceToolbarDashboardsV1"),var value=defaults.dictionary(forKey:key),var ids=value["TB Item Identifiers"] as? [String] {
+                if !ids.contains("dashboards") { ids.insert("dashboards",at:ids.firstIndex(of:"sidebar").map{$0+1} ?? 0);value["TB Item Identifiers"]=ids;defaults.set(value,forKey:key) }
+                defaults.set(true,forKey:"workspaceToolbarDashboardsV1")
+            }
         }
         _model=State(initialValue:dashboard)
         #if DEBUG
@@ -84,7 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         Window("3PO", id: ProcessInfo.processInfo.arguments.contains("--preview-chat-approval") ? "chatApprovalPreview" : ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") ? "reviewInboxPreview" : ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") ? "reviewInboxValidation" : ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") ? "lifePlansPreview" : ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") ? "commitmentValidation" : ProcessInfo.processInfo.arguments.contains("--validate-advice-context") ? "adviceValidation" : ProcessInfo.processInfo.arguments.contains("--preview-memory-review") ? "memoryReviewPreview" : "dashboard") {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--preview-chat-approval") {
-                ChatApprovalPreview(model:model)
+                if ProcessInfo.processInfo.arguments.contains("--dashboard") { DashboardPreview(model:model) } else { ChatApprovalPreview(model:model) }
             } else if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") {
                 CalendarDragPreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-calendar-scroll") {
@@ -121,7 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             WorkspaceView(model:model).preferredColorScheme(selectedColorScheme)
             #endif
         }.defaultSize(width: ProcessInfo.processInfo.arguments.contains("--small-window") ? 820 : 1200, height: ProcessInfo.processInfo.arguments.contains("--small-window") ? 640 : 780)
-        .windowToolbarStyle(.unifiedCompact(showsTitle:false))
+        .windowToolbarStyle(.unified(showsTitle:false))
         .commands {
             WorkspaceCommands(model:model)
             HelpCommands()

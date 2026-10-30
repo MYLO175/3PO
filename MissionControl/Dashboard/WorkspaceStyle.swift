@@ -8,11 +8,18 @@ enum WorkspaceStyleKey {
     static let backdrop = "workspaceBackdrop"
     static let glowFollowsTime = "workspaceGlowFollowsTime"
     static let motion = "workspaceMotion"
+    static let switcher = "workspaceDashboardSwitcher"
 }
-/// The compact toolbar is 40 points tall and doesn't grow for taller items. The canvas starts right
-/// under it, and the 34-point pill leaves 3 points above and below, midway between window and dashboard.
+/// Where the dashboards are listed: icons in the top bar (full-width dashboard) or the sidebar.
+enum WorkspaceSwitcher: String, CaseIterable, Identifiable {
+    case topBar, sidebar
+    var id: String { rawValue }
+    var title: String { self == .topBar ? "Top bar" : "Sidebar" }
+}
+/// The standard (non-compact) toolbar is 52 points; the 34-point pill leaves even space above and below;
+/// the canvas starts right under it, so the pill sits midway between window and dashboard.
 enum WorkspaceChrome {
-    static let toolbarItemHeight: CGFloat = 40
+    static let toolbarItemHeight: CGFloat = 52
 }
 enum WorkspaceSurface: String, CaseIterable, Identifiable {
     case glass, solid
@@ -63,6 +70,8 @@ struct WorkspaceSurfaceModifier: ViewModifier {
     @AppStorage(WorkspaceStyleKey.surface) private var surface = WorkspaceSurface.glass.rawValue
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorScheme) private var scheme
+    @State private var hovering = false
+    private var motion = MotionPreference()
     static let radius: CGFloat = 22
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
@@ -70,7 +79,13 @@ struct WorkspaceSurfaceModifier: ViewModifier {
         let dark = scheme == .dark
         content
             .background {
-                if glass { shape.fill(palette[.widget].opacity(dark ? 0.5 : 0.55)).background(.ultraThinMaterial, in: shape) }
+                // Glass must read as a layer above the glow: more frosted, and tinted with a less saturated
+                // widget colour so it never matches the glow behind it, with its own light along the top.
+                if glass {
+                    shape.fill(palette[.widget].mix(with: dark ? Color(white: 0.1) : .white, by: dark ? 0.45 : 0.35).opacity(dark ? 0.72 : 0.68))
+                        .background(.regularMaterial, in: shape)
+                        .overlay(shape.fill(LinearGradient(colors: [.white.opacity(dark ? 0.07 : 0.3), .white.opacity(0)], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.3))))
+                }
                 else { shape.fill(palette[.widget]) }
             }
             .clipShape(shape)
@@ -82,7 +97,9 @@ struct WorkspaceSurfaceModifier: ViewModifier {
                     if glass { shape.strokeBorder(LinearGradient(colors: [.white.opacity(dark ? 0.12 : 0.6), .white.opacity(0)], startPoint: .top, endPoint: .center), lineWidth: 1) }
                 }
             }
-            .shadow(color: .black.opacity(lifted ? 0.16 : dark ? 0.32 : 0.08), radius: lifted ? 22 : 16, y: lifted ? 10 : 7)
+            .shadow(color: .black.opacity(lifted ? 0.16 : hovering ? (dark ? 0.55 : 0.12) : dark ? 0.45 : 0.08), radius: lifted || hovering ? 22 : 18, y: lifted || hovering ? 10 : 8)
+            .offset(y: hovering && highlight == nil && !motion.reduced ? -2 : 0)
+            .onHover { inside in withAnimation(motion.animation(.smooth(duration: 0.25))) { hovering = inside } }
     }
 }
 extension View {
@@ -93,15 +110,13 @@ extension View {
 
 /// The dashboard background. The glow only uses the theme's accent, a neighbouring shade and the
 /// user-bubble colour; following the time of day moves it and adds a slight warm or cool cast.
+/// It stays still between those moves: a constantly drifting backdrop made every glass widget
+/// re-blur each frame. It is clipped and never takes clicks, so it can't cover the sidebar.
 struct WorkspaceBackdropView: View {
     var palette: WorkspacePalette
     @AppStorage(WorkspaceStyleKey.backdrop) private var backdrop = WorkspaceBackdrop.ambient.rawValue
     @AppStorage(WorkspaceStyleKey.glowFollowsTime) private var followsTime = true
-    @AppStorage(WorkspaceStyleKey.motion) private var motion = WorkspaceMotion.full.rawValue
-    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.colorScheme) private var scheme
-    @State private var drifting = false
-    private var still: Bool { motion == WorkspaceMotion.reduced.rawValue || systemReduceMotion }
     var body: some View {
         ZStack {
             palette[.canvas]
@@ -109,13 +124,10 @@ struct WorkspaceBackdropView: View {
                 TimelineView(.periodic(from: .now, by: 300)) { context in
                     glow(GlowPeriod(date: context.date, follows: followsTime))
                 }
-                .scaleEffect(drifting ? 1.06 : 1)
-                .offset(x: drifting ? 18 : -12, y: drifting ? -14 : 10)
-                .animation(still ? nil : .easeInOut(duration: 26).repeatForever(autoreverses: true), value: drifting)
-                .onAppear { drifting = !still }
-                .onChange(of: still) { drifting = !still }
             }
         }
+        .clipped()
+        .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
     private func glow(_ period: GlowPeriod) -> some View {
@@ -136,26 +148,27 @@ struct WorkspaceBackdropView: View {
         EllipticalGradient(colors: [colour, colour.opacity(0)], center: point, startRadiusFraction: 0, endRadiusFraction: 0.5 * size)
     }
 }
-/// Where the glow sits at each time of day. Not following the time keeps one fixed arrangement.
+/// Where the glow sits at each time of day. Its bright patches stay in the lower half and at the sides,
+/// away from widget tops where the glass carries its own light. Not following the time keeps one arrangement.
 struct GlowPeriod: Equatable {
     var spots: [UnitPoint]
     var intensity = 1.0
     var cast = Color.white
     var castAmount = 0.0
     init(date: Date, follows: Bool, calendar: Calendar = .current) {
-        guard follows else { spots = [.init(x: 0.18, y: 0.18), .init(x: 0.82, y: 0.22), .init(x: 0.55, y: 0.95)]; return }
+        guard follows else { spots = [.init(x: 0.12, y: 0.9), .init(x: 0.88, y: 0.85), .init(x: 0.5, y: 1.05)]; return }
         switch calendar.component(.hour, from: date) {
         case 5..<11:
-            spots = [.init(x: 0.1, y: 0.92), .init(x: 0.42, y: 0.12), .init(x: 0.88, y: 0.78)]
+            spots = [.init(x: 0.06, y: 0.95), .init(x: 0.45, y: 1.05), .init(x: 0.95, y: 0.7)]
             cast = Color(red: 1, green: 0.70, blue: 0.48); castAmount = 0.16
         case 11..<17:
-            spots = [.init(x: 0.5, y: 0), .init(x: 0.88, y: 0.35), .init(x: 0.12, y: 0.7)]
+            spots = [.init(x: 0.5, y: 1.08), .init(x: 0.04, y: 0.65), .init(x: 0.96, y: 0.65)]
             intensity = 1.1
         case 17..<21:
-            spots = [.init(x: 0.9, y: 0.9), .init(x: 0.62, y: 0.28), .init(x: 0.1, y: 0.18)]
+            spots = [.init(x: 0.94, y: 0.95), .init(x: 0.6, y: 1.05), .init(x: 0.04, y: 0.78)]
             cast = Color(red: 1, green: 0.5, blue: 0.4); castAmount = 0.16
         default:
-            spots = [.init(x: 0.22, y: 0.08), .init(x: 0.8, y: 0.88), .init(x: 0.5, y: 0.5)]
+            spots = [.init(x: 0.15, y: 1.02), .init(x: 0.85, y: 0.92), .init(x: 0.5, y: 0.8)]
             intensity = 0.65; cast = Color(red: 0.36, green: 0.42, blue: 1); castAmount = 0.12
         }
     }
@@ -172,6 +185,7 @@ struct AppearanceSettings: View {
     @AppStorage(WorkspaceStyleKey.glowFollowsTime) private var followsTime = true
     @AppStorage(WorkspaceStyleKey.motion) private var motion = WorkspaceMotion.full.rawValue
     @AppStorage(WorkspaceHeadlineFont.key) private var headline = WorkspaceHeadlineFont.serif.rawValue
+    @AppStorage(WorkspaceStyleKey.switcher) private var switcher = WorkspaceSwitcher.topBar.rawValue
     @Environment(\.colorScheme) private var scheme
     @State private var editingColours = false
     @State private var replacing: WorkspaceColorTheme?
@@ -198,6 +212,11 @@ struct AppearanceSettings: View {
                 .pickerStyle(.segmented)
         }
         Section {
+            Picker("Dashboards", selection: $switcher) { ForEach(WorkspaceSwitcher.allCases) { Text($0.title).tag($0.rawValue) } }.pickerStyle(.segmented)
+        } header: { Text("Layout") } footer: {
+            Text("Top bar shows each dashboard as an icon beside the window controls, and the dashboard fills the window. Add a dashboard in Edit layout.").font(.caption).foregroundStyle(.secondary)
+        }
+        Section {
             Picker("Widgets", selection: $surface) { ForEach(WorkspaceSurface.allCases) { Text($0.title).tag($0.rawValue) } }.pickerStyle(.segmented)
             Picker("Background", selection: $backdrop) { ForEach(WorkspaceBackdrop.allCases) { Text($0.title).tag($0.rawValue) } }.pickerStyle(.segmented)
             Toggle("Follow the time of day", isOn: $followsTime).disabled(backdrop != WorkspaceBackdrop.ambient.rawValue)
@@ -212,7 +231,7 @@ struct AppearanceSettings: View {
         Section {
             Picker("Animations", selection: $motion) { ForEach(WorkspaceMotion.allCases) { Text($0.title).tag($0.rawValue) } }.pickerStyle(.segmented)
         } header: { Text("Motion") } footer: {
-            Text("Reduced keeps the background and the toolbar orb still. Reduce motion in System Settings does the same.").font(.caption).foregroundStyle(.secondary)
+            Text("Reduced keeps the pill’s bars still and turns off moving numbers and sliding highlights. Reduce motion in System Settings does the same.").font(.caption).foregroundStyle(.secondary)
         }
         .sheet(isPresented: $editingColours) { WorkspaceColorEditor() }
         .confirmationDialog("Replace your custom colours?", isPresented: Binding(get: { replacing != nil }, set: { if !$0 { replacing = nil } }), presenting: replacing) { preset in
