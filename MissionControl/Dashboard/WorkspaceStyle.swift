@@ -93,15 +93,13 @@ extension View {
 
 /// The dashboard background. The glow only uses the theme's accent, a neighbouring shade and the
 /// user-bubble colour; following the time of day moves it and adds a slight warm or cool cast.
+/// It stays still between those moves: a constantly drifting backdrop made every glass widget
+/// re-blur each frame. It is clipped and never takes clicks, so it can't cover the sidebar.
 struct WorkspaceBackdropView: View {
     var palette: WorkspacePalette
     @AppStorage(WorkspaceStyleKey.backdrop) private var backdrop = WorkspaceBackdrop.ambient.rawValue
     @AppStorage(WorkspaceStyleKey.glowFollowsTime) private var followsTime = true
-    @AppStorage(WorkspaceStyleKey.motion) private var motion = WorkspaceMotion.full.rawValue
-    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.colorScheme) private var scheme
-    @State private var drifting = false
-    private var still: Bool { motion == WorkspaceMotion.reduced.rawValue || systemReduceMotion }
     var body: some View {
         ZStack {
             palette[.canvas]
@@ -109,13 +107,10 @@ struct WorkspaceBackdropView: View {
                 TimelineView(.periodic(from: .now, by: 300)) { context in
                     glow(GlowPeriod(date: context.date, follows: followsTime))
                 }
-                .scaleEffect(drifting ? 1.06 : 1)
-                .offset(x: drifting ? 18 : -12, y: drifting ? -14 : 10)
-                .animation(still ? nil : .easeInOut(duration: 26).repeatForever(autoreverses: true), value: drifting)
-                .onAppear { drifting = !still }
-                .onChange(of: still) { drifting = !still }
             }
         }
+        .clipped()
+        .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
     private func glow(_ period: GlowPeriod) -> some View {
@@ -212,7 +207,7 @@ struct AppearanceSettings: View {
         Section {
             Picker("Animations", selection: $motion) { ForEach(WorkspaceMotion.allCases) { Text($0.title).tag($0.rawValue) } }.pickerStyle(.segmented)
         } header: { Text("Motion") } footer: {
-            Text("Reduced keeps the background and the toolbar orb still. Reduce motion in System Settings does the same.").font(.caption).foregroundStyle(.secondary)
+            Text("Reduced keeps the toolbar orb still and turns off moving numbers and sliding highlights. Reduce motion in System Settings does the same.").font(.caption).foregroundStyle(.secondary)
         }
         .sheet(isPresented: $editingColours) { WorkspaceColorEditor() }
         .confirmationDialog("Replace your custom colours?", isPresented: Binding(get: { replacing != nil }, set: { if !$0 { replacing = nil } }), presenting: replacing) { preset in
