@@ -79,7 +79,13 @@ struct WorkspaceSurfaceModifier: ViewModifier {
         let dark = scheme == .dark
         content
             .background {
-                if glass { shape.fill(palette[.widget].opacity(dark ? 0.5 : 0.55)).background(.ultraThinMaterial, in: shape) }
+                // Glass must read as a layer above the glow: more frosted, and tinted with a less saturated
+                // widget colour so it never matches the glow behind it, with its own light along the top.
+                if glass {
+                    shape.fill(palette[.widget].mix(with: dark ? Color(white: 0.1) : .white, by: dark ? 0.45 : 0.35).opacity(dark ? 0.72 : 0.68))
+                        .background(.regularMaterial, in: shape)
+                        .overlay(shape.fill(LinearGradient(colors: [.white.opacity(dark ? 0.07 : 0.3), .white.opacity(0)], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.3))))
+                }
                 else { shape.fill(palette[.widget]) }
             }
             .clipShape(shape)
@@ -91,7 +97,7 @@ struct WorkspaceSurfaceModifier: ViewModifier {
                     if glass { shape.strokeBorder(LinearGradient(colors: [.white.opacity(dark ? 0.12 : 0.6), .white.opacity(0)], startPoint: .top, endPoint: .center), lineWidth: 1) }
                 }
             }
-            .shadow(color: .black.opacity(lifted ? 0.16 : hovering ? (dark ? 0.4 : 0.12) : dark ? 0.32 : 0.08), radius: lifted || hovering ? 22 : 16, y: lifted || hovering ? 10 : 7)
+            .shadow(color: .black.opacity(lifted ? 0.16 : hovering ? (dark ? 0.55 : 0.12) : dark ? 0.45 : 0.08), radius: lifted || hovering ? 22 : 18, y: lifted || hovering ? 10 : 8)
             .offset(y: hovering && highlight == nil && !motion.reduced ? -2 : 0)
             .onHover { inside in withAnimation(motion.animation(.smooth(duration: 0.25))) { hovering = inside } }
     }
@@ -142,26 +148,27 @@ struct WorkspaceBackdropView: View {
         EllipticalGradient(colors: [colour, colour.opacity(0)], center: point, startRadiusFraction: 0, endRadiusFraction: 0.5 * size)
     }
 }
-/// Where the glow sits at each time of day. Not following the time keeps one fixed arrangement.
+/// Where the glow sits at each time of day. Its bright patches stay in the lower half and at the sides,
+/// away from widget tops where the glass carries its own light. Not following the time keeps one arrangement.
 struct GlowPeriod: Equatable {
     var spots: [UnitPoint]
     var intensity = 1.0
     var cast = Color.white
     var castAmount = 0.0
     init(date: Date, follows: Bool, calendar: Calendar = .current) {
-        guard follows else { spots = [.init(x: 0.18, y: 0.18), .init(x: 0.82, y: 0.22), .init(x: 0.55, y: 0.95)]; return }
+        guard follows else { spots = [.init(x: 0.12, y: 0.9), .init(x: 0.88, y: 0.85), .init(x: 0.5, y: 1.05)]; return }
         switch calendar.component(.hour, from: date) {
         case 5..<11:
-            spots = [.init(x: 0.1, y: 0.92), .init(x: 0.42, y: 0.12), .init(x: 0.88, y: 0.78)]
+            spots = [.init(x: 0.06, y: 0.95), .init(x: 0.45, y: 1.05), .init(x: 0.95, y: 0.7)]
             cast = Color(red: 1, green: 0.70, blue: 0.48); castAmount = 0.16
         case 11..<17:
-            spots = [.init(x: 0.5, y: 0), .init(x: 0.88, y: 0.35), .init(x: 0.12, y: 0.7)]
+            spots = [.init(x: 0.5, y: 1.08), .init(x: 0.04, y: 0.65), .init(x: 0.96, y: 0.65)]
             intensity = 1.1
         case 17..<21:
-            spots = [.init(x: 0.9, y: 0.9), .init(x: 0.62, y: 0.28), .init(x: 0.1, y: 0.18)]
+            spots = [.init(x: 0.94, y: 0.95), .init(x: 0.6, y: 1.05), .init(x: 0.04, y: 0.78)]
             cast = Color(red: 1, green: 0.5, blue: 0.4); castAmount = 0.16
         default:
-            spots = [.init(x: 0.22, y: 0.08), .init(x: 0.8, y: 0.88), .init(x: 0.5, y: 0.5)]
+            spots = [.init(x: 0.15, y: 1.02), .init(x: 0.85, y: 0.92), .init(x: 0.5, y: 0.8)]
             intensity = 0.65; cast = Color(red: 0.36, green: 0.42, blue: 1); castAmount = 0.12
         }
     }
