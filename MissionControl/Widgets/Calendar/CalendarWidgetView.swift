@@ -30,6 +30,7 @@ struct CalendarWidgetView: View {
     @State private var placement = 0
     private var calendar: Calendar { .current }
     private var mode: String { configuration.calendarMode }
+    private var motion = MotionPreference()
     private var range: DateInterval {
         if mode == "month" {
             let month = calendar.dateInterval(of:.month,for:configuration.date)!
@@ -278,8 +279,9 @@ struct CalendarWidgetView: View {
             let width = week ? weekColumnWidth : CalendarTimelineFocus.columnWidth(available:max(1,geometry.size.width-14),days:1)
             let indices = week ? CalendarWeekStrip.rendered(leading:leadingIndex,visible:visibleColumns) : 0..<1
             let columns = timelineColumns(indices,from:week ? stripStart : calendar.startOfDay(for:configuration.date))
-            // Counted over the loaded block, so the header height holds steady while scrolling.
-            let allDayCount = mostAllDayEvents(in:range)
+            // Counted over the days on screen, like Calendar: the band grows and shrinks as you scroll.
+            let visibleDays = week ? DateInterval(start:CalendarWeekStrip.day(leadingIndex,from:stripStart),end:calendar.date(byAdding:.day,value:1,to:CalendarWeekStrip.day(leadingIndex+visibleColumns-1,from:stripStart))!) : range
+            let allDayCount = mostAllDayEvents(in:visibleDays)
             let allDayHeight = Double(min(3,allDayCount))*24 + (allDayCount > 3 ? 20 : 0)
             let inset = Double(indices.lowerBound)*(width+8)
             ScrollView(week ? [.horizontal,.vertical] : .vertical) {
@@ -304,7 +306,7 @@ struct CalendarWidgetView: View {
                                         VStack(alignment:.leading,spacing:3) {
                                             ForEach(items.prefix(3)) { event in Button { select(event) } label: { Text("All day · " + event.title).font(.caption2).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading).padding(4).background(color(event).opacity(0.12),in:RoundedRectangle(cornerRadius:4)) }.buttonStyle(.plain).help(event.title) }
                                             if items.count > 3 { Button("+\(items.count-3) all-day events") { configuration.date = day; configuration.calendarMode = "agenda" }.font(.caption2).buttonStyle(.borderless) }
-                                        }.frame(height:allDayHeight,alignment:.top)
+                                        }.frame(height:allDayHeight,alignment:.top).animation(motion.animation(.smooth(duration:0.25)),value:allDayHeight)
                                     }
                                 }.frame(width:width,alignment:.leading)
                             }
