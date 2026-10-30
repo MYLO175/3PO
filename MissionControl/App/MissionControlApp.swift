@@ -67,6 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if ProcessInfo.processInfo.arguments.contains("--render-projects") || EvaluationLaunchGuard.modes.contains(where: { mode in mode.first.map(ProcessInfo.processInfo.arguments.contains) ?? false }) {
             DispatchQueue.main.async { dashboard.start() }
         }
+        if ProcessInfo.processInfo.arguments.contains("--preview-settings-context") && ProcessInfo.processInfo.arguments.contains("--snapshot") {
+            DispatchQueue.main.async { Task { await SettingsContextPreview.render(dashboard) } }
+        }
         #endif
     }
     @AppStorage("workspaceAppearance") private var appearance = "system"
