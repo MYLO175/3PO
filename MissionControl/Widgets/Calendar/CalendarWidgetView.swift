@@ -55,19 +55,6 @@ struct CalendarWidgetView: View {
         }
         return configuration.date.formatted(.dateTime.weekday(.abbreviated).day().month(.wide))
     }
-    /// Day and Agenda views of today only: the event under way and how long is left, or what's next
-    /// and how soon. Week and Month scroll through dates, so a line that comes and goes would jump.
-    private func nextHeadline(_ now: Date) -> String? {
-        guard mode == "day" || mode == "agenda", calendar.isDate(configuration.date, inSameDayAs: now) else { return nil }
-        let today = events.filter { !$0.allDay && calendar.isDate($0.start, inSameDayAs: now) }.sorted { $0.start < $1.start }
-        func span(_ seconds: TimeInterval) -> String {
-            let minutes = max(1, Int((seconds / 60).rounded()))
-            return minutes < 60 ? "\(minutes) min" : "\(minutes / 60) h" + (minutes % 60 == 0 ? "" : " \(minutes % 60) min")
-        }
-        if let current = today.last(where: { $0.start <= now && now < $0.end }) { return current.title + " · " + span(current.end.timeIntervalSince(now)) + " left" }
-        if let next = today.first(where: { $0.start > now }) { return next.title + " in " + span(next.start.timeIntervalSince(now)) }
-        return today.isEmpty ? "Nothing on today" : "Nothing else today"
-    }
     private var events: [AgendaEvent] {
         snapshot.events.filter { !configuration.sourceExclusions.contains($0.calendarID) }.map { event in
             pendingMove?.id == event.id ? pendingMove! : event
@@ -85,9 +72,6 @@ struct CalendarWidgetView: View {
                     Text("Agenda").tag("agenda"); Text("Day").tag("day"); Text("Week").tag("week"); Text("Month").tag("month")
                 }.pickerStyle(.menu).labelsHidden().frame(width:90)
             }.buttonStyle(.borderless).controlSize(.small)
-            TimelineView(.periodic(from:.now,by:60)) { context in
-                if let headline = nextHeadline(context.date) { WidgetHeadline(text:headline,lines:1) }
-            }
             HStack(spacing:8) {
                 Button { showDatePicker.toggle() } label: {
                     HStack(spacing:4) { Text(dateTitle).font(.callout.weight(.medium)); Image(systemName:"chevron.down").font(.caption2) }

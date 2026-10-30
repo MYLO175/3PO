@@ -226,7 +226,6 @@ struct DashboardView: View {
     var remindersPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             WidgetHeader(title:"Reminders",symbol:"checklist") { SourceStatusIndicator(title:"Reminders",health:model.reminderHealth); Button { model.newNativeItem(.reminder) } label: { Image(systemName:"plus") }.help("New reminder").accessibilityLabel("New reminder").disabled(model.writing) }
-            WidgetHeadline(text:reminderHeadline)
             if let error = model.reminderHealth.error { Text((model.reminderHealth.lastSuccess == nil ? "" : "Stale · ") + error).font(.caption).foregroundStyle(.orange).lineLimit(2) }
             HStack(spacing: 8) {
                 sourceMenu("Lists", sources: model.reminderData.sources, exclusions: listExclusions)
@@ -270,15 +269,6 @@ struct DashboardView: View {
                 }
             }
         }.panelStyle()
-    }
-    /// The one line that matters: anything overdue, else the next thing due today.
-    private var reminderHeadline: String {
-        let items = DateRules.ordered(visibleReminders)
-        let overdue = items.filter { DateRules.group($0) == "Overdue" }
-        if overdue.count == 1, let item = overdue.first { return item.title + " is overdue." }
-        if overdue.count > 1 { return "\(overdue.count) reminders overdue." }
-        guard let next = items.first(where: { $0.due.map { Calendar.current.isDateInToday($0) } ?? false }), let due = next.due else { return "Nothing due today." }
-        return next.title + (next.hasTime ? " by " + due.formatted(date: .omitted, time: .shortened) : " today") + "."
     }
     /// Checkbox, title, then when it's due on the right: red today or overdue, orange tomorrow, grey later.
     func reminderRow(_ item: TaskItem, showSource: Bool, showOverdueBadge: Bool) -> some View {
