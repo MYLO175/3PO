@@ -42,6 +42,30 @@ import AppKit
         _ = model.assistant.memory.put(memory)
         return (registration, university, engineering, project)
     }
+    /// More fictional spaces with deadlines relative to today, so Projects home, Due soon
+    /// and subproject boards look lived-in. Interactive preview only.
+    static func seedOverview(_ model: DashboardModel, registration: String) {
+        func day(_ offset: Int) -> String { LifeDue.local(Calendar.current.date(byAdding:.day,value:offset,to:.now) ?? .now) }
+        func task(_ title: String, _ parent: LifeItem, _ status: LifeItemStatus = .planned, due: Int? = nil) -> LifeItem {
+            LifeItem(registration:registration,kind:.task,title:title,parentID:parent.id,status:status,due:due.map(day))
+        }
+        let signals = LifeItem(registration:registration,kind:.space,title:"Signals coursework",areas:[.studies],icon:"graduationcap")
+        let sheets = LifeItem(registration:registration,kind:.space,title:"Problem sheets",parentID:signals.id,areas:[.studies],icon:"doc.text")
+        let revision = LifeItem(registration:registration,kind:.space,title:"Revision",parentID:signals.id,areas:[.studies],icon:"book.closed")
+        let applications = LifeItem(registration:registration,kind:.space,title:"Graduate applications",areas:[.career],icon:"briefcase")
+        let northwind = LifeItem(registration:registration,kind:.space,title:"Northwind Robotics",parentID:applications.id,areas:[.career])
+        let moving = LifeItem(registration:registration,kind:.space,title:"Moving out",areas:[.home],icon:"house")
+        let batches: [[LifeItem]] = [
+            [signals,sheets,revision,applications,northwind,moving],
+            [task("Problem sheet 4",sheets,.active,due:0),task("Problem sheet 5",sheets,due:7),task("Problem sheet 3",sheets,.done),
+             task("Summary sheet, chapters 1–3",revision),task("Past paper 2024",revision,due:12),task("Coursework 1 report",signals,due:4)],
+            [task("Cover letter",northwind,.active,due:2),task("Online test",northwind,due:13),task("Application form",northwind,.done),
+             task("Research two more companies",applications,due:20),task("Book a van",moving,due:18),task("Deposit return",moving,.waiting)]
+        ]
+        for (number,batch) in batches.enumerated() {
+            _ = try? model.assistant.projects.create(batch,receipt:.init(id:"preview-overview-\(number)",registration:registration,result:"Fictional overview",itemID:batch[0].id))
+        }
+    }
     static func render(_ model: DashboardModel) async {
         guard let (registration,university,engineering,project) = seed(model) else { return }
         let previews:[(String,CGFloat,CGFloat,String,String,UUID?)]=[
@@ -114,9 +138,11 @@ struct LifeProjectInteractivePreview: View {
             if chat { AssistantPanel(model:model,assistant:model.assistant,readingMode:$reading,configuration:$configuration) } else if lifeMap { PALifeMapWidget(model:model,configuration:$configuration) } else { LifeProjectWidget(model:model,configuration:$configuration,previewRegistration:registration) }
         }.padding(20).frame(minWidth:350,minHeight:500)
         .task {
-            guard registration.isEmpty, let (identity,_,engineering,project) = LifeProjectPreview.seed(model) else { return }
+            guard registration.isEmpty, let (identity,_,_,project) = LifeProjectPreview.seed(model) else { return }
             model.assistant.seedWorkflowPreview()
-            registration = identity; configuration.projectRoots = [identity:(ProcessInfo.processInfo.arguments.contains("--check-board-scroll") ? project.id : engineering.id).uuidString]
+            LifeProjectPreview.seedOverview(model,registration:identity)
+            registration = identity
+            if ProcessInfo.processInfo.arguments.contains("--check-board-scroll") { configuration.projectRoots = [identity:project.id.uuidString] }
         }
     }
 }
