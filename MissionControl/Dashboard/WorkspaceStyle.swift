@@ -63,6 +63,8 @@ struct WorkspaceSurfaceModifier: ViewModifier {
     @AppStorage(WorkspaceStyleKey.surface) private var surface = WorkspaceSurface.glass.rawValue
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorScheme) private var scheme
+    @State private var hovering = false
+    private var motion = MotionPreference()
     static let radius: CGFloat = 22
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
@@ -82,7 +84,9 @@ struct WorkspaceSurfaceModifier: ViewModifier {
                     if glass { shape.strokeBorder(LinearGradient(colors: [.white.opacity(dark ? 0.12 : 0.6), .white.opacity(0)], startPoint: .top, endPoint: .center), lineWidth: 1) }
                 }
             }
-            .shadow(color: .black.opacity(lifted ? 0.16 : dark ? 0.32 : 0.08), radius: lifted ? 22 : 16, y: lifted ? 10 : 7)
+            .shadow(color: .black.opacity(lifted ? 0.16 : hovering ? (dark ? 0.4 : 0.12) : dark ? 0.32 : 0.08), radius: lifted || hovering ? 22 : 16, y: lifted || hovering ? 10 : 7)
+            .offset(y: hovering && highlight == nil && !motion.reduced ? -2 : 0)
+            .onHover { inside in withAnimation(motion.animation(.smooth(duration: 0.25))) { hovering = inside } }
     }
 }
 extension View {

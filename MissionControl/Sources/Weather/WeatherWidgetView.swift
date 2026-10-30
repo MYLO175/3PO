@@ -58,7 +58,7 @@ struct WeatherForecastFace:View {
                     Image(systemName:today.symbol).symbolRenderingMode(.hierarchical).foregroundStyle(palette[.accent])
                         .font(.system(size:max(18,min(size.height*0.62,size.width*0.23)),weight:.light)).frame(width:size.width*0.32)
                     VStack(alignment:.leading,spacing:2) {
-                        Text(temperature(today.high)).font(.system(size:max(18,min(size.height*0.54,size.width*0.27)),weight:.light,design:.rounded)).monospacedDigit()
+                        Text(temperature(today.high)).font(.system(size:max(18,min(size.height*0.54,size.width*0.27)),weight:.light,design:.rounded)).monospacedDigit().rollingNumber(today.high)
                         Text(today.description).font((bounds.size.height < 85 ? Font.caption : Font.callout).weight(.medium)).lineLimit(1)
                         if bounds.size.height >= 85 { Text("Forecast high · Low \(temperature(today.low))C").font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                     }.frame(maxWidth:.infinity,alignment:.leading)

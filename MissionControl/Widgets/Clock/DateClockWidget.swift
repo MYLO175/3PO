@@ -57,13 +57,13 @@ struct DateClockFace:View {
                     Text(day).font(.system(size:fittedFont(day,width:dateWidth,height:size.height*0.72,weight:.semibold),weight:.semibold,design:.rounded))
                     Text(month).font(.system(size:fittedFont(month,width:dateWidth,height:size.height*0.2,weight:.medium),weight:.medium,design:.rounded)).foregroundStyle(.secondary)
                 }.frame(width:dateWidth,height:size.height,alignment:leading ? .leading : .center)
-                Text(time).font(.system(size:fittedFont(time,width:timeWidth,height:size.height*0.94,weight:.light,monospaced:true),weight:.light,design:.rounded)).monospacedDigit().frame(width:timeWidth,height:size.height)
+                Text(time).font(.system(size:fittedFont(time,width:timeWidth,height:size.height*0.94,weight:.light,monospaced:true),weight:.light,design:.rounded)).monospacedDigit().rollingNumber(time).frame(width:timeWidth,height:size.height)
             }
         } else if showsTime {
             let dateLabel=date.formatted(.dateTime.day().month(.wide))
             VStack(alignment:alignment,spacing:size.height*0.04) {
                 Text(dateLabel).font(.system(size:fittedFont(dateLabel,width:size.width,height:size.height*0.25,weight:.medium),weight:.medium,design:.rounded)).foregroundStyle(.secondary)
-                Text(time).font(.system(size:fittedFont(time,width:size.width,height:size.height*0.65,weight:.light,monospaced:true),weight:.light,design:.rounded)).monospacedDigit()
+                Text(time).font(.system(size:fittedFont(time,width:size.width,height:size.height*0.65,weight:.light,monospaced:true),weight:.light,design:.rounded)).monospacedDigit().rollingNumber(time)
             }
         } else {
             VStack(alignment:alignment,spacing:size.height*0.035) {
@@ -83,12 +83,12 @@ struct DateClockFace:View {
                     VStack(alignment:alignment,spacing:4) {
                         Text(date.formatted(.dateTime.day())).font(.system(size:min(180,max(36,min(size.width*0.42,size.height*0.5))),weight:.semibold,design:.rounded))
                         Text(date.formatted(.dateTime.month(.wide).year())).font(.system(size:min(32,max(16,size.height*0.1)),weight:.medium,design:.rounded)).foregroundStyle(.secondary)
-                        if showsTime { Text(time).font(.system(size:min(42,max(18,size.height*0.14)),weight:.light,design:.rounded)).monospacedDigit() }
+                        if showsTime { Text(time).font(.system(size:min(42,max(18,size.height*0.14)),weight:.light,design:.rounded)).monospacedDigit().rollingNumber(time) }
                     }
                 } else {
                     VStack(alignment:alignment,spacing:10) {
                         Text(date.formatted(.dateTime.day().month(.wide))).font(.system(size:min(46,max(20,min(size.width*0.095,size.height*0.18))),weight:.medium,design:.rounded)).foregroundStyle(showsTime ? .secondary : .primary)
-                        if showsTime { Text(time).font(.system(size:min(180,max(28,min(size.width/(seconds ? 5.5 : 4.2),size.height*0.4))),weight:.light,design:.rounded)).monospacedDigit() }
+                        if showsTime { Text(time).font(.system(size:min(180,max(28,min(size.width/(seconds ? 5.5 : 4.2),size.height*0.4))),weight:.light,design:.rounded)).monospacedDigit().rollingNumber(time) }
                     }
                 }
             }.lineLimit(1).minimumScaleFactor(0.5).frame(width:size.width,height:size.height,alignment:leading ? .leading : .center)

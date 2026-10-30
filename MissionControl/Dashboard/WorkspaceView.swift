@@ -20,6 +20,9 @@ struct WorkspaceView: View {
     @State private var legacy = false
     @State private var focusedWidgetID: UUID?
     @State private var showColors = false
+    @Namespace private var sidebarSelection
+    @AppStorage(WorkspaceStyleKey.surface) private var surface = WorkspaceSurface.glass.rawValue
+    private var motion = MotionPreference()
     private var store: WorkspaceStore { model.workspace }
     private var palette: WorkspacePalette { .resolved(raw:colorOverrides,mode:scheme == .dark ? "dark" : "light",theme:theme,accent:accent) }
     private var accentColor: Color { palette[.accent] }
@@ -174,10 +177,9 @@ struct WorkspaceView: View {
             ScrollView {
                 VStack(spacing:4) {
                     ForEach(store.state.pages) { page in
-                        Button { store.select(page.id) } label: {
+                        Button { withAnimation(motion.animation(.smooth(duration:0.32))) { store.select(page.id) } } label: {
                             WorkspacePageLabel(model:model,title:page.title,icon:page.displayIcon,expanded:sidebarVisible,showsReview:page.widgets.contains(where:{$0.kind == .tasks}))
-                            .background(page.id == store.selected.id ? accentColor.opacity(0.14) : Color.clear,
-                                        in:RoundedRectangle(cornerRadius:12,style:.continuous))
+                            .background { if page.id == store.selected.id { sidebarHighlight.matchedGeometryEffect(id:"selection",in:sidebarSelection) } }
                             .contentShape(RoundedRectangle(cornerRadius:12,style:.continuous))
                         }.buttonStyle(.plain)
                             .contextMenu { Button("Edit name and icon…") { naming = page.id; name = page.title; dashboardSymbol=page.symbol; showName = true }; Button("Duplicate") { store.duplicate(page.id) }; Button("Move up") { store.movePage(page.id,offset:-1) }; Button("Move down") { store.movePage(page.id,offset:1) }; Divider(); Button("Remove dashboard") { store.removePage(page.id) }.disabled(store.state.pages.count == 1) }
@@ -193,6 +195,15 @@ struct WorkspaceView: View {
                     .contentShape(RoundedRectangle(cornerRadius:12,style:.continuous))
             }.buttonStyle(.plain).help("New dashboard").accessibilityLabel("New dashboard")
         }.padding(.horizontal,8).padding(.vertical,12)
+    }
+    /// Glass: a lifted pane of the widget colour; solid: an accent tint.
+    @ViewBuilder private var sidebarHighlight: some View {
+        let shape = RoundedRectangle(cornerRadius:12,style:.continuous)
+        if surface == WorkspaceSurface.glass.rawValue {
+            shape.fill(palette[.widget].opacity(scheme == .dark ? 0.55 : 0.8))
+                .overlay(shape.strokeBorder(.white.opacity(scheme == .dark ? 0.08 : 0.6),lineWidth:0.5))
+                .shadow(color:.black.opacity(scheme == .dark ? 0.3 : 0.07),radius:5,y:2)
+        } else { shape.fill(accentColor.opacity(0.14)) }
     }
     private func saveName() { if let naming { store.configurePage(naming,title:name,symbol:dashboardSymbol) } else { store.addPage(name,symbol:dashboardSymbol) }; showName = false }
     private func widgetBinding(_ original: WidgetPlacement) -> Binding<WidgetPlacement> { Binding(get:{ store.selected.widgets.first { $0.id == original.id } ?? original },set:{ store.update($0) }) }
