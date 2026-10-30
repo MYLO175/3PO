@@ -70,7 +70,14 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         config.timeoutIntervalForRequest = 30; config.timeoutIntervalForResource = 120
         return URLSession(configuration: config, delegate: redirectDelegate, delegateQueue: nil)
     }()
+    /// Previews never open the Keychain: a rebuilt preview copy's signature is not on the
+    /// item's access list, so reading asks for the login password, and saving would replace
+    /// the real accounts with the preview's empty list.
+    private var disposable = false
     init() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--preview-") }) { disposable = true; return }
+        #endif
         do {
             if let data = try ChatGPTKeychain.read() { registrations = try JSONDecoder().decode([ChatGPTRegistration].self, from: data) }
             labels()
@@ -87,6 +94,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
         accounts = registrations.map { .init(id: $0.clientID, name: ($0.email.isEmpty ? "ChatGPT account" : $0.email) + " · " + String($0.clientID.suffix(6))) }
     }
     private func save(_ registration: ChatGPTRegistration, select: Bool = true) throws {
+        guard !disposable else { throw ChatGPTError.message("Previews do not save ChatGPT sign-ins.") }
         var updated = registrations.filter { $0.clientID != registration.clientID }; updated.append(registration)
         try ChatGPTKeychain.write(JSONEncoder().encode(updated))
         registrations = updated; if select { activeID = registration.clientID }; labels()
