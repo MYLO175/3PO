@@ -49,6 +49,15 @@ import Foundation
         assert(CalendarWeekStrip.index(of:loaded.end,from:loaded.start,calendar:calendar) == 3*CalendarWeekStrip.block)
         assert(CalendarWeekStrip.loaded(leading:0,start:strip,calendar:calendar).start == strip)
         assert(CalendarWeekStrip.comfortable(centre,visible:7) && !CalendarWeekStrip.comfortable(10,visible:7) && !CalendarWeekStrip.comfortable(CalendarWeekStrip.days-20,visible:7))
+        // Week columns take their bounds from consecutive strip days; across both clock changes those are the calendar's own days.
+        for date in [fall.start,day(2026,3,29).start] {
+            let i = CalendarWeekStrip.index(of:date,from:strip,calendar:calendar)
+            let bounds = DateInterval(start:CalendarWeekStrip.day(i,from:strip,calendar:calendar),end:CalendarWeekStrip.day(i+1,from:strip,calendar:calendar))
+            assert(bounds == calendar.dateInterval(of:.day,for:date)!)
+            for e in [event("midnight",bounds.start,bounds.start),event("overnight",bounds.start.addingTimeInterval(-3600),bounds.start.addingTimeInterval(60)),event("before",bounds.start.addingTimeInterval(-3600),bounds.start)] {
+                assert(DateRules.overlaps(e,interval:bounds) == DateRules.overlaps(e,day:date,calendar:calendar))
+            }
+        }
         let dropped = CalendarTimelineMove.start(on:range.start,y:9.14*CalendarTimelineFocus.hourHeight,calendar:calendar)!
         assert(dropped == range.start.addingTimeInterval(9.25*3600))
         assert(CalendarTimelineMove.start(on:range.start,y:-1,calendar:calendar) == nil && CalendarTimelineMove.start(on:range.start,y:.nan,calendar:calendar) == nil)
@@ -68,6 +77,6 @@ import Foundation
         assert(CalendarTimelineMove.destination(start:range.start.addingTimeInterval(-3600),day:range.start,dx:0,dy:52,columnWidth:900,visibleDays:1,range:range,calendar:calendar) == range.start)
         assert(CalendarTimelineMove.destination(start:start,day:range.start,dx:-500,dy:0,columnWidth:125,visibleDays:7,range:range,calendar:calendar) == nil)
         assert(CalendarTimelineMove.destination(start:second,day:fall.start,dx:0,dy:0,columnWidth:900,visibleDays:1,range:fall,calendar:calendar) == second)
-        print("PASS: overlap lanes, clipped overnight moves, quarter-hour direct drops, week boundaries, viewport focus, distinct repeated DST hours and the continuous week strip")
+        print("PASS: overlap lanes, clipped overnight moves, quarter-hour direct drops, week boundaries, viewport focus, distinct repeated DST hours, the continuous week strip and its day bounds")
     }
 }
