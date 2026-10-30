@@ -13,8 +13,7 @@ struct EmailOverviewView: View {
     }
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
-            HStack {
-                Label("Email summary",systemImage:"envelope.badge").font(.title3.weight(.semibold)); Spacer()
+            WidgetHeader(title:"Email summary",symbol:"envelope.badge") {
                 Button {showRelevance=true} label:{Image(systemName:"slider.horizontal.3")}.help("Review guidance").accessibilityLabel("Review guidance")
                 Button { summaries.process(model,resume:true) } label: { Image(systemName:"arrow.clockwise") }.help("Check incoming mail").accessibilityLabel("Check incoming mail").disabled(!summaries.enabled || summaries.busy || model.inference.busy || model.assistant.busy || model.inference.usagePaused || !model.inference.inferenceVerified)
                 if summaries.busy { ProgressView().controlSize(.small); Button("Stop") { summaries.cancel() } }

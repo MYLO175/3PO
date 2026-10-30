@@ -58,6 +58,7 @@ enum EvaluationLaunchGuard {
         "--cleanup-request-markers",
         "--preview-calendar-drag",
         "--preview-calendar-scroll",
+        "--preview-design",
         "--preview-images",
         "--preview-life-and-plans",
         "--preview-memory-inspection",

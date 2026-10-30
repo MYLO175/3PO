@@ -9,7 +9,9 @@ struct WorkspaceView: View {
     @AppStorage("workspaceAccent") private var accent = "sage"
     @AppStorage("workspaceColorOverrides") private var colorOverrides = "{}"
     @AppStorage("workspaceToolbarHidden") private var toolbarHidden = ""
+    @AppStorage("settingsSelectedPage") private var settingsPage = "General"
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.openSettings) private var openSettings
     @State private var editing = false
     @State private var dashboardSymbol: String?
     @State private var naming: UUID?
@@ -21,7 +23,6 @@ struct WorkspaceView: View {
     private var store: WorkspaceStore { model.workspace }
     private var palette: WorkspacePalette { .resolved(raw:colorOverrides,mode:scheme == .dark ? "dark" : "light",theme:theme,accent:accent) }
     private var accentColor: Color { palette[.accent] }
-    private var background: Color { palette[.canvas] }
     var body: some View {
         VStack(spacing:0) {
             if let report = model.validationReport { HStack { Text(report).font(.caption).textSelection(.enabled); Spacer(); Button { model.validationReport = nil } label: { Image(systemName:"xmark") }.buttonStyle(.borderless).help("Dismiss validation result") }.padding(10) }
@@ -59,9 +60,8 @@ struct WorkspaceView: View {
                         }.frame(width:width,height:height,alignment:.topLeading).coordinateSpace(name:"workspaceGrid").padding(16)
                     }
                 }.clipped()
-                    .background(background,in:UnevenRoundedRectangle(topLeadingRadius:20,style:.continuous))
-                    .clipShape(UnevenRoundedRectangle(topLeadingRadius:20,style:.continuous))
-                    .padding(.top,8)
+                    .background { WorkspaceBackdropView(palette:palette) }
+                    .clipShape(UnevenRoundedRectangle(topLeadingRadius:22,style:.continuous))
 
             }
         }.background(palette[.sidebar]).tint(accentColor).foregroundStyle(palette[.text]).environment(\.workspacePalette,palette).frame(minWidth:780,minHeight:580)
@@ -108,7 +108,7 @@ struct WorkspaceView: View {
             EmptyView()
         }.customizationBehavior(.disabled).sharedBackgroundVisibility(.hidden)
         ToolbarItem(id:"assistant",placement:.principal) {
-            DashboardAIActivityPill(model:model,palette:palette,openChat:showAssistant).frame(height:46,alignment:.center)
+            DashboardAIActivityPill(model:model,palette:palette,openChat:showAssistant).frame(height:WorkspaceChrome.toolbarItemHeight,alignment:.center)
         }.defaultCustomization(visible(.assistant) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
         ToolbarSpacer(.flexible)
         ToolbarItem(id:"refresh",placement:.primaryAction) {
@@ -129,6 +129,7 @@ struct WorkspaceView: View {
                 Picker("Appearance",selection:$appearance) { Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark") }
                 Divider()
                 Button("Customise colours…") { showColors = true }
+                Button("Appearance settings…") { settingsPage = "Appearance"; openSettings() }
             } label: { Label("Appearance",systemImage:"paintpalette") }
         }.defaultCustomization(visible(.appearance) ? .visible : .hidden).sharedBackgroundVisibility(.hidden)
         ToolbarItem(id:"customise",placement:.primaryAction) {
@@ -268,8 +269,8 @@ private struct WorkspaceTile: View {
         ZStack(alignment:.topLeading) {
             if interaction != nil {
                 let destination = metrics.frame(target)
-                RoundedRectangle(cornerRadius:16).fill((valid ? Color.accentColor : .red).opacity(0.08))
-                    .overlay(RoundedRectangle(cornerRadius:16).stroke(valid ? Color.accentColor : .red,style:StrokeStyle(lineWidth:2,dash:[6,4])))
+                RoundedRectangle(cornerRadius:WorkspaceSurfaceModifier.radius,style:.continuous).fill((valid ? Color.accentColor : .red).opacity(0.08))
+                    .overlay(RoundedRectangle(cornerRadius:WorkspaceSurfaceModifier.radius,style:.continuous).stroke(valid ? Color.accentColor : .red,style:StrokeStyle(lineWidth:2,dash:[6,4])))
                     .frame(width:destination.width,height:destination.height).offset(x:destination.minX,y:destination.minY).allowsHitTesting(false)
             }
             VStack(spacing:0) {
@@ -285,16 +286,13 @@ private struct WorkspaceTile: View {
                         } label: { Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width:20).accessibilityLabel("\(widget.kind?.title ?? "Widget") layout actions")
                     }.padding(.horizontal,12).frame(height:34).background(Color.accentColor.opacity(0.08))
                 }
-                content.environment(\.workspacePalette,palette).foregroundStyle(palette[.text]).tint(palette[.accent]).allowsHitTesting(!editing).frame(maxWidth:.infinity,maxHeight:.infinity)
+                content.environment(\.workspacePalette,palette).environment(\.inWorkspaceTile,true).foregroundStyle(palette[.text]).tint(palette[.accent]).allowsHitTesting(!editing).frame(maxWidth:.infinity,maxHeight:.infinity)
             }
             // Keep content at its committed size during the gesture; only the preview shell follows the pointer.
             .frame(width:baseFrame.width,height:baseFrame.height,alignment:.topLeading)
             .frame(width:visual.width,height:visual.height,alignment:.topLeading)
-            .background(palette[.widget],in:RoundedRectangle(cornerRadius:16))
-            .clipShape(RoundedRectangle(cornerRadius:16))
-            .overlay(RoundedRectangle(cornerRadius:16).stroke(editing ? (valid ? palette[.accent].opacity(0.6) : .red) : palette[.border],lineWidth:editing ? 2 : 1))
+            .workspaceSurface(palette,highlight:editing ? (valid ? palette[.accent].opacity(0.6) : .red) : nil,lifted:interaction != nil)
             .overlay(alignment:.bottomTrailing) { if editing { Image(systemName:"arrow.down.right.and.arrow.up.left").font(.caption.weight(.bold)).padding(9).background(.regularMaterial,in:RoundedRectangle(cornerRadius:7)).contentShape(Rectangle()).gesture(gesture(resizing:true)).accessibilityLabel("Resize \(widget.kind?.title ?? "widget")") } }
-            .shadow(color:.black.opacity(interaction == nil ? 0.025 : 0.12),radius:interaction == nil ? 8 : 14,y:3)
             .offset(x:visual.minX,y:visual.minY)
         }.frame(width:metrics.width,height:metrics.height,alignment:.topLeading).zIndex(interaction == nil ? 0 : 1)
             .sheet(isPresented:$showWidgetColours) { WidgetColourEditor(configuration:configuration,title:widget.kind?.title ?? "Widget") }

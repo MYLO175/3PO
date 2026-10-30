@@ -17,9 +17,7 @@ struct TodayBriefView: View {
     }
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
-            HStack(spacing:10) {
-                Label("Today’s brief",systemImage:"sun.max").font(.title3.weight(.semibold)).lineLimit(1).layoutPriority(1)
-                Spacer(minLength:4)
+            WidgetHeader(title:"Today’s brief",symbol:"sun.max") {
                 if let record {
                     ViewThatFits(in:.horizontal) {
                         Text("Updated \(record.created.formatted(date:.omitted,time:.shortened))")
@@ -37,16 +35,18 @@ struct TodayBriefView: View {
                 } label: {Image(systemName:"ellipsis")}
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                     .help("Brief options").accessibilityLabel("Brief options")
-            }.buttonStyle(.borderless)
+            }
             if model.heartbeat.busy && !briefings.busy {Text("The heartbeat will update your brief shortly…").font(.caption).foregroundStyle(.secondary)}
             if briefings.busy { Text(briefings.phase.isEmpty ? "Preparing today’s brief…" : briefings.phase).font(.caption).foregroundStyle(.secondary) }
             if let record {
                 ScrollView {
                     VStack(alignment:.leading,spacing:16) {
-                        if showsWeather.wrappedValue {WeatherBriefCard(weather:model.weather)}
+                        // Read as a message from the PA: the greeting as the headline, then the prose.
+                        let parts=Self.masthead(BriefingRules.displayProse(record))
+                        WidgetHeadline(text:parts.headline,size:30,lines:2)
                         BriefFreshnessNote(model:model,briefings:briefings,record:record)
-                        let prose=BriefingRules.displayProse(record)
-                        Text((try? AttributedString(markdown:prose,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(prose)).font(.callout).lineSpacing(5).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)
+                        Text((try? AttributedString(markdown:parts.body,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(parts.body)).font(.system(size:14)).lineSpacing(5).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)
+                        if showsWeather.wrappedValue {WeatherBriefCard(weather:model.weather)}
                         DisclosureGroup("Sources and coverage",isExpanded:$showSources) {
                             if showSources {VStack(alignment:.leading,spacing:10) {
                                 Text(record.coverage).font(.caption).foregroundStyle(.secondary)
@@ -78,6 +78,17 @@ struct TodayBriefView: View {
         .sheet(isPresented:$showMemory) { PAMemoryView(memory:model.assistant.memory,registration:model.inference.activeID,model:model) }
         .sheet(item:$editingPrompt) {edit in BriefPromptEditor(model:model,briefings:briefings,capture:edit.capture)}
         .onChange(of:model.inference.activeID) { showMemory=false;editingPrompt=nil }
+    }
+    /// A short opening sentence (the brief normally starts with a greeting) becomes the headline;
+    /// otherwise a greeting for the time of day leads the unchanged prose. Display only.
+    static func masthead(_ prose:String,now:Date = .now,calendar:Calendar = .current)->(headline:String,body:String) {
+        let text=prose.trimmingCharacters(in:.whitespacesAndNewlines)
+        if let range=text.range(of:#"^[^\n*_`\[#]{2,48}?[.!](\s|$)"#,options:.regularExpression) {
+            let rest=text[range.upperBound...].trimmingCharacters(in:.whitespacesAndNewlines)
+            if !rest.isEmpty {return (text[range].trimmingCharacters(in:.whitespacesAndNewlines),rest)}
+        }
+        let hour=calendar.component(.hour,from:now)
+        return (hour < 12 ? "Good morning." : hour < 18 ? "Good afternoon." : "Good evening.",text)
     }
 }
 

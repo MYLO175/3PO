@@ -305,7 +305,7 @@ struct DashboardAIActivityPill:View {
     var palette:WorkspacePalette
     var openChat:()->Void
     var body:some View {
-        AIActivityPill(store:model.aiActivity,registration:model.inference.activeID,current:model.currentAIActivity,feedback:model.nativeWriteFeedback,palette:palette,openChat:openChat,openDestination:model.openAIActivityDestination,isVisible:model.activityVisible,relatedDestinations:model.relatedActivityDestinations,presentation:model.activityPresentation)
+        AIActivityPill(store:model.aiActivity,registration:model.inference.activeID,current:model.currentAIActivity,feedback:model.nativeWriteFeedback,palette:palette,openChat:openChat,openDestination:model.openAIActivityDestination,isVisible:model.activityVisible,relatedDestinations:model.relatedActivityDestinations,presentation:model.activityPresentation,busy:model.assistant.busy)
             .task {model.syncFeedbackActivity()}
             .onChange(of:model.inference.activeID) {model.syncFeedbackActivity();model.scheduleReviewWork()}
             .onChange(of:model.emailSummaries.feedback.records) {model.syncFeedbackActivity()}

@@ -51,6 +51,19 @@ struct CalendarWidgetView: View {
         }
         return configuration.date.formatted(.dateTime.weekday(.abbreviated).day().month(.wide))
     }
+    /// Day and Agenda views of today only: the event under way and how long is left, or what's next
+    /// and how soon. Week and Month scroll through dates, so a line that comes and goes would jump.
+    private func nextHeadline(_ now: Date) -> String? {
+        guard mode == "day" || mode == "agenda", calendar.isDate(configuration.date, inSameDayAs: now) else { return nil }
+        let today = events.filter { !$0.allDay && calendar.isDate($0.start, inSameDayAs: now) }.sorted { $0.start < $1.start }
+        func span(_ seconds: TimeInterval) -> String {
+            let minutes = max(1, Int((seconds / 60).rounded()))
+            return minutes < 60 ? "\(minutes) min" : "\(minutes / 60) h" + (minutes % 60 == 0 ? "" : " \(minutes % 60) min")
+        }
+        if let current = today.last(where: { $0.start <= now && now < $0.end }) { return current.title + " · " + span(current.end.timeIntervalSince(now)) + " left" }
+        if let next = today.first(where: { $0.start > now }) { return next.title + " in " + span(next.start.timeIntervalSince(now)) }
+        return today.isEmpty ? "Nothing on today" : "Nothing else today"
+    }
     private var events: [AgendaEvent] {
         snapshot.events.filter { !configuration.sourceExclusions.contains($0.calendarID) }.map { event in
             pendingMove?.id == event.id ? pendingMove! : event
@@ -58,10 +71,8 @@ struct CalendarWidgetView: View {
     }
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
-            HStack(spacing:8) {
-                Label("Calendar",systemImage:"calendar").font(.title3.weight(.semibold))
+            WidgetHeader(title:"Calendar",symbol:"calendar") {
                 SourceStatusIndicator(title:"Calendar",health:SourceHealth(lastSuccess:updated,error:error,loading:loading))
-                Spacer(minLength:4)
                 Menu { Button("Show all") { configuration.sourceExclusions = [] }; Divider(); ForEach(snapshot.sources) { source in
                     Toggle(source.displayLabel,isOn:Binding(get:{ !configuration.sourceExclusions.contains(source.id) },set:{ enabled in if enabled { configuration.sourceExclusions.remove(source.id) } else { configuration.sourceExclusions.insert(source.id) } }))
                 } } label: { Image(systemName:"line.3.horizontal.decrease") }.menuStyle(.borderlessButton).fixedSize().help("Filter calendars").accessibilityLabel("Filter calendars")
@@ -70,6 +81,9 @@ struct CalendarWidgetView: View {
                     Text("Agenda").tag("agenda"); Text("Day").tag("day"); Text("Week").tag("week"); Text("Month").tag("month")
                 }.pickerStyle(.menu).labelsHidden().frame(width:90)
             }.buttonStyle(.borderless).controlSize(.small)
+            TimelineView(.periodic(from:.now,by:60)) { context in
+                if let headline = nextHeadline(context.date) { WidgetHeadline(text:headline,lines:1) }
+            }
             HStack(spacing:8) {
                 Button { showDatePicker.toggle() } label: {
                     HStack(spacing:4) { Text(dateTitle).font(.callout.weight(.medium)); Image(systemName:"chevron.down").font(.caption2) }
@@ -348,21 +362,29 @@ private struct CalendarDayTimeline: View {
                         .help(date.formatted(date:.omitted,time:.shortened) + " " + (Calendar.current.timeZone.abbreviation(for:date) ?? ""))
                 }
             }
+            // The now line sits under the cards; the event under way is opaque, so the line never strikes through its title.
+            TimelineView(.periodic(from:.now,by:60)) { context in
+                if interval.contains(context.date) && context.date < interval.end {
+                    HStack(spacing:0) {
+                        Text(context.date.formatted(date:.omitted,time:.shortened)).font(.system(size:9.5,weight:.bold).monospacedDigit()).foregroundStyle(.white)
+                            .lineLimit(1).fixedSize().padding(.horizontal,4).padding(.vertical,1).background(.red,in:Capsule()).frame(width:40,alignment:.trailing)
+                        Rectangle().fill(.red).frame(height:2).shadow(color:.red.opacity(0.45),radius:3)
+                    }.frame(height:14).offset(y:context.date.timeIntervalSince(interval.start)/3600*hourHeight-7)
+                        .accessibilityLabel("Current time " + context.date.formatted(date:.omitted,time:.shortened)).allowsHitTesting(false)
+                }
+            }
             GeometryReader { geo in
+                TimelineView(.periodic(from:.now,by:60)) { context in
+                let status = CalendarEventStatus.resolver(events,interval:interval,now:context.date)
                 ZStack(alignment:.topLeading) {
                     ForEach(CalendarTimelineLayout.segments(events,interval:interval)) { segment in
                         let height = max(CalendarTimelineFocus.minimumEventHeight,segment.end.timeIntervalSince(segment.start)/3600*hourHeight)
-                        CalendarTimedEventCard(event:segment.event,color:color(segment.event),height:height,movable:canDrag(segment.event),coordinateSpace:coordinateSpace,select:{ select(segment.event) },beginDrag:{ beginDrag(segment.event) },previewStart:{ dx,dy in previewStart(segment.event.start,dx,dy) },move:{ dx,dy in move(segment.event,previewStart(segment.event.start,dx,dy)) })
+                        CalendarTimedEventCard(event:segment.event,color:color(segment.event),height:height,status:status(segment.event),movable:canDrag(segment.event),coordinateSpace:coordinateSpace,select:{ select(segment.event) },beginDrag:{ beginDrag(segment.event) },previewStart:{ dx,dy in previewStart(segment.event.start,dx,dy) },move:{ dx,dy in move(segment.event,previewStart(segment.event.start,dx,dy)) })
                             .frame(width:max(1,(geo.size.width-40)/CGFloat(segment.lanes)-3),height:height)
                             .offset(x:40+CGFloat(segment.lane)*(geo.size.width-40)/CGFloat(segment.lanes),y:segment.start.timeIntervalSince(interval.start)/3600*hourHeight)
                             .zIndex(segment.id == activeDragID ? 1 : 0)
                     }
                 }
-            }
-            TimelineView(.periodic(from:.now,by:60)) { context in
-                if interval.contains(context.date) && context.date < interval.end {
-                    HStack(spacing:0) { Circle().fill(.red).frame(width:6,height:6); Rectangle().fill(.red.opacity(0.8)).frame(height:1) }.padding(.leading,37).offset(y:context.date.timeIntervalSince(interval.start)/3600*hourHeight)
-                        .accessibilityLabel("Current time " + context.date.formatted(date:.omitted,time:.shortened)).allowsHitTesting(false)
                 }
             }
         }.frame(height:CGFloat(hours)*hourHeight).contentShape(Rectangle())
@@ -370,10 +392,29 @@ private struct CalendarDayTimeline: View {
 }
 
 // Measure against the stationary timeline, never the moving card's local bounds.
+/// Today's events: finished ones fade, the one under way fills as it runs, and the next is outlined.
+enum CalendarEventStatus: Equatable {
+    case normal, past, next, current(Double)
+    static func resolver(_ events: [AgendaEvent], interval: DateInterval, now: Date) -> (AgendaEvent) -> CalendarEventStatus {
+        guard interval.contains(now) else { return { _ in .normal } }
+        let timed = events.filter { !$0.allDay }
+        let underway = timed.contains { $0.start <= now && now < $0.end }
+        let nextID = underway ? nil : timed.filter { $0.start > now && interval.contains($0.start) }.min { $0.start < $1.start }?.id
+        return { event in
+            if event.allDay { return .normal }
+            if event.end <= now { return .past }
+            if event.start <= now { return .current(min(1, now.timeIntervalSince(event.start) / max(60, event.end.timeIntervalSince(event.start)))) }
+            return event.id == nextID ? .next : .normal
+        }
+    }
+}
+
 private struct CalendarTimedEventCard: View {
     var event: AgendaEvent
     var color: Color
     var height: Double
+    var status: CalendarEventStatus = .normal
+    @Environment(\.workspacePalette) private var palette
     var movable: Bool
     var coordinateSpace: String
     var select: ()->Void
@@ -389,16 +430,52 @@ private struct CalendarTimedEventCard: View {
             .onChanged { _ in beginDrag() }
             .onEnded { value in move(Double(value.translation.width),Double(value.translation.height)) }
     }
+    /// Under half an hour: one line. About an hour: title, then "time · place". Longer: three lines.
     private var card: some View {
-        VStack(alignment:.leading,spacing:2) {
-            Text(event.title).font(.caption2.weight(.medium)).lineLimit(height > 48 ? 3 : 1)
-            if height > 38 { Text((moving ? previewStart(Double(translation.width),Double(translation.height)) ?? event.start : event.start).formatted(date:.omitted,time:.shortened)).font(.system(size:10)).foregroundStyle(.secondary) }
-            Spacer(minLength:0)
-        }.padding(.horizontal,5).padding(.vertical,height > 38 ? 5 : 2).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
-            .background(color.opacity(moving ? 0.3 : 0.17),in:RoundedRectangle(cornerRadius:5))
-            .overlay(alignment:.leading) { RoundedRectangle(cornerRadius:2).fill(color).frame(width:3) }.clipped()
-            .overlay { if moving { RoundedRectangle(cornerRadius:5).stroke(color,lineWidth:1.5) } }
-            .contentShape(Rectangle())
+        let start = moving ? previewStart(Double(translation.width),Double(translation.height)) ?? event.start : event.start
+        let time = start.formatted(date:.omitted,time:.shortened)
+        let range = moving ? time : time + " – " + event.end.formatted(date:.omitted,time:.shortened)
+        let detail = event.location.isEmpty ? range : range + " · " + event.location
+        let current: Double? = { if case .current(let fraction) = status { return fraction }; return nil }()
+        let shape = RoundedRectangle(cornerRadius:8,style:.continuous)
+        return Group {
+            if height < 30 {
+                // The title wins in a narrow column; the time only shows when both fit.
+                ViewThatFits(in:.horizontal) {
+                    HStack(alignment:.firstTextBaseline,spacing:5) {
+                        Text(event.title).font(.system(size:12,weight:.semibold)).lineLimit(1).fixedSize()
+                        Text(time).font(.system(size:10.5)).foregroundStyle(.secondary).lineLimit(1).fixedSize()
+                        Spacer(minLength:0)
+                    }
+                    Text(event.title).font(.system(size:12,weight:.semibold)).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading)
+                }.padding(.vertical,3)
+            } else {
+                VStack(alignment:.leading,spacing:1) {
+                    Text(event.title).font(.system(size:12,weight:.semibold)).lineLimit(height >= 90 ? 2 : 1)
+                    if height >= 72 {
+                        Text(range).font(.system(size:10.5)).foregroundStyle(.secondary).lineLimit(1)
+                        if !event.location.isEmpty { Text(event.location).font(.system(size:10.5)).foregroundStyle(.secondary).lineLimit(1) }
+                    } else {
+                        Text(detail).font(.system(size:10.5)).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer(minLength:0)
+                }.padding(.vertical,5)
+            }
+        }
+        .padding(.leading,9).padding(.trailing,5).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+        .background {
+            ZStack(alignment:.top) {
+                if current != nil { palette[.widget] }
+                color.opacity(moving ? 0.3 : 0.17)
+                if let current { color.opacity(0.2).frame(height:height*current).frame(maxHeight:.infinity,alignment:.top) }
+            }
+        }
+        .overlay(alignment:.leading) { Rectangle().fill(color).frame(width:3) }
+        .clipShape(shape)
+        .overlay { if moving { shape.stroke(color,lineWidth:1.5) } else if status == .next { shape.strokeBorder(color,lineWidth:1.5) } }
+        .opacity(status == .past && !moving ? 0.5 : 1)
+        .shadow(color:.black.opacity(current == nil ? 0 : 0.14),radius:6,y:3)
+        .contentShape(Rectangle())
     }
     var body: some View {
         Group {

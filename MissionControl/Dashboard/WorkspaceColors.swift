@@ -31,15 +31,17 @@ enum WorkspaceColorRole: String, CaseIterable, Identifiable {
     } }
 }
 enum WorkspaceColorTheme: String, CaseIterable, Identifiable {
-    case sage, ocean, graphite, rose, threePO = "3po"
+    case sage, ocean, graphite, rose, threePO = "3po", midnight, nebula
     var id: String { rawValue }
-    var title: String { switch self { case .sage: "Warm sage"; case .ocean: "Ocean"; case .graphite: "Graphite"; case .rose: "Rose"; case .threePO: "3PO" } }
+    var title: String { switch self { case .sage: "Warm sage"; case .ocean: "Ocean"; case .graphite: "Graphite"; case .rose: "Rose"; case .threePO: "3PO"; case .midnight: "Midnight"; case .nebula: "Nebula" } }
     var detail: String { switch self {
     case .sage: "Warm ivory and calm greens"
     case .ocean: "Cool whites and deep blue"
     case .graphite: "Neutral greys and a restrained blue accent"
     case .rose: "Soft blush and muted plum"
     case .threePO: "Polished gold, warm ivory and midnight bronze"
+    case .midnight: "Deep navy with an electric cyan accent"
+    case .nebula: "Violet dusk with a bright lilac accent"
     } }
     func profile(_ mode: String) -> [String:String] {
         let light: [String], dark: [String]
@@ -59,6 +61,12 @@ enum WorkspaceColorTheme: String, CaseIterable, Identifiable {
         case .rose:
             light = ["F6F0F1","EFE5E9","FFFBFC","412D39","86516C","E7D7DF","F5ECEF","EFDFE8","FAF4F7"]
             dark = ["241B22","2C202A","342731","F2E8EF","D6A9C2","503C49","41313D","503B4D","291E27"]
+        case .midnight:
+            light = ["EEF2FA","E3E9F6","FFFFFF","141B33","0072A8","D5DDEE","EEF3FB","D3EBF8","F6F8FD"]
+            dark = ["0B1020","0F1630","141C38","E6EDFF","4CE0F5","263257","1B2547","123F57","0F1630"]
+        case .nebula:
+            light = ["F4F0FA","EBE4F6","FFFFFF","2A1D3F","6B35D0","E1D6F2","F3EEFA","E6D9FA","FAF7FD"]
+            dark = ["150F22","1B1430","22193A","EFE8FF","C29BFF","3A2D5C","2C2148","3E2B66","1B1430"]
         }
         let roles: [WorkspaceColorRole] = [.canvas,.sidebar,.widget,.text,.accent,.border,.assistantBubble,.userBubble,.input]
         return Dictionary(uniqueKeysWithValues:zip(roles,mode == "dark" ? dark : light).map { ($0.rawValue,"#" + $1) })

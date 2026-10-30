@@ -12,7 +12,11 @@ struct AIActivityPill: View {
     var isVisible: (AIActivityRecord) -> Bool = { _ in true }
     var relatedDestinations:(AIActivityRecord)->[AIActivityDestination] = {_ in []}
     var presentation:(AIActivityRecord)->AIActivityRecord = {$0}
+    /// A chat reply is being written; it has no activity record but the orb should look busy.
+    var busy = false
     @State private var activityOpen = false
+    @AppStorage(WorkspaceStyleKey.motion) private var motion = WorkspaceMotion.full.rawValue
+    @AppStorage(WorkspaceStyleKey.surface) private var surface = WorkspaceSurface.glass.rawValue
     @State private var outcomeClock = Date.now
     @Environment(\.colorScheme) private var scheme
 
@@ -37,31 +41,23 @@ struct AIActivityPill: View {
         let success=confirmation != nil || active == nil && displayed?.state == .succeeded
         let failed=active == nil && displayed?.state.isFailure == true
         let successColour=scheme == .dark ? Color(red:0.44,green:0.83,blue:0.55) : Color(red:0.10,green:0.43,blue:0.22)
-        let statusColour:Color=success ? successColour : failed ? .red : active == nil && (displayed?.needsAttention == true || store.error != nil) ? .orange : palette[.text]
+        let needsYou=active == nil && (displayed?.needsAttention == true || store.error != nil)
+        let statusColour:Color=success ? successColour : failed || needsYou ? .red : palette[.text]
         let progress:Double?=nil
+        let mood:SwirlOrb.Mood=active.map{$0.kind == .heartbeat ? .working($0.progress) : .thinking} ?? (busy ? .thinking : success ? .done : failed || needsYou || attention ? .attention : .ready)
         let message=store.error ?? confirmation.map{PAProse.display($0.message)} ?? displayed.map{AIActivityPresentation.message($0,compact:true)} ?? "3PO is ready"
         let accessibilityStatus=message+(progress.map{". \(Int($0*100)) percent progress."} ?? "")+(attention ? ". An outcome needs attention." : "")
         HStack(spacing: 0) {
             Button(action: openChat) {
-                ZStack {
-                    Circle().fill((success ? successColour : palette[.accent]).opacity(0.13))
-                    if let progress {
-                        Circle().stroke(palette[.accent].opacity(0.18), lineWidth: 2)
-                        Circle().trim(from: 0, to: progress)
-                            .stroke(palette[.accent], style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                            .rotationEffect(.degrees(-90))
-                    }
-                    Image(systemName: "bubble.left.and.bubble.right.fill")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(success ? successColour : palette[.accent])
-                }.frame(width: 29, height: 29).contentShape(Circle())
+                SwirlOrb(mood:mood,accent:palette[.accent],size:27,reduceMotion:motion == WorkspaceMotion.reduced.rawValue)
+                    .frame(width: 30, height: 30).contentShape(Circle())
             }
             .buttonStyle(.plain)
             .help("Open 3PO chat")
             .accessibilityLabel("Open 3PO chat")
             Button { activityOpen.toggle() } label: {
                 HStack(spacing: 8) {
-                    Text(message).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                    Text(message).font(.system(size: 12, weight: .medium)).lineLimit(1)
                         .truncationMode(.tail).frame(maxWidth: .infinity, alignment: .leading)
                     if active?.state == .running && progress == nil {
                         ProgressView().controlSize(.mini).frame(width: 12, height: 12)
@@ -69,10 +65,10 @@ struct AIActivityPill: View {
                     if attention || active?.state != .running {
                         Image(systemName: success ? "checkmark.circle.fill" : displayed?.state == .needsAnswer ? "questionmark.circle.fill" : attention ? "exclamationmark.circle.fill" : "chevron.down")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(success ? successColour : failed ? Color.red : attention ? Color.orange : palette[.accent].opacity(0.8))
+                            .foregroundStyle(success ? successColour : failed || attention ? Color.red : palette[.accent].opacity(0.8))
                     }
                 }.foregroundStyle(statusColour).padding(.leading, 9).padding(.trailing, 7)
-                    .frame(width: dismissible == nil ? 237 : 213, height: 29).contentShape(Rectangle())
+                    .frame(width: dismissible == nil ? 268 : 244, height: 30).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(message)
@@ -86,7 +82,7 @@ struct AIActivityPill: View {
             if let record=dismissible {
                 Button { _=store.dismiss(record,registration:registration) } label: {
                     Image(systemName:"xmark").font(.system(size:10,weight:.semibold))
-                        .frame(width:24,height:29).contentShape(Rectangle())
+                        .frame(width:24,height:30).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(statusColour)
@@ -100,8 +96,9 @@ struct AIActivityPill: View {
         .padding(.horizontal,4)
         .padding(.vertical,2)
         .background(success ? successColour.opacity(0.08) : .clear, in: Capsule())
-        .background(palette[.widget].opacity(0.92), in: Capsule())
-        .overlay(Capsule().stroke(success ? successColour.opacity(0.4) : failed ? Color.red.opacity(0.45) : attention ? Color.orange.opacity(0.55) : palette[.text].opacity(0.13), lineWidth: 0.75))
+        .background(palette[.widget].opacity(surface == WorkspaceSurface.glass.rawValue ? 0.62 : 0.92), in: Capsule())
+        .background(surface == WorkspaceSurface.glass.rawValue ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(.clear), in: Capsule())
+        .overlay(Capsule().stroke(success ? successColour.opacity(0.4) : failed || attention ? Color.red.opacity(0.45) : palette[.text].opacity(0.13), lineWidth: 0.75))
         .task(id:expiry) {
             guard let expiry else {return}
             let remaining=expiry.timeIntervalSinceNow

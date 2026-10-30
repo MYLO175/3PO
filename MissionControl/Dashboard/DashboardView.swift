@@ -225,7 +225,8 @@ struct DashboardView: View {
     }
     var remindersPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing:8) { Label("Reminders",systemImage:"checklist").font(.title3.weight(.semibold)); SourceStatusIndicator(title:"Reminders",health:model.reminderHealth); Spacer(); Button { model.newNativeItem(.reminder) } label: { Image(systemName:"plus") }.buttonStyle(.borderless).help("New reminder").accessibilityLabel("New reminder").disabled(model.writing) }
+            WidgetHeader(title:"Reminders",symbol:"checklist") { SourceStatusIndicator(title:"Reminders",health:model.reminderHealth); Button { model.newNativeItem(.reminder) } label: { Image(systemName:"plus") }.help("New reminder").accessibilityLabel("New reminder").disabled(model.writing) }
+            WidgetHeadline(text:reminderHeadline)
             if let error = model.reminderHealth.error { Text((model.reminderHealth.lastSuccess == nil ? "" : "Stale · ") + error).font(.caption).foregroundStyle(.orange).lineLimit(2) }
             HStack(spacing: 8) {
                 sourceMenu("Lists", sources: model.reminderData.sources, exclusions: listExclusions)
@@ -270,27 +271,33 @@ struct DashboardView: View {
             }
         }.panelStyle()
     }
+    /// The one line that matters: anything overdue, else the next thing due today.
+    private var reminderHeadline: String {
+        let items = DateRules.ordered(visibleReminders)
+        let overdue = items.filter { DateRules.group($0) == "Overdue" }
+        if overdue.count == 1, let item = overdue.first { return item.title + " is overdue." }
+        if overdue.count > 1 { return "\(overdue.count) reminders overdue." }
+        guard let next = items.first(where: { $0.due.map { Calendar.current.isDateInToday($0) } ?? false }), let due = next.due else { return "Nothing due today." }
+        return next.title + (next.hasTime ? " by " + due.formatted(date: .omitted, time: .shortened) : " today") + "."
+    }
+    /// Checkbox, title, then when it's due on the right: red today or overdue, orange tomorrow, grey later.
     func reminderRow(_ item: TaskItem, showSource: Bool, showOverdueBadge: Bool) -> some View {
-        let overdue = DateRules.group(item) == "Overdue"
-        return HStack(alignment: .top, spacing: 8) {
-            Button { model.complete(item) } label: { Image(systemName: item.writable ? "circle" : "lock.circle").font(.title3) }
+        HStack(alignment: .center, spacing: 10) {
+            Button { model.complete(item) } label: { Image(systemName: item.writable ? "circle" : "lock.circle").font(.system(size: 17)) }
                 .buttonStyle(.plain).disabled(!item.writable || model.writing).help(item.writable ? "Complete reminder" : "Read-only list")
             Button { model.editTarget = .reminder(item) } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text(item.title).font(.callout).fixedSize(horizontal: false, vertical: true)
-                    if showOverdueBadge && overdue {
-                        Text("Overdue").font(.caption2.weight(.medium)).foregroundStyle(.orange).padding(.horizontal, 5).padding(.vertical, 2).background(Color.orange.opacity(0.12), in: Capsule())
-                    }
-                }
-                if let due = item.due { Text(due.formatted(date: .abbreviated, time: item.hasTime ? .shortened : .omitted)).font(.caption).foregroundStyle(overdue ? Color.orange : Color.secondary) }
-                if showSource || item.recurring {
-                    HStack(spacing: 4) {
-                        if showSource { Text(item.sourceLabel) }
-                        if item.recurring { Image(systemName: "repeat") }
-                    }.font(.caption2).foregroundStyle(.secondary)
-                }
-            }.frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(item.title).font(.callout).fixedSize(horizontal: false, vertical: true)
+                        if showSource || item.recurring {
+                            HStack(spacing: 4) {
+                                if showSource { Text(item.sourceLabel) }
+                                if item.recurring { Image(systemName: "repeat") }
+                            }.font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                    if let due = item.due { DueBadge(due: due, hasTime: item.hasTime) }
+                }.contentShape(Rectangle())
             }.buttonStyle(.plain).help("Edit reminder").accessibilityLabel("Edit reminder: " + item.title).disabled(model.writing)
         }.padding(.vertical, 3)
     }
@@ -303,10 +310,8 @@ struct DashboardView: View {
     }
     var inboxPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing:8) {
-                Label("Inbox",systemImage:"tray").font(.title3.weight(.semibold))
+            WidgetHeader(title:"Inbox",symbol:"tray") {
                 SourceStatusIndicator(title:"Mail",health:model.mailHealth,coverage:model.mailCoverage,refresh:{model.mailIndex.resume();Task {await model.refreshMail()}})
-                Spacer()
             }
             if model.mailHealth.error != nil {
                 Text(mailStatusSummary).font(.caption).foregroundStyle(.orange).fixedSize(horizontal:false,vertical:true)
@@ -372,11 +377,16 @@ private extension View {
 }
 private struct DashboardPanelStyle: ViewModifier {
     @Environment(\.workspacePalette) private var palette
+    @Environment(\.inWorkspaceTile) private var inWorkspaceTile
     func body(content: Content) -> some View {
-        content.padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(palette[.widget], in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(palette[.border]))
-            .shadow(color:.black.opacity(0.025),radius:8,x:0,y:3)
+        // Inside a dashboard tile the tile draws the surface; the legacy dashboard still needs its own.
+        if inWorkspaceTile { content.padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading) }
+        else {
+            content.padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(palette[.widget], in: RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(palette[.border]))
+                .shadow(color:.black.opacity(0.025),radius:8,x:0,y:3)
+        }
     }
 }
 struct SettingsView: View {
@@ -388,7 +398,7 @@ struct SettingsView: View {
     @State private var contextFeature: ContextFeature?
     @Environment(\.openWindow) private var openWindow
     /// "Memory" keeps the saved identifier of the controls page, now shown as Learning.
-    private let pages = ["General", "Connections", "External assistants", "Assistant", "Background", "Context", "Memory", "Usage", "Help"]
+    private let pages = ["General", "Appearance", "Connections", "External assistants", "Assistant", "Background", "Context", "Memory", "Usage", "Help"]
     var body: some View {
         NavigationSplitView {
             List(selection:selectionBinding) {
@@ -424,6 +434,8 @@ struct SettingsView: View {
                         Text("Calendar and Reminders are read from macOS. Reminders remains the source of truth for to-do and shopping tasks. Apple Mail is read-only. Refresh collects source changes locally and makes no AI calls.").font(.callout)
                         Button("Open Privacy & Security") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security")!) }
                     }
+                case "Appearance":
+                    AppearanceSettings()
                 case "Connections":
                     AIProviderSettings(model:model)
                     WhatsAppSettings(service:model.whatsapp,registration:model.inference.activeID,heartbeatReviewEnabled:model.heartbeat.whatsappEnabled)
@@ -467,6 +479,7 @@ struct SettingsView: View {
     private func icon(for page:String)->String {
         switch page {
         case "General": "gearshape"
+        case "Appearance": "paintpalette"
         case "Connections": "link"
         case "External assistants": "point.3.connected.trianglepath.dotted"
         case "Assistant": "sparkles"
