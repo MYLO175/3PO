@@ -78,9 +78,9 @@ Current recall uses lexical relevance, typed links and human-linked plans. A que
 
 ## Projects
 
-Projects creates two kinds of record: **Space** and **Task**. A space is a folder containing spaces/tasks with optional notes. A task is local work, separate from Apple Reminders. Use names and nesting to represent a project, course or life area.
+Projects creates two kinds of record: **Project** and **Task**. A project can contain subprojects and tasks, with optional notes. A task is local work, separate from Apple Reminders. Use names and nesting to represent a course, module, piece of work or life area.
 
-Home shows top-level spaces; **Unfiled tasks** contains tasks without a folder. Opening a space shows direct contents. Folders & tasks is the default view, with List, Tree and Deadlines available. A board uses **To do / In progress / Done**. Progress measures actual saved tasks, not assumed attendance, mastery or unrecorded work.
+Home shows each top-level project as a card with its progress and next deadline, then **Due soon** for project tasks that are late or due within two weeks; **Unfiled tasks** contains tasks without a project. Opening a project shows its subprojects and tasks. Projects & tasks is the default view, with List, Tree and Deadlines available. A board uses **To do / In progress / Done**. Progress measures actual saved tasks, not assumed attendance, mastery or unrecorded work.
 
 Drag a task between columns to preview its stage, then release to save the local change. Notes use Save/Cancel with revision checks. Supported last edits have session Undo. Creation has no app Undo; recoverable Delete/Recently deleted retains original identities. A nonempty space cannot be converted into a task.
 
