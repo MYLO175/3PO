@@ -288,6 +288,7 @@ import SwiftData
         }
         try LifeWorkspaceRules.validate(LifeWorkspaceState(items:deletedHistory+[.init(registration:"archive",kind:.task,title:"Active task")]))
         try LifeWorkspaceIndexChecks.run()
+        try LifeProjectScheduleChecks.run()
         print("PASS: project persistence, identity, scope, dates, hierarchy, receipts, corrupt-store preservation, bookmarks, stale notes/Undo, direct folder contents, legacy stages, exact progress, guarded board changes/Undo folder ordering/reload/metadata/Undo/gesture targets, styled/multiple notes/reload/stale edits and note deletion Undo")
     }
 }
