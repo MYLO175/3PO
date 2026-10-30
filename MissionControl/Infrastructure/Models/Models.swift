@@ -16,7 +16,7 @@ struct SourceOption: Identifiable, Codable, Hashable {
     var label: String { account.isEmpty ? title : "\(title) · \(account)" }
     var displayLabel: String { title.caseInsensitiveCompare(account) == .orderedSame ? title : label }
 }
-struct AgendaEvent: Identifiable, Codable {
+struct AgendaEvent: Identifiable, Codable, Equatable {
     var id: String
     var calendarID: String
     var title: String
@@ -76,8 +76,11 @@ enum DateRules {
         calendar.dateInterval(of: .day, for: date)!
     }
     static func overlaps(_ event: AgendaEvent, day date: Date, calendar: Calendar = .current) -> Bool {
-        let interval = day(date, calendar: calendar)
-        return event.start < interval.end && (event.end > interval.start || (event.end == event.start && event.start >= interval.start))
+        overlaps(event, interval: day(date, calendar: calendar))
+    }
+    /// For callers that already hold the day's interval, such as a scrolling week strip.
+    static func overlaps(_ event: AgendaEvent, interval: DateInterval) -> Bool {
+        event.start < interval.end && (event.end > interval.start || (event.end == event.start && event.start >= interval.start))
     }
     static func group(_ item: TaskItem, now: Date = .now, calendar: Calendar = .current) -> String {
         guard let due = item.due else { return "Undated" }
