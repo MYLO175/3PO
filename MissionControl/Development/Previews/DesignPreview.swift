@@ -5,6 +5,7 @@ import SwiftUI
 /// heartbeat, glass or solid widgets over the glow, and the real Settings → Appearance controls.
 /// Preferences live in a throwaway suite, so the installed app's look is untouched.
 struct DesignPreview: View {
+    var model: DashboardModel
     @State private var suite: String = {
         let name = "threepo-design-preview-" + UUID().uuidString
         var colours = WorkspaceColorOverrides(); colours.profiles = WorkspaceColorTheme.threePO.profiles
@@ -12,7 +13,7 @@ struct DesignPreview: View {
         return name
     }()
     var body: some View {
-        DesignPreviewContent()
+        DesignPreviewContent(model: model)
             .defaultAppStorage(UserDefaults(suiteName: suite)!)
             .onDisappear { UserDefaults.standard.removePersistentDomain(forName: suite) }
     }
@@ -21,7 +22,7 @@ struct DesignPreview: View {
 extension DesignPreview {
     /// `--preview-design --snapshot`: still orb rows for three themes in both modes (ImageRenderer),
     /// and the whole preview window offscreen, written to /tmp. Motion is held so frames are repeatable.
-    @MainActor static func render() async {
+    @MainActor static func render(_ model: DashboardModel) async {
         let moods: [SwirlOrb.Mood] = [.ready, .thinking, .working(0.55), .done, .attention]
         for (name, preset) in [("3po", WorkspaceColorTheme.threePO), ("ocean", .ocean), ("nebula", .nebula)] {
             for mode in ["light", "dark"] {
@@ -38,7 +39,7 @@ extension DesignPreview {
             let suite = "threepo-design-snapshot-" + UUID().uuidString, defaults = UserDefaults(suiteName: suite)!
             var colours = WorkspaceColorOverrides(); colours.profiles = WorkspaceColorTheme.threePO.profiles
             defaults.set(colours.encoded, forKey: "workspaceColorOverrides"); defaults.set(mode, forKey: "workspaceAppearance"); defaults.set(WorkspaceMotion.reduced.rawValue, forKey: WorkspaceStyleKey.motion)
-            let hosting = NSHostingView(rootView: DesignPreviewContent().defaultAppStorage(defaults))
+            let hosting = NSHostingView(rootView: DesignPreviewContent(model: model).defaultAppStorage(defaults))
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false; window.contentView = hosting
             window.appearance = NSAppearance(named: mode == "dark" ? .darkAqua : .aqua)
@@ -56,6 +57,9 @@ extension DesignPreview {
 }
 
 private struct DesignPreviewContent: View {
+    var model: DashboardModel
+    @State private var calendar = WidgetConfiguration(calendarMode: "day")
+    @State private var reminders = WidgetConfiguration()
     @AppStorage("workspaceColorOverrides") private var colours = "{}"
     @AppStorage("workspaceAppearance") private var appearance = "system"
     @AppStorage(WorkspaceStyleKey.motion) private var motion = WorkspaceMotion.full.rawValue
@@ -109,6 +113,7 @@ private struct DesignPreviewContent: View {
         .toolbarBackground(palette[.sidebar], for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
         .frame(minWidth: 1240, minHeight: 800)
+        .onAppear { Self.seedReminders(model) }
         .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
     }
     private var current: AIActivityRecord? {
@@ -126,24 +131,10 @@ private struct DesignPreviewContent: View {
                     Text("A light day. Design studio is at 10:00 in Room 2.14, and your tutor asked everyone to bring printed drafts. Lunch with Alex is at 13:00. The parcel needs collecting from the post office before 17:30. Your essay draft is due on Monday, and Saturday morning is free if you want to start it then.")
                         .font(.system(size: 14)).lineSpacing(5)
                 }
-                card {
-                    WidgetHeader(title: "Calendar", symbol: "calendar") { Image(systemName: "plus") }
-                    WidgetHeadline(text: "Design studio in 19 min", lines: 1)
-                    event("10:00", "Design studio", "Room 2.14")
-                    event("13:00", "Lunch with Alex", "Café by the library")
-                    event("15:30", "Gym", "Sports centre")
-                    event("18:00", "Seminar reading", "At home")
-                }
+                tile { CalendarWidgetView(model: model, configuration: $calendar, previewSnapshot: Self.events) }
             }
             GridRow {
-                card {
-                    WidgetHeader(title: "Reminders", symbol: "checklist") { Image(systemName: "plus") }
-                    WidgetHeadline(text: "Collect parcel by 17:30.")
-                    reminder("Collect parcel", due: Calendar.current.date(bySettingHour: 17, minute: 30, second: 0, of: .now), hasTime: true)
-                    reminder("Email tutor about the essay", due: Calendar.current.date(byAdding: .day, value: 1, to: .now), hasTime: false)
-                    reminder("Return library books", due: Calendar.current.date(byAdding: .day, value: 4, to: .now), hasTime: false)
-                    reminder("Buy printer paper", due: nil, hasTime: false)
-                }
+                tile { DashboardView(model: model, widgetConfiguration: $reminders).remindersPanel }
                 card {
                     WidgetHeader(title: "Your PA", symbol: "sparkles") { Image(systemName: "square.and.pencil") }
                     HStack { Spacer(); Text("What’s left for today?").padding(.horizontal, 12).padding(.vertical, 7).background(palette[.userBubble], in: RoundedRectangle(cornerRadius: 14)) }
@@ -152,26 +143,41 @@ private struct DesignPreviewContent: View {
             }
         }
     }
+    private func tile(@ViewBuilder content: () -> some View) -> some View {
+        content().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .environment(\.inWorkspaceTile, true).workspaceSurface(palette)
+    }
+    /// Today's made-up events, from a morning run to evening reading.
+    static func events(_ range: DateInterval) -> CalendarSnapshot {
+        let calendar = Calendar.current, source = SourceOption(id: "design-preview", title: "Fictional", account: "Preview", writable: false)
+        var events: [AgendaEvent] = []
+        var day = calendar.startOfDay(for: range.start)
+        while day < range.end {
+            for (hour, minute, length, title, place) in [(8, 0, 45, "Morning run", "Park loop"), (10, 0, 120, "Design studio", "Room 2.14"), (13, 0, 60, "Lunch with Alex", "Café by the library"),
+                                                         (15, 30, 60, "Gym", "Sports centre"), (17, 0, 30, "Tutor call", ""), (18, 0, 60, "Seminar reading", "At home")] {
+                let start = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day)!
+                events.append(AgendaEvent(id: "design-\(title)-\(start.timeIntervalSince1970)", calendarID: source.id, title: title, start: start, end: start.addingTimeInterval(Double(length) * 60), allDay: false, location: place, sourceLabel: source.title))
+            }
+            day = calendar.date(byAdding: .day, value: 1, to: day)!
+        }
+        return CalendarSnapshot(sources: [source], events: events)
+    }
+    /// Made-up reminders due today, tomorrow, later and never.
+    static func seedReminders(_ model: DashboardModel) {
+        let calendar = Calendar.current, list = SourceOption(id: "design-reminders", title: "Personal", account: "Preview", writable: false)
+        func item(_ title: String, _ due: Date?, _ hasTime: Bool) -> TaskItem { TaskItem(id: "design-" + title, listID: list.id, title: title, due: due, hasTime: hasTime, sourceLabel: list.title, writable: false, recurring: false) }
+        model.reminderData = ReminderSnapshot(sources: [list], reminders: [
+            item("Collect parcel", calendar.date(bySettingHour: 17, minute: 30, second: 0, of: .now), true),
+            item("Email tutor about the essay", calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: .now)), false),
+            item("Return library books", calendar.date(byAdding: .day, value: 4, to: calendar.startOfDay(for: .now)), false),
+            item("Buy printer paper", nil, false)
+        ])
+    }
     private func card(@ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 10) { content(); Spacer(minLength: 0) }
             .font(.system(size: 13))
             .padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .workspaceSurface(palette)
-    }
-    private func event(_ time: String, _ title: String, _ place: String) -> some View {
-        HStack(spacing: 10) {
-            TimePill(text: time)
-            Text(title).lineLimit(1)
-            Text(place).foregroundStyle(palette[.text].opacity(0.55)).lineLimit(1)
-        }
-    }
-    private func reminder(_ title: String, due: Date?, hasTime: Bool) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "circle").font(.system(size: 17)).foregroundStyle(palette[.text].opacity(0.5))
-            Text(title).lineLimit(1)
-            Spacer(minLength: 6)
-            if let due { DueBadge(due: due, hasTime: hasTime) }
-        }
     }
     private func set(_ next: SwirlOrb.Mood) {
         run?.cancel()

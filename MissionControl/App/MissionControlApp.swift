@@ -68,7 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             DispatchQueue.main.async { dashboard.start() }
         }
         if ProcessInfo.processInfo.arguments.contains("--preview-design") && ProcessInfo.processInfo.arguments.contains("--snapshot") {
-            DispatchQueue.main.async { Task { await DesignPreview.render(); NSApp.terminate(nil) } }
+            DispatchQueue.main.async { Task { await DesignPreview.render(dashboard); NSApp.terminate(nil) } }
         }
         if ProcessInfo.processInfo.arguments.contains("--preview-settings-context") && ProcessInfo.processInfo.arguments.contains("--snapshot") {
             DispatchQueue.main.async { Task { await SettingsContextPreview.render(dashboard) } }
@@ -90,7 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             } else if ProcessInfo.processInfo.arguments.contains("--preview-calendar-scroll") {
                 CalendarScrollPreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-design") {
-                DesignPreview()
+                DesignPreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {
                 if ProcessInfo.processInfo.arguments.contains("--heartbeat-progress-preview") {HeartbeatProgressPreviewScreen(model:model)}
                 else if ProcessInfo.processInfo.arguments.contains("--workspace-colours-preview") {WorkspaceThemePreview()}
