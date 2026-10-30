@@ -96,7 +96,7 @@ private struct DesignPreviewContent: View {
                             Button("Needs you") { set(.attention) }
                         }.buttonStyle(.borderless)
                     }.padding(.vertical, 6)
-                    Text("The pill in the toolbar is the real one, fed made-up activity.").font(.caption).foregroundStyle(.secondary)
+                    Text("The pill, Calendar and Reminders are the real ones, fed made-up data. Reminders are look-only here.").font(.caption).foregroundStyle(.secondary)
                 }
                 AppearanceSettings()
             }
@@ -134,7 +134,8 @@ private struct DesignPreviewContent: View {
                 tile { CalendarWidgetView(model: model, configuration: $calendar, previewSnapshot: Self.events) }
             }
             GridRow {
-                tile { DashboardView(model: model, widgetConfiguration: $reminders).remindersPanel }
+                // Writable-looking but look-only: a click here never reaches Reminders.
+                tile { DashboardView(model: model, widgetConfiguration: $reminders).remindersPanel.allowsHitTesting(false) }
                 card {
                     WidgetHeader(title: "Your PA", symbol: "sparkles") { Image(systemName: "square.and.pencil") }
                     HStack { Spacer(); Text("What’s left for today?").padding(.horizontal, 12).padding(.vertical, 7).background(palette[.userBubble], in: RoundedRectangle(cornerRadius: 14)) }
@@ -164,8 +165,8 @@ private struct DesignPreviewContent: View {
     }
     /// Made-up reminders due today, tomorrow, later and never.
     static func seedReminders(_ model: DashboardModel) {
-        let calendar = Calendar.current, list = SourceOption(id: "design-reminders", title: "Personal", account: "Preview", writable: false)
-        func item(_ title: String, _ due: Date?, _ hasTime: Bool) -> TaskItem { TaskItem(id: "design-" + title, listID: list.id, title: title, due: due, hasTime: hasTime, sourceLabel: list.title, writable: false, recurring: false) }
+        let calendar = Calendar.current, list = SourceOption(id: "design-reminders", title: "Personal", account: "Preview", writable: true)
+        func item(_ title: String, _ due: Date?, _ hasTime: Bool) -> TaskItem { TaskItem(id: "design-" + title, listID: list.id, title: title, due: due, hasTime: hasTime, sourceLabel: list.title, writable: true, recurring: false) }
         model.reminderData = ReminderSnapshot(sources: [list], reminders: [
             item("Collect parcel", calendar.date(bySettingHour: 17, minute: 30, second: 0, of: .now), true),
             item("Email tutor about the essay", calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: .now)), false),
