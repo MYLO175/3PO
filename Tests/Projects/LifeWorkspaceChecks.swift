@@ -12,7 +12,7 @@ import SwiftData
             let legacy = LifeItem(registration: "compatibility", kind: kind, title: raw, notes: "Retained notes", status: .active, due: "2026-10-10", areas: [.studies], sortOrder: 4, icon: "book.closed")
             let roundTrip = try JSONDecoder().decode(LifeItem.self, from: JSONEncoder().encode(legacy))
             precondition(roundTrip == legacy && roundTrip.kind.rawValue == raw, "Reading an old item never rewrites its identity/revision/content")
-            precondition(kind.title == (kind.isWork ? "Task" : "Space") && kind.workspaceKind == (kind.isWork ? .task : .space))
+            precondition(kind.title == (kind.isWork ? "Task" : "Project") && kind.workspaceKind == (kind.isWork ? .task : .space))
         }
         precondition(LifeBoardScrollRules.step(pointerY:300,height:600,offset:100,contentHeight:2000) == 0)
         precondition(LifeBoardScrollRules.step(pointerY:599,height:600,offset:100,contentHeight:2000) > 0)
