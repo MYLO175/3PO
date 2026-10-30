@@ -84,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         Window("3PO", id: ProcessInfo.processInfo.arguments.contains("--preview-chat-approval") ? "chatApprovalPreview" : ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") ? "reviewInboxPreview" : ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") ? "reviewInboxValidation" : ProcessInfo.processInfo.arguments.contains("--preview-life-and-plans") ? "lifePlansPreview" : ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") ? "commitmentValidation" : ProcessInfo.processInfo.arguments.contains("--validate-advice-context") ? "adviceValidation" : ProcessInfo.processInfo.arguments.contains("--preview-memory-review") ? "memoryReviewPreview" : "dashboard") {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--preview-chat-approval") {
-                ChatApprovalPreview(model:model)
+                if ProcessInfo.processInfo.arguments.contains("--dashboard") { DashboardPreview(model:model) } else { ChatApprovalPreview(model:model) }
             } else if ProcessInfo.processInfo.arguments.contains("--preview-calendar-drag") {
                 CalendarDragPreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-calendar-scroll") {

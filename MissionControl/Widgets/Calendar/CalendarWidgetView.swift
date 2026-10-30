@@ -31,6 +31,7 @@ struct CalendarWidgetView: View {
     private var calendar: Calendar { .current }
     private var mode: String { configuration.calendarMode }
     private var motion = MotionPreference()
+    @Environment(\.calendarPreviewSnapshot) private var environmentSnapshot
     private var range: DateInterval {
         if mode == "month" {
             let month = calendar.dateInterval(of:.month,for:configuration.date)!
@@ -124,7 +125,7 @@ struct CalendarWidgetView: View {
         do {
             let value: CalendarSnapshot
             #if DEBUG
-            if let previewSnapshot { value = previewSnapshot(range) }
+            if let previewSnapshot = previewSnapshot ?? environmentSnapshot { value = previewSnapshot(range) }
             else if let previewFixture { value = try await model.eventKit.calendarDragSnapshot(previewFixture,range:range) }
             else { value = ProcessInfo.processInfo.arguments.contains("--sample") ? model.calendarData : try await model.widgetCalendars.load(range) }
             #else
@@ -576,3 +577,9 @@ struct CalendarDragPreview: View {
     }
 }
 #endif
+
+private struct CalendarPreviewSnapshotKey: EnvironmentKey { static let defaultValue: ((DateInterval) -> CalendarSnapshot)? = nil }
+extension EnvironmentValues {
+    /// Fictional events for DEBUG previews of the whole dashboard; nil in normal use.
+    var calendarPreviewSnapshot: ((DateInterval) -> CalendarSnapshot)? { get { self[CalendarPreviewSnapshotKey.self] } set { self[CalendarPreviewSnapshotKey.self] = newValue } }
+}

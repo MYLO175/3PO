@@ -113,7 +113,7 @@ private struct DesignPreviewContent: View {
         .toolbarBackground(palette[.sidebar], for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
         .frame(minWidth: 1240, minHeight: 800)
-        .onAppear { Self.seedReminders(model) }
+        .onAppear { DesignFixtures.seedReminders(model, writable: false) }
         .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
     }
     private var current: AIActivityRecord? {
@@ -131,7 +131,7 @@ private struct DesignPreviewContent: View {
                     Text("A light day. Design studio is at 10:00 in Room 2.14, and your tutor asked everyone to bring printed drafts. Lunch with Alex is at 13:00. The parcel needs collecting from the post office before 17:30. Your essay draft is due on Monday, and Saturday morning is free if you want to start it then.")
                         .font(.system(size: 14)).lineSpacing(5)
                 }
-                tile { CalendarWidgetView(model: model, configuration: $calendar, previewSnapshot: Self.events) }
+                tile { CalendarWidgetView(model: model, configuration: $calendar, previewSnapshot: DesignFixtures.events) }
             }
             GridRow {
                 // Writable-looking but look-only: a click here never reaches Reminders.
@@ -147,32 +147,6 @@ private struct DesignPreviewContent: View {
     private func tile(@ViewBuilder content: () -> some View) -> some View {
         content().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .environment(\.inWorkspaceTile, true).workspaceSurface(palette)
-    }
-    /// Today's made-up events, from a morning run to evening reading.
-    static func events(_ range: DateInterval) -> CalendarSnapshot {
-        let calendar = Calendar.current, source = SourceOption(id: "design-preview", title: "Fictional", account: "Preview", writable: false)
-        var events: [AgendaEvent] = []
-        var day = calendar.startOfDay(for: range.start)
-        while day < range.end {
-            for (hour, minute, length, title, place) in [(8, 0, 45, "Morning run", "Park loop"), (10, 0, 120, "Design studio", "Room 2.14"), (13, 0, 60, "Lunch with Alex", "Café by the library"),
-                                                         (15, 30, 60, "Gym", "Sports centre"), (17, 0, 30, "Tutor call", ""), (18, 0, 60, "Seminar reading", "At home")] {
-                let start = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day)!
-                events.append(AgendaEvent(id: "design-\(title)-\(start.timeIntervalSince1970)", calendarID: source.id, title: title, start: start, end: start.addingTimeInterval(Double(length) * 60), allDay: false, location: place, sourceLabel: source.title))
-            }
-            day = calendar.date(byAdding: .day, value: 1, to: day)!
-        }
-        return CalendarSnapshot(sources: [source], events: events)
-    }
-    /// Made-up reminders due today, tomorrow, later and never.
-    static func seedReminders(_ model: DashboardModel) {
-        let calendar = Calendar.current, list = SourceOption(id: "design-reminders", title: "Personal", account: "Preview", writable: true)
-        func item(_ title: String, _ due: Date?, _ hasTime: Bool) -> TaskItem { TaskItem(id: "design-" + title, listID: list.id, title: title, due: due, hasTime: hasTime, sourceLabel: list.title, writable: true, recurring: false) }
-        model.reminderData = ReminderSnapshot(sources: [list], reminders: [
-            item("Collect parcel", calendar.date(bySettingHour: 17, minute: 30, second: 0, of: .now), true),
-            item("Email tutor about the essay", calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: .now)), false),
-            item("Return library books", calendar.date(byAdding: .day, value: 4, to: calendar.startOfDay(for: .now)), false),
-            item("Buy printer paper", nil, false)
-        ])
     }
     private func card(@ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 10) { content(); Spacer(minLength: 0) }
@@ -202,6 +176,68 @@ private struct DesignPreviewContent: View {
             try? await Task.sleep(for: .seconds(6))
             if !Task.isCancelled { mood = .ready }
         }
+    }
+}
+/// Made-up events and reminders for the design previews.
+enum DesignFixtures {
+    /// Today's made-up events, from a morning run to evening reading.
+    static func events(_ range: DateInterval) -> CalendarSnapshot {
+        let calendar = Calendar.current, source = SourceOption(id: "design-preview", title: "Fictional", account: "Preview", writable: false)
+        var events: [AgendaEvent] = []
+        var day = calendar.startOfDay(for: range.start)
+        while day < range.end {
+            for (hour, minute, length, title, place) in [(8, 0, 45, "Morning run", "Park loop"), (10, 0, 120, "Design studio", "Room 2.14"), (13, 0, 60, "Lunch with Alex", "Café by the library"),
+                                                         (15, 30, 60, "Gym", "Sports centre"), (17, 0, 30, "Tutor call", ""), (18, 0, 60, "Seminar reading", "At home")] {
+                let start = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day)!
+                events.append(AgendaEvent(id: "design-\(title)-\(start.timeIntervalSince1970)", calendarID: source.id, title: title, start: start, end: start.addingTimeInterval(Double(length) * 60), allDay: false, location: place, sourceLabel: source.title))
+            }
+            day = calendar.date(byAdding: .day, value: 1, to: day)!
+        }
+        return CalendarSnapshot(sources: [source], events: events)
+    }
+    /// Made-up reminders due today, tomorrow, later and never.
+    @MainActor static func seedReminders(_ model: DashboardModel, writable: Bool = true) {
+        let calendar = Calendar.current, list = SourceOption(id: "design-reminders", title: "Personal", account: "Preview", writable: writable)
+        func item(_ title: String, _ due: Date?, _ hasTime: Bool) -> TaskItem { TaskItem(id: "design-" + title, listID: list.id, title: title, due: due, hasTime: hasTime, sourceLabel: list.title, writable: writable, recurring: false) }
+        model.reminderData = ReminderSnapshot(sources: [list], reminders: [
+            item("Collect parcel", calendar.date(bySettingHour: 17, minute: 30, second: 0, of: .now), true),
+            item("Email tutor about the essay", calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: .now)), false),
+            item("Return library books", calendar.date(byAdding: .day, value: 4, to: calendar.startOfDay(for: .now)), false),
+            item("Buy printer paper", nil, false)
+        ])
+    }
+}
+
+/// `--preview-chat-approval --dashboard --sample`: the real dashboard window with made-up pages (Today,
+/// Planning, Assistant). Only widgets that show the in-memory model or fixtures are placed; sample mode
+/// blocks reminder completion, and the chat holds the fictional approval card.
+struct DashboardPreview: View {
+    @Bindable var model: DashboardModel
+    @State private var seeded = false
+    init(model: DashboardModel) {
+        self.model = model
+        // Set up before the first frame, so the default pages (Mail and others) never mount.
+        let store = model.workspace, original = store.state.pages.map(\.id)
+        guard !store.state.pages.contains(where: { $0.title == "Planning" && $0.widgets.count == 1 }) else { return }
+        DesignFixtures.seedReminders(model)
+        store.addPage("Today", symbol: "sun.max")
+        for kind in [WidgetKind.calendar, .reminders, .conversation, .clock] { store.addWidget(kind) }
+        store.addPage("Planning", symbol: "calendar")
+        store.addWidget(.calendar)
+        if var week = store.selected.widgets.first { week.configuration.calendarMode = "week"; store.update(week) }
+        store.addPage("Assistant", symbol: "sparkles")
+        store.addWidget(.conversation)
+        for id in original { store.removePage(id) }
+        if let today = store.state.pages.first?.id { store.select(today) }
+    }
+    var body: some View {
+        WorkspaceView(model: model)
+            .environment(\.calendarPreviewSnapshot, DesignFixtures.events)
+            .task {
+                guard !seeded else { return }; seeded = true
+                do { model.assistant.seedChatApprovalPreview(try await ReviewInboxEvaluation.chatApprovalFixture(model)) }
+                catch { model.assistant.error = error.localizedDescription }
+            }
     }
 }
 #endif
