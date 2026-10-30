@@ -7,7 +7,7 @@ description: Read or change 3PO Assistant, Projects, Reminders, Brief, Review, c
 
 Follow the [3PO operating contract](../../references/3po-contract.md).
 
-Identify the feature or scope the human means. Use read_instructions with a null target for its directory when needed. Calendar targets come from current calendar reads; space targets come from current project reads. Read the exact owner and revision before editing.
+Identify the feature or scope the human means. Use read_instructions with a null target for its directory when needed. Calendar targets come from current calendar reads; project targets (space:) come from current project reads. Read the exact owner and revision before editing.
 
 Read both explicit text and separately returned learned guidance. An apparently empty explicit policy does not prove that no learned rule applies. Parent guidance applies to descendants, and a child's explicit guidance refines its scope.
 

@@ -66,7 +66,7 @@ import Observation
                 (record.reference.kind == "page" && record.projectID.map(ancestorIDs.contains) == true)
             }.map { record in
                 var value = record
-                value.relevance = "Inherited context of an exact parent space, not a direct assertion about this child. Use it to understand the hierarchy; child-specific human context takes priority. Do not copy the parent's whole purpose as this child's purpose."
+                value.relevance = "Inherited context of an exact parent project, not a direct assertion about this child. Use it to understand the hierarchy; child-specific human context takes priority. Do not copy the parent's whole purpose as this child's purpose."
                 return value
             }
             var inherited: [ContextKnowledgeRecord] = [], inheritedBytes = 0

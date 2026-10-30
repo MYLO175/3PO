@@ -11,7 +11,7 @@ Use your running 3PO Mac app from ChatGPT/Codex or Claude Code/Cowork. Both pack
 | day / week | Brief, review and plan work around commitments |
 | calendar | Availability and appointment changes |
 | reminders | Native lists, dates, repeats and completion |
-| projects | Nested spaces, tasks, notes, order and links |
+| projects | Projects, subprojects, tasks, notes, order and links |
 | review | Work through the saved Review inbox |
 | find | Find information in permitted personal sources |
 | memory | Remember, correct, forget and resolve saved knowledge |

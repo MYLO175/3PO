@@ -1,13 +1,13 @@
 ---
 name: projects
-description: Explain or organise 3PO Projects, nested spaces, local tasks, notes, ordering and links. Use for project work and its context; Apple Reminders are a separate destination.
+description: Explain or organise 3PO Projects, subprojects, local tasks, notes, ordering and links. Use for project work and its context; Apple Reminders are a separate destination.
 ---
 
 # Work with Projects
 
 Follow the [3PO operating contract](../../references/3po-contract.md).
 
-Read Project instructions and the relevant workspace branch with read_life_items. Use the maintained project page and parent/child index to understand purpose. Current human descriptions and item state take priority over an older summary.
+Read Project instructions and the relevant workspace branch with read_life_items. Projects are stored as kind space; always call them projects and subprojects to the human. Use the maintained project page and parent/child index to understand purpose. Current human descriptions and item state take priority over an older summary.
 
 Choose the requested existing parent, status and destination from issued records. Before a move, edit, deletion or ordering change, inspect the affected parent/child records. Do not infer completion from a passed deadline.
 

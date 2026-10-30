@@ -82,7 +82,7 @@ import Foundation
         case "read_instructions":
             guard let target = text("target") else {
                 return try json(["targets": ["assistant", "projects", "reminders", "brief", "review"],
-                    "additionalScopes": "calendar:<ID from read_calendar>, space:<UUID from read_life_items>, topic:<area key>",
+                    "additionalScopes": "calendar:<ID from read_calendar>, space:<project UUID from read_life_items>, topic:<area key>",
                     "topics": LifeArea.allCases.map(\.rawValue) + ["recent"], "note": "Read the applicable target before changing guidance. Read instructions:calendars via read_context_page for the calendar-purpose directory."])
             }
             let value = try instruction(target)
@@ -315,7 +315,7 @@ import Foundation
         var scoped = candidate
         if case .space(let id) = ContextInstructionScope(key: target) {
             let item = try tools.mcpProjectItem(id)
-            guard !item.kind.isWork else { throw ActionFailure.message("Scoped instructions belong to a project space.") }
+            guard !item.kind.isWork else { throw ActionFailure.message("Scoped instructions belong to a project.") }
             scoped.title = "Instructions for " + item.title
             scoped.references = [projectIdentity(item)]
         }

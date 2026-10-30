@@ -107,7 +107,7 @@ import EventKit
             "tools": [
                 ["subject": "Current appointments and availability", "read": "read_calendar"],
                 ["subject": "Apple Reminders", "read": "read_reminders"],
-                ["subject": "Project spaces and tasks", "read": "read_life_items"],
+                ["subject": "Projects, subprojects and tasks", "read": "read_life_items"],
                 ["subject": "Email", "read": "search_mail, read_email"],
                 ["subject": "Selected WhatsApp chats", "read": "list_whatsapp_chats, search_whatsapp"],
                 ["subject": "Weather", "read": "read_weather"],
@@ -418,7 +418,7 @@ import EventKit
                 let id = ContextPage.stableID(registration: registration, kind: .project, key: item.id.uuidString)
                 if !existing.contains(id) {
                     let refs = records.filter { $0.reference.kind == "project" && $0.reference.key == item.id.uuidString }.map(\.reference)
-                    directory.append((["id": id, "title": item.title, "about": "Current project/space context"], refs))
+                    directory.append((["id": id, "title": item.title, "about": "Current project context"], refs))
                 }
             }
             directory += ContextInstructionRoute.all.map { (["id": $0.id, "title": $0.title, "about": $0.about], []) }

@@ -413,7 +413,7 @@ struct ProactiveReviewContext {
                 input["retirementTargets"]=retirementTargets.keys.sorted().map {alias in
                     ["id":alias,"kind":retirementTargets[alias]!.kind,"parentID":retirementTargets[alias]!.parentID as Any? ?? NSNull()] as [String:Any]
                 }
-                input["lifeStructure"]=["items":lifeRows,"coverage":"Relevant existing human spaces and bounded direct child tasks, including completed work. Partial coverage; absence is not proof. Use only supplied space IDs for projectTask suggestions; no background workspace mutations."]
+                input["lifeStructure"]=["items":lifeRows,"coverage":"Relevant existing human projects and bounded direct child tasks, including completed work. Partial coverage; absence is not proof. Use only supplied project IDs for projectTask suggestions; no background workspace mutations."]
                 input["whatsapp"]=whatsapp.enumerated().map { index,item in ["id":"wa_\(index)","chat":item.chatName,"sender":item.sender,"sentByMe":item.sentByMe,"received":item.date.ISO8601Format(),"text":item.text,"quoteEvidence":ProactiveRules.whatsappQuotes(item.text).enumerated().map{["id":"wa_\(index):action_\($0.offset)","quote":$0.element]}] as [String:Any] }
                 input["earlierProposals"]=ProactiveRules.earlierRows(earlier,targets:targets,replaceable:replaceableAliases)
                 input["completedReminders"]=completed.enumerated().map{["id":"completed_\($0.offset)","title":$0.element.item.title,"due":DateRules.reminderDue($0.element.item),"completed":$0.element.completedAt.ISO8601Format()]}

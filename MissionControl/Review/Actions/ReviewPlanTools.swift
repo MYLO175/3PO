@@ -28,7 +28,7 @@ enum ReviewPlanTools {
             "start":PAToolProtocol.string("Exact YYYY-MM-DD or timestamp with UTC offset; null retains the existing date",nullable:true),
             "end":PAToolProtocol.string("Calendar end in the same date mode; all-day end is inclusive. Null retains existing end",nullable:true),
             "hasTime":["type":["boolean","null"]],
-            "projectID":PAToolProtocol.string("Exact existing project space ID issued in the plan or read_life_items; null for native items",nullable:true),
+            "projectID":PAToolProtocol.string("Exact existing project ID issued in the plan or read_life_items; null for native items",nullable:true),
             "basis":["type":["string","null"],"enum":["source","human",NSNull()]],
             "evidence":PAToolProtocol.string("Exact quote from the current source or current human request supporting a new/changed action; null for unchanged suggestions",nullable:true),
             "selected":["type":"boolean"]]

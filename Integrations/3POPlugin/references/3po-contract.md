@@ -24,7 +24,7 @@ Run calls sequentially. Only completed with verified:true confirms a saved chang
 
 ## Store boundaries
 
-Projects are local spaces/tasks with their own status, notes and relationships. They are separate from native Reminders and Calendar. A relationship does not merge identities or synchronise completion.
+Projects are local projects (stored as kind space), subprojects and tasks with their own status, notes and relationships. Call them projects and subprojects to the human, never spaces or folders. They are separate from native Reminders and Calendar. A relationship does not merge identities or synchronise completion.
 
 Review is a saved presentation. Read its exact row/revision before acknowledgment. Apply an accepted action with its actual domain tool first. Acknowledgment alone is not task completion.
 

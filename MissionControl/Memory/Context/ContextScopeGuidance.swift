@@ -123,7 +123,7 @@ enum ContextHierarchyRules {
         var rows: [[String: String]] = [], refs: [ContextPageReference] = []
         for root in roots {
             let row = ["title": root.title, "description": root.text.isEmpty ? "Purpose not described yet" : root.text,
-                       "read": root.pageID, "contains": "This space and its nested spaces. Open it for its child index."]
+                       "read": root.pageID, "contains": "This project and its subprojects. Open it for its child index."]
             guard ContextKnowledgeRules.json(rows + [row]).utf8.count <= 3000 else { continue }
             rows.append(row); refs += root.references
         }

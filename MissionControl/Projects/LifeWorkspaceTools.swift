@@ -283,9 +283,9 @@ import CryptoKit
                     else { parent = try current(token) }
                 } else { parent = nil }
                 guard let kind = (entry["kind"] as? String).flatMap(LifeItemKind.init(rawValue:)), LifeItemKind.allCases.contains(kind) else {
-                    throw LifeWorkspaceFailure.message("Create a space or a task.")
+                    throw LifeWorkspaceFailure.message("Create a project (kind space) or a task.")
                 }
-                guard parent?.kind.isWork != true else { throw LifeWorkspaceFailure.message("Choose a space as the parent. Tasks cannot contain other items.") }
+                guard parent?.kind.isWork != true else { throw LifeWorkspaceFailure.message("Choose a project (kind space) as the parent. Tasks cannot contain other items.") }
                 let scope: UUID?
                 if let parent { scope = parent.conversationID } else { scope = topic }
                 values.append(.init(registration:registration, conversationID:scope, kind:kind, title:(entry["title"] as! String).trimmingCharacters(in:.whitespacesAndNewlines), parentID:parent?.id, notes:entry["notes"] as! String, due:entry["due"] as? String, estimateMinutes:entry["estimateMinutes"] as? Int, areas:(entry["areas"] as! [String]).compactMap(LifeArea.init(rawValue:)), sourceTurnID:turnID.uuidString, humanEvidence:String((text("authorization") ?? "").prefix(2000))))

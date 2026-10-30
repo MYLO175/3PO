@@ -23,7 +23,7 @@ enum ContextFeature: String, CaseIterable, Identifiable {
     var defaultText: String {
         switch self {
         case .assistant: return "Use relevant context pages and recent changes to answer naturally and concisely. Read more context when needed, state uncertainty and ask one useful question when essential information is missing. Remember useful enduring context with its original evidence."
-        case .projects: return "Use the purpose and current context of existing project spaces to suggest where work belongs. Keep project tasks separate from Apple Reminders. Ask what a project is for when that is unclear. Project creation and changes follow the human's request or approval."
+        case .projects: return "Use the purpose and current context of existing projects to suggest where work belongs. Call them projects and subprojects, never spaces or folders. Keep project tasks separate from Apple Reminders. Ask what a project is for when that is unclear. Project creation and changes follow the human's request or approval."
         case .reminders: return "Use relevant project and personal context when helping with reminders. Preserve the human's requested date and destination; ask only for essential missing information. Do not infer completion from elapsed time or a missing source."
         }
     }
@@ -70,7 +70,7 @@ enum ContextInstructionRoute: Hashable, Identifiable {
     var about: String {
         switch self {
         case .feature(.assistant): "How 3PO should respond and help in conversation."
-        case .feature(.projects): "How to organise and plan work in existing project spaces."
+        case .feature(.projects): "How to organise and plan work in existing projects."
         case .feature(.reminders): "How to help with reminders, dates and task destinations."
         case .brief: "What to include in your daily brief and how to write it."
         case .review: "What deserves attention, informed by your Review feedback."
