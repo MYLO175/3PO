@@ -9,10 +9,10 @@ enum WorkspaceStyleKey {
     static let glowFollowsTime = "workspaceGlowFollowsTime"
     static let motion = "workspaceMotion"
 }
-/// The toolbar is the pill's height plus even space above and below; the canvas starts right under it,
-/// so the pill sits midway between the top of the window and the dashboard.
+/// The compact toolbar is 40 points tall and doesn't grow for taller items. The canvas starts right
+/// under it, and the 34-point pill leaves 3 points above and below, midway between window and dashboard.
 enum WorkspaceChrome {
-    static let toolbarItemHeight: CGFloat = 54
+    static let toolbarItemHeight: CGFloat = 40
 }
 enum WorkspaceSurface: String, CaseIterable, Identifiable {
     case glass, solid
