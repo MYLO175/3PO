@@ -299,6 +299,24 @@ struct AssistantPanel: View {
     }
     /// A single line of the message field plus its padding.
     private let composerRow: CGFloat = 34
+    @Environment(\.widgetLayout) private var layout
+    /// Two-row sizes keep the message box and show the latest reply above it, as much as fits.
+    private func latestReply(_ turn: AssistantTurn?) -> some View {
+        let replying = turn.map { assistant.busy && assistant.requestConversationID == selectedID && assistant.requestTurnID == $0.id } ?? false
+        return GeometryReader { geometry in
+            Group {
+                if let turn, !turn.content.isEmpty {
+                    let text = PAProse.display(turn.content)
+                    Text((try? AttributedString(markdown:text,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(text))
+                        .font(.callout).lineSpacing(2).lineLimit(max(1,Int((geometry.size.height+2)/19))).textSelection(.enabled)
+                } else if replying {
+                    if assistant.toolStatus.isEmpty { TypingDots() } else { Text(assistant.toolStatus).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                } else {
+                    Text("Ask about your day, an email or what needs doing.").font(.callout).foregroundStyle(.secondary)
+                }
+            }.frame(maxWidth:.infinity,alignment:.topLeading)
+        }
+    }
     /// One click starts on-device dictation straight into the message box; the next click stops.
     private func toggleDictation() {
         if dictation.recording { dictation.stop(); return }
@@ -324,7 +342,7 @@ struct AssistantPanel: View {
         let discoveryEntries=lastDiscoveryEntries(displayedTurns)
         VStack(spacing: 8) {
             WidgetHeader(title:assistant.displayName,symbol:"sparkles") {
-                if let completed=model.heartbeat.state.accounts[model.inference.activeID]?.assessed {
+                if !layout.compact,let completed=model.heartbeat.state.accounts[model.inference.activeID]?.assessed {
                     TimelineView(.periodic(from:.now,by:60)) {context in
                         Text("Heartbeat \(completed.formatted(date:Calendar.current.isDate(completed,inSameDayAs:context.date) ? .omitted : .abbreviated,time:.shortened))")
                             .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
@@ -332,7 +350,7 @@ struct AssistantPanel: View {
                             .accessibilityLabel("Last completed heartbeat \(completed.formatted(date:.abbreviated,time:.shortened))")
                     }
                 }
-                if !focusBinding.wrappedValue.isEmpty {
+                if !layout.compact,!focusBinding.wrappedValue.isEmpty {
                     Label(LifeFocusRules.label(focusBinding.wrappedValue),systemImage:"scope").font(.caption2.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
                         .help("Chat focus. Change it in the PA menu.").accessibilityLabel("Chat focus: " + LifeFocusRules.label(focusBinding.wrappedValue))
                 }
@@ -373,6 +391,7 @@ struct AssistantPanel: View {
                         .accessibilityIdentifier("pa-return-current-chat")
                 }
             }
+            if layout.short { latestReply(displayedTurns.last(where:{ $0.turn.role == "assistant" })?.turn) } else {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
@@ -493,6 +512,7 @@ struct AssistantPanel: View {
                 .onChange(of:viewingHistory) { visibleTurnLimit=40;transcriptScroll.reset();if let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
                 .onAppear { if let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
             }
+            }
             if viewingHistory { historicalDraft }
             if model.memoryLearning.canUndoQuestion(model.inference.activeID) { HStack { Text("Question dismissed").font(.caption).foregroundStyle(.secondary); Button("Undo") { model.memoryLearning.undoQuestion(model.inference.activeID) }.controlSize(.small); Spacer() } }
             if let error = assistant.error, errorHere, !model.inference.usagePaused { DisclosureGroup("Request didn’t complete") { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }.font(.caption) }
@@ -543,7 +563,7 @@ struct AssistantPanel: View {
                 // Mic and send share the single-line field's height, so they sit centred on the text.
                 DictationButton(dictation:dictation,toggle:toggleDictation).frame(height:composerRow).disabled(widgetID != nil && !assistant.drafts.writable)
                 ZStack(alignment:.topLeading) {
-                    if draft.wrappedValue.isEmpty { Text(dictation.recording ? "Listening…" : PAIdentity.placeholder(assistant.displayName)).foregroundStyle(.secondary).padding(.top,2).allowsHitTesting(false) }
+                    if draft.wrappedValue.isEmpty { Text(dictation.recording ? "Listening…" : PAIdentity.placeholder(assistant.displayName)).foregroundStyle(.secondary).lineLimit(1).padding(.top,2).allowsHitTesting(false) }
                     PAChatComposer(text:draft,focused:Binding(get:{composerFocused},set:{composerFocused=$0}),height:$composerHeight,scope:ChatDraftRules.key(registration:model.inference.activeID,widget:imageDraftWidget,conversation:draftKey),enabled:assistant.drafts.writable,textColor:NSColor(palette[.text]),pasteImage:pasteImage,submit:send,cancel:{ guard dictation.recording || dictation.preparing else { return false }; cancelDictation(); return true })
                         .frame(height:composerHeight)
                 }.padding(.vertical,6)

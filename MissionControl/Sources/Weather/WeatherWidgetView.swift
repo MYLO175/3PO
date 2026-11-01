@@ -3,7 +3,37 @@ import AppKit
 
 struct WeatherWidgetView:View {
     @Bindable var weather:WeatherService
+    @Environment(\.widgetLayout) private var layout
     var body:some View {
+        Group {
+            if layout.compact,weather.enabled,weather.allowed,let forecast=weather.forecast,let today=forecast.today() { glance(today:today,forecast:forecast) }
+            else { full }
+        }.onAppear { weather.startRefresh() }
+    }
+    /// Today's temperature and sky, with the coming days beside or below once there is room.
+    private func glance(today:WeatherDay,forecast:WeatherForecast)->some View {
+        VStack(alignment:.leading,spacing:layout == .small ? 6 : 10) {
+            WidgetHeader(title:"Weather",symbol:"cloud.sun") {
+                if layout != .small {
+                    if weather.loading { ProgressView().controlSize(.small) }
+                    Button { weather.startRefresh(allowPrompt:true,force:true) } label:{Image(systemName:"arrow.clockwise")}
+                        .buttonStyle(.borderless).help("Refresh nearby forecast").accessibilityLabel("Refresh weather").disabled(weather.loading)
+                }
+            }.fixedSize(horizontal:false,vertical:true)
+            if layout == .tall {
+                WeatherTodayGlance(today:today)
+                WeatherDaysGlance(today:today,days:forecast.days,timezone:forecast.timezone,vertical:true)
+            } else {
+                HStack(alignment:.top,spacing:18) {
+                    WeatherTodayGlance(today:today)
+                    if layout == .medium { WeatherDaysGlance(today:today,days:forecast.days,timezone:forecast.timezone,vertical:false) }
+                }
+            }
+            Spacer(minLength:0)
+            Link(layout == .small ? "Open-Meteo" : "Open-Meteo · Nearby area",destination:WeatherRules.provider).font(.caption2).lineLimit(1)
+        }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+    }
+    private var full:some View {
         VStack(alignment:.leading,spacing:10) {
             WidgetHeader(title:"Weather",symbol:"cloud.sun") {
                 if weather.loading { ProgressView().controlSize(.small) }
@@ -32,7 +62,66 @@ struct WeatherWidgetView:View {
                 }.frame(maxWidth:.infinity,maxHeight:.infinity)
             }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
-        .onAppear { weather.startRefresh() }
+    }
+}
+private func weatherTemperature(_ value:Double)->String { value.formatted(.number.precision(.fractionLength(0)))+"°" }
+private struct WeatherTodayGlance:View {
+    var today:WeatherDay
+    @Environment(\.workspacePalette) private var palette
+    var body:some View {
+        VStack(alignment:.leading,spacing:2) {
+            HStack(alignment:.center,spacing:8) {
+                Image(systemName:today.symbol).symbolRenderingMode(.hierarchical).foregroundStyle(palette[.accent]).font(.system(size:26,weight:.light))
+                Text(weatherTemperature(today.high)).font(.system(size:34,weight:.light,design:.rounded)).monospacedDigit().rollingNumber(today.high)
+            }
+            Text(today.description).font(.callout.weight(.medium)).lineLimit(1)
+            Text("Low \(weatherTemperature(today.low)) · \(Int(today.rainChance))% rain").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }.fixedSize().accessibilityElement(children:.combine)
+    }
+}
+/// The coming days after today: columns across a wide widget, rows down a tall one.
+private struct WeatherDaysGlance:View {
+    var today:WeatherDay
+    var days:[WeatherDay]
+    var timezone:String
+    var vertical:Bool
+    @Environment(\.workspacePalette) private var palette
+    private func label(_ day:WeatherDay)->String {
+        let parser=DateFormatter();parser.locale=Locale(identifier:"en_US_POSIX");parser.timeZone=TimeZone(identifier:timezone);parser.dateFormat="yyyy-MM-dd"
+        guard let date=parser.date(from:day.date) else { return day.date }
+        let formatter=DateFormatter();formatter.timeZone=parser.timeZone;formatter.dateFormat="EEE";return formatter.string(from:date)
+    }
+    var body:some View {
+        let coming=days.filter{$0.date > today.date}
+        if vertical {
+            VStack(alignment:.leading,spacing:7) {
+                ForEach(coming.prefix(6)) { day in
+                    HStack(spacing:8) {
+                        Text(label(day)).font(.callout.weight(.medium)).frame(width:38,alignment:.leading)
+                        Image(systemName:day.symbol).symbolRenderingMode(.hierarchical).foregroundStyle(palette[.accent]).frame(width:22)
+                        Spacer(minLength:4)
+                        Text(weatherTemperature(day.high)).font(.callout.monospacedDigit())
+                        Text(weatherTemperature(day.low)).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+                    }.accessibilityElement(children:.combine)
+                }
+            }
+        } else {
+            ViewThatFits(in:.horizontal) {
+                ForEach([6,5,4,3,2,1],id:\.self) { count in columns(Array(coming.prefix(count))) }
+            }
+        }
+    }
+    private func columns(_ shown:[WeatherDay])->some View {
+        HStack(spacing:6) {
+            ForEach(shown) { day in
+                VStack(spacing:5) {
+                    Text(label(day)).font(.caption.weight(.medium))
+                    Image(systemName:day.symbol).symbolRenderingMode(.hierarchical).foregroundStyle(palette[.accent]).font(.system(size:16)).frame(height:20)
+                    HStack(spacing:4) { Text(weatherTemperature(day.high)); Text(weatherTemperature(day.low)).foregroundStyle(.secondary) }.font(.caption.monospacedDigit())
+                }.frame(width:58).padding(.vertical,8).background(palette[.assistantBubble].opacity(0.55),in:RoundedRectangle(cornerRadius:12))
+                    .accessibilityElement(children:.combine)
+            }
+        }
     }
 }
 
