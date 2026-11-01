@@ -41,7 +41,7 @@ struct LabCalendarContent: View {
                         ForEach(events) { LabEventRow(event: $0) }
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, 6)
-            }
+            }.scrollEdgeFade(design != .today)
         }
         .popover(isPresented: $lab.choosingDate, arrowEdge: .top) {
             DatePicker("Calendar date", selection: $lab.date, displayedComponents: .date).datePickerStyle(.graphical).labelsHidden().padding(12)
@@ -107,7 +107,7 @@ struct LabBriefContent: View {
                         .padding(.horizontal, 12).padding(.vertical, 8).background(palette[.text].opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
             }.padding(.trailing, 6)
-        }
+        }.scrollEdgeFade(design != .today)
     }
 }
 
@@ -157,7 +157,7 @@ struct LabRemindersContent: View {
                         }
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, 6)
-            }
+            }.scrollEdgeFade(design != .today)
             // Pinned under the list, like the chat's message field, so it never scrolls out of reach.
             if design == .inline {
                 Button {} label: { Label("New reminder", systemImage: "plus").font(.callout) }
@@ -242,7 +242,7 @@ struct LabChatContent: View {
                         }
                     }
                 }.padding(.trailing, 6)
-            }
+            }.scrollEdgeFade(design != .today)
             composer
         }
     }
