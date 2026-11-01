@@ -137,8 +137,80 @@ struct PATasksView: View {
         }
     }
     @State private var showingRelevance=false
+    @Environment(\.widgetLayout) private var layout
+    /// Everything waiting, one line each: questions open their answer, emails their message, suggestions their evidence.
+    private func glanceItems(_ inbox:ReviewInboxProjection)->[ReviewGlanceItem] {
+        inbox.questions.map {item in ReviewGlanceItem(id:"q:\(item.id)",label:"Question",title:PAProse.display(item.question)) {answering=item;answer="";answerError=nil}}
+        + inbox.learningQuestions.map {item in ReviewGlanceItem(id:"l:\(item.id)",label:"Getting to know you",title:PAProse.display(item.text)) {answeringLearning=item;answer="";answerError=nil}}
+        + inbox.standaloneDiscoveries.map {item in ReviewGlanceItem(id:"d:"+item.id,label:item.proposedChange != nil || item.proposedRemoval != nil ? "Needs approval" : item.kind == "reply" ? "Reply draft" : "Suggestion",title:discoveryTitle(item) ?? PAProse.display(item.message)) {sourceDiscovery=item}}
+        + inbox.emailCards.map {card in ReviewGlanceItem(id:"e:"+card.id,label:card.summary.replyDraft == nil ? (card.summary.attention ? "Needs attention" : "Update") : "Reply draft ready",title:card.message.subject.isEmpty ? "(No subject)" : card.message.subject) {model.select(card.message)}}
+        + inbox.pending.map {item in ReviewGlanceItem(id:"p:\(item.id)",label:item.state == .needsAnswer ? "Your answer needed" : item.state == .completed ? "PA work ready" : "Delegated work",title:item.prompt,open:nil)}
+    }
+    private func glance(_ inbox:ReviewInboxProjection)->some View {
+        let items=glanceItems(inbox)
+        return VStack(alignment:.leading,spacing:layout == .small ? 8 : 10) {
+            WidgetHeader(title:"Review inbox",symbol:"tray.full") {
+                // Narrow headers have no room beside the title; the dashboard icon carries the count.
+                if layout == .medium {
+                    if reviewBusy {ProgressView().controlSize(.mini)}
+                    Button { model.heartbeat.check(model,manual:true) } label:{Image(systemName:"waveform.path.ecg")}
+                        .buttonStyle(.borderless).help(model.heartbeat.manualCheckHelp(model)).accessibilityLabel("Run heartbeat")
+                        .disabled(model.heartbeat.manualCheckBlockReason(model) != nil)
+                }
+            }
+            HStack(alignment:.top,spacing:16) {
+                if layout == .medium,!items.isEmpty {GlanceCount(value:inbox.pendingCount,label:"to review").frame(width:78,alignment:.leading)}
+                GlanceRows(items:items,rowHeight:34,empty:"Nothing waiting for review.",scrolls:layout == .tall) {item in
+                    Button {item.open?()} label: {
+                        VStack(alignment:.leading,spacing:1) {
+                            Text(item.title).font(.callout.weight(.medium)).lineLimit(1)
+                            Text(item.label).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }.frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
+                    }.buttonStyle(.plain).disabled(item.open == nil).help(item.title)
+                }
+            }
+        }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+            .contextMenu { if layout != .medium { Button("Run heartbeat") { model.heartbeat.check(model,manual:true) }.disabled(model.heartbeat.manualCheckBlockReason(model) != nil) } }
+    }
     var body: some View {
-        let inbox=model.reviewInbox,questions=inbox.questions,learningQuestions=inbox.learningQuestions,discoveries=inbox.discoveries,emails=inbox.emails,emailCards=inbox.emailCards,standaloneDiscoveries=inbox.standaloneDiscoveries,pending=inbox.pending
+        let inbox=model.reviewInbox
+        return Group { if layout.compact {glance(inbox)} else {full(inbox)} }
+        .sheet(isPresented:$showingRelevance) {ReviewPolicyView(model:model)}
+        .onChange(of:model.inference.activeID) {showingRelevance=false}
+        .sheet(item:$answering) {question in
+            VStack(alignment:.leading,spacing:16) {
+                Text(question.question).font(.headline)
+                TextEditor(text:$answer).frame(minHeight:100).font(.body)
+                if let answerError {Text(answerError).font(.caption).foregroundStyle(.orange)}
+                HStack {Button("Cancel") {answering=nil};Spacer();Button("Send answer") {
+                    guard model.reviewInbox.questions.contains(where:{$0.id == question.id}) else {answerError="This question’s supporting context changed. Run a fresh heartbeat.";return}
+                    let text="About your question “"+question.question+"”: "+answer.trimmingCharacters(in:.whitespacesAndNewlines)
+                    if model.assistant.send(model:model,topicID:nil,prompt:text,focusAreas:[]) {
+                        _ = model.briefings.resolveQuestion(question,model:model,answered:true);answering=nil
+                    } else {answerError="Your PA is busy. Your answer is kept here; send it when ready."}
+                }.disabled(answer.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || model.assistant.busy || model.inference.busy || model.writing || model.heartbeat.busy || ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"))}
+                Text("Your answer continues the PA conversation.").font(.caption).foregroundStyle(.secondary)
+            }.padding(24).frame(width:520)
+        }
+        .sheet(item:$answeringLearning) {question in
+            VStack(alignment:.leading,spacing:16) {
+                Text(question.text).font(.headline)
+                TextEditor(text:$answer).frame(minHeight:100)
+                if let answerError {Text(answerError).font(.caption).foregroundStyle(.orange)}
+                HStack {Button("Cancel") {answeringLearning=nil};Spacer();Button("Send answer") {
+                    guard model.reviewInbox.learningQuestions.contains(where:{$0.id == question.id}) else {answerError="This question is no longer available.";return}
+                    if model.assistant.send(model:model,topicID:question.conversationID,prompt:"About your question “"+question.text+"”: "+answer.trimmingCharacters(in:.whitespacesAndNewlines),focusAreas:question.conversationID == nil ? [] : nil) {model.memoryLearning.answer(question);answeringLearning=nil}
+                    else {answerError="Your PA is busy. Your answer is kept here."}
+                }.disabled(answer.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || model.assistant.busy || model.inference.busy || model.writing || model.heartbeat.busy || ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"))}
+            }.padding(24).frame(width:520)
+        }
+        .sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record,model:model) }
+        .sheet(isPresented:$showingActivity) {BackgroundActivityView(model:model)}
+        .onChange(of:model.inference.activeID) { sourceDiscovery=nil;answering=nil;answeringLearning=nil;answer="" }
+        .onChange(of:inbox.discoveries.map(\.id)) { if let sourceDiscovery,!inbox.discoveries.contains(where:{$0.id == sourceDiscovery.id}) { self.sourceDiscovery=nil } }
+    }
+    private func full(_ inbox:ReviewInboxProjection)->some View {
+        let questions=inbox.questions,learningQuestions=inbox.learningQuestions,emailCards=inbox.emailCards,standaloneDiscoveries=inbox.standaloneDiscoveries,pending=inbox.pending
         let standaloneEntryIDs=lastSuggestionEntryIDs(standaloneDiscoveries)
         return VStack(alignment:.leading,spacing:12) {
             WidgetHeader(title:"Review inbox",symbol:"tray.full") {
@@ -250,40 +322,13 @@ struct PATasksView: View {
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
-        .sheet(isPresented:$showingRelevance) {ReviewPolicyView(model:model)}
-        .onChange(of:model.inference.activeID) {showingRelevance=false}
-        .sheet(item:$answering) {question in
-            VStack(alignment:.leading,spacing:16) {
-                Text(question.question).font(.headline)
-                TextEditor(text:$answer).frame(minHeight:100).font(.body)
-                if let answerError {Text(answerError).font(.caption).foregroundStyle(.orange)}
-                HStack {Button("Cancel") {answering=nil};Spacer();Button("Send answer") {
-                    guard questions.contains(where:{$0.id == question.id}) else {answerError="This question’s supporting context changed. Run a fresh heartbeat.";return}
-                    let text="About your question “"+question.question+"”: "+answer.trimmingCharacters(in:.whitespacesAndNewlines)
-                    if model.assistant.send(model:model,topicID:nil,prompt:text,focusAreas:[]) {
-                        _ = model.briefings.resolveQuestion(question,model:model,answered:true);answering=nil
-                    } else {answerError="Your PA is busy. Your answer is kept here; send it when ready."}
-                }.disabled(answer.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || model.assistant.busy || model.inference.busy || model.writing || model.heartbeat.busy || ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"))}
-                Text("Your answer continues the PA conversation.").font(.caption).foregroundStyle(.secondary)
-            }.padding(24).frame(width:520)
-        }
-        .sheet(item:$answeringLearning) {question in
-            VStack(alignment:.leading,spacing:16) {
-                Text(question.text).font(.headline)
-                TextEditor(text:$answer).frame(minHeight:100)
-                if let answerError {Text(answerError).font(.caption).foregroundStyle(.orange)}
-                HStack {Button("Cancel") {answeringLearning=nil};Spacer();Button("Send answer") {
-                    guard learningQuestions.contains(where:{$0.id == question.id}) else {answerError="This question is no longer available.";return}
-                    if model.assistant.send(model:model,topicID:question.conversationID,prompt:"About your question “"+question.text+"”: "+answer.trimmingCharacters(in:.whitespacesAndNewlines),focusAreas:question.conversationID == nil ? [] : nil) {model.memoryLearning.answer(question);answeringLearning=nil}
-                    else {answerError="Your PA is busy. Your answer is kept here."}
-                }.disabled(answer.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || model.assistant.busy || model.inference.busy || model.writing || model.heartbeat.busy || ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"))}
-            }.padding(24).frame(width:520)
-        }
-        .sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record,model:model) }
-        .sheet(isPresented:$showingActivity) {BackgroundActivityView(model:model)}
-        .onChange(of:model.inference.activeID) { sourceDiscovery=nil;answering=nil;answeringLearning=nil;answer="" }
-        .onChange(of:discoveries.map(\.id)) { if let sourceDiscovery,!discoveries.contains(where:{$0.id == sourceDiscovery.id}) { self.sourceDiscovery=nil } }
     }
+}
+private struct ReviewGlanceItem:Identifiable {
+    var id:String
+    var label:String
+    var title:String
+    var open:(()->Void)?
 }
 private extension View {
     func taskCard()->some View { padding(12).frame(maxWidth:.infinity,alignment:.leading).background(Color.primary.opacity(0.035),in:RoundedRectangle(cornerRadius:12)) }
