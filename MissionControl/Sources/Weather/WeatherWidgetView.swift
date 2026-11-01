@@ -9,17 +9,14 @@ struct WeatherWidgetView:View {
             if layout.compact,weather.enabled,weather.allowed,let forecast=weather.forecast,let today=forecast.today() { glance(today:today,forecast:forecast) }
             else { full }
         }.onAppear { weather.startRefresh() }
+        .widgetMenu("Weather",status:weather.forecast.map { "updated " + $0.fetched.formatted(date:.omitted,time:.shortened) }) {
+            Button("Refresh forecast") { weather.startRefresh(allowPrompt:true,force:true) }
+                .disabled(!weather.enabled || weather.loading || (!weather.allowed && weather.authorization != .notDetermined))
+        }
     }
     /// Today's temperature and sky, with the coming days beside or below once there is room.
     private func glance(today:WeatherDay,forecast:WeatherForecast)->some View {
         VStack(alignment:.leading,spacing:layout == .small ? 6 : 10) {
-            WidgetHeader(title:"Weather",symbol:"cloud.sun") {
-                if layout != .small {
-                    if weather.loading { ProgressView().controlSize(.small) }
-                    Button { weather.startRefresh(allowPrompt:true,force:true) } label:{Image(systemName:"arrow.clockwise")}
-                        .buttonStyle(.borderless).help("Refresh nearby forecast").accessibilityLabel("Refresh weather").disabled(weather.loading)
-                }
-            }.fixedSize(horizontal:false,vertical:true)
             if layout == .tall {
                 WeatherTodayGlance(today:today)
                 WeatherDaysGlance(today:today,days:forecast.days,timezone:forecast.timezone,vertical:true)
@@ -35,12 +32,6 @@ struct WeatherWidgetView:View {
     }
     private var full:some View {
         VStack(alignment:.leading,spacing:10) {
-            WidgetHeader(title:"Weather",symbol:"cloud.sun") {
-                if weather.loading { ProgressView().controlSize(.small) }
-                Button { weather.startRefresh(allowPrompt:true,force:true) } label:{Image(systemName:"arrow.clockwise")}
-                    .buttonStyle(.borderless).help("Refresh nearby forecast").accessibilityLabel("Refresh weather")
-                    .disabled(!weather.enabled || weather.loading || (!weather.allowed && weather.authorization != .notDetermined))
-            }.fixedSize(horizontal:false,vertical:true)
             if weather.enabled,weather.allowed,let forecast=weather.forecast,let today=forecast.today() {
                 WeatherForecastFace(today:today,days:forecast.days,timezone:forecast.timezone)
                 HStack(alignment:.firstTextBaseline) {

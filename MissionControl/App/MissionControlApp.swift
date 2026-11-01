@@ -133,8 +133,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 ChatImageInteractivePreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-projects-lab") {
                 ProjectsDesignLab()
-            } else if ProcessInfo.processInfo.arguments.contains("--preview-widget-menus") {
-                WidgetMenusLab()
             } else if ProcessInfo.processInfo.arguments.contains("--preview-projects") {
                 LifeProjectInteractivePreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-source-timeline") {

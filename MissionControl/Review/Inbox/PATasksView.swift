@@ -149,15 +149,6 @@ struct PATasksView: View {
     private func glance(_ inbox:ReviewInboxProjection)->some View {
         let items=glanceItems(inbox)
         return VStack(alignment:.leading,spacing:layout == .small ? 8 : 10) {
-            WidgetHeader(title:"Review inbox",symbol:"tray.full") {
-                // Narrow headers have no room beside the title; the dashboard icon carries the count.
-                if layout == .medium {
-                    if reviewBusy {ProgressView().controlSize(.mini)}
-                    Button { model.heartbeat.check(model,manual:true) } label:{Image(systemName:"waveform.path.ecg")}
-                        .buttonStyle(.borderless).help(model.heartbeat.manualCheckHelp(model)).accessibilityLabel("Run heartbeat")
-                        .disabled(model.heartbeat.manualCheckBlockReason(model) != nil)
-                }
-            }
             HStack(alignment:.top,spacing:16) {
                 if layout == .medium,!items.isEmpty {GlanceCount(value:inbox.pendingCount,label:"to review").frame(width:78,alignment:.leading)}
                 GlanceRows(items:items,rowHeight:34,empty:"Nothing waiting for review.",scrolls:layout == .tall) {item in
@@ -170,11 +161,17 @@ struct PATasksView: View {
                 }
             }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
-            .contextMenu { if layout != .medium { Button("Run heartbeat") { model.heartbeat.check(model,manual:true) }.disabled(model.heartbeat.manualCheckBlockReason(model) != nil) } }
+    }
+    /// The right-click menu, headed with when Review last checked or what it is doing now.
+    @ViewBuilder private var menuItems: some View {
+        Button("Run heartbeat") { model.heartbeat.check(model,manual:true) }.disabled(model.heartbeat.manualCheckBlockReason(model) != nil)
+        Button("Review guidance…") { showingRelevance=true }
+        Button("Background activity…") { showingActivity=true }
     }
     var body: some View {
         let inbox=model.reviewInbox
         return Group { if layout.compact {glance(inbox)} else {full(inbox)} }
+        .widgetMenu("Review inbox",status:reviewStatus) { menuItems }
         .sheet(isPresented:$showingRelevance) {ReviewPolicyView(model:model)}
         .onChange(of:model.inference.activeID) {showingRelevance=false}
         .sheet(item:$answering) {question in
@@ -212,23 +209,15 @@ struct PATasksView: View {
     private func full(_ inbox:ReviewInboxProjection)->some View {
         let questions=inbox.questions,learningQuestions=inbox.learningQuestions,emailCards=inbox.emailCards,standaloneDiscoveries=inbox.standaloneDiscoveries,pending=inbox.pending
         let standaloneEntryIDs=lastSuggestionEntryIDs(standaloneDiscoveries)
+        let limited=model.heartbeat.dailyCallLimit > 0 && model.heartbeat.state.accounts[model.inference.activeID]?.retryReason == "allowance"
         return VStack(alignment:.leading,spacing:12) {
-            WidgetHeader(title:"Review inbox",symbol:"tray.full") {
-                ReviewInboxBadge(count:inbox.pendingCount)
-                Button {showingRelevance=true} label:{Image(systemName:"slider.horizontal.3")}.buttonStyle(.borderless).help("Review guidance and feedback").accessibilityLabel("Review guidance")
-                Button { showingActivity=true } label:{Image(systemName:"clock.arrow.circlepath")}
-                    .buttonStyle(.borderless).help("Background activity and details").accessibilityLabel("Background activity")
-                Button { model.heartbeat.check(model,manual:true) } label:{Image(systemName:"waveform.path.ecg")}
-                    .buttonStyle(.borderless).help(model.heartbeat.manualCheckHelp(model)).accessibilityLabel("Run heartbeat")
-                    .disabled(model.heartbeat.manualCheckBlockReason(model) != nil)
-            }
-            HStack(spacing:8) {
-                if reviewBusy {ProgressView().controlSize(.mini)}
-                Text(reviewStatus).font(.caption).foregroundStyle(reviewRetrying ? Color.orange : Color.secondary)
-                    .fixedSize(horizontal:false,vertical:true)
-                Spacer(minLength:0)
-                if model.heartbeat.dailyCallLimit > 0,model.heartbeat.state.accounts[model.inference.activeID]?.retryReason == "allowance" {
-                    Button("Limit settings…") {settingsPage="Background";openSettings()}.buttonStyle(.borderless).font(.caption)
+            // The status line shows only when checks need attention; otherwise it heads the right-click menu.
+            if reviewRetrying || limited {
+                HStack(spacing:8) {
+                    Text(reviewStatus).font(.caption).foregroundStyle(reviewRetrying ? Color.orange : Color.secondary)
+                        .fixedSize(horizontal:false,vertical:true)
+                    Spacer(minLength:0)
+                    if limited { Button("Limit settings…") {settingsPage="Background";openSettings()}.buttonStyle(.borderless).font(.caption) }
                 }
             }
             ScrollView {
@@ -320,7 +309,7 @@ struct PATasksView: View {
                         ContentUnavailableView("Nothing waiting for review",systemImage:"checkmark.circle",description:Text("Proposed changes, useful updates and prepared work appear here when enabled sources reveal something useful."))
                     }
                 }.frame(maxWidth:.infinity,alignment:.leading)
-            }
+            }.scrollEdgeFade()
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
     }
 }

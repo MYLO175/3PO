@@ -3,10 +3,11 @@ import SwiftUI
 /// Content hidden past a scroll view's top or bottom fades out instead of being cut off (1 November).
 /// An edge with nothing beyond it stays sharp, so a list that fits shows no fade at all.
 struct ScrollEdgeFade: ViewModifier {
-    var length: CGFloat = 32
+    var edges: VerticalEdge.Set
+    var length: CGFloat
     @State private var hidden = HiddenEdges()
     private var motion = MotionPreference()
-    init(length: CGFloat = 32) { self.length = length }
+    init(edges: VerticalEdge.Set, length: CGFloat) { self.edges = edges; self.length = length }
     struct HiddenEdges: Equatable { var top = false; var bottom = false }
     func body(content: Content) -> some View {
         content
@@ -15,9 +16,9 @@ struct ScrollEdgeFade: ViewModifier {
             } action: { _, edges in hidden = edges }
             .mask {
                 VStack(spacing: 0) {
-                    ramp(.top).frame(height: hidden.top ? length : 0)
+                    ramp(.top).frame(height: hidden.top && edges.contains(.top) ? length : 0)
                     Rectangle()
-                    ramp(.bottom).frame(height: hidden.bottom ? length : 0)
+                    ramp(.bottom).frame(height: hidden.bottom && edges.contains(.bottom) ? length : 0)
                 }.animation(motion.animation(.easeOut(duration: 0.2)), value: hidden)
             }
     }
@@ -29,8 +30,9 @@ struct ScrollEdgeFade: ViewModifier {
 }
 
 extension View {
-    /// Fades hidden content at a scroll view's top and bottom edges; apply to the ScrollView itself.
-    func scrollEdgeFade(_ enabled: Bool = true, length: CGFloat = 32) -> some View {
-        modifier(ScrollEdgeFade(length: enabled ? length : 0))
+    /// Fades hidden content at a scroll view's edges; apply to the ScrollView itself. A pinned header
+    /// at the top (the week view's days) takes `edges: .bottom`.
+    func scrollEdgeFade(_ enabled: Bool = true, edges: VerticalEdge.Set = .all, length: CGFloat = 32) -> some View {
+        modifier(ScrollEdgeFade(edges: edges, length: enabled ? length : 0))
     }
 }
