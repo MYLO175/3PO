@@ -14,7 +14,7 @@ Examples here are fictional. This is the committed 14 October feature baseline; 
 | [Calendar and Reminders](#calendar-and-reminders) | Native records, editors and supported verified changes |
 | [Personal assistant](#personal-assistant) | Natural conversation, screenshots and explicit queued work |
 | [Memory and setup](#memory-and-setup) | Saved facts, evidence, corrections and relevant recall |
-| [Projects](#projects) | Spaces, notes, local tasks and progress |
+| [Projects](#projects) | Projects, notes, local tasks and progress |
 | [Review inbox](#review-inbox) | Worthwhile email reading, action proposals and local drafts |
 | [AI Activity](#ai-activity-and-the-toolbar-pill) | Live work, recent task outcomes and local attention |
 | [Feedback](#feedback) | Editable preferences about what deserves attention |
@@ -82,9 +82,9 @@ Projects creates two kinds of record: **Project** and **Task**. A project can co
 
 Home shows each top-level project as a card with its progress and next deadline, then **Due soon** for project tasks that are late or due within two weeks; **Unfiled tasks** contains tasks without a project. Opening a project shows its subprojects and tasks. Projects & tasks is the default view, with List, Tree and Deadlines available. A board uses **To do / In progress / Done**. Progress measures actual saved tasks, not assumed attendance, mastery or unrecorded work.
 
-Drag a task between columns to preview its stage, then release to save the local change. Notes use Save/Cancel with revision checks. Supported last edits have session Undo. Creation has no app Undo; recoverable Delete/Recently deleted retains original identities. A nonempty space cannot be converted into a task.
+Drag a task between columns to preview its stage, then release to save the local change. Notes use Save/Cancel with revision checks. Supported last edits have session Undo. Creation has no app Undo; recoverable Delete/Recently deleted retains original identities. A nonempty project cannot be converted into a task.
 
-Browsing never changes the saved opening folder. Use **Open this folder by default** explicitly. You can also request changes naturally: “Create a Sensor Garden space with Research and Evaluation folders,” or “Mark Read paper as done.” Mentioning a project is context rather than an instruction to create it.
+Browsing never changes the project Projects opens on. Use **Open this project by default** explicitly. You can also request changes naturally: “Create a Sensor Garden project with Research and Evaluation subprojects,” or “Mark Read paper as done.” Mentioning a project is context rather than an instruction to create it.
 
 Projects and memory share exact identities/links. Filing supported anchors does not author human projects, and completing a local task does not complete a linked Apple Reminder. [Full project guide](../architecture/PROJECT_WORKSPACE.md)
 
