@@ -74,10 +74,16 @@ import SwiftData
         guard state.pages.count > 1 else { return }
         change { $0.pages.removeAll { $0.id == id }; if $0.selectedPageID == id { $0.selectedPageID = $0.pages[0].id } }
     }
-    func addWidget(_ kind: WidgetKind) {
-        guard let rect = GridRules.firstFree(kind:kind,in:selected.widgets,rows:GridRules.rows(selected)) else { error = "This dashboard is full. Make room in Edit mode or add a new dashboard."; return }
+    func addWidget(_ kind: WidgetKind, size: WidgetSize? = nil) {
+        let rows = GridRules.rows(selected)
+        let free = size.map { GridRules.firstFree(columns:$0.columns,rows:$0.rows,in:selected.widgets,rowLimit:rows) } ?? GridRules.firstFree(kind:kind,in:selected.widgets,rows:rows)
+        guard let rect = free else { error = "This dashboard is full. Make room in Edit mode or add a new dashboard."; return }
         let widget = WidgetPlacement(kindRaw:kind.rawValue,rect:rect)
         change { state in if let i = state.pages.firstIndex(where: { $0.id == state.selectedPageID }) { state.pages[i].widgets.append(widget) } }
+    }
+    func resize(_ widget: WidgetPlacement, to size: WidgetSize) {
+        guard let rect = GridRules.resized(widget,to:size,among:selected.widgets,rows:GridRules.rows(selected)) else { error = "There’s no room for a \(size.title.lowercased()) widget on this dashboard. Make room or add a new dashboard."; return }
+        var next = widget; next.rect = rect; update(next)
     }
     func update(_ widget: WidgetPlacement) {
         guard GridRules.valid(widget.rect,among:selected.widgets,excluding:widget.id,rowLimit:GridRules.rows(selected)) else { return }

@@ -119,3 +119,66 @@ struct RollingNumber<Value: Equatable>: ViewModifier {
 extension View {
     func rollingNumber<Value: Equatable>(_ value: Value) -> some View { modifier(RollingNumber(value: value)) }
 }
+
+private struct WidgetLayoutKey: EnvironmentKey { static let defaultValue = WidgetLayout.large }
+extension EnvironmentValues {
+    /// The tile's arrangement from its grid size; the full widget outside dashboard tiles.
+    var widgetLayout: WidgetLayout { get { self[WidgetLayoutKey.self] } set { self[WidgetLayoutKey.self] = newValue } }
+}
+
+/// A glance's headline number: a big rounded count over a short label ("3" / "due today").
+struct GlanceCount: View {
+    var value: Int
+    var label: String
+    var urgent = false
+    @Environment(\.workspacePalette) private var palette
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("\(value)").font(.system(size: 34, weight: .semibold, design: .rounded)).monospacedDigit()
+                .foregroundStyle(urgent ? Color.red : palette[.text]).rollingNumber(value)
+            Text(label).font(.caption.weight(.medium)).foregroundStyle(palette[.text].opacity(0.6)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+        }.accessibilityElement(children: .combine)
+    }
+}
+
+/// A glance's rows: as many as fit, side by side in columns once the widget is wide, with
+/// "N more" when some are left out. A tall widget scrolls through them all instead.
+struct GlanceRows<Item: Identifiable, Row: View>: View {
+    var items: [Item]
+    var rowHeight: CGFloat
+    var empty: String
+    var scrolls = false
+    var columnWidth: CGFloat = 210
+    @ViewBuilder var row: (Item) -> Row
+    @Environment(\.workspacePalette) private var palette
+    private let spacing: CGFloat = 6
+    var body: some View {
+        if items.isEmpty {
+            Text(empty).font(.callout).foregroundStyle(palette[.text].opacity(0.6)).fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else if scrolls {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: spacing) { ForEach(items) { row($0).frame(minHeight: rowHeight, alignment: .leading) } }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }.scrollIndicators(.never)
+        } else {
+            GeometryReader { geometry in
+                let columns = max(1, Int((geometry.size.width + 14) / (columnWidth + 14)))
+                let perColumn = max(1, Int((geometry.size.height + spacing) / (rowHeight + spacing)))
+                // When some are left out, the last column gives up only enough height for one caption line.
+                let lastColumn = items.count > columns * perColumn ? Int((geometry.size.height - 14) / (rowHeight + spacing)) : perColumn
+                let shown = Array(items.prefix(max(1, (columns - 1) * perColumn + lastColumn)))
+                HStack(alignment: .top, spacing: 14) {
+                    ForEach(0..<columns, id: \.self) { column in
+                        VStack(alignment: .leading, spacing: spacing) {
+                            ForEach(Array(shown.dropFirst(column * perColumn).prefix(perColumn))) { row($0).frame(height: rowHeight, alignment: .leading) }
+                            if column == columns - 1, items.count > shown.count {
+                                Text("\(items.count - shown.count) more").font(.caption2.weight(.medium)).foregroundStyle(palette[.text].opacity(0.55)).lineLimit(1)
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                }
+            }
+        }
+    }
+}

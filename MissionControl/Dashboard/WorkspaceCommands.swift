@@ -7,7 +7,7 @@ struct WorkspaceMenuActions {
     var sidebar: Binding<Bool>
     var editing: Binding<Bool>
     var newDashboard: () -> Void
-    var addWidget: (WidgetKind) -> Void
+    var addWidget: (WidgetKind, WidgetSize?) -> Void
     var customiseToolbar: () -> Void
     var customiseColors: () -> Void
 }
@@ -35,7 +35,7 @@ struct WorkspaceCommands: Commands {
             Button("New dashboard…") { workspace?.newDashboard() }.keyboardShortcut("n",modifiers:.command).disabled(workspace == nil)
             Menu("Add widget") {
                 ForEach(WidgetKind.allCases,id:\.self) { kind in
-                    Button(kind.title) { workspace?.addWidget(kind) }
+                    Menu(kind.title) { ForEach(WidgetSize.allCases) { size in Button(size.title) { workspace?.addWidget(kind,size) } } }
                 }
             }.disabled(workspace == nil || model.workspace.readOnly)
             Toggle("Edit layout",isOn:editing).disabled(workspace == nil || model.workspace.readOnly)
