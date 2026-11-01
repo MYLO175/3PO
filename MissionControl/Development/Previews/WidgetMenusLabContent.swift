@@ -22,17 +22,19 @@ struct LabCalendarContent: View {
     let design: WidgetMenuDesign
     @Bindable var lab: WidgetLabState
     @Environment(\.workspacePalette) private var palette
+    /// Day, Week and Month keep their date line in every design; Agenda drops it unless the design needs it.
+    private var showsDateRow: Bool { design == .today || design == .inline || lab.calendarMode != "agenda" }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if design == .today || design == .inline { dateRow }
+            if showsDateRow { dateRow }
             if design == .today, lab.problem { LabStaleNote(source: "Calendar") }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     ForEach(Array(lab.days.enumerated()), id: \.offset) { index, day in
                         let events = WidgetLabFixtures.events(on: day).filter { !lab.hiddenCalendars.contains($0.calendar.id) }
                         if index > 0 { Divider() }
-                        // Inline names the first day in its date line, so the list doesn't repeat it.
-                        if !(design == .inline && index == 0) {
+                        // A date line already names the first day, so the list doesn't repeat it.
+                        if !(index == 0 && design != .today && showsDateRow) {
                             Text(day.formatted(.dateTime.weekday(.wide).day().month(.abbreviated))).font(.subheadline.weight(.semibold))
                         }
                         if events.isEmpty { Text("Nothing on").font(.callout).foregroundStyle(palette[.text].opacity(0.5)) }
@@ -53,7 +55,7 @@ struct LabCalendarContent: View {
             Spacer(minLength: 4)
             Group {
                 Button { lab.step(-1) } label: { Image(systemName: "chevron.left") }.help(lab.stepTitle(-1))
-                Button("Today") { lab.date = .now }
+                Button(lab.calendarMode == "day" || lab.calendarMode == "week" ? "Now" : "Today") { lab.date = .now }
                 Button { lab.step(1) } label: { Image(systemName: "chevron.right") }.help(lab.stepTitle(1))
             }.opacity(design == .inline ? 0.6 : 1)
         }.buttonStyle(.borderless).controlSize(.small)
@@ -240,7 +242,7 @@ struct LabChatContent: View {
                         }
                     }
                 }.padding(.trailing, 6)
-            }.defaultScrollAnchor(.bottom)
+            }
             composer
         }
     }

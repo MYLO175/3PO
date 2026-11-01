@@ -40,7 +40,7 @@ enum WidgetMenuDesign: String, CaseIterable, Identifiable {
     var summary: String {
         switch self {
         case .today: "Today’s headers for comparison: an icon, the name and the controls on every widget, plus a second control row on Calendar and Reminders."
-        case .bare: "No header and no control rows. Every option, including New, Today and the view, is in the widget’s right-click menu. A dot appears only when a source has a problem; click it for details."
+        case .bare: "No header, control rows or scroll bars. Every option is in the widget’s right-click menu; Day, Week and Month keep their date line with Now. A dot appears only when a source has a problem; click it for details."
         case .hover: "Calm at rest, like A. Point at a widget and its one to three everyday buttons fade in at the top right, with ••• for the same menu as right-click."
         case .inline: "No header. The few controls you use daily sit in the content: the date line steers the calendar, New reminder sits under the list, the brief’s update time sits under the greeting and the new-chat button is in the message field. The rest is in right-click."
         }
@@ -178,6 +178,7 @@ struct LabTile: View {
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .font(.system(size: 13))
+        .scrollIndicators(design == .today ? .automatic : .never)
         .contentShape(Rectangle())
         .labMenu(design != .today) { LabWidgetMenu(widget: widget, lab: lab) }
         .overlay(alignment: .topTrailing) {
@@ -255,11 +256,12 @@ struct LabWidgetMenu: View {
                 Button("New event…", systemImage: "plus") {}
                 if lab.problem { Button("Try again", systemImage: "arrow.clockwise") { lab.problem = false } }
             }
-            Section {
-                Button("Today") { lab.date = .now }
-                Button(lab.stepTitle(-1)) { lab.step(-1) }
-                Button(lab.stepTitle(1)) { lab.step(1) }
-                Button("Go to date…") { lab.choosingDate = true }
+            // Day, Week and Month keep their date line in the widget, so only Agenda steers from here.
+            if lab.calendarMode == "agenda" {
+                Section {
+                    Button("Today") { lab.date = .now }
+                    Button("Go to date…") { lab.choosingDate = true }
+                }
             }
             Picker("View", selection: $lab.calendarMode) { Text("Agenda").tag("agenda"); Text("Day").tag("day"); Text("Week").tag("week"); Text("Month").tag("month") }
             Menu("Calendars") { LabCalendarToggles(lab: lab) }
@@ -362,6 +364,7 @@ extension WidgetMenusLab {
         await shot(design: .hover, dark: true, hover: true, name: "hover-shown-dark")
         await shot(design: .bare, dark: true, configure: { $0.editing = true }, name: "edit-dark")
         await shot(design: .bare, dark: true, configure: { $0.problem = true; $0.tip = true }, name: "problem-tip-dark")
+        await shot(design: .bare, dark: true, configure: { $0.calendarMode = "day" }, name: "bare-day-dark")
     }
     @MainActor private static func shot(design: WidgetMenuDesign, dark: Bool, hover: Bool = false, configure: (WidgetLabState) -> Void = { _ in }, name: String) async {
         let lab = WidgetLabState(); configure(lab)
