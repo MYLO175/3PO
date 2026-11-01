@@ -17,12 +17,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 if [[ "${1:-}" == "--list" ]]; then
-  found=0
+  found=0; procs="$(ps -axo command=)"
   for app in /private/tmp/*/"3PO Preview"*.app(N/) /private/tmp/3po-preview/*/"3PO Preview"*.app(N/); do
     found=1
     info="$app/Contents/Info.plist"
     name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$info" 2>/dev/null || print -- "${app:t:r}")"
-    state="stopped"; pgrep -f "$app/Contents/MacOS/" >/dev/null 2>&1 && state="running"
+    state="stopped"; [[ "$procs" == *"$app/Contents/MacOS/"* ]] && state="running"
     if branch="$(/usr/libexec/PlistBuddy -c 'Print :MissionControlPreviewBranch' "$info" 2>/dev/null)"; then
       commit="$(/usr/libexec/PlistBuddy -c 'Print :MissionControlPreviewCommit' "$info")"
       flags="$(/usr/libexec/PlistBuddy -c 'Print :MissionControlPreviewFlags' "$info")"
