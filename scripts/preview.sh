@@ -5,11 +5,35 @@
 #
 #   scripts/preview.sh [--no-build] --preview-calendar-scroll
 #   scripts/preview.sh --preview-widget-sizes --sample   (later flags pass through)
+#   scripts/preview.sh --list                            (every preview copy on this Mac)
 #
-# Builds Debug into a reusable root (MISSIONCONTROL_PREVIEW_ROOT, default
-# /private/tmp/3po-preview) unless --no-build, then launches "3PO Preview".
+# Each copy is named after its branch, "3PO Preview (widget-sizes)" for
+# claude/widget-sizes, or after the branch and flag elsewhere ("main-design"),
+# with a matching bundle ID, so the Dock, Command-Tab and Activity Monitor tell
+# copies apart. MISSIONCONTROL_PREVIEW_NAME overrides the name. Debug builds go
+# to /private/tmp/3po-preview/<name> (MISSIONCONTROL_PREVIEW_ROOT overrides), so
+# branches never share a build. The copy records its branch, commit and flags.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+if [[ "${1:-}" == "--list" ]]; then
+  found=0
+  for app in /private/tmp/*/"3PO Preview"*.app(N/) /private/tmp/3po-preview/*/"3PO Preview"*.app(N/); do
+    found=1
+    info="$app/Contents/Info.plist"
+    name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$info" 2>/dev/null || print -- "${app:t:r}")"
+    state="stopped"; pgrep -f "$app/Contents/MacOS/" >/dev/null 2>&1 && state="running"
+    if branch="$(/usr/libexec/PlistBuddy -c 'Print :MissionControlPreviewBranch' "$info" 2>/dev/null)"; then
+      commit="$(/usr/libexec/PlistBuddy -c 'Print :MissionControlPreviewCommit' "$info")"
+      flags="$(/usr/libexec/PlistBuddy -c 'Print :MissionControlPreviewFlags' "$info")"
+      origin="branch $branch at $commit · $flags"
+    else origin="older copy, branch not recorded"; fi
+    print -- "$name · $state · $origin · made $(stat -f '%Sm' -t '%d %b %H:%M' "$app")"
+    print -- "    $app"
+  done
+  (( found )) || print -- "No preview copies under /private/tmp."
+  exit 0
+fi
 
 build=1; flag=""; extra=()
 while (( $# )); do
@@ -23,18 +47,31 @@ while (( $# )); do
 done
 [[ -n "$flag" ]] || { print -u2 -- "Pass a preview flag, for example --preview-calendar-scroll."; exit 64; }
 
-root="${MISSIONCONTROL_PREVIEW_ROOT:-/private/tmp/3po-preview}"
+branch="$(git branch --show-current 2>/dev/null || true)"; commit="$(git rev-parse --short HEAD)"
+if [[ -n "${MISSIONCONTROL_PREVIEW_NAME:-}" ]]; then name="$MISSIONCONTROL_PREVIEW_NAME"
+elif [[ "$branch" == claude/* ]]; then name="${branch#claude/}"
+else name="${branch:-detached}-${flag#--preview-}"; fi
+name="$(print -r -- "${name:l}" | tr -cs 'a-z0-9-' '-' | sed 's/^-*//;s/-*$//')"
+[[ -n "$name" ]] || name="preview"
+
+root="${MISSIONCONTROL_PREVIEW_ROOT:-/private/tmp/3po-preview/$name}"
 mkdir -p "$root"
 if (( build )); then MISSIONCONTROL_BUILD_ROOT="$root" scripts/build.sh >/dev/null || { print -u2 -- "Build failed: $root/build.log"; exit 1; }; fi
 product="$root/derived-data/Build/Products/Debug/3PO.app"
 [[ -d "$product" ]] || { print -u2 -- "No Debug build at $product"; exit 1; }
 
-app="$root/3PO Preview.app"
-pkill -f "$app/Contents/MacOS/" 2>/dev/null || true
-rm -rf "$app"; cp -R "$product" "$app"
+title="3PO Preview ($name)"
+app="$root/$title.app"
+pkill -f "$root/3PO Preview.*app/Contents/MacOS/" 2>/dev/null || true
+rm -rf "$app" "$root/3PO Preview.app"; cp -R "$product" "$app"
 plist="$app/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.mylomichael.missioncontrol.preview" -c "Set :CFBundleName 3PO Preview" "$plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 3PO Preview" "$plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string 3PO Preview" "$plist"
+set_key() { /usr/libexec/PlistBuddy -c "Set :$1 $2" "$plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$plist"; }
+set_key CFBundleIdentifier "com.mylomichael.missioncontrol.preview.$name"
+set_key CFBundleName "$title"
+set_key CFBundleDisplayName "$title"
+set_key MissionControlPreviewBranch "${branch:-detached}"
+set_key MissionControlPreviewCommit "$commit"
+set_key MissionControlPreviewFlags "$flag${extra:+ ${extra[*]}}"
 codesign --force --deep -s - "$app" 2>/dev/null
 open -n "$app" --args "$flag" "${extra[@]}"
-print -- "Opened 3PO Preview ($flag${extra:+ ${extra[*]}}) from $app"
+print -- "Opened $title ($flag${extra:+ ${extra[*]}}, $commit) from $app"
