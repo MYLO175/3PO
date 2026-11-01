@@ -24,7 +24,7 @@ Examples here are fictional. This is the committed 14 October feature baseline; 
 
 ## Dashboard and appearance
 
-Create saved pages and add widgets for the PA, Calendar, Reminders, Review, Projects/Life map, brief, weather or date/clock. Widgets preview continuously while you move or resize them, then snap and save on release. The dashboard fits the window; each widget's content can scroll. Focused view helps when the window is narrow.
+Create saved pages and add widgets for the PA, Calendar, Reminders, Review, Projects/Life map, brief, weather or date/clock. Widgets preview continuously while you move or resize them, then snap and save on release. Each widget comes in Small, Medium, Large, Extra large, Tall and Wide sizes (chosen in Add widget or the widget's … menu in Edit layout); the smaller ones show a glance of what matters, such as the next events or reminders due. The dashboard fits the window; each widget's content can scroll. Focused view helps when the window is narrow.
 
 The native customisable toolbar shares the window controls. Its arrangement is saved separately from page/widget layouts; Dashboard, View and Edit menus expose actions even when toolbar items are hidden.
 

@@ -127,15 +127,49 @@ struct LifeProjectWidget: View {
             .id((current?.id.uuidString ?? (unfiled ? "unfiled" : "home"))+":"+presentation.rawValue)
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
-    var body: some View {
-        HStack(alignment:.top,spacing:0) {
-            if sidebarShown {
-                LifeProjectSidebar(index:index,selected:current.flatMap{$0.kind.isWork ? $0.parentID : $0.id},unfiled:unfiled,looseCount:looseWork.count,home:navigateHome,openUnfiled:openUnfiled,open:open)
-                    .frame(width:230)
-                Divider().padding(.trailing,24)
+    @Environment(\.widgetLayout) private var tileLayout
+    /// Only the dashboard's own Projects tile is a glance; one embedded in a Life map area sheet stays full.
+    private var layout: WidgetLayout { widgetID == nil ? .large : tileLayout }
+    /// Project work that is late or due in the next two weeks; a tall widget adds each project's progress.
+    private var glance: some View {
+        let due = index.dueSoon(under:nil), late = index.lateCount(under:nil)
+        return VStack(alignment:.leading,spacing:layout == .small ? 8 : 10) {
+            WidgetHeader(title:"Projects",symbol:"folder",meta:layout == .small && late > 0 ? "\(late) late" : nil)
+            HStack(alignment:.top,spacing:16) {
+                if layout == .medium,!due.isEmpty { GlanceCount(value:late > 0 ? late : due.count,label:late > 0 ? "late" : "due soon",urgent:late > 0).frame(width:78,alignment:.leading) }
+                VStack(alignment:.leading,spacing:12) {
+                    GlanceRows(items:due,rowHeight:24,empty:"Nothing due in the next two weeks.",scrolls:false) { item in
+                        HStack(spacing:8) {
+                            Button { complete(item) } label: { Image(systemName:"circle").font(.system(size:14)).foregroundStyle(palette[.text].opacity(0.4)) }
+                                .buttonStyle(.plain).disabled(store.readOnly).accessibilityLabel("Complete task: "+item.title).help("Changes this workspace task only")
+                            Button { editing = item } label: { Text(item.title).font(.callout).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle()) }
+                                .buttonStyle(.plain).help(index.path(item).map(\.title).joined(separator:" › "))
+                            if let due = item.due { LifeDueChip(due:due).fixedSize() }
+                        }
+                    }.frame(maxHeight:layout == .tall ? min(150,CGFloat(max(1,due.count))*30) : .infinity)
+                    if layout == .tall {
+                        let projects = index.children(of:nil).filter { !$0.kind.isWork }
+                        if !projects.isEmpty {
+                            Text("Projects").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            ScrollView {
+                                VStack(alignment:.leading,spacing:10) {
+                                    ForEach(projects) { project in
+                                        let progress = index.progress(under:project.id)
+                                        VStack(alignment:.leading,spacing:4) {
+                                            Label(project.title,systemImage:project.displaySymbol).font(.callout).lineLimit(1)
+                                            if progress.total > 0 { LifeTaskProgressView(progress:progress,compact:true) }
+                                        }.help(project.title)
+                                    }
+                                }.frame(maxWidth:.infinity,alignment:.leading)
+                            }.scrollIndicators(.never)
+                        }
+                    }
+                }
             }
-            page
-        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+    }
+    var body: some View {
+        Group { if layout.compact { glance } else { fullBody } }
         .sheet(item: $editing) { item in LifeItemEditor(model: model, item: item) { editing = nil } }
         .sheet(item: $notesEditing) { capture in LifeProjectNotesSheet(model:model,capture:capture) }
         .sheet(item:$matching) { item in LifeIdentitySheet(model:model,item:item) { matching=nil } }
@@ -159,6 +193,16 @@ struct LifeProjectWidget: View {
         .onChange(of:store.revision) { navigation.reconcile(items:items);boardScroll.stop();boardDrag=nil;folderInsertion=nil;dropHover=nil }
         .onChange(of:focusAreas) { navigation.reconcile(items:items);resetPage() }
         .onChange(of: savedRoot) { navigation = .init();unfiled=false;resetPage() }
+    }
+    private var fullBody: some View {
+        HStack(alignment:.top,spacing:0) {
+            if sidebarShown {
+                LifeProjectSidebar(index:index,selected:current.flatMap{$0.kind.isWork ? $0.parentID : $0.id},unfiled:unfiled,looseCount:looseWork.count,home:navigateHome,openUnfiled:openUnfiled,open:open)
+                    .frame(width:230)
+                Divider().padding(.trailing,24)
+            }
+            page
+        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
     private var controls:some View {
         HStack(spacing:14) {

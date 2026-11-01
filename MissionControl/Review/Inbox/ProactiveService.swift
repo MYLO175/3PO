@@ -633,7 +633,7 @@ struct ProactiveReviewContext {
     }
     #if DEBUG
     func seedAdviceFixture(_ records:[PADiscovery],model:DashboardModel) throws {
-        guard ["--validate-advice-context","--validate-review-inbox","--preview-review-inbox"].contains(where:ProcessInfo.processInfo.arguments.contains) else { throw SummaryFailure.invalid }
+        guard ["--validate-advice-context","--validate-review-inbox","--preview-review-inbox","--preview-widget-sizes"].contains(where:ProcessInfo.processInfo.arguments.contains) else { throw SummaryFailure.invalid }
         state.records=records.map{record in var value=record;value.scope=record.sourceKind == "whatsapp" ? scope(model) : legacyMailScope(model);return value}
         try save()
     }
