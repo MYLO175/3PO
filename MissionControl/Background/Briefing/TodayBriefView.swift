@@ -7,6 +7,7 @@ struct TodayBriefView: View {
     @State private var showMemory=false
     @State private var showSources=false
     @State private var legacyShowsWeather=true
+    @State private var legacyTextSize=14.0
     @State private var editingPrompt:BriefPromptEdit?
     private var record:DailyBriefing? {briefings.savedToday(model) ?? briefings.current(model)}
     private var showsWeather:Binding<Bool> {
@@ -15,7 +16,14 @@ struct TodayBriefView: View {
             else {legacyShowsWeather=value}
         })
     }
+    private var textSize:Binding<Double> {
+        Binding(get:{configuration?.wrappedValue.briefTextSize ?? legacyTextSize},set:{value in
+            if let configuration {configuration.wrappedValue.briefTextSize = value == 14 ? nil : value}
+            else {legacyTextSize=value}
+        })
+    }
     var body: some View {
+        let size=textSize.wrappedValue
         VStack(alignment:.leading,spacing:12) {
             WidgetHeader(title:"Today’s brief",symbol:"sun.max") {
                 if let record {
@@ -30,6 +38,9 @@ struct TodayBriefView: View {
                 else { Button { briefings.updateToday(model) } label: { Image(systemName:"arrow.clockwise") }.help(!briefings.hasCurrentToday(model) ? "Prepare today’s brief using AI" : "Refresh today’s brief using AI and fresh sources").accessibilityLabel(!briefings.hasCurrentToday(model) ? "Prepare today’s brief" : "Refresh today’s brief").disabled(model.heartbeat.busy) }
                 Menu {
                     Toggle("Show weather",isOn:showsWeather)
+                    Picker("Text size",selection:textSize) {
+                        Text("Small").tag(12.0); Text("Default").tag(14.0); Text("Large").tag(16.0); Text("Larger").tag(18.0); Text("Largest").tag(21.0)
+                    }
                     Divider()
                     Button("Edit brief prompt…") {editingPrompt=BriefPromptEdit(capture:briefings.writingPrompt(model.inference.activeID))}.disabled(model.inference.activeID.isEmpty)
                 } label: {Image(systemName:"ellipsis")}
@@ -43,9 +54,9 @@ struct TodayBriefView: View {
                     VStack(alignment:.leading,spacing:16) {
                         // Read as a message from the PA: the greeting as the headline, then the prose.
                         let parts=Self.masthead(BriefingRules.displayProse(record))
-                        WidgetHeadline(text:parts.headline,size:30,lines:2)
+                        WidgetHeadline(text:parts.headline,size:(30*size/14).rounded(),lines:2)
                         BriefFreshnessNote(model:model,briefings:briefings,record:record)
-                        Text((try? AttributedString(markdown:parts.body,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(parts.body)).font(.system(size:14)).lineSpacing(5).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)
+                        Text((try? AttributedString(markdown:parts.body,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(parts.body)).font(.system(size:size)).lineSpacing(5*size/14).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)
                         if showsWeather.wrappedValue {WeatherBriefCard(weather:model.weather)}
                         DisclosureGroup("Sources and coverage",isExpanded:$showSources) {
                             if showSources {VStack(alignment:.leading,spacing:10) {

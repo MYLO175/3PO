@@ -7,8 +7,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         completionHandler([.banner, .sound])
     }
+    private var appearanceObserver: NSObjectProtocol?
+    /// Light, Dark or System for the whole app, set through AppKit. SwiftUI's preferredColorScheme on each
+    /// window could stick after Dark, so choosing Light or System didn't always take effect.
+    private func applyAppearance() {
+        let value = UserDefaults.standard.string(forKey:"workspaceAppearance") ?? "system"
+        let target: NSAppearance? = value == "light" ? NSAppearance(named:.aqua) : value == "dark" ? NSAppearance(named:.darkAqua) : nil
+        if NSApp.appearance?.name != target?.name { NSApp.appearance = target }
+    }
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
+        applyAppearance()
+        appearanceObserver = NotificationCenter.default.addObserver(forName:UserDefaults.didChangeNotification,object:nil,queue:.main) { [weak self] _ in
+            Task { @MainActor in self?.applyAppearance() }
+        }
         let arguments = ProcessInfo.processInfo.arguments
         guard arguments.contains("--small-window") || arguments.contains("--dark-window") else { return }
         // SwiftUI may restore a fullscreen window after didFinishLaunching.
@@ -122,9 +134,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 SourceTimelinePreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--render-projects") || ProcessInfo.processInfo.arguments.contains("--validate-review-inbox") || ProcessInfo.processInfo.arguments.contains("--validate-commitment-reports") || ProcessInfo.processInfo.arguments.contains("--validate-advice-context") || ProcessInfo.processInfo.arguments.contains("--validate-native-memory") || ProcessInfo.processInfo.arguments.contains("--validate-memory-inspection") || ProcessInfo.processInfo.arguments.contains("--validate-source-timeline") || ProcessInfo.processInfo.arguments.contains("--validate-native-capabilities") || ProcessInfo.processInfo.arguments.contains("--validate-native-editors") {
                 Text("Running disposable validation…").padding().task {model.start()}
-            } else { WorkspaceView(model:model).preferredColorScheme(selectedColorScheme) }
+            } else { WorkspaceView(model:model) }
             #else
-            WorkspaceView(model:model).preferredColorScheme(selectedColorScheme)
+            WorkspaceView(model:model)
             #endif
         }.defaultSize(width: ProcessInfo.processInfo.arguments.contains("--small-window") ? 820 : 1200, height: ProcessInfo.processInfo.arguments.contains("--small-window") ? 640 : 780)
         .windowToolbarStyle(.unified(showsTitle:false))
@@ -156,9 +168,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             Image(nsImage: MenuBarIcon.image)
                 .accessibilityLabel("3PO")
         }
-        Settings { SettingsView(model: model).preferredColorScheme(selectedColorScheme) }
+        Settings { SettingsView(model: model) }
         Window("3PO Help",id:"help") {
-            PAHelpView(model:model).preferredColorScheme(selectedColorScheme)
+            PAHelpView(model:model)
         }.defaultSize(width:760,height:650)
     }
 }

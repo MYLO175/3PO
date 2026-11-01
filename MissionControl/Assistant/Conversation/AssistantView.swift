@@ -297,6 +297,8 @@ struct AssistantPanel: View {
             }.font(.caption)
         }
     }
+    /// A single line of the message field plus its padding.
+    private let composerRow: CGFloat = 34
     /// One click starts on-device dictation straight into the message box; the next click stops.
     private func toggleDictation() {
         if dictation.recording { dictation.stop(); return }
@@ -538,7 +540,8 @@ struct AssistantPanel: View {
                 }.frame(height:88)
             }
             HStack(alignment:.bottom,spacing:6) {
-                DictationButton(dictation:dictation,toggle:toggleDictation).disabled(widgetID != nil && !assistant.drafts.writable)
+                // Mic and send share the single-line field's height, so they sit centred on the text.
+                DictationButton(dictation:dictation,toggle:toggleDictation).frame(height:composerRow).disabled(widgetID != nil && !assistant.drafts.writable)
                 ZStack(alignment:.topLeading) {
                     if draft.wrappedValue.isEmpty { Text(dictation.recording ? "Listening…" : PAIdentity.placeholder(assistant.displayName)).foregroundStyle(.secondary).padding(.top,2).allowsHitTesting(false) }
                     PAChatComposer(text:draft,focused:Binding(get:{composerFocused},set:{composerFocused=$0}),height:$composerHeight,scope:ChatDraftRules.key(registration:model.inference.activeID,widget:imageDraftWidget,conversation:draftKey),enabled:assistant.drafts.writable,textColor:NSColor(palette[.text]),pasteImage:pasteImage,submit:send,cancel:{ guard dictation.recording || dictation.preparing else { return false }; cancelDictation(); return true })
@@ -548,14 +551,14 @@ struct AssistantPanel: View {
                 Button { if stopping { assistant.cancel() } else { send() } } label: {
                     Image(systemName:stopping ? "stop.fill" : "arrow.up").font(.system(size:13,weight:.bold))
                         .frame(width:30,height:30).foregroundStyle(palette[.widget]).background(palette[.accent],in:Circle())
-                }.buttonStyle(.plain)
+                }.buttonStyle(.plain).frame(height:composerRow)
                     .help(stopping ? "Stop" : assistant.busy ? "Queue this message" : "Send")
                     .accessibilityLabel(stopping ? "Stop" : assistant.busy ? "Queue" : "Send")
                     .disabled(!sendingHere && ((widgetID != nil && !assistant.drafts.writable) || composerEmpty || (!model.inference.inferenceVerified || (!assistant.busy && model.inference.busy) || model.inference.usagePaused)))
             }
-            .padding(.leading,5).padding(.trailing,5).padding(.vertical,4)
-            .background(palette[.input],in:RoundedRectangle(cornerRadius:20,style:.continuous))
-            .overlay(RoundedRectangle(cornerRadius:20,style:.continuous).strokeBorder(palette[.text].opacity(composerFocused ? 0.18 : 0.1)))
+            .padding(.horizontal,6).padding(.vertical,4)
+            .background(palette[.input],in:RoundedRectangle(cornerRadius:21,style:.continuous))
+            .overlay(RoundedRectangle(cornerRadius:21,style:.continuous).strokeBorder(palette[.text].opacity(composerFocused ? 0.18 : 0.1)))
             .shadow(color:.black.opacity(0.06),radius:8,y:3)
             if let note = dictation.note { Text(note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true) }
             if errorHere && assistant.error?.contains("Choose the specific target") == true {

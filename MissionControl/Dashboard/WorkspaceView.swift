@@ -204,21 +204,28 @@ struct WorkspaceView: View {
     /// Top bar: one icon per dashboard beside the window controls; the selection slides between them.
     /// New dashboard appears while editing the layout.
     private var dashboardIcons: some View {
-        HStack(spacing:2) {
-            ForEach(store.state.pages) { page in
-                Button { withAnimation(motion.animation(.smooth(duration:0.32))) { store.select(page.id) } } label: {
-                    WorkspacePageLabel(model:model,title:page.title,icon:page.displayIcon,expanded:false,showsReview:page.widgets.contains(where:{$0.kind == .tasks}),height:32)
-                        .frame(width:38)
-                        .background { if page.id == store.selected.id { sidebarHighlight.matchedGeometryEffect(id:"selection",in:sidebarSelection) } }
-                        .contentShape(RoundedRectangle(cornerRadius:12,style:.continuous))
-                }.buttonStyle(.plain).contextMenu { pageMenu(page) }
-            }
-            if editing {
-                Button { newDashboard() } label: { Image(systemName:"plus").font(.system(size:14,weight:.medium)).frame(width:32,height:32).contentShape(Rectangle()) }
-                    .buttonStyle(.plain).help("New dashboard").accessibilityLabel("New dashboard")
-                    .transition(.opacity.combined(with:.scale(scale:0.8)))
-            }
-        }.animation(motion.animation(.smooth(duration:0.25)),value:editing)
+        // The toolbar is hosted apart from the window content, so a matched-geometry highlight landed in the
+        // wrong place there. One highlight slides by a fixed step under the selected icon instead.
+        let pages = store.state.pages, selected = pages.firstIndex { $0.id == store.selected.id } ?? 0
+        return ZStack(alignment:.leading) {
+            sidebarHighlight.frame(width:38,height:32)
+                .offset(x:CGFloat(selected)*40)
+                .animation(motion.animation(.smooth(duration:0.32)),value:selected)
+            HStack(spacing:2) {
+                ForEach(pages) { page in
+                    Button { store.select(page.id) } label: {
+                        WorkspacePageLabel(model:model,title:page.title,icon:page.displayIcon,expanded:false,showsReview:page.widgets.contains(where:{$0.kind == .tasks}),height:32)
+                            .frame(width:38)
+                            .contentShape(RoundedRectangle(cornerRadius:12,style:.continuous))
+                    }.buttonStyle(.plain).contextMenu { pageMenu(page) }
+                }
+                if editing {
+                    Button { newDashboard() } label: { Image(systemName:"plus").font(.system(size:14,weight:.medium)).frame(width:32,height:32).contentShape(Rectangle()) }
+                        .buttonStyle(.plain).help("New dashboard").accessibilityLabel("New dashboard")
+                        .transition(.opacity.combined(with:.scale(scale:0.8)))
+                }
+            }.animation(motion.animation(.smooth(duration:0.25)),value:editing)
+        }
     }
     @ViewBuilder private func pageMenu(_ page: DashboardPage) -> some View {
         Button("Edit name and icon…") { naming = page.id; name = page.title; dashboardSymbol=page.symbol; showName = true }
