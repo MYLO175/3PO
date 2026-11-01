@@ -10,7 +10,10 @@ struct ProductionReviewConversationView:View {
     @State private var selected=Set<String>()
     @State private var preparing=true
     @State private var draft=""
+    @FocusState private var composerFocused:Bool
     private var conversation:AssistantConversation? {model.assistant.conversation(conversationID)}
+    /// No saved suggestion for this source: the sheet is a plain conversation about it.
+    private var quickChat:Bool {!preparing && rows.isEmpty}
     private var jobs:[ReviewWorkJob] {model.reviewWork.jobs(model.inference.activeID,conversation:conversationID)}
     private var usable:Bool {model.reviewConversationAvailable(conversationID)}
     private var displayedRows:[ReviewPreparedRow] {rowGroups.compactMap {group in
@@ -33,7 +36,7 @@ struct ProductionReviewConversationView:View {
                 Image(systemName:"bubble.left.and.text.bubble.right").font(.title2).foregroundStyle(palette[.accent]).padding(.top,3)
                 VStack(alignment:.leading,spacing:5) {Text(conversation?.title ?? "Review suggestion").font(.title3.weight(.semibold)).lineLimit(2);Text("Discuss a plan with 3PO").font(.caption).foregroundStyle(.secondary)}
                 Spacer(minLength:8)
-                Button(ReviewSelectionRules.approvalTitle(selectedActions.count)) {finish()}.disabled(preparing || !model.reviewWork.readable)
+                Button(quickChat ? "Done" : ReviewSelectionRules.approvalTitle(selectedActions.count)) {finish()}.disabled(preparing || !model.reviewWork.readable)
             }.padding(22)
             Divider()
             if usable {
@@ -43,6 +46,7 @@ struct ProductionReviewConversationView:View {
                             Text(PAProse.display(opening)).font(.callout).lineSpacing(4).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)
                             if completedCount > 0 {Label("\(completedCount) action\(completedCount == 1 ? "" : "s") completed",systemImage:"checkmark.circle.fill").font(.callout.weight(.semibold)).foregroundStyle(palette[.accent])}
                             if preparing {HStack {ProgressView().controlSize(.small);Text("Preparing saved actions…").font(.caption).foregroundStyle(.secondary)}}
+                            if quickChat,turns.isEmpty,completedCount == 0 {Text("3PO has no suggested actions for this. Ask it to do something, such as adding a reminder, planning a task or drafting a reply.").font(.caption).foregroundStyle(.secondary)}
                             if !rows.isEmpty {
                                 Text(completedCount > 0 ? "Saved actions and remaining suggestions" : "Would you like me to take these actions?").font(.headline)
                                 ForEach(displayedRows) {row in preparedRow(row)}
@@ -80,7 +84,7 @@ struct ProductionReviewConversationView:View {
                     if model.heartbeat.busy {Label("Your reply will run after the heartbeat finishes",systemImage:"clock").font(.caption).foregroundStyle(.secondary)}
                     if let error=model.reviewWork.error {Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)}
                     HStack(alignment:.bottom,spacing:10) {
-                        TextField("Ask for a change, or reply…",text:$draft,axis:.vertical).textFieldStyle(.plain).lineLimit(1...4).padding(12).background(palette[.widget],in:RoundedRectangle(cornerRadius:11)).overlay(RoundedRectangle(cornerRadius:11).stroke(palette[.border].opacity(0.65))).onSubmit {sendDraft()}
+                        TextField(quickChat ? "Ask 3PO to do something with this…" : "Ask for a change, or reply…",text:$draft,axis:.vertical).textFieldStyle(.plain).lineLimit(1...4).focused($composerFocused).padding(12).background(palette[.widget],in:RoundedRectangle(cornerRadius:11)).overlay(RoundedRectangle(cornerRadius:11).stroke(palette[.border].opacity(0.65))).onSubmit {sendDraft()}
                         Button {sendDraft()} label:{Image(systemName:"arrow.up").font(.headline).frame(width:30,height:30)}.buttonStyle(.borderedProminent).clipShape(Circle()).disabled(draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || !model.reviewWork.readable).accessibilityLabel("Send Review reply")
                     }
                     Text("You can leave this review while 3PO works. This conversation stays with this source.").font(.caption2).foregroundStyle(.secondary)
@@ -113,6 +117,7 @@ struct ProductionReviewConversationView:View {
             }
             rowGroups=DashboardModel.reviewRowGroups(rows)
             preparing=false
+            if rows.isEmpty {composerFocused=true}
         }.onChange(of:draft) {_,value in model.reviewWork.setDraft(value,registration:model.inference.activeID,conversation:conversationID)}
         .onChange(of:model.reviewWork.plan(model.inference.activeID,conversation:conversationID)?.revision) {if let plan=model.reviewWork.plan(model.inference.activeID,conversation:conversationID) {load(plan)}}
         .onExitCommand {dismiss()}

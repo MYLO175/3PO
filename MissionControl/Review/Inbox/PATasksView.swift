@@ -54,6 +54,7 @@ struct PATasksView: View {
     @State private var answer=""
     @State private var answerError:String?
     @State private var answeringLearning:PALearningQuestion?
+    @State private var backgroundID:String?
     private func discoveryTitle(_ item:PADiscovery)->String? {
         item.sourceTitle ?? (item.needsDateClarification && item.sourceKind != "whatsapp" ? model.emailSummaries.records.first{$0.id == item.mailID && $0.registration == item.registration}?.message?.subject : nil)
     }
@@ -75,70 +76,90 @@ struct PATasksView: View {
             job.source.key == source.key && job.actions.contains{$0.id == item.id && $0.phase == .saved}
         }
     }
+    /// One Explore entry per source, on its last card; informational updates count too.
     private func lastSuggestionEntryIDs(_ values:[PADiscovery])->Set<String> {
         var last:[String:String]=[:]
-        for item in values where item.kind != "update" {last[item.registration+":"+model.reviewSource(item).key]=item.id}
+        for item in values {last[item.registration+":"+model.reviewSource(item).key]=item.id}
         return Set(last.values)
     }
-    @ViewBuilder private func suggestionEntry(_ item:PADiscovery)->some View {
+    /// Explore always opens the source's Review conversation. Without a saved suggestion it
+    /// works as a quick chat about that source; the sparkles mark 3PO's own suggestions.
+    @ViewBuilder private func exploreButton(suggested:Bool,completed:Int,open:@escaping ()->Void)->some View {
+        Button(action:open) {
+            if suggested {Label("Explore actions",systemImage:"sparkles")} else {Text("Explore actions")}
+        }.help(suggested ? "See 3PO’s suggested actions, or ask it to do something else" : "Ask 3PO to do something with this")
+        if completed > 0 {Label("\(completed) done",systemImage:"checkmark.circle.fill").font(.caption).foregroundStyle(.secondary).help("\(completed) action\(completed == 1 ? "" : "s") completed")}
+    }
+    private func discoveryExplore(_ item:PADiscovery)->(related:[PADiscovery],suggested:Bool,completed:Int) {
         let source=model.reviewSource(item)
         let current=model.reviewRecords(source)
         let related=current.isEmpty ? [item] : current
-        let proposals=related.filter{$0.kind != "update"}
         let completed=model.reviewCompletedActions(source)
-        if completed > 0 || completedProposal(item,source:source) {
-            Label("\(max(1,completed)) action\(max(1,completed) == 1 ? "" : "s") completed",systemImage:"checkmark.circle.fill").foregroundStyle(.secondary)
-            Button("View actions") {model.openReviewConversation(related)}
-        }
-        else if proposals.contains(where:{ProactiveReviewRules.hasSuggestedAction($0) && !completedProposal($0,source:source)}) {
-            Button("Explore suggested actions") {model.openReviewConversation(related)}
+        let suggested=related.contains{$0.kind != "update" && ProactiveReviewRules.hasSuggestedAction($0) && !completedProposal($0,source:source)}
+        return (related,suggested,completed > 0 ? completed : completedProposal(item,source:source) ? 1 : 0)
+    }
+    private func showsBackground(_ id:String)->Binding<Bool> {
+        Binding(get:{backgroundID == id},set:{if !$0,backgroundID == id {backgroundID=nil}})
+    }
+    /// Background context opens from the card's right-click menu, so the card itself keeps
+    /// to its title, source line and explanation.
+    private func backgroundPanel<Content:View>(_ title:String="Background context",@ViewBuilder _ content:()->Content)->some View {
+        VStack(alignment:.leading,spacing:12) {
+            Text(title).font(.headline)
+            content()
+        }.padding(16).frame(width:420,alignment:.leading).fixedSize(horizontal:false,vertical:true)
+    }
+    private func discoveryConnection(_ item:PADiscovery)->String? {item.proposedChange?.connection ?? item.proposedProjectTask?.connection}
+    @ViewBuilder private func backgroundUpdate(_ item:PADiscovery,emailTitle:String)->some View {
+        VStack(alignment:.leading,spacing:4) {
+            if let title=discoveryTitle(item),title != emailTitle {Text(title).font(.callout.weight(.semibold))}
+            Text(PAProse.display(item.message)).font(.callout).textSelection(.enabled)
+            Button("Source evidence") {backgroundID=nil;sourceDiscovery=item}.buttonStyle(.link).font(.caption)
         }
     }
-    @ViewBuilder private func discoveryContent(_ item:PADiscovery,embedded:Bool=false,emailTitle:String?=nil,showsActionEntry:Bool=true)->some View {
-        VStack(alignment:.leading,spacing:8) {
+    @ViewBuilder private func discoveryCard(_ item:PADiscovery,showsActionEntry:Bool)->some View {
+        let details=model.preparedSourceDetails(item)
+        let message=item.sourceKind == "whatsapp" ? nil : model.mailData.messages.first{$0.id == item.mailID}
+        let explore=discoveryExplore(item)
+        VStack(alignment:.leading,spacing:6) {
+            Text(item.proposedChange?.target.title ?? item.proposedRemoval?.target.title ?? discoveryTitle(item) ?? details?.title ?? details?.location ?? "Review suggestion").font(.callout.weight(.semibold)).lineLimit(2)
+            if let details {ReviewSourceLine(details:details)}
+            Text(PAProse.display(item.message)).font(.callout)
             if let change=item.proposedChange {
-                Label("Needs approval · " + (change.target.kind == "event" ? "Calendar" : "Reminders"),systemImage:"calendar.badge.clock").font(.caption.weight(.semibold))
-                Text(change.target.title).font(.callout.weight(.semibold))
-                Text(dateLabel(change.target.start ?? change.target.due,hasTime:change.target.hasTime,fallback:"No date") + " → " + dateLabel(change.date(),hasTime:change.hasTime,fallback:change.newDate)).font(.callout).textSelection(.enabled)
-                Text("Inferred connection · " + change.connection).font(.caption).foregroundStyle(.secondary)
+                Label(dateLabel(change.target.start ?? change.target.due,hasTime:change.target.hasTime,fallback:"No date") + " → " + dateLabel(change.date(),hasTime:change.hasTime,fallback:change.newDate),systemImage:"calendar.badge.clock").font(.caption).foregroundStyle(.secondary)
             }
             if let removal=item.proposedRemoval {
-                Label("Needs approval · Remove from Calendar",systemImage:"calendar.badge.minus").font(.caption.weight(.semibold))
-                Text(removal.target.title).font(.callout.weight(.semibold))
-                Text(dateLabel(removal.target.start,hasTime:removal.target.hasTime,fallback:"No date")).font(.callout).textSelection(.enabled)
-                Text("Only this occurrence").font(.caption).foregroundStyle(.secondary)
-                Text("Removal cannot be undone in 3PO.").font(.caption).foregroundStyle(.secondary)
+                Label(dateLabel(removal.target.start,hasTime:removal.target.hasTime,fallback:"No date") + " · only this occurrence",systemImage:"calendar.badge.minus").font(.caption).foregroundStyle(.secondary)
             }
-            if !embedded || item.nativeTarget == nil {
-                Label(item.kind == "reply" ? "Reply draft" : item.kind == "update" ? "Update" : item.kind == "change" ? "Date change" : item.kind == "remove" ? "Calendar removal" : "Missing plan",systemImage:item.kind == "calendar" ? "calendar.badge.plus" : "checklist").font(.caption).foregroundStyle(.secondary)
-            }
-            if let title=discoveryTitle(item),!embedded || (title != emailTitle && title != item.nativeTarget?.title) { Text(title).font(.callout.weight(.semibold)) }
-            if !embedded || item.nativeTarget == nil {Text(PAProse.display(item.message)).textSelection(.enabled)}
-            if !embedded,let details=model.preparedSourceDetails(item) {ReviewSourceLabel(details:details,showsTitle:true)}
-            if let reply=item.replyDraft {
-                Text(reply).font(.callout).textSelection(.enabled).padding(10).frame(maxWidth:.infinity,alignment:.leading).background(Color.primary.opacity(0.04),in:RoundedRectangle(cornerRadius:8))
-                Text("Check the details before using this draft.").font(.caption2).foregroundStyle(.secondary)
-            }
-            if !embedded {
-                ReviewFeedbackButton(model:model,topic:discoveryTitle(item) ?? item.message,email:model.preparedFeedbackEmail(item),isCurrent:{model.proactive.state.records.first(where:{$0.id == item.id}).map{ProactiveRules.reviewProjection($0) == item && model.proactive.preparedReviewAvailable($0,model:model)} == true})
-            }
-            if let project=item.proposedProjectTask { Label("Task in " + project.target.title,systemImage:"folder").font(.caption);Text(project.connection).font(.caption).foregroundStyle(.secondary) }
-            if let date=item.proposedDate { Text(dateLabel(date.date(),hasTime:date.hasTime,fallback:date.start) + (date.end.map{" to " + dateLabel(date.date($0),hasTime:date.hasTime,fallback:$0)} ?? "")).font(.callout).textSelection(.enabled) }
-            Button("Source evidence") { sourceDiscovery=item }.buttonStyle(.borderless).font(.caption)
+            if let project=item.proposedProjectTask {Label("Task in " + project.target.title,systemImage:"folder").font(.caption).foregroundStyle(.secondary)}
+            if let date=item.proposedDate {Label(dateLabel(date.date(),hasTime:date.hasTime,fallback:date.start) + (date.end.map{" to " + dateLabel(date.date($0),hasTime:date.hasTime,fallback:$0)} ?? ""),systemImage:"calendar").font(.caption).foregroundStyle(.secondary)}
             if item.reviewState == "pending" || model.reviewCreationClaim(item).map({$0.receipt == nil}) == true {
                 Label("Save needs checking; it will not be repeated",systemImage:"exclamationmark.circle").font(.caption).foregroundStyle(.orange)
             }
-            HStack {
-                if showsActionEntry,item.kind != "update" {suggestionEntry(item)}
+            HStack(spacing:8) {
+                if showsActionEntry {exploreButton(suggested:explore.suggested,completed:explore.completed) {model.openReviewConversation(explore.related)}}
+                if let message {Button("View email") {model.select(message)}}
+                ReviewFeedbackButton(model:model,topic:discoveryTitle(item) ?? item.message,email:model.preparedFeedbackEmail(item),isCurrent:{model.proactive.state.records.first(where:{$0.id == item.id}).map{ProactiveRules.reviewProjection($0) == item && model.proactive.preparedReviewAvailable($0,model:model)} == true})
                 Spacer()
-                if !embedded {Button("Dismiss") {model.proactive.dismiss(item,model:model)}.disabled(model.writing)}
-            }.controlSize(.small)
+                Button("Dismiss") {model.proactive.dismiss(item,model:model)}.disabled(model.writing)
+            }.controlSize(.small).padding(.top,4)
             if model.reviewApprovalErrorAccount == item.registration,model.reviewApprovalErrorID == item.id,let error=model.reviewApprovalError {Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)}
+        }.taskCard()
+        .contextMenu {
+            if showsActionEntry {Button("Explore actions") {model.openReviewConversation(explore.related)}}
+            if let message {Button("View email") {model.select(message)}}
+            if discoveryConnection(item) != nil {Button("Background context") {backgroundID=item.id}}
+            Button("Source evidence") {sourceDiscovery=item}
+            Divider()
+            Button("Dismiss") {model.proactive.dismiss(item,model:model)}.disabled(model.writing)
+        }
+        .popover(isPresented:showsBackground(item.id),arrowEdge:.bottom) {
+            backgroundPanel {Text(PAProse.display(discoveryConnection(item) ?? "")).font(.callout).textSelection(.enabled)}
         }
     }
     @State private var showingRelevance=false
     var body: some View {
-        let inbox=model.reviewInbox,questions=inbox.questions,learningQuestions=inbox.learningQuestions,discoveries=inbox.discoveries,emails=inbox.emails,emailCards=inbox.emailCards,standaloneDiscoveries=inbox.standaloneDiscoveries,pending=inbox.pending
+        let inbox=model.reviewInbox,questions=inbox.questions,learningQuestions=inbox.learningQuestions,discoveries=inbox.discoveries,emailCards=inbox.emailCards,standaloneDiscoveries=inbox.standaloneDiscoveries,pending=inbox.pending
         let standaloneEntryIDs=lastSuggestionEntryIDs(standaloneDiscoveries)
         return VStack(alignment:.leading,spacing:12) {
             WidgetHeader(title:"Review inbox",symbol:"tray.full") {
@@ -164,75 +185,73 @@ struct PATasksView: View {
                     if !questions.isEmpty || !learningQuestions.isEmpty || !inbox.contextQuestions.isEmpty {Text("Questions for you").font(.headline)}
                     ContextProjectQuestionsSection(model: model, questions: inbox.contextQuestions)
                     ForEach(questions) {item in
-                        VStack(alignment:.leading,spacing:8) {
-                            Label("Your answer would help",systemImage:"questionmark.bubble").font(.caption).foregroundStyle(.secondary)
-                            Text(PAProse.display(item.question)).font(.callout).textSelection(.enabled)
-                            DisclosureGroup("Context") {ForEach(item.sourceIDs,id:\.self) {id in if let source=item.snapshot.sources.first(where:{$0.id == id}) {Text(source.label + (source.date.map{" · " + $0.formatted(date:.abbreviated,time:.shortened)} ?? "")).font(.caption).textSelection(.enabled)}}}
-                            HStack {Button("Answer") {answering=item;answer="";answerError=nil};Spacer();Button("Dismiss") {_ = model.briefings.resolveQuestion(item,model:model,answered:false)}}.controlSize(.small)
+                        let sources=item.sourceIDs.compactMap{id in item.snapshot.sources.first{$0.id == id}}
+                        VStack(alignment:.leading,spacing:6) {
+                            Text(PAProse.display(item.question)).font(.callout.weight(.semibold))
+                            Text(sources.isEmpty ? "Your answer would help 3PO" : "Based on " + sources.map(\.label).joined(separator:", ")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                .help(sources.map{$0.label + ($0.date.map{" · " + $0.formatted(date:.abbreviated,time:.shortened)} ?? "")}.joined(separator:"\n"))
+                            HStack {Button("Answer") {answering=item;answer="";answerError=nil};Spacer();Button("Dismiss") {_ = model.briefings.resolveQuestion(item,model:model,answered:false)}}.controlSize(.small).padding(.top,4)
                         }.taskCard()
                     }
                     ForEach(learningQuestions) {item in
-                        VStack(alignment:.leading,spacing:8) {
-                            Label("Getting to know you",systemImage:"questionmark.bubble").font(.caption).foregroundStyle(.secondary)
-                            Text(PAProse.display(item.text)).font(.callout)
-                            DisclosureGroup("Why I’m asking") {Text(item.evidence).font(.caption).textSelection(.enabled)}
-                            HStack {Button("Answer") {answeringLearning=item;answer="";answerError=nil};Spacer();Button("Dismiss") {model.memoryLearning.dismiss(item)}}.controlSize(.small)
+                        VStack(alignment:.leading,spacing:6) {
+                            Text(PAProse.display(item.text)).font(.callout.weight(.semibold))
+                            Text("Getting to know you").font(.caption).foregroundStyle(.secondary)
+                            HStack {Button("Answer") {answeringLearning=item;answer="";answerError=nil};Spacer();Button("Dismiss") {model.memoryLearning.dismiss(item)}}.controlSize(.small).padding(.top,4)
                         }.taskCard()
+                        .contextMenu {Button("Why 3PO is asking") {backgroundID="learning:"+item.id}}
+                        .popover(isPresented:showsBackground("learning:"+item.id),arrowEdge:.bottom) {backgroundPanel("Why 3PO is asking") {Text(item.evidence).font(.callout).textSelection(.enabled)}}
                     }
                     if !standaloneDiscoveries.isEmpty { Text("From your background review").font(.headline) }
                     ForEach(standaloneDiscoveries) { item in
-                        discoveryContent(item,showsActionEntry:standaloneEntryIDs.contains(item.id)).taskCard()
+                        discoveryCard(item,showsActionEntry:standaloneEntryIDs.contains(item.id))
                     }
                     if !emailCards.isEmpty { Text("Emails to review").font(.headline) }
                     ForEach(emailCards) { card in
                         let message=card.message,summary=card.summary
-                        VStack(alignment:.leading,spacing:8) {
-                            Label(card.handling?.label ?? (!card.needsReview ? "Reviewed" : summary.replyDraft == nil ? (summary.attention ? "Needs attention" : "Update") : "Reply draft ready"),systemImage:card.handling != nil || !card.needsReview ? "checkmark.circle" : summary.replyDraft == nil ? "checklist" : "pencil.line").font(.caption).foregroundStyle(.secondary)
+                        let completedSource=ReviewWorkSource(key:"mail:"+message.id,title:message.subject,kind:"mail",accountID:message.accountID,messageID:message.id)
+                        let completedActions=model.reviewCompletedActions(completedSource)
+                        let proposals=card.discoveries.filter{$0.kind != "update"},updates=card.discoveries.filter{$0.kind == "update"}
+                        let pendingProposals=proposals.filter{ProactiveReviewRules.hasSuggestedAction($0) && !completedProposal($0,source:completedSource)}
+                        let hasSummaryDraft=summary.replyDraft.map{!$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty} == true && !proposals.contains{$0.replyDraft != nil} && !model.reviewSummaryDraftCompleted(message)
+                        let hasBackground = !updates.isEmpty || summary.personalRelevance != nil || card.handling != nil || summary.keepInReview == true
+                        let dismiss={model.emailSummaries.dismiss(message.id,model:model,expectedRegistration:summary.registration,expectedVersion:ReviewAcknowledgementRules.emailVersion(message,summary))}
+                        VStack(alignment:.leading,spacing:6) {
                             Text(message.subject).font(.callout.weight(.semibold)).lineLimit(2)
-                            ReviewSourceLabel(details:.email(message))
-                            Text(PAProse.display(summary.reason.isEmpty ? summary.summary : summary.reason)).font(.callout).textSelection(.enabled)
-                            if let handling=card.handling {
-                                Text("Inferred connection to “"+handling.native.title+"” · "+handling.reason).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                                Button("Keep in review") {model.emailSummaries.keepForReview(summary.id,model:model)}.buttonStyle(.borderless).font(.caption)
-                            }
-                            if summary.keepInReview == true {HStack {Text("Kept in review by you").font(.caption).foregroundStyle(.secondary);Button("Use inferred status") {model.emailSummaries.keepForReview(summary.id,model:model,keep:false)}.buttonStyle(.borderless).font(.caption)}}
-                            if let reply=summary.replyDraft {
-                                VStack(alignment:.leading,spacing:5) {
-                                    Text("Suggested reply").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                                    if summary.replyDraftEdited == true,summary.replyDraftCheckedBody != summary.bodyFingerprint {Text("Your saved draft is preserved, but the email changed. Review its details.").font(.caption).foregroundStyle(.orange)}
-                                    Text(reply).font(.callout).textSelection(.enabled)
-                                    Text("Check placeholders and details before using it.").font(.caption2).foregroundStyle(.secondary)
-                                }.padding(10).frame(maxWidth:.infinity,alignment:.leading).background(Color.primary.opacity(0.04),in:RoundedRectangle(cornerRadius:8))
-                            }
-                            if summary.replyDraft == nil,EmailReplyDraftRules.canReply(summary,message:message) {
-                                Text(EmailReplyDraftRules.needsBackgroundDraft(summary,message:message) ? "Reply preparation pending" : "Check details before preparing a reply").font(.caption).foregroundStyle(.secondary)
-                            }
-                            if let relevance=summary.personalRelevance {Label(relevance.reason,systemImage:"person.crop.circle.badge.checkmark").font(.caption).foregroundStyle(.secondary)}
-                            let completedSource=ReviewWorkSource(key:"mail:"+message.id,title:message.subject,kind:"mail",accountID:message.accountID,messageID:message.id)
-                            let completedActions=model.reviewCompletedActions(completedSource)
-                            if completedActions > 0 {
-                                HStack {Label("\(completedActions) action\(completedActions == 1 ? "" : "s") completed",systemImage:"checkmark.circle.fill").foregroundStyle(.secondary);Button("View actions") {model.openReviewSource(message)};Spacer()}.controlSize(.small)
-                            }
-                            let proposals=card.discoveries.filter{$0.kind != "update"},updates=card.discoveries.filter{$0.kind == "update"}
-                            let pendingProposals=proposals.filter{ProactiveReviewRules.hasSuggestedAction($0) && !completedProposal($0,source:completedSource)}
-                            let hasSummaryDraft=summary.replyDraft.map{!$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty} == true && !proposals.contains{$0.replyDraft != nil} && !model.reviewSummaryDraftCompleted(message)
+                            ReviewSourceLine(details:.email(message))
+                            Text(PAProse.display(summary.reason.isEmpty ? summary.summary : summary.reason)).font(.callout)
+                            if summary.replyDraftEdited == true,summary.replyDraftCheckedBody != summary.bodyFingerprint {Text("Your saved reply draft is kept, but the email changed. Check it in Explore actions.").font(.caption).foregroundStyle(.orange)}
                             if proposals.contains(where:{$0.reviewState == "pending" || model.reviewCreationClaim($0).map({$0.receipt == nil}) == true}) {
                                 Label("A save needs checking",systemImage:"exclamationmark.circle").font(.caption).foregroundStyle(.orange)
                             }
-                            if completedActions == 0 && (!pendingProposals.isEmpty || hasSummaryDraft) {
-                                Button("Explore suggested actions") {model.openReviewSource(message)}.controlSize(.small)
-                            }
-                            if !updates.isEmpty {
-                                DisclosureGroup("Background context") {
-                                    ForEach(updates) { item in discoveryContent(item,embedded:true,emailTitle:message.subject,showsActionEntry:false) }
-                                }
-                            }
-                            HStack {
+                            HStack(spacing:8) {
+                                exploreButton(suggested:!pendingProposals.isEmpty || hasSummaryDraft,completed:completedActions) {model.openReviewSource(message)}
+                                Button("View email") {model.select(message)}
                                 ReviewFeedbackButton(model:model,topic:message.subject,email:.init(message:message,summary:summary),isCurrent:{model.emailSummaries.feedbackSourceCurrent(message,summary:summary,model:model)})
-                                Button("View email") { model.select(message) }
-                                Spacer(); Button("Dismiss") { model.emailSummaries.dismiss(message.id,model:model,expectedRegistration:summary.registration,expectedVersion:ReviewAcknowledgementRules.emailVersion(message,summary)) }
-                            }.controlSize(.small)
+                                Spacer()
+                                Button("Dismiss",action:dismiss)
+                            }.controlSize(.small).padding(.top,4)
                         }.taskCard()
+                        .contextMenu {
+                            Button("Explore actions") {model.openReviewSource(message)}
+                            Button("View email") {model.select(message)}
+                            if hasBackground {Button("Background context") {backgroundID="mail:"+message.id}}
+                            if card.handling != nil {Button("Keep in review") {model.emailSummaries.keepForReview(summary.id,model:model)}}
+                            if summary.keepInReview == true {Button("Use inferred status") {model.emailSummaries.keepForReview(summary.id,model:model,keep:false)}}
+                            Divider()
+                            Button("Dismiss",action:dismiss)
+                        }
+                        .popover(isPresented:showsBackground("mail:"+message.id),arrowEdge:.bottom) {
+                            backgroundPanel {
+                                if let relevance=summary.personalRelevance {Label(relevance.reason,systemImage:"person.crop.circle.badge.checkmark").font(.callout)}
+                                if let handling=card.handling {
+                                    Text("Inferred connection to “"+handling.native.title+"” · "+handling.reason).font(.callout).textSelection(.enabled)
+                                    Button("Keep in review") {backgroundID=nil;model.emailSummaries.keepForReview(summary.id,model:model)}.controlSize(.small)
+                                }
+                                if summary.keepInReview == true {HStack {Text("Kept in review by you").font(.callout);Button("Use inferred status") {backgroundID=nil;model.emailSummaries.keepForReview(summary.id,model:model,keep:false)}.controlSize(.small)}}
+                                ForEach(updates) {item in backgroundUpdate(item,emailTitle:message.subject)}
+                            }
+                        }
                     }
                     if !pending.isEmpty { Text("Delegated work").font(.headline) }
                     ForEach(pending) { item in
@@ -281,7 +300,7 @@ struct PATasksView: View {
         }
         .sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record,model:model) }
         .sheet(isPresented:$showingActivity) {BackgroundActivityView(model:model)}
-        .onChange(of:model.inference.activeID) { sourceDiscovery=nil;answering=nil;answeringLearning=nil;answer="" }
+        .onChange(of:model.inference.activeID) { sourceDiscovery=nil;answering=nil;answeringLearning=nil;answer="";backgroundID=nil }
         .onChange(of:discoveries.map(\.id)) { if let sourceDiscovery,!discoveries.contains(where:{$0.id == sourceDiscovery.id}) { self.sourceDiscovery=nil } }
     }
 }
