@@ -116,6 +116,8 @@ struct ChatApprovalPreview:View {
             .padding(20).frame(minWidth:650,minHeight:600).preferredColorScheme(.dark)
             .task {
                 guard !seeded else {return};seeded=true
+                // The preview has no saved account; an in-memory fictional owner lets the sample chat open.
+                if model.inference.activeID.isEmpty {model.inference.useChatGPTForFictionalEvaluation();model.chatGPT.activeID="fictional-chat-preview"}
                 do {model.assistant.seedChatApprovalPreview(try await ReviewInboxEvaluation.chatApprovalFixture(model))}
                 catch {model.assistant.error=error.localizedDescription}
             }
@@ -282,6 +284,7 @@ struct AssistantPanel: View {
         if capture.preparationNotes == nil {capture.preparationNotes=(turn.toolErrors ?? []).filter(PAReadPrerequisite.legacyPreparation)}
         inspectingContext=capture
     }
+    private func copyMessage(_ turn:AssistantTurn) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(turn.content,forType:.string) }
     @ViewBuilder private var historicalDraft: some View {
         let key = displayedSessionID ?? selectedID
         let text = assistant.drafts.text(registration:model.inference.activeID,widget:imageDraftWidget,conversation:key)
@@ -480,17 +483,12 @@ struct AssistantPanel: View {
                                 if let date = turn.created, !replyingHere { TranscriptHoverTime(date:date).padding(.horizontal,turn.role == "user" ? 4 : 2) }
                             }
                                 .modifier(TranscriptRowHover())
-                            .contextMenu {
-                                if turn.contextCapture != nil {
-                                    Button("Sources & searches…",systemImage:"magnifyingglass") {inspectContext(turn)}
-                                        .accessibilityIdentifier("pa-sources-searches-" + turn.id.uuidString)
-                                }
-                                if !turn.content.isEmpty { Button("Copy",systemImage:"doc.on.doc") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(turn.content,forType:.string) } }
-                            }
+                            .background(TranscriptMessageMenu(sources:turn.contextCapture == nil ? nil : {inspectContext(turn)},copy:turn.content.isEmpty ? nil : {copyMessage(turn)}))
                             .accessibilityActions {
                                 if turn.contextCapture != nil {
                                     Button("Sources & searches") {inspectContext(turn)}
                                 }
+                                if !turn.content.isEmpty { Button("Copy") {copyMessage(turn)} }
                             }
                             .accessibilityIdentifier("pa-turn-"+turn.id.uuidString)
 
@@ -852,6 +850,55 @@ extension EnvironmentValues {
 private struct TranscriptRowHover: ViewModifier {
     @State private var hovered = false
     func body(content: Content) -> some View { content.environment(\.transcriptRowHovered, hovered).onHover { hovered = $0 } }
+}
+
+/// A message's right-click menu: Sources & searches (when the reply saved its context) and Copy.
+/// Selectable reply text answers a right-click with its own Copy/Look Up menu and the gaps between
+/// lines take no clicks, so a `.contextMenu` here almost never opened. This watches for right-clicks
+/// and Control-clicks anywhere on the message instead; left-clicks and drags still select text.
+private struct TranscriptMessageMenu: NSViewRepresentable {
+    var sources: (() -> Void)?
+    var copy: (() -> Void)?
+    func makeNSView(context: Context) -> Probe { let view = Probe(); view.sources = sources; view.copy = copy; return view }
+    func updateNSView(_ view: Probe, context: Context) { view.sources = sources; view.copy = copy }
+    static func dismantleNSView(_ view: Probe, coordinator: ()) { view.stop() }
+    final class Probe: NSView {
+        var sources: (() -> Void)?
+        var copy: (() -> Void)?
+        private var monitor: Any?
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow(); stop()
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching:[.rightMouseDown,.leftMouseDown]) { [weak self] event in
+                guard let self, let menu = self.messageMenu(event) else { return event }
+                NSMenu.popUpContextMenu(menu, with: event, for: self)
+                return nil
+            }
+        }
+        func stop() { if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil }
+        /// Only a right-click on this message where it is scrolled into view. The host reports a
+        /// visible rect wider than the message, so the point must also be inside its bounds.
+        private func messageMenu(_ event: NSEvent) -> NSMenu? {
+            guard event.type == .rightMouseDown || event.modifierFlags.contains(.control), let window, event.window === window, !isHiddenOrHasHiddenAncestor else { return nil }
+            let point = convert(event.locationInWindow, from: nil)
+            guard bounds.contains(point), visibleRect.contains(point) else { return nil }
+            let menu = NSMenu()
+            if let sources { menu.addItem(TranscriptMenuItem("Sources & searches…", symbol: "magnifyingglass", run: sources)) }
+            if let copy { menu.addItem(TranscriptMenuItem("Copy", symbol: "doc.on.doc", run: copy)) }
+            return menu.items.isEmpty ? nil : menu
+        }
+    }
+}
+private final class TranscriptMenuItem: NSMenuItem {
+    private let run: () -> Void
+    init(_ title: String, symbol: String, run: @escaping () -> Void) {
+        self.run = run
+        super.init(title: title, action: #selector(choose), keyEquivalent: "")
+        target = self; image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+    }
+    required init(coder: NSCoder) { fatalError("init(coder:) is not used") }
+    @objc private func choose() { run() }
 }
 
 /// The mic inside the message box. While listening it turns red and its ring follows your voice.
