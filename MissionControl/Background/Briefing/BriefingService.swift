@@ -529,6 +529,14 @@ import EventKit
         try? await center.add(UNNotificationRequest(identifier:"missioncontrol-review-question-"+question.id,content:content,trigger:nil))
     }
     #if DEBUG
+    /// `--preview-widget-sizes`: a made-up brief and one question, in disposable storage.
+    func seedWidgetSizesPreview(_ model:DashboardModel) throws {
+        guard ProcessInfo.processInfo.arguments.contains("--preview-widget-sizes") else {throw SummaryFailure.invalid}
+        let brief=DailyBriefing(id:"fictional-widget-sizes-brief",registration:model.inference.activeID,day:BriefingRules.day(.now),created:.now,items:[],sources:[],coverage:"Fictional preview only",sourceScope:scope(model),message:"Good morning. A light day. Design studio is at 10:00 in Room 2.14, and your tutor asked everyone to bring printed drafts. Lunch with Alex is at 13:00. The parcel needs collecting from the post office before 17:30. Your essay draft is due on Monday, and Saturday morning is free if you want to start it then.",heartbeatID:"fictional-widget-sizes")
+        state.updatedBriefs=[brief.registration:brief]
+        state.reviewQuestions=[.init(question:"Do you want Saturday morning kept free for the essay?",sourceIDs:[],snapshot:brief)]
+        try save()
+    }
     func seedHeartbeatPreview(_ model:DashboardModel) throws {
         guard ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") else {throw SummaryFailure.invalid}
         let snapshot=DailyBriefing(id:"fictional-preview-brief",registration:model.inference.activeID,day:BriefingRules.day(.now),created:.now,items:[],sources:[.init(id:"memory_0",label:"Fictional Orion project review",kind:"memory",date:nil,originalID:"fictional-project")],coverage:"Fictional preview only",sourceScope:scope(model),message:"Your prototype review is tomorrow. The report reminder is in place; the remaining uncertainty is whether the revised prototype is ready.",heartbeatID:"fictional-preview-cycle")

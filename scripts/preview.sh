@@ -4,17 +4,19 @@
 # app's preferences, single-copy check or window, and only the preview flag runs.
 #
 #   scripts/preview.sh [--no-build] --preview-calendar-scroll
+#   scripts/preview.sh --preview-widget-sizes --sample   (later flags pass through)
 #
 # Builds Debug into a reusable root (MISSIONCONTROL_PREVIEW_ROOT, default
 # /private/tmp/3po-preview) unless --no-build, then launches "3PO Preview".
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-build=1; flag=""
+build=1; flag=""; extra=()
 while (( $# )); do
   case "$1" in
     --no-build) build=0 ;;
     --preview-*) [[ -z "$flag" ]] || { print -u2 -- "Pass one preview flag."; exit 64; }; flag="$1" ;;
+    --*) [[ -n "$flag" ]] || { print -u2 -- "Put the preview flag before $1."; exit 64; }; extra+=("$1") ;;
     *) print -u2 -- "Unknown option $1 (previews use --preview-* flags)"; exit 64 ;;
   esac
   shift
@@ -34,5 +36,5 @@ plist="$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.mylomichael.missioncontrol.preview" -c "Set :CFBundleName 3PO Preview" "$plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 3PO Preview" "$plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string 3PO Preview" "$plist"
 codesign --force --deep -s - "$app" 2>/dev/null
-open -n "$app" --args "$flag"
-print -- "Opened 3PO Preview ($flag) from $app"
+open -n "$app" --args "$flag" "${extra[@]}"
+print -- "Opened 3PO Preview ($flag${extra:+ ${extra[*]}}) from $app"
