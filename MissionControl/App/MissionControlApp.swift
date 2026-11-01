@@ -88,6 +88,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if ProcessInfo.processInfo.arguments.contains("--preview-design") && ProcessInfo.processInfo.arguments.contains("--snapshot") {
             DispatchQueue.main.async { Task { await DesignPreview.render(dashboard); NSApp.terminate(nil) } }
         }
+        if ProcessInfo.processInfo.arguments.contains("--preview-widget-sizes") && ProcessInfo.processInfo.arguments.contains("--sample") && ProcessInfo.processInfo.arguments.contains("--snapshot") {
+            DispatchQueue.main.async { Task { await WidgetSizesPreview.render(dashboard); NSApp.terminate(nil) } }
+        }
         if ProcessInfo.processInfo.arguments.contains("--preview-settings-context") && ProcessInfo.processInfo.arguments.contains("--snapshot") {
             DispatchQueue.main.async { Task { await SettingsContextPreview.render(dashboard) } }
         }
@@ -109,6 +112,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 CalendarScrollPreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-design") {
                 DesignPreview(model:model)
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-widget-sizes") {
+                WidgetSizesPreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") {
                 if ProcessInfo.processInfo.arguments.contains("--heartbeat-progress-preview") {HeartbeatProgressPreviewScreen(model:model)}
                 else if ProcessInfo.processInfo.arguments.contains("--workspace-colours-preview") {WorkspaceThemePreview()}

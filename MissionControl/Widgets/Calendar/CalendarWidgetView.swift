@@ -34,7 +34,10 @@ struct CalendarWidgetView: View {
     private var mode: String { configuration.calendarMode }
     private var motion = MotionPreference()
     @Environment(\.calendarPreviewSnapshot) private var environmentSnapshot
+    @Environment(\.widgetLayout) private var layout
     private var range: DateInterval {
+        // Glances always look ahead from today, whatever view the full widget was left in.
+        if layout.compact { let start = calendar.startOfDay(for:.now); return DateInterval(start:start,end:calendar.date(byAdding:.day,value:7,to:start)!) }
         if mode == "month" {
             let month = calendar.dateInterval(of:.month,for:configuration.date)!
             let start = calendar.dateInterval(of:.weekOfYear,for:month.start)!.start
@@ -61,6 +64,66 @@ struct CalendarWidgetView: View {
         }
     }
     var body: some View {
+        Group {
+            if layout.compact { glance } else { full }
+        }.padding(16).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+            .onAppear { mounted=true; returnToToday() }
+            .onDisappear { mounted=false; dragCapture=nil }
+            .onChange(of:widgetID) { dragCapture=nil; returnToToday() }
+            .onChange(of:model.inference.activeID) { dragCapture=nil }
+            .onChange(of:model.sourceRevision) { dragCapture=nil }
+            .onChange(of:configuration.calendarMode) { dragCapture=nil }
+            .onChange(of:configuration.sourceExclusions) { dragCapture=nil }
+            .task(id:"\(range.start.timeIntervalSince1970):\(range.end.timeIntervalSince1970):\(model.widgetCalendars.revision)") { await load() }
+            .onChange(of:configuration.date) { showDatePicker = false; dragCapture=nil }
+            .sheet(item:$selectedEvent) { NativeItemEditor(model:model,target:.event($0.event)) }
+            .alert("Calendar move",isPresented:Binding(get:{ moveError != nil },set:{ if !$0 { moveError=nil } })) {
+                Button("OK",role:.cancel) { moveError=nil }
+            } message: { Text(moveError ?? "") }
+    }
+    /// What's left of today, then the coming days: a date and the next events, more of them as the widget grows.
+    private var glance: some View {
+        let now = Date.now
+        func key(_ event: AgendaEvent) -> (Date, Int, Date) { (calendar.startOfDay(for:max(event.start,now)), event.allDay ? 0 : 1, event.start) }
+        let ahead = events.filter { $0.end > now }.sorted { key($0) < key($1) }
+        // Two-row sizes keep to today and the next day that has something on; a tall one shows the week.
+        let horizon = ahead.first.flatMap { calendar.date(byAdding:.day,value:calendar.isDateInToday(key($0).0) ? 2 : 1,to:key($0).0) }
+        let upcoming = layout.short ? ahead.filter { key($0).0 < horizon ?? .distantFuture } : ahead
+        return VStack(alignment:.leading,spacing:layout == .small ? 8 : 10) {
+            WidgetHeader(title:"Calendar",symbol:"calendar",meta:layout == .small ? now.formatted(.dateTime.weekday(.abbreviated).day()) : nil) {
+                if layout == .medium {
+                    SourceStatusIndicator(title:"Calendar",health:SourceHealth(lastSuccess:updated,error:error,loading:loading))
+                    Button { model.newNativeItem(.event,date:.now) } label: { Image(systemName:"plus") }.help("New event").accessibilityLabel("New event").disabled(model.writing)
+                }
+            }.controlSize(.small)
+            if let error, layout != .small { Text((updated == nil ? "" : "Stale · ") + error).font(.caption).foregroundStyle(.orange).lineLimit(2) }
+            HStack(alignment:.top,spacing:16) {
+                if layout == .medium {
+                    VStack(alignment:.leading,spacing:0) {
+                        Text(now.formatted(.dateTime.weekday(.wide)).uppercased()).font(.system(size:10.5,weight:.bold)).tracking(1).foregroundStyle(palette[.accent]).lineLimit(1)
+                        Text(now.formatted(.dateTime.day())).font(.system(size:38,weight:.semibold,design:.rounded)).monospacedDigit()
+                        Text(now.formatted(.dateTime.month(.wide))).font(.caption.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
+                    }.frame(width:78,alignment:.leading)
+                }
+                GlanceRows(items:upcoming,rowHeight:layout == .tall ? 40 : 32,empty:"Nothing else this week.",scrolls:layout == .tall) { event in glanceRow(event,now:now) }
+            }
+        }.contextMenu { if layout != .medium { Button("New event") { model.newNativeItem(.event,date:.now) }.disabled(model.writing) } }
+    }
+    private func glanceRow(_ event: AgendaEvent, now: Date) -> some View {
+        let day = calendar.startOfDay(for:max(event.start,now))
+        let when = event.allDay ? "All day" : event.start <= now ? "Now · until " + event.end.formatted(date:.omitted,time:.shortened) : event.start.formatted(date:.omitted,time:.shortened)
+        let dayLabel = calendar.isDateInToday(day) ? nil : calendar.isDateInTomorrow(day) ? "Tomorrow" : day.formatted(.dateTime.weekday(.abbreviated).day())
+        return Button { select(event) } label: {
+            HStack(alignment:.top,spacing:7) {
+                RoundedRectangle(cornerRadius:2).fill(color(event)).frame(width:3)
+                VStack(alignment:.leading,spacing:2) {
+                    Text(event.title).font(.callout.weight(.medium)).lineLimit(layout == .tall ? 2 : 1)
+                    Text([dayLabel,when].compactMap { $0 }.joined(separator:" · ")).font(.caption).foregroundStyle(event.start <= now && !event.allDay ? palette[.accent] : .secondary).lineLimit(1)
+                }.frame(maxWidth:.infinity,alignment:.leading)
+            }.contentShape(Rectangle())
+        }.buttonStyle(.plain).help(event.title + (event.location.isEmpty ? "" : " · " + event.location))
+    }
+    private var full: some View {
         VStack(alignment:.leading,spacing:12) {
             WidgetHeader(title:"Calendar",symbol:"calendar") {
                 SourceStatusIndicator(title:"Calendar",health:SourceHealth(lastSuccess:updated,error:error,loading:loading))
@@ -87,20 +150,7 @@ struct CalendarWidgetView: View {
             if mode == "month" { monthView }
             else if mode == "day" || mode == "week" { timelineView }
             else { agendaView }
-        }.padding(16).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
-            .onAppear { mounted=true; returnToToday() }
-            .onDisappear { mounted=false; dragCapture=nil }
-            .onChange(of:widgetID) { dragCapture=nil; returnToToday() }
-            .onChange(of:model.inference.activeID) { dragCapture=nil }
-            .onChange(of:model.sourceRevision) { dragCapture=nil }
-            .onChange(of:configuration.calendarMode) { dragCapture=nil }
-            .onChange(of:configuration.sourceExclusions) { dragCapture=nil }
-            .task(id:"\(range.start.timeIntervalSince1970):\(range.end.timeIntervalSince1970):\(model.widgetCalendars.revision)") { await load() }
-            .onChange(of:configuration.date) { showDatePicker = false; dragCapture=nil }
-            .sheet(item:$selectedEvent) { NativeItemEditor(model:model,target:.event($0.event)) }
-            .alert("Calendar move",isPresented:Binding(get:{ moveError != nil },set:{ if !$0 { moveError=nil } })) {
-                Button("OK",role:.cancel) { moveError=nil }
-            } message: { Text(moveError ?? "") }
+        }
     }
     private func returnToToday() {
         configuration.date = .now

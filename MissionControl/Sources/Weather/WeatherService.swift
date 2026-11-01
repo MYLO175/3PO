@@ -46,7 +46,18 @@ import SwiftData
             forecast = try? LocalRecordRepository(container: container).decode("localWeather", as: WeatherForecast.self)
         }
     }
+    #if DEBUG
+    @ObservationIgnored private var fixtureOnly = false
+    /// `--preview-widget-sizes`: a made-up forecast shown as if location were allowed. No location or network request follows.
+    func seedWidgetSizesPreview(_ value: WeatherForecast) {
+        guard ProcessInfo.processInfo.arguments.contains("--preview-widget-sizes") else { return }
+        fixtureOnly = true; forecast = value; authorization = .authorizedAlways
+    }
+    #endif
     func startRefresh(allowPrompt: Bool = false, force: Bool = false) {
+        #if DEBUG
+        guard !fixtureOnly else { return }
+        #endif
         guard enabled, !loading, force || Date.now.timeIntervalSince(lastAttempt) >= 1800 else { return }
         guard allowed || (allowPrompt && authorization == .notDetermined) else { return }
         work = Task { await refresh(allowPrompt:allowPrompt) }
@@ -99,6 +110,9 @@ import SwiftData
         let continuation = locationWait; locationWait = nil; continuation?.resume(with:result)
     }
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        #if DEBUG
+        guard !fixtureOnly else { return }
+        #endif
         let changed = authorization != manager.authorizationStatus
         if changed { authorization = manager.authorizationStatus; scopeRevision += 1 }
         if locationWait != nil {

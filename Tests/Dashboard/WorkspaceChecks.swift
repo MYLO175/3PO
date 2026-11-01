@@ -63,7 +63,17 @@ struct WorkspaceChecks {
         let weather=WidgetPlacement(kind:.weather,rect:GridRect(x:0,y:0,w:3,h:3))
         let weatherRoundTrip=try JSONDecoder().decode(WidgetPlacement.self,from:JSONEncoder().encode(weather))
         assert(weatherRoundTrip == weather && weatherRoundTrip.kind == .weather)
-        assert(WidgetKind.weather.minimumColumns == 3 && WidgetKind.weather.minimumRows == 3)
+        assert(WidgetKind.weather.defaultColumns == 3 && WidgetKind.weather.defaultRows == 3,"Plain Add widget keeps each widget's earlier size")
+        assert(WidgetKind.allCases.allSatisfy { $0.minimumColumns == 2 && $0.minimumRows == 2 },"Every widget shrinks to Small")
+        assert(WidgetSize.allCases.map { "\($0.columns)x\($0.rows)" } == ["2x2","4x2","4x4","8x4","2x4","8x2"],"Preset grid sizes")
+        assert(WidgetSize.matching(GridRect(x:3,y:1,w:4,h:2)) == .medium && WidgetSize.matching(GridRect(x:0,y:0,w:3,h:3)) == nil)
+        assert(WidgetLayout(rect:GridRect(x:0,y:0,w:2,h:2),size:CGSize(width:184,height:162)) == .small)
+        assert(WidgetLayout(rect:GridRect(x:0,y:0,w:8,h:2),size:CGSize(width:772,height:162)) == .medium,"Wide is a medium glance")
+        assert(WidgetLayout(rect:GridRect(x:0,y:0,w:2,h:4),size:CGSize(width:184,height:336)) == .tall)
+        assert(WidgetLayout(rect:GridRect(x:0,y:0,w:3,h:4),size:CGSize(width:282,height:336)) == .large,"Three-column widgets keep the full layout")
+        assert(WidgetLayout(rect:GridRect(x:0,y:0,w:2,h:2),size:CGSize(width:420,height:340)) == .small,"The chosen grid size wins in a big window")
+        assert(WidgetLayout(rect:GridRect(x:0,y:0,w:4,h:4),size:CGSize(width:200,height:170)) == .small,"A tiny window still gets a glance")
+        assert(WidgetLayout(rect:GridRect(x:0,y:0,w:12,h:8),size:CGSize(width:1100,height:600)) == .large,"Focused view is the full widget")
         let base = WidgetPlacement(kind: .calendar, rect: GridRect(x: 0, y: 0, w: 4, h: 5))
         assert(GridRules.valid(GridRect(x: 4, y: 0, w: 4, h: 5), among: [base]), "Edge touching is allowed")
         assert(!GridRules.valid(GridRect(x: 3, y: 0, w: 4, h: 5), among: [base]), "Horizontal overlap is rejected")
@@ -140,6 +150,18 @@ struct WorkspaceChecks {
         assert(!GridRules.valid(GridRect(x:0,y:4,w:4,h:5),among:[],rowLimit:8),"Canvas bottom is bounded")
         let filled = [WidgetPlacement(kind:.calendar,rect:GridRect(x:0,y:0,w:12,h:8))]
         assert(GridRules.firstFree(kind:.reminders,in:filled,rows:8) == nil,"Full pages cannot grow downward")
+        var tiled:[WidgetPlacement]=[]
+        for size in [WidgetSize.extraLarge,.large,.wide,.tall,.small,.medium] {
+            guard let rect=GridRules.firstFree(columns:size.columns,rows:size.rows,in:tiled,rowLimit:8) else { preconditionFailure("Every preset fits once on an 8-row page") }
+            tiled.append(WidgetPlacement(kind:.clock,rect:rect))
+        }
+        assert(tiled.map(\.rect) == [GridRect(x:0,y:0,w:8,h:4),GridRect(x:8,y:0,w:4,h:4),GridRect(x:0,y:4,w:8,h:2),GridRect(x:8,y:4,w:2,h:4),GridRect(x:10,y:4,w:2,h:2),GridRect(x:0,y:6,w:4,h:2)],"Presets tile left to right, then down")
+        let corner = WidgetPlacement(kind:.weather,rect:GridRect(x:10,y:6,w:2,h:2))
+        assert(GridRules.resized(corner,to:.large,among:[corner],rows:8) == GridRect(x:8,y:4,w:4,h:4),"A resize at the edge moves in only as far as it must")
+        let neighbour = WidgetPlacement(kind:.clock,rect:GridRect(x:2,y:0,w:2,h:2)), growing = WidgetPlacement(kind:.weather,rect:GridRect(x:0,y:0,w:2,h:2))
+        assert(GridRules.resized(growing,to:.medium,among:[growing,neighbour],rows:8) == GridRect(x:4,y:0,w:4,h:2),"A blocked resize takes the first free place")
+        assert(GridRules.resized(growing,to:.small,among:[growing,neighbour],rows:8) == growing.rect,"The widget's own space is free")
+        assert(GridRules.resized(growing,to:.extraLarge,among:[growing]+filled,rows:8) == nil,"No room is refused, not overlapped")
         let legacy = try JSONDecoder().decode(DashboardPage.self,from:Data("{\"id\":\"00000000-0000-0000-0000-000000000001\",\"title\":\"Legacy\",\"widgets\":[]}".utf8))
         assert(legacy.canvasRows == nil && GridRules.rows(legacy) == 8)
         let tall = DashboardPage(title:"Legacy tall",widgets:[WidgetPlacement(kind:.calendar,rect:GridRect(x:0,y:3,w:12,h:15))])
@@ -183,8 +205,8 @@ struct WorkspaceChecks {
         var clock = WidgetConfiguration(); clock.clockShowsTime = false; clock.clockShowsSeconds = true
         let clockData = try JSONEncoder().encode(clock), restoredClock = try JSONDecoder().decode(WidgetConfiguration.self,from:clockData)
         assert(restoredClock.clockShowsTime == false && restoredClock.clockShowsSeconds == true)
-        assert(WidgetKind.clock.minimumRows == 2 && WidgetKind.clock.minimumColumns == 3)
-        print("PASS: named theme persistence and revision guards, fixed viewport geometry, continuous previews, workspace persistence, clock preferences, toolbar preservation and latest-supported Undo ordering")
+        assert(WidgetKind.clock.defaultRows == 2 && WidgetKind.clock.defaultColumns == 3)
+        print("PASS: named theme persistence and revision guards, fixed viewport geometry, continuous previews, workspace persistence, preset sizes and glance layouts, clock preferences, toolbar preservation and latest-supported Undo ordering")
     }
     static func savedThemeChecks() throws {
         let colors = ##"{"profiles":{"light":{"canvas":"#EEF1F3"},"dark":{"canvas":"#101823","futureRole":"#AABBCC"},"futureMode":{"canvas":"#112233"}},"futureMetadata":{"keep":true}}"##

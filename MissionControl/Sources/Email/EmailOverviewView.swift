@@ -1,5 +1,6 @@
 import SwiftUI
 struct EmailOverviewView: View {
+    @Environment(\.workspacePalette) private var palette
     @Bindable var model: DashboardModel
     @Bindable var summaries: EmailSummaryService
     var configuration: Binding<WidgetConfiguration>? = nil
@@ -11,7 +12,34 @@ struct EmailOverviewView: View {
             !(configuration?.wrappedValue.sourceExclusions.contains(message.accountID) ?? false) && (filter == "All" || (filter == "Needs action" ? EmailHighlightRules.needsAction(summary,replied:message.replied) : filter == "Worth reading" ? summary.worthReading == true && !EmailHighlightRules.needsAction(summary,replied:message.replied) : summary.followUpDate != nil))
         }
     }
+    @Environment(\.widgetLayout) private var layout
     var body: some View {
+        Group { if layout.compact { glance } else { full } }
+            .sheet(isPresented:$showRelevance) {ReviewPolicyView(model:model)}.onChange(of:model.inference.activeID) {showRelevance=false}.onChange(of:filter) { limit = 6 }
+    }
+    /// Highlighted emails, those needing action first, with how many need action once there is room.
+    private var glance: some View {
+        let items=available.map { message,summary in EmailGlanceItem(message:message,summary:summary,needsAction:EmailHighlightRules.needsAction(summary,replied:message.replied)) }
+            .enumerated().sorted { ($0.element.needsAction ? 0 : 1,$0.offset) < ($1.element.needsAction ? 0 : 1,$1.offset) }.map(\.element)
+        let actions=items.filter(\.needsAction).count
+        return VStack(alignment:.leading,spacing:layout == .small ? 8 : 10) {
+            WidgetHeader(title:"Email summary",symbol:"envelope.badge") {
+                if layout != .small, summaries.busy { ProgressView().controlSize(.small) }
+            }
+            HStack(alignment:.top,spacing:16) {
+                if layout == .medium,!items.isEmpty { GlanceCount(value:actions,label:actions == 1 ? "needs action" : "need action").frame(width:78,alignment:.leading) }
+                GlanceRows(items:items,rowHeight:34,empty:!summaries.enabled ? "Email monitoring is off." : "Nothing highlighted.",scrolls:layout == .tall) { item in
+                    Button { model.select(item.message) } label: {
+                        VStack(alignment:.leading,spacing:1) {
+                            Text(item.message.subject.isEmpty ? "(No subject)" : item.message.subject).font(.callout.weight(.medium)).lineLimit(1)
+                            Text(EmailHighlightRules.category(item.summary,replied:item.message.replied)+" · "+item.message.sender).font(.caption).foregroundStyle(item.summary.attention ? palette[.accent] : .secondary).lineLimit(1)
+                        }.frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
+                    }.buttonStyle(.plain).help(PAProse.display(item.summary.summary))
+                }
+            }
+        }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+    }
+    private var full: some View {
         VStack(alignment:.leading,spacing:12) {
             WidgetHeader(title:"Email summary",symbol:"envelope.badge") {
                 Button {showRelevance=true} label:{Image(systemName:"slider.horizontal.3")}.help("Review guidance").accessibilityLabel("Review guidance")
@@ -65,8 +93,14 @@ struct EmailOverviewView: View {
             }
             if summaries.paused || model.inference.usagePaused { Text(model.inference.usagePaused ? "Subscription processing paused; saved suggestions are available." : "Monitoring paused. Check incoming mail to resume one bounded batch.").font(.caption).foregroundStyle(.orange) }
             if let error = summaries.error { DisclosureGroup("Monitoring details") { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }.font(.caption) }
-        }.sheet(isPresented:$showRelevance) {ReviewPolicyView(model:model)}.onChange(of:model.inference.activeID) {showRelevance=false}.onChange(of:filter) { limit = 6 }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+        }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
     }
+}
+private struct EmailGlanceItem:Identifiable {
+    var message:MailMessage
+    var summary:EmailSummary
+    var needsAction:Bool
+    var id:String {message.id}
 }
 struct EmailSummarySettings: View {
     @Bindable var model: DashboardModel
