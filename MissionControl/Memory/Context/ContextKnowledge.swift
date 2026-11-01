@@ -166,9 +166,18 @@ import EventKit
         return targets
     }
     /// Current eligibility is evaluated before every projection, including after source withdrawal.
+    /// A shared evaluation pass (`withSharedContextEvaluation`) builds each identical projection once.
     func contextKnowledge(registration: String, topic: UUID? = nil, includeTopics: Bool = true,
                           allowedMemoryIDs: Set<UUID>? = nil, includeRecent: Bool = true, retainingReferences: [String: String] = [:],
                           retainingReferenceVersions: [String: Set<String>] = [:], purpose: ContextKnowledgePurpose = .conversation, mailAccounts: Set<String>? = nil, whatsappReady: Bool = true) -> [ContextKnowledgeRecord] {
+        contextEvaluation.value(ContextEvaluationBatch.KnowledgeRequest(registration: registration, topic: topic, includeTopics: includeTopics, allowedMemoryIDs: allowedMemoryIDs, includeRecent: includeRecent,
+                                retainingReferences: retainingReferences, retainingReferenceVersions: retainingReferenceVersions, purpose: purpose, mailAccounts: mailAccounts, whatsappReady: whatsappReady)) {
+            buildContextKnowledge(registration: registration, topic: topic, includeTopics: includeTopics, allowedMemoryIDs: allowedMemoryIDs, includeRecent: includeRecent,
+                                  retainingReferences: retainingReferences, retainingReferenceVersions: retainingReferenceVersions, purpose: purpose, mailAccounts: mailAccounts, whatsappReady: whatsappReady)
+        }
+    }
+    private func buildContextKnowledge(registration: String, topic: UUID?, includeTopics: Bool, allowedMemoryIDs: Set<UUID>?, includeRecent: Bool, retainingReferences: [String: String],
+                                       retainingReferenceVersions: [String: Set<String>], purpose: ContextKnowledgePurpose, mailAccounts: Set<String>?, whatsappReady: Bool) -> [ContextKnowledgeRecord] {
         #if DEBUG
         contextKnowledgeBuildCount += 1
         #endif
@@ -592,6 +601,10 @@ import EventKit
                                        _ body: (@escaping ([String: String]?) -> Bool) -> T) -> T {
         var active = true
         defer { active = false }
+        return body(contextPageAvailability(registration: registration, captures: captures) { active })
+    }
+    /// The shared check behind `withContextPageAvailability`; it fails closed once `active` is false.
+    func contextPageAvailability(registration: String, captures: [[String: String]], active: @escaping () -> Bool) -> ([String: String]?) -> Bool {
         var retained: [String: Set<String>] = [:]
         var purposes = Set<ContextKnowledgePurpose>()
         for versions in captures where !versions.isEmpty && !isConversationDirectoryReceipt(versions) {
@@ -600,16 +613,20 @@ import EventKit
                 .compactMap { ContextKnowledgePurpose(rawValue: String($0.dropFirst("context-purpose:".count))) }
             purposes.formUnion(captured.isEmpty ? [.conversation] : captured)
         }
+        // Each captured purpose is projected once, when a receipt first needs it; nothing
+        // changes inside the synchronous scope, so a later build sees the same state.
         var current: [ContextKnowledgePurpose: [String: String]] = [:]
-        if assistant.memory.enabled, registration == inference.activeID {
-            for purpose in purposes.sorted(by: { $0.rawValue < $1.rawValue }) {
-                let records = contextKnowledge(registration: registration, retainingReferenceVersions: retained, purpose: purpose)
-                current[purpose] = contextDependencyVersions(registration: registration, records: records)
-            }
+        let project = { (purpose: ContextKnowledgePurpose) -> [String: String]? in
+            guard self.assistant.memory.enabled, registration == self.inference.activeID, purposes.contains(purpose) else { return nil }
+            if let value = current[purpose] { return value }
+            let records = self.contextKnowledge(registration: registration, retainingReferenceVersions: retained, purpose: purpose)
+            let value = self.contextDependencyVersions(registration: registration, records: records)
+            current[purpose] = value
+            return value
         }
-        return body { versions in
+        return { versions in
             ContextPageDependencyRules.available(versions) { versions in
-                guard active, registration == self.inference.activeID else { return false }
+                guard active(), registration == self.inference.activeID else { return false }
                 if versions.keys.allSatisfy({ $0 == "instruction:review" }) {
                     return self.contextKnowledgeAvailable(registration: registration, versions: versions)
                 }
@@ -621,7 +638,7 @@ import EventKit
                     .compactMap { ContextKnowledgePurpose(rawValue: String($0.dropFirst("context-purpose:".count))) }
                 let required = captured.isEmpty ? [.conversation] : captured
                 return required.allSatisfy { purpose in
-                    guard let projection = current[purpose] else { return false }
+                    guard let projection = project(purpose) else { return false }
                     return versions.allSatisfy { projection[$0.key] == $0.value }
                 }
             }

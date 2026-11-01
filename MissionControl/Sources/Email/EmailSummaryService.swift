@@ -118,7 +118,36 @@ import SwiftData
             return .init(dependency: .init(id: $0.id.uuidString, fingerprint: MemoryDependencyRules.fingerprint(MemoryRetrieval.record($0))), text: text)
         }
     }
-    func policy(_ registration:String)->ReviewPolicyCapture {reviewPolicies.policy(registration, preferences: guidancePreferences(registration))}
+    func policy(_ registration:String)->ReviewPolicyCapture {
+        if let shared=sharedPolicies?[registration] {return shared}
+        let value=reviewPolicies.policy(registration, preferences: guidancePreferences(registration))
+        sharedPolicies?[registration]=value
+        return value
+    }
+    /// Fingerprinting every preference once per checked email stalled heartbeats; one synchronous,
+    /// read-only pass reuses the policy instead. Nothing survives the pass.
+    @ObservationIgnored private var sharedPolicies:[String:ReviewPolicyCapture]?
+    func withSharedPolicy<T>(_ body:()->T)->T {
+        guard sharedPolicies == nil else {return body()}
+        sharedPolicies=[:];defer{sharedPolicies=nil}
+        return body()
+    }
+    /// One synchronous pass over saved assessments checks every page receipt against one shared
+    /// projection per purpose, instead of rebuilding the context for each message.
+    func withSharedAssessmentContext<T>(_ model:DashboardModel,_ body:()->T)->T {
+        let registration=model.inference.activeID
+        return model.withSharedContextPages("email",registration:registration,captures:{
+            self.records.filter{$0.registration == registration}.flatMap(\.pageReceipts)+self.decisions.filter{$0.registration == registration}.compactMap{$0.reviewContext?.contextPageDependencies}
+        },body)
+    }
+    /// Confirmation lookups run for each chat delta, so they share only the confirmation candidates' receipts.
+    private func withSharedConfirmationContext<T>(_ model:DashboardModel,_ body:()->T)->T {
+        let registration=model.inference.activeID
+        guard !model.contextEvaluation.sharesPages("email",registration:registration) else {return model.withSharedContextEvaluation(body)}
+        return model.withSharedContextPages("email-confirmations",registration:registration,captures:{
+            self.records.filter{$0.registration == registration && $0.resolution != nil}.flatMap(\.pageReceipts)
+        },body)
+    }
     func reviewGuidancePending(_ registration: String) -> Bool {
         reviewMemory?.learningEnabled == true && reviewPolicies.readable && reviewPolicies.needsConsolidation(registration, preferences: guidancePreferences(registration))
     }
@@ -145,8 +174,10 @@ import SwiftData
         // Equal legacy nil stamps cannot establish the policy/feedback used by an old decision.
         // Revisit through the existing bounded lane without changing saved cards or legacy recall.
         guard let receipt,reviewPolicies.readable else {return false}
-        let discovery=reviewPreferenceStamp(message,model:model,evidence:evidence)
-        return ReviewPolicyRules.assessmentContextMatches(receipt,policy:policy(model.inference.activeID),discoveryRevision:discovery) && reviewPreferencesAvailable(receipt.preferences,model:model) && model.contextPageDependenciesAvailable(receipt.contextPageDependencies,registration:model.inference.activeID)
+        // Check the saved receipts first: the discovery stamp runs a memory and page search per message.
+        let currentPolicy=policy(model.inference.activeID)
+        guard receipt.policy.matches(currentPolicy),reviewPreferencesAvailable(receipt.preferences,model:model),model.contextPageDependenciesAvailable(receipt.contextPageDependencies,registration:model.inference.activeID) else {return false}
+        return ReviewPolicyRules.assessmentContextMatches(receipt,policy:currentPolicy,discoveryRevision:reviewPreferenceStamp(message,model:model,evidence:evidence))
     }
     /// For new AI input only. Prepared Review display deliberately keeps its saved projection.
     func reviewAssessmentAvailable(_ summary:EmailSummary,model:DashboardModel)->Bool {
@@ -292,12 +323,12 @@ import SwiftData
     }
     func hasPendingIncoming(_ model:DashboardModel,mailReview:MailReviewScope? = nil) -> Bool {
         guard enabled,!paused,reviewPolicies.readable else { return false }
-        return monitored(model).contains { message in
+        return withSharedAssessmentContext(model) { monitored(model).contains { message in
             guard reviewPermitted(message,model:model,scope:mailReview) else {return false}
             guard current(message,model:model) == nil,!rejected.contains(where:{$0.matches(message,registration:model.inference.activeID)}) else { return false }
             let decision=decisions.first { $0.id == message.id && $0.registration == model.inference.activeID && $0.fingerprint == EmailSummary.fingerprint(message) }
             return decision == nil || decision?.readBody == true || (message.received >= Date.now.addingTimeInterval(-30*86400) && decision.map{!headerDecisionCurrent($0,message:message,model:model)} == true) || mightConfirmOutstanding(message,model:model)
-        } || highlights(model).contains {message,summary in reviewPermitted(message,model:model,scope:mailReview) && EmailReplyDraftRules.needsBackgroundDraft(summary,message:message)} || sourceAssessments(model,includeStale:true).contains {message,summary in !rejected.contains(where:{$0.matches(message,registration:model.inference.activeID)}) && reviewPermitted(message,model:model,scope:mailReview) && (actionEvidenceNeedsRecheck(summary,message:message,model:model) || preferenceNeedsRecheck(summary,message:message,model:model) || (summary.observedBodyFingerprint != nil && summary.observedBodyFingerprint != summary.bodyFingerprint) || (summary.completionEvidenceChecked != true && mightConfirmOutstanding(message,model:model)) || (resolutionSourceIDs(model).contains(message.id) && (summary.bodyCheckedAt ?? .distantPast) < Date.now.addingTimeInterval(-86400)))}
+        } || highlights(model).contains {message,summary in reviewPermitted(message,model:model,scope:mailReview) && EmailReplyDraftRules.needsBackgroundDraft(summary,message:message)} || sourceAssessments(model,includeStale:true).contains {message,summary in !rejected.contains(where:{$0.matches(message,registration:model.inference.activeID)}) && reviewPermitted(message,model:model,scope:mailReview) && (actionEvidenceNeedsRecheck(summary,message:message,model:model) || preferenceNeedsRecheck(summary,message:message,model:model) || (summary.observedBodyFingerprint != nil && summary.observedBodyFingerprint != summary.bodyFingerprint) || (summary.completionEvidenceChecked != true && mightConfirmOutstanding(message,model:model)) || (resolutionSourceIDs(model).contains(message.id) && (summary.bodyCheckedAt ?? .distantPast) < Date.now.addingTimeInterval(-86400)))} }
     }
     private func resolutionSourceIDs(_ model:DashboardModel)->Set<String> {
         Set(records.filter{$0.registration == model.inference.activeID && $0.resolution != nil}.flatMap{[$0.id,$0.resolution!.confirmation.messageID]})
@@ -307,8 +338,12 @@ import SwiftData
         guard enabled,model.assistant.contextEnabled else {return []}
         // Confirmation context needs only saved confirmation candidates. Rejecting
         // other rows first avoids revalidating every assessment for each chat delta.
-        return records.lazy.filter{!requiringResolution || $0.resolution != nil}.compactMap{self.sourceAssessment($0,model:model,includeStale:includeStale)}.sorted{$0.0.received == $1.0.received ? $0.0.id < $1.0.id : $0.0.received > $1.0.received}
+        let assess={model.contextEvaluation.value(AssessmentPass(includeStale:includeStale,requiringResolution:requiringResolution)) {
+            self.records.lazy.filter{!requiringResolution || $0.resolution != nil}.compactMap{self.sourceAssessment($0,model:model,includeStale:includeStale)}.sorted{$0.0.received == $1.0.received ? $0.0.id < $1.0.id : $0.0.received > $1.0.received}
+        }}
+        return includeStale ? model.withSharedContextEvaluation(assess) : requiringResolution ? withSharedConfirmationContext(model,assess) : withSharedAssessmentContext(model,assess)
     }
+    private struct AssessmentPass:Hashable {var includeStale:Bool;var requiringResolution:Bool}
     private func sourceAssessment(_ summary:EmailSummary,model:DashboardModel,includeStale:Bool = false)->(MailMessage,EmailSummary)? {
         guard enabled,model.assistant.contextEnabled,summary.registration == model.inference.activeID,includeStale || reviewAssessmentAvailable(summary,model:model),includeStale || (summary.observedBodyFingerprint.map({$0 == summary.bodyFingerprint}) ?? true),
               let message=model.mailData.messages.first(where:{$0.id == summary.id}) ?? summary.message,
@@ -325,10 +360,10 @@ import SwiftData
         return value
     }
     func resolved(_ model:DashboardModel,mailAccounts:Set<String>? = nil,use:AutomaticMemoryUse? = nil,whatsappReady:Bool = true)->[(MailMessage,EmailSummary,EmailResolution)] {
-        sourceAssessments(model,requiringResolution:true).compactMap {message,summary in
+        withSharedConfirmationContext(model) { sourceAssessments(model,requiringResolution:true).compactMap {message,summary in
             guard mailAccounts?.contains(message.accountID) ?? true,let value=resolution(summary,message:message,model:model),use.map({model.reviewAcknowledgementSupportAvailable(memory:value.memoryDependencies,whatsapp:value.whatsappDependencies,use:$0,mailAccounts:mailAccounts,whatsappReady:whatsappReady)}) ?? true else {return nil}
             return (message,summary,value)
-        }
+        } }
     }
     func resolutionContext(_ model:DashboardModel,mailAccounts:Set<String>? = nil,use:AutomaticMemoryUse? = nil,whatsappReady:Bool = true,limit:Int = 24)->[[String:String]] {
         resolved(model,mailAccounts:mailAccounts,use:use,whatsappReady:whatsappReady).prefix(max(0,limit)).map {message,summary,value in
@@ -343,9 +378,9 @@ import SwiftData
         return captured.allSatisfy{current.contains($0)}
     }
     func resolutionRevision(_ model:DashboardModel)->String {
-        EmailNativeEvidence.hash(sourceAssessments(model).filter{$0.1.resolution != nil || $0.1.keepInReview == true}.map {message,summary in
+        withSharedAssessmentContext(model) { EmailNativeEvidence.hash(sourceAssessments(model).filter{$0.1.resolution != nil || $0.1.keepInReview == true}.map {message,summary in
             [message.id,ReviewAcknowledgementRules.emailVersion(message,summary),summary.adviceRevision(replied:message.replied),String(summary.keepInReview == true),summary.resolution.map{EmailNativeEvidence.hash($0)} ?? "",String(resolution(summary,message:message,model:model) != nil)]
-        })
+        }) }
     }
     func completionCandidates(_ requests:[(MailMessage,EmailSummary)],model:DashboardModel,scope:MailReviewScope?)->[(MailMessage,EmailSummary)] {
         let ids=Set(requests.map{$0.0.id})
@@ -375,7 +410,7 @@ import SwiftData
         }.sorted { ($0.1.followUpDate ?? "9999") < ($1.1.followUpDate ?? "9999") }
     }
     func highlights(_ model: DashboardModel,use:AutomaticMemoryUse? = nil,mailAccounts:Set<String>? = nil,whatsappReady:Bool = true) -> [(MailMessage,EmailSummary)] {
-        records.filter { $0.registration == model.inference.activeID && ($0.observedBodyFingerprint == nil || $0.observedBodyFingerprint == $0.bodyFingerprint) && EmailHighlightRules.visible($0) }.compactMap { summary -> (MailMessage,EmailSummary)? in
+        withSharedAssessmentContext(model) { model.contextEvaluation.value(HighlightPass(use:use,mailAccounts:mailAccounts,whatsappReady:whatsappReady)) { records.filter { $0.registration == model.inference.activeID && ($0.observedBodyFingerprint == nil || $0.observedBodyFingerprint == $0.bodyFingerprint) && EmailHighlightRules.visible($0) }.compactMap { summary -> (MailMessage,EmailSummary)? in
             guard let message = model.mailData.messages.first(where:{ $0.id == summary.id }) ?? summary.message,
                   model.mailData.accounts.contains(where:{ $0.id == message.accountID }), !model.assistant.excludedAccounts.contains(message.accountID) else { return nil }
             guard reviewAssessmentAvailable(summary,model:model),resolution(summary,message:message,model:model,use:use,mailAccounts:mailAccounts,whatsappReady:whatsappReady) == nil else {return nil}
@@ -388,8 +423,9 @@ import SwiftData
         }.filter{EmailHighlightRules.visible($0.1)}.sorted { a,b in
             let ar = EmailHighlightRules.rank(a.1,replied:a.0.replied), br = EmailHighlightRules.rank(b.1,replied:b.0.replied)
             if ar != br { return ar < br };if (a.1.personalRelevance != nil) != (b.1.personalRelevance != nil) {return a.1.personalRelevance != nil}; if a.0.received != b.0.received { return a.0.received > b.0.received }; return a.0.id < b.0.id
-        }
+        } } }
     }
+    private struct HighlightPass:Hashable {var use:AutomaticMemoryUse?;var mailAccounts:Set<String>?;var whatsappReady:Bool}
     func dismissalContext(_ model: DashboardModel) -> [[String:String]] {
         EmailReviewRules.feedback(records.filter { $0.registration == model.inference.activeID && $0.message.map {message in !model.assistant.excludedAccounts.contains(message.accountID) && model.mailData.accounts.contains{$0.id == message.accountID}} == true })
     }
@@ -556,7 +592,8 @@ import SwiftData
                 try validateWork()
                 guard registration == model.inference.activeID, !model.assistant.busy, !model.inference.busy,!model.projectPlacement.busy else { return }
                 let messages = monitored(model).filter(permitted)
-                let unknown = Array(messages.filter { message in current(message,model:model) == nil && !decisions.contains { $0.id == message.id && $0.registration == registration && $0.fingerprint == EmailSummary.fingerprint(message) && (headerDecisionCurrent($0,message:message,model:model) || message.received < Date.now.addingTimeInterval(-30*86400)) } }.prefix(20))
+                // Decisions older than 30 days stay settled; test that before rechecking a decision's saved context.
+                let unknown = withSharedAssessmentContext(model) { Array(messages.filter { message in current(message,model:model) == nil && !decisions.contains { $0.id == message.id && $0.registration == registration && $0.fingerprint == EmailSummary.fingerprint(message) && (message.received < Date.now.addingTimeInterval(-30*86400) || headerDecisionCurrent($0,message:message,model:model)) } }.prefix(20)) }
                 if !unknown.isEmpty {
                     phase = "Assessing incoming headers"
                     let aliases = Dictionary(uniqueKeysWithValues:unknown.enumerated().map { ("mail_\($0.offset)",$0.element) })
@@ -578,9 +615,9 @@ import SwiftData
                     }
                     do { try save() } catch { decisions = previous; throw error }
                 }
-                let newMessages = messages.filter { message in current(message,model:model) == nil && (decisions.contains { $0.id == message.id && $0.registration == registration && $0.fingerprint == EmailSummary.fingerprint(message) && $0.readBody } || mightConfirmOutstanding(message,model:model)) && !rejected.contains { $0.matches(message,registration:registration) } }
+                let newMessages = withSharedAssessmentContext(model) { messages.filter { message in current(message,model:model) == nil && (decisions.contains { $0.id == message.id && $0.registration == registration && $0.fingerprint == EmailSummary.fingerprint(message) && $0.readBody } || mightConfirmOutstanding(message,model:model)) && !rejected.contains { $0.matches(message,registration:registration) } } }
                 // Reserve one slot for bounded body-only change detection even during backlog indexing.
-                let rechecks = sourceAssessments(model,includeStale:true).map(\.0).filter { message in
+                let rechecks = withSharedAssessmentContext(model) { sourceAssessments(model,includeStale:true).map(\.0).filter { message in
                     guard permitted(message) else {return false}
                     guard !rejected.contains(where: { $0.matches(message,registration:registration) }), let saved = current(message, model: model) else { return false }
                     return actionEvidenceNeedsRecheck(saved,message:message,model:model) || preferenceNeedsRecheck(saved,message:message,model:model) || (saved.observedBodyFingerprint != nil && saved.observedBodyFingerprint != saved.bodyFingerprint) || (saved.completionEvidenceChecked != true && mightConfirmOutstanding(message,model:model)) || ((resolutionSourceIDs(model).contains(message.id) || (EmailHighlightRules.visible(saved) && resolution(saved,message:message,model:model) == nil)) && (EmailReplyDraftRules.needsBackgroundDraft(saved,message:message) || (saved.bodyCheckedAt ?? .distantPast) < Date.now.addingTimeInterval(-86400)))
@@ -592,7 +629,7 @@ import SwiftData
                     let x=current(first,model:model)?.attention == true,y=current(second,model:model)?.attention == true
                     if x != y {return x}
                     return (current(first,model:model)?.bodyCheckedAt ?? .distantPast) < (current(second,model:model)?.bodyCheckedAt ?? .distantPast)
-                }
+                } }
                 let batch = Array(newMessages.prefix(rechecks.isEmpty ? 3 : 2)) + Array(rechecks.prefix(newMessages.isEmpty ? 3 : 1))
                 for message in batch {
                     try Task.checkCancellation()
@@ -704,4 +741,9 @@ import SwiftData
             }
         }
     }
+}
+
+private extension EmailSummary {
+    /// Every saved context-page receipt an assessment pass may check for this summary.
+    var pageReceipts:[[String:String]] {[reviewContext?.contextPageDependencies,handling?.contextPageDependencies,personalRelevance?.contextPageDependencies,resolution?.contextPageDependencies].compactMap{$0}}
 }

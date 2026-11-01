@@ -138,6 +138,36 @@ import Synchronization
             checks["confirmation lookup ignores unrelated assessments before context-page validation"] = actual == capturedResolutions && model.contextKnowledgeBuildCount == builds
         }
         do {
+            // Heartbeat smoothness (1 November): checking every saved assessment shares one
+            // projection per purpose instead of rebuilding the context for each email.
+            defer {try? model.emailSummaries.seedAdviceFixture(saved)}
+            var row=request
+            row.resolution=nil
+            let additions=(0..<60).map { index -> EmailSummary in
+                var value=row;value.id="fictional-shared-pass-\(index)"
+                let stale=index.isMultiple(of:2) ? [:] : ["memory:"+UUID().uuidString:"fictional-earlier-\(index)"]
+                value.reviewContext = .init(policy:model.emailSummaries.policy(owner),memories:[],discoveryRevision:nil,contextPageDependencies:["context-purpose:email":"1"].merging(stale){first,_ in first})
+                return value
+            }
+            try model.emailSummaries.seedAdviceFixture(saved + additions)
+            let individualStart=model.contextKnowledgeBuildCount
+            let individual=Set(additions.filter{model.emailSummaries.reviewAssessmentAvailable($0,model:model)}.map(\.id))
+            let individualBuilds=model.contextKnowledgeBuildCount-individualStart
+            let sharedStart=model.contextKnowledgeBuildCount
+            let shared=Set(model.emailSummaries.sourceAssessments(model).map(\.1.id)).intersection(additions.map(\.id))
+            let sharedBuilds=model.contextKnowledgeBuildCount-sharedStart
+            checks["shared assessment pass preserves each exact page receipt result"] = shared == individual && individual.count == 30
+            checks["shared assessment pass builds context once per purpose, not once per email"] = individualBuilds >= additions.count && sharedBuilds <= 3
+            checks["shared pass leaves no page check or projection behind"] = model.contextEvaluation.pageAvailability(additions[0].reviewContext?.contextPageDependencies,registration:owner) == nil && {
+                let before=model.contextKnowledgeBuildCount
+                _=model.contextKnowledge(registration:owner,purpose:.email);_=model.contextKnowledge(registration:owner,purpose:.email)
+                return model.contextKnowledgeBuildCount-before == 2
+            }()
+            var changed=additions;changed[0].reviewContext?.contextPageDependencies?["memory:"+UUID().uuidString]="fictional-later-change"
+            try model.emailSummaries.seedAdviceFixture(saved + changed)
+            checks["the next shared pass sees a receipt that became stale"] = !model.emailSummaries.sourceAssessments(model).contains{$0.1.id == changed[0].id} && model.emailSummaries.sourceAssessments(model).contains{$0.1.id == changed[2].id}
+        }
+        do {
             let capturedMail=model.mailData
             defer {model.mailData=capturedMail;try? model.emailSummaries.seedAdviceFixture(saved)}
             var additions:[EmailSummary]=[]
