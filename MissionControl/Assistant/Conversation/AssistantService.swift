@@ -350,7 +350,12 @@ import Observation
     func seedChatApprovalPreview(_ proposal:AssistantActionProposal) {
         guard ProcessInfo.processInfo.arguments.contains("--preview-chat-approval"),let id=openPA(),let c=allConversations.firstIndex(where:{$0.id == id}) else {return}
         allConversations[c].turns.append(.init(role:"user",content:"Add matching projects for the four remaining fictional modules.",completed:true))
-        allConversations[c].turns.append(.init(role:"assistant",content:"Review the proposed actions below. Approve to carry them out, or reply with changes.",completed:true,actionApprovals:[proposal]))
+        var reply=AssistantTurn(role:"assistant",content:"Review the proposed actions below. Approve to carry them out, or reply with changes.",completed:true,actionApprovals:[proposal])
+        // A fictional trace so the reply's right-click Sources & searches has something to open.
+        var capture=PAContextCapture(model:"Fictional model",focusAreas:[],memoryIDs:[],eligibleMemoryCount:0,notebookMemoryIDs:[],workspaceIDs:[],historyTurnIDs:[],excerptedHistoryIDs:[],sourceSnapshotIncluded:false,sourceSnapshotBytes:0,profileSetup:false)
+        capture.lookups=[.init(tool:"read_life_items",query:"Modules",status:"completed",resultCount:4),.init(tool:"read_context_page",query:"Fictional Engineering",status:"completed",resultCount:1)]
+        reply.contextCapture=capture
+        allConversations[c].turns.append(reply)
         _=save();draft="Keep this unsent variation"
     }
     func seedWorkflowPreview() {
