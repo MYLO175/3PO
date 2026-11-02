@@ -148,6 +148,8 @@ struct PATasksView: View {
             }.controlSize(.small).padding(.top,4)
             if model.reviewApprovalErrorAccount == item.registration,model.reviewApprovalErrorID == item.id,let error=model.reviewApprovalError {Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)}
         }.taskCard()
+        // Inside a dashboard tile the widget's own menu takes every right-click not marked like this.
+        .keepsOwnRightClickMenu()
         .contextMenu {
             if showsActionEntry {Button("Explore actions") {model.openReviewConversation(explore.related)}}
             if let message {Button("View email") {model.select(message)}}
@@ -269,7 +271,7 @@ struct PATasksView: View {
                             Text(PAProse.display(item.text)).font(.callout.weight(.semibold))
                             Text("Getting to know you").font(.caption).foregroundStyle(.secondary)
                             HStack {Button("Answer") {answeringLearning=item;answer="";answerError=nil};Spacer();Button("Dismiss") {model.memoryLearning.dismiss(item)}}.controlSize(.small).padding(.top,4)
-                        }.taskCard()
+                        }.taskCard().keepsOwnRightClickMenu()
                         .contextMenu {Button("Why 3PO is asking") {backgroundID="learning:"+item.id}}
                         .popover(isPresented:showsBackground("learning:"+item.id),arrowEdge:.bottom) {backgroundPanel("Why 3PO is asking") {Text(item.evidence).font(.callout).textSelection(.enabled)}}
                     }
@@ -302,7 +304,7 @@ struct PATasksView: View {
                                 Spacer()
                                 Button("Dismiss",action:dismiss)
                             }.controlSize(.small).padding(.top,4)
-                        }.taskCard()
+                        }.taskCard().keepsOwnRightClickMenu()
                         .contextMenu {
                             Button("Explore actions") {model.openReviewSource(message)}
                             Button("View email") {model.select(message)}

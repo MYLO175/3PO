@@ -804,9 +804,13 @@ import EventKit
     static func seedCardsPreview(_ model:DashboardModel)throws {
         // In memory only: projects need an owner, and previews never read the real account.
         model.inference.useChatGPTForFictionalEvaluation();model.chatGPT.activeID="fictional-review-cards"
+        // The preview copy's own settings: Review shows email cards only with context and monitoring on,
+        // and only for mail inside the monitoring window, which a fresh copy starts today.
+        model.assistant.contextEnabled=true;model.emailSummaries.enabled=true
         let owner=model.inference.activeID,now=Date.now,scope=model.proactive.sourceSettingsScope(model)
         func mail(_ id:String,_ index:Int,_ sender:String,_ subject:String,hoursAgo:Double)throws->MailMessage {
-            let raw:[String:Any]=["id":id,"accountID":"fictional-mail","account":"Fictional Mail","messageID":index,"internetMessageID":id+"@example.invalid","sender":sender,"subject":subject,"received":now.addingTimeInterval(-hoursAgo*3600).ISO8601Format(),"unread":true,"replied":false,"flagged":false]
+            let received=max(now.addingTimeInterval(-hoursAgo*3600),model.emailSummaries.monitoringSince.addingTimeInterval(Double(index)*60))
+            let raw:[String:Any]=["id":id,"accountID":"fictional-mail","account":"Fictional Mail","messageID":index,"internetMessageID":id+"@example.invalid","sender":sender,"subject":subject,"received":received.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
             return try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:raw))
         }
         func day(_ days:Double)->String {let f=DateFormatter();f.calendar=Calendar(identifier:.gregorian);f.dateFormat="yyyy-MM-dd";return f.string(from:now.addingTimeInterval(days*86400))}
@@ -1255,9 +1259,10 @@ struct ReviewInboxPreview:View {
         VStack {Text("Fictional review inbox · disposable storage · no Apple writes").font(.caption);if ready {
             if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {WorkspaceView(model:model)} else if cardsPreview {
                 Picker("Size",selection:$previewLayout) {Text("Full").tag(WidgetLayout.large);Text("Medium").tag(WidgetLayout.medium);Text("Tall").tag(WidgetLayout.tall);Text("Small").tag(WidgetLayout.small)}.pickerStyle(.segmented).fixedSize()
+                // Hosted like a dashboard tile, so right-clicks pick the card's or the widget's menu as in the app.
                 if let size=Self.glanceSize(previewLayout) {
-                    PATasksView(model:model).environment(\.widgetLayout,previewLayout).padding(14).frame(width:size.width,height:size.height).background(Color.primary.opacity(0.05),in:RoundedRectangle(cornerRadius:16)).frame(maxHeight:.infinity,alignment:.top)
-                } else {PATasksView(model:model)}
+                    PATasksView(model:model).environment(\.widgetLayout,previewLayout).padding(14).frame(width:size.width,height:size.height).background(Color.primary.opacity(0.05),in:RoundedRectangle(cornerRadius:16)).widgetMenuHost().frame(maxHeight:.infinity,alignment:.top)
+                } else {PATasksView(model:model).widgetMenuHost()}
             } else {PATasksView(model:model)}
             if ProcessInfo.processInfo.arguments.contains("--pill-feedback-preview") {Button("Show completion message") {model.showFeedback("Completed: Claim my refund")}}
             if model.briefings.undoQuestionDate(model.inference.activeID) != nil {Button("Undo question dismissal") {model.briefings.undoQuestion(model.inference.activeID)}};if model.proactive.canUndo {Button("Undo dismissed fixture") {model.proactive.undo(model)}};if model.emailSummaries.canUndoDismiss {Button("Undo email dismissal") {model.emailSummaries.undoDismiss(model)}}
@@ -1297,6 +1302,7 @@ struct ReviewInboxPreview:View {
         for (layout,name) in [(WidgetLayout.medium,"medium"),(.tall,"tall"),(.small,"small")] {
             if let size=glanceSize(layout) {await capture(PATasksView(model:model).environment(\.widgetLayout,layout).padding(14),"glance-"+name,NSSize(width:size.width,height:size.height))}
         }
+        await checkRightClickOwners(model,&report)
         if let favour=model.mailData.messages.first(where:{$0.id == "cards-favour"}) {
             model.openReviewSource(favour)
             if let id=model.reviewPresentation?.id {await capture(ProductionReviewConversationView(model:model,conversationID:id),"quick-chat",NSSize(width:700,height:520))}
@@ -1308,6 +1314,30 @@ struct ReviewInboxPreview:View {
             model.reviewPresentation=nil
         }
         try? report.joined(separator:"\n").write(to:EvaluationOutput.url("/tmp/missioncontrol-review-cards.txt"),atomically:true,encoding:.utf8)
+    }
+    /// The inbox inside the real widget menu host: a right-click on each card must leave the
+    /// widget's menu alone (so the card's own menu opens), and one outside the cards must not.
+    @MainActor static func checkRightClickOwners(_ model:DashboardModel,_ report:inout [String]) async {
+        let hosting=NSHostingView(rootView:PATasksView(model:model).widgetMenuHost().background(Color(nsColor:.windowBackgroundColor)))
+        let window=NSWindow(contentRect:NSRect(x:0,y:0,width:860,height:1150),styleMask:[.titled,.resizable],backing:.buffered,defer:false)
+        window.isReleasedWhenClosed=false;window.contentView=hosting;window.orderFront(nil)
+        try? await Task.sleep(for:.milliseconds(900))
+        hosting.layoutSubtreeIfNeeded();hosting.displayIfNeeded()
+        try? await Task.sleep(for:.milliseconds(600))
+        hosting.layoutSubtreeIfNeeded()
+        func all(_ view:NSView)->[NSView] {[view]+view.subviews.flatMap(all)}
+        let views=all(hosting)
+        let markers=views.filter{$0 is RightClickMenuOwnerMarker.Marker && $0.visibleRect.contains(NSPoint(x:$0.bounds.midX,y:$0.bounds.midY))}
+        guard let probe=views.first(where:{$0 is WidgetMenuProbe.Probe}) else {report.append("right-click: no widget menu probe");window.close();return}
+        func click(_ point:NSPoint)->Bool {
+            guard let event=NSEvent.mouseEvent(with:.rightMouseDown,location:point,modifierFlags:[],timestamp:0,windowNumber:window.windowNumber,context:nil,eventNumber:0,clickCount:1,pressure:1) else {return false}
+            return RightClickMenuOwners.smallerOwner(than:probe,under:event)
+        }
+        let kept=markers.filter{click($0.convert(NSPoint(x:$0.bounds.midX,y:$0.bounds.midY),to:nil))}.count
+        let covered=markers.map{$0.convert($0.bounds,to:nil)}
+        let outside=stride(from:4.0,to:Double(hosting.bounds.height),by:6).map{hosting.convert(NSPoint(x:24,y:$0),to:nil)}.first{p in !covered.contains{$0.contains(p)}}
+        report.append("right-click: card markers \(markers.count), card keeps its menu \(kept)/\(markers.count), outside cards opens widget menu \(outside.map{!click($0)} ?? false)")
+        window.close()
     }
 }
 #endif
