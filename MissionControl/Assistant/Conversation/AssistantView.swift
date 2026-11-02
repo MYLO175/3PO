@@ -239,7 +239,6 @@ struct AssistantPanel: View {
     @State private var transcriptScroll=AssistantTranscriptScrollState()
     @State private var transcriptUserScrolling=false
     @State private var sourceDiscovery:PADiscovery?
-    @State private var reviewingProject:PADiscovery?
     @ViewBuilder private func discoveryActions(_ record: PADiscovery, compact: Bool = false, showsActionEntry:Bool = true) -> some View {
         if compact {
             HStack { if showsActionEntry {reviewDiscoveryButtons(record)} }
@@ -573,8 +572,6 @@ struct AssistantPanel: View {
         .onChange(of:sourceDiscovery.map{model.proactive.visible($0,model:model)}) { _,available in if available == false {sourceDiscovery=nil} }
         .onChange(of:model.inference.usagePaused) { _, paused in
             if !paused, let error = assistant.error, PAProvider.isUsageLimitError(error) { assistant.error = nil }
-        }.sheet(item:$reviewingProject) { record in
-            LifeItemEditor(model:model,item:.init(registration:record.registration,kind:.space,title:String((record.sourceTitle ?? "New project").prefix(160)),notes:record.evidence),close:{reviewingProject=nil},reviewedSuggestion:record)
         }.sheet(isPresented:$showRename) { PANameEditor(assistant:assistant) }.sheet(isPresented:$showBriefing) { ScrollView { BriefingView(model:model,briefings:model.briefings) }.padding(20).frame(width:650,height:600) }.sheet(isPresented:$showMemory) { ContextPagesView(model:model,registration:model.inference.activeID) }.sheet(isPresented:$showSupportingFacts) { PAMemoryView(memory:assistant.memory,registration:model.inference.activeID,conversationID:selectedTopicID,topicTitle:topic?.title,learning:model.memoryLearning,assistant:assistant,checkContext:{ model.memoryLearning.check(model,manual:true) },organisation:model.lifeOrganisation,organiseContext:{ model.lifeOrganisation.check(model,manual:true,topic:selectedTopicID) },model:model,focusAreas:focusAreas) }.sheet(item:$inspectingContext) { capture in PAContextCaptureView(capture:capture,model:model,registration:model.inference.activeID) }.sheet(item:$sourceDiscovery) { record in DiscoveryEvidenceView(record:record,model:model) }.sheet(isPresented:$showProfileSetup) {
             PAProfileSetupPanel(model:model,assistant:assistant,topicID:selectedTopicID,registration:model.inference.activeID)
         }.onChange(of:dictation.transcript) { _,words in showDictated(words) }

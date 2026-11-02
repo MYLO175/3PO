@@ -191,10 +191,6 @@ import SwiftData
         guard model.assistant.contextEnabled,summary.registration == model.inference.activeID,!model.assistant.excludedAccounts.contains(message.accountID),model.mailData.accounts.contains(where:{$0.id == message.accountID}),let current=model.mailData.messages.first(where:{$0.id == message.id}),current.accountID == message.accountID,let saved=records.first(where:{$0.id == message.id && $0.registration == summary.registration}),saved.fingerprint == EmailSummary.fingerprint(current) else {return false}
         return saved.fingerprint == summary.fingerprint && summary.fingerprint == EmailSummary.fingerprint(message) && (saved.observedBodyFingerprint == nil || saved.observedBodyFingerprint == saved.bodyFingerprint) && saved.adviceRevision(replied:current.replied) == summary.adviceRevision(replied:message.replied) && ReviewAcknowledgementRules.emailVersion(current,saved) == ReviewAcknowledgementRules.emailVersion(message,summary)
     }
-    func feedbackEmail(_ record:PADiscovery,model:DashboardModel)->ReviewFeedbackEmail? {
-        guard record.sourceKind != "whatsapp",model.proactive.sourceEvidenceAvailable(record,model:model),let (message,summary)=sourceAssessments(model).first(where:{$0.0.id == record.mailID}),record.registration == summary.registration,(record.sourceRevision == nil || record.sourceRevision == summary.fingerprint),(record.sourceAssessmentRevision == nil || record.sourceAssessmentRevision == summary.adviceRevision(replied:message.replied)) else {return nil}
-        return .init(message:message,summary:summary)
-    }
     private func relevancePages(_ captured:AssistantPageContext,model:DashboardModel,header:Bool)->(rows:[[String:String]],dependencies:[String:String]?) {
         let payload=(try? JSONSerialization.jsonObject(with:Data(captured.text.utf8))) as? [String:Any]
         let rows=payload?["pages"] as? [[String:String]] ?? []
@@ -483,49 +479,6 @@ import SwiftData
             records[index].dismissed = true;records[index].dismissedAt = .now
         }
         do { try save(); dismissedUndo = (id,model.inference.activeID); dismissalDate = .now } catch { records = previous; self.error = "Email suggestion could not be dismissed." }
-    }
-    @discardableResult func saveReplyDraft(_ value:String, summary:EmailSummary, model:DashboardModel,humanEdited:Bool = true)->Bool {
-        guard summary.registration == model.inference.activeID,value.count <= 4000,
-              let i=records.firstIndex(where:{$0.id == summary.id && $0.registration == summary.registration && $0.fingerprint == summary.fingerprint}),
-              let message=model.mailData.messages.first(where:{$0.id == summary.id}) ?? records[i].message,
-              !message.replied,!model.assistant.excludedAccounts.contains(message.accountID),EmailSummary.fingerprint(message) == summary.fingerprint else { return false }
-        let previous=records
-        records[i].replyDraft=value.trimmingCharacters(in:.whitespacesAndNewlines)
-        records[i].replyDraftEdited=humanEdited;records[i].replyDraftCheckedBody=records[i].bodyFingerprint
-        do { try save(); return true } catch { records=previous; self.error="The reply draft could not be saved."; return false }
-    }
-    /// One explicit local draft, with fresh read-only source and captured account/settings.
-    func prepareReply(_ message:MailMessage,summary:EmailSummary,model:DashboardModel) {
-        guard !busy,!model.assistant.busy,!model.inference.busy,!model.projectPlacement.busy,!model.writing,!model.proactive.busy,!model.briefings.busy,!model.memoryLearning.busy,!model.sourceLearning.busy,!model.nativeSourceLearning.busy,!model.memoryMaintenance.busy,
-              model.assistant.contextEnabled,model.inference.inferenceVerified,!model.inference.usagePaused,summary.registration == model.inference.activeID,EmailReplyDraftRules.canReply(summary,message:message),summary.replyDraft == nil,!model.assistant.excludedAccounts.contains(message.accountID),current(message,model:model)?.created == summary.created else { return }
-        let registration=model.inference.activeID,selectedModel=model.inference.selectedModel,memoryControls=model.assistant.memory.useRevision
-        let storage=model.container.map(ObjectIdentifier.init)
-        busy=true;error=nil
-        task=Task {
-            defer { busy=false }
-            var suppliedMemory:[[String:String]]=[]
-            var suppliedPages:[String:String]?
-            @MainActor func valid()->Bool {
-                registration == model.inference.activeID && !model.assistant.busy && memoryControls == model.assistant.memory.useRevision && storage == model.container.map(ObjectIdentifier.init) && humanMemoryContextAvailable(suppliedMemory,model:model,includeTopics:true) && model.contextPageDependenciesAvailable(suppliedPages,registration:registration) && feedbackSourceCurrent(message,summary:summary,model:model) && current(message,model:model)?.created == summary.created && current(message,model:model)?.replyDraft == nil && current(message,model:model)?.dismissed != true && !(model.mailData.messages.first(where:{$0.id == message.id}) ?? message).replied
-            }
-            do {
-                let body=try await model.mail.body(accountID:message.accountID,messageID:message.messageID,expectedInternetMessageID:message.internetMessageID,mailboxName:message.mailboxName)
-                try Task.checkCancellation();guard valid(),!body.isEmpty,body.count <= 16000 else { throw ActionFailure.message("The email changed or its full body is unavailable; no draft saved.") }
-                let memory=model.assistant.memory.context(registration,includeTopics:true,query:MemoryRetrieval.emailQuery(subject:message.subject,sender:message.sender,body:body,reply:true),includeSources:false)
-                suppliedMemory=memory
-                let captured=model.captureContextPages(registration:registration,query:MemoryRetrieval.emailQuery(subject:message.subject,sender:message.sender,body:body,reply:true),includeTopics:false,everyday:false,purpose:.email)
-                let pages=relevancePages(captured,model:model,header:false)
-                suppliedPages=pages.dependencies
-                var input:[String:Any]=["subject":message.subject,"sender":message.sender,"received":message.received.ISO8601Format(),"body":body,"sharedMemory":memory]
-                if !pages.rows.isEmpty {input["contextPages"]=EmailRelevanceRules.pageInput(pages.rows)}
-                let data=try JSONSerialization.data(withJSONObject:input,options:.sortedKeys)
-                let text=try await model.inference.streamResponse(input:[["role":"user","content":String(decoding:data,as:UTF8.self)]],instructions:EmailReplyDraftRules.instructions+" "+EmailRelevanceRules.pageCoverage,model:selectedModel,purpose:.replyDraft) { _ in }
-                try Task.checkCancellation();guard valid() else { throw ActionFailure.message("Email, account or memory changed during drafting; no draft saved.") }
-                let reply=try EmailReplyDraftRules.decode(text)
-                guard saveReplyDraft(reply,summary:summary,model:model,humanEdited:false) else { throw ActionFailure.message("The draft could not be saved; try again after checking the email.") }
-            } catch is CancellationError { error="Reply drafting stopped; no incomplete draft saved." }
-            catch { self.error=error.localizedDescription }
-        }
     }
     func coverage(_ model: DashboardModel) -> String {
         let pending = monitored(model).filter { message in

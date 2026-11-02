@@ -131,8 +131,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 MemoryInspectionPreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-images") {
                 ChatImageInteractivePreview(model:model)
-            } else if ProcessInfo.processInfo.arguments.contains("--preview-projects-lab") {
-                ProjectsDesignLab()
             } else if ProcessInfo.processInfo.arguments.contains("--preview-projects") {
                 LifeProjectInteractivePreview(model:model)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-source-timeline") {

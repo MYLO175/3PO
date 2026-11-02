@@ -145,7 +145,6 @@ struct AIActivityRecord: Codable, Equatable, Identifiable {
         self.finished = finished; self.destination = destination; self.acknowledged = acknowledged
     }
     var needsAttention: Bool { state.needsAttention && !acknowledged }
-    var failureAlert:Bool {state.isFailure && !acknowledged}
     var date: Date { finished ?? created }
 }
 

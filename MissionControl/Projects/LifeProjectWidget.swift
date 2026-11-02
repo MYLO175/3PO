@@ -698,7 +698,6 @@ struct LifeItemEditor: View {
     @Bindable var model: DashboardModel
     @State var item: LifeItem
     var close: () -> Void
-    var reviewedSuggestion:PADiscovery? = nil
     @State private var error: String?
     @State private var saving=false
     @State private var dueEnabled = false
@@ -749,7 +748,7 @@ struct LifeItemEditor: View {
             }.formStyle(.grouped).disabled(saving)
             if item.kind.isWork { Text("Project tasks are separate from Apple Reminders.").font(.caption).foregroundStyle(.secondary) }
             if let error { Text(error).foregroundStyle(.orange).font(.callout) }
-            HStack { Button("Cancel", action: close).keyboardShortcut(.cancelAction).disabled(saving); Spacer(); Button(reviewedSuggestion == nil ? "Save" : "Approve and save") { Task {await save()} }.keyboardShortcut(.defaultAction).disabled(saving || item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || item.registration != model.inference.activeID) }
+            HStack { Button("Cancel", action: close).keyboardShortcut(.cancelAction).disabled(saving); Spacer(); Button("Save") { Task {await save()} }.keyboardShortcut(.defaultAction).disabled(saving || item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || item.registration != model.inference.activeID) }
         }.padding(24).frame(width: 500).frame(maxHeight: 720).interactiveDismissDisabled(saving)
         .onChange(of:item.parentID) { parentChanged=true }
         .onAppear {
@@ -769,10 +768,7 @@ struct LifeItemEditor: View {
         item.due = dueEnabled ? DateRules.localDate(dueDate) : nil; item.estimateMinutes = Int(value)
         if item.kind == .project,parentChanged { item.placement = .init(status:"placed",reason:"Your chosen home is pinned.",parentPinned:true) }
         do {
-            if let proposal=reviewedSuggestion {
-                guard expected == nil else {throw LifeWorkspaceFailure.message("This task already exists. Reopen it to edit it.")}
-                try model.savePreparedProjectItem(item,proposal:proposal)
-            } else { _ = try model.assistant.projects.save(item, expected: expected) }
+            _ = try model.assistant.projects.save(item, expected: expected)
             model.projectPlacement.check(model);close()
         } catch { self.error = error.localizedDescription }
     }

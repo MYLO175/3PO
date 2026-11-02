@@ -57,7 +57,7 @@ For an existing installation, follow [Updating an existing installation](../deve
 2. **Connect the assistant.** In Settings → Connections, choose an **AI provider**. For ChatGPT, use **Continue with ChatGPT** and the app's registration flow, pick a model offered by the connected account, then choose **Check account access · 1 request**. For Claude, confirm the one-time context notice, then follow the Claude section: **Install Claude Code…** (Anthropic's installer in Terminal), **Sign in with Claude…** (Anthropic's own sign-in) and **Check access · 1 request**. Sign-in/model discovery alone is not an inference check. ChatGPT credentials stay in Keychain; Claude Code keeps its own sign-in, which 3PO never reads. There is no API-key fallback for either.
 3. **Choose AI context.** Review Calendar/list/Mail account and optional WhatsApp controls before permitting personal content in inference. Brief/suggestion use and foreground use retain purpose-specific controls. Review-permitted sources may teach bounded source memory under the global memory controls, alongside explicit learning opt-ins.
 4. **Set up memory deliberately.** The native setup interview starts only when you choose Start. Review memory-use and conversation/source-learning controls. New source-learning opt-ins baseline old content rather than indexing all history.
-5. **Arrange the dashboard.** Add widgets/pages, choose colours and place project spaces. Browsing a Projects folder does not set its default opening folder; use that explicit menu action.
+5. **Arrange the dashboard.** Add widgets/pages, choose colours and place projects. Browsing a project does not set the one Projects opens on; use the explicit **Open this project by default** menu action.
 6. **Enable scheduled work if wanted.** Choose the heartbeat interval in Background settings. Check its stages/history, global learning controls and review-permission inheritance. The heartbeat can offer a bounded eligible learning lane; newly permitted sources baseline existing content.
 
 Optional WhatsApp requires a human-scanned QR code and explicit chat selection. Optional Weather requests a location fix; dictation has separate macOS permissions. [Privacy](PRIVACY.md) describes what each source can expose.
@@ -68,7 +68,7 @@ Optional WhatsApp requires a human-scanned QR code and explicit chat selection. 
 | --- | --- |
 | **Refresh sources only** · ⌥⌘R | Collect local sources; no AI request |
 | “What should I focus on today?” | Explicit PA request with relevant permitted context |
-| Create a space and a task | Local project work, separate from Apple Reminders |
+| Create a project and a task | Local project work, separate from Apple Reminders |
 | Inspect Memory or reply Context details | Local saved-record inspection; no new inference |
 | **Run heartbeat** · ⌘R | Explicit AI review and brief update under current controls |
 | Dismiss a Review card, then Undo | Reversible acknowledgement of that displayed concern |

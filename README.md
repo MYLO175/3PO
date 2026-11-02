@@ -22,7 +22,7 @@
 
 | Your day | Your work | Your context |
 | --- | --- | --- |
-| Calendar and Reminders, a current brief, weather and a Review inbox | Nested spaces, notes and local tasks with boards, deadlines and progress | One PA conversation, versioned memories, source evidence and inspectable context |
+| Calendar and Reminders, a current brief, weather and a Review inbox | Nested projects, notes and local tasks with boards, deadlines and progress | One PA conversation, versioned memories, source evidence and inspectable context |
 
 - **Arrange your workspace.** Saved pages, movable/resizable widgets, focused viewing, independent light/dark palettes and named colour themes.
 - **Ask naturally.** Follow-ups, pasted screenshots, optional Life-area Focus, a dedicated setup interview and explicit queued work.
@@ -94,7 +94,7 @@ Memory retrieval currently uses local lexical selection and typed links. Broad s
 | The product and its controls | [Feature guide](docs/guides/FEATURES.md) |
 | Services, data flow and ownership | [Architecture](docs/architecture/ARCHITECTURE.md) |
 | Memory selection, evidence and corrections | [Memory and context](docs/architecture/MEMORY_AND_CONTEXT.md) |
-| Spaces, tasks, notes and links | [Project workspace](docs/architecture/PROJECT_WORKSPACE.md) |
+| Projects, tasks, notes and links | [Project workspace](docs/architecture/PROJECT_WORKSPACE.md) |
 | Setup, checks and source navigation | [Getting started](docs/guides/GETTING_STARTED.md) · [Developer guide](docs/development/DEVELOPMENT.md) |
 | The full reading map | [Documentation index](docs/README.md) |
 
