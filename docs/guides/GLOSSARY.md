@@ -17,7 +17,7 @@
 | **Notebook / Life map** | Derived views of usable memories and exact workspace anchors, rather than another independent facts database. |
 | **Recall** | Local selection of relevant usable facts. Currently lexical with typed/human-reviewed connections, not embeddings. |
 | **Canonical identity** | The stable exact record identity used across views, memory and Projects so a rename or move does not create a different entity. |
-| **Space / Task** | A local folder with optional notes / local project work. A Task is separate from Apple Reminders. |
+| **Project / Task** | A local project (which can hold subprojects) with optional notes / local project work. A Task is separate from Apple Reminders. |
 | **Anchor / binding** | An exact reference connecting memory organisation to an existing workspace/source record. |
 | **Evidence / dependency** | Original quote/identity/version supporting a record / saved support that must remain valid before new reasoning/advice is reused. Saved Review display and concrete creation approval follow their own access/payload/receipt checks. |
 | **Revision** | Version marker or snapshot used to detect a change between read, review and save. |

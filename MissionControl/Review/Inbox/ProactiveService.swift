@@ -432,7 +432,6 @@ struct ProactiveReviewContext {
                 }
                 let feedback:[[String:String]]=[]
                 input["reviewFeedback"]=feedback
-                let relevanceQuery=(emails.map{$0.0.subject+" "+$0.1.summary+" "+$0.1.evidence}+whatsapp.map{$0.chatName+" "+$0.sender+" "+$0.text}).joined(separator:"\n")
                 let acknowledgementContext=model.reviewAcknowledgements(use:memoryUse,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady)
                 input["reviewAcknowledgements"]=try JSONSerialization.jsonObject(with:JSONEncoder().encode(acknowledgementContext))
                 input["whatsappCoverage"]=whatsapp.isEmpty ? "No WhatsApp material supplied; unavailable, disabled or no eligible received text. Never claim nothing important exists." : "Selected chats, last 48 hours, at most eight cached messages; partial linked-device history."

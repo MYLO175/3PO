@@ -22,19 +22,6 @@ struct WidgetHeadline: View {
     }
 }
 
-/// A clock time in a fixed-width pill; red when it is a deadline.
-struct TimePill: View {
-    var text: String
-    var urgent = false
-    @Environment(\.workspacePalette) private var palette
-    var body: some View {
-        let colour = urgent ? Color.red : palette[.accent]
-        Text(text).font(.system(size: 11.5, weight: .semibold).monospacedDigit()).foregroundStyle(colour)
-            .lineLimit(1).frame(minWidth: 44).padding(.horizontal, 6).padding(.vertical, 3)
-            .background(colour.opacity(0.13), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-}
-
 /// When a reminder is due: red for today or overdue, orange for tomorrow, grey for later.
 struct DueBadge: View {
     var due: Date

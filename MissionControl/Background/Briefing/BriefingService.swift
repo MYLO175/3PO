@@ -198,37 +198,6 @@ import EventKit
         guard let container else { throw SummaryFailure.invalid }
         try LocalRecordRepository(container: container).save(state, key: "dailyBriefings")
     }
-    func requestNotifications() {
-        Task {
-            let settings = await UNUserNotificationCenter.current().notificationSettings()
-            guard settings.authorizationStatus != .denied else {
-                notificationStatus = "Notifications are off. Enable 3PO in System Settings → Notifications. Saved briefings remain available."
-                return
-            }
-            do { notificationStatus = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert,.sound]) ? "Notifications enabled." : "Notifications denied; saved briefings remain available." }
-            catch { let detail = error as NSError; notificationStatus = "Notification permission failed (\(detail.domain), \(detail.code)): \(detail.localizedDescription)" }
-        }
-    }
-    #if DEBUG
-    func testNotification() {
-        Task {
-            let center = UNUserNotificationCenter.current()
-            let settings = await center.notificationSettings()
-            guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else {
-                notificationStatus = "Test not sent: enable 3PO in System Settings → Notifications."
-                return
-            }
-            let content = UNMutableNotificationContent()
-            content.title = "3PO notification test"
-            content.body = "Morning briefings will use this notification style. No AI request was made."
-            content.sound = .default
-            do {
-                try await center.add(UNNotificationRequest(identifier: "missioncontrol-notification-test", content: content, trigger: nil))
-                notificationStatus = "Test notification scheduled."
-            } catch { notificationStatus = "Test notification failed: \(error.localizedDescription)" }
-        }
-    }
-    #endif
     func cancel() { task?.cancel() }
     func check(_ model: DashboardModel, manual: Bool = false, live requestedUpdate: Bool = false, heartbeatID:String? = nil, mailReview:MailReviewScope? = nil, whatsappReady:Bool = true,heartbeatRequest:HeartbeatChildRequest? = nil) {
         let heartbeat=heartbeatID != nil,heartbeatControls=model.heartbeat.controlsRevision
