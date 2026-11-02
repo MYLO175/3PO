@@ -10,6 +10,11 @@ import Foundation
         UserDefaults.standard.setVolatileDomain(fixtureArguments,forName:UserDefaults.argumentDomain)
         defer {UserDefaults.standard.setVolatileDomain(arguments,forName:UserDefaults.argumentDomain)}
         let model=DashboardModel(),original=try ReviewInboxEvaluation.seed(model)
+        // Since 26 October a Mail suggestion shows only while its email's current verdict needs
+        // review. Give the fictional email a current action verdict rather than a legacy attention
+        // flag; its advice revision, and so the proposal's receipt, is unchanged.
+        var verdict=model.emailSummaries.records[0];verdict.needsReply=false;verdict.reviewPolicyVersion=EmailSummary.reviewPolicyVersion
+        try model.emailSummaries.seedAdviceFixture([verdict])
         var record=original;record.kind="reminder";record.proposedChange=nil;record.sourceTitle="Submit Orion report"
         try model.proactive.seedAdviceFixture([record],model:model)
         record=model.proactive.state.records[0]
