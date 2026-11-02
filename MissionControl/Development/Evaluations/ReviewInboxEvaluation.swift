@@ -838,6 +838,16 @@ import EventKit
         let project=try model.assistant.projects.save(.init(registration:owner,kind:.space,title:"Orion app",status:.active),expected:nil)
         _=try model.assistant.projects.save(.init(registration:owner,kind:.task,title:"Sketch the review flow",parentID:project.id,status:.active),expected:nil)
         _=try model.contextQuestions.offer(registration:owner,projectID:project.id,identity:model.contextProjectIdentity(project),question:"What are you aiming to achieve with Orion app?")
+        // A suggestion answered in its chat instead of its checkbox: a reply sent and one action
+        // done, so the sheet's header reads Done rather than No actions.
+        model.openReviewSource(moved)
+        if let id=model.reviewPresentation?.id,let conversation=model.assistant.conversation(id),let source=model.reviewSource(conversation),
+           let turns=model.assistant.seedReviewReplyPreview(conversationID:id,human:"Leave the date for now, but add a reminder to email my tutor about it",reply:"Created Email tutor about the Orion deadline") {
+            var job=ReviewWorkJob(humanTurnID:turns.question,responseTurnID:turns.answer,conversationID:id,scope:model.reviewWorkScope(),source:source,mode:.conversation,human:"Leave the date for now, but add a reminder to email my tutor about it")
+            job.phase = .completed;job.finished = .now;job.message="Created Email tutor about the Orion deadline";job.conversationActionCount=1
+            model.reviewWork.seedPreviewJob(job)
+        }
+        model.reviewPresentation=nil
     }
     static func seedFeedbackPreview(_ model:DashboardModel)throws {
         let body="General fictional university newsletter: campus travel tips and optional societies fair. No personal reply or action is requested."
@@ -1311,6 +1321,11 @@ struct ReviewInboxPreview:View {
         if let task=model.mailData.messages.first(where:{$0.id == "cards-task"}) {
             model.openReviewSource(task)
             if let id=model.reviewPresentation?.id {await capture(ProductionReviewConversationView(model:model,conversationID:id),"suggested",NSSize(width:700,height:620))}
+            model.reviewPresentation=nil
+        }
+        if let moved=model.mailData.messages.first(where:{$0.id == "cards-moved"}) {
+            model.openReviewSource(moved)
+            if let id=model.reviewPresentation?.id {await capture(ProductionReviewConversationView(model:model,conversationID:id),"replied",NSSize(width:700,height:720))}
             model.reviewPresentation=nil
         }
         try? report.joined(separator:"\n").write(to:EvaluationOutput.url("/tmp/missioncontrol-review-cards.txt"),atomically:true,encoding:.utf8)

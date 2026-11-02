@@ -358,6 +358,13 @@ import Observation
         allConversations[c].turns.append(reply)
         _=save();draft="Keep this unsent variation"
     }
+    /// `--preview-review-inbox`: a reply the human already sent in a Review chat, with 3PO's answer.
+    func seedReviewReplyPreview(conversationID:UUID,human:String,reply:String)->(question:UUID,answer:UUID)? {
+        guard ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"),let c=allConversations.firstIndex(where:{$0.id == conversationID}) else {return nil}
+        let question=AssistantTurn(role:"user",content:human,completed:true),answer=AssistantTurn(role:"assistant",content:reply,completed:true)
+        allConversations[c].turns += [question,answer]
+        _=save();return (question.id,answer.id)
+    }
     /// `--preview-widget-sizes`: one short made-up exchange.
     func seedWidgetSizesPreview() {
         guard ProcessInfo.processInfo.arguments.contains("--preview-widget-sizes") else { return }

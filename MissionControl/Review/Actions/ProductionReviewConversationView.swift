@@ -30,13 +30,15 @@ struct ProductionReviewConversationView:View {
         let oldRows=rows.filter{row in model.proactive.state.records.first{$0.id == row.id}.map(model.reviewDiscoveryCompleted) == true}.map(\.id)
         return approvalIDs.union(oldRows).count+jobs.filter{$0.mode == .conversation}.reduce(0){$0+($1.conversationActionCount ?? 0)}
     }
+    /// A reply sent here or a completed action turns No actions into Done.
+    private var engaged:Bool {!jobs.isEmpty || completedCount > 0 || turns.contains{$0.role == "user"}}
     var body:some View {
         VStack(spacing:0) {
             HStack(alignment:.top,spacing:14) {
                 Image(systemName:"bubble.left.and.text.bubble.right").font(.title2).foregroundStyle(palette[.accent]).padding(.top,3)
                 VStack(alignment:.leading,spacing:5) {Text(conversation?.title ?? "Review suggestion").font(.title3.weight(.semibold)).lineLimit(2);Text("Discuss a plan with 3PO").font(.caption).foregroundStyle(.secondary)}
                 Spacer(minLength:8)
-                Button(quickChat ? "Done" : ReviewSelectionRules.approvalTitle(selectedActions.count)) {finish()}.disabled(preparing || !model.reviewWork.readable)
+                Button(ReviewSelectionRules.approvalTitle(selectedActions.count,engaged:quickChat || engaged)) {finish()}.disabled(preparing || !model.reviewWork.readable)
             }.padding(22)
             Divider()
             if usable {
