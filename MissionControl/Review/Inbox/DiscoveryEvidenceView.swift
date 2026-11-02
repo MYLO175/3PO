@@ -39,15 +39,25 @@ struct DiscoveryEvidenceView:View {
         }.padding(24).frame(width:460)
     }
 }
-struct ReviewSourceLabel:View {
+/// The single info line on a Review card: sender name, place and short date.
+/// The full sender address and date stay in the tooltip and the evidence sheet.
+struct ReviewSourceLine:View {
     var details:ReviewSourceDetails
-    var showsTitle=false
     var body:some View {
-        VStack(alignment:.leading,spacing:3) {
-            if showsTitle,let title=details.title {Text(title).font(.caption.weight(.medium)).textSelection(.enabled)}
-            Text(details.channel + " · " + details.location + " · " + details.sender + " · " + details.dateLabel + " " + details.date.formatted(date:.abbreviated,time:.shortened))
-                .font(.caption).foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal:false,vertical:true)
-        }
+        Text(Self.text(details)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            .help(details.channel + " · " + details.location + " · " + details.sender + " · " + details.dateLabel + " " + details.date.formatted(date:.abbreviated,time:.shortened))
+    }
+    static func text(_ details:ReviewSourceDetails,now:Date = .now)->String {
+        let sameYear=Calendar.current.isDate(details.date,equalTo:now,toGranularity:.year)
+        let date=details.date.formatted(sameYear ? .dateTime.day().month(.abbreviated).hour().minute() : .dateTime.day().month(.abbreviated).year().hour().minute())
+        return [senderName(details.sender),details.kind == "whatsapp" ? details.location+" on WhatsApp" : details.location,date].filter{!$0.isEmpty}.joined(separator:" · ")
+    }
+    /// "Name <address>" shows as Name; a bare address stays as it is.
+    static func senderName(_ sender:String)->String {
+        let value=sender.trimmingCharacters(in:.whitespaces)
+        guard let open=value.firstIndex(of:"<"),value.hasSuffix(">") else {return value}
+        let name=value[..<open].trimmingCharacters(in:CharacterSet.whitespaces.union(CharacterSet(charactersIn:"\"'")))
+        return name.isEmpty ? String(value[value.index(after:open)..<value.index(before:value.endIndex)]) : name
     }
 }
 struct ReviewSourceDetailsView:View {

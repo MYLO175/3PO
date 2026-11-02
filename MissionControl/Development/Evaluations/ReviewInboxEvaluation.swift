@@ -2,6 +2,7 @@
 import Foundation
 import SwiftData
 import SwiftUI
+import AppKit
 import EventKit
 
 @MainActor enum ReviewInboxEvaluation {
@@ -799,6 +800,41 @@ import EventKit
         model.completedReminders=[.init(item:task,completedAt:now)];model.completedReminderHealth = .init(lastSuccess:now)
         try model.emailSummaries.seedAdviceFixture(summaries)
     }
+    /// Default `--preview-review-inbox` fixture: one of each card shape, all fictional.
+    static func seedCardsPreview(_ model:DashboardModel)throws {
+        // In memory only: projects need an owner, and previews never read the real account.
+        model.inference.useChatGPTForFictionalEvaluation();model.chatGPT.activeID="fictional-review-cards"
+        let owner=model.inference.activeID,now=Date.now,scope=model.proactive.sourceSettingsScope(model)
+        func mail(_ id:String,_ index:Int,_ sender:String,_ subject:String,hoursAgo:Double)throws->MailMessage {
+            let raw:[String:Any]=["id":id,"accountID":"fictional-mail","account":"Fictional Mail","messageID":index,"internetMessageID":id+"@example.invalid","sender":sender,"subject":subject,"received":now.addingTimeInterval(-hoursAgo*3600).ISO8601Format(),"unread":true,"replied":false,"flagged":false]
+            return try JSONDecoder().decode(MailMessage.self,from:JSONSerialization.data(withJSONObject:raw))
+        }
+        func day(_ days:Double)->String {let f=DateFormatter();f.calendar=Calendar(identifier:.gregorian);f.dateFormat="yyyy-MM-dd";return f.string(from:now.addingTimeInterval(days*86400))}
+        let task=try mail("cards-task",1,"Avery Lin <avery.lin@northwind.example>","Northwind – Graduate Product Engineer 2027 – Take-home task",hoursAgo:3)
+        let favour=try mail("cards-favour",2,"Jordan Sayer <js101@college.example>","Re: Small favour: reference",hoursAgo:4)
+        let test=try mail("cards-test",3,"talent.team+m7912050@careers.fabrikam.example","RE: Invitation to online coding test",hoursAgo:11)
+        let moved=try mail("cards-moved",4,"Fictional tutor <tutor@college.example>","Orion deadline change",hoursAgo:26)
+        model.mailData = .init(messages:[task,favour,test,moved],accounts:[.init(id:"fictional-mail",title:"Fictional Mail")],errors:[])
+        func summary(_ message:MailMessage,_ reason:String,attention:Bool=true)->EmailSummary {
+            EmailSummary(id:message.id,registration:owner,fingerprint:EmailSummary.fingerprint(message),summary:reason,attention:attention,reason:reason,evidence:reason,bodyFingerprint:"fictional-body",message:message,worthReading:attention,needsReply:false)
+        }
+        let taskSummary=summary(task,"The take-home task is due in three days; submit it through the candidate portal. The assessment centre date (16 or 17 November) is not confirmed yet.")
+        var favourSummary=summary(favour,"Jordan offered a call or a meeting this weekend, but no time is fixed. It relates to your Fabrikam reference, so you may need to pick a time.")
+        favourSummary.personalRelevance = .init(reason:"Jordan is your college reference for the Fabrikam application.",evidence:"Fictional preview",memories:[],workspace:[],preferences:[])
+        var testSummary=summary(test,"The extension moves your coding test deadline to Friday 13 November at 23:59. The time zone is not stated.")
+        testSummary.needsReply=true;testSummary.replyDraft="Thanks for the extension. I’ll complete the test by 13 November. Could you confirm which time zone the deadline uses?\n\nBest,\n[Your name]";testSummary.replyDraftCheckedBody="fictional-body"
+        let movedSummary=summary(moved,"Orion report deadline moved.",attention:false)
+        try model.emailSummaries.seedAdviceFixture([taskSummary,favourSummary,testSummary,movedSummary])
+        let reminder=TaskItem(id:"fictional-orion",listID:"fictional-studies",title:"Submit Orion prototype report",due:now.addingTimeInterval(2*86400),hasTime:false,sourceLabel:"Fictional Studies",writable:true,recurring:false,modified:now)
+        model.reminderData = .init(sources:[.init(id:reminder.listID,title:reminder.sourceLabel,account:"Fictional",writable:true)],reminders:[reminder])
+        let calendar=PADiscovery(id:UUID().uuidString,registration:owner,mailID:task.id,kind:"calendar",message:"Add the take-home task deadline to Calendar?",evidence:"The take-home task is due in three days.",created:now,scope:scope,sourceRevision:taskSummary.fingerprint,sourceTitle:"Northwind take-home task due",sourceAssessmentRevision:taskSummary.adviceRevision(replied:false),proposedDate:.init(start:day(3),hasTime:false,timeZoneID:TimeZone.current.identifier))
+        let update=PADiscovery(id:UUID().uuidString,registration:owner,mailID:task.id,kind:"update",message:"The assessment centre is on 16 or 17 November; the final-round invitation will confirm which.",evidence:"Assessment centre: 16 or 17 November, to be confirmed.",created:now,scope:scope,sourceRevision:taskSummary.fingerprint,sourceTitle:"Assessment centre date",sourceAssessmentRevision:taskSummary.adviceRevision(replied:false))
+        let change=PADiscovery(id:UUID().uuidString,registration:owner,mailID:moved.id,kind:"change",message:"Your tutor moved the Orion report deadline by four days. Change the reminder’s date?",evidence:"The Orion prototype report deadline has moved.",created:now,scope:"fixture",sourceRevision:movedSummary.fingerprint,sourceAssessmentRevision:movedSummary.adviceRevision(replied:false),proposedChange:.init(target:.reminder(reminder),newDate:day(6),hasTime:false,connection:"The distinctive Orion prototype report matches your existing reminder.",timeZoneID:TimeZone.current.identifier))
+        try model.proactive.seedAdviceFixture([calendar,update,change],model:model)
+        let project=try model.assistant.projects.save(.init(registration:owner,kind:.space,title:"Orion app",status:.active),expected:nil)
+        _=try model.assistant.projects.save(.init(registration:owner,kind:.task,title:"Sketch the review flow",parentID:project.id,status:.active),expected:nil)
+        _=try model.contextQuestions.offer(registration:owner,projectID:project.id,identity:model.contextProjectIdentity(project),question:"What are you aiming to achieve with Orion app?")
+    }
     static func seedFeedbackPreview(_ model:DashboardModel)throws {
         let body="General fictional university newsletter: campus travel tips and optional societies fair. No personal reply or action is requested."
         let fields:[String:Any]=["id":"fictional-feedback-newsletter","accountID":"fictional-mail","account":"Fictional Mail","messageID":1,"internetMessageID":"fictional-feedback@example.invalid","sender":"University Communications <news@example.invalid>","subject":"Fictional autumn newsletter","received":Date.now.ISO8601Format(),"unread":true,"replied":false,"flagged":false]
@@ -845,8 +881,13 @@ import EventKit
         let report:[String:Any]=["passed":checks.values.filter{$0}.count,"total":checks.count,"checks":checks,"storage":"Disposable in-memory review source fixtures; zero AI, native writes, helper/auth or preference changes."]
         try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]).write(to:EvaluationOutput.url("/tmp/missioncontrol-review-source-details-evaluation.json"))
     }
+    /// `--preview-review-inbox` with no fixture sub-flag shows the card fixture.
+    static var cardsPreview:Bool {
+        let args=ProcessInfo.processInfo.arguments
+        return args.contains("--preview-review-inbox") && !["--unified-review-preview","--compound-email-actions","--feedback-preview","--email-resolution-preview","--grouped-review-preview","--source-details-preview","--calendar-removal-preview","--email-work-preview","--navigation-preview"].contains{args.contains($0)}
+    }
     static func previewSession(_ target:NativeEditTarget)->NativeEditSession? {
-        if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"),(ProcessInfo.processInfo.arguments.contains("--compound-email-actions") || ProcessInfo.processInfo.arguments.contains("--duplicate-action-preview")),case .create(let request)=target {
+        if ProcessInfo.processInfo.arguments.contains("--preview-review-inbox"),(ProcessInfo.processInfo.arguments.contains("--compound-email-actions") || ProcessInfo.processInfo.arguments.contains("--duplicate-action-preview") || cardsPreview),case .create(let request)=target {
             let id=request.kind == .event ? "fictional-calendar" : "fictional-list"
             return .init(item:.init(kind:request.kind,itemID:request.id.uuidString,occurrenceID:request.id.uuidString,sourceID:id,title:request.title,notes:request.notes,writable:true),sources:[.init(id:id,title:request.kind == .event ? "Fictional Calendar" : "Fictional Reminders",account:"Fictional",writable:true)])
         }
@@ -1202,22 +1243,58 @@ extension EventKitService {
 struct ReviewInboxPreview:View {
     var model:DashboardModel
     @State private var ready=false
+    @MainActor static var seedError:String?
+    /// No sub-flag: the card fixture, with the Explore sheet attached as in the workspace.
+    private let cardsPreview=ReviewInboxEvaluation.cardsPreview
     var body:some View {
         VStack {Text("Fictional review inbox · disposable storage · no Apple writes").font(.caption);if ready {
             if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {WorkspaceView(model:model)} else {PATasksView(model:model)}
             if ProcessInfo.processInfo.arguments.contains("--pill-feedback-preview") {Button("Show completion message") {model.showFeedback("Completed: Claim my refund")}}
             if model.briefings.undoQuestionDate(model.inference.activeID) != nil {Button("Undo question dismissal") {model.briefings.undoQuestion(model.inference.activeID)}};if model.proactive.canUndo {Button("Undo dismissed fixture") {model.proactive.undo(model)}};if model.emailSummaries.canUndoDismiss {Button("Undo email dismissal") {model.emailSummaries.undoDismiss(model)}}
         } }
-            .padding(16).frame(width:ProcessInfo.processInfo.arguments.contains("--navigation-preview") ? 1120 : ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 840 : 600,height:ProcessInfo.processInfo.arguments.contains("--navigation-preview") ? 820 : ProcessInfo.processInfo.arguments.contains("--email-work-preview") ? 780 : 660)
+            .padding(16).frame(width:ProcessInfo.processInfo.arguments.contains("--navigation-preview") ? 1120 : ProcessInfo.processInfo.arguments.contains("--email-work-preview") || cardsPreview ? 860 : 600,height:ProcessInfo.processInfo.arguments.contains("--navigation-preview") ? 820 : ProcessInfo.processInfo.arguments.contains("--email-work-preview") || cardsPreview ? 780 : 660)
             .sheet(item:Binding(get:{model.editTarget},set:{model.editTarget=$0})){NativeItemEditor(model:model,target:$0)}
+            .sheet(item:Binding(get:{cardsPreview ? model.reviewPresentation : nil},set:{model.reviewPresentation=$0})){ProductionReviewConversationView(model:model,conversationID:$0.id)}
             .sheet(item:Binding(get:{model.calendarRemovalReview},set:{model.calendarRemovalReview=$0})){CalendarRemovalReviewSheet(model:model,session:$0)}
-            .task {guard !ready else {return};if ProcessInfo.processInfo.arguments.contains("--unified-review-preview") {try? ReviewInboxEvaluation.seedUnifiedReviewPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--compound-email-actions") {try? ReviewInboxEvaluation.seedCompoundPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--feedback-preview") {try? ReviewInboxEvaluation.seedFeedbackPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--email-resolution-preview") {try? ReviewInboxEvaluation.seedResolutionPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--grouped-review-preview") {try? ReviewInboxEvaluation.seedGroupedReviewPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--source-details-preview") {try? ReviewInboxEvaluation.seedSourceDetailsPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--calendar-removal-preview") {_ = try? ReviewInboxEvaluation.seedRemoval(model)} else if ProcessInfo.processInfo.arguments.contains("--email-work-preview") {try? ReviewInboxEvaluation.seedEmailWorkPreview(model);if ProcessInfo.processInfo.arguments.contains("--heartbeat-preview") {try? model.briefings.seedHeartbeatPreview(model)}} else {_ = try? ReviewInboxEvaluation.seed(model)};if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {
+            .task {guard !ready else {return};if ProcessInfo.processInfo.arguments.contains("--unified-review-preview") {try? ReviewInboxEvaluation.seedUnifiedReviewPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--compound-email-actions") {try? ReviewInboxEvaluation.seedCompoundPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--feedback-preview") {try? ReviewInboxEvaluation.seedFeedbackPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--email-resolution-preview") {try? ReviewInboxEvaluation.seedResolutionPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--grouped-review-preview") {try? ReviewInboxEvaluation.seedGroupedReviewPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--source-details-preview") {try? ReviewInboxEvaluation.seedSourceDetailsPreview(model)} else if ProcessInfo.processInfo.arguments.contains("--calendar-removal-preview") {_ = try? ReviewInboxEvaluation.seedRemoval(model)} else if ProcessInfo.processInfo.arguments.contains("--email-work-preview") {try? ReviewInboxEvaluation.seedEmailWorkPreview(model);if ProcessInfo.processInfo.arguments.contains("--heartbeat-preview") {try? model.briefings.seedHeartbeatPreview(model)}} else if cardsPreview {do {try ReviewInboxEvaluation.seedCardsPreview(model)} catch {Self.seedError=String(describing:error)}} else {_ = try? ReviewInboxEvaluation.seed(model)};if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {
                 // Default pages contain native widgets whose mount can independently read sources.
                 let defaults=model.workspace.state.pages.map(\.id)
                 model.workspace.addPage("Navigation fixture")
                 for id in defaults {model.workspace.removePage(id)}
                 model.workspace.showReviewInbox()
-            };if ProcessInfo.processInfo.arguments.contains("--activity-work-preview") {AIActivityWorkPreview.seed(model)};ready=true}
+            };if ProcessInfo.processInfo.arguments.contains("--activity-work-preview") {AIActivityWorkPreview.seed(model)};ready=true;if cardsPreview,ProcessInfo.processInfo.arguments.contains("--snapshot") {await Self.renderCards(model);NSApp.terminate(nil)}}
+    }
+    /// `--snapshot`: offscreen renders of the cards and both Explore sheet states, plus a
+    /// short fixture report. Clicks, menus and popovers still need the interactive preview.
+    @MainActor static func renderCards(_ model:DashboardModel) async {
+        var report:[String]=[]
+        let owner=model.inference.activeID,projects=model.assistant.projects.items(owner,includeTopics:true)
+        report.append("fixture: memory \(model.assistant.memory.enabled), projects \(projects.count), saved questions \(model.contextQuestions.questions(registration:owner).count), visible questions \(model.visibleContextProjectQuestions().count), candidate \(projects.first(where:{!$0.kind.isWork}).map{model.contextProjectQuestionCandidate($0,items:projects)} ?? false), error \(model.contextQuestions.error ?? "none"), seed \(seedError ?? "ok")")
+        func capture(_ view:some View,_ name:String,_ size:NSSize) async {
+            let hosting=NSHostingView(rootView:view.background(Color(nsColor:.windowBackgroundColor)).preferredColorScheme(.dark))
+            let window=NSWindow(contentRect:NSRect(origin:.zero,size:size),styleMask:[.titled,.resizable],backing:.buffered,defer:false)
+            window.isReleasedWhenClosed=false;window.contentView=hosting;window.appearance=NSAppearance(named:.darkAqua);window.orderFront(nil)
+            try? await Task.sleep(for:.milliseconds(900))
+            hosting.layoutSubtreeIfNeeded();hosting.displayIfNeeded()
+            if let bitmap=hosting.bitmapImageRepForCachingDisplay(in:hosting.bounds) {
+                hosting.cacheDisplay(in:hosting.bounds,to:bitmap)
+                try? bitmap.representation(using:.png,properties:[:])?.write(to:EvaluationOutput.url("/tmp/missioncontrol-review-cards-"+name+".png"),options:.atomic)
+            }
+            window.close()
+        }
+        await capture(PATasksView(model:model),"inbox",NSSize(width:860,height:1150))
+        await capture(PATasksView(model:model),"narrow",NSSize(width:520,height:900))
+        if let favour=model.mailData.messages.first(where:{$0.id == "cards-favour"}) {
+            model.openReviewSource(favour)
+            if let id=model.reviewPresentation?.id {await capture(ProductionReviewConversationView(model:model,conversationID:id),"quick-chat",NSSize(width:700,height:520))}
+            model.reviewPresentation=nil
+        }
+        if let task=model.mailData.messages.first(where:{$0.id == "cards-task"}) {
+            model.openReviewSource(task)
+            if let id=model.reviewPresentation?.id {await capture(ProductionReviewConversationView(model:model,conversationID:id),"suggested",NSSize(width:700,height:620))}
+            model.reviewPresentation=nil
+        }
+        try? report.joined(separator:"\n").write(to:EvaluationOutput.url("/tmp/missioncontrol-review-cards.txt"),atomically:true,encoding:.utf8)
     }
 }
 #endif

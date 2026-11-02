@@ -77,9 +77,10 @@ struct ContextProjectQuestionsSection: View {
     @State private var error: String?
     var body: some View {
         ForEach(questions) { question in
-            VStack(alignment: .leading, spacing: 8) {
-                Text(question.question).font(.callout).textSelection(.enabled)
-                Text("Help 3PO understand this project's purpose.").font(.caption).foregroundStyle(.secondary)
+            let project = model.assistant.projects.items(question.registration, includeTopics: true).first { $0.id == question.projectID }
+            VStack(alignment: .leading, spacing: 6) {
+                Text(question.question).font(.callout.weight(.semibold))
+                Text(project.map { "Helps 3PO understand what " + $0.title + " is for" } ?? "Helps 3PO understand this project's purpose").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 HStack {
                     Button("Answer") { answering = question; error = nil }
                     Spacer()
@@ -87,8 +88,14 @@ struct ContextProjectQuestionsSection: View {
                         do { dismissed = try model.contextQuestions.dismiss(id: question.id, registration: question.registration, expectedRevision: question.revision); error = nil }
                         catch { self.error = error.localizedDescription }
                     }
-                }.controlSize(.small)
-            }.padding(12).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+                }.controlSize(.small).padding(.top, 4)
+            }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+            // Each card presents its own answer sheet: a sheet on an EmptyView inside the
+            // inbox's lazy stack was never attached, so Answer did nothing.
+            .sheet(item: Binding(get: { answering?.id == question.id ? answering : nil }, set: { answering = $0 })) { question in
+                ContextProjectPurposeAnswerView(model: model, question: question)
+            }
+            .onChange(of: model.inference.activeID) { answering = nil; dismissed = nil; error = nil }
         }
         if let dismissed, dismissed.registration == model.inference.activeID {
             HStack {
@@ -101,8 +108,6 @@ struct ContextProjectQuestionsSection: View {
         }
         if let error { Text(error).font(.caption).foregroundStyle(.orange) }
         if let error = model.contextQuestions.error { Text(error).font(.caption).foregroundStyle(.orange) }
-        EmptyView().sheet(item: $answering) { question in ContextProjectPurposeAnswerView(model: model, question: question) }
-            .onChange(of: model.inference.activeID) { answering = nil; dismissed = nil; error = nil }
     }
 }
 private struct ContextProjectPurposeAnswerView: View {
