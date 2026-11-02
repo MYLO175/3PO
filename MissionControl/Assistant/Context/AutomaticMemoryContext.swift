@@ -2,7 +2,7 @@ import Foundation
 
 extension DashboardModel {
     func contextPageDependenciesAvailable(_ versions:[String:String]?,registration:String)->Bool {
-        ContextPageDependencyRules.available(versions) {self.contextKnowledgeAvailable(registration:registration,versions:$0)}
+        contextEvaluation.pageAvailability(versions,registration:registration) ?? ContextPageDependencyRules.available(versions) {self.contextKnowledgeAvailable(registration:registration,versions:$0)}
     }
     func whatsappDependenciesAvailable(_ dependencies:[WhatsAppWindowDependency]?,use:AutomaticMemoryUse)->Bool {
         guard let dependencies,!dependencies.isEmpty else { return true }

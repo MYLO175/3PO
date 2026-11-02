@@ -96,13 +96,16 @@ import SwiftData
         let accounts=model.mailData.accounts.filter{!model.assistant.excludedAccounts.contains($0.id)}
         return .init(mailReview:.collected(index:model.mailIndex,snapshot:model.mailData,excluded:model.assistant.excludedAccounts),accounts:accounts,enabledMail:Set(accounts.map(\.id)),nativeReady:model.heartbeatNativeReady,wantsWhatsApp:(model.heartbeat.whatsappEnabled || access.briefEnabled) && access.enabled && !access.chats.isEmpty,whatsappReady:whatsappReady)
     }
+    /// Checks every account against the same saved context, so one shared pass serves them all.
     private static func pending(_ model:DashboardModel,mailReview:MailReviewScope,whatsappReady:Bool,nativeReady:Bool)->HeartbeatPending {
+        model.emailSummaries.withSharedAssessmentContext(model) {
         let proposals=model.proactive.enabled && model.proactive.hasPendingSources(model,mailReview:mailReview,whatsappReady:whatsappReady)
         let accounts=Set(mailReview.accountIDs.filter{id in
             var one=mailReview;one.windows=one.windows.filter{$0.key == id}
             return model.emailSummaries.hasPendingIncoming(model,mailReview:one) || !nativeReady || (model.proactive.enabled && model.proactive.hasPendingSources(model,mailReview:mailReview,whatsappReady:whatsappReady,mailAccountID:id))
         })
         return .init(any:model.emailSummaries.reviewGuidancePending(model.inference.activeID) || model.emailSummaries.feedback.items(model.inference.activeID).contains{$0.state == .queued && $0.heartbeatEligible == true} || model.emailSummaries.hasPendingIncoming(model,mailReview:mailReview) || (nativeReady && proposals),mailAccounts:accounts,proposals:proposals || (model.proactive.enabled && environment(model).proposalAllowanceReached))
+        }
     }
     private static func activity(_ model:DashboardModel,registration:String,runID:String)->HeartbeatActivity {
         .init(preparedItems:model.proactive.state.records.filter{$0.registration == registration}.count,emailDrafts:model.emailSummaries.records.filter{$0.registration == registration && $0.replyDraft != nil}.count,whatsappDrafts:model.proactive.state.records.filter{$0.registration == registration && $0.replyDraft != nil}.count,handled:model.emailSummaries.records.filter{$0.registration == registration && $0.handling != nil}.count,briefUpdated:model.briefings.state.updatedBriefs?[registration]?.heartbeatID == runID,questions:model.briefings.state.reviewQuestions?.filter{$0.snapshot.registration == registration && $0.snapshot.heartbeatID == runID}.count ?? 0)

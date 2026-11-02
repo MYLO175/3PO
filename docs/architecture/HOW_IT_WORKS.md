@@ -233,6 +233,8 @@ Source collection runs independently without AI. A heartbeat reads available sav
 
 Sources allowed for review can also teach memory when memory learning is enabled. Facts keep source evidence and are editable; newly included sources baseline existing content, and failed learning stays paused. New facts attach to existing life areas rather than rebuilding the whole structure. Source refresh itself never learns. Memory settings show inherited review access. The optional daily heartbeat AI limit remains Off by default in Settings → Background.
 
+A heartbeat should not slow the app down. When it checks every saved email assessment, header decision or pending source in one go (choosing which emails to read, which suggestions to compare, what is still pending), that check shares one context projection per purpose, the current Review guide and one native snapshot, and discards them when the check returns. Each assessment is still judged against its own exact receipts. Header decisions older than 30 days are not rechecked, and the per-message preference search runs only once an email's saved receipts still match. Before 1 November these checks rebuilt the whole context for every saved email on the main thread, which could stall the app with a spinning cursor during a heartbeat.
+
 
 ## Compound email suggestions
 

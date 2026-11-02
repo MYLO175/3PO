@@ -194,12 +194,16 @@ struct ProactiveReviewContext {
         let previous = state; state.records[i].dismissed = false;state.records[i].dismissedAt=nil;state.records[i].dismissedSourceVersion=nil
         do { try save(); undoID = nil; dismissalDate = nil } catch { state = previous; self.error = "Dismissal could not be undone." }
     }
+    private struct ContextRevisionPass:Hashable {var mailAccounts:Set<String>?;var whatsappReady:Bool}
+    /// Computed once per shared pass: it hashes every saved fact and email assessment.
     private func contextRevision(_ model:DashboardModel,mailAccounts:Set<String>? = nil,whatsappReady:Bool = true)->String {
+        model.emailSummaries.withSharedAssessmentContext(model) { model.contextEvaluation.value(ContextRevisionPass(mailAccounts:mailAccounts,whatsappReady:whatsappReady)) {
         let facts=model.assistant.memory.permittedRecords.filter{$0.registration == model.inference.activeID && MemoryRules.usable($0,registration:model.inference.activeID) && $0.allSourceEvidence.allSatisfy{source in (source.identity.kind != .mail || (mailAccounts?.contains(source.identity.accountID) ?? true)) && (source.identity.kind != .whatsapp || whatsappReady)}}
         let values:[String]=["communication-actions-v6-date-contract","review-policy",model.emailSummaries.policy(model.inference.activeID).revision,"human-context",model.humanContextDiscoveryRevision(model.inference.activeID),model.assistant.projects.revision.uuidString,TimeZone.current.identifier,scope(model),model.inference.selectedModel,model.featureInstruction(.assistant,registration:model.inference.activeID).text,model.heartbeat.whatsappEnabled.description,DiscoveryNativeTarget.fingerprint(facts.sorted{$0.id.uuidString < $1.id.uuidString}.map{MemoryDependencyRules.fingerprint(MemoryRetrieval.record($0))}),DiscoveryNativeTarget.fingerprint(model.paOrientation?.calendar ?? model.calendarData),DiscoveryNativeTarget.fingerprint(model.reminderData),EmailNativeEvidence.hash(model.completedReminders),EmailNativeEvidence.hash(model.emailSummaries.dismissalContext(model)),model.reviewAcknowledgementRevision,model.assistant.memory.revision.uuidString,model.emailSummaries.resolutionRevision(model),EmailNativeEvidence.hash(model.emailSummaries.sourceAssessments(model).filter{mailAccounts?.contains($0.0.accountID) ?? true}.map{[$0.0.id,$0.1.adviceRevision(replied:$0.0.replied)]})]
         let guide=model.calendarPurposeCapture(sources:model.calendarData.sources.filter(\.writable),registration:model.inference.activeID)
         let instructions=[ContextFeature.projects,.reminders].map{model.featureInstruction($0,registration:model.inference.activeID).reference.revision}
         return DiscoveryNativeTarget.fingerprint(values+[EmailNativeEvidence.hash(guide.referenceVersions),EmailNativeEvidence.hash(instructions)])
+        } }
     }
     /// Historical cards may be reconsidered without reusing their old interpretation
     /// as current advice. Account/source choices and uncertain operation claims still apply.
@@ -213,23 +217,27 @@ struct ProactiveReviewContext {
         }.sorted {$0.created == $1.created ? $0.id < $1.id : $0.created > $1.created}
     }
     func hasPendingSources(_ model:DashboardModel,mailReview:MailReviewScope? = nil,whatsappReady:Bool = true,mailAccountID:String? = nil)->Bool {
+        model.emailSummaries.withSharedAssessmentContext(model) {
         let registration=model.inference.activeID,progress=state.accounts[registration] ?? .init(),context=contextRevision(model,mailAccounts:mailReview?.accountIDs,whatsappReady:whatsappReady)
         if model.emailSummaries.enabled && model.emailSummaries.highlights(model,use:.heartbeatSuggestions,mailAccounts:mailReview?.accountIDs,whatsappReady:whatsappReady).contains(where:{message,summary in (mailAccountID == nil || message.accountID == mailAccountID) && canCompareEmail(message,summary,model:model,mailReview:mailReview) && model.emailSummaries.reviewPermitted(message,model:model,scope:mailReview) && summary.fingerprint == EmailSummary.fingerprint(message) && !summary.evidence.isEmpty && EmailHighlightRules.suggestionSource(summary,replied:message.replied,heartbeat:true) && EmailReviewRules.eligibleForComparison(summary,message:message,heartbeat:true,now:.now) && !ProactiveRules.assessed(progress,kind:"mail",id:message.id,revision:summary.adviceRevision(replied:message.replied),context:context)}) {return true}
         if mailAccountID == nil,earlierCandidates(model,mailReview:mailReview,whatsappReady:whatsappReady).contains(where:{progress.reviewedProposalContexts?[$0.id] != context}) {return true}
         let access=model.whatsapp.access(for:registration)
         guard mailAccountID == nil,whatsappReady,access.enabled,access.includeInSuggestions == true || model.heartbeat.whatsappEnabled else {return false}
         return SourceContextRules.recent(model.whatsapp.messages,chats:model.whatsapp.chats,allowed:access.chats,now:.now).contains{!ProactiveRules.assessed(progress,kind:"whatsapp",id:$0.id,revision:$0.revision,context:context)}
+        }
     }
     private func canCompareEmail(_ message:MailMessage,_ summary:EmailSummary,model:DashboardModel,mailReview:MailReviewScope?)->Bool {
         if model.emailSummaries.handling(summary,message:message,model:model) == nil {return true}
         return !model.emailSummaries.completionCandidates([(message,summary)],model:model,scope:mailReview).isEmpty
     }
     func cancel() { task?.cancel() }
-    func emailReviewCandidates(_ model:DashboardModel,heartbeat:Bool,mailReview:MailReviewScope?,whatsappReady:Bool,now:Date)->[(MailMessage,EmailSummary)] {
-        let progress=state.accounts[model.inference.activeID] ?? .init(),context=contextRevision(model,mailAccounts:mailReview?.accountIDs,whatsappReady:whatsappReady)
+    func emailReviewCandidates(_ model:DashboardModel,heartbeat:Bool,mailReview:MailReviewScope?,whatsappReady:Bool,now:Date,context captured:String? = nil)->[(MailMessage,EmailSummary)] {
+        model.emailSummaries.withSharedAssessmentContext(model) {
+        let progress=state.accounts[model.inference.activeID] ?? .init(),context=captured ?? contextRevision(model,mailAccounts:mailReview?.accountIDs,whatsappReady:whatsappReady)
         return Array((model.emailSummaries.enabled ? model.emailSummaries.highlights(model,use:heartbeat ? .heartbeatSuggestions : .manualSuggestions,mailAccounts:mailReview?.accountIDs,whatsappReady:whatsappReady) : []).filter{message,summary in
             canCompareEmail(message,summary,model:model,mailReview:mailReview) && model.emailSummaries.reviewPermitted(message,model:model,scope:mailReview) && summary.fingerprint == EmailSummary.fingerprint(message) && EmailReviewRules.eligibleForComparison(summary,message:message,heartbeat:heartbeat,now:now) && !ProactiveRules.assessed(progress,kind:"mail",id:message.id,revision:summary.adviceRevision(replied:message.replied),context:context) && EmailHighlightRules.suggestionSource(summary,replied:message.replied,heartbeat:heartbeat,now:now) && !summary.evidence.isEmpty
         }.prefix(3))
+        }
     }
     func check(_ model: DashboardModel, manual: Bool = false, heartbeat: Bool = false, heartbeatWhatsAppReady: Bool = true,mailReview:MailReviewScope? = nil,heartbeatRequest:HeartbeatChildRequest? = nil) {
         if heartbeat {
@@ -259,7 +267,7 @@ struct ProactiveReviewContext {
         }
         let memoryWhatsAppReady = !heartbeat || heartbeatWhatsAppReady
         var context=contextRevision(model,mailAccounts:mailReview?.accountIDs,whatsappReady:memoryWhatsAppReady)
-        let emails=emailReviewCandidates(model,heartbeat:heartbeat,mailReview:mailReview,whatsappReady:memoryWhatsAppReady,now:now)
+        let emails=emailReviewCandidates(model,heartbeat:heartbeat,mailReview:mailReview,whatsappReady:memoryWhatsAppReady,now:now,context:context)
         let completionEmails=model.emailSummaries.completionCandidates(emails,model:model,scope:mailReview)
         let waScope=model.whatsapp.scope(for:registration,purpose:.suggestions),waAccess=model.whatsapp.access(for:registration)
         let waRecent=SourceContextRules.recent(model.whatsapp.messages,chats:model.whatsapp.chats,allowed:waAccess.chats,now:now).filter { message in !ProactiveRules.assessed(progress,kind:"whatsapp",id:message.id,revision:message.revision,context:context) }
