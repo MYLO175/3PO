@@ -182,15 +182,17 @@ struct PATasksView: View {
     private func glance(_ inbox:ReviewInboxProjection)->some View {
         let items=glanceItems(inbox)
         return VStack(alignment:.leading,spacing:layout == .small ? 8 : 10) {
-            HStack(alignment:.top,spacing:16) {
-                if layout == .medium,!items.isEmpty {GlanceCount(value:inbox.pendingCount,label:"to review").frame(width:78,alignment:.leading)}
-                GlanceRows(items:items,rowHeight:34,empty:"Nothing waiting for review.",scrolls:layout == .tall) {item in
-                    Button {item.open?()} label: {
-                        VStack(alignment:.leading,spacing:1) {
-                            Text(item.title).font(.callout.weight(.medium)).lineLimit(1)
-                            Text(item.label).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        }.frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
-                    }.buttonStyle(.plain).disabled(item.open == nil).help(item.title)
+            if items.isEmpty {ReviewEmptyState(compact:true)} else {
+                HStack(alignment:.top,spacing:16) {
+                    if layout == .medium {GlanceCount(value:inbox.pendingCount,label:"to review").frame(width:78,alignment:.leading)}
+                    GlanceRows(items:items,rowHeight:34,empty:"Nothing waiting for review.",scrolls:layout == .tall) {item in
+                        Button {item.open?()} label: {
+                            VStack(alignment:.leading,spacing:1) {
+                                Text(item.title).font(.callout.weight(.medium)).lineLimit(1)
+                                Text(item.label).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }.frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
+                        }.buttonStyle(.plain).disabled(item.open == nil).help(item.title)
+                    }
                 }
             }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
@@ -243,6 +245,7 @@ struct PATasksView: View {
         let questions=inbox.questions,learningQuestions=inbox.learningQuestions,emailCards=inbox.emailCards,standaloneDiscoveries=inbox.standaloneDiscoveries,pending=inbox.pending
         let standaloneEntryIDs=lastSuggestionEntryIDs(standaloneDiscoveries)
         let limited=model.heartbeat.dailyCallLimit > 0 && model.heartbeat.state.accounts[model.inference.activeID]?.retryReason == "allowance"
+        let nothingWaiting=emailCards.isEmpty && standaloneDiscoveries.isEmpty && pending.isEmpty && questions.isEmpty && learningQuestions.isEmpty && inbox.contextQuestions.isEmpty
         return VStack(alignment:.leading,spacing:12) {
             // The status line shows only when checks need attention; otherwise it heads the right-click menu.
             if reviewRetrying || limited {
@@ -253,7 +256,7 @@ struct PATasksView: View {
                     if limited { Button("Limit settings…") {settingsPage="Background";openSettings()}.buttonStyle(.borderless).font(.caption) }
                 }
             }
-            ScrollView {
+            if nothingWaiting {ReviewEmptyState()} else {ScrollView {
                 LazyVStack(alignment:.leading,spacing:12) {
                     if !questions.isEmpty || !learningQuestions.isEmpty || !inbox.contextQuestions.isEmpty {Text("Questions for you").font(.headline)}
                     ContextProjectQuestionsSection(model: model, questions: inbox.contextQuestions)
@@ -336,12 +339,20 @@ struct PATasksView: View {
                             if item.state != .running { HStack { if item.state == .waiting { Button("Continue queue") { model.assistant.resumeQueue(model:model) }.disabled(model.assistant.busy || model.inference.busy || model.inference.usagePaused) }; Button("Remove") { model.assistant.discardQueued(item.id) } }.controlSize(.small) }
                         }.taskCard()
                     }
-                    if emailCards.isEmpty && standaloneDiscoveries.isEmpty && pending.isEmpty && questions.isEmpty && learningQuestions.isEmpty && inbox.contextQuestions.isEmpty {
-                        ContentUnavailableView("Nothing waiting for review",systemImage:"checkmark.circle",description:Text("Proposed changes, useful updates and prepared work appear here when enabled sources reveal something useful."))
-                    }
                 }.frame(maxWidth:.infinity,alignment:.leading)
-            }.scrollEdgeFade()
+            }.scrollEdgeFade()}
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+    }
+}
+/// Nothing waiting: a large tick and one line, centred in the tile.
+private struct ReviewEmptyState:View {
+    var compact=false
+    @Environment(\.workspacePalette) private var palette
+    var body:some View {
+        VStack(spacing:compact ? 8 : 14) {
+            Image(systemName:"checkmark.circle").font(.system(size:compact ? 30 : 56,weight:.light)).foregroundStyle(palette[.accent])
+            Text("Nothing waiting for review").font(compact ? .callout.weight(.medium) : .title3.weight(.semibold)).foregroundStyle(palette[.text].opacity(0.75))
+        }.multilineTextAlignment(.center).frame(maxWidth:.infinity,maxHeight:.infinity).accessibilityElement(children:.combine)
     }
 }
 private struct ReviewGlanceItem:Identifiable {
