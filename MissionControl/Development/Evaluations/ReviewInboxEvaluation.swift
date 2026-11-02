@@ -1246,9 +1246,19 @@ struct ReviewInboxPreview:View {
     @MainActor static var seedError:String?
     /// No sub-flag: the card fixture, with the Explore sheet attached as in the workspace.
     private let cardsPreview=ReviewInboxEvaluation.cardsPreview
+    /// The card fixture can also be seen at the dashboard's smaller tile sizes.
+    @State private var previewLayout=WidgetLayout.large
+    static func glanceSize(_ layout:WidgetLayout)->CGSize? {
+        switch layout {case .small:.init(width:210,height:170);case .medium:.init(width:430,height:170);case .tall:.init(width:210,height:390);case .large:nil}
+    }
     var body:some View {
         VStack {Text("Fictional review inbox · disposable storage · no Apple writes").font(.caption);if ready {
-            if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {WorkspaceView(model:model)} else {PATasksView(model:model)}
+            if ProcessInfo.processInfo.arguments.contains("--navigation-preview") {WorkspaceView(model:model)} else if cardsPreview {
+                Picker("Size",selection:$previewLayout) {Text("Full").tag(WidgetLayout.large);Text("Medium").tag(WidgetLayout.medium);Text("Tall").tag(WidgetLayout.tall);Text("Small").tag(WidgetLayout.small)}.pickerStyle(.segmented).fixedSize()
+                if let size=Self.glanceSize(previewLayout) {
+                    PATasksView(model:model).environment(\.widgetLayout,previewLayout).padding(14).frame(width:size.width,height:size.height).background(Color.primary.opacity(0.05),in:RoundedRectangle(cornerRadius:16)).frame(maxHeight:.infinity,alignment:.top)
+                } else {PATasksView(model:model)}
+            } else {PATasksView(model:model)}
             if ProcessInfo.processInfo.arguments.contains("--pill-feedback-preview") {Button("Show completion message") {model.showFeedback("Completed: Claim my refund")}}
             if model.briefings.undoQuestionDate(model.inference.activeID) != nil {Button("Undo question dismissal") {model.briefings.undoQuestion(model.inference.activeID)}};if model.proactive.canUndo {Button("Undo dismissed fixture") {model.proactive.undo(model)}};if model.emailSummaries.canUndoDismiss {Button("Undo email dismissal") {model.emailSummaries.undoDismiss(model)}}
         } }
@@ -1264,7 +1274,7 @@ struct ReviewInboxPreview:View {
                 model.workspace.showReviewInbox()
             };if ProcessInfo.processInfo.arguments.contains("--activity-work-preview") {AIActivityWorkPreview.seed(model)};ready=true;if cardsPreview,ProcessInfo.processInfo.arguments.contains("--snapshot") {await Self.renderCards(model);NSApp.terminate(nil)}}
     }
-    /// `--snapshot`: offscreen renders of the cards and both Explore sheet states, plus a
+    /// `--snapshot`: offscreen renders of the cards, the smaller tile sizes and both Explore sheet states, plus a
     /// short fixture report. Clicks, menus and popovers still need the interactive preview.
     @MainActor static func renderCards(_ model:DashboardModel) async {
         var report:[String]=[]
@@ -1284,6 +1294,9 @@ struct ReviewInboxPreview:View {
         }
         await capture(PATasksView(model:model),"inbox",NSSize(width:860,height:1150))
         await capture(PATasksView(model:model),"narrow",NSSize(width:520,height:900))
+        for (layout,name) in [(WidgetLayout.medium,"medium"),(.tall,"tall"),(.small,"small")] {
+            if let size=glanceSize(layout) {await capture(PATasksView(model:model).environment(\.widgetLayout,layout).padding(14),"glance-"+name,NSSize(width:size.width,height:size.height))}
+        }
         if let favour=model.mailData.messages.first(where:{$0.id == "cards-favour"}) {
             model.openReviewSource(favour)
             if let id=model.reviewPresentation?.id {await capture(ProductionReviewConversationView(model:model,conversationID:id),"quick-chat",NSSize(width:700,height:520))}

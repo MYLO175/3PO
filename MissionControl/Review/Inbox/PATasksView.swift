@@ -117,12 +117,15 @@ struct PATasksView: View {
             Button("Source evidence") {backgroundID=nil;sourceDiscovery=item}.buttonStyle(.link).font(.caption)
         }
     }
+    private func discoveryCardTitle(_ item:PADiscovery,details:ReviewSourceDetails?)->String {
+        item.proposedChange?.target.title ?? item.proposedRemoval?.target.title ?? discoveryTitle(item) ?? details?.title ?? details?.location ?? "Review suggestion"
+    }
     @ViewBuilder private func discoveryCard(_ item:PADiscovery,showsActionEntry:Bool)->some View {
         let details=model.preparedSourceDetails(item)
         let message=item.sourceKind == "whatsapp" ? nil : model.mailData.messages.first{$0.id == item.mailID}
         let explore=discoveryExplore(item)
         VStack(alignment:.leading,spacing:6) {
-            Text(item.proposedChange?.target.title ?? item.proposedRemoval?.target.title ?? discoveryTitle(item) ?? details?.title ?? details?.location ?? "Review suggestion").font(.callout.weight(.semibold)).lineLimit(2)
+            Text(discoveryCardTitle(item,details:details)).font(.callout.weight(.semibold)).lineLimit(2)
             if let details {ReviewSourceLine(details:details)}
             Text(PAProse.display(item.message)).font(.callout)
             if let change=item.proposedChange {
@@ -160,11 +163,18 @@ struct PATasksView: View {
     @State private var showingRelevance=false
     @Environment(\.widgetLayout) private var layout
     /// Everything waiting, one line each: questions open their answer, emails their message, suggestions their evidence.
+    /// The second line is the full card's info line, never a status label.
     private func glanceItems(_ inbox:ReviewInboxProjection)->[ReviewGlanceItem] {
-        inbox.questions.map {item in ReviewGlanceItem(id:"q:\(item.id)",label:"Question",title:PAProse.display(item.question)) {answering=item;answer="";answerError=nil}}
+        inbox.questions.map {item in
+            let sources=item.sourceIDs.compactMap{id in item.snapshot.sources.first{$0.id == id}}
+            return ReviewGlanceItem(id:"q:\(item.id)",label:sources.isEmpty ? "Your answer would help 3PO" : "Based on " + sources.map(\.label).joined(separator:", "),title:PAProse.display(item.question)) {answering=item;answer="";answerError=nil}
+        }
         + inbox.learningQuestions.map {item in ReviewGlanceItem(id:"l:\(item.id)",label:"Getting to know you",title:PAProse.display(item.text)) {answeringLearning=item;answer="";answerError=nil}}
-        + inbox.standaloneDiscoveries.map {item in ReviewGlanceItem(id:"d:"+item.id,label:item.proposedChange != nil || item.proposedRemoval != nil ? "Needs approval" : item.kind == "reply" ? "Reply draft" : "Suggestion",title:discoveryTitle(item) ?? PAProse.display(item.message)) {sourceDiscovery=item}}
-        + inbox.emailCards.map {card in ReviewGlanceItem(id:"e:"+card.id,label:card.summary.replyDraft == nil ? (card.summary.attention ? "Needs attention" : "Update") : "Reply draft ready",title:card.message.subject.isEmpty ? "(No subject)" : card.message.subject) {model.select(card.message)}}
+        + inbox.standaloneDiscoveries.map {item in
+            let details=model.preparedSourceDetails(item)
+            return ReviewGlanceItem(id:"d:"+item.id,label:details.map{ReviewSourceLine.text($0)} ?? PAProse.display(item.message),title:discoveryCardTitle(item,details:details)) {sourceDiscovery=item}
+        }
+        + inbox.emailCards.map {card in ReviewGlanceItem(id:"e:"+card.id,label:ReviewSourceLine.text(.email(card.message)),title:card.message.subject.isEmpty ? "(No subject)" : card.message.subject) {model.select(card.message)}}
         + inbox.pending.map {item in ReviewGlanceItem(id:"p:\(item.id)",label:item.state == .needsAnswer ? "Your answer needed" : item.state == .completed ? "PA work ready" : "Delegated work",title:item.prompt,open:nil)}
     }
     private func glance(_ inbox:ReviewInboxProjection)->some View {
