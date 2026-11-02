@@ -69,6 +69,7 @@ enum EvaluationLaunchGuard {
         "--preview-settings",
         "--preview-settings-context",
         "--preview-source-timeline",
+        "--preview-widget-sizes",
         "--render-life-map",
         "--render-projects",
         "--render-weather",

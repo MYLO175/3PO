@@ -38,7 +38,7 @@ import SwiftData
         persistEnabledPreference=false;enabled=true
     }
     func seedAdviceFixture(_ values:[EmailSummary]) throws {
-        guard ["--validate-advice-context","--validate-review-inbox","--preview-review-inbox"].contains(where:ProcessInfo.processInfo.arguments.contains) else { throw SummaryFailure.invalid }
+        guard ["--validate-advice-context","--validate-review-inbox","--preview-review-inbox","--preview-widget-sizes"].contains(where:ProcessInfo.processInfo.arguments.contains) else { throw SummaryFailure.invalid }
         records=values;try save()
     }
     func reopenedResolutionFixture()throws->EmailSummaryService {

@@ -51,7 +51,7 @@ struct WorkspaceView: View {
                                 Spacer()
                             }
                             if let widget = store.selected.widgets.first(where:{ $0.id == focusedWidgetID }) ?? store.selected.widgets.first {
-                                WorkspaceTile(model:model,store:store,widget:widgetBinding(widget),editing:false,metrics:WorkspaceGeometry(width:width,height:max(1,height-38),rows:rows),focused:true)
+                                WorkspaceTile(model:model,store:store,widget:widgetBinding(widget),editing:false,metrics:WorkspaceGeometry(width:width,height:max(1,height-38),rows:rows),focused:true,startEditing:{ editing = true })
                             }
                         }.padding(16)
                     } else {
@@ -60,7 +60,7 @@ struct WorkspaceView: View {
                                 for x in 0..<12 { for y in 0..<rows { context.fill(Path(ellipseIn:CGRect(x:Double(x)*metrics.xStep,y:Double(y)*metrics.yStep,width:3,height:3)),with:.color(.secondary.opacity(0.2))) } }
                             }.allowsHitTesting(false) }
                             ForEach(store.selected.widgets) { widget in
-                                WorkspaceTile(model:model,store:store,widget:widgetBinding(widget),editing:editing,metrics:metrics)
+                                WorkspaceTile(model:model,store:store,widget:widgetBinding(widget),editing:editing,metrics:metrics,startEditing:{ editing = true })
                             }
                         }.frame(width:width,height:height,alignment:.topLeading).coordinateSpace(name:"workspaceGrid").padding(16)
                     }
@@ -159,7 +159,7 @@ struct WorkspaceView: View {
         }
     }
     private func newDashboard() { naming = nil; dashboardSymbol=nil; name = "New dashboard"; showName = true }
-    private func addWidget(_ kind: WidgetKind) { store.addWidget(kind); editing = true }
+    private func addWidget(_ kind: WidgetKind, size: WidgetSize? = nil) { store.addWidget(kind,size:size); editing = true }
     private func customiseToolbar() { NSApp.keyWindow?.runToolbarCustomizationPalette(nil) }
     private func showAssistant() { model.openAssistantComposer() }
     private func visible(_ tool: WorkspaceTool) -> Bool { ToolbarRules.visible(tool,hidden:toolbarHidden) }
@@ -169,7 +169,7 @@ struct WorkspaceView: View {
         guard matching.count > 1,let index=matching.firstIndex(where:{$0.id == widget.id}) else {return title}
         return "\(title) \(index+1)"
     }
-    private var widgetChoices: some View { ForEach(WidgetKind.allCases,id:\.self) { kind in Button { addWidget(kind) } label: { Label(kind.title,systemImage:kind.icon) } } }
+    private var widgetChoices: some View { ForEach(WidgetKind.allCases,id:\.self) { kind in Menu { ForEach(WidgetSize.allCases) { size in Button(size.title) { addWidget(kind,size:size) } } } label: { Label(kind.title,systemImage:kind.icon) } } }
     private var addMenu: some View {
         Menu { widgetChoices } label: { Label("Add widget",systemImage:"plus") }
     }
@@ -301,6 +301,7 @@ private struct WorkspaceTile: View {
     var editing: Bool
     var metrics: WorkspaceGeometry
     var focused = false
+    var startEditing: (() -> Void)? = nil
     @State private var interaction: Interaction?
     @State private var readingMode = false
     private struct Interaction { var origin: GridRect; var translation: CGSize; var resizing: Bool }
@@ -330,14 +331,19 @@ private struct WorkspaceTile: View {
                         HStack { Image(systemName:"line.3.horizontal"); Text(widget.kind?.title ?? "Unavailable widget").font(.caption.weight(.semibold)); Spacer() }.contentShape(Rectangle()).gesture(gesture(resizing:false))
                         Button { showWidgetColours = true } label: { Image(systemName:"paintpalette") }.buttonStyle(.borderless).help("Widget colours").accessibilityLabel("\(widget.kind?.title ?? "Widget") colours")
                         Menu {
+                            Picker("Size",selection:Binding(get:{ WidgetSize.matching(widget.rect) },set:{ if let size = $0 { store.resize(widget,to:size) } })) {
+                                ForEach(WidgetSize.allCases) { size in Text(size.title).tag(Optional(size)) }
+                            }.pickerStyle(.inline)
                             Button("Fill page") { store.fullPage(widget) }
+                            Divider()
                             Button("Move right") { adjust(x:1) }; Button("Move left") { adjust(x:-1) }; Button("Move down") { adjust(y:1) }; Button("Move up") { adjust(y:-1) }
                             Button("Wider") { adjust(w:1) }; Button("Narrower") { adjust(w:-1) }; Button("Taller") { adjust(h:1) }; Button("Shorter") { adjust(h:-1) }
                             Divider(); Button("Remove widget") { store.removeWidget(widget.id) }
                         } label: { Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width:20).accessibilityLabel("\(widget.kind?.title ?? "Widget") layout actions")
                     }.padding(.horizontal,12).frame(height:34).background(Color.accentColor.opacity(0.08))
                 }
-                content.environment(\.workspacePalette,palette).environment(\.inWorkspaceTile,true).foregroundStyle(palette[.text]).tint(palette[.accent]).allowsHitTesting(!editing).frame(maxWidth:.infinity,maxHeight:.infinity)
+                content.environment(\.workspacePalette,palette).environment(\.inWorkspaceTile,true).scrollIndicators(.never).environment(\.widgetLayout,WidgetLayout(rect:baseRect,size:baseFrame.size)).foregroundStyle(palette[.text]).tint(palette[.accent]).allowsHitTesting(!editing).frame(maxWidth:.infinity,maxHeight:.infinity)
+                    .widgetMenuHost(enabled:!editing,editLayout:startEditing)
             }
             // Keep content at its committed size during the gesture; only the preview shell follows the pointer.
             .frame(width:baseFrame.width,height:baseFrame.height,alignment:.topLeading)

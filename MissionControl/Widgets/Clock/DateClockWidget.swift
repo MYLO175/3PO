@@ -8,20 +8,18 @@ struct DateClockWidget:View {
     var body:some View {
         TimelineView(.periodic(from:.now,by:seconds && showsTime ? 1 : 30)) { context in
             VStack(spacing:8) {
-                HStack {
-                    Text(context.date.formatted(.dateTime.weekday(.wide))).font(.subheadline.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
-                    Spacer()
-                    Menu {
-                        Picker("Layout",selection:Binding(get:{configuration.clockStyle ?? "auto"},set:{configuration.clockStyle=$0})) { Text("Adaptive").tag("auto");Text("Digital").tag("digital");Text("Calendar").tag("calendar") }
-                        Picker("Alignment",selection:Binding(get:{configuration.clockAlignment ?? "centre"},set:{configuration.clockAlignment=$0})) { Text("Centre").tag("centre");Text("Leading").tag("leading") }
-                        Divider()
-                        Toggle("Show clock",isOn:Binding(get:{showsTime},set:{configuration.clockShowsTime=$0}))
-                        Toggle("Show seconds",isOn:Binding(get:{seconds},set:{configuration.clockShowsSeconds=$0})).disabled(!showsTime)
-                        Toggle("24-hour time",isOn:Binding(get:{configuration.clockUses24Hour ?? false},set:{configuration.clockUses24Hour=$0})).disabled(!showsTime)
-                    } label:{Image(systemName:"ellipsis")}.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width:22).accessibilityLabel("Date and clock options")
-                }.fixedSize(horizontal:false,vertical:true)
+                Text(context.date.formatted(.dateTime.weekday(.wide))).font(.subheadline.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
+                    .frame(maxWidth:.infinity,alignment:.leading).fixedSize(horizontal:false,vertical:true)
                 DateClockFace(date:context.date,configuration:configuration)
             }.padding(16)
+        }
+        .widgetMenu("Date and clock") {
+            Picker("Layout",selection:Binding(get:{configuration.clockStyle ?? "auto"},set:{configuration.clockStyle=$0})) { Text("Adaptive").tag("auto");Text("Digital").tag("digital");Text("Calendar").tag("calendar") }
+            Picker("Alignment",selection:Binding(get:{configuration.clockAlignment ?? "centre"},set:{configuration.clockAlignment=$0})) { Text("Centre").tag("centre");Text("Leading").tag("leading") }
+            Divider()
+            Toggle("Show clock",isOn:Binding(get:{showsTime},set:{configuration.clockShowsTime=$0}))
+            Toggle("Show seconds",isOn:Binding(get:{seconds},set:{configuration.clockShowsSeconds=$0})).disabled(!showsTime)
+            Toggle("24-hour time",isOn:Binding(get:{configuration.clockUses24Hour ?? false},set:{configuration.clockUses24Hour=$0})).disabled(!showsTime)
         }
     }
 }
@@ -58,6 +56,13 @@ struct DateClockFace:View {
                     Text(month).font(.system(size:fittedFont(month,width:dateWidth,height:size.height*0.2,weight:.medium),weight:.medium,design:.rounded)).foregroundStyle(.secondary)
                 }.frame(width:dateWidth,height:size.height,alignment:leading ? .leading : .center)
                 Text(time).font(.system(size:fittedFont(time,width:timeWidth,height:size.height*0.94,weight:.light,monospaced:true),weight:.light,design:.rounded)).monospacedDigit().rollingNumber(time).frame(width:timeWidth,height:size.height)
+            }
+        } else if showsTime && size.height > size.width*1.3 {
+            // Portrait: the day large, its month, then the time.
+            VStack(alignment:alignment,spacing:size.height*0.03) {
+                Text(day).font(.system(size:fittedFont(day,width:size.width,height:size.height*0.4,weight:.semibold),weight:.semibold,design:.rounded))
+                Text(month).font(.system(size:fittedFont(month,width:size.width,height:size.height*0.1,weight:.medium),weight:.medium,design:.rounded)).foregroundStyle(.secondary)
+                Text(time).font(.system(size:fittedFont(time,width:size.width,height:size.height*0.28,weight:.light,monospaced:true),weight:.light,design:.rounded)).monospacedDigit().rollingNumber(time)
             }
         } else if showsTime {
             let dateLabel=date.formatted(.dateTime.day().month(.wide))

@@ -126,7 +126,6 @@ private struct DesignPreviewContent: View {
         Grid(horizontalSpacing: 14, verticalSpacing: 14) {
             GridRow {
                 card {
-                    WidgetHeader(title: "Today’s brief", symbol: "sun.max") { Text("Updated 08:02").font(.caption2).foregroundStyle(.secondary); Image(systemName: "arrow.clockwise"); Image(systemName: "ellipsis") }
                     WidgetHeadline(text: "Good morning.", size: 30)
                     Text("A light day. Design studio is at 10:00 in Room 2.14, and your tutor asked everyone to bring printed drafts. Lunch with Alex is at 13:00. The parcel needs collecting from the post office before 17:30. Your essay draft is due on Monday, and Saturday morning is free if you want to start it then.")
                         .font(.system(size: 14)).lineSpacing(5)
@@ -137,7 +136,6 @@ private struct DesignPreviewContent: View {
                 // Writable-looking but look-only: a click here never reaches Reminders.
                 tile { DashboardView(model: model, widgetConfiguration: $reminders).remindersPanel.allowsHitTesting(false) }
                 card {
-                    WidgetHeader(title: "Your PA", symbol: "sparkles") { Image(systemName: "square.and.pencil") }
                     HStack { Spacer(); Text("What’s left for today?").padding(.horizontal, 12).padding(.vertical, 7).background(palette[.userBubble], in: RoundedRectangle(cornerRadius: 14)) }
                     Text("Design studio at 10:00, lunch with Alex at 13:00, and the parcel before 17:30.")
                 }

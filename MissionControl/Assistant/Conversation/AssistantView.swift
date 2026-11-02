@@ -116,6 +116,8 @@ struct ChatApprovalPreview:View {
             .padding(20).frame(minWidth:650,minHeight:600).preferredColorScheme(.dark)
             .task {
                 guard !seeded else {return};seeded=true
+                // The preview has no saved account; an in-memory fictional owner lets the sample chat open.
+                if model.inference.activeID.isEmpty {model.inference.useChatGPTForFictionalEvaluation();model.chatGPT.activeID="fictional-chat-preview"}
                 do {model.assistant.seedChatApprovalPreview(try await ReviewInboxEvaluation.chatApprovalFixture(model))}
                 catch {model.assistant.error=error.localizedDescription}
             }
@@ -282,6 +284,7 @@ struct AssistantPanel: View {
         if capture.preparationNotes == nil {capture.preparationNotes=(turn.toolErrors ?? []).filter(PAReadPrerequisite.legacyPreparation)}
         inspectingContext=capture
     }
+    private func copyMessage(_ turn:AssistantTurn) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(turn.content,forType:.string) }
     @ViewBuilder private var historicalDraft: some View {
         let key = displayedSessionID ?? selectedID
         let text = assistant.drafts.text(registration:model.inference.activeID,widget:imageDraftWidget,conversation:key)
@@ -299,6 +302,24 @@ struct AssistantPanel: View {
     }
     /// A single line of the message field plus its padding.
     private let composerRow: CGFloat = 34
+    @Environment(\.widgetLayout) private var layout
+    /// Two-row sizes keep the message box and show the latest reply above it, as much as fits.
+    private func latestReply(_ turn: AssistantTurn?) -> some View {
+        let replying = turn.map { assistant.busy && assistant.requestConversationID == selectedID && assistant.requestTurnID == $0.id } ?? false
+        return GeometryReader { geometry in
+            Group {
+                if let turn, !turn.content.isEmpty {
+                    let text = PAProse.display(turn.content)
+                    Text((try? AttributedString(markdown:text,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(text))
+                        .font(.callout).lineSpacing(2).lineLimit(max(1,Int((geometry.size.height+2)/19))).textSelection(.enabled)
+                } else if replying {
+                    if assistant.toolStatus.isEmpty { TypingDots() } else { Text(assistant.toolStatus).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                } else {
+                    Text("Ask about your day, an email or what needs doing.").font(.callout).foregroundStyle(.secondary)
+                }
+            }.frame(maxWidth:.infinity,alignment:.topLeading)
+        }
+    }
     /// One click starts on-device dictation straight into the message box; the next click stops.
     private func toggleDictation() {
         if dictation.recording { dictation.stop(); return }
@@ -323,45 +344,12 @@ struct AssistantPanel: View {
         let displayedTurns=page.rows
         let discoveryEntries=lastDiscoveryEntries(displayedTurns)
         VStack(spacing: 8) {
-            WidgetHeader(title:assistant.displayName,symbol:"sparkles") {
-                if let completed=model.heartbeat.state.accounts[model.inference.activeID]?.assessed {
-                    TimelineView(.periodic(from:.now,by:60)) {context in
-                        Text("Heartbeat \(completed.formatted(date:Calendar.current.isDate(completed,inSameDayAs:context.date) ? .omitted : .abbreviated,time:.shortened))")
-                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                            .help("Last completed AI heartbeat: \(completed.formatted(date:.abbreviated,time:.shortened))")
-                            .accessibilityLabel("Last completed heartbeat \(completed.formatted(date:.abbreviated,time:.shortened))")
-                    }
-                }
-                if !focusBinding.wrappedValue.isEmpty {
-                    Label(LifeFocusRules.label(focusBinding.wrappedValue),systemImage:"scope").font(.caption2.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
-                        .help("Chat focus. Change it in the PA menu.").accessibilityLabel("Chat focus: " + LifeFocusRules.label(focusBinding.wrappedValue))
-                }
-                Button { startNewChat() } label: { Image(systemName:"square.and.pencil") }
-                    .disabled(assistant.busy || model.inference.busy || assistant.setupActive(selectedTopicID))
-                    .help("New chat — keep earlier chats and saved memory")
-                    .accessibilityLabel("New chat").accessibilityIdentifier("pa-new-chat")
-                Menu {
-                    Menu("Focus: " + LifeFocusRules.label(focusBinding.wrappedValue),systemImage:"scope") {
-                        Button("All areas") { focusBinding.wrappedValue = [] }
-                        Divider()
-                        ForEach(LifeArea.allCases.filter{$0 != .unsorted}) { area in
-                            Toggle(area.title,isOn:Binding(get:{focusBinding.wrappedValue.contains(area)},set:{ enabled in
-                                let values=enabled ? focusBinding.wrappedValue+[area] : focusBinding.wrappedValue.filter{$0 != area}
-                                focusBinding.wrappedValue=LifeFocusRules.normalised(values.map(\.rawValue))
-                            }))
-                        }
-                    }
-                    Button("Chat history…",systemImage:"clock.arrow.circlepath") {
-                        historyEntries = AssistantChatHistoryEntry.entries(assistant.feed)
-                        showHistory = true
-                    }
-                    Button("Name your PA…") { showRename = true }.disabled(assistant.busy)
-                    Button("Context…") { showMemory = true }
-                    Button(assistant.setupActive(selectedTopicID) ? "Continue context setup…" : "Set up my PA…") { showProfileSetup=true }.disabled(assistant.busy)
-                    Text(assistant.contextEnabled ? "Apple source context enabled" : "Apple source context off")
-                } label: { Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("PA options").accessibilityLabel("PA options")
-                if supportsReadingMode { Button { readingMode.toggle() } label: { Image(systemName:readingMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") }.help(readingMode ? "Compact chat" : "Expand chat") }
-            }.buttonStyle(.borderless).controlSize(.small)
+            // Focus narrows what the PA looks at, so it stays in sight while it is on.
+            if !layout.compact,!focusBinding.wrappedValue.isEmpty {
+                Label("Focus: " + LifeFocusRules.label(focusBinding.wrappedValue),systemImage:"scope").font(.caption2.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
+                    .frame(maxWidth:.infinity,alignment:.leading)
+                    .help("Change the focus in the right-click menu.").accessibilityLabel("Chat focus: " + LifeFocusRules.label(focusBinding.wrappedValue))
+            }
             if viewingHistory {
                 HStack {
                     Label("Earlier chat",systemImage:"clock.arrow.circlepath").font(.caption).foregroundStyle(.secondary)
@@ -373,6 +361,7 @@ struct AssistantPanel: View {
                         .accessibilityIdentifier("pa-return-current-chat")
                 }
             }
+            if layout.short { latestReply(displayedTurns.last(where:{ $0.turn.role == "assistant" })?.turn) } else {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
@@ -461,17 +450,12 @@ struct AssistantPanel: View {
                                 if let date = turn.created, !replyingHere { TranscriptHoverTime(date:date).padding(.horizontal,turn.role == "user" ? 4 : 2) }
                             }
                                 .modifier(TranscriptRowHover())
-                            .contextMenu {
-                                if turn.contextCapture != nil {
-                                    Button("Sources & searches…",systemImage:"magnifyingglass") {inspectContext(turn)}
-                                        .accessibilityIdentifier("pa-sources-searches-" + turn.id.uuidString)
-                                }
-                                if !turn.content.isEmpty { Button("Copy",systemImage:"doc.on.doc") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(turn.content,forType:.string) } }
-                            }
+                            .background(TranscriptMessageMenu(sources:turn.contextCapture == nil ? nil : {inspectContext(turn)},copy:turn.content.isEmpty ? nil : {copyMessage(turn)}))
                             .accessibilityActions {
                                 if turn.contextCapture != nil {
                                     Button("Sources & searches") {inspectContext(turn)}
                                 }
+                                if !turn.content.isEmpty { Button("Copy") {copyMessage(turn)} }
                             }
                             .accessibilityIdentifier("pa-turn-"+turn.id.uuidString)
 
@@ -485,6 +469,7 @@ struct AssistantPanel: View {
                     Double(geometry.contentSize.height-geometry.visibleRect.maxY)
                 } action: { _, distance in transcriptScroll.update(distanceFromBottom:distance,userScrolling:transcriptUserScrolling) }
                 .onScrollPhaseChange { _, phase in transcriptUserScrolling = phase == .tracking || phase == .interacting || phase == .decelerating }
+                .scrollEdgeFade()
                 .onChange(of:page.lastVisibleTurn?.content) { if transcriptScroll.followsBottom,let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
                 .onChange(of:page.lastVisibleTurn?.id) { if transcriptScroll.followsBottom,let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
                 .onChange(of:selectedID) { visibleTurnLimit=40;transcriptScroll.reset();if let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
@@ -492,6 +477,7 @@ struct AssistantPanel: View {
                 .onChange(of:displayedSessionID) { visibleTurnLimit=40;transcriptScroll.reset();if let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
                 .onChange(of:viewingHistory) { visibleTurnLimit=40;transcriptScroll.reset();if let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
                 .onAppear { if let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
+            }
             }
             if viewingHistory { historicalDraft }
             if model.memoryLearning.canUndoQuestion(model.inference.activeID) { HStack { Text("Question dismissed").font(.caption).foregroundStyle(.secondary); Button("Undo") { model.memoryLearning.undoQuestion(model.inference.activeID) }.controlSize(.small); Spacer() } }
@@ -543,7 +529,7 @@ struct AssistantPanel: View {
                 // Mic and send share the single-line field's height, so they sit centred on the text.
                 DictationButton(dictation:dictation,toggle:toggleDictation).frame(height:composerRow).disabled(widgetID != nil && !assistant.drafts.writable)
                 ZStack(alignment:.topLeading) {
-                    if draft.wrappedValue.isEmpty { Text(dictation.recording ? "Listening…" : PAIdentity.placeholder(assistant.displayName)).foregroundStyle(.secondary).padding(.top,2).allowsHitTesting(false) }
+                    if draft.wrappedValue.isEmpty { Text(dictation.recording ? "Listening…" : PAIdentity.placeholder(assistant.displayName)).foregroundStyle(.secondary).lineLimit(1).padding(.top,2).allowsHitTesting(false) }
                     PAChatComposer(text:draft,focused:Binding(get:{composerFocused},set:{composerFocused=$0}),height:$composerHeight,scope:ChatDraftRules.key(registration:model.inference.activeID,widget:imageDraftWidget,conversation:draftKey),enabled:assistant.drafts.writable,textColor:NSColor(palette[.text]),pasteImage:pasteImage,submit:send,cancel:{ guard dictation.recording || dictation.preparing else { return false }; cancelDictation(); return true })
                         .frame(height:composerHeight)
                 }.padding(.vertical,6)
@@ -596,6 +582,35 @@ struct AssistantPanel: View {
         .sheet(isPresented:$showHistory) {
             AssistantChatHistoryView(entries:historyEntries,select:{ entry in historySelection = .init(sessionID:entry.sessionID);showHistory=false },close:{showHistory=false})
         }.padding(16)
+        .widgetMenu(assistant.displayName,status:heartbeatStatus) { chatMenuItems }
+    }
+    private var heartbeatStatus: String? {
+        model.heartbeat.state.accounts[model.inference.activeID]?.assessed.map { "heartbeat " + $0.formatted(date:Calendar.current.isDateInToday($0) ? .omitted : .abbreviated,time:.shortened) }
+    }
+    /// The right-click menu; a message keeps its own Sources & searches and Copy.
+    @ViewBuilder private var chatMenuItems: some View {
+        Button("New chat",systemImage:"square.and.pencil") { startNewChat() }
+            .disabled(assistant.busy || model.inference.busy || assistant.setupActive(selectedTopicID))
+        Button("Chat history…",systemImage:"clock.arrow.circlepath") {
+            historyEntries = AssistantChatHistoryEntry.entries(assistant.feed)
+            showHistory = true
+        }
+        Menu("Focus: " + LifeFocusRules.label(focusBinding.wrappedValue),systemImage:"scope") {
+            Button("All areas") { focusBinding.wrappedValue = [] }
+            Divider()
+            ForEach(LifeArea.allCases.filter{$0 != .unsorted}) { area in
+                Toggle(area.title,isOn:Binding(get:{focusBinding.wrappedValue.contains(area)},set:{ enabled in
+                    let values=enabled ? focusBinding.wrappedValue+[area] : focusBinding.wrappedValue.filter{$0 != area}
+                    focusBinding.wrappedValue=LifeFocusRules.normalised(values.map(\.rawValue))
+                }))
+            }
+        }
+        if supportsReadingMode { Button(readingMode ? "Compact chat" : "Expand chat") { readingMode.toggle() } }
+        Divider()
+        Button("Name your PA…") { showRename = true }.disabled(assistant.busy)
+        Button("Context…") { showMemory = true }
+        Button(assistant.setupActive(selectedTopicID) ? "Continue context setup…" : "Set up my PA…") { showProfileSetup=true }.disabled(assistant.busy)
+        Text(assistant.contextEnabled ? "Apple source context enabled" : "Apple source context off")
     }
 }
 struct AssistantSourceSettings: View {
@@ -832,6 +847,56 @@ extension EnvironmentValues {
 private struct TranscriptRowHover: ViewModifier {
     @State private var hovered = false
     func body(content: Content) -> some View { content.environment(\.transcriptRowHovered, hovered).onHover { hovered = $0 } }
+}
+
+/// A message's right-click menu: Sources & searches (when the reply saved its context) and Copy.
+/// Selectable reply text answers a right-click with its own Copy/Look Up menu and the gaps between
+/// lines take no clicks, so a `.contextMenu` here almost never opened. This watches for right-clicks
+/// and Control-clicks anywhere on the message instead; left-clicks and drags still select text.
+private struct TranscriptMessageMenu: NSViewRepresentable {
+    var sources: (() -> Void)?
+    var copy: (() -> Void)?
+    func makeNSView(context: Context) -> Probe { let view = Probe(); view.sources = sources; view.copy = copy; return view }
+    func updateNSView(_ view: Probe, context: Context) { view.sources = sources; view.copy = copy }
+    static func dismantleNSView(_ view: Probe, coordinator: ()) { view.stop() }
+    final class Probe: NSView {
+        var sources: (() -> Void)?
+        var copy: (() -> Void)?
+        private var monitor: Any?
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow(); stop()
+            guard window != nil else { return }
+            RightClickMenuOwners.add(self)
+            monitor = NSEvent.addLocalMonitorForEvents(matching:[.rightMouseDown,.leftMouseDown]) { [weak self] event in
+                guard let self, let menu = self.messageMenu(event) else { return event }
+                NSMenu.popUpContextMenu(menu, with: event, for: self)
+                return nil
+            }
+        }
+        func stop() { if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil; RightClickMenuOwners.remove(self) }
+        /// Only a right-click on this message where it is scrolled into view. The host reports a
+        /// visible rect wider than the message, so the point must also be inside its bounds.
+        private func messageMenu(_ event: NSEvent) -> NSMenu? {
+            guard event.type == .rightMouseDown || event.modifierFlags.contains(.control), let window, event.window === window, !isHiddenOrHasHiddenAncestor else { return nil }
+            let point = convert(event.locationInWindow, from: nil)
+            guard bounds.contains(point), visibleRect.contains(point) else { return nil }
+            let menu = NSMenu()
+            if let sources { menu.addItem(TranscriptMenuItem("Sources & searches…", symbol: "magnifyingglass", run: sources)) }
+            if let copy { menu.addItem(TranscriptMenuItem("Copy", symbol: "doc.on.doc", run: copy)) }
+            return menu.items.isEmpty ? nil : menu
+        }
+    }
+}
+private final class TranscriptMenuItem: NSMenuItem {
+    private let run: () -> Void
+    init(_ title: String, symbol: String, run: @escaping () -> Void) {
+        self.run = run
+        super.init(title: title, action: #selector(choose), keyEquivalent: "")
+        target = self; image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+    }
+    required init(coder: NSCoder) { fatalError("init(coder:) is not used") }
+    @objc private func choose() { run() }
 }
 
 /// The mic inside the message box. While listening it turns red and its ring follows your voice.

@@ -24,7 +24,44 @@ struct PALifeMapWidget: View {
     }) }
     private var notebook:LifeNotebook { model.assistant.memory.notebook(model.inference.activeID,includeTopics:true) }
     private var notes:[LifeAreaNote] { notebook.notes.filter { focusAreas.isEmpty || focusAreas.contains($0.area) } }
+    @Environment(\.widgetLayout) private var layout
+    @Environment(\.workspacePalette) private var palette
     var body:some View {
+        // Only the glance has a widget menu; the full view keeps its own header.
+        Group { if layout.compact { glance.widgetMenu("Life map") { Button("Context…") { showContext=true } } } else { full } }
+        .sheet(isPresented:$showContext) { ContextPagesView(model:model,registration:model.inference.activeID) }
+        .sheet(item:$areaDetails) { area in
+            LifeMapAreaDetails(model:model,registration:model.inference.activeID,area:area) { areaMemory=$0 }
+                .sheet(item:$areaMemory) { memory in memoryDetails(memory,fromArea:true) }
+        }
+        .sheet(item:$selected) { memory in memoryDetails(memory)
+        }
+        .onChange(of:model.inference.activeID) { selected=nil;areaDetails=nil;areaMemory=nil;detailOrganising=nil;detailPlanReports=nil;detailShowMemory=false;showContext=false;selectedArea=nil }
+    }
+    /// The areas of life with what 3PO knows in each; a click opens that area.
+    private var glance:some View {
+        let total=Set(notes.flatMap { $0.records.map(\.id) }).count
+        return VStack(alignment:.leading,spacing:layout == .small ? 8 : 10) {
+            if !model.assistant.memory.enabled && notebook.anchors.isEmpty {
+                Text("Saved memory is off.").font(.callout).foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+            } else {
+                HStack(alignment:.top,spacing:16) {
+                    if layout == .medium,!notes.isEmpty { GlanceCount(value:total,label:"saved facts").frame(width:78,alignment:.leading) }
+                    GlanceRows(items:notes,rowHeight:24,empty:"Grows from what you tell your PA.",scrolls:layout == .tall,columnWidth:170) { note in
+                        Button { areaDetails=note.area } label: {
+                            HStack(spacing:8) {
+                                Image(systemName:note.area.symbol).font(.system(size:12,weight:.semibold)).foregroundStyle(palette[.accent]).frame(width:18)
+                                Text(note.area.title).font(.callout).lineLimit(1)
+                                Spacer(minLength:4)
+                                Text("\(note.records.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            }.contentShape(Rectangle())
+                        }.buttonStyle(.plain).help("Open " + note.area.title)
+                    }
+                }
+            }
+        }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+    }
+    private var full:some View {
         VStack(alignment:.leading,spacing:10) {
             HStack { Label("Life map",systemImage:"point.3.connected.trianglepath.dotted").font(.title3.weight(.semibold));Spacer()
                 LifeFocusPicker(selection:focusBinding).frame(maxWidth:160,alignment:.trailing)
@@ -58,14 +95,6 @@ struct PALifeMapWidget: View {
             }.controlSize(.small) }
             if presentation != "Structure",let error=model.lifeOrganisation.error { Text(error).font(.caption).foregroundStyle(.orange).lineLimit(3) }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
-        .sheet(isPresented:$showContext) { ContextPagesView(model:model,registration:model.inference.activeID) }
-        .sheet(item:$areaDetails) { area in
-            LifeMapAreaDetails(model:model,registration:model.inference.activeID,area:area) { areaMemory=$0 }
-                .sheet(item:$areaMemory) { memory in memoryDetails(memory,fromArea:true) }
-        }
-        .sheet(item:$selected) { memory in memoryDetails(memory)
-        }
-        .onChange(of:model.inference.activeID) { selected=nil;areaDetails=nil;areaMemory=nil;detailOrganising=nil;detailPlanReports=nil;detailShowMemory=false;showContext=false;selectedArea=nil }
     }
     private func memoryDetails(_ memory:PAMemory,fromArea:Bool=false)->some View {
             VStack(alignment:.leading,spacing:14) {

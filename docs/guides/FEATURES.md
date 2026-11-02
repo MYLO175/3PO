@@ -24,7 +24,7 @@ Examples here are fictional. This is the committed 14 October feature baseline; 
 
 ## Dashboard and appearance
 
-Create saved pages and add widgets for the PA, Calendar, Reminders, Review, Projects/Life map, brief, weather or date/clock. Widgets preview continuously while you move or resize them, then snap and save on release. The dashboard fits the window; each widget's content can scroll. Focused view helps when the window is narrow.
+Create saved pages and add widgets for the PA, Calendar, Reminders, Review, Projects/Life map, brief, weather or date/clock. Widgets preview continuously while you move or resize them, then snap and save on release. Each widget comes in Small, Medium, Large, Extra large, Tall and Wide sizes (chosen in Add widget or the widget's … menu in Edit layout); the smaller ones show a glance of what matters, such as the next events or reminders due. The dashboard fits the window; each widget's content can scroll. Focused view helps when the window is narrow. A widget is just its content: right-click it for its options.
 
 The native customisable toolbar shares the window controls. Its arrangement is saved separately from page/widget layouts; Dashboard, View and Edit menus expose actions even when toolbar items are hidden.
 
@@ -114,7 +114,7 @@ The card/preferences show progress and any failure. **Stop** targets one submiss
 
 Today's brief shows one current update with its timestamp and **Sources and coverage**. It selects useful commitments, requests and updates rather than listing every message. Partial/disabled/unavailable source coverage remains explicit; “nothing stood out” refers only to checked material.
 
-The header refresh explicitly prepares an AI update. The account's writing instructions are editable through **Edit brief prompt…**; editing alone does not regenerate saved output. The original morning record and its chat/notification delivery remain saved, while later manual/heartbeat updates change the widget without delivering another morning message.
+**Refresh today's brief** in its right-click menu explicitly prepares an AI update. The account's writing instructions are editable through **Edit brief prompt…**; editing alone does not regenerate saved output. The original morning record and its chat/notification delivery remain saved, while later manual/heartbeat updates change the widget without delivering another morning message.
 
 Existing and new ordinary output uses readable source labels while preserving structured evidence and raw saved prose. Saved briefs and Review cards remain dated output under current source/account access; reuse for new reasoning/advice still requires current supporting dependencies.
 
@@ -134,7 +134,7 @@ Settings → Background controls scheduled review and its interval. A due heartb
 
 Scheduled work waits while the system sleeps, the laptop is closed or it is in dark wake. Full wake/launch checks once when due. Recoverable email, memory/organisation or suggestion failures retain separate outcomes and can still permit a supported brief. Ownership, Stop/sleep, foreground and usage guards end the run; completed receipts remain and the next interval starts a fresh cycle. It does not replay uncertain foreground saves or old queues. Quitting the app stops its work; closing the window leaves the menu bar app running.
 
-**View heartbeat history** shows the latest 20 runs with stages, collection issues, failure details and AI usage. The PA header's last-completed time advances only on a completed run. Opening history makes no AI request.
+**View heartbeat history** shows the latest 20 runs with stages, collection issues, failure details and AI usage. The last-completed heartbeat time at the top of the PA's right-click menu advances only on a completed run. Opening history makes no AI request.
 
 Automatic learning retains global controls, review-permission inheritance or explicit source opt-ins, bounded deltas, shared allowance and persistent failure pauses. An eligible lane can run under exact heartbeat ownership; new permission baselines old content. Foreground typing/Stop wins. [Architecture flow](../architecture/ARCHITECTURE.md#collection-and-heartbeat-are-different-loops)
 

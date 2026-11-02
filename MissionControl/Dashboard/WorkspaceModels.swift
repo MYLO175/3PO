@@ -115,25 +115,58 @@ enum WidgetKind: String, Codable, CaseIterable {
         }
     }
 
-    var minimumColumns: Int {
+    /// Every widget can shrink to the Small preset; each has a glance for two-row and two-column sizes.
+    var minimumColumns: Int { WidgetSize.small.columns }
+    var minimumRows: Int { WidgetSize.small.rows }
+
+    /// The size a plain Add widget uses: the full widget's comfortable size, as before presets.
+    var defaultColumns: Int {
         switch self {
-        case .calendar, .conversation, .overview, .emailSummary, .tasks, .memoryGraph, .projects: return 4
-        case .reminders: return 3
-        case .mail: return 4
-        case .clock: return 3
-        case .weather: return 3
+        case .calendar, .conversation, .overview, .emailSummary, .tasks, .memoryGraph, .projects, .mail: return 4
+        case .reminders, .clock, .weather: return 3
         }
     }
 
-    var minimumRows: Int {
+    var defaultRows: Int {
         switch self {
         case .calendar, .conversation: return 5
-        case .reminders: return 4
-        case .mail, .overview, .emailSummary, .tasks, .memoryGraph, .projects: return 4
+        case .reminders, .mail, .overview, .emailSummary, .tasks, .memoryGraph, .projects: return 4
         case .clock: return 2
         case .weather: return 3
         }
     }
+}
+
+/// Preset sizes offered when adding or resizing a widget (1 November). Free resizing still works
+/// between them; Small is every widget's minimum.
+enum WidgetSize: String, CaseIterable, Identifiable {
+    case small, medium, large, extraLarge, tall, wide
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .small: return "Small"
+        case .medium: return "Medium"
+        case .large: return "Large"
+        case .extraLarge: return "Extra large"
+        case .tall: return "Tall"
+        case .wide: return "Wide"
+        }
+    }
+    var columns: Int { switch self { case .small, .tall: return 2; case .medium, .large: return 4; case .extraLarge, .wide: return 8 } }
+    var rows: Int { switch self { case .small, .medium, .wide: return 2; case .large, .extraLarge, .tall: return 4 } }
+    static func matching(_ rect: GridRect) -> WidgetSize? { allCases.first { $0.columns == rect.w && $0.rows == rect.h } }
+}
+
+/// How a widget arranges itself. Two rows or columns get a glance (small, medium, tall); anything
+/// larger is the full widget. The points check keeps a small window from squeezing the full widget.
+enum WidgetLayout: Equatable {
+    case small, medium, tall, large
+    init(rect: GridRect, size: CGSize) {
+        let narrow = rect.w <= 2 || size.width < 230, short = rect.h <= 2 || size.height < 190
+        self = narrow ? (short ? .small : .tall) : (short ? .medium : .large)
+    }
+    var compact: Bool { self != .large }
+    var short: Bool { self == .small || self == .medium }
 }
 
 enum ProjectPageSection:String,CaseIterable,Identifiable {
@@ -245,7 +278,7 @@ struct DashboardPage: Identifiable, Codable, Equatable {
     var widgets: [WidgetPlacement]
     var canvasRows: Int?
     var symbol: String? = nil
-    var displayIcon: String { symbol ?? (widgets.count == 1 ? widgets[0].kind?.icon ?? "square" : "square.grid.2x2") }
+    var displayIcon: String { symbol ?? (!widgets.isEmpty && Set(widgets.map(\.kindRaw)).count == 1 ? widgets[0].kind?.icon ?? "square" : "square.grid.2x2") }
 
     init(id: UUID = UUID(), title: String, widgets: [WidgetPlacement], canvasRows: Int? = nil) {
         self.id = id
@@ -289,8 +322,8 @@ enum GridRules {
     }
 
     static func firstFree(kind: WidgetKind, in placements: [WidgetPlacement]) -> GridRect {
-        let width = kind.minimumColumns
-        let height = kind.minimumRows
+        let width = kind.defaultColumns
+        let height = kind.defaultRows
         let lastOccupiedRow = placements
             .map { max(0, $0.rect.y + max(0, $0.rect.h)) }
             .max() ?? 0
@@ -306,14 +339,25 @@ enum GridRules {
         return GridRect(x: 0, y: lastOccupiedRow, w: width, h: height)
     }
     static func firstFree(kind: WidgetKind, in placements: [WidgetPlacement], rows: Int) -> GridRect? {
-        guard rows >= kind.minimumRows else { return nil }
-        for y in 0...(rows-kind.minimumRows) {
-            for x in 0...(columns-kind.minimumColumns) {
-                let candidate = GridRect(x:x,y:y,w:kind.minimumColumns,h:kind.minimumRows)
+        firstFree(columns:kind.defaultColumns,rows:kind.defaultRows,in:placements,rowLimit:rows)
+    }
+    static func firstFree(columns width: Int, rows height: Int, in placements: [WidgetPlacement], rowLimit rows: Int) -> GridRect? {
+        guard rows >= height, width <= columns else { return nil }
+        for y in 0...(rows-height) {
+            for x in 0...(columns-width) {
+                let candidate = GridRect(x:x,y:y,w:width,h:height)
                 if valid(candidate,among:placements,rowLimit:rows) { return candidate }
             }
         }
         return nil
+    }
+    /// A preset applied to a placed widget: in place, nudged left or up only as far as the page
+    /// edge needs, otherwise the first free spot on the page; nil when the page has no room.
+    static func resized(_ widget: WidgetPlacement, to size: WidgetSize, among placements: [WidgetPlacement], rows: Int) -> GridRect? {
+        let others = placements.filter { $0.id != widget.id }
+        let here = GridRect(x:min(widget.rect.x,columns-size.columns),y:max(0,min(widget.rect.y,rows-size.rows)),w:size.columns,h:size.rows)
+        if valid(here,among:others,rowLimit:rows) { return here }
+        return firstFree(columns:size.columns,rows:size.rows,in:others,rowLimit:rows)
     }
 
     static func defaults() -> WorkspaceState {

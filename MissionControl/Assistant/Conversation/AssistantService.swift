@@ -350,8 +350,22 @@ import Observation
     func seedChatApprovalPreview(_ proposal:AssistantActionProposal) {
         guard ProcessInfo.processInfo.arguments.contains("--preview-chat-approval"),let id=openPA(),let c=allConversations.firstIndex(where:{$0.id == id}) else {return}
         allConversations[c].turns.append(.init(role:"user",content:"Add matching projects for the four remaining fictional modules.",completed:true))
-        allConversations[c].turns.append(.init(role:"assistant",content:"Review the proposed actions below. Approve to carry them out, or reply with changes.",completed:true,actionApprovals:[proposal]))
+        var reply=AssistantTurn(role:"assistant",content:"Review the proposed actions below. Approve to carry them out, or reply with changes.",completed:true,actionApprovals:[proposal])
+        // A fictional trace so the reply's right-click Sources & searches has something to open.
+        var capture=PAContextCapture(model:"Fictional model",focusAreas:[],memoryIDs:[],eligibleMemoryCount:0,notebookMemoryIDs:[],workspaceIDs:[],historyTurnIDs:[],excerptedHistoryIDs:[],sourceSnapshotIncluded:false,sourceSnapshotBytes:0,profileSetup:false)
+        capture.lookups=[.init(tool:"read_life_items",query:"Modules",status:"completed",resultCount:4),.init(tool:"read_context_page",query:"Fictional Engineering",status:"completed",resultCount:1)]
+        reply.contextCapture=capture
+        allConversations[c].turns.append(reply)
         _=save();draft="Keep this unsent variation"
+    }
+    /// `--preview-widget-sizes`: one short made-up exchange.
+    func seedWidgetSizesPreview() {
+        guard ProcessInfo.processInfo.arguments.contains("--preview-widget-sizes") else { return }
+        var feed=AssistantConversation(accountID:connection.activeID,title:"Preview PA");feed.isPrimary=true
+        feed.turns=[.init(role:"user",content:"What’s left for today?",completed:true,created:Date.now.addingTimeInterval(-600)),
+                    .init(role:"assistant",content:"Design studio at 10:00 in Room 2.14, lunch with Alex at 13:00, and the parcel needs collecting before 17:30. Saturday morning is free if you want to start the essay.",completed:true,created:Date.now.addingTimeInterval(-590))]
+        allConversations=[feed];activeID=feed.id
+        transcriptRevision=UUID()
     }
     func seedWorkflowPreview() {
         guard ProcessInfo.processInfo.arguments.contains("--preview-projects") else { return }
