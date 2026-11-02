@@ -1,5 +1,11 @@
 # How 3PO works: detailed reference
 
+## 2 November: requests keep going when knowledge changes, and Review chats close with Done
+
+A chat or Review request no longer stops because knowledge it was given changed while it worked. Context pages, memory facts, project details, email confirmations and instructions are captured input, never authority, and heartbeats or the request's own saves refresh them all the time. Before, creating one reminder could change a page the request had been given, and the request then stopped with "knowledge supplied by a context page changed or became unavailable", leaving the rest of the instruction undone. A request still stops for Stop, a changed account or storage, a changed memory-use setting, withdrawn source access (including WhatsApp access behind a supplied page), or a supplied fact that the human forgot or whose source permission was withdrawn. Every save keeps its own exact target, revision, receipt and uncertain-save checks, so stale knowledge cannot overwrite a changed item. Earlier replies whose supporting pages changed are still left out of later replay as before.
+
+In a Review conversation the header button reads **Done**, instead of **No actions**, as soon as you send a reply or an action from that conversation completes. Selecting a suggestion still turns it into Approve 1 action / Approve N actions. Done or Escape closes the sheet without approving or dismissing anything, and the request keeps running in the background; its result appears in the conversation and the card's done count.
+
 ## 26 October: a more selective Review inbox
 
 Review now holds back email that doesn't concern you specifically. An email gets in when you need to do or decide something, or when it tells you something new about one of your own projects, applications, course requirements, responsibilities, commitments or people you know. A general interest, hobby or field of study isn't enough on its own. For example, a gig that matches your music taste, or an optional talk in your subject, stays quiet unless your Review guide asks for that kind of email. The app enforces this itself as well: a match supported only by a taste ("preference") memory leaves the email quiet.
@@ -77,7 +83,7 @@ Heartbeat and manual Review comparison supply each relevant space once, even whe
 
 A reply checks the memories and project items actually supplied to it, including later tool reads and relevant project ancestors. Adding or changing an unrelated fact/project no longer cancels inference. The same applies to unrelated email confirmations: exact supplied confirmations stay checked even when new records move them beyond the normal display limit. Historical dismissal text and recovered contact names are not configuration changes; actual Dismiss/Undo choices still invalidate captured context.
 
-Changing a supplied belief, project or confirmation, withdrawing a supporting source, changing accounts/model/permissions/Focus, or pressing Stop retains the existing safeguards. Exact native targets, save receipts and uncertain-operation rules are unchanged. A genuine inference cancellation now names the category that changed instead of only saying Configuration changed. This does not automatically retry failed requests or replay any action.
+Changing a supplied belief, project or confirmation, withdrawing a supporting source, changing accounts/model/permissions/Focus, or pressing Stop retains the existing safeguards. (Since 2 November a changed supplied belief, project, confirmation or page no longer stops the request; see the 2 November section.) Exact native targets, save receipts and uncertain-operation rules are unchanged. A genuine inference cancellation now names the category that changed instead of only saying Configuration changed. This does not automatically retry failed requests or replay any action.
 
 ## 16 October: one context path and one memory store
 

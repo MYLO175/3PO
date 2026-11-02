@@ -70,7 +70,6 @@ import SwiftData
     var clarification:(String,[String])?;let mailCursor:any AssistantMailCursor=OnDemandMailCursor()
     let history:(String?,String?)->AssistantPageContext
     var names:[String]=[],captures:[AssistantPageContext]=[],unavailable=0
-    var pageContextAvailable:Bool {captures.allSatisfy{$0.current()}}
     init(history:@escaping(String?,String?)->AssistantPageContext) {self.history=history}
     func execute(_ call:PAFunctionCall,valid:@escaping NativeWriteValidity) async throws -> String {
         guard valid() else {throw IntegrationError.verification}

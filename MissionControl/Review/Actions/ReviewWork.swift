@@ -77,7 +77,9 @@ struct ReviewWorkPlan:Codable,Equatable {
 }
 enum ReviewSelectionRules {
     static let version=3
-    static func approvalTitle(_ count:Int)->String {count == 0 ? "No actions" : "Approve \(count) action\(count == 1 ? "" : "s")"}
+    /// Engaged: the human has replied here or an action completed, so closing acknowledges
+    /// the conversation (Done) while its work keeps running.
+    static func approvalTitle(_ count:Int,engaged:Bool=false)->String {count > 0 ? "Approve \(count) action\(count == 1 ? "" : "s")" : engaged ? "Done" : "No actions"}
     static func initial(_ plan:ReviewWorkPlan)->Set<String> {plan.presentationVersion == version ? Set(plan.selected) : []}
 }
 struct ReviewWorkActionResult {
@@ -335,6 +337,13 @@ struct ReviewWorkConversationResult {
             for action in value.jobs[index].actions.indices where value.jobs[index].actions[action].phase != .saved {value.jobs[index].actions[action].phase = .waiting}
         }
     }
+    #if DEBUG
+    /// `--preview-review-inbox`: a finished fictional chat request.
+    func seedPreviewJob(_ job:ReviewWorkJob) {
+        guard ProcessInfo.processInfo.arguments.contains("--preview-review-inbox") else {return}
+        _=change{$0.jobs.append(job)}
+    }
+    #endif
     @discardableResult private func update(_ id:UUID,_ mutation:(inout ReviewWorkJob)->Void)->Bool {change {value in if let index=value.jobs.firstIndex(where:{$0.id == id}) {mutation(&value.jobs[index])}}}
     @discardableResult private func updateAction(_ id:UUID,_ action:String,_ mutation:(inout ReviewWorkAction)->Void)->Bool {update(id){job in if let index=job.actions.firstIndex(where:{$0.id == action}) {mutation(&job.actions[index])}}}
     private func change(_ mutation:(inout ReviewWorkState)->Void)->Bool {

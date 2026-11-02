@@ -753,7 +753,8 @@ private final class ObservationCounter:@unchecked Sendable {
         }
 
         // Real service pauses in transport while independent collection/local edits occur.
-        for mode in ["ack-title","ack-support","resolution-added","resolution-crowded","resolution-changed","resolution-lost","human-dismiss","whatsapp-account","unrelated-memory","selected-memory","unrelated-project","selected-project"] {
+        // Supplied knowledge is captured input (2 Nov): only a forgotten fact or withdrawn access stops the request.
+        for mode in ["ack-title","ack-support","resolution-added","resolution-crowded","resolution-changed","resolution-lost","human-dismiss","whatsapp-account","unrelated-memory","selected-memory","unrelated-project","selected-project","forgotten-memory","page-whatsapp"] {
             let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("context-churn-"+mode))
             let fact=PAMemory(registration:p.activeID,text:"Orion prototype needs a small motor",kind:.context,explicit:true,provenance:"Fictional human")
             check(value.memory.put(fact),"Context churn fixture saves its selected fact")
@@ -761,7 +762,7 @@ private final class ObservationCounter:@unchecked Sendable {
             _=try value.projects.create([item],receipt:.init(id:"fixture-"+mode,registration:p.activeID,result:"Fictional space",itemID:item.id))
             c.directoryCapture = { _ in
                 let text=String(decoding:try! JSONEncoder().encode(item),as:UTF8.self)
-                return .init(text:text,pageIDs:["fictional-context-page-"+item.id.uuidString],memoryIDs:[fact.id],workspaceIDs:[item.id],referenceVersions:["project:"+item.id.uuidString:item.revision.uuidString],validate:{ignored in
+                return .init(text:text,pageIDs:["fictional-context-page-"+item.id.uuidString],memoryIDs:[fact.id],workspaceIDs:[item.id],referenceVersions:["project:"+item.id.uuidString:item.revision.uuidString],whatsappScope:mode == "page-whatsapp" ? c.state.whatsappScope : nil,validate:{ignored in
                     ignored.contains("project:"+item.id.uuidString) || value.projects.state.items.first(where:{$0.id == item.id})?.revision == item.revision
                 })
             }
@@ -779,17 +780,18 @@ private final class ObservationCounter:@unchecked Sendable {
             case "resolution-changed":c.state.resolvedRequests[0]["confirmationQuote"]="Changed confirmation"
             case "resolution-lost":c.state.resolvedRequests=[]
             case "human-dismiss":c.attentionRevision="ack-human-changed"
-            case "whatsapp-account":c.state.whatsappScope = .init(registration:p.activeID,linkedIdentity:"different-fictional-device",revision:UUID())
+            case "whatsapp-account","page-whatsapp":c.state.whatsappScope = .init(registration:p.activeID,linkedIdentity:"different-fictional-device",revision:UUID())
             case "unrelated-memory":_=value.memory.put(PAMemory(registration:p.activeID,text:"Garden irrigation uses a valve",kind:.context,explicit:true,provenance:"Fictional human"))
             case "selected-memory":var changed=fact;changed.text="Orion prototype now needs a large motor";_=value.memory.put(changed)
+            case "forgotten-memory":_=value.memory.forget(fact.id)
             case "unrelated-project":_=try value.projects.save(LifeItem(registration:p.activeID,kind:.space,title:"Garden irrigation"),expected:nil)
             default:var changed=item;changed.notes="The prototype scope changed";_=try value.projects.save(changed,expected:item.revision)
             }
             p.release();await until{!value.busy}
-            let rejected=["selected-memory","selected-project"].contains(mode)
-            check((value.error != nil) == rejected,"\(mode) distinguishes supplied-context changes from unrelated collection")
+            let rejected=["forgotten-memory","page-whatsapp"].contains(mode)
+            check((value.error != nil) == rejected,"\(mode) stops only for a forgotten fact or withdrawn access, never for changed knowledge")
             check(rejected ? c.sessions[0].calls.isEmpty : c.sessions[0].calls == ["read_memory"],"\(mode) validates before executing any late tool")
-            if rejected {check(value.error?.contains("because") == true,"Real invalidation names the changed context rather than a generic configuration failure")}
+            if rejected {check(value.error?.contains(mode == "forgotten-memory" ? "forgotten" : "WhatsApp") == true,"Real invalidation names the withdrawn permission rather than a generic configuration failure")}
             else {check(value.feed!.turns.last?.completed == true,"Unrelated churn keeps the completed reply")}
         }
         for kind in ["memory","project"] {
@@ -798,34 +800,36 @@ private final class ObservationCounter:@unchecked Sendable {
             check(value.memory.put(fact),"Read dependency fixture saves its initially unrelated fact")
             let item=LifeItem(registration:p.activeID,kind:.space,title:"Garden irrigation")
             _=try value.projects.create([item],receipt:.init(id:"read-dependency-"+kind,registration:p.activeID,result:"Fictional space",itemID:item.id))
-            c.configure={session,_ in session.executeBody={_,session in
+            c.configure={session,_ in session.executeBody={call,session in
+                guard call.name != "change_reminder" else {return "{\"verified\":true}"}
                 if kind == "memory" {session.consultedMemory.insert(fact.id)} else {session.consultedWorkspace.insert(item.id)}
                 p.holdNext=true
                 return "{}"
             }}
-            p.replies=[tools([kind == "memory" ? "read_memory" : "read_life_items"]),tools(["change_reminder"])]
+            p.replies=[tools([kind == "memory" ? "read_memory" : "read_life_items"]),tools(["change_reminder"]),final("Fictional answer")]
             check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Tell me about the Orion prototype"),"Additional read request starts without a lexical match")
             await until{p.waiting}
             if kind == "memory" {var changed=fact;changed.text="The irrigation valve has changed";_=value.memory.put(changed)}
             else {var changed=item;changed.notes="Changed after read";_=try value.projects.save(changed,expected:item.revision)}
             p.release();await until{!value.busy}
-            check(value.error != nil && c.sessions[0].calls.count == 1,"A changed \(kind) actually supplied by a tool blocks the next late action")
+            check(value.error == nil && c.sessions[0].calls.count == 2,"A changed \(kind) supplied by a tool does not stop the next action")
         }
 
         for name in ["remember_context","change_memory"] {
             let p=FictionalInference(),c=FictionalContext(),value=service(p,try open("mutation-dependency-"+name))
             let saved=PAMemory(registration:p.activeID,text:"Orion prototype uses a motor",kind:.context,explicit:true,provenance:"Fictional human")
-            c.configure={session,_ in session.executeBody={_,_ in
+            c.configure={session,_ in session.executeBody={call,_ in
+                guard call.name == name else {return "{\"verified\":true}"}
                 precondition(value.memory.put(saved))
                 p.holdNext=true
                 return "{\"saved\":true,\"id\":\"\(saved.id.uuidString)\"}"
             }}
-            p.replies=[tools([name]),tools(["change_reminder"])]
+            p.replies=[tools([name]),tools(["change_reminder"]),final("Fictional answer")]
             check(value.send(runtime:c.runtime(),topicID:nil,prompt:"Remember the Orion prototype details"),"Mutation-return dependency fixture starts")
             await until{p.waiting}
             var changed=saved;changed.text="Orion prototype needs a revised motor";_=value.memory.put(changed)
             p.release();await until{!value.busy}
-            check(value.error != nil && c.sessions[0].calls == [name],"A changed canonical memory returned by \(name) blocks the next action")
+            check(value.error == nil && c.sessions[0].calls == [name,"change_reminder"],"A changed canonical memory returned by \(name) does not stop the next action")
             check(value.feed!.turns.last?.contextCapture?.consultedMemoryIDs.isEmpty == true,"Mutation-issued memory IDs remain separate from successful-read traces")
         }
         for supplied in [false,true] {
@@ -841,7 +845,7 @@ private final class ObservationCounter:@unchecked Sendable {
             await until{p.waiting}
             c.state.resolvedRequests[0]["confirmationQuote"]="Changed"
             p.release();await until{!value.busy}
-            check((value.error != nil) == supplied,"Only an actually supplied tool confirmation becomes a later dependency")
+            check(value.error == nil,"A later change to an email confirmation, supplied or not, does not stop the request")
         }
 
         do {
@@ -857,7 +861,7 @@ private final class ObservationCounter:@unchecked Sendable {
             p.replies=[tools(["read_attention"]),final("Current attention read completed")]
             check(value.send(runtime:runtime,topicID:nil,prompt:"What needs my attention?"),"Ordinary attention request starts with light state")
             await until{!value.busy}
-            check(value.error == nil && value.feed?.turns.last?.completed == true && reads.first == false && reads.contains(true),"Resolution projection becomes necessary only after read_attention supplies exact resolutions")
+            check(value.error == nil && value.feed?.turns.last?.completed == true && !reads.isEmpty && !reads.contains(true),"Request validation never builds the attention projection; supplied resolutions are captured input")
         }
 
         for selected in [false,true] {
@@ -872,8 +876,8 @@ private final class ObservationCounter:@unchecked Sendable {
             await until{p.waiting}
             try value.projects.unlink(edge.id,registration:p.activeID,expectedRevision:value.projects.revision)
             p.release();await until{!value.busy}
-            check((value.error != nil) == selected,"Only changed relationships of supplied project owners stop inference")
-            check(selected ? c.sessions[0].calls.isEmpty : c.sessions[0].calls == ["change_reminder"],"Changed supplied links reject late writes while unrelated links do not")
+            check(value.error == nil,"Changed project relationships, supplied or not, do not stop the request")
+            check(c.sessions[0].calls == ["change_reminder"],"The requested write still runs after a relationship change")
         }
 
         let queuedProvider = FictionalInference(), queuedContext = FictionalContext()
@@ -997,12 +1001,11 @@ private final class ObservationCounter:@unchecked Sendable {
                 check(saved.first?.turns.last?.content == "Fictional creation completed","Recovered creation reply must survive reopening")
             }
         }
-        for interruption in ["Stop","account","permission","filters","context"] {
+        // A changed context page no longer interrupts a request (2 Nov), so it is not listed.
+        for interruption in ["Stop","account","permission","filters"] {
             let p=FictionalInference(),c=FictionalContext()
             settings.set(true,forKey:"assistantContextEnabled")
             let value=service(p,try open("preparation-interruption-"+interruption))
-            var pageCurrent=true
-            c.directoryCapture={_ in .init(validate:{_ in pageCurrent})}
             var writes=0
             c.configure={session,_ in session.executeBody={call,session in
                 if call.name == "read_calendar" {
@@ -1011,8 +1014,7 @@ private final class ObservationCounter:@unchecked Sendable {
                     case "Stop":value.cancel()
                     case "account":p.activeID="changed-owner"
                     case "permission":value.contextEnabled=false
-                    case "filters":value.excludedCalendars.insert(destination.id)
-                    default:pageCurrent=false
+                    default:value.excludedCalendars.insert(destination.id)
                     }
                     return "{}"
                 }

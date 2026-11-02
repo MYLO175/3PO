@@ -543,7 +543,7 @@ import EventKit
         let whatsappPurpose: WhatsAppReadPurpose = purpose == .brief ? .brief : [.suggestions, .manualSuggestions, .heartbeatSuggestions].contains(purpose) ? .suggestions : .conversation
         let whatsappScope = expected.contains { $0.kind == "whatsapp" } ? whatsapp.scope(for: registration, purpose: whatsappPurpose) : nil
         return .init(text: ContextKnowledgeRules.json(payload), pageIDs: suppliedPages.map(\.id),
-                     memoryIDs: Set(selectedRecords.compactMap(\.memoryID)), workspaceIDs: Set(selectedRecords.compactMap(\.projectID)), referenceVersions: Dictionary(expected.map { ($0.contextKey, $0.revision) }, uniquingKeysWith: { first, _ in first }), guideText: navigation.text, guideFingerprint: navigation.text.isEmpty ? nil : ContextKnowledgeRules.fingerprint(navigation.text), validate: { [weak self] ignored in
+                     memoryIDs: Set(selectedRecords.compactMap(\.memoryID)), workspaceIDs: Set(selectedRecords.compactMap(\.projectID)), referenceVersions: Dictionary(expected.map { ($0.contextKey, $0.revision) }, uniquingKeysWith: { first, _ in first }), whatsappScope: whatsappScope, guideText: navigation.text, guideFingerprint: navigation.text.isEmpty ? nil : ContextKnowledgeRules.fingerprint(navigation.text), validate: { [weak self] ignored in
             guard let self, registration == self.inference.activeID, self.assistant.memory.enabled else { return false }
             if let whatsappScope, whatsappScope != self.whatsapp.scope(for: registration, purpose: whatsappPurpose) { return false }
             let ignoredProjects = Set(ignored.filter { $0.hasPrefix("project:") }.map { String($0.dropFirst(8)) })

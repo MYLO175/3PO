@@ -280,6 +280,8 @@ import Foundation
             check(ReviewSelectionRules.approvalTitle(0) == "No actions","Zero selection clearly closes without approval")
             check(ReviewSelectionRules.approvalTitle(1) == "Approve 1 action","Singular approval names exactly one action")
             check(ReviewSelectionRules.approvalTitle(2) == "Approve 2 actions","Plural approval names its exact count")
+            check(ReviewSelectionRules.approvalTitle(0,engaged:true) == "Done","After a reply or completed action, closing reads Done")
+            check(ReviewSelectionRules.approvalTitle(1,engaged:true) == "Approve 1 action","A current selection still names its approval after a reply")
             let w=ReviewWorkFixture(),job=w.job()
             var plan=ReviewWorkPlan(conversationID:job.conversationID,scope:job.scope,source:job.source,actions:[w.action("a")],selected:["a"])
             check(ReviewSelectionRules.initial(plan).isEmpty,"Legacy automatic checkbox selections reset locally")
