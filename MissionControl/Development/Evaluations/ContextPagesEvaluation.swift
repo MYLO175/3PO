@@ -713,7 +713,7 @@ import SwiftData
         checks["Context pages real tool continuation reads every stored long-page character"] = body.utf8.count > 12_000 && complete && chunks > 1 && restored == body
         checks["Context pages real tool continuation uses exact increasing character offsets"] = offsets
         checks["Context pages every encoded continuation stays within final payload bytes"] = bounds
-        checks["Context pages real tool records the exact human-page version"] = tools.consultedContextVersions["page:" + page.id] == page.revision.uuidString && tools.pageContextAvailable
+        checks["Context pages real tool records the exact human-page version"] = tools.consultedContextVersions["page:" + page.id] == page.revision.uuidString
         for index in 0..<38 {
             _ = try model.contextPages.save(.init(registration: registration, kind: .note, key: "fictional-directory-\(index)", owner: .human,
                 title: "Cobalt note \(index)", synopsis: "Fictional context", markdown: String(repeating: "\"\\🌱", count: 600)), expectedRevision: nil)
@@ -737,7 +737,7 @@ import SwiftData
         checks["Context pages omitted working rows do not retain hidden memory dependencies"] = broad.referenceVersions.keys.filter { $0.hasPrefix("memory:") }.allSatisfy { suppliedMemory.contains($0) }
         var edited = page; edited.markdown += "\nIndependent human edit"
         _ = try model.contextPages.save(edited, expectedRevision: page.revision)
-        checks["Context pages actual read tool rejects later human-page edit"] = !tools.pageContextAvailable
+        checks["Context pages read tool keeps the version it read after a later human-page edit"] = tools.consultedContextVersions["page:" + page.id] == page.revision.uuidString
         checks["Context pages read and directory operations make zero inference calls"] = fixture.provider.calls == 0 && fixture.sources.reads == 0 && model.aiUsage.state.records.isEmpty
         return checks
     }
@@ -985,14 +985,14 @@ import SwiftData
                 let turn = conversation.flatMap { model.assistant.conversation($0)?.turns.last }
                 let saved = kind == "memory" ? !model.assistant.memory.records.contains(where: { $0.id == fact.id }) : model.assistant.projects.items(registration, includeTopics: true).isEmpty
                 checks[label + " preserves one verified mutation and its receipt"] = saved && tools.writes == 1 && tools.receipts.count == 1 && turn?.actionResult?.confirmedActions == 1
+                // A changed page is captured input, not authority (2 Nov): neither the turn's own
+                // change nor a later human edit stops the request.
+                checks[label + (independentEdit ? " completes its authorised turn despite a later human page edit" : " completes its authorised turn despite retiring its own context")] = reachedFinal && !model.assistant.busy && model.assistant.error == nil && turn?.content.contains(ContextPagesInference.finalText) == true && turn?.actionResult?.phase == "completed"
                 if independentEdit {
-                    checks[label + " refuses final prose after independent human revision"] = reachedFinal && !model.assistant.busy && model.assistant.error != nil && turn?.content.contains(ContextPagesInference.finalText) == false && turn?.actionResult?.phase != "completed"
                     checks[label + " retains the independently saved page version"] = editedRevision != nil && model.contextPages.page(id: page.id, registration: registration)?.revision == editedRevision && !model.contextKnowledgeAvailable(registration: registration, versions: minimalPageVersion, ignoring: tools.adopted)
-                } else {
-                    checks[label + " completes its authorised turn despite retiring its own context"] = reachedFinal && !model.assistant.busy && model.assistant.error == nil && turn?.content.contains(ContextPagesInference.finalText) == true && turn?.actionResult?.phase == "completed"
                 }
                 checks[label + " uses completed fictional transport without subscription requests"] = fixture.provider.calls == 2 && fixture.sources.reads == 0 && model.aiUsage.state.records.isEmpty
-                if !reachedFinal || (independentEdit == (model.assistant.error == nil)) {
+                if !reachedFinal || model.assistant.error != nil {
                     let detail = label + ": calls=\(fixture.provider.calls), writes=\(tools.writes), phase=\(turn?.actionResult?.phase ?? "missing"), error=\(model.assistant.error ?? "none")\n"
                     FileHandle.standardError.write(Data(detail.utf8))
                 }

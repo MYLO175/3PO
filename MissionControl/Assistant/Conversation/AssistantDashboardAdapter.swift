@@ -221,9 +221,6 @@ extension DashboardModel {
                 captures.map { available($0) }
             }
         }
-        runtime.ownedPageKnowledgeAvailable = { [weak self] registration, versions, ignored in
-            self?.contextKnowledgeAvailable(registration: registration, versions: versions, ignoring: ignored) ?? false
-        }
         runtime.ownedContextReferences = { [weak self] registration, keys in
             self?.contextReferencesForOwnedChanges(registration: registration, keys: keys) ?? keys
         }

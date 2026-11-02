@@ -59,6 +59,8 @@ struct AssistantToolRequest {
     var workspaceIDs: Set<UUID> = []
     var referenceVersions: [String: String] = [:]
     var sourceAccessFingerprints: [String:String] = [:]
+    /// The WhatsApp access the supplied records depended on; withdrawing it stops the request.
+    var whatsappScope: WhatsAppSourceScope? = nil
     /// Stable ordinary-chat orientation, placed before clocks, snapshots and request-local facts.
     var guideText: String = ""
     var guideFingerprint: String? = nil
@@ -73,6 +75,7 @@ struct AssistantToolRequest {
                      memoryIDs: memoryIDs.union(guidance.memoryIDs), workspaceIDs: workspaceIDs.union(guidance.workspaceIDs),
                      referenceVersions: referenceVersions.merging(guidance.referenceVersions) { first, _ in first },
                      sourceAccessFingerprints: sourceAccessFingerprints.merging(guidance.sourceAccessFingerprints) { first,_ in first },
+                     whatsappScope: whatsappScope ?? guidance.whatsappScope,
                      guideText: guideText,
                      guideFingerprint: guideFingerprint,
                      validate: { base.current(ignoring: $0) && guidance.current(ignoring: $0) })
@@ -100,7 +103,6 @@ extension AssistantMailCursor { var searchTerms: [String] { [] } }
     var consultedWorkspace: Set<UUID> { get }
     var suppliedWeatherScope:String? {get}
     var suppliedWhatsAppScope:WhatsAppSourceScope? {get}
-    var pageContextAvailable: Bool { get }
     var consultedContextVersions: [String: String] { get }
     var suppliedSourceAccessFingerprints: [String:String] { get }
     func adoptContextChanges(_ keys: Set<String>)
@@ -163,7 +165,6 @@ extension AssistantMailCursor { var searchTerms: [String] { [] } }
     /// One fresh synchronous projection for a bounded history selection; no result
     /// is retained across an await or another validation decision.
     var pageKnowledgeAvailability: ((String, [[String: String]]) -> [Bool])?
-    var ownedPageKnowledgeAvailable: ((String, [String: String], Set<String>) -> Bool)?
     var ownedContextReferences: (String, Set<String>) -> Set<String> = { _, keys in keys }
     /// Exact dependencies a supported memory mutation may retire, captured before it removes its lineage.
     var memoryMutationReferences: (String, PAFunctionCall) -> Set<String> = { _, _ in [] }
@@ -194,7 +195,6 @@ struct ReviewActionExecution {
     var actionReceiptsReadable:Bool {true}
     var suppliedWeatherScope:String? {nil}
     var suppliedWhatsAppScope:WhatsAppSourceScope? {nil}
-    var pageContextAvailable: Bool { true }
     var consultedContextVersions: [String: String] { [:] }
     var suppliedSourceAccessFingerprints: [String:String] { [:] }
     func adoptContextChanges(_ keys: Set<String>) {}

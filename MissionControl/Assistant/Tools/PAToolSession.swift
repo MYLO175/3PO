@@ -23,7 +23,6 @@ import Foundation
     private var contextPageCaptures: [AssistantPageContext] = []
     private let historyLookup: ((String?, String?) -> AssistantPageContext)?
     private var ownedContextChanges: Set<String> = []
-    var pageContextAvailable: Bool { contextPageCaptures.allSatisfy { $0.current(ignoring: ownedContextChanges) } }
     var consultedContextVersions: [String: String] { contextPageCaptures.reduce(into: [:]) { $0.merge($1.referenceVersions) { _, newer in newer } }.filter { !ownedContextChanges.contains($0.key) } }
     var suppliedSourceAccessFingerprints: [String:String] { contextPageCaptures.reduce(into: [:]) { $0.merge($1.sourceAccessFingerprints) { _,newer in newer } } }
     func adoptContextChanges(_ keys: Set<String>) { ownedContextChanges.formUnion(keys) }
@@ -442,6 +441,7 @@ import Foundation
             let purpose: ContextKnowledgePurpose = assistant.profileBusy(topicID) ? .setup : .conversation
             let capture = model.captureContextPages(registration: registration, query: text("query"), topic: topicID, includeTopics: purpose == .setup ? false : focusAreas != nil, everyday: false, pageID: text("id"), pageOffset: offset, purpose: purpose)
             contextPageCaptures.append(capture)
+            if suppliedWhatsAppScope == nil { suppliedWhatsAppScope = capture.whatsappScope }
             consultedMemory.formUnion(capture.memoryIDs)
             notebookWorkspace.formUnion(capture.workspaceIDs)
             return capture.text
