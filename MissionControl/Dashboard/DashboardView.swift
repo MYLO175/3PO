@@ -5,6 +5,7 @@ import AppKit
 struct DashboardView: View {
     @Bindable var model: DashboardModel
     var widgetConfiguration: Binding<WidgetConfiguration>? = nil
+    @Environment(\.widgetLayout) private var widgetLayout
     @AppStorage("showEmailSources") private var showEmailSources = false
     @AppStorage("assistantExpanded") private var assistantExpanded = false
     @AppStorage("assistantReadingMode") private var assistantReadingMode = false
@@ -112,6 +113,18 @@ struct DashboardView: View {
             HStack { Label(title, systemImage: icon).font(.title3.weight(.semibold)); Spacer(); if health.loading { ProgressView().controlSize(.small) } }
             Text(health.loading ? loadingLabel : health.detail).font(.caption).foregroundStyle(health.error == nil ? Color.secondary : Color.orange).lineLimit(3).textSelection(.enabled)
         }
+    }
+    /// The same choices as `sourceMenu`, as a submenu of a widget's right-click menu.
+    func sourceToggles(_ title: String, sources: [SourceOption], exclusions: Binding<Set<String>>) -> some View {
+        Menu(title) {
+            Button("Show all") { exclusions.wrappedValue = [] }
+            Divider()
+            ForEach(sources) { source in
+                Toggle(source.displayLabel, isOn: Binding(get: { !exclusions.wrappedValue.contains(source.id) }, set: { enabled in
+                    if enabled { exclusions.wrappedValue.remove(source.id) } else { exclusions.wrappedValue.insert(source.id) }
+                }))
+            }
+        }.disabled(sources.isEmpty)
     }
     func sourceMenu(_ title: String, sources: [SourceOption], exclusions: Binding<Set<String>>) -> some View {
         Menu {
@@ -223,18 +236,25 @@ struct DashboardView: View {
         }
         return "\(start) – \(end)"
     }
-    var remindersPanel: some View { PanelLayoutSwitch(full: remindersFull, glance: remindersGlance) }
+    var remindersPanel: some View {
+        PanelLayoutSwitch(full: remindersFull, glance: remindersGlance)
+            .widgetMenu("Reminders", health: model.reminderHealth) { reminderMenuItems }
+    }
+    /// The right-click menu; grouping only changes the full list.
+    @ViewBuilder private var reminderMenuItems: some View {
+        Button("New reminder…") { model.newNativeItem(.reminder) }.disabled(model.writing)
+        if !widgetLayout.compact {
+            Picker("Group by", selection: reminderGroupingBinding) {
+                Text("Lists").tag("lists")
+                Text("Due date").tag("due")
+            }
+        }
+        sourceToggles("Lists", sources: model.reminderData.sources, exclusions: listExclusions)
+    }
     /// Due work first (overdue, today, then upcoming), then undated; a count beside the list once there is room.
     private func remindersGlance(_ layout: WidgetLayout) -> some View {
         let items = DateRules.ordered(visibleReminders), due = items.filter { ["Overdue", "Today"].contains(DateRules.group($0)) }
         return VStack(alignment: .leading, spacing: layout == .small ? 8 : 10) {
-            WidgetHeader(title: "Reminders", symbol: "checklist", meta: layout == .small && !due.isEmpty ? "\(due.count) due" : nil) {
-                if layout == .medium {
-                    SourceStatusIndicator(title: "Reminders", health: model.reminderHealth)
-                    Button { model.newNativeItem(.reminder) } label: { Image(systemName: "plus") }.help("New reminder").accessibilityLabel("New reminder").disabled(model.writing)
-                }
-            }
-            if let error = model.reminderHealth.error, layout != .small { Text((model.reminderHealth.lastSuccess == nil ? "" : "Stale · ") + error).font(.caption).foregroundStyle(.orange).lineLimit(1) }
             HStack(alignment: .top, spacing: 16) {
                 if layout == .medium, !items.isEmpty {
                     GlanceCount(value: due.count, label: "due today", urgent: items.contains { DateRules.group($0) == "Overdue" }).frame(width: 78, alignment: .leading)
@@ -253,21 +273,9 @@ struct DashboardView: View {
                 }
             }
         }.panelStyle()
-            .contextMenu { if layout != .medium { Button("New reminder") { model.newNativeItem(.reminder) }.disabled(model.writing) } }
     }
     private var remindersFull: some View {
         VStack(alignment: .leading, spacing: 12) {
-            WidgetHeader(title:"Reminders",symbol:"checklist") { SourceStatusIndicator(title:"Reminders",health:model.reminderHealth); Button { model.newNativeItem(.reminder) } label: { Image(systemName:"plus") }.help("New reminder").accessibilityLabel("New reminder").disabled(model.writing) }
-            if let error = model.reminderHealth.error { Text((model.reminderHealth.lastSuccess == nil ? "" : "Stale · ") + error).font(.caption).foregroundStyle(.orange).lineLimit(2) }
-            HStack(spacing: 8) {
-                sourceMenu("Lists", sources: model.reminderData.sources, exclusions: listExclusions)
-                Spacer(minLength: 0)
-                Picker("Group reminders", selection: reminderGroupingBinding) {
-                    Text("Lists").tag("lists")
-                    Text("Due date").tag("due")
-                }.pickerStyle(.segmented).labelsHidden().controlSize(.small).fixedSize()
-            }
-            Divider()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     if reminderGroupingMode == "lists" {
@@ -299,7 +307,7 @@ struct DashboardView: View {
                         }
                     }
                 }
-            }
+            }.scrollEdgeFade()
         }.panelStyle()
     }
     /// Checkbox, title, then when it's due on the right: red today or overdue, orange tomorrow, grey later.
@@ -323,22 +331,27 @@ struct DashboardView: View {
             }.buttonStyle(.plain).help("Edit reminder").accessibilityLabel("Edit reminder: " + item.title).disabled(model.writing)
         }.padding(.vertical, 3)
     }
-    private var mailStatusSummary:String {
-        let accounts=model.mailData.accounts.filter{model.mailIndex.accountErrors?[$0.id] != nil}.map(\.title)
-        let label=accounts.isEmpty ? "Mail" : accounts.joined(separator:", ")
-        let slow=model.mailHealth.error?.contains("did not respond") == true
-        let explanation=slow ? "is taking longer to respond" : "couldn’t refresh"
-        return label+" "+explanation+". "+(visibleMessages.isEmpty ? "Open the status dot for details." : "Showing saved mail.")
+    var inboxPanel: some View {
+        PanelLayoutSwitch(full: inboxFull, glance: inboxGlance)
+            .widgetMenu("Inbox", health: model.mailHealth, coverage: model.mailCoverage, refresh: refreshMail) {
+                Button("Check for new mail", action: refreshMail).disabled(model.mailHealth.loading)
+                Menu("Mailboxes") {
+                    Button("Show all") { accountExclusions.wrappedValue = [] }
+                    Divider()
+                    ForEach(model.mailData.accounts) { account in
+                        Toggle("\(account.title) · Inbox", isOn: Binding(get: { !accountExclusions.wrappedValue.contains(account.id) }, set: { enabled in
+                            if enabled { accountExclusions.wrappedValue.remove(account.id) } else { accountExclusions.wrappedValue.insert(account.id) }
+                        }))
+                    }
+                }
+                Text("Last 30 days · \(visibleMessages.count) messages")
+            }
     }
-    var inboxPanel: some View { PanelLayoutSwitch(full: inboxFull, glance: inboxGlance) }
+    private func refreshMail() { model.mailIndex.resume(); Task { await model.refreshMail() } }
     /// The newest messages, unread in bold, with the unread count beside them once there is room.
     private func inboxGlance(_ layout: WidgetLayout) -> some View {
         let messages = visibleMessages, unread = messages.filter(\.unread).count
         return VStack(alignment: .leading, spacing: layout == .small ? 8 : 10) {
-            WidgetHeader(title: "Inbox", symbol: "tray", meta: layout == .small && unread > 0 ? "\(unread) unread" : nil) {
-                if layout != .small { SourceStatusIndicator(title: "Mail", health: model.mailHealth, coverage: model.mailCoverage, refresh: { model.mailIndex.resume(); Task { await model.refreshMail() } }) }
-            }
-            if model.mailHealth.error != nil, layout != .small { Text(mailStatusSummary).font(.caption).foregroundStyle(.orange).lineLimit(1) }
             HStack(alignment: .top, spacing: 16) {
                 if layout == .medium, !messages.isEmpty { GlanceCount(value: unread, label: "unread").frame(width: 78, alignment: .leading) }
                 GlanceRows(items: messages, rowHeight: 34, empty: model.mailHealth.error == nil ? "No recent inbox messages." : "Mail isn’t connected.", scrolls: layout == .tall) { message in
@@ -361,28 +374,8 @@ struct DashboardView: View {
     }
     private var inboxFull: some View {
         VStack(alignment: .leading, spacing: 12) {
-            WidgetHeader(title:"Inbox",symbol:"tray") {
-                SourceStatusIndicator(title:"Mail",health:model.mailHealth,coverage:model.mailCoverage,refresh:{model.mailIndex.resume();Task {await model.refreshMail()}})
-            }
-            if model.mailHealth.error != nil {
-                Text(mailStatusSummary).font(.caption).foregroundStyle(.orange).fixedSize(horizontal:false,vertical:true)
-            }
-            HStack {
-                Menu {
-                    Button("Enable all") { accountExclusions.wrappedValue = [] }
-                    Divider()
-                    ForEach(model.mailData.accounts) { account in
-                        Toggle("\(account.title) · Inbox", isOn: Binding(get: { !accountExclusions.wrappedValue.contains(account.id) }, set: { enabled in
-                            if enabled { accountExclusions.wrappedValue.remove(account.id) } else { accountExclusions.wrappedValue.insert(account.id) }
-                        }))
-                    }
-                } label: { Label("Mailboxes", systemImage: "line.3.horizontal.decrease") }.controlSize(.small)
-                Spacer()
-                Text("Last 30 days · \(visibleMessages.count)").font(.caption).foregroundStyle(.secondary)
-            }
-            Divider()
             if visibleMessages.isEmpty {
-                ContentUnavailableView("No inbox messages", systemImage: "tray", description: Text(model.mailHealth.error == nil ? "Recent messages appear here after Mail connects." : "Check the Mail connection status above."))
+                ContentUnavailableView("No inbox messages", systemImage: "tray", description: Text(model.mailHealth.error == nil ? "Recent messages appear here after Mail connects." : "Mail couldn’t connect. The dot in the corner explains why."))
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -403,7 +396,7 @@ struct DashboardView: View {
                             Divider()
                         }
                     }
-                }
+                }.scrollEdgeFade()
             }
         }.panelStyle()
     }

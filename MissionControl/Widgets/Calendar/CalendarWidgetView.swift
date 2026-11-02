@@ -67,6 +67,7 @@ struct CalendarWidgetView: View {
         Group {
             if layout.compact { glance } else { full }
         }.padding(16).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+            .widgetMenu("Calendar",health:SourceHealth(lastSuccess:updated,error:error,loading:loading)) { menuItems }
             .onAppear { mounted=true; returnToToday() }
             .onDisappear { mounted=false; dragCapture=nil }
             .onChange(of:widgetID) { dragCapture=nil; returnToToday() }
@@ -90,13 +91,10 @@ struct CalendarWidgetView: View {
         let horizon = ahead.first.flatMap { calendar.date(byAdding:.day,value:calendar.isDateInToday(key($0).0) ? 2 : 1,to:key($0).0) }
         let upcoming = layout.short ? ahead.filter { key($0).0 < horizon ?? .distantFuture } : ahead
         return VStack(alignment:.leading,spacing:layout == .small ? 8 : 10) {
-            WidgetHeader(title:"Calendar",symbol:"calendar",meta:layout == .small ? now.formatted(.dateTime.weekday(.abbreviated).day()) : nil) {
-                if layout == .medium {
-                    SourceStatusIndicator(title:"Calendar",health:SourceHealth(lastSuccess:updated,error:error,loading:loading))
-                    Button { model.newNativeItem(.event,date:.now) } label: { Image(systemName:"plus") }.help("New event").accessibilityLabel("New event").disabled(model.writing)
-                }
-            }.controlSize(.small)
-            if let error, layout != .small { Text((updated == nil ? "" : "Stale · ") + error).font(.caption).foregroundStyle(.orange).lineLimit(2) }
+            // A small widget has no room for the medium one's date block, so the day leads its list.
+            if layout == .small {
+                Text(now.formatted(.dateTime.weekday(.wide).day()).uppercased()).font(.system(size:10.5,weight:.bold)).tracking(1).foregroundStyle(palette[.accent]).lineLimit(1)
+            }
             HStack(alignment:.top,spacing:16) {
                 if layout == .medium {
                     VStack(alignment:.leading,spacing:0) {
@@ -107,7 +105,28 @@ struct CalendarWidgetView: View {
                 }
                 GlanceRows(items:upcoming,rowHeight:layout == .tall ? 40 : 32,empty:"Nothing else this week.",scrolls:layout == .tall) { event in glanceRow(event,now:now) }
             }
-        }.contextMenu { if layout != .medium { Button("New event") { model.newNativeItem(.event,date:.now) }.disabled(model.writing) } }
+        }
+    }
+    /// The right-click menu. Day, Week and Month keep their date line in the widget, so only Agenda
+    /// steers from here; glances always look ahead from today.
+    @ViewBuilder private var menuItems: some View {
+        Button("New event…") { model.newNativeItem(.event,date:layout.compact ? .now : configuration.date) }.disabled(model.writing)
+        if !layout.compact {
+            if mode == "agenda" {
+                Button("Today",action:returnToToday)
+                Button("Go to date…") { showDatePicker = true }
+            }
+            Picker("View",selection:$configuration.calendarMode) {
+                Text("Agenda").tag("agenda"); Text("Day").tag("day"); Text("Week").tag("week"); Text("Month").tag("month")
+            }
+            Menu("Calendars") {
+                Button("Show all") { configuration.sourceExclusions = [] }
+                Divider()
+                ForEach(snapshot.sources) { source in
+                    Toggle(source.displayLabel,isOn:Binding(get:{ !configuration.sourceExclusions.contains(source.id) },set:{ enabled in if enabled { configuration.sourceExclusions.remove(source.id) } else { configuration.sourceExclusions.insert(source.id) } }))
+                }
+            }
+        }
     }
     private func glanceRow(_ event: AgendaEvent, now: Date) -> some View {
         let day = calendar.startOfDay(for:max(event.start,now))
@@ -125,32 +144,27 @@ struct CalendarWidgetView: View {
     }
     private var full: some View {
         VStack(alignment:.leading,spacing:12) {
-            WidgetHeader(title:"Calendar",symbol:"calendar") {
-                SourceStatusIndicator(title:"Calendar",health:SourceHealth(lastSuccess:updated,error:error,loading:loading))
-                Menu { Button("Show all") { configuration.sourceExclusions = [] }; Divider(); ForEach(snapshot.sources) { source in
-                    Toggle(source.displayLabel,isOn:Binding(get:{ !configuration.sourceExclusions.contains(source.id) },set:{ enabled in if enabled { configuration.sourceExclusions.remove(source.id) } else { configuration.sourceExclusions.insert(source.id) } }))
-                } } label: { Image(systemName:"line.3.horizontal.decrease") }.menuStyle(.borderlessButton).fixedSize().help("Filter calendars").accessibilityLabel("Filter calendars")
-                Button { model.newNativeItem(.event,date:configuration.date) } label: { Image(systemName:"plus") }.help("New event").accessibilityLabel("New event").disabled(model.writing)
-                Picker("Calendar view",selection:$configuration.calendarMode) {
-                    Text("Agenda").tag("agenda"); Text("Day").tag("day"); Text("Week").tag("week"); Text("Month").tag("month")
-                }.pickerStyle(.menu).labelsHidden().frame(width:90)
-            }.buttonStyle(.borderless).controlSize(.small)
-            HStack(spacing:8) {
-                Button { showDatePicker.toggle() } label: {
-                    HStack(spacing:4) { Text(dateTitle).font(.callout.weight(.medium)); Image(systemName:"chevron.down").font(.caption2) }
-                }.help("Choose calendar date").accessibilityLabel("Choose calendar date").popover(isPresented:$showDatePicker) {
-                    DatePicker("Calendar date",selection:$configuration.date,displayedComponents:.date).datePickerStyle(.graphical).labelsHidden().padding(12)
-                }
-                Spacer(minLength:4)
-                Button { navigate(-1) } label: { Image(systemName:"chevron.left") }.help("Previous calendar period").accessibilityLabel("Previous calendar period")
-                Button(mode == "day" || mode == "week" ? "Now" : "Today",action:returnToToday)
-                Button { navigate(1) } label: { Image(systemName:"chevron.right") }.help("Next calendar period").accessibilityLabel("Next calendar period")
-            }.buttonStyle(.borderless).controlSize(.small)
-            if let error { Text((updated == nil ? "" : "Stale · ") + error).font(.caption).foregroundStyle(.orange).lineLimit(2) }
+            // Day, Week and Month keep their date line; Agenda is a list of days and steers from the menu.
+            if mode != "agenda" {
+                HStack(spacing:8) {
+                    Button { showDatePicker.toggle() } label: {
+                        HStack(spacing:4) { Text(dateTitle).font(.callout.weight(.medium)); Image(systemName:"chevron.down").font(.caption2) }
+                    }.help("Choose calendar date").accessibilityLabel("Choose calendar date").popover(isPresented:$showDatePicker) { datePicker }
+                    Spacer(minLength:4)
+                    Button { navigate(-1) } label: { Image(systemName:"chevron.left") }.help("Previous calendar period").accessibilityLabel("Previous calendar period")
+                    Button(mode == "day" || mode == "week" ? "Now" : "Today",action:returnToToday)
+                    Button { navigate(1) } label: { Image(systemName:"chevron.right") }.help("Next calendar period").accessibilityLabel("Next calendar period")
+                }.buttonStyle(.borderless).controlSize(.small)
+            }
             if mode == "month" { monthView }
             else if mode == "day" || mode == "week" { timelineView }
             else { agendaView }
         }
+        // Agenda has no date button, so the menu's Go to date opens here.
+        .popover(isPresented:mode == "agenda" ? $showDatePicker : .constant(false),arrowEdge:.top) { datePicker }
+    }
+    private var datePicker: some View {
+        DatePicker("Calendar date",selection:$configuration.date,displayedComponents:.date).datePickerStyle(.graphical).labelsHidden().padding(12)
     }
     private func returnToToday() {
         configuration.date = .now
@@ -293,7 +307,7 @@ struct CalendarWidgetView: View {
                     }
                 }
             }.frame(maxWidth:.infinity,alignment:.leading)
-        }
+        }.scrollEdgeFade()
     }
     private var monthView: some View {
         GeometryReader { geo in
@@ -315,7 +329,7 @@ struct CalendarWidgetView: View {
                                 .opacity(calendar.component(.month,from:date) == calendar.component(.month,from:configuration.date) ? 1 : 0.45)
                         }
                     }
-                }
+                }.scrollEdgeFade()
             }
         }
     }
@@ -356,6 +370,8 @@ struct CalendarWidgetView: View {
                 }.frame(width:Double(week ? CalendarWeekStrip.days : 1)*(width+8)-8,alignment:.leading)
             }
             .scrollPosition($timelinePosition)
+            // The day header is pinned at the top, so only the hours below fade.
+            .scrollEdgeFade(edges:.bottom)
             // A four-year strip's scroller thumb is a sliver that jumps months; scrolling and the arrows suffice.
             .scrollIndicators(.never,axes:.horizontal)
             .onScrollGeometryChange(for:Int.self) { week ? Int(($0.contentOffset.x/(width+8)).rounded()) : 0 } action: { _,leading in if week { leadingIndex = leading } }

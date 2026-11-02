@@ -134,7 +134,6 @@ struct LifeProjectWidget: View {
     private var glance: some View {
         let due = index.dueSoon(under:nil), late = index.lateCount(under:nil)
         return VStack(alignment:.leading,spacing:layout == .small ? 8 : 10) {
-            WidgetHeader(title:"Projects",symbol:"folder",meta:layout == .small && late > 0 ? "\(late) late" : nil)
             HStack(alignment:.top,spacing:16) {
                 if layout == .medium,!due.isEmpty { GlanceCount(value:late > 0 ? late : due.count,label:late > 0 ? "late" : "due soon",urgent:late > 0).frame(width:78,alignment:.leading) }
                 VStack(alignment:.leading,spacing:12) {
@@ -161,7 +160,7 @@ struct LifeProjectWidget: View {
                                         }.help(project.title)
                                     }
                                 }.frame(maxWidth:.infinity,alignment:.leading)
-                            }.scrollIndicators(.never)
+                            }.scrollIndicators(.never).scrollEdgeFade()
                         }
                     }
                 }
@@ -169,7 +168,8 @@ struct LifeProjectWidget: View {
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
     }
     var body: some View {
-        Group { if layout.compact { glance } else { fullBody } }
+        // Only the glance has a widget menu; the full view keeps its own header and card menus.
+        Group { if layout.compact { glance.widgetMenu("Projects") {} } else { fullBody } }
         .sheet(item: $editing) { item in LifeItemEditor(model: model, item: item) { editing = nil } }
         .sheet(item: $notesEditing) { capture in LifeProjectNotesSheet(model:model,capture:capture) }
         .sheet(item:$matching) { item in LifeIdentitySheet(model:model,item:item) { matching=nil } }

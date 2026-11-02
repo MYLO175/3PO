@@ -15,6 +15,7 @@ struct EmailOverviewView: View {
     @Environment(\.widgetLayout) private var layout
     var body: some View {
         Group { if layout.compact { glance } else { full } }
+            .widgetMenu("Email summary") { menuItems }
             .sheet(isPresented:$showRelevance) {ReviewPolicyView(model:model)}.onChange(of:model.inference.activeID) {showRelevance=false}.onChange(of:filter) { limit = 6 }
     }
     /// Highlighted emails, those needing action first, with how many need action once there is room.
@@ -23,9 +24,6 @@ struct EmailOverviewView: View {
             .enumerated().sorted { ($0.element.needsAction ? 0 : 1,$0.offset) < ($1.element.needsAction ? 0 : 1,$1.offset) }.map(\.element)
         let actions=items.filter(\.needsAction).count
         return VStack(alignment:.leading,spacing:layout == .small ? 8 : 10) {
-            WidgetHeader(title:"Email summary",symbol:"envelope.badge") {
-                if layout != .small, summaries.busy { ProgressView().controlSize(.small) }
-            }
             HStack(alignment:.top,spacing:16) {
                 if layout == .medium,!items.isEmpty { GlanceCount(value:actions,label:actions == 1 ? "needs action" : "need action").frame(width:78,alignment:.leading) }
                 GlanceRows(items:items,rowHeight:34,empty:!summaries.enabled ? "Email monitoring is off." : "Nothing highlighted.",scrolls:layout == .tall) { item in
@@ -39,24 +37,24 @@ struct EmailOverviewView: View {
             }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
     }
+    /// The right-click menu: checking mail (Stop while it runs), what to show, accounts and guidance.
+    @ViewBuilder private var menuItems: some View {
+        if summaries.busy { Button("Stop checking mail") { summaries.cancel() } }
+        else { Button("Check incoming mail") { summaries.process(model,resume:true) }.disabled(!summaries.enabled || model.inference.busy || model.assistant.busy || model.inference.usagePaused || !model.inference.inferenceVerified) }
+        if !layout.compact { Picker("Show",selection:$filter) { ForEach(["All","Needs action","Worth reading","Future dates"],id:\.self) { Text($0).tag($0) } } }
+        if let configuration {
+            Menu("Accounts") {
+                ForEach(model.mailData.accounts) { account in
+                    Toggle(account.title,isOn:Binding(get:{ !configuration.wrappedValue.sourceExclusions.contains(account.id) },set:{ on in var value = configuration.wrappedValue; if on { value.sourceExclusions.remove(account.id) } else { value.sourceExclusions.insert(account.id) }; configuration.wrappedValue = value }))
+                }
+            }
+        }
+        Button("Review guidance…") { showRelevance=true }
+    }
     private var full: some View {
         VStack(alignment:.leading,spacing:12) {
-            WidgetHeader(title:"Email summary",symbol:"envelope.badge") {
-                Button {showRelevance=true} label:{Image(systemName:"slider.horizontal.3")}.help("Review guidance").accessibilityLabel("Review guidance")
-                Button { summaries.process(model,resume:true) } label: { Image(systemName:"arrow.clockwise") }.help("Check incoming mail").accessibilityLabel("Check incoming mail").disabled(!summaries.enabled || summaries.busy || model.inference.busy || model.assistant.busy || model.inference.usagePaused || !model.inference.inferenceVerified)
-                if summaries.busy { ProgressView().controlSize(.small); Button("Stop") { summaries.cancel() } }
-            }
-            HStack {
-                Picker("Show",selection:$filter) { ForEach(["All","Needs action","Worth reading","Future dates"],id:\.self) { Text($0).tag($0) } }.labelsHidden().frame(maxWidth:160)
-                if let configuration {
-                    Menu("Accounts") {
-                        ForEach(model.mailData.accounts) { account in
-                            Toggle(account.title,isOn:Binding(get:{ !configuration.wrappedValue.sourceExclusions.contains(account.id) },set:{ on in var value = configuration.wrappedValue; if on { value.sourceExclusions.remove(account.id) } else { value.sourceExclusions.insert(account.id) }; configuration.wrappedValue = value }))
-                        }
-                    }
-                }
-                Spacer(minLength:0)
-            }
+            // With no picker on show, a narrowed view says what it is showing.
+            if filter != "All" { Text("Showing " + filter.lowercased()).font(.caption).foregroundStyle(.secondary) }
             if summaries.canUndoDismiss { HStack { Text("Suggestion dismissed").font(.caption).foregroundStyle(.secondary); Button("Undo") { summaries.undoDismiss(model) }.controlSize(.small); Spacer() } }
             ScrollView {
                 LazyVStack(alignment:.leading,spacing:10) {
@@ -90,7 +88,7 @@ struct EmailOverviewView: View {
                         }.padding(.top,6)
                     }.font(.caption)
                 }.frame(maxWidth:.infinity,alignment:.leading)
-            }
+            }.scrollEdgeFade()
             if summaries.paused || model.inference.usagePaused { Text(model.inference.usagePaused ? "Subscription processing paused; saved suggestions are available." : "Monitoring paused. Check incoming mail to resume one bounded batch.").font(.caption).foregroundStyle(.orange) }
             if let error = summaries.error { DisclosureGroup("Monitoring details") { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }.font(.caption) }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)

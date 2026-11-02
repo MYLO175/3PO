@@ -51,7 +51,7 @@ struct WorkspaceView: View {
                                 Spacer()
                             }
                             if let widget = store.selected.widgets.first(where:{ $0.id == focusedWidgetID }) ?? store.selected.widgets.first {
-                                WorkspaceTile(model:model,store:store,widget:widgetBinding(widget),editing:false,metrics:WorkspaceGeometry(width:width,height:max(1,height-38),rows:rows),focused:true)
+                                WorkspaceTile(model:model,store:store,widget:widgetBinding(widget),editing:false,metrics:WorkspaceGeometry(width:width,height:max(1,height-38),rows:rows),focused:true,startEditing:{ editing = true })
                             }
                         }.padding(16)
                     } else {
@@ -60,7 +60,7 @@ struct WorkspaceView: View {
                                 for x in 0..<12 { for y in 0..<rows { context.fill(Path(ellipseIn:CGRect(x:Double(x)*metrics.xStep,y:Double(y)*metrics.yStep,width:3,height:3)),with:.color(.secondary.opacity(0.2))) } }
                             }.allowsHitTesting(false) }
                             ForEach(store.selected.widgets) { widget in
-                                WorkspaceTile(model:model,store:store,widget:widgetBinding(widget),editing:editing,metrics:metrics)
+                                WorkspaceTile(model:model,store:store,widget:widgetBinding(widget),editing:editing,metrics:metrics,startEditing:{ editing = true })
                             }
                         }.frame(width:width,height:height,alignment:.topLeading).coordinateSpace(name:"workspaceGrid").padding(16)
                     }
@@ -301,6 +301,7 @@ private struct WorkspaceTile: View {
     var editing: Bool
     var metrics: WorkspaceGeometry
     var focused = false
+    var startEditing: (() -> Void)? = nil
     @State private var interaction: Interaction?
     @State private var readingMode = false
     private struct Interaction { var origin: GridRect; var translation: CGSize; var resizing: Bool }
@@ -341,7 +342,8 @@ private struct WorkspaceTile: View {
                         } label: { Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width:20).accessibilityLabel("\(widget.kind?.title ?? "Widget") layout actions")
                     }.padding(.horizontal,12).frame(height:34).background(Color.accentColor.opacity(0.08))
                 }
-                content.environment(\.workspacePalette,palette).environment(\.inWorkspaceTile,true).environment(\.widgetLayout,WidgetLayout(rect:baseRect,size:baseFrame.size)).foregroundStyle(palette[.text]).tint(palette[.accent]).allowsHitTesting(!editing).frame(maxWidth:.infinity,maxHeight:.infinity)
+                content.environment(\.workspacePalette,palette).environment(\.inWorkspaceTile,true).scrollIndicators(.never).environment(\.widgetLayout,WidgetLayout(rect:baseRect,size:baseFrame.size)).foregroundStyle(palette[.text]).tint(palette[.accent]).allowsHitTesting(!editing).frame(maxWidth:.infinity,maxHeight:.infinity)
+                    .widgetMenuHost(enabled:!editing,editLayout:startEditing)
             }
             // Keep content at its committed size during the gesture; only the preview shell follows the pointer.
             .frame(width:baseFrame.width,height:baseFrame.height,alignment:.topLeading)

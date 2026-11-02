@@ -8,20 +8,18 @@ struct DateClockWidget:View {
     var body:some View {
         TimelineView(.periodic(from:.now,by:seconds && showsTime ? 1 : 30)) { context in
             VStack(spacing:8) {
-                HStack {
-                    Text(context.date.formatted(.dateTime.weekday(.wide))).font(.subheadline.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
-                    Spacer()
-                    Menu {
-                        Picker("Layout",selection:Binding(get:{configuration.clockStyle ?? "auto"},set:{configuration.clockStyle=$0})) { Text("Adaptive").tag("auto");Text("Digital").tag("digital");Text("Calendar").tag("calendar") }
-                        Picker("Alignment",selection:Binding(get:{configuration.clockAlignment ?? "centre"},set:{configuration.clockAlignment=$0})) { Text("Centre").tag("centre");Text("Leading").tag("leading") }
-                        Divider()
-                        Toggle("Show clock",isOn:Binding(get:{showsTime},set:{configuration.clockShowsTime=$0}))
-                        Toggle("Show seconds",isOn:Binding(get:{seconds},set:{configuration.clockShowsSeconds=$0})).disabled(!showsTime)
-                        Toggle("24-hour time",isOn:Binding(get:{configuration.clockUses24Hour ?? false},set:{configuration.clockUses24Hour=$0})).disabled(!showsTime)
-                    } label:{Image(systemName:"ellipsis")}.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width:22).accessibilityLabel("Date and clock options")
-                }.fixedSize(horizontal:false,vertical:true)
+                Text(context.date.formatted(.dateTime.weekday(.wide))).font(.subheadline.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
+                    .frame(maxWidth:.infinity,alignment:.leading).fixedSize(horizontal:false,vertical:true)
                 DateClockFace(date:context.date,configuration:configuration)
             }.padding(16)
+        }
+        .widgetMenu("Date and clock") {
+            Picker("Layout",selection:Binding(get:{configuration.clockStyle ?? "auto"},set:{configuration.clockStyle=$0})) { Text("Adaptive").tag("auto");Text("Digital").tag("digital");Text("Calendar").tag("calendar") }
+            Picker("Alignment",selection:Binding(get:{configuration.clockAlignment ?? "centre"},set:{configuration.clockAlignment=$0})) { Text("Centre").tag("centre");Text("Leading").tag("leading") }
+            Divider()
+            Toggle("Show clock",isOn:Binding(get:{showsTime},set:{configuration.clockShowsTime=$0}))
+            Toggle("Show seconds",isOn:Binding(get:{seconds},set:{configuration.clockShowsSeconds=$0})).disabled(!showsTime)
+            Toggle("24-hour time",isOn:Binding(get:{configuration.clockUses24Hour ?? false},set:{configuration.clockUses24Hour=$0})).disabled(!showsTime)
         }
     }
 }

@@ -27,7 +27,8 @@ struct PALifeMapWidget: View {
     @Environment(\.widgetLayout) private var layout
     @Environment(\.workspacePalette) private var palette
     var body:some View {
-        Group { if layout.compact { glance } else { full } }
+        // Only the glance has a widget menu; the full view keeps its own header.
+        Group { if layout.compact { glance.widgetMenu("Life map") { Button("Context…") { showContext=true } } } else { full } }
         .sheet(isPresented:$showContext) { ContextPagesView(model:model,registration:model.inference.activeID) }
         .sheet(item:$areaDetails) { area in
             LifeMapAreaDetails(model:model,registration:model.inference.activeID,area:area) { areaMemory=$0 }
@@ -41,7 +42,6 @@ struct PALifeMapWidget: View {
     private var glance:some View {
         let total=Set(notes.flatMap { $0.records.map(\.id) }).count
         return VStack(alignment:.leading,spacing:layout == .small ? 8 : 10) {
-            WidgetHeader(title:"Life map",symbol:"point.3.connected.trianglepath.dotted",meta:layout == .tall ? "\(total) facts" : nil)
             if !model.assistant.memory.enabled && notebook.anchors.isEmpty {
                 Text("Saved memory is off.").font(.callout).foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
             } else {

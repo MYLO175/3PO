@@ -25,6 +25,7 @@ struct TodayBriefView: View {
     @Environment(\.widgetLayout) private var layout
     var body: some View {
         Group { if layout.compact { glance } else { full } }
+        .widgetMenu("Today’s brief",status:record.map { "updated " + $0.created.formatted(date:.omitted,time:.shortened) }) { menuItems }
         .sheet(isPresented:$showMemory) { PAMemoryView(memory:model.assistant.memory,registration:model.inference.activeID,model:model) }
         .sheet(item:$editingPrompt) {edit in BriefPromptEditor(model:model,briefings:briefings,capture:edit.capture)}
         .onChange(of:model.inference.activeID) { showMemory=false;editingPrompt=nil }
@@ -34,78 +35,47 @@ struct TodayBriefView: View {
         let size:Double=layout == .small ? min(13,textSize.wrappedValue) : textSize.wrappedValue
         let today=showsWeather.wrappedValue && model.weather.enabled && model.weather.allowed ? model.weather.forecast?.today() : nil
         return VStack(alignment:.leading,spacing:layout == .small ? 6 : 8) {
-            WidgetHeader(title:"Today’s brief",symbol:"sun.max") {
-                if let today,layout == .medium {
-                    Label(today.high.formatted(.number.precision(.fractionLength(0)))+"°",systemImage:today.symbol).font(.caption.weight(.medium)).foregroundStyle(.secondary).labelStyle(.titleAndIcon)
-                        .help(today.description).accessibilityLabel("Weather: \(today.description), high \(Int(today.high.rounded())) degrees")
-                }
-                if layout == .medium { options }
-            }
-            if let record { glanceProse(record,size:size)
+            if let record { glanceProse(record,size:size,today:layout == .medium ? today : nil)
             } else {
                 Text(briefings.busy ? (briefings.phase.isEmpty ? "Preparing today’s brief…" : briefings.phase) : "Updated with each heartbeat.").font(.callout).foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
             }
         }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
-            .contextMenu {
-                if layout != .medium {
-                    Button(!briefings.hasCurrentToday(model) ? "Prepare today’s brief" : "Refresh today’s brief") { briefings.updateToday(model) }.disabled(briefings.busy || model.heartbeat.busy)
-                    Toggle("Show weather",isOn:showsWeather)
-                    Button("Edit brief prompt…") {editingPrompt=BriefPromptEdit(capture:briefings.writingPrompt(model.inference.activeID))}.disabled(model.inference.activeID.isEmpty)
-                }
-            }
     }
-    @ViewBuilder private func glanceProse(_ record:DailyBriefing,size:Double)->some View {
+    @ViewBuilder private func glanceProse(_ record:DailyBriefing,size:Double,today:WeatherDay?)->some View {
         let parts=Self.masthead(BriefingRules.displayProse(record))
         let markdown=(try? AttributedString(markdown:parts.body,options:.init(interpretedSyntax:.inlineOnlyPreservingWhitespace))) ?? AttributedString(parts.body)
         let spacing=4*size/14, line=size*1.22+spacing
         let prose=Text(markdown).font(.system(size:size)).lineSpacing(spacing)
-        WidgetHeadline(text:parts.headline,size:layout == .small ? 17 : (22*size/14).rounded(),lines:layout == .tall ? 2 : 1)
-        if layout == .tall { ScrollView { prose.textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading) }.scrollIndicators(.never) }
+        HStack(alignment:.firstTextBaseline,spacing:8) {
+            WidgetHeadline(text:parts.headline,size:layout == .small ? 17 : (22*size/14).rounded(),lines:layout == .tall ? 2 : 1)
+            // A medium brief has room for today's weather beside the greeting.
+            if let today {
+                Spacer(minLength:4)
+                Label(today.high.formatted(.number.precision(.fractionLength(0)))+"°",systemImage:today.symbol).font(.caption.weight(.medium)).foregroundStyle(.secondary).labelStyle(.titleAndIcon)
+                    .help(today.description).accessibilityLabel("Weather: \(today.description), high \(Int(today.high.rounded())) degrees")
+            }
+        }
+        if layout == .tall { ScrollView { prose.textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading) }.scrollEdgeFade() }
         else {
             GeometryReader { geometry in
                 prose.lineLimit(max(1,Int((geometry.size.height+spacing)/line))).frame(maxWidth:.infinity,alignment:.topLeading)
             }
         }
     }
-    @ViewBuilder private var options: some View {
-        if briefings.busy { ProgressView().controlSize(.small) }
-        else { Button { briefings.updateToday(model) } label: { Label(!briefings.hasCurrentToday(model) ? "Prepare today’s brief" : "Refresh today’s brief",systemImage:"arrow.clockwise").labelStyle(.iconOnly) }.help(!briefings.hasCurrentToday(model) ? "Prepare today’s brief using AI" : "Refresh today’s brief using AI and fresh sources").disabled(model.heartbeat.busy) }
-        Menu {
-            Toggle("Show weather",isOn:showsWeather)
-            Picker("Text size",selection:textSize) {
-                Text("Small").tag(12.0); Text("Default").tag(14.0); Text("Large").tag(16.0); Text("Larger").tag(18.0); Text("Largest").tag(21.0)
-            }
-            Divider()
-            Button("Edit brief prompt…") {editingPrompt=BriefPromptEdit(capture:briefings.writingPrompt(model.inference.activeID))}.disabled(model.inference.activeID.isEmpty)
-        } label: {Image(systemName:"ellipsis")}
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-            .help("Brief options").accessibilityLabel("Brief options")
+    /// The right-click menu: refresh (Stop while it is being prepared), weather, text size and the prompt.
+    @ViewBuilder private var menuItems: some View {
+        if briefings.busy { Button("Stop preparing the brief") { briefings.cancel() } }
+        else { Button(!briefings.hasCurrentToday(model) ? "Prepare today’s brief" : "Refresh today’s brief") { briefings.updateToday(model) }.disabled(model.heartbeat.busy) }
+        Toggle("Show weather",isOn:showsWeather)
+        Picker("Text size",selection:textSize) {
+            Text("Small").tag(12.0); Text("Default").tag(14.0); Text("Large").tag(16.0); Text("Larger").tag(18.0); Text("Largest").tag(21.0)
+        }
+        Divider()
+        Button("Edit brief prompt…") {editingPrompt=BriefPromptEdit(capture:briefings.writingPrompt(model.inference.activeID))}.disabled(model.inference.activeID.isEmpty)
     }
     private var full: some View {
         let size=textSize.wrappedValue
         return VStack(alignment:.leading,spacing:12) {
-            WidgetHeader(title:"Today’s brief",symbol:"sun.max") {
-                if let record {
-                    ViewThatFits(in:.horizontal) {
-                        Text("Updated \(record.created.formatted(date:.omitted,time:.shortened))")
-                        Text(record.created.formatted(date:.omitted,time:.shortened))
-                    }.font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                        .help("Updated \(record.created.formatted(date:.abbreviated,time:.shortened)). Refreshes with each heartbeat.")
-                        .accessibilityLabel("Brief updated \(record.created.formatted(date:.omitted,time:.shortened))")
-                }
-                if briefings.busy { ProgressView().controlSize(.small); Button("Stop") { briefings.cancel() }.fixedSize() }
-                else { Button { briefings.updateToday(model) } label: { Image(systemName:"arrow.clockwise") }.help(!briefings.hasCurrentToday(model) ? "Prepare today’s brief using AI" : "Refresh today’s brief using AI and fresh sources").accessibilityLabel(!briefings.hasCurrentToday(model) ? "Prepare today’s brief" : "Refresh today’s brief").disabled(model.heartbeat.busy) }
-                Menu {
-                    Toggle("Show weather",isOn:showsWeather)
-                    Picker("Text size",selection:textSize) {
-                        Text("Small").tag(12.0); Text("Default").tag(14.0); Text("Large").tag(16.0); Text("Larger").tag(18.0); Text("Largest").tag(21.0)
-                    }
-                    Divider()
-                    Button("Edit brief prompt…") {editingPrompt=BriefPromptEdit(capture:briefings.writingPrompt(model.inference.activeID))}.disabled(model.inference.activeID.isEmpty)
-                } label: {Image(systemName:"ellipsis")}
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                    .help("Brief options").accessibilityLabel("Brief options")
-            }
             if model.heartbeat.busy && !briefings.busy {Text("The heartbeat will update your brief shortly…").font(.caption).foregroundStyle(.secondary)}
             if briefings.busy { Text(briefings.phase.isEmpty ? "Preparing today’s brief…" : briefings.phase).font(.caption).foregroundStyle(.secondary) }
             if let record {
@@ -137,7 +107,7 @@ struct TodayBriefView: View {
                             }.padding(.top,8)}
                         }.font(.caption)
                     }.frame(maxWidth:.infinity,alignment:.leading)
-                }
+                }.scrollEdgeFade()
             } else {
                 if showsWeather.wrappedValue {WeatherBriefCard(weather:model.weather)}
                 ContentUnavailableView("Your day at a glance",systemImage:"sun.horizon",description:Text(!model.assistant.contextEnabled ? "Enable assistant source context in Settings." : briefings.busy ? "Your PA is preparing today’s brief…" : model.inference.usagePaused ? "Subscription access is paused. Your Apple sources remain available." : "Updated with each heartbeat. Refresh here for a manual update."))

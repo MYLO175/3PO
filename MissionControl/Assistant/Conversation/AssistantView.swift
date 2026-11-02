@@ -344,45 +344,12 @@ struct AssistantPanel: View {
         let displayedTurns=page.rows
         let discoveryEntries=lastDiscoveryEntries(displayedTurns)
         VStack(spacing: 8) {
-            WidgetHeader(title:assistant.displayName,symbol:"sparkles") {
-                if !layout.compact,let completed=model.heartbeat.state.accounts[model.inference.activeID]?.assessed {
-                    TimelineView(.periodic(from:.now,by:60)) {context in
-                        Text("Heartbeat \(completed.formatted(date:Calendar.current.isDate(completed,inSameDayAs:context.date) ? .omitted : .abbreviated,time:.shortened))")
-                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                            .help("Last completed AI heartbeat: \(completed.formatted(date:.abbreviated,time:.shortened))")
-                            .accessibilityLabel("Last completed heartbeat \(completed.formatted(date:.abbreviated,time:.shortened))")
-                    }
-                }
-                if !layout.compact,!focusBinding.wrappedValue.isEmpty {
-                    Label(LifeFocusRules.label(focusBinding.wrappedValue),systemImage:"scope").font(.caption2.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
-                        .help("Chat focus. Change it in the PA menu.").accessibilityLabel("Chat focus: " + LifeFocusRules.label(focusBinding.wrappedValue))
-                }
-                Button { startNewChat() } label: { Image(systemName:"square.and.pencil") }
-                    .disabled(assistant.busy || model.inference.busy || assistant.setupActive(selectedTopicID))
-                    .help("New chat — keep earlier chats and saved memory")
-                    .accessibilityLabel("New chat").accessibilityIdentifier("pa-new-chat")
-                Menu {
-                    Menu("Focus: " + LifeFocusRules.label(focusBinding.wrappedValue),systemImage:"scope") {
-                        Button("All areas") { focusBinding.wrappedValue = [] }
-                        Divider()
-                        ForEach(LifeArea.allCases.filter{$0 != .unsorted}) { area in
-                            Toggle(area.title,isOn:Binding(get:{focusBinding.wrappedValue.contains(area)},set:{ enabled in
-                                let values=enabled ? focusBinding.wrappedValue+[area] : focusBinding.wrappedValue.filter{$0 != area}
-                                focusBinding.wrappedValue=LifeFocusRules.normalised(values.map(\.rawValue))
-                            }))
-                        }
-                    }
-                    Button("Chat history…",systemImage:"clock.arrow.circlepath") {
-                        historyEntries = AssistantChatHistoryEntry.entries(assistant.feed)
-                        showHistory = true
-                    }
-                    Button("Name your PA…") { showRename = true }.disabled(assistant.busy)
-                    Button("Context…") { showMemory = true }
-                    Button(assistant.setupActive(selectedTopicID) ? "Continue context setup…" : "Set up my PA…") { showProfileSetup=true }.disabled(assistant.busy)
-                    Text(assistant.contextEnabled ? "Apple source context enabled" : "Apple source context off")
-                } label: { Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("PA options").accessibilityLabel("PA options")
-                if supportsReadingMode { Button { readingMode.toggle() } label: { Image(systemName:readingMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") }.help(readingMode ? "Compact chat" : "Expand chat") }
-            }.buttonStyle(.borderless).controlSize(.small)
+            // Focus narrows what the PA looks at, so it stays in sight while it is on.
+            if !layout.compact,!focusBinding.wrappedValue.isEmpty {
+                Label("Focus: " + LifeFocusRules.label(focusBinding.wrappedValue),systemImage:"scope").font(.caption2.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
+                    .frame(maxWidth:.infinity,alignment:.leading)
+                    .help("Change the focus in the right-click menu.").accessibilityLabel("Chat focus: " + LifeFocusRules.label(focusBinding.wrappedValue))
+            }
             if viewingHistory {
                 HStack {
                     Label("Earlier chat",systemImage:"clock.arrow.circlepath").font(.caption).foregroundStyle(.secondary)
@@ -502,6 +469,7 @@ struct AssistantPanel: View {
                     Double(geometry.contentSize.height-geometry.visibleRect.maxY)
                 } action: { _, distance in transcriptScroll.update(distanceFromBottom:distance,userScrolling:transcriptUserScrolling) }
                 .onScrollPhaseChange { _, phase in transcriptUserScrolling = phase == .tracking || phase == .interacting || phase == .decelerating }
+                .scrollEdgeFade()
                 .onChange(of:page.lastVisibleTurn?.content) { if transcriptScroll.followsBottom,let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
                 .onChange(of:page.lastVisibleTurn?.id) { if transcriptScroll.followsBottom,let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
                 .onChange(of:selectedID) { visibleTurnLimit=40;transcriptScroll.reset();if let id=page.lastVisibleTurn?.id {proxy.scrollTo(id,anchor:.bottom)} }
@@ -614,6 +582,35 @@ struct AssistantPanel: View {
         .sheet(isPresented:$showHistory) {
             AssistantChatHistoryView(entries:historyEntries,select:{ entry in historySelection = .init(sessionID:entry.sessionID);showHistory=false },close:{showHistory=false})
         }.padding(16)
+        .widgetMenu(assistant.displayName,status:heartbeatStatus) { chatMenuItems }
+    }
+    private var heartbeatStatus: String? {
+        model.heartbeat.state.accounts[model.inference.activeID]?.assessed.map { "heartbeat " + $0.formatted(date:Calendar.current.isDateInToday($0) ? .omitted : .abbreviated,time:.shortened) }
+    }
+    /// The right-click menu; a message keeps its own Sources & searches and Copy.
+    @ViewBuilder private var chatMenuItems: some View {
+        Button("New chat",systemImage:"square.and.pencil") { startNewChat() }
+            .disabled(assistant.busy || model.inference.busy || assistant.setupActive(selectedTopicID))
+        Button("Chat history…",systemImage:"clock.arrow.circlepath") {
+            historyEntries = AssistantChatHistoryEntry.entries(assistant.feed)
+            showHistory = true
+        }
+        Menu("Focus: " + LifeFocusRules.label(focusBinding.wrappedValue),systemImage:"scope") {
+            Button("All areas") { focusBinding.wrappedValue = [] }
+            Divider()
+            ForEach(LifeArea.allCases.filter{$0 != .unsorted}) { area in
+                Toggle(area.title,isOn:Binding(get:{focusBinding.wrappedValue.contains(area)},set:{ enabled in
+                    let values=enabled ? focusBinding.wrappedValue+[area] : focusBinding.wrappedValue.filter{$0 != area}
+                    focusBinding.wrappedValue=LifeFocusRules.normalised(values.map(\.rawValue))
+                }))
+            }
+        }
+        if supportsReadingMode { Button(readingMode ? "Compact chat" : "Expand chat") { readingMode.toggle() } }
+        Divider()
+        Button("Name your PA…") { showRename = true }.disabled(assistant.busy)
+        Button("Context…") { showMemory = true }
+        Button(assistant.setupActive(selectedTopicID) ? "Continue context setup…" : "Set up my PA…") { showProfileSetup=true }.disabled(assistant.busy)
+        Text(assistant.contextEnabled ? "Apple source context enabled" : "Apple source context off")
     }
 }
 struct AssistantSourceSettings: View {
@@ -870,13 +867,14 @@ private struct TranscriptMessageMenu: NSViewRepresentable {
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow(); stop()
             guard window != nil else { return }
+            RightClickMenuOwners.add(self)
             monitor = NSEvent.addLocalMonitorForEvents(matching:[.rightMouseDown,.leftMouseDown]) { [weak self] event in
                 guard let self, let menu = self.messageMenu(event) else { return event }
                 NSMenu.popUpContextMenu(menu, with: event, for: self)
                 return nil
             }
         }
-        func stop() { if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil }
+        func stop() { if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil; RightClickMenuOwners.remove(self) }
         /// Only a right-click on this message where it is scrolled into view. The host reports a
         /// visible rect wider than the message, so the point must also be inside its bounds.
         private func messageMenu(_ event: NSEvent) -> NSMenu? {

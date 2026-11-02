@@ -9,35 +9,6 @@ enum WorkspaceHeadlineFont: String, CaseIterable, Identifiable {
     var design: Font.Design { switch self { case .serif: .serif; case .rounded: .rounded; case .standard: .default } }
 }
 
-/// One header for every dashboard widget (30 October): an accent icon chip, the title as a small
-/// spaced capital label, optional details, then the widget's own controls on the right.
-struct WidgetHeader<Accessory: View>: View {
-    var title: String
-    var symbol: String
-    var meta: String? = nil
-    @ViewBuilder var accessory: Accessory
-    @Environment(\.workspacePalette) private var palette
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: symbol).font(.system(size: 13, weight: .semibold)).foregroundStyle(palette[.accent])
-                .frame(width: 26, height: 26)
-                .background(palette[.accent].opacity(0.15), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .accessibilityHidden(true)
-            Text(title.uppercased()).font(.system(size: 11, weight: .bold)).tracking(1.3)
-                .foregroundStyle(palette[.accent]).lineLimit(1).layoutPriority(1)
-                .accessibilityLabel(title).accessibilityAddTraits(.isHeader)
-            Spacer(minLength: 4)
-            if let meta { Text(meta).font(.caption2).foregroundStyle(palette[.text].opacity(0.6)).lineLimit(1) }
-            accessory
-        }
-        .buttonStyle(.borderless)
-        .frame(minHeight: 28)
-    }
-}
-extension WidgetHeader where Accessory == EmptyView {
-    init(title: String, symbol: String, meta: String? = nil) { self.init(title: title, symbol: symbol, meta: meta) { EmptyView() } }
-}
-
 /// The one line that matters in a widget, in the headline font from Settings.
 struct WidgetHeadline: View {
     var text: String
@@ -160,7 +131,7 @@ struct GlanceRows<Item: Identifiable, Row: View>: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: spacing) { ForEach(items) { row($0).frame(minHeight: rowHeight, alignment: .leading) } }
                     .frame(maxWidth: .infinity, alignment: .leading)
-            }.scrollIndicators(.never)
+            }.scrollIndicators(.never).scrollEdgeFade()
         } else {
             GeometryReader { geometry in
                 let columns = max(1, Int((geometry.size.width + 14) / (columnWidth + 14)))
